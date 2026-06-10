@@ -2,13 +2,16 @@
 
 > Validé le 2026-06-10. Périmètre : toute la phase 6 (admin plateforme, SSO OIDC,
 > Billing v2, durcissement SOC2, découverte Fleet en doc seulement).
+> Révisé le 2026-06-10 suite à l'[audit TMS](../../audit-tms-2026-06-10.md) :
+> le volet Billing v2 est réorienté du sell-side vers le **rapprochement de factures
+> transporteur** (freight audit buy-side) — voir la décision ci-dessous.
 
 ## Décisions structurantes
 
 | Décision | Choix | Pourquoi |
 | -------- | ----- | -------- |
 | Modèle « platform admin » | Modèle Prisma `PlatformUser` séparé, login dédié | `User.tenantId` est obligatoire avec `@@unique([tenantId, email])` et ~10 relations tenant-scoped ; un modèle disjoint n'impacte aucun guard existant et garde l'isolation intacte |
-| Pricing factures client | `Rate.customerId` existant + `calculateRateCost` | Le modèle de tarifs de vente existe déjà ; cohérent avec le buy-side |
+| Billing v2 : buy-side audit, pas sell-side | Rapprochement facture transporteur vs coût estimé (tolérances, litige, PAID) | L'audit TMS classe le rapprochement comme trou MVP + ROI le plus démontrable (2-5 % des montants) et différenciateur 19.4 ; le sell-side bâtirait sur une tarification encore embryonnaire — reporté après le rating engine v2 |
 | Sessions plateforme | Access token 12 h, pas de refresh token en v1 | Plan d'ops interne, re-login acceptable ; évite de dupliquer la machinerie refresh |
 | Secrets au repos | AES-256-GCM, préfixe `enc:v1:`, migration lazy | Pas de migration de données risquée ; rechiffrement à la prochaine écriture |
 
@@ -93,56 +96,77 @@ dédié léger (pas de refresh transparent).
 Tenant suspendu ou config `enabled: false` → 404/401 propre. Audit `LOGIN` avec
 `metadata.method: 'oidc'` (+ `provisioned: true` au premier login).
 
-## 3. Billing v2 — facturation client (sell-side)
+## 3. Billing v2 — rapprochement de factures transporteur (freight audit buy-side)
 
-### Données
+Principe : le brouillon existant (coûts estimés des loads COMPLETED) est le
+« montant attendu ». La phase 6 ajoute la capture de la facture **réellement reçue**
+du transporteur et son rapprochement automatique avec tolérances ; écart hors
+tolérance → litige ; puis suivi de paiement.
 
-- `CustomerInvoice` : `id`, `tenantId`, `invoiceNumber` (séquence `CINV-` via
-  `SequencesService`), `customerId`, `status`, `currency`, `totalAmount`,
-  `approvedAt`, `paidAt`, timestamps. `@@unique([tenantId, invoiceNumber])`.
-- `CustomerInvoiceLine` : `customerInvoiceId`, `transportOrderId @unique`
-  (empêche la double facturation d'une commande), `description`, `amount`.
-- Statuts : `DRAFT → APPROVED → PAID` (+ `CANCELLED` depuis DRAFT), enum
-  `CustomerInvoiceStatus` dans `packages/shared` **et** `schema.prisma` (règle 3),
-  state machine dans `packages/shared/src/workflows` + tests vitest (règle 2).
-- Miroir trivial sur le buy-side : ajout de `PAID` à `InvoiceStatus` existant,
-  `paidAt` sur `Invoice`, transition `APPROVED → PAID`.
+### Données (évolution des modèles existants — pas de nouvelle entité)
+
+- `Invoice` (existant) gagne : `carrierInvoiceNumber String?` (référence de la
+  facture du transporteur), `invoicedTotal Decimal?`, `varianceTotal Decimal?`,
+  `disputeReason String?`, `reconciledAt DateTime?`, `paidAt DateTime?`.
+- `InvoiceLine` (existant) gagne : `invoicedAmount Decimal?`, `variance Decimal?`.
+- Statuts : `InvoiceStatus` passe de `DRAFT → APPROVED` à
+  `DRAFT → APPROVED | DISPUTED`, `DISPUTED → APPROVED`, `APPROVED → PAID`
+  (enum mis à jour dans `packages/shared` **et** `schema.prisma` (règle 3),
+  state machine `invoice.workflow.ts` dans `packages/shared/src/workflows` +
+  tests vitest (règle 2) — les transitions existantes restent valides).
+- Tolérances : `TenantModule.settings` du module billing —
+  `{ tolerancePct: number, toleranceAbsolute: number }` (défauts : 2 % et 25,
+  dans la devise de la facture), lues via le module registry, modifiables par
+  `PATCH /api/v1/modules/billing` (mécanisme existant).
 
 ### Logique
 
-- « Facturables » : `GET /billing/customer-invoices/billable?customerId=` →
-  commandes du client en statut `COMPLETED` ou `CLOSED` sans ligne de facture, avec montant
-  proposé = `calculateRateCost(rate actif du client, distance/poids agrégés des
-  shipments de la commande)` ; fallback 0 si pas de tarif actif (montant éditable).
-- `POST /billing/customer-invoices` : `customerId` + `orders[{ transportOrderId,
-  amount?, description? }]` — montants modifiables tant que `DRAFT`
-  (`PATCH /billing/customer-invoices/:id/lines/:lineId`).
-- Workflow : `POST :id/approve`, `POST :id/mark-paid` (body `paidAt?`),
-  `POST :id/cancel`. Audit explicite avant/après sur chaque transition (règle 14),
-  `@Audit` sur create/update.
-- `OwnershipService.assertOwned` sur `customerId` et chaque `transportOrderId`
-  (règle 9) ; tout filtré `tenantId` (règle 1).
+- `POST /billing/invoices/:id/reconcile` (facture en `DRAFT`) — body :
+  `{ carrierInvoiceNumber, lines: [{ lineId, invoicedAmount }] }` (toute ligne
+  omise = montant attendu). Calcule `variance` par ligne et `varianceTotal`,
+  puis applique la règle de tolérance sur le total :
+  `|varianceTotal| ≤ max(toleranceAbsolute, invoicedTotal × tolerancePct/100)`
+  → transition automatique vers `APPROVED` (« bon à payer ») ; sinon → `DISPUTED`
+  avec le détail des écarts par ligne.
+- `POST /billing/invoices/:id/resolve-dispute` — body :
+  `{ resolution: 'ACCEPT_INVOICED' | 'KEEP_EXPECTED', reason }`.
+  `ACCEPT_INVOICED` : le total payable devient `invoicedTotal` ;
+  `KEEP_EXPECTED` : on paie le montant attendu (le transporteur émet un avoir —
+  hors système). Les deux mènent à `APPROVED`, `disputeReason` conservé.
+- `POST /billing/invoices/:id/approve` (existant) reste possible sans
+  rapprochement (paiement sur estimé — self-billing assumé).
+- `POST /billing/invoices/:id/mark-paid` — body `{ paidAt? }` (défaut now) ;
+  exige `APPROVED`.
+- Audit explicite avant/après sur reconcile / resolve-dispute / mark-paid
+  (règle 14). Rien ne change aux règles d'éligibilité des loads ni à
+  l'anti-double-facturation (`InvoiceLine.loadId @unique`).
 
 ### Export
 
-- `GET /billing/customer-invoices/export.csv` — CSV de la liste filtrée
-  (mêmes filtres que la liste), généré en mémoire, `Content-Disposition`.
-- `GET /billing/customer-invoices/:id/pdf` — PDF généré à la volée avec `pdfkit`
-  et streamé (pas de fichier stocké → `DocumentsService` non concerné).
+- `GET /billing/invoices/export.csv` — CSV de la liste filtrée (statut,
+  transporteur, période) avec attendu/facturé/écart par facture, généré en
+  mémoire, `Content-Disposition`. (Le PDF sell-side est reporté avec le sell-side.)
 
 ### Permissions & module
 
-Clés ajoutées au catalogue : `billing.customer-invoice.read`, `.manage`,
-`.approve`, `.pay` (alignées sur les clés billing existantes). Contrôleur sous
+Clé ajoutée au catalogue : `billing.invoices.pay` (séparation des tâches
+approbation/paiement, utile au récit SOC2). `reconcile`/`resolve-dispute` sous
+`billing.invoices.manage` existant. Contrôleur déjà sous
 `@RequireModule(MODULE_KEYS.BILLING)`.
 
 ### Web
 
-- `/billing/customer-invoices` (liste + filtres + export CSV),
-- `/billing/customer-invoices/[id]` (détail, édition des lignes en DRAFT, approve /
-  mark-paid / cancel, bouton PDF),
-- création depuis les facturables (sélection client → commandes cochables).
-- Bouton « marquer payée » ajouté au détail des factures transporteur.
+- `/invoices` (existant) : colonnes attendu/facturé/écart + filtre statut
+  (DISPUTED visible), export CSV.
+- Détail facture : formulaire de rapprochement (n° facture transporteur +
+  montants facturés par ligne), affichage des écarts ligne par ligne, actions
+  résolution de litige / marquer payée.
+
+### Reporté (après rating engine v2 — phase 7+)
+
+La facturation client (sell-side) initialement spécifiée : elle exige un moteur
+de tarification digne de ce nom (lanes, weight breaks, détail persisté — voir
+audit §5) pour produire des montants défendables.
 
 ## 4. Durcissement SOC2-track
 
@@ -170,8 +194,8 @@ Vehicle/Trailer existants, questions ouvertes. **Aucun code.**
 
 ## Tests
 
-- Unitaires (vitest, `packages/shared`) : state machine `CustomerInvoice` (+
-  transition `PAID` du buy-side).
+- Unitaires (vitest, `packages/shared`) : state machine `Invoice` étendue
+  (DISPUTED, PAID) + logique de tolérance (fonction pure dans `packages/shared`).
 - Unitaires (API) : `CryptoService` (round-trip, compat clair, clé invalide).
 - E2E (`apps/api/test/phase6.e2e-spec.ts`, conventions existantes — données à codes
   uniques, rejouable) :
@@ -181,13 +205,16 @@ Vehicle/Trailer existants, questions ouvertes. **Aucun code.**
   - OIDC : CRUD config (secret masqué), `oidc/exchange` avec code invalide refusé.
     (Le flow IdP complet n'est pas testable en e2e sans IdP ; le service de
     callback est couvert en unitaire avec `openid-client` mocké.)
-  - Billing v2 : billable → création facture → approve → mark-paid → double
-    facturation de la même commande refusée → export CSV 200.
+  - Billing v2 : brouillon → reconcile dans la tolérance → APPROVED auto →
+    mark-paid ; reconcile hors tolérance → DISPUTED → resolve-dispute → PAID ;
+    export CSV 200.
 
 ## Hors périmètre (assumé)
 
 - Refresh tokens pour les sessions plateforme ; impersonation/support tenant.
 - SCIM, logout OIDC (RP-initiated), multi-IdP par tenant.
-- Envoi des factures client par email ; taxes ; paiements partiels.
+- Facturation client (sell-side) — reportée après le rating engine v2 ; taxes ;
+  paiements partiels ; ingestion automatique de factures (EDI 210/PDF — la saisie
+  est manuelle en v1, l'ingestion IA est le différenciateur 19.3/19.4 à venir).
 - Rechiffrement batch des `Integration.config` existants (lazy seulement,
   script mentionné dans le runbook).
