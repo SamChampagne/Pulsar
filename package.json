@@ -1,0 +1,35 @@
+{
+  "name": "pulsar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pulsar — modular logistics platform. First module: manufacturing TMS.",
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["@prisma/client", "@prisma/engines", "prisma", "esbuild"]
+  },
+  "scripts": {
+    "setup": "pnpm install && pnpm db:generate && pnpm --filter @pulsar/shared build && pnpm --filter @pulsar/database build",
+    "dev": "concurrently -n api,web -c blue,green \"pnpm dev:api\" \"pnpm dev:web\"",
+    "dev:api": "pnpm --filter @pulsar/api dev",
+    "dev:web": "pnpm --filter @pulsar/web dev",
+    "build": "pnpm --filter @pulsar/shared build && pnpm --filter @pulsar/database build && pnpm --filter @pulsar/api build && pnpm --filter @pulsar/web build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "format": "prettier --write \"**/*.{ts,js,json,svelte,md,prisma}\"",
+    "format:check": "prettier --check \"**/*.{ts,js,json,svelte,md,prisma}\"",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "db:generate": "pnpm --filter @pulsar/database generate",
+    "db:migrate": "pnpm --filter @pulsar/database migrate:dev",
+    "db:deploy": "pnpm --filter @pulsar/database migrate:deploy",
+    "db:push": "pnpm --filter @pulsar/database push",
+    "db:seed": "pnpm --filter @pulsar/database seed",
+    "db:studio": "pnpm --filter @pulsar/database studio"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "prettier": "^3.5.3",
+    "prettier-plugin-svelte": "^3.3.3"
+  }
+}
