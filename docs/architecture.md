@@ -36,6 +36,28 @@ src/
 
 ### Request pipeline
 
+```mermaid
+sequenceDiagram
+  participant W as Web (SPA)
+  participant G1 as JwtAuthGuard
+  participant G2 as ModulesGuard
+  participant G3 as PermissionsGuard
+  participant C as Controller
+  participant S as Service
+  participant DB as PostgreSQL
+
+  W->>G1: GET /api/v1/transportation/loads (Bearer JWT)
+  G1->>G1: verify token → request.user { id, tenantId, permissions }
+  G1->>G2: ok
+  G2->>DB: tenant_modules: "transportation" enabled for tenantId?
+  G2->>G3: ok (else 403)
+  G3->>G3: user.permissions ⊇ @RequirePermissions? (else 403)
+  G3->>C: ok
+  C->>S: list(user.tenantId, query)
+  S->>DB: WHERE tenantId = ... (always)
+  DB-->>W: Paginated<Load>
+```
+
 Every request passes three global guards, in order:
 
 1. **JwtAuthGuard** — validates the Bearer token (skipped on `@Public()` endpoints). The JWT

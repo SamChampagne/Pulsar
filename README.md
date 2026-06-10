@@ -63,6 +63,8 @@ API documentation (Swagger): http://localhost:3000/api/docs
 
 ## Documentation
 
+- [docs/guide-fonctionnel.md](./docs/guide-fonctionnel.md) 🇫🇷 — guide fonctionnel (concepts
+  métier, parcours utilisateur, règles de gestion)
 - [docs/getting-started.md](./docs/getting-started.md) — full local setup walkthrough
 - [docs/architecture.md](./docs/architecture.md) — monorepo, API layering, guards
 - [docs/data-model.md](./docs/data-model.md) — domain model and TMS workflow

@@ -1,5 +1,14 @@
 # Pulsar documentation
 
+## Functional (business / users)
+
+| Document                                         | Contents                                                  |
+| ------------------------------------------------ | --------------------------------------------------------- |
+| [guide-fonctionnel.md](./guide-fonctionnel.md) 🇫🇷 | Concepts métier, rôles, parcours pas à pas, règles de gestion, statuts |
+| [../PRODUCT_SPEC.md](../PRODUCT_SPEC.md)         | Product vision, target customer, scope, OTM/SAP TM mapping |
+
+## Technical (developers)
+
 | Document                                       | Contents                                          |
 | ---------------------------------------------- | ------------------------------------------------- |
 | [getting-started.md](./getting-started.md)     | Local development setup, step by step             |
