@@ -55,6 +55,7 @@ model Tenant {
   loads             Load[]
   tenders           Tender[]
   lanePreferences   LaneCarrierPreference[]
+  invoices          Invoice[]
   routes            Route[]
   stops             Stop[]
   rates             Rate[]
@@ -469,6 +470,7 @@ model Carrier {
   rates    Rate[]
   tenders  Tender[]
   lanePreferences LaneCarrierPreference[]
+  invoices Invoice[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -707,6 +709,7 @@ model Load {
   route          Route?
   trackingEvents TrackingEvent[]
   tenders        Tender[]
+  invoiceLine    InvoiceLine?
 
   @@unique([tenantId, loadNumber])
   @@index([tenantId, status])
@@ -903,6 +906,52 @@ model TrackingEvent {
   @@index([tenantId, loadId, occurredAt])
   @@index([tenantId, shipmentId, occurredAt])
   @@map("tracking_events")
+}
+
+// ============================================================================
+// BILLING — carrier settlement (buy-side) v1
+// ============================================================================
+
+enum InvoiceStatus {
+  DRAFT
+  APPROVED
+}
+
+// Draft invoice grouping the estimated costs of a carrier's completed,
+// not-yet-invoiced loads. Approval freezes it (v1 — no payment tracking yet).
+model Invoice {
+  id            String        @id @default(cuid())
+  tenantId      String
+  invoiceNumber String
+  carrierId     String
+  status        InvoiceStatus @default(DRAFT)
+  currency      String        @default("CAD")
+  totalAmount   Decimal       @db.Decimal(12, 2)
+  approvedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id])
+  carrier Carrier       @relation(fields: [carrierId], references: [id])
+  lines   InvoiceLine[]
+
+  @@unique([tenantId, invoiceNumber])
+  @@index([tenantId, status])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  // One line per load; the unique constraint prevents double-billing a load.
+  loadId      String  @unique
+  description String
+  amount      Decimal @db.Decimal(12, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  load    Load    @relation(fields: [loadId], references: [id])
+
+  @@map("invoice_lines")
 }
 
 model ProofOfDelivery {

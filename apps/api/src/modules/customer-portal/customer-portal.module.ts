@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { PortalLinksController, PortalPublicController } from './portal.controller';
 import { PortalService } from './portal.service';
 
@@ -8,6 +9,7 @@ import { PortalService } from './portal.service';
  * links) for the shipper's customers. Order entry comes later.
  */
 @Module({
+  imports: [AuditLogsModule],
   controllers: [PortalLinksController, PortalPublicController],
   providers: [PortalService],
 })

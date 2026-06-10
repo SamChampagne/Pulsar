@@ -2,6 +2,7 @@ export * from './modules';
 export * from './permissions';
 export * from './enums/core';
 export * from './enums/transportation';
+export * from './enums/billing';
 export * from './workflows/transport-order.workflow';
 export * from './workflows/shipment.workflow';
 export * from './workflows/load.workflow';

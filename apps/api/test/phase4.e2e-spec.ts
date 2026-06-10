@@ -69,11 +69,11 @@ describe('Phase 4 (e2e)', () => {
   });
 
   it('creates a read-only API key and uses it via X-Api-Key', async () => {
-    // Write scopes are refused in v1.
+    // Unknown scopes are refused.
     await request(http)
       .post('/api/v1/api-keys')
       .set(auth())
-      .send({ name: 'bad', scopes: ['transportation.orders.manage'] })
+      .send({ name: 'bad', scopes: ['not.a.permission'] })
       .expect(400);
 
     const created = await request(http)
@@ -159,6 +159,12 @@ describe('Phase 4 (e2e)', () => {
   });
 
   it('gates the customer portal on module activation', async () => {
+    // Reset first (other suites/runs may have left the module enabled).
+    await request(http)
+      .patch('/api/v1/modules/customer-portal')
+      .set(auth())
+      .send({ enabled: false })
+      .expect(200);
     // Module disabled → management endpoint refused by ModulesGuard.
     await request(http)
       .post(`/api/v1/customer-portal/customers/${ids.customer}/portal-link`)

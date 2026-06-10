@@ -21,6 +21,7 @@ import { IntegrationsModule } from './core/integrations/integrations.module';
 import { ModuleRegistryModule } from './core/module-registry/module-registry.module';
 import { TransportationModule } from './modules/transportation/transportation.module';
 import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
+import { BillingModule } from './modules/billing/billing.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { CustomerPortalModule } from './modules/customer-portal/customer-portal.
     // Business modules (activable per tenant — see ModulesGuard)
     TransportationModule,
     CustomerPortalModule,
+    BillingModule,
   ],
   providers: [
     // Guard order matters: authenticate, then check module activation, then permissions.

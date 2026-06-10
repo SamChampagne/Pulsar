@@ -91,12 +91,23 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
       read-only orders/shipments/tracking view, module-gated management + public page
 - [x] Phase 4 e2e suite (7 tests)
 
-## Phase 5 — Next
+## Phase 5 — Portal v2, service accounts, Billing
 
-- [ ] Service accounts → write scopes for API keys
-- [ ] Portal v2: order entry (customer creates DRAFT orders from the portal)
-- [ ] SSO (OIDC) per tenant; platform admin plane (cross-tenant)
-- [ ] Billing foundations (rated loads → invoice drafts)
+- [x] Service accounts: API keys act as a hidden DISABLED tenant user → write scopes allowed,
+      audit/FK attribution intact
+- [x] Portal v2: order entry from the portal (DRAFT orders, locations projection, audited as
+      `source: customer-portal`)
+- [x] **Billing module v1** (third business module): carrier invoice drafts from completed
+      loads' estimated costs, billable preview, approval, double-billing prevented by schema
+- [x] Phase 5 e2e suite (4 tests; module-state resets make suites rerun-safe)
+
+## Phase 6 — Next
+
+- [ ] SSO (OIDC) per tenant
+- [ ] Platform administration plane (cross-tenant ops: create/suspend tenants)
+- [ ] Billing v2: customer invoicing, payment tracking, invoice PDF/export
+- [ ] Fleet module discovery (maintenance, compliance)
+- [ ] SOC2-track hardening: secrets management, encrypted integration configs, backups
 
 ## Phase 3 — Platform & integrations
 

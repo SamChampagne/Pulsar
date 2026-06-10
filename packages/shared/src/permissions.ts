@@ -40,12 +40,17 @@ export const PERMISSIONS = {
   CUSTOMER_PORTAL: {
     LINKS_MANAGE: 'customer-portal.links.manage',
   },
+  BILLING: {
+    INVOICES_READ: 'billing.invoices.read',
+    INVOICES_MANAGE: 'billing.invoices.manage',
+  },
 } as const;
 
 export type PermissionKey =
   | (typeof PERMISSIONS.CORE)[keyof typeof PERMISSIONS.CORE]
   | (typeof PERMISSIONS.TRANSPORTATION)[keyof typeof PERMISSIONS.TRANSPORTATION]
-  | (typeof PERMISSIONS.CUSTOMER_PORTAL)[keyof typeof PERMISSIONS.CUSTOMER_PORTAL];
+  | (typeof PERMISSIONS.CUSTOMER_PORTAL)[keyof typeof PERMISSIONS.CUSTOMER_PORTAL]
+  | (typeof PERMISSIONS.BILLING)[keyof typeof PERMISSIONS.BILLING];
 
 export interface PermissionDescriptor {
   key: PermissionKey;
@@ -66,6 +71,11 @@ const tms = (key: PermissionKey, description: string): PermissionDescriptor => (
 const portal = (key: PermissionKey, description: string): PermissionDescriptor => ({
   key,
   module: MODULE_KEYS.CUSTOMER_PORTAL,
+  description,
+});
+const billing = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.BILLING,
   description,
 });
 
@@ -98,6 +108,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   tms(PERMISSIONS.TRANSPORTATION.TRACKING_WRITE, 'Record tracking events and PODs'),
   tms(PERMISSIONS.TRANSPORTATION.ANALYTICS_READ, 'View carrier scorecards and KPIs'),
   portal(PERMISSIONS.CUSTOMER_PORTAL.LINKS_MANAGE, 'Generate and revoke customer portal links'),
+  billing(PERMISSIONS.BILLING.INVOICES_READ, 'View carrier invoices'),
+  billing(PERMISSIONS.BILLING.INVOICES_MANAGE, 'Draft and approve carrier invoices'),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);

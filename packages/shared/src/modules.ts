@@ -81,6 +81,6 @@ export const MODULE_CATALOG: ModuleDescriptor[] = [
     name: 'Billing',
     description: 'Freight billing, invoicing, carrier settlement.',
     isCore: false,
-    available: false,
+    available: true,
   },
 ];

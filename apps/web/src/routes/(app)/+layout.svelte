@@ -15,6 +15,9 @@
   const hasTransportation = $derived(
     $auth?.tenant.enabledModules.includes(MODULE_KEYS.TRANSPORTATION) ?? false,
   );
+  const hasBilling = $derived(
+    $auth?.tenant.enabledModules.includes(MODULE_KEYS.BILLING) ?? false,
+  );
 
   const coreNav = [{ href: '/dashboard', label: 'Dashboard' }];
   const tmsNav = [
@@ -68,6 +71,11 @@
           {#each tmsAnalyticsNav as item (item.href)}
             <a href={item.href} class:active={isActive(item.href)}>{item.label}</a>
           {/each}
+        {/if}
+
+        {#if hasBilling}
+          <div class="nav-section">Billing</div>
+          <a href="/invoices" class:active={isActive('/invoices')}>Invoices</a>
         {/if}
 
         <div class="nav-section">Administration</div>

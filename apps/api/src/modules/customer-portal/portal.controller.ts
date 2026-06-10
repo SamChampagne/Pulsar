@@ -1,12 +1,47 @@
-import { Controller, Delete, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
+import { IsDateString, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { RequireModule } from '../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PortalService } from './portal.service';
+
+class PortalOrderDto {
+  @IsString()
+  originLocationId!: string;
+
+  @IsString()
+  destinationLocationId!: string;
+
+  @IsOptional()
+  @IsString()
+  customerReference?: string;
+
+  @IsOptional()
+  @IsDateString()
+  requestedPickupDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  requestedDeliveryDate?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  totalWeightKg?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  palletCount?: number;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
 
 /** Link management — gated on the customer-portal module being enabled for the tenant. */
 @ApiTags('customer-portal')
@@ -39,5 +74,11 @@ export class PortalPublicController {
   @Get(':token')
   view(@Param('token') token: string) {
     return this.portal.getPortalView(token);
+  }
+
+  /** Portal v2: the customer submits a transport request (lands as a DRAFT order). */
+  @Post(':token/orders')
+  createOrder(@Param('token') token: string, @Body() dto: PortalOrderDto) {
+    return this.portal.createOrder(token, dto);
   }
 }

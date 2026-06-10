@@ -47,9 +47,11 @@ Les rôles sont configurables par tenant (catalogue de permissions), mais le dé
 
 Compte de démonstration : `admin@pulsar.dev` / `admin123` (tenant `acme`) — possède tout.
 
-**Clés API** (Administration → API keys) : accès machine-à-machine en lecture (en-tête
-`X-Api-Key`), avec portées choisies à la création, clé affichée une seule fois, révocation
-immédiate — pour brancher un ERP ou un outil BI sans compte utilisateur.
+**Clés API** (Administration → API keys) : accès machine-à-machine en lecture **et en
+écriture** (en-tête `X-Api-Key`), avec portées choisies à la création, clé affichée une seule
+fois, révocation immédiate. Les écritures sont attribuées au **compte de service** caché du
+tenant (incapable de se connecter) — l'audit reste complet. Idéal pour brancher un ERP qui crée
+des ordres ou un outil BI qui lit les données.
 
 **Gestion des comptes** (Administration → Users) : l'administrateur **invite** un utilisateur par
 courriel (sans mot de passe initial — l'invité choisit le sien via un lien valable 72 h, aussi
@@ -144,9 +146,19 @@ Toujours sur le détail du load :
 
 Si le module **Customer Portal** est activé (Administration → Modules), chaque client peut
 recevoir un **lien de portail** (bouton *Portal link* sur l'écran Customers) : une page sans
-compte listant **ses** ordres, le statut de chaque expédition et les liens de suivi. Désactiver
-le module coupe immédiatement tous les portails émis ; chaque lien est aussi révocable
-individuellement.
+compte listant **ses** ordres, le statut de chaque expédition et les liens de suivi. Le client
+peut aussi **soumettre une demande de transport** (origine, destination, référence, palettes,
+poids) qui arrive chez vous comme un ordre **DRAFT** à confirmer — c'est la saisie de commande
+en libre-service. Désactiver le module coupe immédiatement tous les portails émis ; chaque lien
+est aussi révocable individuellement.
+
+### La facturation transporteur (module Billing)
+
+Si le module **Billing** est activé : l'écran **Invoices** regroupe en un **brouillon de
+facture** les loads complétés et non encore facturés d'un transporteur, à leur coût estimé
+(`INV-000001`, une ligne par load — un load ne peut jamais être facturé deux fois).
+**Approve** fige la facture. C'est la base du règlement transporteur (« freight settlement ») ;
+la facturation client et le suivi des paiements viendront ensuite.
 
 ### Étape 4bis — Le chauffeur et le client final (sans compte)
 

@@ -79,12 +79,18 @@ The increment that turns Pulsar from an internal tool into a collaborative platf
 - ✅ **Customer Portal module v1** — second business module live, validating per-tenant
   modularity end-to-end (read-only customer visibility via capability link).
 
-## Phase 5 — Commercial readiness
+## Phase 5 — Portal v2, service accounts, Billing ✅ (current)
 
-- Portal v2: customer order entry (DRAFT orders from the portal).
-- Service accounts → write scopes for API keys.
+- ✅ Portal v2: customers submit transport requests from the portal (DRAFT orders to confirm).
+- ✅ Service accounts: API keys gain write scopes, attributed to a hidden per-tenant
+  service-account user (cannot sign in; audit intact).
+- ✅ **Billing module v1** — third business module: completed loads' estimated costs → carrier
+  invoice drafts (INV- sequence, one line per load, double-billing impossible) → approval.
+
+## Phase 6 — Commercial readiness
+
 - SSO (OIDC) per tenant; platform administration plane (cross-tenant ops).
-- Billing foundations: rated costs → invoice drafts.
+- Billing v2: customer invoicing, payment tracking, invoice export.
 - Fleet module discovery (maintenance, compliance).
 - SOC2-track hardening: secrets management, encrypted integration configs, backup/restore runbook.
 

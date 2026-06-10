@@ -21,15 +21,39 @@ const keySelect = {
   createdAt: true,
 } as const;
 
+const SERVICE_ACCOUNT_EMAIL = 'service-account@pulsar.local';
+
 /**
  * Inbound API keys for machine-to-machine integrations.
- * v1 restriction: only `*.read` scopes are accepted — write paths attribute
- * actions to a user id, which an API key does not have. Service accounts will
- * lift this (see TODO.md).
+ * Keys act as the tenant's hidden **service account** user (DISABLED → cannot
+ * sign in, but gives write paths a real user id for audit/FK attribution),
+ * carrying the scopes chosen at creation. Write scopes are therefore allowed.
  */
 @Injectable()
 export class ApiKeysService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** One hidden service-account user per tenant, created lazily. */
+  private async ensureServiceUser(tenantId: string): Promise<string> {
+    const existing = await this.prisma.user.findUnique({
+      where: { tenantId_email: { tenantId, email: SERVICE_ACCOUNT_EMAIL } },
+      select: { id: true },
+    });
+    if (existing) return existing.id;
+    const created = await this.prisma.user.create({
+      data: {
+        tenantId,
+        email: SERVICE_ACCOUNT_EMAIL,
+        // Unguessable placeholder + DISABLED status: this account can never sign in.
+        passwordHash: sha256(randomBytes(32).toString('hex')),
+        firstName: 'Service',
+        lastName: 'Account',
+        status: 'DISABLED',
+      },
+      select: { id: true },
+    });
+    return created.id;
+  }
 
   list(tenantId: string) {
     return this.prisma.apiKey.findMany({
@@ -44,12 +68,8 @@ export class ApiKeysService {
     const valid = new Set<string>(ALL_PERMISSION_KEYS);
     for (const scope of scopes) {
       if (!valid.has(scope)) throw new BadRequestException(`Unknown scope "${scope}"`);
-      if (!scope.endsWith('.read')) {
-        throw new BadRequestException(
-          `API keys only support read scopes for now ("${scope}" is not a .read permission)`,
-        );
-      }
     }
+    await this.ensureServiceUser(tenantId);
     const rawKey = `pk_${randomBytes(24).toString('base64url')}`;
     const record = await this.prisma.apiKey.create({
       data: {
@@ -72,7 +92,7 @@ export class ApiKeysService {
     return { revoked: true };
   }
 
-  /** Resolves a raw key into a synthetic AuthUser carrying the key's scopes. */
+  /** Resolves a raw key into the tenant's service-account principal with the key's scopes. */
   async validate(rawKey: string): Promise<AuthUser> {
     const key = await this.prisma.apiKey.findUnique({ where: { keyHash: sha256(rawKey) } });
     if (!key || key.revokedAt) throw new UnauthorizedException('Invalid API key');
@@ -81,7 +101,7 @@ export class ApiKeysService {
       .update({ where: { id: key.id }, data: { lastUsedAt: new Date() } })
       .catch(() => undefined);
     return {
-      id: `apikey:${key.id}`,
+      id: await this.ensureServiceUser(key.tenantId),
       tenantId: key.tenantId,
       email: `apikey:${key.name}`,
       firstName: 'API',

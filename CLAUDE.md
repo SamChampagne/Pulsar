@@ -52,8 +52,9 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
 
 ## Hard rules (continued, phase 4)
 
-13. Inbound API keys accept **read scopes only** (`*.read`) until service accounts exist —
-    `ApiKeysService.create` enforces it; don't lift this silently.
+13. API-key requests act as the tenant's hidden service account
+    (`service-account@pulsar.local`, DISABLED). Never make that account loginable, and never
+    attribute key actions to a fake/non-User id.
 14. Master-data create/update endpoints carry `@Audit(entityType, action)`; new ones must too.
     Workflow services keep explicit `AuditLogsService.log` calls (before/after state).
 15. Public pages of a business module must re-check module activation in the service

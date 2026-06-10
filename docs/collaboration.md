@@ -109,9 +109,10 @@ Inspect deliveries: `GET /integrations/:id/deliveries`.
 
 `POST /api-keys` (permission `core.api-keys.manage`) returns the full key **once**
 (`pk_…`, SHA-256 hash at rest). Requests authenticate with the `X-Api-Key` header instead of a
-JWT; the key carries its own scope list. **v1 restriction: only `*.read` scopes** — write
-endpoints attribute actions to user ids, which keys do not have (service accounts will lift
-this). Revocation is immediate; `lastUsedAt` is stamped on use.
+JWT; the key carries its own scope list (read **and** write). Key requests act as the tenant's
+hidden **service account** user (`service-account@pulsar.local`, status DISABLED — can never
+sign in), so write paths get a real user id for audit/FK attribution. Revocation is immediate;
+`lastUsedAt` is stamped on use.
 
 ## Declarative audit
 
@@ -127,7 +128,20 @@ Second business module — proves per-tenant modularity end to end. Management e
 `@RequireModule(MODULE_KEYS.CUSTOMER_PORTAL)`; the public page (`GET /public/portal/:token`,
 web `/portal/[token]`) re-checks module activation in the service because public routes bypass
 ModulesGuard. Disabling the module instantly kills both the management API and every issued
-portal page. v1 is read-only visibility; order entry is the next portal increment.
+portal page. v2 adds **order entry**: `POST /public/portal/:token/orders` lets the customer
+submit a transport request that lands as a DRAFT order (no creator user — portal-born, audited
+with `source: customer-portal`); the portal view exposes the tenant's active locations
+(id/name/city only) for that purpose.
+
+## Billing module (carrier settlement v1)
+
+Third business module. `POST /billing/invoices/draft { carrierId }` bundles the carrier's
+COMPLETED, not-yet-invoiced loads (with an estimated cost) into a DRAFT invoice
+(`INV-000001`); `InvoiceLine.loadId` is unique, so a load can never be billed twice.
+`GET /billing/invoices/billable?carrierId=` previews the next draft;
+`POST /billing/invoices/:id/approve` freezes it. Permissions `billing.invoices.read|manage`,
+controllers gated by `@RequireModule(MODULE_KEYS.BILLING)`. Customer invoicing and payment
+tracking come later.
 
 ## Identity flows
 
