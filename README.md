@@ -1,10 +1,11 @@
 # Pulsar
 
-**Pulsar** is a modular logistics platform (B2B SaaS). Its first commercial module is a
-**manufacturing TMS** (Transportation Management System): transport orders, shipments, loads,
-routing, carrier execution, tracking and proof of delivery.
+**Pulsar** is a modular logistics platform (B2B SaaS). Three business modules are live, activable
+per tenant: **Transportation (TMS)** — orders, shipments, loads, carrier tendering, routing,
+mobile driver execution, tracking, POD; **Customer Portal** — self-service order entry and
+visibility for the shipper's customers; **Billing** — carrier settlement drafts from rated loads.
 
-> 📄 Product vision and scope: [PRODUCT_SPEC.md](./PRODUCT_SPEC.md) · Roadmap: [ROADMAP.md](./ROADMAP.md) · Docs: [docs/](./docs)
+> 📄 Status & next steps: [docs/etat-du-projet.md](./docs/etat-du-projet.md) 🇫🇷 · Product vision: [PRODUCT_SPEC.md](./PRODUCT_SPEC.md) · Roadmap: [ROADMAP.md](./ROADMAP.md) · Docs: [docs/](./docs)
 
 ## Architecture at a glance
 

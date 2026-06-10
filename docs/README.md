@@ -1,5 +1,8 @@
 # Pulsar documentation
 
+**Resuming work? Start here →** [etat-du-projet.md](./etat-du-projet.md) 🇫🇷 (project status,
+roadmap position, what to do next).
+
 ## Functional (business / users)
 
 | Document                                         | Contents                                                  |

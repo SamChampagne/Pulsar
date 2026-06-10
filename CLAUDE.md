@@ -5,9 +5,11 @@ Guidance for AI coding sessions in this repository.
 ## What this is
 
 Pulsar is a **multi-tenant modular logistics SaaS**. Platform core (auth/RBAC/audit/module
-registry) + business modules activable per tenant. First module: **Transportation (TMS)**.
-Read [PRODUCT_SPEC.md](./PRODUCT_SPEC.md) for domain context, [ROADMAP.md](./ROADMAP.md) and
-[TODO.md](./TODO.md) for what to build next.
+registry) + business modules activable per tenant. Three live modules: **Transportation (TMS)**,
+**Customer Portal**, **Billing**. Phases 0–5 are shipped.
+**Start with [docs/etat-du-projet.md](./docs/etat-du-projet.md)** (status + what to do next),
+then [ROADMAP.md](./ROADMAP.md) / [TODO.md](./TODO.md); domain context in
+[PRODUCT_SPEC.md](./PRODUCT_SPEC.md).
 
 ## Layout
 
