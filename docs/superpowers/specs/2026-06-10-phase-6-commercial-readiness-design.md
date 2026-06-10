@@ -106,14 +106,20 @@ tolérance → litige ; puis suivi de paiement.
 ### Données (évolution des modèles existants — pas de nouvelle entité)
 
 - `Invoice` (existant) gagne : `carrierInvoiceNumber String?` (référence de la
-  facture du transporteur), `invoicedTotal Decimal?`, `varianceTotal Decimal?`,
-  `disputeReason String?`, `reconciledAt DateTime?`, `paidAt DateTime?`.
+  facture du transporteur), `invoicedTotal Decimal?`, `varianceTotal Decimal?`
+  (net, pour affichage), `varianceGross Decimal?` (somme des |écarts| ligne —
+  c'est elle qui porte la tolérance), `disputeReasonCode DisputeReasonCode?`,
+  `disputeNote String?`, `reconciledAt DateTime?`, `paidAt DateTime?`.
 - `InvoiceLine` (existant) gagne : `invoicedAmount Decimal?`, `variance Decimal?`.
 - Statuts : `InvoiceStatus` passe de `DRAFT → APPROVED` à
   `DRAFT → APPROVED | DISPUTED`, `DISPUTED → APPROVED`, `APPROVED → PAID`
   (enum mis à jour dans `packages/shared` **et** `schema.prisma` (règle 3),
   state machine `invoice.workflow.ts` dans `packages/shared/src/workflows` +
   tests vitest (règle 2) — les transitions existantes restent valides).
+- Nouvel enum `DisputeReasonCode` (shared + Prisma, règle 3) : `RATE_MISMATCH`,
+  `QUANTITY_MISMATCH`, `UNEXPECTED_CHARGE`, `DUPLICATE_BILLING`, `OTHER` —
+  motifs codifiés pour permettre plus tard les statistiques d'écarts par
+  transporteur ; le détail libre va dans `disputeNote`.
 - Tolérances : `TenantModule.settings` du module billing —
   `{ tolerancePct: number, toleranceAbsolute: number }` (défauts : 2 % et 25,
   dans la devise de la facture), lues via le module registry, modifiables par
@@ -121,18 +127,29 @@ tolérance → litige ; puis suivi de paiement.
 
 ### Logique
 
-- `POST /billing/invoices/:id/reconcile` (facture en `DRAFT`) — body :
+- `POST /billing/invoices/:id/reconcile` (facture en `DRAFT` **ou** `DISPUTED` —
+  le re-rapprochement couvre le cas réel le plus fréquent : le transporteur
+  renvoie une facture corrigée ; les montants facturés précédents sont écrasés
+  et la tolérance réévaluée) — body :
   `{ carrierInvoiceNumber, lines: [{ lineId, invoicedAmount }] }` (toute ligne
-  omise = montant attendu). Calcule `variance` par ligne et `varianceTotal`,
-  puis applique la règle de tolérance sur le total :
-  `|varianceTotal| ≤ max(toleranceAbsolute, invoicedTotal × tolerancePct/100)`
+  omise = montant attendu). Calcule `variance` par ligne, `varianceTotal` (net)
+  et `varianceGross = Σ|variance ligne|`, puis applique la tolérance sur le
+  **brut** (le net est borné par le brut, donc un seul test suffit — il attrape
+  les écarts de lignes qui se compensent, +100/−100) :
+  `varianceGross ≤ max(toleranceAbsolute, invoicedTotal × tolerancePct/100)`
   → transition automatique vers `APPROVED` (« bon à payer ») ; sinon → `DISPUTED`
-  avec le détail des écarts par ligne.
+  avec le détail des écarts par ligne (depuis DISPUTED, rester DISPUTED est un
+  no-op d'état, les montants sont mis à jour).
+  *Choix documenté* : `max()` sert de plancher aux petites factures (un écart de
+  20 sur une facture de 100 ne doit pas partir en litige si le plancher est 25).
+  Des clients voudront `min()` (plus strict) — le jour venu c'est un troisième
+  paramètre de settings (`toleranceMode`), pas maintenant.
 - `POST /billing/invoices/:id/resolve-dispute` — body :
-  `{ resolution: 'ACCEPT_INVOICED' | 'KEEP_EXPECTED', reason }`.
+  `{ resolution: 'ACCEPT_INVOICED' | 'KEEP_EXPECTED', reasonCode, note? }`.
   `ACCEPT_INVOICED` : le total payable devient `invoicedTotal` ;
   `KEEP_EXPECTED` : on paie le montant attendu (le transporteur émet un avoir —
-  hors système). Les deux mènent à `APPROVED`, `disputeReason` conservé.
+  hors système). Les deux mènent à `APPROVED` ; `disputeReasonCode`/`disputeNote`
+  conservés.
 - `POST /billing/invoices/:id/approve` (existant) reste possible sans
   rapprochement (paiement sur estimé — self-billing assumé).
 - `POST /billing/invoices/:id/mark-paid` — body `{ paidAt? }` (défaut now) ;
@@ -206,7 +223,9 @@ Vehicle/Trailer existants, questions ouvertes. **Aucun code.**
     (Le flow IdP complet n'est pas testable en e2e sans IdP ; le service de
     callback est couvert en unitaire avec `openid-client` mocké.)
   - Billing v2 : brouillon → reconcile dans la tolérance → APPROVED auto →
-    mark-paid ; reconcile hors tolérance → DISPUTED → resolve-dispute → PAID ;
+    mark-paid ; **écarts compensés** (+X/−X, net 0) → DISPUTED (le test
+    anti-angle-mort) ; reconcile hors tolérance → DISPUTED → **re-reconcile**
+    (facture corrigée) → APPROVED ; DISPUTED → resolve-dispute → PAID ;
     export CSV 200.
 
 ## Hors périmètre (assumé)
