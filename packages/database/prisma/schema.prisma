@@ -1,0 +1,975 @@
+// Pulsar — Prisma schema
+//
+// Multi-tenancy strategy: shared database, shared schema. Every tenant-scoped
+// model carries a `tenantId` column and an index on it. Isolation is enforced
+// at the application layer (every query in apps/api filters by the tenant
+// resolved from the JWT). See docs/multi-tenancy.md.
+//
+// Status enums mirror packages/shared/src/enums — keep both in sync.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// CORE — tenants, identity, RBAC
+// ============================================================================
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+}
+
+model Tenant {
+  id        String       @id @default(cuid())
+  slug      String       @unique
+  name      String
+  status    TenantStatus @default(TRIAL)
+  settings  Json         @default("{}")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users             User[]
+  roles             Role[]
+  auditLogs         AuditLog[]
+  documents         Document[]
+  notifications     Notification[]
+  integrations      Integration[]
+  webhookDeliveries WebhookDelivery[]
+  apiKeys           ApiKey[]
+  modules           TenantModule[]
+  customers         Customer[]
+  locations         Location[]
+  carriers          Carrier[]
+  drivers           Driver[]
+  vehicles          Vehicle[]
+  trailers          Trailer[]
+  transportOrders   TransportOrder[]
+  shipments         Shipment[]
+  loads             Load[]
+  tenders           Tender[]
+  lanePreferences   LaneCarrierPreference[]
+  invoices          Invoice[]
+  routes            Route[]
+  stops             Stop[]
+  rates             Rate[]
+  trackingEvents    TrackingEvent[]
+  proofsOfDelivery  ProofOfDelivery[]
+
+  @@map("tenants")
+}
+
+// Per-tenant atomic counters for business document numbers (TO/SH/LD...).
+// Incremented via INSERT ... ON CONFLICT DO UPDATE RETURNING (see SequencesService).
+model NumberSequence {
+  tenantId String @map("tenant_id")
+  key      String
+  value    Int    @default(0)
+
+  @@id([tenantId, key])
+  @@map("number_sequences")
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+model User {
+  id           String     @id @default(cuid())
+  tenantId     String
+  email        String
+  passwordHash String
+  firstName    String
+  lastName     String
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  tenant                 Tenant            @relation(fields: [tenantId], references: [id])
+  roles                  UserRole[]
+  refreshTokens          RefreshToken[]
+  actionTokens           UserActionToken[]
+  auditLogs              AuditLog[]
+  notifications          Notification[]
+  uploadedDocuments      Document[]
+  createdTransportOrders TransportOrder[]
+  recordedTrackingEvents TrackingEvent[]
+  receivedPods           ProofOfDelivery[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+// Inbound API keys (read-only scopes in v1). Only the SHA-256 hash is stored;
+// the prefix is kept for display ("pk_ab12cd34…").
+model ApiKey {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  prefix      String
+  keyHash     String    @unique
+  scopes      String[]
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("api_keys")
+}
+
+enum UserActionTokenKind {
+  INVITATION
+  PASSWORD_RESET
+}
+
+// One-shot tokens for invitation acceptance and password resets (hash at rest).
+model UserActionToken {
+  id        String              @id @default(cuid())
+  userId    String
+  kind      UserActionTokenKind
+  tokenHash String              @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_action_tokens")
+}
+
+// Rotating refresh tokens (only the SHA-256 hash is stored).
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  tenantId    String
+  key         String
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("roles")
+}
+
+// Platform-wide permission catalog, seeded from packages/shared.
+model Permission {
+  id          String @id @default(cuid())
+  key         String @unique
+  module      String
+  description String
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId String
+  roleId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+// ============================================================================
+// CORE — audit, documents, notifications, integrations, module registry
+// ============================================================================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String?
+  action     String // CREATE | UPDATE | DELETE | STATUS_CHANGE | LOGIN
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User?  @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, createdAt])
+  @@map("audit_logs")
+}
+
+// Document metadata only — binary storage (S3/local) is referenced by storageKey.
+model Document {
+  id           String   @id @default(cuid())
+  tenantId     String
+  entityType   String
+  entityId     String
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id])
+  uploadedBy User?  @relation(fields: [uploadedById], references: [id])
+
+  @@index([tenantId, entityType, entityId])
+  @@map("documents")
+}
+
+enum NotificationLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model Notification {
+  id        String            @id @default(cuid())
+  tenantId  String
+  userId    String
+  level     NotificationLevel @default(INFO)
+  title     String
+  body      String
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime          @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, readAt])
+  @@map("notifications")
+}
+
+enum IntegrationStatus {
+  DISABLED
+  ENABLED
+  ERROR
+}
+
+model Integration {
+  id        String            @id @default(cuid())
+  tenantId  String
+  key       String // e.g. "telematics-samsara", "edi-204"
+  name      String
+  status    IntegrationStatus @default(DISABLED)
+  config    Json              @default("{}")
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id])
+  deliveries WebhookDelivery[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("integrations")
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+// Durable outbox for outbound webhooks: retried with backoff until delivered
+// or the attempt budget is exhausted.
+model WebhookDelivery {
+  id            String                @id @default(cuid())
+  tenantId      String
+  integrationId String
+  event         String
+  payload       Json
+  status        WebhookDeliveryStatus @default(PENDING)
+  attempts      Int                   @default(0)
+  nextAttemptAt DateTime              @default(now())
+  lastError     String?
+  deliveredAt   DateTime?
+  createdAt     DateTime              @default(now())
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([tenantId, integrationId, createdAt])
+  @@map("webhook_deliveries")
+}
+
+// Platform module catalog (core, transportation, fleet, ...).
+model ModuleDefinition {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  name        String
+  description String
+  isCore      Boolean @default(false)
+  available   Boolean @default(false)
+
+  tenants TenantModule[]
+
+  @@map("module_definitions")
+}
+
+// Per-tenant module activation — the heart of the modular platform.
+model TenantModule {
+  tenantId  String
+  moduleId  String
+  enabled   Boolean  @default(false)
+  settings  Json     @default("{}")
+  enabledAt DateTime?
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  module ModuleDefinition @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, moduleId])
+  @@map("tenant_modules")
+}
+
+// ============================================================================
+// TRANSPORTATION — master data
+// ============================================================================
+
+model Customer {
+  id          String   @id @default(cuid())
+  tenantId    String
+  code        String
+  name        String
+  contactName String?
+  email       String?
+  phone       String?
+  notes       String?
+  // Customer Portal capability link (module customer-portal must be enabled).
+  portalToken String?  @unique
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  locations       Location[]
+  transportOrders TransportOrder[]
+  rates           Rate[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("customers")
+}
+
+enum LocationType {
+  PLANT
+  WAREHOUSE
+  DISTRIBUTION_CENTER
+  CUSTOMER_SITE
+  CARRIER_TERMINAL
+  OTHER
+}
+
+model Location {
+  id           String       @id @default(cuid())
+  tenantId     String
+  customerId   String?
+  code         String
+  name         String
+  type         LocationType @default(OTHER)
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String?
+  postalCode   String?
+  country      String       @default("CA")
+  latitude     Float?
+  longitude    Float?
+  timezone     String?
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  tenant               Tenant           @relation(fields: [tenantId], references: [id])
+  customer             Customer?        @relation(fields: [customerId], references: [id])
+  originOrders         TransportOrder[] @relation("OrderOrigin")
+  destinationOrders    TransportOrder[] @relation("OrderDestination")
+  originShipments      Shipment[]       @relation("ShipmentOrigin")
+  destinationShipments Shipment[]       @relation("ShipmentDestination")
+  stops                Stop[]
+  laneOrigins          LaneCarrierPreference[] @relation("LaneOrigin")
+  laneDestinations     LaneCarrierPreference[] @relation("LaneDestination")
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("locations")
+}
+
+enum CarrierStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Carrier {
+  id          String        @id @default(cuid())
+  tenantId    String
+  code        String
+  name        String
+  scacCode    String?
+  mcNumber    String?
+  dotNumber   String?
+  contactName String?
+  email       String?
+  phone       String?
+  status      CarrierStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  drivers  Driver[]
+  vehicles Vehicle[]
+  trailers Trailer[]
+  loads    Load[]
+  rates    Rate[]
+  tenders  Tender[]
+  lanePreferences LaneCarrierPreference[]
+  invoices Invoice[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("carriers")
+}
+
+enum DriverStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Driver {
+  id            String       @id @default(cuid())
+  tenantId      String
+  carrierId     String? // null = internal fleet driver
+  firstName     String
+  lastName      String
+  licenseNumber String?
+  phone         String?
+  email         String?
+  status        DriverStatus @default(ACTIVE)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id])
+  carrier Carrier? @relation(fields: [carrierId], references: [id])
+  loads   Load[]
+
+  @@index([tenantId])
+  @@map("drivers")
+}
+
+enum AssetStatus {
+  AVAILABLE
+  IN_SERVICE
+  MAINTENANCE
+  RETIRED
+}
+
+enum VehicleType {
+  TRACTOR
+  STRAIGHT_TRUCK
+  VAN
+  OTHER
+}
+
+model Vehicle {
+  id         String      @id @default(cuid())
+  tenantId   String
+  carrierId  String?
+  unitNumber String
+  type       VehicleType @default(TRACTOR)
+  make       String?
+  model      String?
+  year       Int?
+  vin        String?
+  plate      String?
+  status     AssetStatus @default(AVAILABLE)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id])
+  carrier Carrier? @relation(fields: [carrierId], references: [id])
+  loads   Load[]
+
+  @@unique([tenantId, unitNumber])
+  @@index([tenantId])
+  @@map("vehicles")
+}
+
+enum TrailerType {
+  DRY_VAN
+  REEFER
+  FLATBED
+  TANKER
+  OTHER
+}
+
+model Trailer {
+  id               String      @id @default(cuid())
+  tenantId         String
+  carrierId        String?
+  unitNumber       String
+  type             TrailerType @default(DRY_VAN)
+  capacityWeightKg Float?
+  capacityVolumeM3 Float?
+  plate            String?
+  status           AssetStatus @default(AVAILABLE)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id])
+  carrier Carrier? @relation(fields: [carrierId], references: [id])
+  loads   Load[]
+
+  @@unique([tenantId, unitNumber])
+  @@index([tenantId])
+  @@map("trailers")
+}
+
+// ============================================================================
+// TRANSPORTATION — orders, planning, execution
+// Workflow: TransportOrder → Shipment → Load → Route → Dispatch → In Transit
+//           → Delivered → Closed (see packages/shared/src/workflows)
+// ============================================================================
+
+enum TransportOrderStatus {
+  DRAFT
+  CONFIRMED
+  PLANNED
+  IN_EXECUTION
+  COMPLETED
+  CLOSED
+  CANCELLED
+}
+
+// Customer demand — the commercial request to move freight (OTM "order release").
+model TransportOrder {
+  id                    String               @id @default(cuid())
+  tenantId              String
+  orderNumber           String
+  customerId            String
+  customerReference     String?
+  status                TransportOrderStatus @default(DRAFT)
+  originLocationId      String
+  destinationLocationId String
+  requestedPickupDate   DateTime?
+  requestedDeliveryDate DateTime?
+  totalWeightKg         Float?
+  totalVolumeM3         Float?
+  palletCount           Int?
+  notes                 String?
+  createdById           String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  tenant              Tenant     @relation(fields: [tenantId], references: [id])
+  customer            Customer   @relation(fields: [customerId], references: [id])
+  originLocation      Location   @relation("OrderOrigin", fields: [originLocationId], references: [id])
+  destinationLocation Location   @relation("OrderDestination", fields: [destinationLocationId], references: [id])
+  createdBy           User?      @relation(fields: [createdById], references: [id])
+  shipments           Shipment[]
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, customerId])
+  @@map("transport_orders")
+}
+
+enum ShipmentStatus {
+  PENDING
+  PLANNED
+  DISPATCHED
+  IN_TRANSIT
+  DELIVERED
+  CLOSED
+  CANCELLED
+}
+
+// Planning/execution unit derived from an order (SAP TM "freight unit").
+model Shipment {
+  id                    String         @id @default(cuid())
+  tenantId              String
+  shipmentNumber        String
+  transportOrderId      String
+  status                ShipmentStatus @default(PENDING)
+  // Public share token: anyone with it can view the read-only tracking page.
+  trackingToken         String?        @unique
+  originLocationId      String
+  destinationLocationId String
+  loadId                String?
+  weightKg              Float?
+  volumeM3              Float?
+  palletCount           Int?
+  plannedPickupAt       DateTime?
+  plannedDeliveryAt     DateTime?
+  actualPickupAt        DateTime?
+  actualDeliveryAt      DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  tenant              Tenant           @relation(fields: [tenantId], references: [id])
+  transportOrder      TransportOrder   @relation(fields: [transportOrderId], references: [id])
+  originLocation      Location         @relation("ShipmentOrigin", fields: [originLocationId], references: [id])
+  destinationLocation Location         @relation("ShipmentDestination", fields: [destinationLocationId], references: [id])
+  load                Load?            @relation(fields: [loadId], references: [id])
+  stops               Stop[]
+  trackingEvents      TrackingEvent[]
+  proofOfDelivery     ProofOfDelivery?
+
+  @@unique([tenantId, shipmentNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, transportOrderId])
+  @@map("shipments")
+}
+
+enum LoadStatus {
+  OPEN
+  PLANNED
+  TENDERED
+  DISPATCHED
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+// Physical consolidation assigned to a carrier/vehicle (SAP TM "freight order").
+model Load {
+  id            String     @id @default(cuid())
+  tenantId      String
+  loadNumber    String
+  status        LoadStatus @default(OPEN)
+  carrierId     String?
+  driverId      String?
+  vehicleId     String?
+  trailerId     String?
+  rateId        String?
+  // Estimated buy-side cost computed from the assigned rate (see calculateRateCost).
+  estimatedCost Decimal?   @db.Decimal(12, 2)
+  costCurrency  String?
+  // Public driver token: grants stop check-in/out + POD capture on this load only.
+  driverToken   String?    @unique
+  dispatchedAt  DateTime?
+  completedAt   DateTime?
+  notes         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  carrier        Carrier?        @relation(fields: [carrierId], references: [id])
+  driver         Driver?         @relation(fields: [driverId], references: [id])
+  vehicle        Vehicle?        @relation(fields: [vehicleId], references: [id])
+  trailer        Trailer?        @relation(fields: [trailerId], references: [id])
+  rate           Rate?           @relation(fields: [rateId], references: [id])
+  shipments      Shipment[]
+  route          Route?
+  trackingEvents TrackingEvent[]
+  tenders        Tender[]
+  invoiceLine    InvoiceLine?
+
+  @@unique([tenantId, loadNumber])
+  @@index([tenantId, status])
+  @@map("loads")
+}
+
+enum TenderStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CANCELLED
+}
+
+// Offer sent to a carrier to haul a load. The carrier responds through a
+// public tokenized link — no Pulsar account required.
+model Tender {
+  id            String       @id @default(cuid())
+  tenantId      String
+  loadId        String
+  carrierId     String
+  status        TenderStatus @default(PENDING)
+  // Part of an automatic sequence: on decline/expiry the next carrier in the
+  // lane preference list is tendered automatically.
+  isAuto        Boolean      @default(false)
+  token         String       @unique
+  message       String?
+  declineReason String?
+  expiresAt     DateTime
+  sentAt        DateTime     @default(now())
+  respondedAt   DateTime?
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  load    Load    @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  carrier Carrier @relation(fields: [carrierId], references: [id])
+
+  @@index([tenantId, loadId])
+  @@index([status, expiresAt])
+  @@map("tenders")
+}
+
+// Ordered carrier preference per lane (origin → destination pair).
+// Drives auto-tendering: rank 1 is offered first, then rank 2 on decline/expiry, etc.
+model LaneCarrierPreference {
+  id                    String @id @default(cuid())
+  tenantId              String
+  originLocationId      String
+  destinationLocationId String
+  carrierId             String
+  rank                  Int
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id])
+  originLocation      Location @relation("LaneOrigin", fields: [originLocationId], references: [id])
+  destinationLocation Location @relation("LaneDestination", fields: [destinationLocationId], references: [id])
+  carrier             Carrier  @relation(fields: [carrierId], references: [id])
+
+  @@unique([tenantId, originLocationId, destinationLocationId, rank], map: "lane_prefs_lane_rank_key")
+  @@unique([tenantId, originLocationId, destinationLocationId, carrierId], map: "lane_prefs_lane_carrier_key")
+  @@map("lane_carrier_preferences")
+}
+
+// Ordered stop sequence for a load.
+model Route {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  loadId               String   @unique
+  totalDistanceKm      Float?
+  estimatedDurationMin Int?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  load   Load   @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  stops  Stop[]
+
+  @@index([tenantId])
+  @@map("routes")
+}
+
+enum StopType {
+  PICKUP
+  DELIVERY
+}
+
+enum StopStatus {
+  PENDING
+  ARRIVED
+  DEPARTED
+  COMPLETED
+  SKIPPED
+}
+
+model Stop {
+  id                 String     @id @default(cuid())
+  tenantId           String
+  routeId            String
+  sequence           Int
+  type               StopType
+  status             StopStatus @default(PENDING)
+  locationId         String
+  shipmentId         String?
+  plannedArrivalAt   DateTime?
+  plannedDepartureAt DateTime?
+  actualArrivalAt    DateTime?
+  actualDepartureAt  DateTime?
+  notes              String?
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  route          Route           @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  location       Location        @relation(fields: [locationId], references: [id])
+  shipment       Shipment?       @relation(fields: [shipmentId], references: [id])
+  trackingEvents TrackingEvent[]
+
+  @@unique([routeId, sequence])
+  @@index([tenantId])
+  @@map("stops")
+}
+
+enum RateType {
+  FLAT
+  PER_KM
+  PER_HUNDREDWEIGHT
+  PER_PALLET
+  SPOT
+}
+
+enum RateStatus {
+  DRAFT
+  ACTIVE
+  EXPIRED
+}
+
+// Simple rate offering (buy-side carrier rate or sell-side customer rate).
+model Rate {
+  id               String     @id @default(cuid())
+  tenantId         String
+  name             String
+  carrierId        String?
+  customerId       String?
+  rateType         RateType   @default(FLAT)
+  currency         String     @default("CAD")
+  baseAmount       Decimal    @db.Decimal(12, 2)
+  fuelSurchargePct Float?
+  minCharge        Decimal?   @db.Decimal(12, 2)
+  validFrom        DateTime?
+  validTo          DateTime?
+  status           RateStatus @default(DRAFT)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  carrier  Carrier?  @relation(fields: [carrierId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+  loads    Load[]
+
+  @@index([tenantId])
+  @@map("rates")
+}
+
+enum TrackingEventType {
+  CREATED
+  PLANNED
+  DISPATCHED
+  POSITION_UPDATE
+  ARRIVED_AT_STOP
+  DEPARTED_STOP
+  DELAYED
+  EXCEPTION
+  DELIVERED
+  CANCELLED
+}
+
+model TrackingEvent {
+  id           String            @id @default(cuid())
+  tenantId     String
+  type         TrackingEventType
+  loadId       String?
+  shipmentId   String?
+  stopId       String?
+  message      String?
+  latitude     Float?
+  longitude    Float?
+  payload      Json?
+  occurredAt   DateTime          @default(now())
+  recordedById String?
+  createdAt    DateTime          @default(now())
+
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
+  load       Load?     @relation(fields: [loadId], references: [id])
+  shipment   Shipment? @relation(fields: [shipmentId], references: [id])
+  stop       Stop?     @relation(fields: [stopId], references: [id])
+  recordedBy User?     @relation(fields: [recordedById], references: [id])
+
+  @@index([tenantId, loadId, occurredAt])
+  @@index([tenantId, shipmentId, occurredAt])
+  @@map("tracking_events")
+}
+
+// ============================================================================
+// BILLING — carrier settlement (buy-side) v1
+// ============================================================================
+
+enum InvoiceStatus {
+  DRAFT
+  APPROVED
+}
+
+// Draft invoice grouping the estimated costs of a carrier's completed,
+// not-yet-invoiced loads. Approval freezes it (v1 — no payment tracking yet).
+model Invoice {
+  id            String        @id @default(cuid())
+  tenantId      String
+  invoiceNumber String
+  carrierId     String
+  status        InvoiceStatus @default(DRAFT)
+  currency      String        @default("CAD")
+  totalAmount   Decimal       @db.Decimal(12, 2)
+  approvedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id])
+  carrier Carrier       @relation(fields: [carrierId], references: [id])
+  lines   InvoiceLine[]
+
+  @@unique([tenantId, invoiceNumber])
+  @@index([tenantId, status])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  // One line per load; the unique constraint prevents double-billing a load.
+  loadId      String  @unique
+  description String
+  amount      Decimal @db.Decimal(12, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  load    Load    @relation(fields: [loadId], references: [id])
+
+  @@map("invoice_lines")
+}
+
+model ProofOfDelivery {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  shipmentId          String   @unique
+  signedByName        String?
+  signedAt            DateTime
+  notes               String?
+  // Signature image / photos are stored as Documents (entityType = "proof-of-delivery").
+  signatureDocumentId String?
+  receivedById        String?
+  createdAt           DateTime @default(now())
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  shipment   Shipment @relation(fields: [shipmentId], references: [id])
+  receivedBy User?    @relation(fields: [receivedById], references: [id])
+
+  @@index([tenantId])
+  @@map("proof_of_deliveries")
+}

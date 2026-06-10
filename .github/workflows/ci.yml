@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pulsar
+          POSTGRES_PASSWORD: pulsar
+          POSTGRES_DB: pulsar
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pulsar -d pulsar"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://pulsar:pulsar@localhost:5432/pulsar?schema=public
+      JWT_SECRET: ci-only-secret
+      JWT_EXPIRES_IN: 8h
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Prisma schema
+        run: pnpm --filter @pulsar/database exec prisma validate
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Build shared packages
+        run: pnpm --filter @pulsar/shared build && pnpm --filter @pulsar/database build
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build apps
+        run: pnpm --filter @pulsar/api build && pnpm --filter @pulsar/web build
+
+      - name: Unit tests (shared)
+        run: pnpm --filter @pulsar/shared test
+
+      - name: Apply migrations & seed
+        run: |
+          pnpm --filter @pulsar/database exec prisma migrate deploy
+          pnpm --filter @pulsar/database exec tsx prisma/seed.ts
+
+      - name: E2E tests (api)
+        run: pnpm --filter @pulsar/api test:e2e
