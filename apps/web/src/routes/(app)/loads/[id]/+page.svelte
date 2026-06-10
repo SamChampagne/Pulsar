@@ -126,14 +126,31 @@
 
   async function sendTender() {
     try {
-      const tender = await api<TenderRow & { responseUrl: string }>(
+      const tender = await api<TenderRow & { responseUrl: string; emailedTo: string | null }>(
         `/transportation/loads/${loadId}/tender`,
         { method: 'POST', body: { carrierId: form.carrierId || undefined } },
       );
+      if (tender.emailedTo) toast.success(`Tender emailed to ${tender.emailedTo}`);
       await copyToClipboard(tender.responseUrl, 'Tender link');
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Failed to send tender');
+    }
+  }
+
+  async function autoTender() {
+    try {
+      const tender = await api<TenderRow & { emailedTo: string | null }>(
+        `/transportation/loads/${loadId}/auto-tender`,
+        { method: 'POST', body: {} },
+      );
+      toast.success(
+        `Auto-tender started — offered to ${tender.carrier.name}` +
+          (tender.emailedTo ? ` (emailed to ${tender.emailedTo})` : ''),
+      );
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to auto-tender');
     }
   }
 
@@ -279,6 +296,7 @@
     </div>
     <div style="display: flex; gap: 8px;">
       {#if detail.status === 'PLANNED'}
+        <button class="btn btn-secondary" onclick={autoTender}>Auto-tender (lane)</button>
         <button class="btn btn-secondary" onclick={sendTender}>Tender to carrier</button>
         <button class="btn" onclick={() => action('dispatch')}>Dispatch</button>
         <button class="btn btn-danger" onclick={() => action('cancel')}>Cancel</button>

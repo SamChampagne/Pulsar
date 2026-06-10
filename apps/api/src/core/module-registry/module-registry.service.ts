@@ -1,9 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
 
 @Injectable()
 export class ModuleRegistryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly modulesCache: TenantModulesCacheService,
+  ) {}
 
   /** Full catalog with the activation state for the given tenant. */
   async listForTenant(tenantId: string) {
@@ -29,7 +33,7 @@ export class ModuleRegistryService {
       throw new BadRequestException(`Module "${moduleKey}" is not available yet`);
     }
 
-    return this.prisma.tenantModule.upsert({
+    const result = await this.prisma.tenantModule.upsert({
       where: { tenantId_moduleId: { tenantId, moduleId: definition.id } },
       update: { enabled, enabledAt: enabled ? new Date() : undefined },
       create: {
@@ -40,5 +44,7 @@ export class ModuleRegistryService {
       },
       include: { module: true },
     });
+    this.modulesCache.invalidate(tenantId);
+    return result;
   }
 }

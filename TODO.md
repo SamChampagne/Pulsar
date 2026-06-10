@@ -58,14 +58,23 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [x] File storage: local/S3 drivers behind FILE_STORAGE, upload/download endpoints, POD photos
 - [x] E2E suite for the collaboration layer (7 tests)
 
-## Phase 2.5 — Operational depth
+## Phase 2.5 — Tender automation
 
-- [ ] Email notification channel (sends tender links automatically — `tenders.service.ts` TODO)
+- [x] Email channel (`EmailService`, log/SMTP drivers) — tender links emailed automatically,
+      `emailedTo` surfaced in tender responses
+- [x] Lane carrier preference lists (`LaneCarrierPreference`, GET/PUT /transportation/lanes,
+      `/lanes` web page)
+- [x] Auto-tendering chain (`auto-tender` endpoint, advance on decline, 5-min expiry cron,
+      `tender.expired` webhook, `isAuto` flag)
+- [x] Tenant modules cache (30 s TTL + invalidation on toggle) in `ModulesGuard`
+- [x] E2E suite for tender automation (6 tests)
+
+## Phase 3 — Operational depth
+
 - [ ] Order splitting (1 order → N shipments)
 - [ ] Multi-stop load planning UI + manual route editor
-- [ ] Tender preference lists per lane; auto-retender on decline/expiry
+- [ ] Email notifications beyond tendering (status updates to customer contacts)
 - [ ] Password reset + user invitation flow
-- [ ] Cache tenant modules & permissions (drop per-request DB hit in `ModulesGuard`)
 - [ ] Webhook outbox with retries; inbound API keys
 - [ ] Audit interceptor (declarative auditing instead of manual service calls)
 - [ ] Pre-signed URLs for direct-to-S3 uploads (skip the API for large files)

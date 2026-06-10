@@ -40,14 +40,21 @@ The increment that turns Pulsar from an internal tool into a collaborative platf
 - ✅ Debt settled: rotating refresh tokens (15 min access tokens), real file storage
   (local/S3 driver) with upload/download endpoints.
 
-## Phase 2.5 — Operational depth (next)
+## Phase 2.5 — Tender automation ✅ (current)
 
-- Email channel for notifications — sends tender links and status updates automatically.
+- ✅ Email channel (log/SMTP drivers) — tender links are emailed to carriers automatically.
+- ✅ Lane carrier preference lists (`/lanes` UI + API) with ordered ranking.
+- ✅ Auto-tendering: sequential chain through the lane list on decline/expiry
+  (5-minute expiry cron + lazy expiry on read), `tender.expired` webhook.
+- ✅ Module cache (30 s TTL, invalidated on toggle) — ModulesGuard no longer hits the DB
+  per request.
+
+## Phase 3 — Operational depth (next)
+
 - Order splitting: 1 order → N shipments; multi-stop loads with per-shipment stops.
 - Manual route editor (reorder stops, planned times per stop).
-- Tender preference lists per lane; sequential auto-retender on decline/expiry.
+- Email notifications beyond tendering (status updates, delivered/POD to customer contacts).
 - Password reset + user invitation flow.
-- Module/permission caching (drop per-request DB hit in `ModulesGuard`).
 - Webhook outbox with retries; inbound API keys.
 
 ## Phase 3 — Platform & integrations

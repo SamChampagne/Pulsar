@@ -27,6 +27,9 @@ import { RoutesService } from './routes/routes.service';
 import { TrackingController } from './tracking/tracking.controller';
 import { TrackingService } from './tracking/tracking.service';
 import { TendersService } from './tenders/tenders.service';
+import { TenderExpiryService } from './tenders/tender-expiry.service';
+import { LanesController } from './lanes/lanes.controller';
+import { LanesService } from './lanes/lanes.service';
 import { LoadCostService } from './loads/load-cost.service';
 import { PublicLinksController } from './public/public-links.controller';
 import { PublicLinksService } from './public/public-links.service';
@@ -54,6 +57,7 @@ import { AnalyticsService } from './analytics/analytics.service';
     RoutesController,
     TrackingController,
     AnalyticsController,
+    LanesController,
     // Public, token-authenticated endpoints (tender response, tracking, driver)
     PublicLinksController,
   ],
@@ -71,6 +75,8 @@ import { AnalyticsService } from './analytics/analytics.service';
     RoutesService,
     TrackingService,
     TendersService,
+    TenderExpiryService,
+    LanesService,
     LoadCostService,
     PublicLinksService,
     AnalyticsService,

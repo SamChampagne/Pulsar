@@ -93,13 +93,22 @@ renvoie au bassin.
 
 Plutôt que d'assigner unilatéralement, le planificateur peut **offrir** le voyage :
 
-1. Sur un load PLANNED : **Tender to carrier** — le load passe à **TENDERED** et un **lien de
-   réponse** est copié (à transmettre au transporteur ; envoi courriel automatique à venir).
+1. Sur un load PLANNED : **Tender to carrier** — le load passe à **TENDERED** ; le lien de
+   réponse est **envoyé par courriel** au transporteur (s'il a une adresse) et copié dans le
+   presse-papier.
 2. Le transporteur ouvre le lien (aucun compte requis) : il voit le résumé du voyage (arrêts,
    poids, palettes, distance) et choisit **Accept** ou **Decline** (avec motif).
 3. **Accepté** → le répartiteur peut dispatcher. **Refusé ou expiré** (48 h par défaut) → le load
    revient à PLANNED pour offrir à un autre transporteur. L'offre peut aussi être **annulée**
    tant qu'elle est sans réponse.
+
+#### Tender automatique (listes de préférence par voie)
+
+L'écran **Lanes** définit, pour chaque paire origine → destination, la **liste ordonnée** des
+transporteurs préférés. Sur un load PLANNED, **Auto-tender (lane)** offre le voyage au rang 1 ;
+chaque refus ou expiration passe automatiquement au transporteur suivant (vérification toutes
+les 5 minutes pour les offres expirées), jusqu'à acceptation ou épuisement de la liste — le
+répartiteur n'intervient que si toute la liste a refusé.
 
 Le tableau de bord Analytics comptabilise les taux d'acceptation par transporteur.
 
@@ -215,9 +224,8 @@ Avant de créer le premier ordre d'un client, vérifier que ces données existen
   sophistiquée — on peut toutefois mettre plusieurs shipments dans un même load).
 - Route générée automatiquement (cueillettes puis livraisons) : pas encore de réordonnancement
   manuel ni d'heures planifiées par arrêt dans l'écran.
-- Le lien de tender est **copié** dans le presse-papier — l'envoi courriel automatique au
-  transporteur viendra avec le canal de notifications.
-- Tender séquentiel manuel : pas encore de liste de préférence par voie ni de relance automatique.
+- Courriel : seuls les liens de tender sont envoyés pour l'instant (driver `log` en dev, SMTP en
+  production) ; pas encore de notifications courriel de statut au client final.
 - Pas encore : portail client complet (le lien de suivi en est l'embryon), facturation, EDI.
 
 La feuille de route détaillée : [ROADMAP.md](../ROADMAP.md).

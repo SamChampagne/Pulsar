@@ -106,6 +106,13 @@ export class LoadsController {
     return this.tenders.create(user.tenantId, user.id, id, dto);
   }
 
+  /** Starts the automatic tender sequence based on the lane's carrier preference list. */
+  @Post(':id/auto-tender')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
+  autoTender(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: CreateTenderDto) {
+    return this.tenders.autoTender(user.tenantId, user.id, id, dto.expiresInHours);
+  }
+
   @Post(':id/cancel-tender')
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
   cancelTender(@CurrentUser() user: AuthUser, @Param('id') id: string) {

@@ -5,12 +5,16 @@ import { randomBytes } from 'node:crypto';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { EmailService } from '../../../core/email/email.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
+import { LanesService } from '../lanes/lanes.service';
 
 export interface CreateTenderInput {
   carrierId?: string;
   message?: string;
   expiresInHours?: number;
+  /** Internal: marks the tender as part of an automatic lane sequence. */
+  isAuto?: boolean;
 }
 
 const tenderInclude = {
@@ -25,6 +29,8 @@ export class TendersService {
     private readonly config: ConfigService,
     private readonly audit: AuditLogsService,
     private readonly webhooks: WebhooksService,
+    private readonly email: EmailService,
+    private readonly lanes: LanesService,
   ) {}
 
   private link(token: string): string {
@@ -40,7 +46,7 @@ export class TendersService {
   }
 
   /** Sends a tender: load PLANNED → TENDERED, a tokenized response link is generated. */
-  async create(tenantId: string, userId: string, loadId: string, input: CreateTenderInput) {
+  async create(tenantId: string, userId: string | undefined, loadId: string, input: CreateTenderInput) {
     const load = await this.prisma.load.findFirst({ where: { id: loadId, tenantId } });
     if (!load) throw new NotFoundException('Load not found');
     if (load.status !== LoadStatus.PLANNED) {
@@ -59,6 +65,7 @@ export class TendersService {
           tenantId,
           loadId,
           carrierId,
+          isAuto: input.isAuto ?? false,
           token: randomBytes(24).toString('base64url'),
           message: input.message,
           expiresAt: new Date(Date.now() + expiresInHours * 3600 * 1000),
@@ -87,8 +94,126 @@ export class TendersService {
       carrierId,
     });
 
-    // TODO(phase-next): email the link to tender.carrier.email once an email channel exists.
-    return { ...tender, responseUrl: this.link(tender.token) };
+    // Email the response link to the carrier (best-effort; the UI also offers copy-link).
+    let emailedTo: string | null = null;
+    if (tender.carrier.email) {
+      const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+      const url = this.link(tender.token);
+      const sent = await this.email.send({
+        to: tender.carrier.email,
+        subject: `Transport offer ${load.loadNumber} — ${tenant.name}`,
+        html: [
+          `<p>${tenant.name} is offering you load <strong>${load.loadNumber}</strong>.</p>`,
+          input.message ? `<p>${input.message}</p>` : '',
+          `<p><a href="${url}">Review, accept or decline the offer</a></p>`,
+          `<p>This offer expires on ${tender.expiresAt.toUTCString()}.</p>`,
+        ].join('\n'),
+        text: `${tenant.name} is offering you load ${load.loadNumber}. Respond here: ${url}`,
+      });
+      emailedTo = sent ? tender.carrier.email : null;
+    }
+
+    return { ...tender, responseUrl: this.link(tender.token), emailedTo };
+  }
+
+  /**
+   * Starts (or continues) automatic tendering using the lane preference list of
+   * the load's first shipment (origin → destination). The first carrier without
+   * a failed tender on this load is offered; on decline/expiry the chain
+   * advances automatically (see respond() and TenderExpiryService).
+   */
+  async autoTender(
+    tenantId: string,
+    userId: string | undefined,
+    loadId: string,
+    expiresInHours?: number,
+  ) {
+    const load = await this.prisma.load.findFirst({
+      where: { id: loadId, tenantId },
+      include: {
+        shipments: { select: { originLocationId: true, destinationLocationId: true }, take: 1 },
+      },
+    });
+    if (!load) throw new NotFoundException('Load not found');
+    if (load.shipments.length === 0) {
+      throw new BadRequestException('Cannot auto-tender a load without shipments');
+    }
+
+    const { originLocationId, destinationLocationId } = load.shipments[0];
+    const carrierIds = await this.lanes.orderedCarrierIds(
+      tenantId,
+      originLocationId,
+      destinationLocationId,
+    );
+    if (carrierIds.length === 0) {
+      throw new BadRequestException('No carrier preference list for this lane');
+    }
+
+    const next = await this.nextCarrierInChain(tenantId, loadId, carrierIds);
+    if (!next) {
+      throw new BadRequestException('All carriers on this lane have already declined');
+    }
+    return this.create(tenantId, userId, loadId, {
+      carrierId: next,
+      expiresInHours,
+      isAuto: true,
+    });
+  }
+
+  /** First carrier of the lane list without a DECLINED/EXPIRED tender on this load. */
+  private async nextCarrierInChain(
+    tenantId: string,
+    loadId: string,
+    laneCarrierIds: string[],
+  ): Promise<string | null> {
+    const failed = await this.prisma.tender.findMany({
+      where: {
+        tenantId,
+        loadId,
+        status: { in: [TenderStatus.DECLINED, TenderStatus.EXPIRED] },
+      },
+      select: { carrierId: true },
+    });
+    const excluded = new Set(failed.map((t) => t.carrierId));
+    return laneCarrierIds.find((id) => !excluded.has(id)) ?? null;
+  }
+
+  /** Advances an automatic chain after a decline/expiry. Best-effort: never throws. */
+  async advanceChain(tenderId: string): Promise<void> {
+    try {
+      const tender = await this.prisma.tender.findUnique({
+        where: { id: tenderId },
+        include: {
+          load: {
+            include: {
+              shipments: {
+                select: { originLocationId: true, destinationLocationId: true },
+                take: 1,
+              },
+            },
+          },
+        },
+      });
+      if (!tender?.isAuto || tender.load.status !== LoadStatus.PLANNED) return;
+      const shipment = tender.load.shipments[0];
+      if (!shipment) return;
+
+      const carrierIds = await this.lanes.orderedCarrierIds(
+        tender.tenantId,
+        shipment.originLocationId,
+        shipment.destinationLocationId,
+      );
+      const next = await this.nextCarrierInChain(tender.tenantId, tender.loadId, carrierIds);
+      if (next) {
+        await this.create(tender.tenantId, undefined, tender.loadId, {
+          carrierId: next,
+          isAuto: true,
+        });
+      }
+    } catch (err) {
+      // The chain stalling is recoverable by hand; log and move on.
+      console.error(`Auto-tender chain advance failed for tender ${tenderId}`, err);
+    }
   }
 
   /** Cancels the pending tender and returns the load to PLANNED. */
@@ -239,6 +364,10 @@ export class TendersService {
       carrierId: tender.carrierId,
       ...(declineReason ? { declineReason } : {}),
     });
+
+    if (!accept) {
+      await this.advanceChain(tender.id);
+    }
 
     return { status: accept ? TenderStatus.ACCEPTED : TenderStatus.DECLINED };
   }

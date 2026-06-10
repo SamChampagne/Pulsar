@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
+import { EmailModule } from './core/email/email.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { ModulesGuard } from './common/guards/modules.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -24,7 +26,9 @@ import { TransportationModule } from './modules/transportation/transportation.mo
       // Local dev reads the root .env; deployed environments inject real env vars.
       envFilePath: ['.env', '../../.env'],
     }),
+    ScheduleModule.forRoot(),
     PrismaModule,
+    EmailModule,
     // Core platform modules
     AuthModule,
     TenantsModule,

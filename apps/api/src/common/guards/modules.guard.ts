@@ -2,19 +2,19 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@
 import { Reflector } from '@nestjs/core';
 import type { AuthUser, ModuleKey } from '@pulsar/shared';
 import { MODULE_KEYS } from '@pulsar/shared';
-import { PrismaService } from '../../prisma/prisma.service';
+import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
 import { MODULE_KEY } from '../decorators/require-module.decorator';
 
 /**
  * Blocks access to endpoints of a business module unless the module is enabled
  * for the caller's tenant. The `core` module is always allowed.
- * TODO(phase-2): cache tenant→modules lookups (per-request DB hit today).
+ * Lookups go through a 30s in-memory cache, invalidated on module toggle.
  */
 @Injectable()
 export class ModulesGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly prisma: PrismaService,
+    private readonly modulesCache: TenantModulesCacheService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -27,10 +27,8 @@ export class ModulesGuard implements CanActivate {
     const user: AuthUser | undefined = context.switchToHttp().getRequest().user;
     if (!user) return false;
 
-    const activation = await this.prisma.tenantModule.findFirst({
-      where: { tenantId: user.tenantId, enabled: true, module: { key: moduleKey } },
-    });
-    if (!activation) {
+    const enabled = await this.modulesCache.getEnabledKeys(user.tenantId);
+    if (!enabled.has(moduleKey)) {
       throw new ForbiddenException(`Module "${moduleKey}" is not enabled for this tenant`);
     }
     return true;

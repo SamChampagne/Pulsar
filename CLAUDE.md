@@ -90,9 +90,10 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
 ## Known gotchas / debt (don't "fix" silently, see TODO.md)
 
 - Permissions are embedded in the JWT → role changes apply at next **refresh** (15 min max).
-- `ModulesGuard` hits the DB per request (caching planned).
-- Tender links are copied to the clipboard — no email channel yet to send them automatically.
+- `ModulesGuard` uses a 30 s in-memory cache (single-process; Redis when scaling out).
+- Email: `EMAIL_DRIVER=log` in dev/CI (logs only); only tender links are emailed today.
 - Webhooks are fire-and-forget (no outbox/retries yet).
+- Auto-tender chains advance best-effort: a failure logs and leaves the load PLANNED.
 - Web route building is v0: stops auto-generated from shipments (pickups then deliveries);
   manual reordering is a phase-1 leftover.
 - The e2e suites (`apps/api/test/*.e2e-spec.ts`) need a running, seeded database; they create

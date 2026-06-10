@@ -52,6 +52,7 @@ model Tenant {
   shipments         Shipment[]
   loads             Load[]
   tenders           Tender[]
+  lanePreferences   LaneCarrierPreference[]
   routes            Route[]
   stops             Stop[]
   rates             Rate[]
@@ -356,6 +357,8 @@ model Location {
   originShipments      Shipment[]       @relation("ShipmentOrigin")
   destinationShipments Shipment[]       @relation("ShipmentDestination")
   stops                Stop[]
+  laneOrigins          LaneCarrierPreference[] @relation("LaneOrigin")
+  laneDestinations     LaneCarrierPreference[] @relation("LaneDestination")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -389,6 +392,7 @@ model Carrier {
   loads    Load[]
   rates    Rate[]
   tenders  Tender[]
+  lanePreferences LaneCarrierPreference[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -649,6 +653,9 @@ model Tender {
   loadId        String
   carrierId     String
   status        TenderStatus @default(PENDING)
+  // Part of an automatic sequence: on decline/expiry the next carrier in the
+  // lane preference list is tendered automatically.
+  isAuto        Boolean      @default(false)
   token         String       @unique
   message       String?
   declineReason String?
@@ -661,7 +668,28 @@ model Tender {
   carrier Carrier @relation(fields: [carrierId], references: [id])
 
   @@index([tenantId, loadId])
+  @@index([status, expiresAt])
   @@map("tenders")
+}
+
+// Ordered carrier preference per lane (origin → destination pair).
+// Drives auto-tendering: rank 1 is offered first, then rank 2 on decline/expiry, etc.
+model LaneCarrierPreference {
+  id                    String @id @default(cuid())
+  tenantId              String
+  originLocationId      String
+  destinationLocationId String
+  carrierId             String
+  rank                  Int
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id])
+  originLocation      Location @relation("LaneOrigin", fields: [originLocationId], references: [id])
+  destinationLocation Location @relation("LaneDestination", fields: [destinationLocationId], references: [id])
+  carrier             Carrier  @relation(fields: [carrierId], references: [id])
+
+  @@unique([tenantId, originLocationId, destinationLocationId, rank], map: "lane_prefs_lane_rank_key")
+  @@unique([tenantId, originLocationId, destinationLocationId, carrierId], map: "lane_prefs_lane_carrier_key")
+  @@map("lane_carrier_preferences")
 }
 
 // Ordered stop sequence for a load.
