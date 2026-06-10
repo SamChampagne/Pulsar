@@ -10,6 +10,7 @@ import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import {
   CreateTransportOrderDto,
   PlanTransportOrderDto,
+  ShipmentSplitDto,
   UpdateTransportOrderDto,
 } from './dto/transport-order.dto';
 import { TransportOrdersService } from './transport-orders.service';
@@ -61,6 +62,13 @@ export class TransportOrdersController {
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
   plan(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: PlanTransportOrderDto) {
     return this.orders.plan(user.tenantId, user.id, id, dto);
+  }
+
+  /** Appends an additional shipment to a PLANNED order (post-planning re-split). */
+  @Post(':id/shipments')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
+  addShipment(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ShipmentSplitDto) {
+    return this.orders.addShipment(user.tenantId, user.id, id, dto);
   }
 
   @Post(':id/cancel')

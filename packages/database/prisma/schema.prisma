@@ -42,6 +42,7 @@ model Tenant {
   notifications     Notification[]
   integrations      Integration[]
   webhookDeliveries WebhookDelivery[]
+  apiKeys           ApiKey[]
   modules           TenantModule[]
   customers         Customer[]
   locations         Location[]
@@ -106,6 +107,26 @@ model User {
   @@unique([tenantId, email])
   @@index([tenantId])
   @@map("users")
+}
+
+// Inbound API keys (read-only scopes in v1). Only the SHA-256 hash is stored;
+// the prefix is kept for display ("pk_ab12cd34…").
+model ApiKey {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  prefix      String
+  keyHash     String    @unique
+  scopes      String[]
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("api_keys")
 }
 
 enum UserActionTokenKind {
@@ -360,6 +381,8 @@ model Customer {
   email       String?
   phone       String?
   notes       String?
+  // Customer Portal capability link (module customer-portal must be enabled).
+  portalToken String?  @unique
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

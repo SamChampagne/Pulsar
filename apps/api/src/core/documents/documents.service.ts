@@ -63,6 +63,67 @@ export class DocumentsService {
     };
   }
 
+  /** Pre-signed (or API-relative) download URL. */
+  async downloadUrl(tenantId: string, id: string) {
+    const doc = await this.prisma.document.findFirst({ where: { id, tenantId } });
+    if (!doc) throw new NotFoundException('Document not found');
+    const expiresIn = 300;
+    const presigned = await this.storage.getDownloadUrl(doc.storageKey, expiresIn);
+    return presigned
+      ? { url: presigned, presigned: true, expiresIn }
+      : { url: `/api/v1/documents/${id}/download`, presigned: false };
+  }
+
+  /**
+   * Direct-to-storage upload (S3 driver only): returns a pre-signed PUT URL;
+   * the client uploads then calls confirmUpload to register the document.
+   */
+  async presignUpload(
+    tenantId: string,
+    input: { entityType: string; entityId: string; fileName: string; mimeType: string },
+  ) {
+    const safeName = input.fileName.replace(/[^\w.\-]+/g, '_').slice(-120);
+    const storageKey = `${tenantId}/${input.entityType}/${input.entityId}/${randomBytes(8).toString('hex')}-${safeName}`;
+    const expiresIn = 600;
+    const uploadUrl = await this.storage.getUploadUrl(storageKey, input.mimeType, expiresIn);
+    if (!uploadUrl) {
+      throw new BadRequestException(
+        'Pre-signed uploads require the s3 storage driver — use POST /documents/upload instead',
+      );
+    }
+    return { uploadUrl, storageKey, expiresIn };
+  }
+
+  async confirmUpload(
+    tenantId: string,
+    input: {
+      storageKey: string;
+      entityType: string;
+      entityId: string;
+      fileName: string;
+      mimeType: string;
+      sizeBytes: number;
+      uploadedById?: string;
+    },
+  ) {
+    // The key was issued by presignUpload for this tenant — never accept foreign prefixes.
+    if (!input.storageKey.startsWith(`${tenantId}/`)) {
+      throw new BadRequestException('Invalid storage key');
+    }
+    return this.prisma.document.create({
+      data: {
+        tenantId,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        sizeBytes: input.sizeBytes,
+        storageKey: input.storageKey,
+        uploadedById: input.uploadedById,
+      },
+    });
+  }
+
   async remove(tenantId: string, id: string) {
     const doc = await this.prisma.document.findFirst({ where: { id, tenantId } });
     if (!doc) throw new NotFoundException('Document not found');

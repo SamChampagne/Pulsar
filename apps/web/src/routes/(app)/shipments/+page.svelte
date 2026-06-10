@@ -85,6 +85,16 @@
     }
   }
 
+  async function cancelShipment(shipment: ShipmentRow) {
+    try {
+      await api(`/transportation/shipments/${shipment.id}/cancel`, { method: 'POST' });
+      toast.success(`${shipment.shipmentNumber} cancelled`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to cancel shipment');
+    }
+  }
+
   async function removeFromLoad(shipment: ShipmentRow) {
     try {
       await api(`/transportation/shipments/${shipment.id}/remove-load`, { method: 'POST' });
@@ -169,6 +179,9 @@
           <td style="text-align: right; white-space: nowrap;">
             {#if shipment.status === 'PENDING'}
               <button class="btn btn-sm" onclick={() => openAssign(shipment)}>Assign to load</button>
+              <button class="btn btn-danger btn-sm" onclick={() => cancelShipment(shipment)}>
+                Cancel
+              </button>
             {:else if shipment.status === 'PLANNED'}
               <button class="btn btn-secondary btn-sm" onclick={() => removeFromLoad(shipment)}>
                 Remove from load

@@ -20,6 +20,8 @@ export const PERMISSIONS = {
     INTEGRATIONS_MANAGE: 'core.integrations.manage',
     MODULES_READ: 'core.modules.read',
     MODULES_MANAGE: 'core.modules.manage',
+    API_KEYS_READ: 'core.api-keys.read',
+    API_KEYS_MANAGE: 'core.api-keys.manage',
   },
   TRANSPORTATION: {
     MASTER_DATA_READ: 'transportation.master-data.read',
@@ -35,11 +37,15 @@ export const PERMISSIONS = {
     TRACKING_WRITE: 'transportation.tracking.write',
     ANALYTICS_READ: 'transportation.analytics.read',
   },
+  CUSTOMER_PORTAL: {
+    LINKS_MANAGE: 'customer-portal.links.manage',
+  },
 } as const;
 
 export type PermissionKey =
   | (typeof PERMISSIONS.CORE)[keyof typeof PERMISSIONS.CORE]
-  | (typeof PERMISSIONS.TRANSPORTATION)[keyof typeof PERMISSIONS.TRANSPORTATION];
+  | (typeof PERMISSIONS.TRANSPORTATION)[keyof typeof PERMISSIONS.TRANSPORTATION]
+  | (typeof PERMISSIONS.CUSTOMER_PORTAL)[keyof typeof PERMISSIONS.CUSTOMER_PORTAL];
 
 export interface PermissionDescriptor {
   key: PermissionKey;
@@ -57,6 +63,11 @@ const tms = (key: PermissionKey, description: string): PermissionDescriptor => (
   module: MODULE_KEYS.TRANSPORTATION,
   description,
 });
+const portal = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.CUSTOMER_PORTAL,
+  description,
+});
 
 export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.TENANT_READ, 'View tenant profile and settings'),
@@ -72,6 +83,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.INTEGRATIONS_MANAGE, 'Configure integrations'),
   core(PERMISSIONS.CORE.MODULES_READ, 'View enabled modules'),
   core(PERMISSIONS.CORE.MODULES_MANAGE, 'Enable or disable modules for the tenant'),
+  core(PERMISSIONS.CORE.API_KEYS_READ, 'View API keys'),
+  core(PERMISSIONS.CORE.API_KEYS_MANAGE, 'Create and revoke API keys'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ, 'View customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_MANAGE, 'Manage customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.ORDERS_READ, 'View transport orders'),
@@ -84,6 +97,7 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   tms(PERMISSIONS.TRANSPORTATION.TRACKING_READ, 'View tracking events and PODs'),
   tms(PERMISSIONS.TRANSPORTATION.TRACKING_WRITE, 'Record tracking events and PODs'),
   tms(PERMISSIONS.TRANSPORTATION.ANALYTICS_READ, 'View carrier scorecards and KPIs'),
+  portal(PERMISSIONS.CUSTOMER_PORTAL.LINKS_MANAGE, 'Generate and revoke customer portal links'),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);

@@ -15,6 +15,7 @@ import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import {
   CreateTransportOrderDto,
   PlanTransportOrderDto,
+  ShipmentSplitDto,
   UpdateTransportOrderDto,
 } from './dto/transport-order.dto';
 
@@ -177,6 +178,42 @@ export class TransportOrdersService {
       });
     }
     return this.transition(tenantId, userId, id, TransportOrderStatus.PLANNED);
+  }
+
+  /** Post-planning re-split: appends one more PENDING shipment to a PLANNED order. */
+  async addShipment(tenantId: string, userId: string, id: string, split: ShipmentSplitDto) {
+    const order = await this.get(tenantId, id);
+    if (order.status !== TransportOrderStatus.PLANNED) {
+      throw new BadRequestException('Shipments can only be added to PLANNED orders');
+    }
+    const shipment = await this.prisma.shipment.create({
+      data: {
+        tenantId,
+        shipmentNumber: await this.sequences.nextNumber(tenantId, 'shipment'),
+        transportOrderId: order.id,
+        status: ShipmentStatus.PENDING,
+        originLocationId: order.originLocationId,
+        destinationLocationId: order.destinationLocationId,
+        weightKg: split.weightKg,
+        volumeM3: split.volumeM3,
+        palletCount: split.palletCount,
+        plannedPickupAt: split.plannedPickupAt
+          ? new Date(split.plannedPickupAt)
+          : order.requestedPickupDate,
+        plannedDeliveryAt: split.plannedDeliveryAt
+          ? new Date(split.plannedDeliveryAt)
+          : order.requestedDeliveryDate,
+      },
+    });
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.CREATE,
+      entityType: 'shipment',
+      entityId: shipment.id,
+      after: { shipmentNumber: shipment.shipmentNumber, transportOrderId: order.id },
+    });
+    return shipment;
   }
 
   async transition(tenantId: string, userId: string, id: string, to: TransportOrderStatus) {

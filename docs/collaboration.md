@@ -13,6 +13,7 @@ Three kinds of capability links, each carrying the narrowest possible scope:
 | Tender  | `Tender.token`        | View load summary; accept or decline **once**     | Cancel tender / expiry (lazy)   |
 | Tracking| `Shipment.trackingToken` | Read-only status page (no tenant internals)    | `DELETE /shipments/:id/share`   |
 | Driver  | `Load.driverToken`    | Stop ARRIVED/DEPARTED + POD (+photo) on that load | `DELETE /loads/:id/driver-link` |
+| Portal  | `Customer.portalToken`| Read-only order/shipment list for one customer (customer-portal module) | `DELETE /customer-portal/customers/:id/portal-link` |
 
 Principles:
 
@@ -103,6 +104,30 @@ then FAILED). Config JSON: `{ "url", "secret"?, "events"?: [] }`. Headers:
 `X-Pulsar-Signature: sha256=HMAC(secret, body)`, `X-Pulsar-Event`, `X-Pulsar-Delivery`.
 Events: `tender.sent|accepted|declined|expired`, `load.dispatched|completed`.
 Inspect deliveries: `GET /integrations/:id/deliveries`.
+
+## Inbound API keys
+
+`POST /api-keys` (permission `core.api-keys.manage`) returns the full key **once**
+(`pk_…`, SHA-256 hash at rest). Requests authenticate with the `X-Api-Key` header instead of a
+JWT; the key carries its own scope list. **v1 restriction: only `*.read` scopes** — write
+endpoints attribute actions to user ids, which keys do not have (service accounts will lift
+this). Revocation is immediate; `lastUsedAt` is stamped on use.
+
+## Declarative audit
+
+`@Audit(entityType, action)` on a handler + the global `AuditInterceptor` log the action with
+the response `id` after success. Applied to master-data create/update endpoints; workflow
+services keep their explicit `AuditLogsService` calls because they record before/after state.
+API-key principals are logged without a userId (they are not User rows).
+
+## Customer Portal module
+
+Second business module — proves per-tenant modularity end to end. Management endpoints
+(`/customer-portal/customers/:id/portal-link`) sit behind
+`@RequireModule(MODULE_KEYS.CUSTOMER_PORTAL)`; the public page (`GET /public/portal/:token`,
+web `/portal/[token]`) re-checks module activation in the service because public routes bypass
+ModulesGuard. Disabling the module instantly kills both the management API and every issued
+portal page. v1 is read-only visibility; order entry is the next portal increment.
 
 ## Identity flows
 

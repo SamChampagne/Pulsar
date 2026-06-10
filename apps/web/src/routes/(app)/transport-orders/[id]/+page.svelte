@@ -37,19 +37,26 @@
 
   async function submitPlan(event: SubmitEvent) {
     event.preventDefault();
-    const meaningful = splitRows.filter((r) => r.weightKg !== '' || r.palletCount !== '');
-    const body =
-      splitRows.length > 1 || meaningful.length > 0
-        ? {
-            shipments: splitRows.map((r) => ({
-              weightKg: r.weightKg === '' ? undefined : Number(r.weightKg),
-              palletCount: r.palletCount === '' ? undefined : Number(r.palletCount),
-            })),
-          }
-        : {};
+    const rows = splitRows.map((r) => ({
+      weightKg: r.weightKg === '' ? undefined : Number(r.weightKg),
+      palletCount: r.palletCount === '' ? undefined : Number(r.palletCount),
+    }));
     try {
-      await api(`/transportation/transport-orders/${orderId}/plan`, { method: 'POST', body });
-      toast.success(`Order planned (${splitRows.length} shipment${splitRows.length > 1 ? 's' : ''})`);
+      if (order?.status === 'PLANNED') {
+        // Post-planning re-split: each row appends one shipment.
+        for (const row of rows) {
+          await api(`/transportation/transport-orders/${orderId}/shipments`, {
+            method: 'POST',
+            body: row,
+          });
+        }
+        toast.success(`${rows.length} shipment${rows.length > 1 ? 's' : ''} added`);
+      } else {
+        const meaningful = rows.filter((r) => r.weightKg !== undefined || r.palletCount !== undefined);
+        const body = splitRows.length > 1 || meaningful.length > 0 ? { shipments: rows } : {};
+        await api(`/transportation/transport-orders/${orderId}/plan`, { method: 'POST', body });
+        toast.success(`Order planned (${rows.length} shipment${rows.length > 1 ? 's' : ''})`);
+      }
       showPlanForm = false;
       splitRows = [{ weightKg: '', palletCount: '' }];
       await load();
@@ -107,6 +114,10 @@
       {:else if order.status === 'CONFIRMED'}
         <button class="btn" onclick={() => (showPlanForm = !showPlanForm)}>Plan…</button>
         <button class="btn btn-danger" onclick={() => action('cancel')}>Cancel</button>
+      {:else if order.status === 'PLANNED'}
+        <button class="btn btn-secondary" onclick={() => (showPlanForm = !showPlanForm)}>
+          Add shipment…
+        </button>
       {:else if order.status === 'COMPLETED'}
         <button class="btn" onclick={() => action('close')}>Close</button>
       {/if}

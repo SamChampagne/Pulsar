@@ -70,10 +70,20 @@ The increment that turns Pulsar from an internal tool into a collaborative platf
 - Audit log retention & export.
 - Performance pass: indexes review, pagination cursors, load tests.
 
-## Phase 4 — Second module & commercial readiness
+## Phase 4 — Platform & second module ✅ (current)
 
-- Customer Portal module (shipper's customers: order entry + tracking) — validates the
-  multi-module architecture end-to-end.
+- ✅ Inbound API keys (read-only scopes v1, X-Api-Key auth, revocation, admin UI).
+- ✅ Declarative audit (`@Audit` + global interceptor) on master-data mutations.
+- ✅ Pre-signed S3 URLs (download + direct PUT upload with confirm; local fallback).
+- ✅ Post-planning shipment management (add/cancel shipments on a PLANNED order).
+- ✅ **Customer Portal module v1** — second business module live, validating per-tenant
+  modularity end-to-end (read-only customer visibility via capability link).
+
+## Phase 5 — Commercial readiness
+
+- Portal v2: customer order entry (DRAFT orders from the portal).
+- Service accounts → write scopes for API keys.
+- SSO (OIDC) per tenant; platform administration plane (cross-tenant ops).
 - Billing foundations: rated costs → invoice drafts.
 - Fleet module discovery (maintenance, compliance).
 - SOC2-track hardening: secrets management, encrypted integration configs, backup/restore runbook.

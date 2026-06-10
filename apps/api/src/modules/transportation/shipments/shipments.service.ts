@@ -87,6 +87,19 @@ export class ShipmentsService {
     });
   }
 
+  /** Cancels an unassigned PENDING shipment (post-planning cleanup). */
+  async cancel(tenantId: string, id: string) {
+    const shipment = await this.get(tenantId, id);
+    if (shipment.status !== ShipmentStatus.PENDING) {
+      throw new BadRequestException('Only PENDING shipments can be cancelled');
+    }
+    return this.prisma.shipment.update({
+      where: { id },
+      data: { status: ShipmentStatus.CANCELLED },
+      include: shipmentInclude,
+    });
+  }
+
   async removeFromLoad(tenantId: string, id: string) {
     const shipment = await this.get(tenantId, id);
     if (shipment.status !== ShipmentStatus.PLANNED) {

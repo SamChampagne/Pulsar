@@ -50,6 +50,15 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
 7. After changing `packages/shared` or `packages/database`, **rebuild them** (`pnpm setup` or the
    package's `build` script) — the API consumes their `dist/`.
 
+## Hard rules (continued, phase 4)
+
+13. Inbound API keys accept **read scopes only** (`*.read`) until service accounts exist —
+    `ApiKeysService.create` enforces it; don't lift this silently.
+14. Master-data create/update endpoints carry `@Audit(entityType, action)`; new ones must too.
+    Workflow services keep explicit `AuditLogsService.log` calls (before/after state).
+15. Public pages of a business module must re-check module activation in the service
+    (`TenantModulesCacheService`) — public routes bypass ModulesGuard (see PortalService).
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

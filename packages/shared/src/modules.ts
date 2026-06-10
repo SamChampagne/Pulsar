@@ -67,7 +67,7 @@ export const MODULE_CATALOG: ModuleDescriptor[] = [
     name: 'Customer Portal',
     description: 'Self-service order entry and shipment visibility for customers.',
     isCore: false,
-    available: false,
+    available: true,
   },
   {
     key: MODULE_KEYS.ANALYTICS,

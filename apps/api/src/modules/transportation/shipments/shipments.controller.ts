@@ -51,6 +51,12 @@ export class ShipmentsController {
     return this.shipments.removeFromLoad(user.tenantId, id);
   }
 
+  @Post(':id/cancel')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
+  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.shipments.cancel(user.tenantId, id);
+  }
+
   /** Public tracking link management (share with the end customer). */
   @Post(':id/share')
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.TRACKING_WRITE)

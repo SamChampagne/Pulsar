@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
+import { AuditInterceptor } from './common/interceptors/audit.interceptor';
+import { ApiKeysModule } from './core/api-keys/api-keys.module';
 import { EmailModule } from './core/email/email.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { ModulesGuard } from './common/guards/modules.guard';
@@ -18,6 +20,7 @@ import { NotificationsModule } from './core/notifications/notifications.module';
 import { IntegrationsModule } from './core/integrations/integrations.module';
 import { ModuleRegistryModule } from './core/module-registry/module-registry.module';
 import { TransportationModule } from './modules/transportation/transportation.module';
+import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
 
 @Module({
   imports: [
@@ -29,6 +32,7 @@ import { TransportationModule } from './modules/transportation/transportation.mo
     ScheduleModule.forRoot(),
     PrismaModule,
     EmailModule,
+    ApiKeysModule,
     // Core platform modules
     AuthModule,
     TenantsModule,
@@ -42,12 +46,14 @@ import { TransportationModule } from './modules/transportation/transportation.mo
     ModuleRegistryModule,
     // Business modules (activable per tenant — see ModulesGuard)
     TransportationModule,
+    CustomerPortalModule,
   ],
   providers: [
     // Guard order matters: authenticate, then check module activation, then permissions.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: ModulesGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
 })
 export class AppModule {}

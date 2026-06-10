@@ -15,7 +15,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { PERMISSIONS } from '@pulsar/shared';
-import { IsString } from 'class-validator';
+import { IsInt, IsString, Min } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { DocumentsService } from './documents.service';
@@ -26,6 +26,23 @@ class UploadDocumentDto {
 
   @IsString()
   entityId!: string;
+}
+
+class PresignUploadDto extends UploadDocumentDto {
+  @IsString()
+  fileName!: string;
+
+  @IsString()
+  mimeType!: string;
+}
+
+class ConfirmUploadDto extends PresignUploadDto {
+  @IsString()
+  storageKey!: string;
+
+  @IsInt()
+  @Min(0)
+  sizeBytes!: number;
 }
 
 @ApiTags('core/documents')
@@ -72,6 +89,26 @@ export class DocumentsController {
       type: mimeType,
       disposition: `attachment; filename="${fileName.replace(/"/g, '')}"`,
     });
+  }
+
+  @Get(':id/download-url')
+  @RequirePermissions(PERMISSIONS.CORE.DOCUMENTS_READ)
+  downloadUrl(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.documents.downloadUrl(user.tenantId, id);
+  }
+
+  /** Direct-to-S3 upload, step 1: get a pre-signed PUT URL (s3 driver only). */
+  @Post('presign-upload')
+  @RequirePermissions(PERMISSIONS.CORE.DOCUMENTS_MANAGE)
+  presignUpload(@CurrentUser() user: AuthUser, @Body() dto: PresignUploadDto) {
+    return this.documents.presignUpload(user.tenantId, dto);
+  }
+
+  /** Direct-to-S3 upload, step 2: register the uploaded file as a document. */
+  @Post('confirm-upload')
+  @RequirePermissions(PERMISSIONS.CORE.DOCUMENTS_MANAGE)
+  confirmUpload(@CurrentUser() user: AuthUser, @Body() dto: ConfirmUploadDto) {
+    return this.documents.confirmUpload(user.tenantId, { ...dto, uploadedById: user.id });
   }
 
   @Delete(':id')

@@ -47,6 +47,10 @@ Les rôles sont configurables par tenant (catalogue de permissions), mais le dé
 
 Compte de démonstration : `admin@pulsar.dev` / `admin123` (tenant `acme`) — possède tout.
 
+**Clés API** (Administration → API keys) : accès machine-à-machine en lecture (en-tête
+`X-Api-Key`), avec portées choisies à la création, clé affichée une seule fois, révocation
+immédiate — pour brancher un ERP ou un outil BI sans compte utilisateur.
+
 **Gestion des comptes** (Administration → Users) : l'administrateur **invite** un utilisateur par
 courriel (sans mot de passe initial — l'invité choisit le sien via un lien valable 72 h, aussi
 copiable par l'admin). « Mot de passe oublié ? » sur l'écran de connexion envoie un lien de
@@ -135,6 +139,14 @@ Toujours sur le détail du load :
 - **Complete (delivered)** — les shipments passent à DELIVERED avec l'heure réelle ; un ordre dont
   tous les shipments sont livrés passe automatiquement à **COMPLETED**.
 - **Cancel** (avant le transit) : les shipments retournent au bassin de planification.
+
+### Le portail client (module activable)
+
+Si le module **Customer Portal** est activé (Administration → Modules), chaque client peut
+recevoir un **lien de portail** (bouton *Portal link* sur l'écran Customers) : une page sans
+compte listant **ses** ordres, le statut de chaque expédition et les liens de suivi. Désactiver
+le module coupe immédiatement tous les portails émis ; chaque lien est aussi révocable
+individuellement.
 
 ### Étape 4bis — Le chauffeur et le client final (sans compte)
 

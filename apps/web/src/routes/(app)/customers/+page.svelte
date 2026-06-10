@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { MODULE_KEYS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
+  import { toast } from '$lib/stores/toast';
 
   interface CustomerRow {
     id: string;
@@ -17,6 +20,23 @@
   let error = $state('');
   let showForm = $state(false);
   let form = $state({ code: '', name: '', contactName: '', email: '' });
+
+  const hasPortal = $derived(
+    $auth?.tenant.enabledModules.includes(MODULE_KEYS.CUSTOMER_PORTAL) ?? false,
+  );
+
+  async function portalLink(customer: CustomerRow) {
+    try {
+      const { url } = await api<{ url: string }>(
+        `/customer-portal/customers/${customer.id}/portal-link`,
+        { method: 'POST' },
+      );
+      await navigator.clipboard.writeText(url);
+      toast.success(`Portal link for ${customer.name} copied`);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to create portal link');
+    }
+  }
 
   async function load() {
     try {
@@ -112,6 +132,7 @@
         <th>Contact</th>
         <th>Email</th>
         <th>Active</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -126,9 +147,16 @@
               {customer.isActive ? 'YES' : 'NO'}
             </span>
           </td>
+          <td style="text-align: right;">
+            {#if hasPortal}
+              <button class="btn btn-secondary btn-sm" onclick={() => portalLink(customer)}>
+                Portal link
+              </button>
+            {/if}
+          </td>
         </tr>
       {:else}
-        <tr><td colspan="5" class="muted">No customers yet.</td></tr>
+        <tr><td colspan="6" class="muted">No customers yet.</td></tr>
       {/each}
     </tbody>
   </table>

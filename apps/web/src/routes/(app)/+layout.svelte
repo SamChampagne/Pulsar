@@ -28,6 +28,7 @@
   const tmsAnalyticsNav = [{ href: '/analytics', label: 'Analytics' }];
   const adminNav = [
     { href: '/settings/users', label: 'Users' },
+    { href: '/settings/api-keys', label: 'API keys' },
     { href: '/settings/modules', label: 'Modules' },
   ];
 

@@ -81,10 +81,22 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 
 ## Phase 4 — Platform & integrations
 
-- [ ] Inbound API keys for integrations
-- [ ] Audit interceptor (declarative auditing instead of manual service calls)
-- [ ] Pre-signed URLs for direct-to-S3 uploads (skip the API for large files)
-- [ ] Re-splitting / shipment management after planning
+- [x] Inbound API keys (read-only scopes, X-Api-Key header, hash at rest, revocation,
+      Settings → API keys page)
+- [x] Audit interceptor (`@Audit` decorator, applied to master-data create/update)
+- [x] Pre-signed URLs (S3 driver: GET + direct PUT upload with confirm step;
+      local driver degrades to API download)
+- [x] Post-planning shipment management (add shipment to PLANNED order, cancel PENDING shipment)
+- [x] **Customer Portal module v1** (second business module): per-customer capability link,
+      read-only orders/shipments/tracking view, module-gated management + public page
+- [x] Phase 4 e2e suite (7 tests)
+
+## Phase 5 — Next
+
+- [ ] Service accounts → write scopes for API keys
+- [ ] Portal v2: order entry (customer creates DRAFT orders from the portal)
+- [ ] SSO (OIDC) per tenant; platform admin plane (cross-tenant)
+- [ ] Billing foundations (rated loads → invoice drafts)
 
 ## Phase 3 — Platform & integrations
 
