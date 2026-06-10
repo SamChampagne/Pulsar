@@ -10,7 +10,9 @@ import {
 import { Prisma } from '@pulsar/database';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
+import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { AssignLoadResourcesDto, CreateLoadDto } from './dto/load.dto';
 
@@ -20,7 +22,17 @@ const loadInclude = {
   vehicle: { select: { id: true, unitNumber: true } },
   trailer: { select: { id: true, unitNumber: true } },
   rate: { select: { id: true, name: true, rateType: true, baseAmount: true, currency: true } },
-  shipments: { select: { id: true, shipmentNumber: true, status: true, transportOrderId: true } },
+  shipments: {
+    select: {
+      id: true,
+      shipmentNumber: true,
+      status: true,
+      transportOrderId: true,
+      originLocationId: true,
+      destinationLocationId: true,
+      proofOfDelivery: { select: { id: true, signedByName: true, signedAt: true } },
+    },
+  },
   route: { include: { stops: { orderBy: { sequence: 'asc' as const } } } },
 } satisfies Prisma.LoadInclude;
 
@@ -28,6 +40,8 @@ const loadInclude = {
 export class LoadsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly sequences: SequencesService,
+    private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
   ) {}
 
@@ -58,11 +72,10 @@ export class LoadsService {
   }
 
   async create(tenantId: string, userId: string, dto: CreateLoadDto) {
-    const count = await this.prisma.load.count({ where: { tenantId } });
     const load = await this.prisma.load.create({
       data: {
         tenantId,
-        loadNumber: `LD-${String(count + 1).padStart(6, '0')}`,
+        loadNumber: await this.sequences.nextNumber(tenantId, 'load'),
         notes: dto.notes,
       },
       include: loadInclude,
@@ -84,6 +97,13 @@ export class LoadsService {
     if (load.status !== LoadStatus.OPEN && load.status !== LoadStatus.PLANNED) {
       throw new BadRequestException('Resources can only be assigned to OPEN or PLANNED loads');
     }
+    await Promise.all([
+      this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId),
+      this.ownership.assertOwnedIfSet('driver', dto.driverId, tenantId),
+      this.ownership.assertOwnedIfSet('vehicle', dto.vehicleId, tenantId),
+      this.ownership.assertOwnedIfSet('trailer', dto.trailerId, tenantId),
+      this.ownership.assertOwnedIfSet('rate', dto.rateId, tenantId),
+    ]);
     const updated = await this.prisma.load.update({
       where: { id },
       data: {

@@ -8,7 +8,9 @@ import {
 import { Prisma } from '@pulsar/database';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
+import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { CreateTransportOrderDto, UpdateTransportOrderDto } from './dto/transport-order.dto';
 
@@ -23,8 +25,18 @@ const orderInclude = {
 export class TransportOrdersService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly sequences: SequencesService,
+    private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
   ) {}
+
+  private async assertReferences(tenantId: string, dto: UpdateTransportOrderDto) {
+    await Promise.all([
+      this.ownership.assertOwnedIfSet('customer', dto.customerId, tenantId),
+      this.ownership.assertOwnedIfSet('location', dto.originLocationId, tenantId),
+      this.ownership.assertOwnedIfSet('location', dto.destinationLocationId, tenantId),
+    ]);
+  }
 
   async list(tenantId: string, query: ListQueryDto & { status?: TransportOrderStatus }) {
     const { page, pageSize, skip, take } = paginationArgs(query);
@@ -64,13 +76,11 @@ export class TransportOrdersService {
   }
 
   async create(tenantId: string, userId: string, dto: CreateTransportOrderDto) {
-    // TODO(phase-2): replace count-based numbering with a per-tenant DB sequence
-    // (count+1 can collide under concurrent creates).
-    const count = await this.prisma.transportOrder.count({ where: { tenantId } });
+    await this.assertReferences(tenantId, dto);
     const order = await this.prisma.transportOrder.create({
       data: {
         tenantId,
-        orderNumber: `TO-${String(count + 1).padStart(6, '0')}`,
+        orderNumber: await this.sequences.nextNumber(tenantId, 'transport-order'),
         createdById: userId,
         ...dto,
         requestedPickupDate: dto.requestedPickupDate ? new Date(dto.requestedPickupDate) : undefined,
@@ -96,6 +106,7 @@ export class TransportOrdersService {
     if (order.status !== TransportOrderStatus.DRAFT) {
       throw new BadRequestException('Only DRAFT orders can be edited');
     }
+    await this.assertReferences(tenantId, dto);
     return this.prisma.transportOrder.update({
       where: { id },
       data: {
@@ -130,11 +141,10 @@ export class TransportOrdersService {
     if (order.status !== TransportOrderStatus.CONFIRMED) {
       throw new BadRequestException('Only CONFIRMED orders can be planned');
     }
-    const shipmentCount = await this.prisma.shipment.count({ where: { tenantId } });
     await this.prisma.shipment.create({
       data: {
         tenantId,
-        shipmentNumber: `SH-${String(shipmentCount + 1).padStart(6, '0')}`,
+        shipmentNumber: await this.sequences.nextNumber(tenantId, 'shipment'),
         transportOrderId: order.id,
         status: ShipmentStatus.PENDING,
         originLocationId: order.originLocationId,

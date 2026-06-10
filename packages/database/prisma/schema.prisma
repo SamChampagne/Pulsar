@@ -60,6 +60,17 @@ model Tenant {
   @@map("tenants")
 }
 
+// Per-tenant atomic counters for business document numbers (TO/SH/LD...).
+// Incremented via INSERT ... ON CONFLICT DO UPDATE RETURNING (see SequencesService).
+model NumberSequence {
+  tenantId String @map("tenant_id")
+  key      String
+  value    Int    @default(0)
+
+  @@id([tenantId, key])
+  @@map("number_sequences")
+}
+
 enum UserStatus {
   INVITED
   ACTIVE

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { LoadStatus, StopStatus, TrackingEventType } from '@pulsar/shared';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
+import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateRouteDto } from './dto/route.dto';
 
@@ -14,7 +15,10 @@ const routeInclude = {
 
 @Injectable()
 export class RoutesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ownership: OwnershipService,
+  ) {}
 
   list(tenantId: string, _query: ListQueryDto) {
     return this.prisma.route.findMany({
@@ -43,6 +47,12 @@ export class RoutesService {
     if (new Set(sequences).size !== sequences.length) {
       throw new BadRequestException('Stop sequences must be unique');
     }
+    await Promise.all(
+      dto.stops.flatMap((s) => [
+        this.ownership.assertOwned('location', s.locationId, tenantId),
+        this.ownership.assertOwnedIfSet('shipment', s.shipmentId, tenantId),
+      ]),
+    );
 
     // Rebuild from scratch — the route is fully owned by its load.
     await this.prisma.route.deleteMany({ where: { loadId: dto.loadId, tenantId } });

@@ -199,7 +199,7 @@
     <tbody>
       {#each orders as order (order.id)}
         <tr>
-          <td><strong>{order.orderNumber}</strong></td>
+          <td><a href={`/transport-orders/${order.id}`}><strong>{order.orderNumber}</strong></a></td>
           <td>{order.customer.name}</td>
           <td>{order.originLocation.city}</td>
           <td>{order.destinationLocation.city}</td>

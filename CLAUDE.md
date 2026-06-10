@@ -28,6 +28,8 @@ pnpm db:seed      # seed catalogs + demo tenant (admin@pulsar.dev / admin123, te
 pnpm dev          # api :3000 + web :5173 (web proxies /api → :3000)
 pnpm build        # build everything (order matters: shared → database → api → web)
 pnpm typecheck    # all workspaces
+pnpm test         # unit tests (state machines in packages/shared)
+pnpm test:e2e     # full workflow over HTTP — needs a seeded DB (db:up + db:migrate + db:seed)
 ```
 
 Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at the repo root.
@@ -71,11 +73,19 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
   client from `$lib/api/client`, errors in a local `error` string.
 - Prettier is the only formatter (`pnpm format`); no ESLint configured yet.
 
+## Hard rules (continued)
+
+8. Document numbers (TO/SH/LD) come from `SequencesService.nextNumber()` — never generate them
+   any other way.
+9. Every foreign key accepted in a write payload must be checked with
+   `OwnershipService.assertOwned(IfSet)` before persisting.
+
 ## Known gotchas / debt (don't "fix" silently, see TODO.md)
 
-- Order/shipment/load numbers are count-based → race-prone; planned fix is per-tenant sequences.
 - Permissions are embedded in the JWT → role changes apply at next login.
 - `ModulesGuard` hits the DB per request (caching planned in phase 2).
-- DTOs don't yet verify that referenced ids (customerId, locationId…) belong to the tenant —
-  records are tenant-checked on read paths, but cross-references should be validated on write.
 - Documents are metadata-only (no binary storage yet).
+- Web route building is v0: stops auto-generated from shipments (pickups then deliveries);
+  manual reordering is a phase-1 leftover.
+- The e2e suite (`apps/api/test/workflow.e2e-spec.ts`) needs a running, seeded database; it
+  creates its own master data with unique codes so reruns are safe.

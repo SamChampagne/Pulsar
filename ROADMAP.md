@@ -2,7 +2,7 @@
 
 Phases are scoped to ship a usable increment each time. Detailed tasks live in [TODO.md](./TODO.md).
 
-## Phase 0 — Foundation ✅ (current)
+## Phase 0 — Foundation ✅
 
 - Monorepo (pnpm workspaces): `apps/api`, `apps/web`, `packages/shared`, `packages/database`.
 - Multi-tenant Prisma schema: platform core + full transportation domain.
@@ -13,15 +13,17 @@ Phases are scoped to ship a usable increment each time. Detailed tasks live in [
 - SvelteKit SPA: login, dashboard, transport orders, customers, carriers, module settings.
 - Docker Compose (PostgreSQL), seed with demo tenant.
 
-## Phase 1 — Usable TMS happy path
+## Phase 1 — Usable TMS happy path ✅ (current)
 
-- Web UI for the full workflow: shipments list, load builder (assign shipments/carrier/resources),
-  route editor, dispatch board, tracking timeline, POD capture.
-- Transport order detail page (shipments, events, documents, audit trail).
-- Per-tenant sequence generation for order/shipment/load numbers (replace count-based).
-- Input hardening: cross-entity tenant checks on all foreign keys in DTOs.
-- E2E happy-path test (order → delivered) + unit tests on state machines.
-- CI (GitHub Actions): typecheck, build, test, prisma validate.
+- ✅ Web UI for the full workflow: shipments list with load assignment, load detail (resources,
+  route generation, stop arrive/depart, dispatch/transit/complete), tracking timeline, POD capture.
+- ✅ Transport order detail page (shipments, tracking events, actions).
+- ✅ Per-tenant sequence generation for order/shipment/load numbers (atomic, replaces count-based).
+- ✅ Input hardening: cross-entity tenant ownership checks on all foreign keys in write payloads.
+- ✅ E2E happy-path test (order → delivered → POD → closed) + unit tests on state machines.
+- ✅ CI (GitHub Actions): prisma validate, typecheck, build, unit + e2e against a Postgres service.
+- Remaining: manual route editor (reorder/planned times), service-level unit tests,
+  machine-readable error codes.
 
 ## Phase 2 — Operational depth
 

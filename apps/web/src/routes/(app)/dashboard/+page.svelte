@@ -15,8 +15,8 @@
       ]);
       stats = [
         { label: 'Transport Orders', value: orders.total, href: '/transport-orders' },
-        { label: 'Shipments', value: shipments.total, href: '/transport-orders' },
-        { label: 'Loads', value: loads.total, href: '/transport-orders' },
+        { label: 'Shipments', value: shipments.total, href: '/shipments' },
+        { label: 'Loads', value: loads.total, href: '/loads' },
         { label: 'Carriers', value: carriers.total, href: '/carriers' },
       ];
     } catch (e) {

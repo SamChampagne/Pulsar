@@ -18,6 +18,8 @@
   const coreNav = [{ href: '/dashboard', label: 'Dashboard' }];
   const tmsNav = [
     { href: '/transport-orders', label: 'Transport Orders' },
+    { href: '/shipments', label: 'Shipments' },
+    { href: '/loads', label: 'Loads' },
     { href: '/customers', label: 'Customers' },
     { href: '/carriers', label: 'Carriers' },
   ];

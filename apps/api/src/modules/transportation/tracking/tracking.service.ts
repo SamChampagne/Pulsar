@@ -1,11 +1,15 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ShipmentStatus } from '@pulsar/shared';
+import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreatePodDto, CreateTrackingEventDto } from './dto/tracking.dto';
 
 @Injectable()
 export class TrackingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ownership: OwnershipService,
+  ) {}
 
   listEvents(tenantId: string, filter: { loadId?: string; shipmentId?: string }) {
     if (!filter.loadId && !filter.shipmentId) {
@@ -25,7 +29,12 @@ export class TrackingService {
     });
   }
 
-  createEvent(tenantId: string, userId: string, dto: CreateTrackingEventDto) {
+  async createEvent(tenantId: string, userId: string, dto: CreateTrackingEventDto) {
+    await Promise.all([
+      this.ownership.assertOwnedIfSet('load', dto.loadId, tenantId),
+      this.ownership.assertOwnedIfSet('shipment', dto.shipmentId, tenantId),
+      this.ownership.assertOwnedIfSet('stop', dto.stopId, tenantId),
+    ]);
     return this.prisma.trackingEvent.create({
       data: {
         tenantId,

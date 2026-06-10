@@ -2,12 +2,16 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { Prisma } from '@pulsar/database';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
+import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle.dto';
 
 @Injectable()
 export class VehiclesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ownership: OwnershipService,
+  ) {}
 
   async list(tenantId: string, query: ListQueryDto) {
     const { page, pageSize, skip, take } = paginationArgs(query);
@@ -41,11 +45,13 @@ export class VehiclesService {
       where: { tenantId_unitNumber: { tenantId, unitNumber: dto.unitNumber } },
     });
     if (existing) throw new ConflictException(`Vehicle "${dto.unitNumber}" already exists`);
+    await this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId);
     return this.prisma.vehicle.create({ data: { tenantId, ...dto } });
   }
 
   async update(tenantId: string, id: string, dto: UpdateVehicleDto) {
     await this.get(tenantId, id);
+    await this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId);
     const { unitNumber: _unit, ...data } = dto;
     return this.prisma.vehicle.update({ where: { id }, data });
   }

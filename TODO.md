@@ -21,26 +21,29 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [x] Docs: architecture, data model, multi-tenancy, module system, API conventions,
       getting started, PRODUCT_SPEC, ROADMAP, CLAUDE.md
 - [x] First Prisma migration committed (`init`)
-- [ ] CI pipeline (typecheck + build + prisma validate)
+- [x] CI pipeline (.github/workflows/ci.yml: validate + typecheck + build + unit + e2e)
 
 ## Phase 1 — Usable TMS happy path
 
 ### API
-- [ ] Per-tenant number sequences (TO/SH/LD) — replace count-based generation
-      (`transport-orders.service.ts`, `loads.service.ts`)
-- [ ] Validate tenant ownership of all referenced ids in DTOs (customerId, locationIds, carrierId…)
-- [ ] Unit tests: workflow state machines (shared) + order/load services
-- [ ] E2E test: order → confirm → plan → load → dispatch → deliver → POD → close
+- [x] Per-tenant number sequences (TO/SH/LD) — atomic `number_sequences` table
+      (`SequencesService`)
+- [x] Validate tenant ownership of all referenced ids in write payloads (`OwnershipService`)
+- [x] Unit tests: workflow state machines (packages/shared, vitest)
+- [x] E2E test: order → confirm → plan → load → dispatch → deliver → POD → close
+      (`apps/api/test/workflow.e2e-spec.ts`)
+- [ ] Unit tests on order/load services (mocked Prisma)
 - [ ] Standardized error codes (machine-readable `code` field alongside message)
 
 ### Web
-- [ ] Transport order detail page (shipments, timeline, actions)
-- [ ] Shipments page with "assign to load" flow
-- [ ] Loads page: create load, assign resources, dispatch/start-transit/complete buttons
-- [ ] Route editor (ordered stops on a load)
-- [ ] Tracking timeline component (events per load/shipment)
-- [ ] POD capture form
-- [ ] Toast notifications for action feedback; replace inline error strings
+- [x] Transport order detail page (shipments, timeline, actions)
+- [x] Shipments page with "assign to load" flow (pick existing load or create one)
+- [x] Loads page: list + detail (assign resources, dispatch/start-transit/complete/cancel)
+- [x] Route v0 on load detail: auto-generate stops from shipments + arrive/depart actions
+- [ ] Route editor v1: manual stop reordering and planned times
+- [x] Tracking timeline component (events per load/shipment)
+- [x] POD capture form (load detail, per delivered shipment)
+- [x] Toast notifications for action feedback
 
 ## Phase 2 — Operational depth
 

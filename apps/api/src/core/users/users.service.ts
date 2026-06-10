@@ -3,6 +3,7 @@ import { Prisma } from '@pulsar/database';
 import { hash } from 'bcryptjs';
 import { ListQueryDto } from '../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../common/pagination';
+import { OwnershipService } from '../../prisma/ownership.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 
@@ -19,7 +20,15 @@ const userSelect = {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ownership: OwnershipService,
+  ) {}
+
+  private async assertRolesOwned(tenantId: string, roleIds: string[] | undefined) {
+    if (!roleIds) return;
+    await Promise.all(roleIds.map((id) => this.ownership.assertOwned('role', id, tenantId)));
+  }
 
   async list(tenantId: string, query: ListQueryDto) {
     const { page, pageSize, skip, take } = paginationArgs(query);
@@ -54,6 +63,7 @@ export class UsersService {
       where: { tenantId_email: { tenantId, email } },
     });
     if (existing) throw new ConflictException('A user with this email already exists');
+    await this.assertRolesOwned(tenantId, dto.roleIds);
 
     return this.prisma.user.create({
       data: {
@@ -72,6 +82,7 @@ export class UsersService {
 
   async update(tenantId: string, id: string, dto: UpdateUserDto) {
     await this.get(tenantId, id);
+    await this.assertRolesOwned(tenantId, dto.roleIds);
     return this.prisma.user.update({
       where: { id },
       data: {

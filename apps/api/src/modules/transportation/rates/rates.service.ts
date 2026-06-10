@@ -2,12 +2,23 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@pulsar/database';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
+import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateRateDto, UpdateRateDto } from './dto/rate.dto';
 
 @Injectable()
 export class RatesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ownership: OwnershipService,
+  ) {}
+
+  private async assertReferences(tenantId: string, dto: UpdateRateDto) {
+    await Promise.all([
+      this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId),
+      this.ownership.assertOwnedIfSet('customer', dto.customerId, tenantId),
+    ]);
+  }
 
   async list(tenantId: string, query: ListQueryDto) {
     const { page, pageSize, skip, take } = paginationArgs(query);
@@ -40,7 +51,8 @@ export class RatesService {
     return rate;
   }
 
-  create(tenantId: string, dto: CreateRateDto) {
+  async create(tenantId: string, dto: CreateRateDto) {
+    await this.assertReferences(tenantId, dto);
     return this.prisma.rate.create({
       data: {
         tenantId,
@@ -53,6 +65,7 @@ export class RatesService {
 
   async update(tenantId: string, id: string, dto: UpdateRateDto) {
     await this.get(tenantId, id);
+    await this.assertReferences(tenantId, dto);
     return this.prisma.rate.update({
       where: { id },
       data: {
