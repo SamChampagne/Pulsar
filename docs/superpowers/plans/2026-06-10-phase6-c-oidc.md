@@ -455,21 +455,18 @@ export class OidcService {
 
   /** Step 3: the SPA trades the one-shot code for the standard session pair. */
   async exchange(code: string): Promise<LoginResponse> {
-    const record = await this.prisma.userActionToken.findUnique({
-      where: { tokenHash: sha256(code) },
-    });
-    if (
-      !record ||
-      record.kind !== 'OIDC_EXCHANGE' ||
-      record.usedAt ||
-      record.expiresAt < new Date()
-    ) {
-      throw new UnauthorizedException('Invalid or expired exchange code');
-    }
-    await this.prisma.userActionToken.update({
-      where: { id: record.id },
+    const tokenHash = sha256(code);
+    // Atomic one-shot claim: the conditional UPDATE is the uniqueness guarantee.
+    // A read-then-write pair would let two concurrent exchanges both pass the
+    // usedAt check; here only one request can match usedAt: null.
+    const claimed = await this.prisma.userActionToken.updateMany({
+      where: { tokenHash, kind: 'OIDC_EXCHANGE', usedAt: null, expiresAt: { gt: new Date() } },
       data: { usedAt: new Date() },
     });
+    if (claimed.count !== 1) {
+      throw new UnauthorizedException('Invalid or expired exchange code');
+    }
+    const record = await this.prisma.userActionToken.findUniqueOrThrow({ where: { tokenHash } });
     return this.auth.issueSession(record.userId);
   }
 

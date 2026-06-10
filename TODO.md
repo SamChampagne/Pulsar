@@ -101,13 +101,25 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
       loads' estimated costs, billable preview, approval, double-billing prevented by schema
 - [x] Phase 5 e2e suite (4 tests; module-state resets make suites rerun-safe)
 
-## Phase 6 — Next
+## Phase 6 — Commercial readiness (specs/plans: docs/superpowers/)
 
 - [ ] SSO (OIDC) per tenant
 - [ ] Platform administration plane (cross-tenant ops: create/suspend tenants)
-- [ ] Billing v2: customer invoicing, payment tracking, invoice PDF/export
-- [ ] Fleet module discovery (maintenance, compliance)
-- [ ] SOC2-track hardening: secrets management, encrypted integration configs, backups
+- [ ] Billing v2: carrier invoice reconciliation (gross-variance tolerance, disputes,
+      PAID, CSV export) — sell-side reported after rating engine v2 (see TMS audit §5)
+- [ ] Fleet module discovery doc (maintenance, compliance)
+- [ ] SOC2-track hardening: CryptoService, encrypted integration configs,
+      reencrypt script, runbooks
+
+### Dette notée à la revue des plans phase 6 (durcissements différés)
+
+- [ ] Décorateur composite `@PlatformController()` (= `@Public()` + `@UseGuards(PlatformGuard)`)
+      — le pattern actuel rend l'oubli du second décorateur silencieusement ouvert
+- [ ] Throttling sur `POST /platform/auth/login` (porte cross-tenant exposée)
+- [ ] Inclure le slug du tenant dans le state OIDC chiffré et le vérifier au callback
+      (défense en profondeur contre le rejeu d'états entre tenants)
+- [ ] Cache du `Issuer.discover` par issuer (un aller-retour de découverte par login OIDC)
+- [ ] MFA (TOTP + recovery) pour les comptes plateforme — phase 7 (voir spec phase 6)
 
 ## Phase 3 — Platform & integrations
 

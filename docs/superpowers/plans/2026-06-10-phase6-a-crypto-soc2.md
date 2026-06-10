@@ -327,6 +327,11 @@ ENCRYPTION_KEY=q8mB3dT9rV2xU5nC7sE4hG1jL0aF3kM8oP4wY6zI1tQ=
 
 Mettre aussi à jour le `.env` local de la même façon (sinon `pnpm dev` ne démarre plus après la Task 4).
 
+Note : cette clé d'exemple publiée (et celle du workflow CI) est **rejetée en
+production** par `assertProductionSecrets` — voir plan 6B, Task 3, qui liste ces
+valeurs exactes dans `PUBLISHED_EXAMPLES`. Si la clé d'exemple change ici,
+mettre à jour cette liste.
+
 - [ ] **Step 6: Commit**
 
 ```bash
@@ -762,6 +767,13 @@ Les secrets chiffrés (Integration.config, OIDC clientSecret) portent le préfix
 5. Redémarrer l'API.
 6. Vérifier : la page Integrations s'affiche (déchiffrement OK), un webhook part
    signé (le secret est lisible).
+
+⚠️ **Fenêtre d'indisponibilité partielle** : entre l'étape 3 (les lignes sont
+rechiffrées avec la nouvelle clé) et l'étape 5 (l'API redémarre avec la nouvelle
+clé), l'API en marche ne peut plus déchiffrer les configs — les webhooks et
+lectures d'intégrations sont en erreur pendant ces minutes. Faire la rotation en
+fenêtre de maintenance courte ; ces erreurs sont attendues, ce n'est pas un
+incident (l'outbox rejouera les webhooks en échec).
 
 Premier passage (chiffrement initial des lignes encore en clair) : même commande
 sans `ENCRYPTION_KEY_OLD`.

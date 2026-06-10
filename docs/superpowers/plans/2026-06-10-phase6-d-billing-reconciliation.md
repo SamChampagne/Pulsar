@@ -564,9 +564,15 @@ import { ReconcileInvoiceDto, ResolveDisputeDto } from './dto/reconcile.dto';
     return paid;
   }
 
-  /** Filtered list as CSV (expected/invoiced/variance per invoice). */
+  /** Filtered list as CSV (expected/invoiced/variance per invoice).
+   *  Own query, NOT list(): the list endpoint takes 50 for the UI — an export
+   *  silently truncated to 50 invoices would produce wrong reports. */
   async exportCsv(tenantId: string, status?: InvoiceStatus): Promise<string> {
-    const invoices = await this.list(tenantId, status);
+    const invoices = await this.prisma.invoice.findMany({
+      where: { tenantId, ...(status ? { status } : {}) },
+      orderBy: { createdAt: 'desc' },
+      include: invoiceInclude,
+    });
     const escape = (value: unknown) => {
       const s = value === null || value === undefined ? '' : String(value);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
