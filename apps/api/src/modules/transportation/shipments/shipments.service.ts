@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { LoadStatus, ShipmentStatus } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
+import { randomBytes } from 'node:crypto';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -14,7 +16,27 @@ const shipmentInclude = {
 
 @Injectable()
 export class ShipmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
+
+  /** Generates (or returns) the public read-only tracking link for this shipment. */
+  async generateTrackingLink(tenantId: string, id: string) {
+    const shipment = await this.get(tenantId, id);
+    let token = shipment.trackingToken;
+    if (!token) {
+      token = randomBytes(24).toString('base64url');
+      await this.prisma.shipment.update({ where: { id }, data: { trackingToken: token } });
+    }
+    return { url: `${this.config.get('WEB_URL', 'http://localhost:5173')}/track/${token}` };
+  }
+
+  async revokeTrackingLink(tenantId: string, id: string) {
+    await this.get(tenantId, id);
+    await this.prisma.shipment.update({ where: { id }, data: { trackingToken: null } });
+    return { revoked: true };
+  }
 
   async list(tenantId: string, query: ListQueryDto & { status?: ShipmentStatus }) {
     const { page, pageSize, skip, take } = paginationArgs(query);

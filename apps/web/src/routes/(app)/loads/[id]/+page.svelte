@@ -16,11 +16,24 @@
     proofOfDelivery: { id: string; signedByName: string | null; signedAt: string } | null;
   }
 
+  interface TenderRow {
+    id: string;
+    status: string;
+    token: string;
+    message: string | null;
+    declineReason: string | null;
+    sentAt: string;
+    expiresAt: string;
+    carrier: { id: string; name: string };
+  }
+
   interface LoadDetail {
     id: string;
     loadNumber: string;
     status: string;
     notes: string | null;
+    estimatedCost: string | null;
+    costCurrency: string | null;
     dispatchedAt: string | null;
     completedAt: string | null;
     carrier: { id: string; name: string } | null;
@@ -60,7 +73,10 @@
   let detail = $state<LoadDetail | null>(null);
   let route = $state<RouteDetail | null>(null);
   let events = $state<TimelineEvent[]>([]);
+  let tenders = $state<TenderRow[]>([]);
   let error = $state('');
+
+  const latestTender = $derived(tenders[0] ?? null);
 
   // Resource assignment form
   let carriers = $state<Option[]>([]);
@@ -93,8 +109,52 @@
       events = await api<TimelineEvent[]>('/transportation/tracking/events', {
         query: { loadId },
       });
+      tenders = await api<TenderRow[]>(`/transportation/loads/${loadId}/tenders`);
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load';
+    }
+  }
+
+  async function copyToClipboard(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied to clipboard`);
+    } catch {
+      toast.error('Could not copy — link: ' + text);
+    }
+  }
+
+  async function sendTender() {
+    try {
+      const tender = await api<TenderRow & { responseUrl: string }>(
+        `/transportation/loads/${loadId}/tender`,
+        { method: 'POST', body: { carrierId: form.carrierId || undefined } },
+      );
+      await copyToClipboard(tender.responseUrl, 'Tender link');
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to send tender');
+    }
+  }
+
+  async function cancelTender() {
+    try {
+      await api(`/transportation/loads/${loadId}/cancel-tender`, { method: 'POST' });
+      toast.success('Tender cancelled');
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to cancel tender');
+    }
+  }
+
+  async function driverLink() {
+    try {
+      const { url } = await api<{ url: string }>(`/transportation/loads/${loadId}/driver-link`, {
+        method: 'POST',
+      });
+      await copyToClipboard(url, 'Driver link');
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to create driver link');
     }
   }
 
@@ -219,13 +279,25 @@
     </div>
     <div style="display: flex; gap: 8px;">
       {#if detail.status === 'PLANNED'}
+        <button class="btn btn-secondary" onclick={sendTender}>Tender to carrier</button>
         <button class="btn" onclick={() => action('dispatch')}>Dispatch</button>
         <button class="btn btn-danger" onclick={() => action('cancel')}>Cancel</button>
+      {:else if detail.status === 'TENDERED'}
+        {#if latestTender?.status === 'ACCEPTED'}
+          <button class="btn" onclick={() => action('dispatch')}>Dispatch</button>
+        {/if}
+        {#if latestTender?.status === 'PENDING'}
+          <button class="btn btn-secondary" onclick={cancelTender}>Cancel tender</button>
+        {/if}
+        <button class="btn btn-danger" onclick={() => action('cancel')}>Cancel load</button>
       {:else if detail.status === 'DISPATCHED'}
         <button class="btn" onclick={() => action('start-transit')}>Start transit</button>
         <button class="btn btn-danger" onclick={() => action('cancel')}>Cancel</button>
       {:else if detail.status === 'IN_TRANSIT'}
         <button class="btn" onclick={() => action('complete')}>Complete (delivered)</button>
+      {/if}
+      {#if ['PLANNED', 'TENDERED', 'DISPATCHED', 'IN_TRANSIT'].includes(detail.status)}
+        <button class="btn btn-secondary" onclick={driverLink}>Driver link</button>
       {/if}
     </div>
   </div>
@@ -272,7 +344,38 @@
         {#if editable}
           <button class="btn" onclick={saveResources}>Save resources</button>
         {/if}
+        {#if detail.estimatedCost !== null}
+          <p style="margin-bottom: 0;">
+            <span class="muted">Estimated cost:</span>
+            <strong>{Number(detail.estimatedCost).toLocaleString()} {detail.costCurrency}</strong>
+          </p>
+        {/if}
       </div>
+
+      {#if latestTender}
+        <div class="card">
+          <h2 style="margin-top: 0;">Tender</h2>
+          <p style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <StatusBadge status={latestTender.status} />
+            <span>{latestTender.carrier.name}</span>
+            <span class="muted">
+              expires {new Date(latestTender.expiresAt).toLocaleString()}
+            </span>
+          </p>
+          {#if latestTender.declineReason}
+            <p class="error-text">Declined: {latestTender.declineReason}</p>
+          {/if}
+          {#if latestTender.status === 'PENDING'}
+            <button
+              class="btn btn-secondary btn-sm"
+              onclick={() =>
+                copyToClipboard(`${location.origin}/tender/${latestTender.token}`, 'Tender link')}
+            >
+              Copy carrier link
+            </button>
+          {/if}
+        </div>
+      {/if}
 
       <div class="card">
         <h2 style="margin-top: 0;">Route</h2>

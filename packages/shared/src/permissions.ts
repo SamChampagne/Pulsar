@@ -33,6 +33,7 @@ export const PERMISSIONS = {
     RATES_MANAGE: 'transportation.rates.manage',
     TRACKING_READ: 'transportation.tracking.read',
     TRACKING_WRITE: 'transportation.tracking.write',
+    ANALYTICS_READ: 'transportation.analytics.read',
   },
 } as const;
 
@@ -82,6 +83,7 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   tms(PERMISSIONS.TRANSPORTATION.RATES_MANAGE, 'Manage rates'),
   tms(PERMISSIONS.TRANSPORTATION.TRACKING_READ, 'View tracking events and PODs'),
   tms(PERMISSIONS.TRANSPORTATION.TRACKING_WRITE, 'Record tracking events and PODs'),
+  tms(PERMISSIONS.TRANSPORTATION.ANALYTICS_READ, 'View carrier scorecards and KPIs'),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);

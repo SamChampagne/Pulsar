@@ -26,12 +26,20 @@ export function clearAuth() {
   auth.set(null);
 }
 
-export function getAccessToken(): string | null {
+function readSession(): LoginResponse | null {
   if (!browser) return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as LoginResponse).accessToken : null;
+    return raw ? (JSON.parse(raw) as LoginResponse) : null;
   } catch {
     return null;
   }
+}
+
+export function getAccessToken(): string | null {
+  return readSession()?.accessToken ?? null;
+}
+
+export function getRefreshToken(): string | null {
+  return readSession()?.refreshToken ?? null;
 }

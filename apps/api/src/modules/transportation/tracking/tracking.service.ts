@@ -45,7 +45,8 @@ export class TrackingService {
     });
   }
 
-  async createPod(tenantId: string, userId: string, dto: CreatePodDto) {
+  /** `userId` is absent when the POD comes from the public driver link. */
+  async createPod(tenantId: string, userId: string | undefined, dto: CreatePodDto) {
     const shipment = await this.prisma.shipment.findFirst({
       where: { id: dto.shipmentId, tenantId },
       include: { proofOfDelivery: true },

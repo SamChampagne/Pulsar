@@ -1,19 +1,24 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
   LoadStatus,
   ShipmentStatus,
+  TenderStatus,
   TrackingEventType,
   TransportOrderStatus,
   canTransitionLoad,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
+import { randomBytes } from 'node:crypto';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { WebhooksService } from '../../../core/integrations/webhooks.service';
+import { LoadCostService } from './load-cost.service';
 import { AssignLoadResourcesDto, CreateLoadDto } from './dto/load.dto';
 
 const loadInclude = {
@@ -43,6 +48,9 @@ export class LoadsService {
     private readonly sequences: SequencesService,
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
+    private readonly cost: LoadCostService,
+    private readonly webhooks: WebhooksService,
+    private readonly config: ConfigService,
   ) {}
 
   async list(tenantId: string, query: ListQueryDto & { status?: LoadStatus }) {
@@ -104,14 +112,14 @@ export class LoadsService {
       this.ownership.assertOwnedIfSet('trailer', dto.trailerId, tenantId),
       this.ownership.assertOwnedIfSet('rate', dto.rateId, tenantId),
     ]);
-    const updated = await this.prisma.load.update({
+    await this.prisma.load.update({
       where: { id },
       data: {
         ...dto,
         status: load.status === LoadStatus.OPEN ? LoadStatus.PLANNED : undefined,
       },
-      include: loadInclude,
     });
+    await this.cost.recompute(tenantId, id);
     await this.audit.log({
       tenantId,
       userId,
@@ -120,7 +128,36 @@ export class LoadsService {
       entityId: id,
       after: dto,
     });
-    return updated;
+    return this.get(tenantId, id);
+  }
+
+  /**
+   * Generates (or returns) the public driver link for mobile stop check-in/out
+   * and POD capture. Revocable at any time.
+   */
+  async generateDriverLink(tenantId: string, id: string) {
+    const load = await this.get(tenantId, id);
+    const allowed: LoadStatus[] = [
+      LoadStatus.PLANNED,
+      LoadStatus.TENDERED,
+      LoadStatus.DISPATCHED,
+      LoadStatus.IN_TRANSIT,
+    ];
+    if (!allowed.includes(load.status as LoadStatus)) {
+      throw new BadRequestException('Driver links are only available for active loads');
+    }
+    let token = load.driverToken;
+    if (!token) {
+      token = randomBytes(24).toString('base64url');
+      await this.prisma.load.update({ where: { id }, data: { driverToken: token } });
+    }
+    return { url: `${this.config.get('WEB_URL', 'http://localhost:5173')}/driver/${token}` };
+  }
+
+  async revokeDriverLink(tenantId: string, id: string) {
+    await this.get(tenantId, id);
+    await this.prisma.load.update({ where: { id }, data: { driverToken: null } });
+    return { revoked: true };
   }
 
   /** Dispatch: load + its shipments go to DISPATCHED, parent orders to IN_EXECUTION. */
@@ -132,6 +169,14 @@ export class LoadsService {
     }
     if (load.shipments.length === 0) {
       throw new BadRequestException('Cannot dispatch a load without shipments');
+    }
+    if (load.status === LoadStatus.TENDERED) {
+      const accepted = await this.prisma.tender.findFirst({
+        where: { tenantId, loadId: id, status: TenderStatus.ACCEPTED },
+      });
+      if (!accepted) {
+        throw new BadRequestException('Cannot dispatch: the tender has not been accepted yet');
+      }
     }
 
     const orderIds = [...new Set(load.shipments.map((s) => s.transportOrderId))];
@@ -160,6 +205,11 @@ export class LoadsService {
       }),
     ]);
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.DISPATCHED);
+    await this.webhooks.emit(tenantId, 'load.dispatched', {
+      loadId: id,
+      loadNumber: load.loadNumber,
+      carrierId: load.carrierId,
+    });
     return updated;
   }
 
@@ -234,6 +284,11 @@ export class LoadsService {
     }
 
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.COMPLETED);
+    await this.webhooks.emit(tenantId, 'load.completed', {
+      loadId: id,
+      loadNumber: load.loadNumber,
+      carrierId: load.carrierId,
+    });
     return this.get(tenantId, id);
   }
 
@@ -250,6 +305,11 @@ export class LoadsService {
       this.prisma.shipment.updateMany({
         where: { loadId: id },
         data: { status: ShipmentStatus.PENDING, loadId: null },
+      }),
+      // Any pending tender dies with the load.
+      this.prisma.tender.updateMany({
+        where: { loadId: id, status: TenderStatus.PENDING },
+        data: { status: TenderStatus.CANCELLED, respondedAt: new Date() },
       }),
     ]);
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.CANCELLED);

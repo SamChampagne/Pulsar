@@ -4,9 +4,17 @@ Base URL: `/api/v1`. OpenAPI/Swagger served at `/api/docs`.
 
 ## Authentication
 
-- `POST /auth/login` → `{ accessToken, user, tenant }`. All other endpoints require
-  `Authorization: Bearer <token>` unless marked `@Public()`.
+- `POST /auth/login` → `{ accessToken (15 min), refreshToken (30 d), user, tenant }`.
+- `POST /auth/refresh` rotates the refresh token and returns a new pair (permissions re-read
+  from the DB). `POST /auth/logout` revokes it.
+- All other endpoints require `Authorization: Bearer <accessToken>` unless marked `@Public()`.
 - The JWT carries `sub` (user id), `tenantId`, `email`, `permissions[]`.
+
+## Public namespace
+
+`/public/**` endpoints are token-authenticated (capability links), not JWT-authenticated:
+tender response, shipment tracking, driver stop/POD operations. The token in the URL is the
+credential; payloads never expose tenant internals. See [collaboration.md](./collaboration.md).
 
 ## Resources
 

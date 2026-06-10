@@ -23,3 +23,4 @@ packages/database/generated/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+storage/

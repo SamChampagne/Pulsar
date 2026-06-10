@@ -100,6 +100,17 @@ describe('Load workflow', () => {
     expect(canTransitionLoad(LoadStatus.PLANNED, LoadStatus.OPEN)).toBe(true);
   });
 
+  it('supports the tender detour: PLANNED → TENDERED → DISPATCHED', () => {
+    expect(canTransitionLoad(LoadStatus.PLANNED, LoadStatus.TENDERED)).toBe(true);
+    expect(canTransitionLoad(LoadStatus.TENDERED, LoadStatus.DISPATCHED)).toBe(true);
+    expect(canTransitionLoad(LoadStatus.TENDERED, LoadStatus.PLANNED)).toBe(true);
+  });
+
+  it('rejects tendering an OPEN load or re-tendering after dispatch', () => {
+    expect(canTransitionLoad(LoadStatus.OPEN, LoadStatus.TENDERED)).toBe(false);
+    expect(canTransitionLoad(LoadStatus.DISPATCHED, LoadStatus.TENDERED)).toBe(false);
+  });
+
   it('rejects cancelling once in transit', () => {
     expect(canTransitionLoad(LoadStatus.IN_TRANSIT, LoadStatus.CANCELLED)).toBe(false);
   });

@@ -45,16 +45,30 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [x] POD capture form (load detail, per delivered shipment)
 - [x] Toast notifications for action feedback
 
-## Phase 2 — Operational depth
+## Phase 2 — Collaboration & cost
 
+- [x] Tendering: PLANNED→TENDERED workflow, Tender entity, public accept/decline endpoints +
+      carrier page (`/tender/[token]`), expiry, dispatch gated on acceptance
+- [x] Public tracking link per shipment (`/track/[token]`) + share/revoke endpoints
+- [x] Driver mobile page (`/driver/[token]`): stop arrive/depart, POD + photo, revocable link
+- [x] Cost engine: `calculateRateCost` (shared, unit-tested) + `LoadCostService` recompute hooks
+- [x] Carrier scorecard endpoint + Analytics page (`transportation.analytics.read`)
+- [x] Outbound webhooks v0 (HMAC signature, tender/load events)
+- [x] Refresh tokens (rotation, hashed at rest) + transparent refresh in the web client + logout
+- [x] File storage: local/S3 drivers behind FILE_STORAGE, upload/download endpoints, POD photos
+- [x] E2E suite for the collaboration layer (7 tests)
+
+## Phase 2.5 — Operational depth
+
+- [ ] Email notification channel (sends tender links automatically — `tenders.service.ts` TODO)
 - [ ] Order splitting (1 order → N shipments)
-- [ ] Multi-stop load planning UI
-- [ ] Rate selection + cost estimate at load level
-- [ ] S3-compatible document storage + pre-signed URLs (`documents.service.ts` TODO)
-- [ ] Email notification channel (`notifications.service.ts` TODO)
-- [ ] Refresh tokens + password reset + user invitation flow
+- [ ] Multi-stop load planning UI + manual route editor
+- [ ] Tender preference lists per lane; auto-retender on decline/expiry
+- [ ] Password reset + user invitation flow
 - [ ] Cache tenant modules & permissions (drop per-request DB hit in `ModulesGuard`)
+- [ ] Webhook outbox with retries; inbound API keys
 - [ ] Audit interceptor (declarative auditing instead of manual service calls)
+- [ ] Pre-signed URLs for direct-to-S3 uploads (skip the API for large files)
 
 ## Phase 3 — Platform & integrations
 

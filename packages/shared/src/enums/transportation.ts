@@ -27,9 +27,19 @@ export enum ShipmentStatus {
 export enum LoadStatus {
   OPEN = 'OPEN',
   PLANNED = 'PLANNED',
+  TENDERED = 'TENDERED',
   DISPATCHED = 'DISPATCHED',
   IN_TRANSIT = 'IN_TRANSIT',
   COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+/** Lifecycle of a carrier tender (offer to haul a load). */
+export enum TenderStatus {
+  PENDING = 'PENDING',
+  ACCEPTED = 'ACCEPTED',
+  DECLINED = 'DECLINED',
+  EXPIRED = 'EXPIRED',
   CANCELLED = 'CANCELLED',
 }
 

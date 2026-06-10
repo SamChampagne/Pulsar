@@ -3,6 +3,7 @@ import { LoadStatus, StopStatus, TrackingEventType } from '@pulsar/shared';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { LoadCostService } from '../loads/load-cost.service';
 import { CreateRouteDto } from './dto/route.dto';
 
 const routeInclude = {
@@ -18,6 +19,7 @@ export class RoutesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ownership: OwnershipService,
+    private readonly cost: LoadCostService,
   ) {}
 
   list(tenantId: string, _query: ListQueryDto) {
@@ -56,7 +58,7 @@ export class RoutesService {
 
     // Rebuild from scratch — the route is fully owned by its load.
     await this.prisma.route.deleteMany({ where: { loadId: dto.loadId, tenantId } });
-    return this.prisma.route.create({
+    const route = await this.prisma.route.create({
       data: {
         tenantId,
         loadId: dto.loadId,
@@ -76,14 +78,20 @@ export class RoutesService {
       },
       include: routeInclude,
     });
+    // Distance may have changed → refresh the PER_KM cost estimate.
+    await this.cost.recompute(tenantId, dto.loadId);
+    return route;
   }
 
-  /** Records arrival/departure at a stop and emits the matching tracking event. */
+  /**
+   * Records arrival/departure at a stop and emits the matching tracking event.
+   * `userId` is absent when the update comes from the public driver link.
+   */
   async updateStopStatus(
     tenantId: string,
     stopId: string,
     status: StopStatus,
-    userId: string,
+    userId?: string,
   ) {
     const stop = await this.prisma.stop.findFirst({
       where: { id: stopId, tenantId },

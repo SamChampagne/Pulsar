@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
+import { DocumentsModule } from '../../core/documents/documents.module';
+import { IntegrationsModule } from '../../core/integrations/integrations.module';
 import { CustomersController } from './customers/customers.controller';
 import { CustomersService } from './customers/customers.service';
 import { LocationsController } from './locations/locations.controller';
@@ -24,6 +26,12 @@ import { RoutesController } from './routes/routes.controller';
 import { RoutesService } from './routes/routes.service';
 import { TrackingController } from './tracking/tracking.controller';
 import { TrackingService } from './tracking/tracking.service';
+import { TendersService } from './tenders/tenders.service';
+import { LoadCostService } from './loads/load-cost.service';
+import { PublicLinksController } from './public/public-links.controller';
+import { PublicLinksService } from './public/public-links.service';
+import { AnalyticsController } from './analytics/analytics.controller';
+import { AnalyticsService } from './analytics/analytics.service';
 
 /**
  * Transportation Management module (TMS).
@@ -31,7 +39,7 @@ import { TrackingService } from './tracking/tracking.service';
  * tenants without the module enabled get a 403 from ModulesGuard.
  */
 @Module({
-  imports: [AuditLogsModule],
+  imports: [AuditLogsModule, DocumentsModule, IntegrationsModule],
   controllers: [
     CustomersController,
     LocationsController,
@@ -45,6 +53,9 @@ import { TrackingService } from './tracking/tracking.service';
     LoadsController,
     RoutesController,
     TrackingController,
+    AnalyticsController,
+    // Public, token-authenticated endpoints (tender response, tracking, driver)
+    PublicLinksController,
   ],
   providers: [
     CustomersService,
@@ -59,6 +70,10 @@ import { TrackingService } from './tracking/tracking.service';
     LoadsService,
     RoutesService,
     TrackingService,
+    TendersService,
+    LoadCostService,
+    PublicLinksService,
+    AnalyticsService,
   ],
 })
 export class TransportationModule {}

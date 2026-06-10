@@ -21,6 +21,8 @@ export interface AuthUser {
 
 export interface LoginResponse {
   accessToken: string;
+  /** Opaque rotating token — exchange at POST /auth/refresh for a new pair. */
+  refreshToken: string;
   user: AuthUser;
   tenant: {
     id: string;

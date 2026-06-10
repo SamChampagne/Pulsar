@@ -16,6 +16,7 @@
 | [data-model.md](./data-model.md)               | Domain entities and the TMS workflow              |
 | [multi-tenancy.md](./multi-tenancy.md)         | Tenant isolation strategy and rules               |
 | [module-system.md](./module-system.md)         | Per-tenant module activation                      |
+| [collaboration.md](./collaboration.md)         | Tokenized public links (tender/tracking/driver), refresh tokens, storage, webhooks, cost engine |
 | [api-conventions.md](./api-conventions.md)     | REST conventions, pagination, errors, auth        |
 
 Product-level documents live at the repository root: [PRODUCT_SPEC.md](../PRODUCT_SPEC.md),

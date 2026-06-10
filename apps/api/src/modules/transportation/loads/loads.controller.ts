@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { LoadStatus, MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
@@ -7,8 +7,26 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
+import { IsInt, IsOptional as IsOpt, IsString, Max, Min } from 'class-validator';
+import { TendersService } from '../tenders/tenders.service';
 import { AssignLoadResourcesDto, CreateLoadDto } from './dto/load.dto';
 import { LoadsService } from './loads.service';
+
+class CreateTenderDto {
+  @IsOpt()
+  @IsString()
+  carrierId?: string;
+
+  @IsOpt()
+  @IsString()
+  message?: string;
+
+  @IsOpt()
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  expiresInHours?: number;
+}
 
 class LoadListQueryDto extends ListQueryDto {
   @IsOptional()
@@ -21,7 +39,10 @@ class LoadListQueryDto extends ListQueryDto {
 @RequireModule(MODULE_KEYS.TRANSPORTATION)
 @Controller('transportation/loads')
 export class LoadsController {
-  constructor(private readonly loads: LoadsService) {}
+  constructor(
+    private readonly loads: LoadsService,
+    private readonly tenders: TendersService,
+  ) {}
 
   @Get()
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_READ)
@@ -69,5 +90,39 @@ export class LoadsController {
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.EXECUTION_MANAGE)
   cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.loads.cancel(user.tenantId, user.id, id);
+  }
+
+  // --- Carrier tendering ------------------------------------------------------
+
+  @Get(':id/tenders')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_READ)
+  listTenders(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.tenders.listForLoad(user.tenantId, id);
+  }
+
+  @Post(':id/tender')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
+  tender(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: CreateTenderDto) {
+    return this.tenders.create(user.tenantId, user.id, id, dto);
+  }
+
+  @Post(':id/cancel-tender')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
+  cancelTender(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.tenders.cancel(user.tenantId, user.id, id);
+  }
+
+  // --- Driver link --------------------------------------------------------------
+
+  @Post(':id/driver-link')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.EXECUTION_MANAGE)
+  driverLink(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.loads.generateDriverLink(user.tenantId, id);
+  }
+
+  @Delete(':id/driver-link')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.EXECUTION_MANAGE)
+  revokeDriverLink(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.loads.revokeDriverLink(user.tenantId, id);
   }
 }

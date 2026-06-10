@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { MODULE_KEYS, PERMISSIONS, ShipmentStatus } from '@pulsar/shared';
@@ -49,5 +49,18 @@ export class ShipmentsController {
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
   removeFromLoad(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.shipments.removeFromLoad(user.tenantId, id);
+  }
+
+  /** Public tracking link management (share with the end customer). */
+  @Post(':id/share')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.TRACKING_WRITE)
+  share(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.shipments.generateTrackingLink(user.tenantId, id);
+  }
+
+  @Delete(':id/share')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.TRACKING_WRITE)
+  revokeShare(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.shipments.revokeTrackingLink(user.tenantId, id);
   }
 }

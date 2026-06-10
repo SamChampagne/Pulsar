@@ -79,13 +79,21 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
    any other way.
 9. Every foreign key accepted in a write payload must be checked with
    `OwnershipService.assertOwned(IfSet)` before persisting.
+10. Public (`/public/**`) payloads must never expose `tenantId` or internal references — build
+    explicit projections (see docs/collaboration.md). Capability tokens come from
+    `randomBytes(24).toString('base64url')`.
+11. Anything that changes a load's rate, route distance or shipment mix must call
+    `LoadCostService.recompute()`.
+12. Files go through `DocumentsService.upload/download` (FILE_STORAGE driver) — never touch the
+    filesystem or S3 directly from feature code.
 
 ## Known gotchas / debt (don't "fix" silently, see TODO.md)
 
-- Permissions are embedded in the JWT → role changes apply at next login.
-- `ModulesGuard` hits the DB per request (caching planned in phase 2).
-- Documents are metadata-only (no binary storage yet).
+- Permissions are embedded in the JWT → role changes apply at next **refresh** (15 min max).
+- `ModulesGuard` hits the DB per request (caching planned).
+- Tender links are copied to the clipboard — no email channel yet to send them automatically.
+- Webhooks are fire-and-forget (no outbox/retries yet).
 - Web route building is v0: stops auto-generated from shipments (pickups then deliveries);
   manual reordering is a phase-1 leftover.
-- The e2e suite (`apps/api/test/workflow.e2e-spec.ts`) needs a running, seeded database; it
-  creates its own master data with unique codes so reruns are safe.
+- The e2e suites (`apps/api/test/*.e2e-spec.ts`) need a running, seeded database; they create
+  their own master data with unique codes so reruns are safe.

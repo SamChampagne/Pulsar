@@ -5,5 +5,6 @@ export * from './enums/transportation';
 export * from './workflows/transport-order.workflow';
 export * from './workflows/shipment.workflow';
 export * from './workflows/load.workflow';
+export * from './cost/rate-cost';
 export * from './types/api';
 export * from './types/auth';

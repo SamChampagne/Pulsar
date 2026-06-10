@@ -2,7 +2,8 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { MODULE_KEYS } from '@pulsar/shared';
-  import { auth, clearAuth } from '$lib/stores/auth';
+  import { api } from '$lib/api/client';
+  import { auth, clearAuth, getRefreshToken } from '$lib/stores/auth';
 
   let { children } = $props();
 
@@ -23,6 +24,7 @@
     { href: '/customers', label: 'Customers' },
     { href: '/carriers', label: 'Carriers' },
   ];
+  const tmsAnalyticsNav = [{ href: '/analytics', label: 'Analytics' }];
   const adminNav = [{ href: '/settings/modules', label: 'Modules' }];
 
   function isActive(href: string): boolean {
@@ -30,6 +32,10 @@
   }
 
   function logout() {
+    const refreshToken = getRefreshToken();
+    if (refreshToken) {
+      void api('/auth/logout', { method: 'POST', body: { refreshToken } }).catch(() => undefined);
+    }
     clearAuth();
     void goto('/login');
   }
@@ -52,6 +58,9 @@
         {#if hasTransportation}
           <div class="nav-section">Transportation</div>
           {#each tmsNav as item (item.href)}
+            <a href={item.href} class:active={isActive(item.href)}>{item.label}</a>
+          {/each}
+          {#each tmsAnalyticsNav as item (item.href)}
             <a href={item.href} class:active={isActive(item.href)}>{item.label}</a>
           {/each}
         {/if}

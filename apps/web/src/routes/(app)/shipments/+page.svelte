@@ -73,6 +73,18 @@
     }
   }
 
+  async function shareTracking(shipment: ShipmentRow) {
+    try {
+      const { url } = await api<{ url: string }>(`/transportation/shipments/${shipment.id}/share`, {
+        method: 'POST',
+      });
+      await navigator.clipboard.writeText(url);
+      toast.success(`Tracking link for ${shipment.shipmentNumber} copied`);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to create tracking link');
+    }
+  }
+
   async function removeFromLoad(shipment: ShipmentRow) {
     try {
       await api(`/transportation/shipments/${shipment.id}/remove-load`, { method: 'POST' });
@@ -162,6 +174,9 @@
                 Remove from load
               </button>
             {/if}
+            <button class="btn btn-secondary btn-sm" onclick={() => shareTracking(shipment)}>
+              Share tracking
+            </button>
           </td>
         </tr>
       {:else}

@@ -30,7 +30,8 @@ souscrit ; les futurs modules : Flotte, Cour, WMS léger, Portail client, Analyt
 | **Driver / Vehicle / Trailer** | Les ressources d'exécution. Un chauffeur sans transporteur = flotte interne. |
 | **Rate**            | Une entente tarifaire (forfait, au km, au 100 lb, à la palette, spot), côté achat (transporteur) ou vente (client). |
 | **Tracking Event**  | Un événement de suivi horodaté : réparti, arrivé à l'arrêt, en retard, livré… |
-| **POD** (Proof of Delivery) | La preuve de livraison : qui a signé, quand, remarques. Une seule par shipment. |
+| **POD** (Proof of Delivery) | La preuve de livraison : qui a signé, quand, remarques, photo. Une seule par shipment. |
+| **Tender**          | L'offre de transport envoyée au transporteur : un lien lui permet d'accepter ou refuser le voyage, sans compte Pulsar. |
 
 ## 3. Qui fait quoi (rôles types)
 
@@ -88,6 +89,20 @@ renvoie au bassin.
 2. **Route** : « Generate route from shipments » construit l'itinéraire (cueillettes puis
    livraisons). *(v1 : réordonnancement manuel à venir.)*
 
+### Étape 3bis — Offrir le voyage au transporteur (tender)
+
+Plutôt que d'assigner unilatéralement, le planificateur peut **offrir** le voyage :
+
+1. Sur un load PLANNED : **Tender to carrier** — le load passe à **TENDERED** et un **lien de
+   réponse** est copié (à transmettre au transporteur ; envoi courriel automatique à venir).
+2. Le transporteur ouvre le lien (aucun compte requis) : il voit le résumé du voyage (arrêts,
+   poids, palettes, distance) et choisit **Accept** ou **Decline** (avec motif).
+3. **Accepté** → le répartiteur peut dispatcher. **Refusé ou expiré** (48 h par défaut) → le load
+   revient à PLANNED pour offrir à un autre transporteur. L'offre peut aussi être **annulée**
+   tant qu'elle est sans réponse.
+
+Le tableau de bord Analytics comptabilise les taux d'acceptation par transporteur.
+
 ### Étape 4 — Exécuter (Répartiteur)
 
 Toujours sur le détail du load :
@@ -102,11 +117,27 @@ Toujours sur le détail du load :
   tous les shipments sont livrés passe automatiquement à **COMPLETED**.
 - **Cancel** (avant le transit) : les shipments retournent au bassin de planification.
 
+### Étape 4bis — Le chauffeur et le client final (sans compte)
+
+- **Lien chauffeur** (bouton *Driver link* sur le load) : une page mobile où le chauffeur marque
+  ses arrivées/départs aux arrêts et capture le POD (signataire, remarques, **photo**). Le lien
+  est révocable à tout moment.
+- **Lien de suivi** (bouton *Share tracking* sur un shipment) : une page publique en lecture
+  seule — statut, jalons prévus/réels, historique, preuve de livraison — à transmettre au client
+  final, comme un suivi de colis. Révocable également.
+
 ### Étape 5 — Prouver et fermer
 
-- **Capture POD** (détail du load, par shipment livré) : nom du signataire, remarques. Une seule
-  preuve par shipment — une deuxième tentative est refusée.
+- **Capture POD** : par le chauffeur (page mobile) ou par le répartiteur (détail du load) —
+  signataire, remarques, photo. Une seule preuve par shipment, la deuxième tentative est refusée.
 - Sur l'ordre **COMPLETED**, **Close** ferme le dossier (statut terminal).
+
+### Le coût estimé
+
+Dès qu'un **tarif** est affecté au load, Pulsar calcule le coût estimé : montant de base selon le
+type (forfait, au km × distance de la route, au 100 lb × poids, à la palette × palettes), plus la
+surcharge carburant (%), avec respect du minimum facturable. Le montant s'affiche dans la carte
+Resources du load et alimente la colonne « Est. spend » du scorecard.
 
 ## 5. Règles de gestion à connaître
 
@@ -164,7 +195,8 @@ stateDiagram-v2
 | --------- | --------------------------------------------------------------------------- |
 | Order     | DRAFT → CONFIRMED → PLANNED → IN_EXECUTION → COMPLETED → CLOSED (+ CANCELLED) |
 | Shipment  | PENDING → PLANNED → DISPATCHED → IN_TRANSIT → DELIVERED → CLOSED (+ CANCELLED) |
-| Load      | OPEN → PLANNED → DISPATCHED → IN_TRANSIT → COMPLETED (+ CANCELLED)          |
+| Load      | OPEN → PLANNED (→ TENDERED) → DISPATCHED → IN_TRANSIT → COMPLETED (+ CANCELLED) |
+| Tender    | PENDING → ACCEPTED / DECLINED / EXPIRED / CANCELLED                         |
 | Stop      | PENDING → ARRIVED → DEPARTED / COMPLETED (+ SKIPPED)                        |
 
 ## 7. Préparer un nouveau dossier : checklist des données de base
@@ -183,7 +215,9 @@ Avant de créer le premier ordre d'un client, vérifier que ces données existen
   sophistiquée — on peut toutefois mettre plusieurs shipments dans un même load).
 - Route générée automatiquement (cueillettes puis livraisons) : pas encore de réordonnancement
   manuel ni d'heures planifiées par arrêt dans l'écran.
-- Pas encore : pièces jointes (fichiers réels), notifications courriel, portail client, facturation.
-- Le tarif affecté au load est informatif : pas encore de calcul de coût automatique.
+- Le lien de tender est **copié** dans le presse-papier — l'envoi courriel automatique au
+  transporteur viendra avec le canal de notifications.
+- Tender séquentiel manuel : pas encore de liste de préférence par voie ni de relance automatique.
+- Pas encore : portail client complet (le lien de suivi en est l'embryon), facturation, EDI.
 
 La feuille de route détaillée : [ROADMAP.md](../ROADMAP.md).

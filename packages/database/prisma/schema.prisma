@@ -51,6 +51,7 @@ model Tenant {
   transportOrders   TransportOrder[]
   shipments         Shipment[]
   loads             Load[]
+  tenders           Tender[]
   routes            Route[]
   stops             Stop[]
   rates             Rate[]
@@ -91,6 +92,7 @@ model User {
 
   tenant                 Tenant            @relation(fields: [tenantId], references: [id])
   roles                  UserRole[]
+  refreshTokens          RefreshToken[]
   auditLogs              AuditLog[]
   notifications          Notification[]
   uploadedDocuments      Document[]
@@ -101,6 +103,21 @@ model User {
   @@unique([tenantId, email])
   @@index([tenantId])
   @@map("users")
+}
+
+// Rotating refresh tokens (only the SHA-256 hash is stored).
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
 }
 
 model Role {
@@ -371,6 +388,7 @@ model Carrier {
   trailers Trailer[]
   loads    Load[]
   rates    Rate[]
+  tenders  Tender[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -537,6 +555,8 @@ model Shipment {
   shipmentNumber        String
   transportOrderId      String
   status                ShipmentStatus @default(PENDING)
+  // Public share token: anyone with it can view the read-only tracking page.
+  trackingToken         String?        @unique
   originLocationId      String
   destinationLocationId String
   loadId                String?
@@ -568,6 +588,7 @@ model Shipment {
 enum LoadStatus {
   OPEN
   PLANNED
+  TENDERED
   DISPATCHED
   IN_TRANSIT
   COMPLETED
@@ -576,20 +597,25 @@ enum LoadStatus {
 
 // Physical consolidation assigned to a carrier/vehicle (SAP TM "freight order").
 model Load {
-  id           String     @id @default(cuid())
-  tenantId     String
-  loadNumber   String
-  status       LoadStatus @default(OPEN)
-  carrierId    String?
-  driverId     String?
-  vehicleId    String?
-  trailerId    String?
-  rateId       String?
-  dispatchedAt DateTime?
-  completedAt  DateTime?
-  notes        String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id            String     @id @default(cuid())
+  tenantId      String
+  loadNumber    String
+  status        LoadStatus @default(OPEN)
+  carrierId     String?
+  driverId      String?
+  vehicleId     String?
+  trailerId     String?
+  rateId        String?
+  // Estimated buy-side cost computed from the assigned rate (see calculateRateCost).
+  estimatedCost Decimal?   @db.Decimal(12, 2)
+  costCurrency  String?
+  // Public driver token: grants stop check-in/out + POD capture on this load only.
+  driverToken   String?    @unique
+  dispatchedAt  DateTime?
+  completedAt   DateTime?
+  notes         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 
   tenant         Tenant          @relation(fields: [tenantId], references: [id])
   carrier        Carrier?        @relation(fields: [carrierId], references: [id])
@@ -600,10 +626,42 @@ model Load {
   shipments      Shipment[]
   route          Route?
   trackingEvents TrackingEvent[]
+  tenders        Tender[]
 
   @@unique([tenantId, loadNumber])
   @@index([tenantId, status])
   @@map("loads")
+}
+
+enum TenderStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CANCELLED
+}
+
+// Offer sent to a carrier to haul a load. The carrier responds through a
+// public tokenized link — no Pulsar account required.
+model Tender {
+  id            String       @id @default(cuid())
+  tenantId      String
+  loadId        String
+  carrierId     String
+  status        TenderStatus @default(PENDING)
+  token         String       @unique
+  message       String?
+  declineReason String?
+  expiresAt     DateTime
+  sentAt        DateTime     @default(now())
+  respondedAt   DateTime?
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  load    Load    @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  carrier Carrier @relation(fields: [carrierId], references: [id])
+
+  @@index([tenantId, loadId])
+  @@map("tenders")
 }
 
 // Ordered stop sequence for a load.
