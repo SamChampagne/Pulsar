@@ -50,4 +50,16 @@ export class IntegrationsService {
       },
     });
   }
+
+  async listDeliveries(tenantId: string, integrationId: string) {
+    const integration = await this.prisma.integration.findFirst({
+      where: { id: integrationId, tenantId },
+    });
+    if (!integration) throw new NotFoundException('Integration not found');
+    return this.prisma.webhookDelivery.findMany({
+      where: { tenantId, integrationId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+  }
 }

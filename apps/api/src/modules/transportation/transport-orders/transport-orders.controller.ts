@@ -7,7 +7,11 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
-import { CreateTransportOrderDto, UpdateTransportOrderDto } from './dto/transport-order.dto';
+import {
+  CreateTransportOrderDto,
+  PlanTransportOrderDto,
+  UpdateTransportOrderDto,
+} from './dto/transport-order.dto';
 import { TransportOrdersService } from './transport-orders.service';
 
 class OrderListQueryDto extends ListQueryDto {
@@ -55,8 +59,8 @@ export class TransportOrdersController {
 
   @Post(':id/plan')
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
-  plan(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.orders.plan(user.tenantId, user.id, id);
+  plan(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: PlanTransportOrderDto) {
+    return this.orders.plan(user.tenantId, user.id, id, dto);
   }
 
   @Post(':id/cancel')

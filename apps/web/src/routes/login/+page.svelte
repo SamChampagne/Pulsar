@@ -57,6 +57,9 @@
     <button class="btn" type="submit" disabled={loading} style="width: 100%; justify-content: center;">
       {loading ? 'Signing in…' : 'Sign in'}
     </button>
+    <p style="text-align: center; margin-bottom: 0;">
+      <a href="/forgot-password" class="muted" style="font-size: 12px;">Forgot password?</a>
+    </p>
   </form>
 </div>
 

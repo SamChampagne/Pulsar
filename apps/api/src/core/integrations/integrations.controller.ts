@@ -57,4 +57,11 @@ export class IntegrationsController {
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateIntegrationDto) {
     return this.integrations.update(user.tenantId, id, dto);
   }
+
+  /** Recent webhook deliveries of an integration (outbox audit/debugging). */
+  @Get(':id/deliveries')
+  @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_READ)
+  deliveries(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.integrations.listDeliveries(user.tenantId, id);
+  }
 }

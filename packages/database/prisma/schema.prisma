@@ -41,6 +41,7 @@ model Tenant {
   documents         Document[]
   notifications     Notification[]
   integrations      Integration[]
+  webhookDeliveries WebhookDelivery[]
   modules           TenantModule[]
   customers         Customer[]
   locations         Location[]
@@ -94,6 +95,7 @@ model User {
   tenant                 Tenant            @relation(fields: [tenantId], references: [id])
   roles                  UserRole[]
   refreshTokens          RefreshToken[]
+  actionTokens           UserActionToken[]
   auditLogs              AuditLog[]
   notifications          Notification[]
   uploadedDocuments      Document[]
@@ -104,6 +106,27 @@ model User {
   @@unique([tenantId, email])
   @@index([tenantId])
   @@map("users")
+}
+
+enum UserActionTokenKind {
+  INVITATION
+  PASSWORD_RESET
+}
+
+// One-shot tokens for invitation acceptance and password resets (hash at rest).
+model UserActionToken {
+  id        String              @id @default(cuid())
+  userId    String
+  kind      UserActionTokenKind
+  tokenHash String              @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_action_tokens")
 }
 
 // Rotating refresh tokens (only the SHA-256 hash is stored).
@@ -258,11 +281,41 @@ model Integration {
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant     Tenant            @relation(fields: [tenantId], references: [id])
+  deliveries WebhookDelivery[]
 
   @@unique([tenantId, key])
   @@index([tenantId])
   @@map("integrations")
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+// Durable outbox for outbound webhooks: retried with backoff until delivered
+// or the attempt budget is exhausted.
+model WebhookDelivery {
+  id            String                @id @default(cuid())
+  tenantId      String
+  integrationId String
+  event         String
+  payload       Json
+  status        WebhookDeliveryStatus @default(PENDING)
+  attempts      Int                   @default(0)
+  nextAttemptAt DateTime              @default(now())
+  lastError     String?
+  deliveredAt   DateTime?
+  createdAt     DateTime              @default(now())
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([tenantId, integrationId, createdAt])
+  @@map("webhook_deliveries")
 }
 
 // Platform module catalog (core, transportation, fleet, ...).

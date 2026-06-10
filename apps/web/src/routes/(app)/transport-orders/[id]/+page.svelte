@@ -29,6 +29,35 @@
   let events = $state<TimelineEvent[]>([]);
   let error = $state('');
 
+  // Plan-with-split form
+  let showPlanForm = $state(false);
+  let splitRows = $state<{ weightKg: string; palletCount: string }[]>([
+    { weightKg: '', palletCount: '' },
+  ]);
+
+  async function submitPlan(event: SubmitEvent) {
+    event.preventDefault();
+    const meaningful = splitRows.filter((r) => r.weightKg !== '' || r.palletCount !== '');
+    const body =
+      splitRows.length > 1 || meaningful.length > 0
+        ? {
+            shipments: splitRows.map((r) => ({
+              weightKg: r.weightKg === '' ? undefined : Number(r.weightKg),
+              palletCount: r.palletCount === '' ? undefined : Number(r.palletCount),
+            })),
+          }
+        : {};
+    try {
+      await api(`/transportation/transport-orders/${orderId}/plan`, { method: 'POST', body });
+      toast.success(`Order planned (${splitRows.length} shipment${splitRows.length > 1 ? 's' : ''})`);
+      showPlanForm = false;
+      splitRows = [{ weightKg: '', palletCount: '' }];
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to plan');
+    }
+  }
+
   async function load() {
     try {
       order = await api<OrderDetail>(`/transportation/transport-orders/${orderId}`);
@@ -76,13 +105,52 @@
         <button class="btn" onclick={() => action('confirm')}>Confirm</button>
         <button class="btn btn-danger" onclick={() => action('cancel')}>Cancel</button>
       {:else if order.status === 'CONFIRMED'}
-        <button class="btn" onclick={() => action('plan')}>Plan</button>
+        <button class="btn" onclick={() => (showPlanForm = !showPlanForm)}>Plan…</button>
         <button class="btn btn-danger" onclick={() => action('cancel')}>Cancel</button>
       {:else if order.status === 'COMPLETED'}
         <button class="btn" onclick={() => action('close')}>Close</button>
       {/if}
     </div>
   </div>
+
+  {#if showPlanForm}
+    <form class="card" style="margin-bottom: 16px;" onsubmit={submitPlan}>
+      <h2 style="margin-top: 0;">Plan — split into shipments</h2>
+      <p class="muted">
+        One shipment per row. Leave a single empty row to create one shipment with the full order
+        quantities.
+      </p>
+      {#each splitRows as row, index (index)}
+        <div class="split-row">
+          <span class="muted">#{index + 1}</span>
+          <input type="number" min="0" placeholder="Weight (kg)" bind:value={row.weightKg} />
+          <input type="number" min="0" placeholder="Pallets" bind:value={row.palletCount} />
+          {#if splitRows.length > 1}
+            <button
+              class="btn btn-danger btn-sm"
+              type="button"
+              onclick={() => (splitRows = splitRows.filter((_, i) => i !== index))}
+            >
+              ✕
+            </button>
+          {/if}
+        </div>
+      {/each}
+      <div style="display: flex; gap: 8px; margin-top: 10px;">
+        <button
+          class="btn btn-secondary"
+          type="button"
+          onclick={() => (splitRows = [...splitRows, { weightKg: '', palletCount: '' }])}
+        >
+          Add shipment
+        </button>
+        <button class="btn" type="submit">Plan order</button>
+        <button class="btn btn-secondary" type="button" onclick={() => (showPlanForm = false)}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  {/if}
 
   <div class="detail-grid">
     <div class="card">
@@ -170,5 +238,14 @@
   dd {
     margin: 0;
     font-size: 13px;
+  }
+
+  .split-row {
+    display: grid;
+    grid-template-columns: 32px 1fr 1fr 40px;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+    max-width: 480px;
   }
 </style>

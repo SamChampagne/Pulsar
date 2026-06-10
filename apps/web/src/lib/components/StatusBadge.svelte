@@ -20,6 +20,8 @@
     CLOSED: 'badge-muted',
     CANCELLED: 'badge-danger',
     INACTIVE: 'badge-danger',
+    INVITED: 'badge-warning',
+    DISABLED: 'badge-danger',
   };
 </script>
 

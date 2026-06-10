@@ -4,9 +4,11 @@ export class CreateUserDto {
   @IsEmail()
   email!: string;
 
+  /** Omit to send an invitation instead (the user sets their own password). */
+  @IsOptional()
   @IsString()
   @MinLength(8)
-  password!: string;
+  password?: string;
 
   @IsString()
   firstName!: string;

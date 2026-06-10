@@ -1,5 +1,16 @@
 import { PartialType } from '@nestjs/swagger';
-import { IsDateString, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsDateString,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 
 export class CreateTransportOrderDto {
   @IsString()
@@ -44,3 +55,41 @@ export class CreateTransportOrderDto {
 }
 
 export class UpdateTransportOrderDto extends PartialType(CreateTransportOrderDto) {}
+
+export class ShipmentSplitDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  weightKg?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  volumeM3?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  palletCount?: number;
+
+  @IsOptional()
+  @IsDateString()
+  plannedPickupAt?: string;
+
+  @IsOptional()
+  @IsDateString()
+  plannedDeliveryAt?: string;
+}
+
+export class PlanTransportOrderDto {
+  /**
+   * Optional split: one shipment is created per entry. Omit for the default
+   * single shipment carrying the full order quantities.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ShipmentSplitDto)
+  shipments?: ShipmentSplitDto[];
+}

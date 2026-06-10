@@ -26,7 +26,10 @@
     { href: '/lanes', label: 'Lanes' },
   ];
   const tmsAnalyticsNav = [{ href: '/analytics', label: 'Analytics' }];
-  const adminNav = [{ href: '/settings/modules', label: 'Modules' }];
+  const adminNav = [
+    { href: '/settings/users', label: 'Users' },
+    { href: '/settings/modules', label: 'Modules' },
+  ];
 
   function isActive(href: string): boolean {
     return page.url.pathname.startsWith(href);

@@ -3,10 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { JwtPayload, LoginResponse, ModuleKey, PermissionKey } from '@pulsar/shared';
 import { AuditAction } from '@pulsar/shared';
-import { compare } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { EmailService } from '../email/email.service';
 import { LoginDto } from './dto/login.dto';
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -18,7 +19,67 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly audit: AuditLogsService,
+    private readonly email: EmailService,
   ) {}
+
+  /**
+   * Starts a password reset. Always resolves to a generic acknowledgement so
+   * the endpoint cannot be used to enumerate accounts.
+   */
+  async requestPasswordReset(email: string, tenantSlug?: string): Promise<{ ok: boolean }> {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: email.toLowerCase(),
+        status: 'ACTIVE',
+        ...(tenantSlug ? { tenant: { slug: tenantSlug } } : {}),
+      },
+    });
+    if (user) {
+      const token = randomBytes(32).toString('base64url');
+      await this.prisma.userActionToken.create({
+        data: {
+          userId: user.id,
+          kind: 'PASSWORD_RESET',
+          tokenHash: sha256(token),
+          expiresAt: new Date(Date.now() + 3600 * 1000),
+        },
+      });
+      const url = `${this.config.get('WEB_URL', 'http://localhost:5173')}/reset-password/${token}`;
+      await this.email.send({
+        to: user.email,
+        subject: 'Pulsar — password reset',
+        html: `<p>Reset your Pulsar password: <a href="${url}">${url}</a></p><p>This link expires in 1 hour.</p>`,
+        text: `Reset your Pulsar password: ${url} (expires in 1 hour)`,
+      });
+    }
+    return { ok: true };
+  }
+
+  /** Consumes an INVITATION or PASSWORD_RESET token and sets the new password. */
+  async resetPassword(token: string, password: string): Promise<{ ok: boolean }> {
+    const record = await this.prisma.userActionToken.findUnique({
+      where: { tokenHash: sha256(token) },
+    });
+    if (!record || record.usedAt || record.expiresAt < new Date()) {
+      throw new UnauthorizedException('Invalid or expired link');
+    }
+    await this.prisma.$transaction([
+      this.prisma.userActionToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.user.update({
+        where: { id: record.userId },
+        data: { passwordHash: await hash(password, 10), status: 'ACTIVE' },
+      }),
+      // Any active session of the (possibly compromised) account is invalidated.
+      this.prisma.refreshToken.updateMany({
+        where: { userId: record.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+    return { ok: true };
+  }
 
   async login(dto: LoginDto): Promise<LoginResponse> {
     const user = await this.prisma.user.findFirst({

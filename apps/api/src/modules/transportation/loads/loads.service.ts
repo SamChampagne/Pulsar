@@ -17,6 +17,7 @@ import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { EmailService } from '../../../core/email/email.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
 import { LoadCostService } from './load-cost.service';
 import { AssignLoadResourcesDto, CreateLoadDto } from './dto/load.dto';
@@ -50,6 +51,7 @@ export class LoadsService {
     private readonly audit: AuditLogsService,
     private readonly cost: LoadCostService,
     private readonly webhooks: WebhooksService,
+    private readonly email: EmailService,
     private readonly config: ConfigService,
   ) {}
 
@@ -289,7 +291,48 @@ export class LoadsService {
       loadNumber: load.loadNumber,
       carrierId: load.carrierId,
     });
+    await this.notifyCustomersDelivered(tenantId, id);
     return this.get(tenantId, id);
+  }
+
+  /** Emails each order's customer contact that their shipment was delivered (best-effort). */
+  private async notifyCustomersDelivered(tenantId: string, loadId: string): Promise<void> {
+    const shipments = await this.prisma.shipment.findMany({
+      where: { tenantId, loadId },
+      select: {
+        shipmentNumber: true,
+        trackingToken: true,
+        actualDeliveryAt: true,
+        transportOrder: {
+          select: {
+            orderNumber: true,
+            customerReference: true,
+            customer: { select: { email: true, name: true } },
+          },
+        },
+      },
+    });
+    const webUrl = this.config.get('WEB_URL', 'http://localhost:5173');
+    for (const shipment of shipments) {
+      const to = shipment.transportOrder.customer.email;
+      if (!to) continue;
+      const trackLine = shipment.trackingToken
+        ? `<p><a href="${webUrl}/track/${shipment.trackingToken}">Track this shipment</a></p>`
+        : '';
+      await this.email.send({
+        to,
+        subject: `Delivered — ${shipment.shipmentNumber} (order ${shipment.transportOrder.orderNumber})`,
+        html: [
+          `<p>Your shipment <strong>${shipment.shipmentNumber}</strong>`,
+          shipment.transportOrder.customerReference
+            ? ` (ref ${shipment.transportOrder.customerReference})`
+            : '',
+          ` was delivered on ${shipment.actualDeliveryAt?.toUTCString() ?? 'today'}.</p>`,
+          trackLine,
+        ].join(''),
+        text: `Your shipment ${shipment.shipmentNumber} was delivered.`,
+      });
+    }
   }
 
   async cancel(tenantId: string, userId: string, id: string) {

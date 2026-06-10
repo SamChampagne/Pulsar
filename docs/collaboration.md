@@ -56,8 +56,10 @@ manual handling.
 - `EMAIL_DRIVER=log` (default): emails are written to the application log — dev/CI safe.
 - `EMAIL_DRIVER=smtp`: real delivery via nodemailer (`SMTP_*` variables, `EMAIL_FROM`).
 
-Current senders: tender links to carriers (`tenders.service.ts`). Tender responses include
-`emailedTo` so callers/tests know whether the email was handed to the driver.
+Current senders: tender links to carriers (`tenders.service.ts`), user invitations and password
+resets (`users.service.ts` / `auth.service.ts`), delivered notifications to the order's customer
+contact (`loads.service.ts`). Tender responses include `emailedTo` so callers/tests know whether
+the email was handed to the driver.
 
 ## Module cache
 
@@ -92,13 +94,25 @@ POD photos from the driver page land as documents with `entityType=proof-of-deli
 required metric is missing — never silently 0. `LoadCostService.recompute` persists
 `Load.estimatedCost` and runs after resource assignment and route (re)builds.
 
-## Webhooks (v0)
+## Webhooks (durable outbox)
 
-`WebhooksService.emit(tenantId, event, data)` POSTs to every ENABLED integration whose key
-starts with `webhook`. Config JSON: `{ "url", "secret"?, "events"?: [] }`. Signature:
-`X-Pulsar-Signature: sha256=HMAC(secret, body)`. Events today: `tender.sent`,
-`tender.accepted`, `tender.declined`, `load.dispatched`, `load.completed`.
-Fire-and-forget with 5 s timeout — a durable outbox with retries is phase 3.
+`WebhooksService.emit(tenantId, event, data)` persists one `webhook_deliveries` row per ENABLED
+integration whose key starts with `webhook` and matches the event, then attempts delivery
+inline. Failures are retried by a 1-minute cron with backoff (1m, 5m, 30m, 2h, 6h — 5 attempts,
+then FAILED). Config JSON: `{ "url", "secret"?, "events"?: [] }`. Headers:
+`X-Pulsar-Signature: sha256=HMAC(secret, body)`, `X-Pulsar-Event`, `X-Pulsar-Delivery`.
+Events: `tender.sent|accepted|declined|expired`, `load.dispatched|completed`.
+Inspect deliveries: `GET /integrations/:id/deliveries`.
+
+## Identity flows
+
+- **Invitation**: `POST /users` without a password creates an INVITED account, emails a one-shot
+  72 h link (`/reset-password/:token`) and returns `inviteUrl` to the admin. The account cannot
+  sign in until the password is set.
+- **Password reset**: `POST /auth/forgot-password` (always 200 — no account enumeration) emails a
+  1 h link; `POST /auth/reset-password` consumes the token (single use), activates the account if
+  INVITED, and revokes every active refresh token of the user.
+- Tokens live in `user_action_tokens` (SHA-256 hash at rest).
 
 ## Carrier scorecard
 

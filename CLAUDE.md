@@ -91,8 +91,9 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
 
 - Permissions are embedded in the JWT → role changes apply at next **refresh** (15 min max).
 - `ModulesGuard` uses a 30 s in-memory cache (single-process; Redis when scaling out).
-- Email: `EMAIL_DRIVER=log` in dev/CI (logs only); only tender links are emailed today.
-- Webhooks are fire-and-forget (no outbox/retries yet).
+- Email: `EMAIL_DRIVER=log` in dev/CI (logs only). Senders: tender links, invitations/resets,
+  delivered notices.
+- Webhooks go through a durable outbox (`webhook_deliveries`, 5 retries with backoff).
 - Auto-tender chains advance best-effort: a failure logs and leaves the load PLANNED.
 - Web route building is v0: stops auto-generated from shipments (pickups then deliveries);
   manual reordering is a phase-1 leftover.

@@ -71,13 +71,20 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 
 ## Phase 3 — Operational depth
 
-- [ ] Order splitting (1 order → N shipments)
-- [ ] Multi-stop load planning UI + manual route editor
-- [ ] Email notifications beyond tendering (status updates to customer contacts)
-- [ ] Password reset + user invitation flow
-- [ ] Webhook outbox with retries; inbound API keys
+- [x] Order splitting at plan time (`PlanTransportOrderDto.shipments`, split form on order detail)
+- [x] Manual route editor (reorder, planned arrival per stop, distance/duration → PER_KM cost)
+- [x] Delivered email to the order's customer contact (tracking link included when shared)
+- [x] User invitations (INVITED status, one-shot 72 h token, `inviteUrl` returned, Users page)
+- [x] Forgot/reset password (1 h token, enumeration-safe, refresh tokens revoked on reset)
+- [x] Webhook outbox (`webhook_deliveries`, retry cron with backoff, deliveries endpoint)
+- [x] Phase 3 e2e suite (5 tests)
+
+## Phase 4 — Platform & integrations
+
+- [ ] Inbound API keys for integrations
 - [ ] Audit interceptor (declarative auditing instead of manual service calls)
 - [ ] Pre-signed URLs for direct-to-S3 uploads (skip the API for large files)
+- [ ] Re-splitting / shipment management after planning
 
 ## Phase 3 — Platform & integrations
 

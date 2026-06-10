@@ -47,6 +47,12 @@ Les rôles sont configurables par tenant (catalogue de permissions), mais le dé
 
 Compte de démonstration : `admin@pulsar.dev` / `admin123` (tenant `acme`) — possède tout.
 
+**Gestion des comptes** (Administration → Users) : l'administrateur **invite** un utilisateur par
+courriel (sans mot de passe initial — l'invité choisit le sien via un lien valable 72 h, aussi
+copiable par l'admin). « Mot de passe oublié ? » sur l'écran de connexion envoie un lien de
+réinitialisation d'une heure ; la réinitialisation déconnecte toutes les sessions actives du
+compte.
+
 ## 4. Le cycle de vie, étape par étape
 
 ```mermaid
@@ -72,8 +78,11 @@ client (n° de PO). L'ordre est créé en **DRAFT** avec un numéro automatique 
 
 ### Étape 2 — Planifier (Planificateur)
 
-Sur l'ordre confirmé, **Plan** crée automatiquement le **shipment** (statut PENDING) avec les
-caractéristiques de l'ordre. L'ordre passe à **PLANNED**.
+Sur l'ordre confirmé, **Plan…** crée le ou les **shipments** (statut PENDING). Par défaut un seul
+shipment porte les quantités complètes de l'ordre ; le formulaire permet de **découper l'ordre en
+plusieurs shipments** (une ligne par shipment, avec poids/palettes propres) — par exemple 18
+palettes réparties en deux camions. L'ordre passe à **PLANNED** et ne sera COMPLETED que lorsque
+**tous** ses shipments seront livrés.
 
 **Écran : Shipments.** Les shipments PENDING forment le « bassin de planification ».
 **Assign to load** : choisir un load existant (OPEN/PLANNED) ou en créer un à la volée.
@@ -87,7 +96,8 @@ renvoie au bassin.
 1. **Resources** : affecter transporteur, chauffeur, véhicule, remorque, tarif. Dès la première
    affectation, le load passe d'OPEN à PLANNED.
 2. **Route** : « Generate route from shipments » construit l'itinéraire (cueillettes puis
-   livraisons). *(v1 : réordonnancement manuel à venir.)*
+   livraisons). **Edit route** permet ensuite de réordonner les arrêts, fixer l'heure prévue de
+   chaque arrêt, et saisir la distance (qui alimente le coût au km).
 
 ### Étape 3bis — Offrir le voyage au transporteur (tender)
 
@@ -220,12 +230,10 @@ Avant de créer le premier ordre d'un client, vérifier que ces données existen
 
 ## 8. Limites actuelles (transparence)
 
-- 1 ordre = 1 shipment (pas encore de découpage multi-shipment ni de consolidation multi-clients
-  sophistiquée — on peut toutefois mettre plusieurs shipments dans un même load).
-- Route générée automatiquement (cueillettes puis livraisons) : pas encore de réordonnancement
-  manuel ni d'heures planifiées par arrêt dans l'écran.
-- Courriel : seuls les liens de tender sont envoyés pour l'instant (driver `log` en dev, SMTP en
-  production) ; pas encore de notifications courriel de statut au client final.
+- Courriels envoyés : liens de tender, invitations/réinitialisations, avis de livraison au
+  contact client (driver `log` en dev, SMTP en production). Pas encore d'avis de retard ni de
+  résumé quotidien.
+- Le découpage d'un ordre se fait au moment de la planification (pas de re-découpage après coup).
 - Pas encore : portail client complet (le lien de suivi en est l'embryon), facturation, EDI.
 
 La feuille de route détaillée : [ROADMAP.md](../ROADMAP.md).

@@ -12,7 +12,11 @@ import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
-import { CreateTransportOrderDto, UpdateTransportOrderDto } from './dto/transport-order.dto';
+import {
+  CreateTransportOrderDto,
+  PlanTransportOrderDto,
+  UpdateTransportOrderDto,
+} from './dto/transport-order.dto';
 
 const orderInclude = {
   customer: { select: { id: true, code: true, name: true } },
@@ -133,29 +137,45 @@ export class TransportOrdersService {
   }
 
   /**
-   * Planning step: derives one shipment from the order (1 order = 1 shipment for now;
-   * order splitting into multiple freight units is a phase-2 feature).
+   * Planning step: derives shipments (freight units) from the order. Without a
+   * split, one shipment carries the full order; with `dto.shipments`, one
+   * shipment is created per entry (order splitting).
    */
-  async plan(tenantId: string, userId: string, id: string) {
+  async plan(tenantId: string, userId: string, id: string, dto?: PlanTransportOrderDto) {
     const order = await this.get(tenantId, id);
     if (order.status !== TransportOrderStatus.CONFIRMED) {
       throw new BadRequestException('Only CONFIRMED orders can be planned');
     }
-    await this.prisma.shipment.create({
-      data: {
-        tenantId,
-        shipmentNumber: await this.sequences.nextNumber(tenantId, 'shipment'),
-        transportOrderId: order.id,
-        status: ShipmentStatus.PENDING,
-        originLocationId: order.originLocationId,
-        destinationLocationId: order.destinationLocationId,
-        weightKg: order.totalWeightKg,
-        volumeM3: order.totalVolumeM3,
-        palletCount: order.palletCount,
-        plannedPickupAt: order.requestedPickupDate,
-        plannedDeliveryAt: order.requestedDeliveryDate,
+
+    const splits = dto?.shipments ?? [
+      {
+        weightKg: order.totalWeightKg ?? undefined,
+        volumeM3: order.totalVolumeM3 ?? undefined,
+        palletCount: order.palletCount ?? undefined,
       },
-    });
+    ];
+
+    for (const split of splits) {
+      await this.prisma.shipment.create({
+        data: {
+          tenantId,
+          shipmentNumber: await this.sequences.nextNumber(tenantId, 'shipment'),
+          transportOrderId: order.id,
+          status: ShipmentStatus.PENDING,
+          originLocationId: order.originLocationId,
+          destinationLocationId: order.destinationLocationId,
+          weightKg: split.weightKg,
+          volumeM3: split.volumeM3,
+          palletCount: split.palletCount,
+          plannedPickupAt: split.plannedPickupAt
+            ? new Date(split.plannedPickupAt)
+            : order.requestedPickupDate,
+          plannedDeliveryAt: split.plannedDeliveryAt
+            ? new Date(split.plannedDeliveryAt)
+            : order.requestedDeliveryDate,
+        },
+      });
+    }
     return this.transition(tenantId, userId, id, TransportOrderStatus.PLANNED);
   }
 

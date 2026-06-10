@@ -49,13 +49,18 @@ The increment that turns Pulsar from an internal tool into a collaborative platf
 - ✅ Module cache (30 s TTL, invalidated on toggle) — ModulesGuard no longer hits the DB
   per request.
 
-## Phase 3 — Operational depth (next)
+## Phase 3 — Operational depth ✅ (current)
 
-- Order splitting: 1 order → N shipments; multi-stop loads with per-shipment stops.
-- Manual route editor (reorder stops, planned times per stop).
-- Email notifications beyond tendering (status updates, delivered/POD to customer contacts).
-- Password reset + user invitation flow.
-- Webhook outbox with retries; inbound API keys.
+- ✅ Order splitting: plan an order into N shipments (per-shipment weight/pallets), multi-stop
+  loads already supported by consolidation.
+- ✅ Manual route editor: reorder stops, planned arrival per stop, distance/duration
+  (feeds PER_KM costing).
+- ✅ Delivered email notification to the order's customer contact (with tracking link when shared).
+- ✅ User invitations (one-shot 72 h links) + forgot/reset password (1 h links,
+  enumeration-safe, sessions revoked on reset) + Users admin page.
+- ✅ Webhook outbox: durable deliveries with retry backoff (5 attempts) and
+  `GET /integrations/:id/deliveries` for inspection.
+- Remaining (moved to phase 4): inbound API keys, audit interceptor, pre-signed S3 URLs.
 
 ## Phase 3 — Platform & integrations
 

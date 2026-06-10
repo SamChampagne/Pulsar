@@ -47,16 +47,28 @@
 
   interface RouteDetail {
     id: string;
+    totalDistanceKm: number | null;
+    estimatedDurationMin: number | null;
     stops: {
       id: string;
       sequence: number;
       type: string;
       status: string;
+      locationId: string;
+      shipmentId: string | null;
       plannedArrivalAt: string | null;
       actualArrivalAt: string | null;
       actualDepartureAt: string | null;
       location: { name: string; city: string };
     }[];
+  }
+
+  interface EditStop {
+    type: string;
+    locationId: string;
+    shipmentId: string | null;
+    plannedArrivalAt: string;
+    label: string;
   }
 
   interface Option {
@@ -89,6 +101,68 @@
   // POD form
   let podShipment = $state<ShipmentOnLoad | null>(null);
   let podForm = $state({ signedByName: '', notes: '' });
+
+  // Route editor
+  let editingRoute = $state(false);
+  let editStops = $state<EditStop[]>([]);
+  let editDistance = $state('');
+  let editDuration = $state('');
+
+  function toLocalInput(value: string | null): string {
+    if (!value) return '';
+    const d = new Date(value);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function startEditRoute() {
+    if (!route) return;
+    editStops = route.stops.map((s) => ({
+      type: s.type,
+      locationId: s.locationId,
+      shipmentId: s.shipmentId,
+      plannedArrivalAt: toLocalInput(s.plannedArrivalAt),
+      label: `${s.location.name}, ${s.location.city}`,
+    }));
+    editDistance = route.totalDistanceKm === null ? '' : String(route.totalDistanceKm);
+    editDuration = route.estimatedDurationMin === null ? '' : String(route.estimatedDurationMin);
+    editingRoute = true;
+  }
+
+  function moveStop(index: number, delta: number) {
+    const target = index + delta;
+    if (target < 0 || target >= editStops.length) return;
+    const next = [...editStops];
+    [next[index], next[target]] = [next[target], next[index]];
+    editStops = next;
+  }
+
+  async function saveRoute() {
+    try {
+      await api('/transportation/routes', {
+        method: 'POST',
+        body: {
+          loadId,
+          totalDistanceKm: editDistance === '' ? undefined : Number(editDistance),
+          estimatedDurationMin: editDuration === '' ? undefined : Number(editDuration),
+          stops: editStops.map((s, index) => ({
+            sequence: index + 1,
+            type: s.type,
+            locationId: s.locationId,
+            shipmentId: s.shipmentId ?? undefined,
+            plannedArrivalAt: s.plannedArrivalAt
+              ? new Date(s.plannedArrivalAt).toISOString()
+              : undefined,
+          })),
+        },
+      });
+      toast.success('Route updated');
+      editingRoute = false;
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to save route');
+    }
+  }
 
   const editable = $derived(detail?.status === 'OPEN' || detail?.status === 'PLANNED');
   const executing = $derived(detail?.status === 'DISPATCHED' || detail?.status === 'IN_TRANSIT');
@@ -396,8 +470,39 @@
       {/if}
 
       <div class="card">
-        <h2 style="margin-top: 0;">Route</h2>
-        {#if route}
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h2 style="margin-top: 0;">Route</h2>
+          {#if route && editable && !editingRoute}
+            <button class="btn btn-secondary btn-sm" onclick={startEditRoute}>Edit route</button>
+          {/if}
+        </div>
+        {#if editingRoute}
+          <div class="route-meta">
+            <div class="field">
+              <label for="distance">Distance (km)</label>
+              <input id="distance" type="number" min="0" bind:value={editDistance} />
+            </div>
+            <div class="field">
+              <label for="duration">Duration (min)</label>
+              <input id="duration" type="number" min="0" bind:value={editDuration} />
+            </div>
+          </div>
+          {#each editStops as stop, index (index)}
+            <div class="edit-stop">
+              <span class="muted">#{index + 1} {stop.type}</span>
+              <span>{stop.label}</span>
+              <input type="datetime-local" bind:value={stop.plannedArrivalAt} />
+              <span class="row-actions">
+                <button class="btn btn-secondary btn-sm" type="button" onclick={() => moveStop(index, -1)}>↑</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick={() => moveStop(index, 1)}>↓</button>
+              </span>
+            </div>
+          {/each}
+          <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <button class="btn" onclick={saveRoute}>Save route</button>
+            <button class="btn btn-secondary" onclick={() => (editingRoute = false)}>Cancel</button>
+          </div>
+        {:else if route}
           <table>
             <thead>
               <tr><th>#</th><th>Type</th><th>Location</th><th>Status</th><th></th></tr>
@@ -525,5 +630,26 @@
     border-top: 1px solid var(--color-border);
     margin-top: 14px;
     padding-top: 6px;
+  }
+
+  .route-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 16px;
+  }
+
+  .edit-stop {
+    display: grid;
+    grid-template-columns: 90px 1fr 180px 80px;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 13px;
+  }
+
+  .row-actions {
+    display: flex;
+    gap: 4px;
   }
 </style>
