@@ -24,13 +24,20 @@
   Table `platform_users`. Aucune relation vers les modèles tenant.
 - Seed : un admin plateforme initial `platform@pulsar.dev` / `admin123`
   (surchargeable par `PLATFORM_ADMIN_EMAIL` / `PLATFORM_ADMIN_PASSWORD`).
+- **Garde-fou production** (même pattern que la validation `ENCRYPTION_KEY`) :
+  en `NODE_ENV=production`, l'API **refuse de démarrer** si
+  `PLATFORM_ADMIN_PASSWORD` est absent ou vaut `admin123`. Le défaut n'existe
+  qu'en dev/CI. Testé unitairement.
 
 ### Auth
 
 - `POST /platform/auth/login` → access token JWT signé avec le `JWT_SECRET` existant,
   payload `{ sub, email, platformAdmin: true }`, expiration 12 h. Pas de refresh token.
 - Nouvelle stratégie Passport `platform-jwt` + `PlatformGuard` : n'accepte que les
-  tokens portant `platformAdmin: true`.
+  tokens portant `platformAdmin: true`, et **relit le `status` du `PlatformUser`
+  en base à chaque requête** (un admin passé `DISABLED` perd l'accès immédiatement
+  — indispensable avec un token 12 h sans refresh ; le trafic des routes
+  plateforme rend le hit DB négligeable).
 - La stratégie `jwt` existante rejette explicitement les tokens platform
   (payload sans `tenantId` / avec `platformAdmin`) → un token plateforme ne peut
   jamais atteindre une route tenant, et inversement.
@@ -84,9 +91,13 @@ dédié léger (pas de refresh transparent).
    (`code_verifier`) stockés dans un cookie signé httpOnly de 10 min.
 2. `GET /auth/oidc/:tenantSlug/callback` → vérifie state/nonce, échange le code,
    lit `email` (et `given_name`/`family_name` si présents) de l'ID token.
-3. Lookup `User` par `(tenant, email)` ; si absent → **provisioning** : création en
-   `ACTIVE`, rôle = `defaultRoleId` de la config, `passwordHash` aléatoire
-   inutilisable. Si l'utilisateur existe mais est `DISABLED` → refus.
+3. Lookup `User` par le **claim `sub`** d'abord — nouveau champ `User.oidcSubject
+   String?` (`@@unique([tenantId, oidcSubject])`), c'est l'identifiant stable de
+   la spec OIDC (l'email peut être réassigné chez l'IdP). Si aucun `sub` connu :
+   fallback par `(tenant, email)` puis **liaison** (`oidcSubject` écrit sur le
+   user) ; si toujours absent → **provisioning** : création en `ACTIVE`,
+   `oidcSubject` posé, rôle = `defaultRoleId` de la config, `passwordHash`
+   aléatoire inutilisable. Si l'utilisateur existe mais est `DISABLED` → refus.
 4. `buildSession(user.id)` (même émission access/refresh que le login classique).
 5. Redirect vers `WEB_URL/oidc/complete?code=<one-shot>` — code d'échange
    `UserActionToken` kind `OIDC_EXCHANGE`, TTL 60 s, usage unique.
@@ -139,7 +150,12 @@ tolérance → litige ; puis suivi de paiement.
   `varianceGross ≤ max(toleranceAbsolute, invoicedTotal × tolerancePct/100)`
   → transition automatique vers `APPROVED` (« bon à payer ») ; sinon → `DISPUTED`
   avec le détail des écarts par ligne (depuis DISPUTED, rester DISPUTED est un
-  no-op d'état, les montants sont mis à jour).
+  no-op d'état, les montants sont mis à jour). À l'entrée automatique en litige,
+  `disputeReasonCode` reste **null, délibérément** : le code qualifie le
+  diagnostic humain posé à la résolution — un défaut automatique (ex.
+  `RATE_MISMATCH` alors que l'écart est un `UNEXPECTED_CHARGE`) polluerait les
+  statistiques par transporteur que les codes doivent justement permettre. Les
+  listes filtrent sur le statut `DISPUTED` + l'écart affiché.
   *Choix documenté* : `max()` sert de plancher aux petites factures (un écart de
   20 sur une facture de 100 ne doit pas partir en litige si le plancher est 25).
   Des clients voudront `min()` (plus strict) — le jour venu c'est un troisième
@@ -197,9 +213,16 @@ audit §5) pour produire des montants défendables.
   Migration lazy : les lignes existantes restent en clair jusqu'à la prochaine
   écriture.
 - `Tenant.authConfig.clientSecret` (OIDC) chiffré via le même service.
+- **Script de rechiffrement** `apps/api/scripts/reencrypt-secrets.ts` (exécuté via
+  `pnpm --filter api reencrypt-secrets`) : lit `ENCRYPTION_KEY_OLD` +
+  `ENCRYPTION_KEY`, parcourt `Integration.config` et `Tenant.authConfig`,
+  déchiffre avec l'ancienne clé (ou prend tel quel ce qui est en clair) et
+  réécrit chiffré avec la nouvelle. Sert à la fois à la **rotation de clé** et au
+  **chiffrement initial** des lignes encore en clair. Sans lui, le runbook de
+  rotation serait inexécutable.
 - `docs/runbooks.md` : rotation `JWT_SECRET` (invalide les sessions, procédure),
-  rotation `ENCRYPTION_KEY` (script de rechiffrement à documenter), backup/restore
-  PostgreSQL (pg_dump/pg_restore, fréquence, test de restauration).
+  rotation `ENCRYPTION_KEY` (procédure utilisant le script ci-dessus),
+  backup/restore PostgreSQL (pg_dump/pg_restore, fréquence, test de restauration).
 
 ## 5. Module Fleet — découverte (doc seulement)
 
@@ -213,12 +236,17 @@ Vehicle/Trailer existants, questions ouvertes. **Aucun code.**
 
 - Unitaires (vitest, `packages/shared`) : state machine `Invoice` étendue
   (DISPUTED, PAID) + logique de tolérance (fonction pure dans `packages/shared`).
-- Unitaires (API) : `CryptoService` (round-trip, compat clair, clé invalide).
+- Unitaires (API) : `CryptoService` (round-trip, compat clair, clé invalide) ;
+  garde-fou production du mot de passe plateforme (refus de démarrer) ; script
+  de rechiffrement (rotation + chiffrement initial) ; liaison OIDC par `sub`
+  (match par sub, fallback email + liaison, collision refusée) avec
+  `openid-client` mocké.
 - E2E (`apps/api/test/phase6.e2e-spec.ts`, conventions existantes — données à codes
   uniques, rejouable) :
   - Plateforme : login platform admin, création de tenant complet (admin invité
     peut consommer son invitation), suspension → login tenant refusé, token
-    plateforme rejeté sur une route tenant et inversement.
+    plateforme rejeté sur une route tenant et inversement, **admin plateforme
+    passé DISABLED → requête suivante refusée** (relecture du status).
   - OIDC : CRUD config (secret masqué), `oidc/exchange` avec code invalide refusé.
     (Le flow IdP complet n'est pas testable en e2e sans IdP ; le service de
     callback est couvert en unitaire avec `openid-client` mocké.)
@@ -228,12 +256,20 @@ Vehicle/Trailer existants, questions ouvertes. **Aucun code.**
     (facture corrigée) → APPROVED ; DISPUTED → resolve-dispute → PAID ;
     export CSV 200.
 
-## Hors périmètre (assumé)
+## Hors périmètre (reports tracés, avec phase cible)
 
-- Refresh tokens pour les sessions plateforme ; impersonation/support tenant.
-- SCIM, logout OIDC (RP-initiated), multi-IdP par tenant.
-- Facturation client (sell-side) — reportée après le rating engine v2 ; taxes ;
-  paiements partiels ; ingestion automatique de factures (EDI 210/PDF — la saisie
-  est manuelle en v1, l'ingestion IA est le différenciateur 19.3/19.4 à venir).
-- Rechiffrement batch des `Integration.config` existants (lazy seulement,
-  script mentionné dans le runbook).
+- **MFA (TOTP + codes de récupération) pour les comptes plateforme — phase 7.**
+  Seul des cinq points sécurité de revue à être reporté : c'est un chantier
+  complet (enrollment, recovery, UI), pas un correctif. Les quatre autres
+  (garde-fou mot de passe par défaut en prod, relecture du status dans
+  `PlatformGuard`, script de rechiffrement, liaison OIDC par `sub`) sont
+  **traités en phase 6** — voir sections 1, 2 et 4.
+- Refresh tokens pour les sessions plateforme ; impersonation/support tenant
+  (phase 7, avec la MFA).
+- SCIM, logout OIDC (RP-initiated), multi-IdP par tenant (à la demande client).
+- Facturation client (sell-side) — reportée après le rating engine v2
+  (cible phase 7+, voir audit TMS §5) ; taxes ; paiements partiels ; ingestion
+  automatique de factures (EDI 210/PDF — la saisie est manuelle en v1,
+  l'ingestion IA est le différenciateur 19.3/19.4 à venir).
+- `toleranceMode` (`min()` strict vs `max()` plancher) — troisième paramètre de
+  settings, le jour où un client le demande.
