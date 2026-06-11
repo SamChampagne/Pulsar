@@ -27,6 +27,9 @@
     { href: '/customers', label: 'Customers' },
     { href: '/carriers', label: 'Carriers' },
     { href: '/lanes', label: 'Lanes' },
+    { href: '/rates', label: 'Rates' },
+    { href: '/accessorials', label: 'Accessorials' },
+    { href: '/fuel-tables', label: 'Fuel tables' },
   ];
   const tmsAnalyticsNav = [{ href: '/analytics', label: 'Analytics' }];
   const adminNav = [
