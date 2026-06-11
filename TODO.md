@@ -184,7 +184,7 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
       `Shipment.loadId` dans `assignToLoad`, `removeFromLoad` et `loads.cancel`
 - [x] Analytics on-time : la borne de comparaison est `plannedDeliveryLate ?? plannedDeliveryEarly`
       (couvre les données migrées sans `late`)
-- [x] Suite e2e phase7-2 (7 tests) ; 13 migrations au total
+- [x] Suite e2e phase7-2 (6 tests) ; 12 migrations au total
 
 ### Chantier 7.3 — Billing sell-side (à faire, débloqué par 7.1)
 
