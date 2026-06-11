@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 
-export type SequenceKey = 'transport-order' | 'shipment' | 'load' | 'invoice';
+export type SequenceKey = 'transport-order' | 'shipment' | 'load' | 'invoice' | 'customer-invoice';
 
 const PREFIXES: Record<SequenceKey, string> = {
   'transport-order': 'TO',
   shipment: 'SH',
   load: 'LD',
   invoice: 'INV',
+  'customer-invoice': 'CINV',
 };
 
 /**

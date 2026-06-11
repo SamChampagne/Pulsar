@@ -67,6 +67,7 @@ model Tenant {
   trackingEvents    TrackingEvent[]
   proofsOfDelivery  ProofOfDelivery[]
   shipmentLoadLegs  ShipmentLoadLeg[]
+  customerInvoices  CustomerInvoice[]
 
   @@map("tenants")
 }
@@ -419,10 +420,11 @@ model Customer {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tenant          Tenant           @relation(fields: [tenantId], references: [id])
-  locations       Location[]
-  transportOrders TransportOrder[]
-  rates           Rate[]
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  locations        Location[]
+  transportOrders  TransportOrder[]
+  rates            Rate[]
+  customerInvoices CustomerInvoice[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -641,12 +643,13 @@ model TransportOrder {
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
 
-  tenant              Tenant     @relation(fields: [tenantId], references: [id])
-  customer            Customer   @relation(fields: [customerId], references: [id])
-  originLocation      Location   @relation("OrderOrigin", fields: [originLocationId], references: [id])
-  destinationLocation Location   @relation("OrderDestination", fields: [destinationLocationId], references: [id])
-  createdBy           User?      @relation(fields: [createdById], references: [id])
+  tenant              Tenant                @relation(fields: [tenantId], references: [id])
+  customer            Customer              @relation(fields: [customerId], references: [id])
+  originLocation      Location              @relation("OrderOrigin", fields: [originLocationId], references: [id])
+  destinationLocation Location              @relation("OrderDestination", fields: [destinationLocationId], references: [id])
+  createdBy           User?                 @relation(fields: [createdById], references: [id])
   shipments           Shipment[]
+  customerInvoiceLine CustomerInvoiceLine?
 
   @@unique([tenantId, orderNumber])
   @@index([tenantId, status])
@@ -1187,6 +1190,58 @@ model InvoiceLine {
   load    Load    @relation(fields: [loadId], references: [id])
 
   @@map("invoice_lines")
+}
+
+enum CustomerInvoiceStatus {
+  DRAFT
+  APPROVED
+  SENT
+  PAID
+}
+
+// Customer billing statement (sell-side): delivered orders priced with the
+// CUSTOMER's rates (rating engine 7.1), one statement per currency encountered.
+// Wording: emails/UI say "billing statement" until taxes exist (spec 7.3).
+model CustomerInvoice {
+  id            String                @id @default(cuid())
+  tenantId      String
+  invoiceNumber String
+  customerId    String
+  status        CustomerInvoiceStatus @default(DRAFT)
+  currency      String                @default("CAD")
+  totalAmount   Decimal               @db.Decimal(12, 2)
+  approvedAt    DateTime?
+  sentAt        DateTime?
+  paidAt        DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  tenant   Tenant                @relation(fields: [tenantId], references: [id])
+  customer Customer              @relation(fields: [customerId], references: [id])
+  lines    CustomerInvoiceLine[]
+
+  @@unique([tenantId, invoiceNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, customerId])
+  @@map("customer_invoices")
+}
+
+model CustomerInvoiceLine {
+  id                String  @id @default(cuid())
+  customerInvoiceId String
+  // One line per order; the unique prevents double-billing an order. Freed by
+  // deleting a DRAFT statement (cascade) — the only escape path by design.
+  transportOrderId  String  @unique
+  description       String
+  amount            Decimal @db.Decimal(12, 2)
+  // Frozen sell-side snapshot (customer rate as used + inputs + lines), same
+  // self-contained structure as Load.costDetail. Never recomputed once APPROVED.
+  priceDetail       Json
+
+  customerInvoice CustomerInvoice @relation(fields: [customerInvoiceId], references: [id], onDelete: Cascade)
+  transportOrder  TransportOrder  @relation(fields: [transportOrderId], references: [id], onDelete: Restrict)
+
+  @@map("customer_invoice_lines")
 }
 
 model ProofOfDelivery {
