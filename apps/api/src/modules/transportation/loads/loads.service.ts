@@ -21,6 +21,7 @@ import { EmailService } from '../../../core/email/email.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
 import { LoadCostService } from './load-cost.service';
 import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
+import { shipmentWindowWarnings } from '../planning/window-warnings';
 
 const loadInclude = {
   carrier: { select: { id: true, code: true, name: true } },
@@ -36,7 +37,19 @@ const loadInclude = {
       transportOrderId: true,
       originLocationId: true,
       destinationLocationId: true,
+      plannedPickupEarly: true,
+      plannedPickupLate: true,
+      plannedDeliveryEarly: true,
+      plannedDeliveryLate: true,
       proofOfDelivery: { select: { id: true, signedByName: true, signedAt: true } },
+      transportOrder: {
+        select: {
+          requestedPickupEarly: true,
+          requestedPickupLate: true,
+          requestedDeliveryEarly: true,
+          requestedDeliveryLate: true,
+        },
+      },
     },
   },
   route: { include: { stops: { orderBy: { sequence: 'asc' as const } } } },
@@ -85,7 +98,10 @@ export class LoadsService {
   async get(tenantId: string, id: string) {
     const load = await this.prisma.load.findFirst({ where: { id, tenantId }, include: loadInclude });
     if (!load) throw new NotFoundException('Load not found');
-    return load;
+    return {
+      ...load,
+      windowWarnings: load.shipments.flatMap((s) => shipmentWindowWarnings(s.transportOrder, [s])),
+    };
   }
 
   async create(tenantId: string, userId: string, dto: CreateLoadDto) {

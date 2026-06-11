@@ -19,12 +19,24 @@ import {
   UpdateTransportOrderDto,
 } from './dto/transport-order.dto';
 import { toDate, assertWindowCoherence, resolveSplitWindows } from '../planning/window-validation';
+import { shipmentWindowWarnings } from '../planning/window-warnings';
 
 const orderInclude = {
   customer: { select: { id: true, code: true, name: true } },
   originLocation: { select: { id: true, code: true, name: true, city: true } },
   destinationLocation: { select: { id: true, code: true, name: true, city: true } },
-  shipments: { select: { id: true, shipmentNumber: true, status: true, loadId: true } },
+  shipments: {
+    select: {
+      id: true,
+      shipmentNumber: true,
+      status: true,
+      loadId: true,
+      plannedPickupEarly: true,
+      plannedPickupLate: true,
+      plannedDeliveryEarly: true,
+      plannedDeliveryLate: true,
+    },
+  },
 } satisfies Prisma.TransportOrderInclude;
 
 @Injectable()
@@ -78,7 +90,7 @@ export class TransportOrdersService {
       include: orderInclude,
     });
     if (!order) throw new NotFoundException('Transport order not found');
-    return order;
+    return { ...order, windowWarnings: shipmentWindowWarnings(order, order.shipments) };
   }
 
   async create(tenantId: string, userId: string, dto: CreateTransportOrderDto) {
