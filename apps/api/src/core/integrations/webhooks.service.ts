@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma } from '@pulsar/database';
 import { createHmac } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CryptoService } from '../crypto/crypto.service';
 
 interface WebhookConfig {
   url?: string;
@@ -25,14 +26,17 @@ const BACKOFF_MINUTES = [1, 5, 30, 120, 360];
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly crypto: CryptoService,
+  ) {}
 
   async emit(tenantId: string, event: string, data: Record<string, unknown>): Promise<void> {
     const hooks = await this.prisma.integration.findMany({
       where: { tenantId, status: 'ENABLED', key: { startsWith: 'webhook' } },
     });
     const matching = hooks.filter((hook) => {
-      const config = hook.config as WebhookConfig;
+      const config = this.crypto.decryptJson<WebhookConfig>(hook.config);
       if (!config.url) return false;
       return !config.events || config.events.length === 0 || config.events.includes(event);
     });
@@ -79,7 +83,7 @@ export class WebhooksService {
     });
     if (!delivery || delivery.status !== 'PENDING') return;
 
-    const config = delivery.integration.config as WebhookConfig;
+    const config = this.crypto.decryptJson<WebhookConfig>(delivery.integration.config);
     const body = JSON.stringify(delivery.payload);
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',

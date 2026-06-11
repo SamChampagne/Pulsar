@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CryptoService } from '../crypto/crypto.service';
 
 export interface UpsertIntegrationInput {
   key: string;
@@ -9,17 +10,54 @@ export interface UpsertIntegrationInput {
   status?: 'DISABLED' | 'ENABLED' | 'ERROR';
 }
 
+const SENSITIVE_KEY = /secret|password|token|key/i;
+const MASK = '***';
+
+/** API responses never expose secret values — they are replaced by "***". */
+export function maskConfig(config: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(config).map(([k, v]) => [k, SENSITIVE_KEY.test(k) && v ? MASK : v]),
+  );
+}
+
+/** A client echoing back "***" means "keep the stored secret unchanged". */
+export function mergePreservingMasked(
+  incoming: Record<string, unknown>,
+  stored: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(incoming).map(([k, v]) => [k, v === MASK ? stored[k] : v]),
+  );
+}
+
 /**
  * Integration *configuration* registry (EDI, telematics, ERP connectors...).
- * Actual connector runtimes are a later phase — this stores per-tenant config.
- * TODO(phase-3): encrypt secrets inside config at rest.
+ * Configs are encrypted at rest (enc:v1 string in the Json column); legacy
+ * plaintext rows are read transparently and re-encrypted on next write
+ * (see apps/api/scripts/reencrypt-secrets.ts for the batch path).
  */
 @Injectable()
 export class IntegrationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly crypto: CryptoService,
+  ) {}
 
-  list(tenantId: string) {
-    return this.prisma.integration.findMany({ where: { tenantId }, orderBy: { name: 'asc' } });
+  /** Internal consumers (webhooks) get the decrypted config. */
+  decryptedConfig<T = Record<string, unknown>>(stored: unknown): T {
+    return this.crypto.decryptJson<T>(stored);
+  }
+
+  private present(integration: { config: unknown } & Record<string, unknown>) {
+    return { ...integration, config: maskConfig(this.crypto.decryptJson(integration.config)) };
+  }
+
+  async list(tenantId: string) {
+    const rows = await this.prisma.integration.findMany({
+      where: { tenantId },
+      orderBy: { name: 'asc' },
+    });
+    return rows.map((row) => this.present(row));
   }
 
   async create(tenantId: string, input: UpsertIntegrationInput) {
@@ -27,28 +65,37 @@ export class IntegrationsService {
       where: { tenantId_key: { tenantId, key: input.key } },
     });
     if (existing) throw new ConflictException(`Integration "${input.key}" already exists`);
-    return this.prisma.integration.create({
+    const created = await this.prisma.integration.create({
       data: {
         tenantId,
         key: input.key,
         name: input.name,
         status: input.status ?? 'DISABLED',
-        config: (input.config ?? {}) as Prisma.InputJsonValue,
+        config: this.crypto.encryptJson(input.config ?? {}) as Prisma.InputJsonValue,
       },
     });
+    return this.present(created);
   }
 
   async update(tenantId: string, id: string, input: Partial<UpsertIntegrationInput>) {
     const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
     if (!integration) throw new NotFoundException('Integration not found');
-    return this.prisma.integration.update({
+    const stored = this.crypto.decryptJson(integration.config);
+    const updated = await this.prisma.integration.update({
       where: { id },
       data: {
         name: input.name,
         status: input.status,
-        ...(input.config ? { config: input.config as Prisma.InputJsonValue } : {}),
+        ...(input.config
+          ? {
+              config: this.crypto.encryptJson(
+                mergePreservingMasked(input.config, stored),
+              ) as Prisma.InputJsonValue,
+            }
+          : {}),
       },
     });
+    return this.present(updated);
   }
 
   async listDeliveries(tenantId: string, integrationId: string) {
