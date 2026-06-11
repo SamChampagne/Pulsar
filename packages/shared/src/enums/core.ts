@@ -33,3 +33,9 @@ export enum AuditAction {
   STATUS_CHANGE = 'STATUS_CHANGE',
   LOGIN = 'LOGIN',
 }
+
+/** Platform-plane operators (cross-tenant). Mirrored in schema.prisma. */
+export enum PlatformUserStatus {
+  ACTIVE = 'ACTIVE',
+  DISABLED = 'DISABLED',
+}

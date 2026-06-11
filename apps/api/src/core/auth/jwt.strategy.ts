@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import type { AuthUser, JwtPayload } from '@pulsar/shared';
@@ -19,7 +19,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
    * Trade-off: a permission change takes effect at next login / token refresh.
    * Revisit when refresh tokens land (see ROADMAP phase 2).
    */
-  validate(payload: JwtPayload): AuthUser {
+  validate(payload: JwtPayload & { platformAdmin?: boolean }): AuthUser {
+    // Watertight separation of the two planes: a platform-plane token must
+    // never reach a tenant route (and tenant guards all assume tenantId).
+    if (payload.platformAdmin || !payload.tenantId) {
+      throw new UnauthorizedException('Not a tenant access token');
+    }
     return {
       id: payload.sub,
       tenantId: payload.tenantId,

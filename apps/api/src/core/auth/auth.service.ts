@@ -109,7 +109,7 @@ export class AuthService {
       entityId: user.id,
     });
 
-    return this.buildSession(user.id);
+    return this.issueSession(user.id);
   }
 
   /**
@@ -120,7 +120,7 @@ export class AuthService {
   async refresh(refreshToken: string): Promise<LoginResponse> {
     const record = await this.prisma.refreshToken.findUnique({
       where: { tokenHash: sha256(refreshToken) },
-      include: { user: true },
+      include: { user: { include: { tenant: true } } },
     });
     if (!record || record.revokedAt || record.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid refresh token');
@@ -128,11 +128,17 @@ export class AuthService {
     if (record.user.status !== 'ACTIVE') {
       throw new UnauthorizedException('User is disabled');
     }
+    // Suspension is enforced at this chokepoint too (not only by the token
+    // revocation in PlatformTenantsService.suspend): no session on a suspended
+    // tenant can ever rotate into a fresh pair.
+    if (record.user.tenant.status === 'SUSPENDED') {
+      throw new UnauthorizedException('Tenant is suspended');
+    }
     await this.prisma.refreshToken.update({
       where: { id: record.id },
       data: { revokedAt: new Date() },
     });
-    return this.buildSession(record.userId);
+    return this.issueSession(record.userId);
   }
 
   async logout(refreshToken: string): Promise<{ loggedOut: boolean }> {
@@ -143,11 +149,24 @@ export class AuthService {
     return { loggedOut: true };
   }
 
-  private async buildSession(userId: string): Promise<LoginResponse> {
+  /**
+   * Single session-issuance path (access + rotating refresh pair). Used by
+   * password login, refresh, and the OIDC exchange — any new auth method must
+   * go through here so session semantics stay identical.
+   */
+  async issueSession(userId: string): Promise<LoginResponse> {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
       include: { tenant: true },
     });
+    // issueSession is the single issuance chokepoint: every caller (password
+    // login, refresh, OIDC exchange) gets these gates, whatever it checked before.
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('User is disabled');
+    }
+    if (user.tenant.status === 'SUSPENDED') {
+      throw new UnauthorizedException('Tenant is suspended');
+    }
     const permissions = await this.getUserPermissions(user.id);
     const enabledModules = await this.getEnabledModules(user.tenantId);
 

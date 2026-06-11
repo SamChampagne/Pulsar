@@ -28,6 +28,7 @@ jobs:
       DATABASE_URL: postgresql://pulsar:pulsar@localhost:5432/pulsar?schema=public
       JWT_SECRET: ci-only-secret
       JWT_EXPIRES_IN: 8h
+      ENCRYPTION_KEY: 1qK0pZ8Yw3mB6dT9rV2xU5nC7sE4hG1jL0aF3kM8oP4=
 
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +62,9 @@ jobs:
 
       - name: Unit tests (shared)
         run: pnpm --filter @pulsar/shared test
+
+      - name: Unit tests (api)
+        run: pnpm --filter @pulsar/api test
 
       - name: Apply migrations & seed
         run: |

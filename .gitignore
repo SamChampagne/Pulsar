@@ -23,4 +23,8 @@ packages/database/generated/
 .idea/
 .vscode/*
 !.vscode/extensions.json
-storage/
+
+# Runtime file storage of the local driver ONLY — a bare "storage/" rule once
+# swallowed the apps/api/src/core/documents/storage/ SOURCES (lost, re-authored
+# in phase 6). Keep this path-anchored.
+/apps/api/storage/

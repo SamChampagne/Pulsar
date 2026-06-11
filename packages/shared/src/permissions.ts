@@ -43,6 +43,7 @@ export const PERMISSIONS = {
   BILLING: {
     INVOICES_READ: 'billing.invoices.read',
     INVOICES_MANAGE: 'billing.invoices.manage',
+    INVOICES_PAY: 'billing.invoices.pay',
   },
 } as const;
 
@@ -110,6 +111,7 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   portal(PERMISSIONS.CUSTOMER_PORTAL.LINKS_MANAGE, 'Generate and revoke customer portal links'),
   billing(PERMISSIONS.BILLING.INVOICES_READ, 'View carrier invoices'),
   billing(PERMISSIONS.BILLING.INVOICES_MANAGE, 'Draft and approve carrier invoices'),
+  billing(PERMISSIONS.BILLING.INVOICES_PAY, 'Mark carrier invoices as paid'),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);

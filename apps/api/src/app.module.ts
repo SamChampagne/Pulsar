@@ -19,6 +19,7 @@ import { DocumentsModule } from './core/documents/documents.module';
 import { NotificationsModule } from './core/notifications/notifications.module';
 import { IntegrationsModule } from './core/integrations/integrations.module';
 import { ModuleRegistryModule } from './core/module-registry/module-registry.module';
+import { PlatformModule } from './core/platform/platform.module';
 import { TransportationModule } from './modules/transportation/transportation.module';
 import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
 import { BillingModule } from './modules/billing/billing.module';
@@ -45,6 +46,7 @@ import { BillingModule } from './modules/billing/billing.module';
     NotificationsModule,
     IntegrationsModule,
     ModuleRegistryModule,
+    PlatformModule,
     // Business modules (activable per tenant — see ModulesGuard)
     TransportationModule,
     CustomerPortalModule,

@@ -32,6 +32,8 @@ model Tenant {
   name      String
   status    TenantStatus @default(TRIAL)
   settings  Json         @default("{}")
+  // OIDC SSO config: { enabled, issuer, clientId, clientSecret (enc:v1), defaultRoleId }
+  authConfig Json?
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
@@ -90,6 +92,8 @@ model User {
   firstName    String
   lastName     String
   status       UserStatus @default(ACTIVE)
+  // Stable OIDC identifier (ID token "sub"); email is only a first-login fallback.
+  oidcSubject  String?
   lastLoginAt  DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -106,6 +110,7 @@ model User {
   receivedPods           ProofOfDelivery[]
 
   @@unique([tenantId, email])
+  @@unique([tenantId, oidcSubject])
   @@index([tenantId])
   @@map("users")
 }
@@ -133,6 +138,7 @@ model ApiKey {
 enum UserActionTokenKind {
   INVITATION
   PASSWORD_RESET
+  OIDC_EXCHANGE
 }
 
 // One-shot tokens for invitation acceptance and password resets (hash at rest).
@@ -164,6 +170,27 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+enum PlatformUserStatus {
+  ACTIVE
+  DISABLED
+}
+
+// Cross-tenant operators (create/suspend tenants). Deliberately has NO relation
+// to any tenant-scoped model — the platform plane never mixes with tenant data.
+model PlatformUser {
+  id           String             @id @default(cuid())
+  email        String             @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  status       PlatformUserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@map("platform_users")
 }
 
 model Role {
@@ -915,10 +942,21 @@ model TrackingEvent {
 enum InvoiceStatus {
   DRAFT
   APPROVED
+  DISPUTED
+  PAID
+}
+
+enum DisputeReasonCode {
+  RATE_MISMATCH
+  QUANTITY_MISMATCH
+  UNEXPECTED_CHARGE
+  DUPLICATE_BILLING
+  OTHER
 }
 
 // Draft invoice grouping the estimated costs of a carrier's completed,
-// not-yet-invoiced loads. Approval freezes it (v1 — no payment tracking yet).
+// not-yet-invoiced loads. Reconciled against the carrier's actual invoice
+// (tolerance on gross variance), disputed when over, PAID tracked.
 model Invoice {
   id            String        @id @default(cuid())
   tenantId      String
@@ -928,6 +966,19 @@ model Invoice {
   currency      String        @default("CAD")
   totalAmount   Decimal       @db.Decimal(12, 2)
   approvedAt    DateTime?
+
+  // --- Reconciliation against the carrier's actual invoice -------------------
+  carrierInvoiceNumber String?
+  invoicedTotal        Decimal?           @db.Decimal(12, 2)
+  // Net (signed) variance — display; the tolerance rides on varianceGross.
+  varianceTotal        Decimal?           @db.Decimal(12, 2)
+  varianceGross        Decimal?           @db.Decimal(12, 2)
+  // Null until a human qualifies the dispute at resolution time (deliberate).
+  disputeReasonCode    DisputeReasonCode?
+  disputeNote          String?
+  reconciledAt         DateTime?
+  paidAt               DateTime?
+
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -947,6 +998,8 @@ model InvoiceLine {
   loadId      String  @unique
   description String
   amount      Decimal @db.Decimal(12, 2)
+  invoicedAmount Decimal? @db.Decimal(12, 2)
+  variance       Decimal? @db.Decimal(12, 2)
 
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   load    Load    @relation(fields: [loadId], references: [id])

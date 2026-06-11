@@ -57,6 +57,11 @@
     <button class="btn" type="submit" disabled={loading} style="width: 100%; justify-content: center;">
       {loading ? 'Signing in…' : 'Sign in'}
     </button>
+    {#if tenant}
+      <a class="muted" href={`/api/v1/auth/oidc/${tenant}`} style="display: block; margin-top: 12px; text-align: center; font-size: 13px;">
+        Sign in with SSO ({tenant})
+      </a>
+    {/if}
     <p style="text-align: center; margin-bottom: 0;">
       <a href="/forgot-password" class="muted" style="font-size: 12px;">Forgot password?</a>
     </p>

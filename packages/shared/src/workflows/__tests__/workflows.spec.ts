@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { LoadStatus, ShipmentStatus, TransportOrderStatus } from '../../enums/transportation';
+import { InvoiceStatus } from '../../enums/billing';
 import { canTransitionLoad, LOAD_TRANSITIONS } from '../load.workflow';
 import { canTransitionShipment, SHIPMENT_TRANSITIONS } from '../shipment.workflow';
 import {
   canTransitionTransportOrder,
   TRANSPORT_ORDER_TRANSITIONS,
 } from '../transport-order.workflow';
+import { canTransitionInvoice } from '../invoice.workflow';
 
 describe('TransportOrder workflow', () => {
   it('follows the happy path DRAFT → … → CLOSED', () => {
@@ -121,5 +123,20 @@ describe('Load workflow', () => {
 
   it('covers every status in the transition map', () => {
     expect(Object.keys(LOAD_TRANSITIONS).sort()).toEqual(Object.values(LoadStatus).sort());
+  });
+});
+
+describe('invoice workflow', () => {
+  it('allows the reconciliation paths', () => {
+    expect(canTransitionInvoice(InvoiceStatus.DRAFT, InvoiceStatus.APPROVED)).toBe(true);
+    expect(canTransitionInvoice(InvoiceStatus.DRAFT, InvoiceStatus.DISPUTED)).toBe(true);
+    expect(canTransitionInvoice(InvoiceStatus.DISPUTED, InvoiceStatus.APPROVED)).toBe(true);
+    expect(canTransitionInvoice(InvoiceStatus.APPROVED, InvoiceStatus.PAID)).toBe(true);
+  });
+
+  it('blocks the invalid paths', () => {
+    expect(canTransitionInvoice(InvoiceStatus.PAID, InvoiceStatus.DRAFT)).toBe(false);
+    expect(canTransitionInvoice(InvoiceStatus.APPROVED, InvoiceStatus.DISPUTED)).toBe(false);
+    expect(canTransitionInvoice(InvoiceStatus.DISPUTED, InvoiceStatus.PAID)).toBe(false);
   });
 });

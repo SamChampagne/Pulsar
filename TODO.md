@@ -101,13 +101,41 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
       loads' estimated costs, billable preview, approval, double-billing prevented by schema
 - [x] Phase 5 e2e suite (4 tests; module-state resets make suites rerun-safe)
 
-## Phase 6 — Next
+## Phase 6 — Commercial readiness (specs/plans: docs/superpowers/)
 
-- [ ] SSO (OIDC) per tenant
-- [ ] Platform administration plane (cross-tenant ops: create/suspend tenants)
-- [ ] Billing v2: customer invoicing, payment tracking, invoice PDF/export
-- [ ] Fleet module discovery (maintenance, compliance)
-- [ ] SOC2-track hardening: secrets management, encrypted integration configs, backups
+- [x] SSO (OIDC) per tenant: `Tenant.authConfig` (clientSecret chiffré), flow PKCE avec
+      state chiffré AES-GCM, lookup `oidcSubject` d'abord (email = fallback de liaison,
+      refusé si `email_verified: false`), code d'échange one-shot 60 s atomique,
+      provisioning au premier login, page Settings → SSO
+- [x] Platform administration plane: modèle `PlatformUser` disjoint, stratégies JWT
+      étanches, `PlatformGuard` avec relecture du status, création de tenant complète
+      (rôle admin + invitation 72 h + modules), suspend/reactivate (sessions tuées,
+      `refresh()` re-vérifie le statut), pages `/platform/*`, garde-fou prod
+      (mot de passe par défaut et secrets d'exemple publiés refusés au boot)
+- [x] Billing v2: rapprochement facture transporteur — tolérance sur l'écart BRUT
+      (Σ|écart ligne|, attrape les compensations), DISPUTED + re-reconcile (facture
+      corrigée), résolution codifiée (`DisputeReasonCode`), PAID (`billing.invoices.pay`),
+      export CSV non plafonné — sell-side reporté après rating engine v2 (audit TMS §5)
+- [x] Fleet module discovery doc (docs/fleet-module-discovery.md)
+- [x] SOC2-track hardening: CryptoService (enc:v1, boot fail-fast), Integration.config
+      chiffré + masqué, script reencrypt-secrets idempotent (rotation + sweep initial),
+      docs/runbooks.md
+- [x] (imprévu) Restauration des drivers file-storage perdus par une règle .gitignore
+      trop large (`storage/` → `/apps/api/storage/`)
+
+### Dette notée à la revue des plans phase 6 (durcissements différés)
+
+- [ ] Décorateur composite `@PlatformController()` (= `@Public()` + `@UseGuards(PlatformGuard)`)
+      — le pattern actuel rend l'oubli du second décorateur silencieusement ouvert
+- [ ] Throttling sur `POST /platform/auth/login` (porte cross-tenant exposée)
+- [ ] Inclure le slug du tenant dans le state OIDC chiffré et le vérifier au callback
+      (défense en profondeur contre le rejeu d'états entre tenants)
+- [ ] Cache du `Issuer.discover` par issuer (un aller-retour de découverte par login OIDC)
+- [ ] MFA (TOTP + recovery) pour les comptes plateforme — phase 7 (voir spec phase 6)
+- [ ] Export CSV factures : préfixer les champs libres commençant par `=+-@` (injection de
+      formule tableur) — risque faible (outil interne mono-tenant), à durcir avant exposition
+- [ ] Gardes de statut des factures dans la transaction (`updateMany` conditionnel + count)
+      plutôt que read-then-write — fenêtre TOCTOU acceptable en UI d'ops, à fermer si API publique
 
 ## Phase 3 — Platform & integrations
 
