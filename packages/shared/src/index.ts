@@ -6,6 +6,8 @@ export * from './enums/billing';
 export * from './workflows/transport-order.workflow';
 export * from './workflows/shipment.workflow';
 export * from './workflows/load.workflow';
+export * from './workflows/invoice.workflow';
+export * from './billing/reconciliation';
 export * from './cost/rate-cost';
 export * from './types/api';
 export * from './types/auth';
