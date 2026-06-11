@@ -48,6 +48,10 @@ export class LanesService {
         throw new BadRequestException('locationId is required for a LOCATION endpoint');
       }
       await this.ownership.assertOwned('location', input.locationId, tenantId);
+    } else if (input.locationId) {
+      throw new BadRequestException(
+        `locationId is only valid for a LOCATION endpoint (got type ${type})`,
+      );
     }
     let key: string;
     try {
@@ -122,6 +126,10 @@ export class LanesService {
     }
   }
 
+  /**
+   * PATCH semantics: an omitted name leaves it unchanged; clearing a name is not supported
+   * (consistent with the other update DTOs).
+   */
   async update(tenantId: string, id: string, dto: UpdateLaneDto) {
     await this.get(tenantId, id);
     return this.prisma.lane.update({ where: { id }, data: { name: dto.name }, include: laneInclude });
@@ -139,7 +147,14 @@ export class LanesService {
         `Lane is referenced by ${rates} rate(s) and ${prefs} carrier preference(s) — remove them first`,
       );
     }
-    await this.prisma.lane.delete({ where: { id } });
+    try {
+      await this.prisma.lane.delete({ where: { id } });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
+        throw new ConflictException('Lane is still referenced by rates or carrier preferences');
+      }
+      throw e;
+    }
     return { deleted: true };
   }
 
