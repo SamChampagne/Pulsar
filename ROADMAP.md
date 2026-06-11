@@ -87,12 +87,21 @@ The increment that turns Pulsar from an internal tool into a collaborative platf
 - ✅ **Billing module v1** — third business module: completed loads' estimated costs → carrier
   invoice drafts (INV- sequence, one line per load, double-billing impossible) → approval.
 
-## Phase 6 — Commercial readiness
+## Phase 6 — Commercial readiness ✅ (current)
 
-- SSO (OIDC) per tenant; platform administration plane (cross-tenant ops).
-- Billing v2: customer invoicing, payment tracking, invoice export.
-- Fleet module discovery (maintenance, compliance).
-- SOC2-track hardening: secrets management, encrypted integration configs, backup/restore runbook.
+- ✅ Platform administration plane: disjoint `PlatformUser` model, watertight tenant/platform
+  JWT strategies, tenant lifecycle (create with full provisioning + invitation, suspend with
+  session revocation, reactivate), `/platform` web pages, production boot guards.
+- ✅ SSO (OIDC) per tenant: encrypted `authConfig`, PKCE flow with AES-GCM-encrypted state,
+  `oidcSubject`-first user resolution with guarded email binding, one-shot atomic exchange
+  code, first-login provisioning, SSO settings page.
+- ✅ Billing v2 — **reoriented to carrier invoice reconciliation** after the TMS audit
+  (`docs/audit-tms-2026-06-10.md`): gross-variance tolerance (catches compensating errors),
+  dispute workflow with codified reasons and corrected-invoice re-reconcile, PAID tracking,
+  CSV export. Customer invoicing (sell-side) deferred until a real rating engine exists.
+- ✅ SOC2-track hardening: secrets encrypted at rest (AES-256-GCM `enc:v1`), idempotent key
+  rotation script, operational runbooks (key rotation, backup/restore).
+- ✅ Fleet module discovery doc (scope, model sketch, open questions — no code).
 
 ## Later / exploratory
 

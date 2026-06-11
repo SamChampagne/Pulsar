@@ -103,13 +103,25 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 
 ## Phase 6 — Commercial readiness (specs/plans: docs/superpowers/)
 
-- [ ] SSO (OIDC) per tenant
-- [ ] Platform administration plane (cross-tenant ops: create/suspend tenants)
-- [ ] Billing v2: carrier invoice reconciliation (gross-variance tolerance, disputes,
-      PAID, CSV export) — sell-side reported after rating engine v2 (see TMS audit §5)
-- [ ] Fleet module discovery doc (maintenance, compliance)
-- [ ] SOC2-track hardening: CryptoService, encrypted integration configs,
-      reencrypt script, runbooks
+- [x] SSO (OIDC) per tenant: `Tenant.authConfig` (clientSecret chiffré), flow PKCE avec
+      state chiffré AES-GCM, lookup `oidcSubject` d'abord (email = fallback de liaison,
+      refusé si `email_verified: false`), code d'échange one-shot 60 s atomique,
+      provisioning au premier login, page Settings → SSO
+- [x] Platform administration plane: modèle `PlatformUser` disjoint, stratégies JWT
+      étanches, `PlatformGuard` avec relecture du status, création de tenant complète
+      (rôle admin + invitation 72 h + modules), suspend/reactivate (sessions tuées,
+      `refresh()` re-vérifie le statut), pages `/platform/*`, garde-fou prod
+      (mot de passe par défaut et secrets d'exemple publiés refusés au boot)
+- [x] Billing v2: rapprochement facture transporteur — tolérance sur l'écart BRUT
+      (Σ|écart ligne|, attrape les compensations), DISPUTED + re-reconcile (facture
+      corrigée), résolution codifiée (`DisputeReasonCode`), PAID (`billing.invoices.pay`),
+      export CSV non plafonné — sell-side reporté après rating engine v2 (audit TMS §5)
+- [x] Fleet module discovery doc (docs/fleet-module-discovery.md)
+- [x] SOC2-track hardening: CryptoService (enc:v1, boot fail-fast), Integration.config
+      chiffré + masqué, script reencrypt-secrets idempotent (rotation + sweep initial),
+      docs/runbooks.md
+- [x] (imprévu) Restauration des drivers file-storage perdus par une règle .gitignore
+      trop large (`storage/` → `/apps/api/storage/`)
 
 ### Dette notée à la revue des plans phase 6 (durcissements différés)
 
