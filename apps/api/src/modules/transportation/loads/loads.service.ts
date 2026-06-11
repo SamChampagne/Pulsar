@@ -139,6 +139,7 @@ export class LoadsService {
       this.ownership.assertOwnedIfSet('rate', dto.rateId, tenantId),
     ]);
     const { force, ...resources } = dto;
+    let capacityOverride: { capacityOverride: true; excesses: unknown } | undefined;
     if (dto.trailerId) {
       const trailer = await this.prisma.trailer.findFirst({
         where: { id: dto.trailerId, tenantId },
@@ -168,14 +169,7 @@ export class LoadsService {
         throw new BadRequestException({ message: 'Trailer capacity exceeded', excesses });
       }
       if (excesses.length > 0 && force) {
-        await this.audit.log({
-          tenantId,
-          userId,
-          action: AuditAction.UPDATE,
-          entityType: 'load',
-          entityId: id,
-          after: { capacityOverride: true, excesses, trailerId: dto.trailerId },
-        });
+        capacityOverride = { capacityOverride: true, excesses };
       }
     }
     await this.prisma.load.update({
@@ -186,13 +180,14 @@ export class LoadsService {
       },
     });
     await this.cost.recompute(tenantId, id);
+    // Single audit entry: the resource change and (when forced) the override reason together.
     await this.audit.log({
       tenantId,
       userId,
       action: AuditAction.UPDATE,
       entityType: 'load',
       entityId: id,
-      after: resources,
+      after: { ...resources, ...capacityOverride },
     });
     return this.get(tenantId, id);
   }
