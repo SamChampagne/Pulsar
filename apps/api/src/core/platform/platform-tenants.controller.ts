@@ -1,8 +1,7 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { Public } from '../../common/decorators/public.decorator';
+import { PlatformController } from '../../common/decorators/platform-controller.decorator';
 import { CreatePlatformTenantDto } from './dto/create-platform-tenant.dto';
-import { PlatformGuard } from './platform.guard';
 import { PlatformTenantsService } from './platform-tenants.service';
 
 interface PlatformRequest {
@@ -10,13 +9,12 @@ interface PlatformRequest {
 }
 
 /**
- * Cross-tenant operations. @Public() skips the global tenant JwtAuthGuard;
- * PlatformGuard then enforces a *platform* token (and live ACTIVE status).
+ * Cross-tenant operations. @PlatformController() skips the global tenant
+ * JwtAuthGuard (@Public) and enforces the platform JWT (PlatformGuard).
  */
 @ApiTags('platform')
 @ApiBearerAuth()
-@Public()
-@UseGuards(PlatformGuard)
+@PlatformController()
 @Controller('platform/tenants')
 export class PlatformTenantsController {
   constructor(private readonly tenants: PlatformTenantsService) {}
