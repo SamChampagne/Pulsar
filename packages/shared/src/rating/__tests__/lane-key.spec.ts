@@ -13,6 +13,11 @@ describe('normalizeGeo', () => {
     expect(normalizeGeo('  MONTREAL ')).toBe('montreal');
     expect(normalizeGeo('Trois-Rivières')).toBe('trois-rivieres');
   });
+
+  it('is idempotent on plain ASCII and handles the empty string', () => {
+    expect(normalizeGeo('montreal')).toBe('montreal');
+    expect(normalizeGeo('')).toBe('');
+  });
 });
 
 describe('buildEndpointKey', () => {
@@ -28,6 +33,12 @@ describe('buildEndpointKey', () => {
   it('throws on missing required fields', () => {
     expect(() => buildEndpointKey(LaneEndpointType.CITY, { city: 'Montréal' })).toThrow();
     expect(() => buildEndpointKey(LaneEndpointType.LOCATION, {})).toThrow();
+  });
+
+  it('throws on missing or blank fields for STATE and COUNTRY levels', () => {
+    expect(() => buildEndpointKey(LaneEndpointType.STATE, { state: 'QC' })).toThrow();
+    expect(() => buildEndpointKey(LaneEndpointType.COUNTRY, {})).toThrow();
+    expect(() => buildEndpointKey(LaneEndpointType.CITY, { city: '   ', state: 'QC', country: 'CA' })).toThrow();
   });
 });
 

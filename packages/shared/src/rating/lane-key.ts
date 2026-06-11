@@ -11,7 +11,7 @@ export interface LaneEndpointInput {
 export function normalizeGeo(value: string): string {
   return value
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toLowerCase();
 }
@@ -35,15 +35,16 @@ export function buildEndpointKey(type: LaneEndpointType, input: LaneEndpointInpu
       if (!input.locationId) throw new Error('A LOCATION endpoint requires locationId');
       return `LOCATION:${input.locationId}`;
     case LaneEndpointType.CITY:
-      if (!input.city || !input.state || !input.country)
-        throw new Error('A CITY endpoint requires city, state and country');
-      return `CITY:${normalizeGeo(input.country)}|${normalizeGeo(input.state)}|${normalizeGeo(input.city)}`;
+      if (!input.city?.trim() || !input.state?.trim() || !input.country?.trim())
+        throw new Error('A CITY endpoint requires non-blank city, state and country');
+      return `CITY:${normalizeGeo(input.country!)}|${normalizeGeo(input.state!)}|${normalizeGeo(input.city!)}`;
     case LaneEndpointType.STATE:
-      if (!input.state || !input.country) throw new Error('A STATE endpoint requires state and country');
-      return `STATE:${normalizeGeo(input.country)}|${normalizeGeo(input.state)}`;
+      if (!input.state?.trim() || !input.country?.trim())
+        throw new Error('A STATE endpoint requires non-blank state and country');
+      return `STATE:${normalizeGeo(input.country!)}|${normalizeGeo(input.state!)}`;
     case LaneEndpointType.COUNTRY:
-      if (!input.country) throw new Error('A COUNTRY endpoint requires country');
-      return `COUNTRY:${normalizeGeo(input.country)}`;
+      if (!input.country?.trim()) throw new Error('A COUNTRY endpoint requires non-blank country');
+      return `COUNTRY:${normalizeGeo(input.country!)}`;
   }
 }
 
