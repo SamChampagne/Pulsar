@@ -123,3 +123,18 @@ export enum TrackingEventType {
   DELIVERED = 'DELIVERED',
   CANCELLED = 'CANCELLED',
 }
+
+/** Geographic level of a lane endpoint, most → least specific. Mirrored in schema.prisma. */
+export enum LaneEndpointType {
+  LOCATION = 'LOCATION',
+  CITY = 'CITY',
+  STATE = 'STATE',
+  COUNTRY = 'COUNTRY',
+}
+
+/** Pricing unit of an accessorial charge. Mirrored in schema.prisma. */
+export enum AccessorialUnit {
+  FLAT = 'FLAT',
+  PER_HOUR = 'PER_HOUR',
+  PER_UNIT = 'PER_UNIT',
+}
