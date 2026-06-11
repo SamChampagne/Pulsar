@@ -277,6 +277,13 @@ describe('Phase 7.3 — sell-side statements (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Test 0 — billable preview requires customerId
+  // ---------------------------------------------------------------------------
+  it('billable preview requires customerId', async () => {
+    await request(http).get('/api/v1/billing/customer-invoices/billable').set(auth()).expect(400);
+  });
+
+  // ---------------------------------------------------------------------------
   // Test 1 — billable preview: ratable vs unratable
   // ---------------------------------------------------------------------------
   it('billable preview: ratable order shows amount; unratable order shows NO_APPLICABLE_RATE', async () => {

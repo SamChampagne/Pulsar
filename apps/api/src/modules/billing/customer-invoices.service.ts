@@ -83,6 +83,9 @@ export class CustomerInvoicesService {
 
   /** Rates every billable order of the customer; nothing is persisted. */
   private async rateBillableOrders(tenantId: string, customerId: string) {
+    if (!customerId) {
+      throw new BadRequestException('customerId is required');
+    }
     await this.ownership.assertOwned('customer', customerId, tenantId);
     const orders = await this.prisma.transportOrder.findMany({
       where: {
@@ -173,7 +176,13 @@ export class CustomerInvoicesService {
     if (statement.status !== CustomerInvoiceStatus.DRAFT) {
       throw new BadRequestException('Only DRAFT statements can be deleted');
     }
-    await this.prisma.customerInvoice.delete({ where: { id } });
+    const { count } = await this.prisma.customerInvoice.deleteMany({
+      where: { id, tenantId, status: CustomerInvoiceStatus.DRAFT },
+    });
+    if (count === 0) {
+      // Approved concurrently between the read and the delete — immutability wins.
+      throw new BadRequestException('Only DRAFT statements can be deleted');
+    }
     await this.audit.log({
       tenantId,
       userId,
