@@ -1,5 +1,6 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { IsEmail, IsString, Length } from 'class-validator';
 import { Public } from '../../common/decorators/public.decorator';
 import { PlatformAuthService } from './platform-auth.service';
@@ -30,6 +31,9 @@ class MfaVerifyDto {
   code!: string;
 }
 
+// Brute-force gate on the cross-tenant door. 20/min/IP (not 5) because local e2e
+// suites share one IP and legitimately log in often; the anti-brute-force intent holds.
+@UseGuards(ThrottlerGuard)
 @ApiTags('platform')
 @Controller('platform/auth')
 export class PlatformAuthController {
