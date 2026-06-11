@@ -29,6 +29,13 @@
     status: string;
   }
 
+  interface CapacityExcess {
+    axis: string;
+    capacity: number;
+    requested: number;
+    excess: number;
+  }
+
   let shipments = $state<ShipmentRow[]>([]);
   let total = $state(0);
   let statusFilter = $state('');
@@ -38,6 +45,9 @@
   let assigning = $state<ShipmentRow | null>(null);
   let openLoads = $state<LoadOption[]>([]);
   let selectedLoadId = $state('');
+  let assignCapacityExcesses = $state<CapacityExcess[]>([]);
+  let assignForce = $state(false);
+  let pendingLoadId = $state('');
 
   async function load() {
     try {
@@ -54,28 +64,54 @@
   async function openAssign(shipment: ShipmentRow) {
     assigning = shipment;
     selectedLoadId = '';
+    assignCapacityExcesses = [];
+    assignForce = false;
+    pendingLoadId = '';
     const result = await api<Paginated<LoadOption>>('/transportation/loads', {
       query: { pageSize: 100 },
     });
     openLoads = result.items.filter((l) => l.status === 'OPEN' || l.status === 'PLANNED');
   }
 
-  async function assign() {
+  async function assign(force = false) {
     if (!assigning) return;
     try {
-      let loadId = selectedLoadId;
+      let loadId = force ? pendingLoadId : selectedLoadId;
       if (!loadId) {
         const created = await api<LoadOption>('/transportation/loads', { method: 'POST', body: {} });
         loadId = created.id;
       }
       await api(`/transportation/shipments/${assigning.id}/assign-load`, {
         method: 'POST',
-        body: { loadId },
+        body: force ? { loadId, force: true } : { loadId },
       });
       toast.success(`${assigning.shipmentNumber} assigned to load`);
       assigning = null;
+      assignCapacityExcesses = [];
+      assignForce = false;
+      pendingLoadId = '';
       await load();
     } catch (e) {
+      if (e instanceof ApiError && e.statusCode === 400) {
+        const body = e.body as { excesses?: CapacityExcess[] } | null;
+        if (body?.excesses?.length) {
+          // Resolve the load id we were trying to assign to (for force retry)
+          if (!force) {
+            let resolvedId = selectedLoadId;
+            if (!resolvedId) {
+              // A new load was created inside the try before the error; we can't recover it here.
+              // Re-open assign so user picks an existing load for force.
+              assignCapacityExcesses = body.excesses;
+              assignForce = false;
+              pendingLoadId = '';
+              return;
+            }
+            pendingLoadId = resolvedId;
+          }
+          assignCapacityExcesses = body.excesses;
+          return;
+        }
+      }
       toast.error(e instanceof ApiError ? e.message : 'Failed to assign');
     }
   }
@@ -137,15 +173,50 @@
     <h2 style="margin-top: 0;">Assign {assigning.shipmentNumber} to a load</h2>
     <div class="field" style="max-width: 360px;">
       <label for="load">Load</label>
-      <select id="load" bind:value={selectedLoadId}>
+      <select id="load" bind:value={selectedLoadId} onchange={() => { assignCapacityExcesses = []; assignForce = false; }}>
         <option value="">+ Create a new load</option>
         {#each openLoads as l (l.id)}
           <option value={l.id}>{l.loadNumber} ({l.status})</option>
         {/each}
       </select>
     </div>
-    <div style="display: flex; gap: 8px;">
-      <button class="btn" onclick={assign}>Assign</button>
+
+    {#if assignCapacityExcesses.length > 0}
+      <div class="capacity-alert">
+        <strong>Trailer capacity exceeded</strong>
+        <table style="width: 100%; margin-top: 6px; border-collapse: collapse; font-size: 12px;">
+          <thead>
+            <tr>
+              <th style="text-align: left;">Axis</th>
+              <th style="text-align: right;">Capacity</th>
+              <th style="text-align: right;">Requested</th>
+              <th style="text-align: right;">Excess</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each assignCapacityExcesses as ex (ex.axis)}
+              <tr>
+                <td>{ex.axis}</td>
+                <td style="text-align: right;">{ex.capacity}</td>
+                <td style="text-align: right;">{ex.requested}</td>
+                <td style="text-align: right; color: var(--color-danger, #dc3545);">+{ex.excess}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+        <label style="display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; cursor: pointer;">
+          <input type="checkbox" bind:checked={assignForce} />
+          Force assignment (audited)
+        </label>
+      </div>
+    {/if}
+
+    <div style="display: flex; gap: 8px; margin-top: 10px;">
+      {#if assignCapacityExcesses.length > 0 && assignForce}
+        <button class="btn btn-danger" onclick={() => assign(true)}>Confirm force assign</button>
+      {:else}
+        <button class="btn" onclick={() => assign()}>Assign</button>
+      {/if}
       <button class="btn btn-secondary" onclick={() => (assigning = null)}>Cancel</button>
     </div>
   </div>
@@ -209,3 +280,13 @@
     </tbody>
   </table>
 </div>
+
+<style>
+  .capacity-alert {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 6px;
+  }
+</style>

@@ -83,6 +83,14 @@
     };
   }
 
+  interface WindowWarning {
+    shipmentNumber: string;
+    field: 'pickup' | 'delivery';
+    kind: 'BEFORE_EARLY' | 'AFTER_LATE';
+    requested: string;
+    planned: string;
+  }
+
   interface LoadDetail {
     id: string;
     loadNumber: string;
@@ -101,6 +109,7 @@
     route: { id: string } | null;
     accessorials: AccessorialOnLoad[];
     costDetail: CostDetail | null;
+    windowWarnings?: WindowWarning[];
   }
 
   interface RouteDetail {
@@ -114,7 +123,8 @@
       status: string;
       locationId: string;
       shipmentId: string | null;
-      plannedArrivalAt: string | null;
+      plannedArrivalEarly: string | null;
+      plannedArrivalLate: string | null;
       actualArrivalAt: string | null;
       actualDepartureAt: string | null;
       location: { name: string; city: string };
@@ -125,7 +135,8 @@
     type: string;
     locationId: string;
     shipmentId: string | null;
-    plannedArrivalAt: string;
+    plannedArrivalEarly: string;
+    plannedArrivalLate: string;
     label: string;
   }
 
@@ -180,6 +191,13 @@
   let rateOptionsError = $state('');
   let expandedRateId = $state<string | null>(null);
 
+  interface CapacityExcess {
+    axis: string;
+    capacity: number;
+    requested: number;
+    excess: number;
+  }
+
   // Resource assignment form
   let carriers = $state<Option[]>([]);
   let drivers = $state<Option[]>([]);
@@ -187,6 +205,8 @@
   let trailers = $state<Option[]>([]);
   let rates = $state<Option[]>([]);
   let form = $state({ carrierId: '', driverId: '', vehicleId: '', trailerId: '', rateId: '' });
+  let resourcesCapacityExcesses = $state<CapacityExcess[]>([]);
+  let resourcesForce = $state(false);
 
   // POD form
   let podShipment = $state<ShipmentOnLoad | null>(null);
@@ -211,7 +231,8 @@
       type: s.type,
       locationId: s.locationId,
       shipmentId: s.shipmentId,
-      plannedArrivalAt: toLocalInput(s.plannedArrivalAt),
+      plannedArrivalEarly: toLocalInput(s.plannedArrivalEarly),
+      plannedArrivalLate: toLocalInput(s.plannedArrivalLate),
       label: `${s.location.name}, ${s.location.city}`,
     }));
     editDistance = route.totalDistanceKm === null ? '' : String(route.totalDistanceKm);
@@ -240,8 +261,11 @@
             type: s.type,
             locationId: s.locationId,
             shipmentId: s.shipmentId ?? undefined,
-            plannedArrivalAt: s.plannedArrivalAt
-              ? new Date(s.plannedArrivalAt).toISOString()
+            plannedArrivalEarly: s.plannedArrivalEarly
+              ? new Date(s.plannedArrivalEarly).toISOString()
+              : undefined,
+            plannedArrivalLate: s.plannedArrivalLate
+              ? new Date(s.plannedArrivalLate).toISOString()
               : undefined,
           })),
         },
@@ -433,11 +457,21 @@
           vehicleId: form.vehicleId || undefined,
           trailerId: form.trailerId || undefined,
           rateId: form.rateId || undefined,
+          ...(resourcesForce ? { force: true } : {}),
         },
       });
       toast.success('Resources assigned');
+      resourcesCapacityExcesses = [];
+      resourcesForce = false;
       await load();
     } catch (e) {
+      if (e instanceof ApiError && e.statusCode === 400) {
+        const body = e.body as { excesses?: CapacityExcess[] } | null;
+        if (body?.excesses?.length) {
+          resourcesCapacityExcesses = body.excesses;
+          return;
+        }
+      }
       toast.error(e instanceof ApiError ? e.message : 'Failed to assign resources');
     }
   }
@@ -595,6 +629,44 @@
         {#if editable}
           <button class="btn" onclick={saveResources}>Save resources</button>
         {/if}
+
+        {#if resourcesCapacityExcesses.length > 0}
+          <div class="capacity-alert">
+            <strong>Trailer capacity exceeded</strong>
+            <table class="breakdown-table" style="margin-top: 6px;">
+              <thead>
+                <tr>
+                  <th style="text-align: left; font-size: 12px;">Axis</th>
+                  <th style="text-align: right; font-size: 12px;">Capacity</th>
+                  <th style="text-align: right; font-size: 12px;">Requested</th>
+                  <th style="text-align: right; font-size: 12px;">Excess</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each resourcesCapacityExcesses as ex (ex.axis)}
+                  <tr>
+                    <td style="font-size: 12px;">{ex.axis}</td>
+                    <td style="text-align: right; font-size: 12px;">{ex.capacity}</td>
+                    <td style="text-align: right; font-size: 12px;">{ex.requested}</td>
+                    <td style="text-align: right; font-size: 12px; color: var(--color-danger, #dc3545);">+{ex.excess}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+            {#if editable}
+              <label style="display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; cursor: pointer;">
+                <input type="checkbox" bind:checked={resourcesForce} />
+                Force assignment (audited)
+              </label>
+              {#if resourcesForce}
+                <button class="btn btn-danger" style="margin-top: 6px;" onclick={saveResources}>
+                  Confirm force assign
+                </button>
+              {/if}
+            {/if}
+          </div>
+        {/if}
+
         {#if detail.estimatedCost !== null}
           <p style="margin-bottom: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
             <span class="muted">Estimated cost:</span>
@@ -809,7 +881,12 @@
             <div class="edit-stop">
               <span class="muted">#{index + 1} {stop.type}</span>
               <span>{stop.label}</span>
-              <input type="datetime-local" bind:value={stop.plannedArrivalAt} />
+              <div class="arrival-window">
+                <span class="arrival-label">Arrival from</span>
+                <input type="datetime-local" bind:value={stop.plannedArrivalEarly} />
+                <span class="arrival-label">to</span>
+                <input type="datetime-local" bind:value={stop.plannedArrivalLate} />
+              </div>
               <span class="row-actions">
                 <button class="btn btn-secondary btn-sm" type="button" onclick={() => moveStop(index, -1)}>↑</button>
                 <button class="btn btn-secondary btn-sm" type="button" onclick={() => moveStop(index, 1)}>↓</button>
@@ -823,7 +900,7 @@
         {:else if route}
           <table>
             <thead>
-              <tr><th>#</th><th>Type</th><th>Location</th><th>Status</th><th></th></tr>
+              <tr><th>#</th><th>Type</th><th>Location</th><th>Arrival window</th><th>Status</th><th></th></tr>
             </thead>
             <tbody>
               {#each route.stops as stop (stop.id)}
@@ -831,6 +908,13 @@
                   <td>{stop.sequence}</td>
                   <td>{stop.type}</td>
                   <td>{stop.location.name}, {stop.location.city}</td>
+                  <td class="muted" style="font-size: 12px;">
+                    {#if stop.plannedArrivalEarly}
+                      {new Date(stop.plannedArrivalEarly).toLocaleString()}{stop.plannedArrivalLate ? ' → ' + new Date(stop.plannedArrivalLate).toLocaleString() : ''}
+                    {:else}
+                      —
+                    {/if}
+                  </td>
                   <td><StatusBadge status={stop.status} /></td>
                   <td style="white-space: nowrap; text-align: right;">
                     {#if executing && stop.status === 'PENDING'}
@@ -984,6 +1068,23 @@
       </div>
     </div>
   </div>
+
+  {#if detail.windowWarnings && detail.windowWarnings.length > 0}
+    <div class="card" style="margin-top: 16px; border-left: 3px solid var(--color-warning, #f59e0b);">
+      <h2 style="margin-top: 0;">
+        ⚠ Avertissements de fenêtre
+        <span class="badge-warning">{detail.windowWarnings.length}</span>
+      </h2>
+      <ul style="margin: 0; padding-left: 20px;">
+        {#each detail.windowWarnings as w (w.shipmentNumber + w.field + w.kind)}
+          <li style="margin-bottom: 6px;">
+            {w.shipmentNumber} — {w.field === 'pickup' ? 'pickup' : 'delivery'} planifié {w.kind === 'BEFORE_EARLY' ? 'avant' : 'après'} la fenêtre demandée
+            (demandé {new Date(w.requested).toLocaleDateString()}, planifié {new Date(w.planned).toLocaleDateString()})
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
 {:else}
   <p class="muted">Loading…</p>
 {/if}
@@ -1016,12 +1117,44 @@
 
   .edit-stop {
     display: grid;
-    grid-template-columns: 90px 1fr 180px 80px;
+    grid-template-columns: 90px 1fr auto 80px;
     gap: 8px;
     align-items: center;
     padding: 6px 0;
     border-bottom: 1px solid var(--color-border);
     font-size: 13px;
+  }
+
+  .arrival-window {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .arrival-label {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+
+  .capacity-alert {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 6px;
+  }
+
+  .badge-warning {
+    display: inline-block;
+    background: var(--color-warning, #f59e0b);
+    color: #fff;
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 8px;
   }
 
   .row-actions {
