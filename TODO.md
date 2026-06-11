@@ -125,17 +125,36 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 
 ### Dette notée à la revue des plans phase 6 (durcissements différés)
 
-- [ ] Décorateur composite `@PlatformController()` (= `@Public()` + `@UseGuards(PlatformGuard)`)
+- [x] Décorateur composite `@PlatformController()` (= `@Public()` + `@UseGuards(PlatformGuard)`)
       — le pattern actuel rend l'oubli du second décorateur silencieusement ouvert
-- [ ] Throttling sur `POST /platform/auth/login` (porte cross-tenant exposée)
-- [ ] Inclure le slug du tenant dans le state OIDC chiffré et le vérifier au callback
+      **→ livré en 7.4** : `apps/api/src/common/decorators/platform-controller.decorator.ts` ;
+      `platform-tenants.controller.ts` + `platform-mfa.controller.ts` migrated vers ce décorateur
+- [x] Throttling sur `POST /platform/auth/login` (porte cross-tenant exposée)
+      **→ livré en 7.4** : `ThrottlerModule` dans `AppModule`, `@UseGuards(ThrottlerGuard)` sur
+      `PlatformAuthController` uniquement, 20 req/min/IP (commentaire in-code explique le seuil)
+- [x] Inclure le slug du tenant dans le state OIDC chiffré et le vérifier au callback
       (défense en profondeur contre le rejeu d'états entre tenants)
-- [ ] Cache du `Issuer.discover` par issuer (un aller-retour de découverte par login OIDC)
-- [ ] MFA (TOTP + recovery) pour les comptes plateforme — phase 7 (voir spec phase 6)
-- [ ] Export CSV factures : préfixer les champs libres commençant par `=+-@` (injection de
+      **→ livré en 7.4** : `tenantSlug` inclus dans le state via `packOidcState` ; `callback`
+      vérifie `state.tenantSlug !== slug` et retourne 401 en cas de divergence
+- [x] Cache du `Issuer.discover` par issuer (un aller-retour de découverte par login OIDC)
+      **→ livré en 7.4** : `issuerCache` TTL 1 h dans `OidcService` ; retry-once avec
+      `forceRefresh = true` si l'échange IdP échoue (rotation d'endpoints)
+- [x] MFA (TOTP + recovery) pour les comptes plateforme — phase 7 (voir spec phase 6)
+      **→ livré en 7.4** : `PlatformMfaService` (otplib v12, fenêtre ±1) ; colonnes
+      `totpSecret enc:v1`, `mfaEnabledAt`, `recoveryCodes` bcrypt à usage unique sur `PlatformUser` ;
+      step tokens `mfa-enroll` (10 min, secret chiffré dans payload) et `mfa-pending` (5 min)
+      rejetés par `platform-jwt.strategy` ; endpoints `login` (3 branches dont
+      `PLATFORM_MFA_ENFORCED`), `mfa/enroll`, `mfa/verify` (publics) et `mfa/enroll-start`
+      (authentifié via `@PlatformController`) ; 14ᵉ migration
+- [x] Export CSV factures : préfixer les champs libres commençant par `=+-@` (injection de
       formule tableur) — risque faible (outil interne mono-tenant), à durcir avant exposition
-- [ ] Gardes de statut des factures dans la transaction (`updateMany` conditionnel + count)
+      **→ livré en 7.4** : `csvSafe()` dans `apps/api/src/common/csv.ts` appliqué sur tous les
+      champs libres de l'export CSV des factures transporteur
+- [x] Gardes de statut des factures dans la transaction (`updateMany` conditionnel + count)
       plutôt que read-then-write — fenêtre TOCTOU acceptable en UI d'ops, à fermer si API publique
+      **→ livré en 7.4** : transitions buy-side (`approve`, `markPaid`, `reconcile`,
+      `resolveDispute`) utilisent `updateMany` conditionnel sur le statut attendu ; `createDrafts`
+      dans `CustomerInvoicesService` est transactionnel avec `P2002 → 409`
 
 ## Phase 7 — Le « cerveau » TMS (rattrapage audit)
 
@@ -208,17 +227,20 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [x] Web : page Invoices enrichie avec deux onglets (carrier / customer statements)
 - [x] Suite e2e `phase7-3-sell-side` (7 tests) ; 13ᵉ migration
 
-### Chantier 7.4 — Durcissements différés phase 6 (à faire)
+### Chantier 7.4 — Durcissements différés phase 6 ✅
 
-Voir la liste détaillée déjà présente ci-dessus dans « Dette notée à la revue des plans
-phase 6 » :
-- [ ] Décorateur composite `@PlatformController()`
-- [ ] Throttling sur `POST /platform/auth/login`
-- [ ] Slug du tenant dans le state OIDC chiffré
-- [ ] Cache du `Issuer.discover` par issuer
-- [ ] MFA (TOTP + recovery) pour les comptes plateforme
-- [ ] Injection de formule tableur dans l'export CSV factures
-- [ ] Gardes de statut des factures dans la transaction (`updateMany` conditionnel)
+Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
+
+- [x] Décorateur composite `@PlatformController()` — `applyDecorators(Public(), UseGuards(PlatformGuard))`
+- [x] Throttling sur `POST /platform/auth/login` — `ThrottlerGuard` 20 req/min/IP
+- [x] Slug du tenant dans le state OIDC chiffré — `packOidcState` + vérification callback
+- [x] Cache du `Issuer.discover` par issuer — TTL 1 h + retry-once refresh
+- [x] MFA (TOTP + recovery) pour les comptes plateforme — `PlatformMfaService`, step tokens,
+      3 branches login, `PLATFORM_MFA_ENFORCED`, 8 codes de récupération bcrypt à usage unique
+- [x] Injection de formule tableur dans l'export CSV factures — `csvSafe()` sur champs libres
+- [x] Gardes de statut des factures dans la transaction — `updateMany` conditionnel, `createDrafts`
+      transactionnel `P2002 → 409`
+- [x] Suite e2e `phase7-4-hardening` (6 tests) ; 14ᵉ migration
 
 ## Phase 3 — Platform & integrations
 

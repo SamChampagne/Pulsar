@@ -1,7 +1,7 @@
 # État du projet — point de reprise
 
 > 🇫🇷 Document de synthèse pour reprendre le travail (humain ou session Claude Code).
-> Mis à jour à la fin de la **phase 7.3**. Détail des tâches : [TODO.md](../TODO.md) ·
+> Mis à jour à la fin de la **phase 7.4**. Détail des tâches : [TODO.md](../TODO.md) ·
 > vision : [ROADMAP.md](../ROADMAP.md) · règles de dev : [CLAUDE.md](../CLAUDE.md) ·
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
@@ -20,7 +20,8 @@
 | 6 — Commercial readiness | ✅ | **Plan d'admin plateforme** (création/suspension de tenants, PlatformUser disjoint, garde-fous prod), **SSO OIDC par tenant** (PKCE, state chiffré, provisioning), **rapprochement de factures transporteur** (tolérance sur écart brut, litiges codifiés, PAID, export CSV — réorientation issue de l'audit TMS), **secrets chiffrés au repos** (enc:v1 + script de rotation idempotent + runbooks), doc de découverte Fleet |
 | 7.1 — Rating engine v2 + Lane | ✅ | **Lane entité première classe** (hiérarchie géo, clés normalisées NFD, spécificité déterministe), **tarifs v2** (tranches CWT as-if, accessorials, table carburant datée), **snapshot `costDetail` figé** (invariant COMPLETED + updateMany atomique), **rate shopping** (`GET /loads/:id/rate-options`), auto-tender par spécificité, CRUD accessorials + fuel-tables, 4 permissions, seed démo, 4 pages web (rates/lanes/accessorials/fuel-tables) + détail load enrichi, 11ᵉ migration |
 | 7.2 — Intégrité du plan | ✅ | **Fenêtres temporelles early/late** sur TransportOrder, Shipment et Stop (RENAME sans perte de données) ; validations dures 400 (`assertWindowCoherence`) + avertissements consultatifs `windowWarnings` sur GET order/load ; **capacité 3 axes** (`checkCapacity` poids/volume/palettes, axe inconnu ignoré, dépassement forcé = audit consolidé) ; `capacityPallets` Trailer ; **jonction `shipment_load_legs`** maintenue dans la même transaction + backfill ; on-time analytics `plannedDeliveryLate ?? plannedDeliveryEarly` ; 6 tests e2e ; 12ᵉ migration |
-| 7.3 — Billing sell-side | ✅ | **Relevés client** depuis les ordres livrés et ratés (`CustomerInvoiceStatus` DRAFT→APPROVED→SENT→PAID) ; `RatingService.rateOrder` (taux client uniquement, lane ou catch-all client, date de référence = dernier `actualDeliveryAt` sinon today, moins cher retenu) ; un relevé par devise (`groupByCurrency`) ; anti-double-billing (`transportOrderId @unique`) ; échappatoire DRAFT (suppression libère les ordres) ; envoi conditionné sur email client + succès email (libellé « Billing statement ») ; 4 permissions `billing.customer-invoices.*` ; séquence CINV ; 7 tests e2e ; 13ᵉ migration |
+| 7.3 — Billing sell-side | ✅ | **Relevés client** depuis les ordres livrés et ratés (`CustomerInvoiceStatus` DRAFT→APPROVED→SENT→PAID) ; `RatingService.rateOrder` (taux client uniquement, lane ou catch-all client, date de référence = dernier `actualDeliveryAt` sinon today, moins cher retenu) ; un relevé par devise (`groupByCurrency`) ; anti-double-billing (`transportOrderId @unique`) ; échappatoire DRAFT (suppression libère les ordres) ; envoi conditionné sur email client + succès email (libellé « Billing statement ») ; 4 permissions `billing.customer-invoices.*` ; séquence CINV ; 8 tests e2e ; 13ᵉ migration |
+| 7.4 — Durcissements différés phase 6 | ✅ | **MFA plateforme** (TOTP otplib ±1, `totpSecret enc:v1` + `mfaEnabledAt` + `recoveryCodes` bcrypt à usage unique, step tokens `mfa-enroll`/`mfa-pending` rejetés par `PlatformJwtStrategy`, 3 branches login dont `PLATFORM_MFA_ENFORCED`, `enroll-start` authentifié) ; **throttling** `PlatformAuthController` 20 req/min/IP ; **`@PlatformController()`** composite `Public + PlatformGuard` ; **cache `Issuer.discover`** TTL 1 h + retry-once ; **slug tenant dans le state OIDC** vérifié au callback ; **`csvSafe()`** sur les champs libres de l'export CSV ; **`updateMany` conditionnel** sur les transitions buy-side + `createDrafts` transactionnel `P2002 → 409` ; 6 tests e2e ; 14ᵉ migration |
 
 **La boucle économique complète fonctionne** : le client commande depuis son portail →
 confirmation → planification (split possible) → tender automatique par lane avec courriel →
@@ -28,8 +29,8 @@ acceptation transporteur sans compte → dispatch → exécution mobile chauffeu
 POD avec photo → facture transporteur brouillon → approbation.
 
 **Chiffres** : 3 modules métier actifs (transportation, customer-portal, billing) + le plan
-d'administration plateforme ; 207 tests (65 vitest shared + 62 jest unitaires API + 80 E2E,
-tous verts et rejouables) ; 13 migrations ; ~75 endpoints ; 32 pages web dont 5 publiques à
+d'administration plateforme ; 219 tests (65 vitest shared + 67 jest unitaires API + 87 E2E,
+tous verts et rejouables) ; 14 migrations ; ~75 endpoints ; 32 pages web dont 5 publiques à
 jeton et 2 plateforme.
 
 ## Carte de la documentation
@@ -44,16 +45,18 @@ jeton et 2 plateforme.
 | Conventions REST | [api-conventions.md](./api-conventions.md) |
 | Démarrage local | [getting-started.md](./getting-started.md) |
 
-## Prochaine session : chantier 7.4 — Durcissements différés phase 6
+## Prochaine session : Phase 8
 
-L'[audit TMS](./audit-tms-2026-06-10.md) est la boussole. Les chantiers 7.1, 7.2 et 7.3 sont
-**livrés**. Seul chantier restant en phase 7 :
+L'[audit TMS](./audit-tms-2026-06-10.md) est la boussole. La phase 7 est **complète** (7.1, 7.2,
+7.3, 7.4 tous livrés). Phase 8 recommandée :
 
-1. **Durcissements différés de la phase 6** (chantier 7.4, voir TODO.md) — MFA plateforme
-   (TOTP + codes de récupération), throttling sur `POST /platform/auth/login`, décorateur
-   composite `@PlatformController()`, cache `Issuer.discover` par issuer, slug du tenant dans
-   le state OIDC chiffré, injection de formule tableur dans l'export CSV factures,
-   gardes de statut dans la transaction (`updateMany` conditionnel).
+1. **BOL généré** — Lettre de transport (Bill of Lading) PDF générée à partir des données du load ;
+   numéro de séquence dédié (BOL) ; endpoint de téléchargement ; intégration dans la page load.
+2. **Sélection de mode LTL / FTL** — champ mode sur TransportOrder et Load ; filtrage des taux
+   par mode (audit TMS §4) ; affichage dans l'UI et les exports.
+3. **Moteur d'exceptions simple** — détection des retards (fenêtres temporelles 7.2 vs
+   `actualArrivalAt`) ; alertes dans l'UI (badge sur le load) ; événement de tracking
+   `DELAY_DETECTED` ; correspond aux trous §9/§4/§10 de l'audit sous la ligne MVP.
 
 ### Dette connue à garder en tête (ne pas « réparer » en silence)
 
