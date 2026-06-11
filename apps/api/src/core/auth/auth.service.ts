@@ -120,13 +120,19 @@ export class AuthService {
   async refresh(refreshToken: string): Promise<LoginResponse> {
     const record = await this.prisma.refreshToken.findUnique({
       where: { tokenHash: sha256(refreshToken) },
-      include: { user: true },
+      include: { user: { include: { tenant: true } } },
     });
     if (!record || record.revokedAt || record.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid refresh token');
     }
     if (record.user.status !== 'ACTIVE') {
       throw new UnauthorizedException('User is disabled');
+    }
+    // Suspension is enforced at this chokepoint too (not only by the token
+    // revocation in PlatformTenantsService.suspend): no session on a suspended
+    // tenant can ever rotate into a fresh pair.
+    if (record.user.tenant.status === 'SUSPENDED') {
+      throw new UnauthorizedException('Tenant is suspended');
     }
     await this.prisma.refreshToken.update({
       where: { id: record.id },

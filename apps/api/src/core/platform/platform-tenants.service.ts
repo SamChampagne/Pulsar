@@ -80,6 +80,8 @@ export class PlatformTenantsService {
     const moduleKeys = [...new Set([MODULE_KEYS.CORE, ...dto.modules])];
 
     const inviteToken = randomBytes(32).toString('base64url');
+    // Pre-computed: bcrypt is CPU-bound and has no place inside the transaction.
+    const placeholderHash = await hash(randomBytes(32).toString('hex'), 10);
     const tenant = await this.prisma.$transaction(async (tx) => {
       const created = await tx.tenant.create({
         data: { slug: dto.slug, name: dto.name, status: 'ACTIVE' },
@@ -112,7 +114,7 @@ export class PlatformTenantsService {
         data: {
           tenantId: created.id,
           email: dto.admin.email.toLowerCase(),
-          passwordHash: await hash(randomBytes(32).toString('hex'), 10),
+          passwordHash: placeholderHash,
           firstName: dto.admin.firstName,
           lastName: dto.admin.lastName,
           status: 'INVITED',
@@ -130,6 +132,9 @@ export class PlatformTenantsService {
       return created;
     });
 
+    // Deliberately post-commit: a failed email must not roll back the tenant.
+    // The raw invite link is also returned to the (authenticated platform)
+    // caller below as the fallback delivery path — it is never logged.
     const inviteUrl = `${this.config.get('WEB_URL', 'http://localhost:5173')}/reset-password/${inviteToken}`;
     await this.email.send({
       to: dto.admin.email,
@@ -156,7 +161,10 @@ export class PlatformTenantsService {
     }
     await this.prisma.$transaction([
       this.prisma.tenant.update({ where: { id }, data: { status: 'SUSPENDED' } }),
-      // Active sessions die with the tenant: no refresh possible while suspended.
+      // Active sessions die with the tenant: no refresh possible while suspended
+      // (refresh() also re-checks tenant status). In-flight ACCESS tokens keep
+      // working up to their 15 min TTL — assumed, same trade-off as the
+      // permissions-in-JWT lag documented in CLAUDE.md.
       this.prisma.refreshToken.updateMany({
         where: { revokedAt: null, user: { tenantId: id } },
         data: { revokedAt: new Date() },
