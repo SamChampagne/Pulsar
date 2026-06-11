@@ -109,7 +109,7 @@ export class AuthService {
       entityId: user.id,
     });
 
-    return this.buildSession(user.id);
+    return this.issueSession(user.id);
   }
 
   /**
@@ -138,7 +138,7 @@ export class AuthService {
       where: { id: record.id },
       data: { revokedAt: new Date() },
     });
-    return this.buildSession(record.userId);
+    return this.issueSession(record.userId);
   }
 
   async logout(refreshToken: string): Promise<{ loggedOut: boolean }> {
@@ -149,7 +149,12 @@ export class AuthService {
     return { loggedOut: true };
   }
 
-  private async buildSession(userId: string): Promise<LoginResponse> {
+  /**
+   * Single session-issuance path (access + rotating refresh pair). Used by
+   * password login, refresh, and the OIDC exchange — any new auth method must
+   * go through here so session semantics stay identical.
+   */
+  async issueSession(userId: string): Promise<LoginResponse> {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
       include: { tenant: true },
