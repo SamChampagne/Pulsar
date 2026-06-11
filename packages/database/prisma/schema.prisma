@@ -32,6 +32,8 @@ model Tenant {
   name      String
   status    TenantStatus @default(TRIAL)
   settings  Json         @default("{}")
+  // OIDC SSO config: { enabled, issuer, clientId, clientSecret (enc:v1), defaultRoleId }
+  authConfig Json?
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
@@ -90,6 +92,8 @@ model User {
   firstName    String
   lastName     String
   status       UserStatus @default(ACTIVE)
+  // Stable OIDC identifier (ID token "sub"); email is only a first-login fallback.
+  oidcSubject  String?
   lastLoginAt  DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -106,6 +110,7 @@ model User {
   receivedPods           ProofOfDelivery[]
 
   @@unique([tenantId, email])
+  @@unique([tenantId, oidcSubject])
   @@index([tenantId])
   @@map("users")
 }
@@ -133,6 +138,7 @@ model ApiKey {
 enum UserActionTokenKind {
   INVITATION
   PASSWORD_RESET
+  OIDC_EXCHANGE
 }
 
 // One-shot tokens for invitation acceptance and password resets (hash at rest).
