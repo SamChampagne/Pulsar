@@ -7,7 +7,7 @@
  */
 import { PrismaClient } from '@pulsar/database';
 import { parseEncryptionKey } from '../src/core/crypto/crypto.util';
-import { reencryptIntegrations } from '../src/core/crypto/reencrypt';
+import { reencryptAuthConfigs, reencryptIntegrations } from '../src/core/crypto/reencrypt';
 
 async function main() {
   const newKey = parseEncryptionKey(process.env.ENCRYPTION_KEY);
@@ -21,6 +21,8 @@ async function main() {
   try {
     const count = await reencryptIntegrations(prisma, oldKey, newKey);
     console.log(`Re-encrypted ${count} integration config(s).`);
+    const authCount = await reencryptAuthConfigs(prisma, oldKey, newKey);
+    console.log(`Re-encrypted ${authCount} tenant authConfig(s).`);
   } finally {
     await prisma.$disconnect();
   }

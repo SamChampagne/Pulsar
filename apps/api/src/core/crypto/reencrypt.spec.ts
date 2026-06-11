@@ -1,5 +1,5 @@
 import { decryptValue, encryptValue, isEncrypted, parseEncryptionKey } from './crypto.util';
-import { reencryptIntegrations } from './reencrypt';
+import { reencryptAuthConfigs, reencryptIntegrations } from './reencrypt';
 
 const OLD = parseEncryptionKey(Buffer.alloc(32, 1).toString('base64'));
 const NEW = parseEncryptionKey(Buffer.alloc(32, 2).toString('base64'));
@@ -56,5 +56,39 @@ describe('reencryptIntegrations', () => {
     await expect(reencryptIntegrations(prisma as never, OLD, NEW)).rejects.toThrow(
       /neither the old nor the new key/,
     );
+  });
+});
+
+describe('reencryptAuthConfigs', () => {
+  it('re-encrypts the clientSecret inside authConfig', async () => {
+    const stored = { enabled: true, issuer: 'https://idp', clientSecret: encryptValue(OLD, 'cs') };
+    const updates: { id: string; authConfig: { clientSecret: string } }[] = [];
+    const prisma = {
+      tenant: {
+        findMany: async () => [{ id: 't1', authConfig: stored }],
+        update: async ({ where, data }: never) => {
+          updates.push({ id: (where as { id: string }).id, ...(data as object) } as never);
+        },
+      },
+    };
+    const count = await reencryptAuthConfigs(prisma as never, OLD, NEW);
+    expect(count).toBe(1);
+    expect(decryptValue(NEW, updates[0].authConfig.clientSecret)).toBe('cs');
+  });
+
+  it('skips rows already rotated to the new key (idempotent)', async () => {
+    const stored = { enabled: true, issuer: 'https://idp', clientSecret: encryptValue(NEW, 'cs') };
+    const updates: unknown[] = [];
+    const prisma = {
+      tenant: {
+        findMany: async () => [{ id: 't2', authConfig: stored }],
+        update: async ({ where, data }: never) => {
+          updates.push({ id: (where as { id: string }).id, ...(data as object) });
+        },
+      },
+    };
+    const count = await reencryptAuthConfigs(prisma as never, OLD, NEW);
+    expect(count).toBe(0);
+    expect(updates).toHaveLength(0);
   });
 });
