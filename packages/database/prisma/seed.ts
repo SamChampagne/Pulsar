@@ -234,6 +234,16 @@ async function main() {
     },
   });
 
+  // The sample order above bypasses SequencesService (hard rule 8): on a fresh
+  // database the counter would still be at 0 and the FIRST API-created order
+  // would also get TO-000001 — a unique-constraint crash that hit whichever
+  // e2e suite ran first. Align the counter; never move an advanced one back.
+  await prisma.numberSequence.upsert({
+    where: { tenantId_key: { tenantId: tenant.id, key: 'transport-order' } },
+    update: {},
+    create: { tenantId: tenant.id, key: 'transport-order', value: 1 },
+  });
+
   console.log('Sample TMS data ready.');
 }
 
