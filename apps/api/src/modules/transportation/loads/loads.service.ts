@@ -156,6 +156,10 @@ export class LoadsService {
       where: { id: { in: ids }, tenantId },
       select: { id: true, unit: true },
     });
+    if (catalog.length !== ids.length) {
+      // Deleted between the ownership check and here — 400 instead of an FK 500.
+      throw new BadRequestException('One or more accessorials could not be found');
+    }
     const unitOf = new Map(catalog.map((a) => [a.id, a.unit]));
 
     await this.prisma.$transaction([
