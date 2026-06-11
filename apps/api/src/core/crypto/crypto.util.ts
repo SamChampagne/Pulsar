@@ -33,6 +33,9 @@ export function encryptValue(key: Buffer, plain: string): string {
 export function decryptValue(key: Buffer, value: string): string {
   if (!isEncrypted(value)) return value;
   const [iv, tag, ciphertext] = value.slice(PREFIX.length).split(':');
+  if (!iv || !tag || !ciphertext) {
+    throw new Error('malformed enc:v1 value (expected iv:tag:ciphertext)');
+  }
   const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'base64'));
   decipher.setAuthTag(Buffer.from(tag, 'base64'));
   return Buffer.concat([

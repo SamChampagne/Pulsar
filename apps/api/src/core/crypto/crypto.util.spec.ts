@@ -39,4 +39,10 @@ describe('crypto.util', () => {
     expect(() => parseEncryptionKey(undefined)).toThrow(/ENCRYPTION_KEY/);
     expect(() => parseEncryptionKey('dG9vLXNob3J0')).toThrow(/32 bytes/);
   });
+
+  it('rejects a malformed enc:v1 value with a clear domain error', () => {
+    for (const bad of ['enc:v1:', 'enc:v1:onlyone', 'enc:v1:aa:bb', 'enc:v1:::']) {
+      expect(() => decryptValue(KEY, bad)).toThrow(/malformed enc:v1 value/);
+    }
+  });
 });
