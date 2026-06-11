@@ -6,9 +6,6 @@
   "engines": {
     "node": ">=20"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": ["@prisma/client", "@prisma/engines", "prisma", "esbuild"]
-  },
   "scripts": {
     "setup": "pnpm install && pnpm db:generate && pnpm --filter @pulsar/shared build && pnpm --filter @pulsar/database build",
     "dev": "concurrently -n api,web -c blue,green \"pnpm dev:api\" \"pnpm dev:web\"",

@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+# pnpm repo: a stray npm run must never commit its lockfile
+package-lock.json
 
 # Builds
 dist/

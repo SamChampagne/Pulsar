@@ -1,9 +1,11 @@
 packages:
   - "apps/*"
   - "packages/*"
-allowBuilds:
-  '@prisma/client': set this to true or false
-  '@prisma/engines': set this to true or false
-  '@scarf/scarf': set this to true or false
-  esbuild: set this to true or false
-  prisma: set this to true or false
+
+# pnpm 10 moved this setting here from package.json's "pnpm" field.
+# Only these packages may run install scripts (prisma engines, esbuild binary).
+onlyBuiltDependencies:
+  - "@prisma/client"
+  - "@prisma/engines"
+  - esbuild
+  - prisma
