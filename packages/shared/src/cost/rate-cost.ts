@@ -48,8 +48,10 @@ export interface CostLine {
 export interface AppliedBreak {
   upToKg: number;
   amount: number;
-  /** True when the deficit-weight ("as-if") rule priced the next bracket cheaper. */
+  /** True when the deficit-weight ("as-if") rule priced a higher bracket cheaper. */
   asIfApplied: boolean;
+  /** The phantom weight used when asIfApplied (the bracket-entry weight), absent otherwise. */
+  asIfWeightKg?: number;
 }
 
 export interface CostBreakdown {
@@ -83,13 +85,16 @@ function weightBase(rate: RateLike, weightKg: number): { base: number; appliedBr
   const applied = index === -1 ? breaks.length - 1 : index;
   let base = cwtOf(weightKg) * breaks[applied].amount;
   let appliedBreak: AppliedBreak = { upToKg: breaks[applied].upToKg, amount: breaks[applied].amount, asIfApplied: false };
-  if (index !== -1 && applied < breaks.length - 1) {
-    // As-if: price as the next bracket's minimum weight (= this bracket's bound) if cheaper.
-    const next = breaks[applied + 1];
-    const asIf = cwtOf(breaks[applied].upToKg) * next.amount;
-    if (asIf < base) {
-      base = asIf;
-      appliedBreak = { upToKg: next.upToKg, amount: next.amount, asIfApplied: true };
+  if (index !== -1) {
+    // Deficit-weight ("as-if") rule: price as the minimum weight of any higher bracket
+    // (= the previous bracket's bound at that bracket's rate); keep the global minimum.
+    for (let i = index + 1; i < breaks.length; i++) {
+      const asIfWeightKg = breaks[i - 1].upToKg;
+      const candidate = cwtOf(asIfWeightKg) * breaks[i].amount;
+      if (candidate < base) {
+        base = candidate;
+        appliedBreak = { upToKg: breaks[i].upToKg, amount: breaks[i].amount, asIfApplied: true, asIfWeightKg };
+      }
     }
   }
   return { base, appliedBreak };
@@ -105,29 +110,35 @@ export function calculateRateCost(
   metrics: CostMetrics,
   accessorials: RequestedAccessorial[] = [],
 ): CostBreakdown | null {
-  let base: number;
+  let rawBase: number;
   let appliedBreak: AppliedBreak | null = null;
   switch (rate.rateType) {
     case RateType.FLAT:
     case RateType.SPOT:
-      base = rate.baseAmount;
+      rawBase = rate.baseAmount;
       break;
     case RateType.PER_KM:
       if (metrics.distanceKm == null) return null;
-      base = rate.baseAmount * metrics.distanceKm;
+      rawBase = rate.baseAmount * metrics.distanceKm;
       break;
     case RateType.PER_HUNDREDWEIGHT: {
       if (metrics.weightKg == null) return null;
-      ({ base, appliedBreak } = weightBase(rate, metrics.weightKg));
+      ({ base: rawBase, appliedBreak } = weightBase(rate, metrics.weightKg));
       break;
     }
     case RateType.PER_PALLET:
       if (metrics.palletCount == null) return null;
-      base = rate.baseAmount * metrics.palletCount;
+      rawBase = rate.baseAmount * metrics.palletCount;
       break;
+    default:
+      // Unknown rate types (e.g. stale DB values) mean "cannot estimate", not NaN.
+      return null;
   }
 
-  const fuelSurcharge = base * ((rate.fuelSurchargePct ?? 0) / 100);
+  // Round base and fuel once before assembling lines so sum(lines[].amount) === total.
+  const baseRounded = round2(rawBase);
+  const rawFuel = rawBase * ((rate.fuelSurchargePct ?? 0) / 100);
+  const fuelRounded = round2(rawFuel);
 
   const prices = new Map((rate.accessorialPrices ?? []).map((p) => [p.code, p.amount]));
   const missingAccessorials: string[] = [];
@@ -154,15 +165,16 @@ export function calculateRateCost(
       label: appliedBreak
         ? `Base (bracket ≤ ${appliedBreak.upToKg} kg${appliedBreak.asIfApplied ? ', as-if' : ''})`
         : 'Base',
-      amount: round2(base),
+      amount: baseRounded,
     },
   ];
-  if (fuelSurcharge > 0) {
-    lines.push({ type: 'FUEL', label: `Fuel surcharge ${rate.fuelSurchargePct}%`, amount: round2(fuelSurcharge) });
+  /** A FUEL line is emitted only when the surcharge is non-zero. */
+  if (fuelRounded > 0) {
+    lines.push({ type: 'FUEL', label: `Fuel surcharge ${rate.fuelSurchargePct}%`, amount: fuelRounded });
   }
   lines.push(...accessorialLines);
 
-  let total = base + fuelSurcharge + accessorialsTotal;
+  let total = baseRounded + fuelRounded + accessorialsTotal;
   if (rate.minCharge != null && total < rate.minCharge) {
     lines.push({
       type: 'MIN_CHARGE_ADJUSTMENT',
@@ -174,8 +186,8 @@ export function calculateRateCost(
 
   return {
     lines,
-    base: round2(base),
-    fuelSurcharge: round2(fuelSurcharge),
+    base: baseRounded,
+    fuelSurcharge: fuelRounded,
     accessorialsTotal: round2(accessorialsTotal),
     total: round2(total),
     appliedBreak,

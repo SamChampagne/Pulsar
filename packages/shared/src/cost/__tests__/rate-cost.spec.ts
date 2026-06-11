@@ -57,7 +57,7 @@ describe('weight breaks + as-if (deficit weight)', () => {
     const cost = calculateRateCost(rate, { weightKg: 900 });
     // own: cwt(900)×15 = 297.62 ; as-if: cwt(1000)×10 = 220.46 → min wins
     expect(cost?.total).toBe(220.46);
-    expect(cost?.appliedBreak).toEqual({ upToKg: 5000, amount: 10, asIfApplied: true });
+    expect(cost?.appliedBreak).toEqual({ upToKg: 5000, amount: 10, asIfApplied: true, asIfWeightKg: 1000 });
   });
 
   it('weights beyond the last bracket use the last bracket', () => {
@@ -70,7 +70,7 @@ describe('weight breaks + as-if (deficit weight)', () => {
     const at500 = calculateRateCost(rate, { weightKg: 500 });
     // 480 kg in bracket ≤500 @20 = 211.65 ; as-if 500 kg in bracket ≤1000 @15 = 165.35 → min wins
     expect(at480?.total).toBe(165.35);
-    expect(at480?.appliedBreak).toEqual({ upToKg: 1000, amount: 15, asIfApplied: true });
+    expect(at480?.appliedBreak).toEqual({ upToKg: 1000, amount: 15, asIfApplied: true, asIfWeightKg: 500 });
     expect(at480!.total).toBeLessThanOrEqual(at500!.total!);
   });
 
@@ -78,6 +78,22 @@ describe('weight breaks + as-if (deficit weight)', () => {
     const cost = calculateRateCost(rate, { weightKg: 100 });
     // 100 kg @20 = 44.09 < as-if 500 kg @15 = 165.35
     expect(cost?.appliedBreak?.asIfApplied).toBe(false);
+  });
+
+  it('as-if scans ALL higher brackets, not only the adjacent one (valley tables)', () => {
+    const valley = {
+      rateType: RateType.PER_HUNDREDWEIGHT,
+      baseAmount: 999,
+      breaks: [
+        { upToKg: 100, amount: 50 },
+        { upToKg: 300, amount: 45 },
+        { upToKg: 5000, amount: 3 },
+      ],
+    };
+    const cost = calculateRateCost(valley, { weightKg: 80 });
+    // own: cwt(80)×50 = 88.18 ; adjacent as-if: cwt(100)×45 = 99.21 (worse) ; cwt(300)×3 = 19.84 (best)
+    expect(cost?.total).toBe(19.84);
+    expect(cost?.appliedBreak).toEqual({ upToKg: 5000, amount: 3, asIfApplied: true, asIfWeightKg: 300 });
   });
 });
 
@@ -130,6 +146,17 @@ describe('minimum charge', () => {
       label: 'Minimum charge adjustment',
       amount: 340,
     });
+  });
+});
+
+describe('lines-sum invariant', () => {
+  it('sum of line amounts always equals the total (billing snapshot invariant)', () => {
+    const cost = calculateRateCost(
+      { rateType: RateType.PER_KM, baseAmount: 1.111, fuelSurchargePct: 7.3, minCharge: 500 },
+      { distanceKm: 123.4 },
+    );
+    const sum = cost!.lines.reduce((s, l) => s + l.amount, 0);
+    expect(Math.round(sum * 100) / 100).toBe(cost!.total);
   });
 });
 
