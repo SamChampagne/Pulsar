@@ -11,8 +11,10 @@
       orderNumber: string;
       customerReference: string | null;
       status: string;
-      requestedPickupDate: string | null;
-      requestedDeliveryDate: string | null;
+      requestedPickupEarly: string | null;
+      requestedPickupLate: string | null;
+      requestedDeliveryEarly: string | null;
+      requestedDeliveryLate: string | null;
       originLocation: { city: string; state: string | null };
       destinationLocation: { city: string; state: string | null };
       shipments: {
@@ -34,11 +36,19 @@
     originLocationId: '',
     destinationLocationId: '',
     customerReference: '',
-    requestedPickupDate: '',
+    requestedPickupEarly: '',
+    requestedPickupLate: '',
+    requestedDeliveryEarly: '',
+    requestedDeliveryLate: '',
     palletCount: '',
     totalWeightKg: '',
     notes: '',
   });
+
+  const fmtWindow = (early: string | null, late?: string | null) =>
+    early
+      ? new Date(early).toLocaleDateString() + (late ? ' → ' + new Date(late).toLocaleDateString() : '')
+      : '—';
 
   function fmt(value: string | null): string {
     return value ? new Date(value).toLocaleDateString() : '—';
@@ -62,8 +72,17 @@
           originLocationId: request.originLocationId,
           destinationLocationId: request.destinationLocationId,
           customerReference: request.customerReference || undefined,
-          requestedPickupDate: request.requestedPickupDate
-            ? new Date(request.requestedPickupDate).toISOString()
+          requestedPickupEarly: request.requestedPickupEarly
+            ? new Date(request.requestedPickupEarly).toISOString()
+            : undefined,
+          requestedPickupLate: request.requestedPickupLate
+            ? new Date(request.requestedPickupLate).toISOString()
+            : undefined,
+          requestedDeliveryEarly: request.requestedDeliveryEarly
+            ? new Date(request.requestedDeliveryEarly).toISOString()
+            : undefined,
+          requestedDeliveryLate: request.requestedDeliveryLate
+            ? new Date(request.requestedDeliveryLate).toISOString()
             : undefined,
           palletCount: request.palletCount ? Number(request.palletCount) : undefined,
           totalWeightKg: request.totalWeightKg ? Number(request.totalWeightKg) : undefined,
@@ -76,7 +95,10 @@
         originLocationId: '',
         destinationLocationId: '',
         customerReference: '',
-        requestedPickupDate: '',
+        requestedPickupEarly: '',
+        requestedPickupLate: '',
+        requestedDeliveryEarly: '',
+        requestedDeliveryLate: '',
         palletCount: '',
         totalWeightKg: '',
         notes: '',
@@ -129,8 +151,20 @@
               <input id="ref" bind:value={request.customerReference} placeholder="PO-12345" />
             </div>
             <div class="field">
-              <label for="pickup">Requested pickup</label>
-              <input id="pickup" type="date" bind:value={request.requestedPickupDate} />
+              <label for="pickup-from">Pickup from</label>
+              <input id="pickup-from" type="date" bind:value={request.requestedPickupEarly} />
+            </div>
+            <div class="field">
+              <label for="pickup-to">Pickup to (optional)</label>
+              <input id="pickup-to" type="date" bind:value={request.requestedPickupLate} />
+            </div>
+            <div class="field">
+              <label for="delivery-from">Delivery from</label>
+              <input id="delivery-from" type="date" bind:value={request.requestedDeliveryEarly} />
+            </div>
+            <div class="field">
+              <label for="delivery-to">Delivery to (optional)</label>
+              <input id="delivery-to" type="date" bind:value={request.requestedDeliveryLate} />
             </div>
             <div class="field">
               <label for="pallets">Pallets</label>
@@ -160,7 +194,8 @@
           </div>
           <div class="muted">
             {order.originLocation.city} → {order.destinationLocation.city}
-            · pickup {fmt(order.requestedPickupDate)} · delivery {fmt(order.requestedDeliveryDate)}
+            · pickup {fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}
+            · delivery {fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}
           </div>
           {#if order.shipments.length > 0}
             <table>

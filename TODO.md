@@ -164,11 +164,27 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
       enrichi (costDetail snapshot + rate options)
 - [x] Migration Prisma `20260611100309_phase7_rating_engine_lanes` (11ᵉ migration)
 
-### Chantier 7.2 — Intégrité du plan (à faire)
+### Chantier 7.2 — Intégrité du plan ✅
 
-- [ ] Fenêtres temporelles early/late sur les stops (hard constraint vs. soft warning)
-- [ ] Vérification de capacité 3 axes (poids, palettes, volume) à l'ajout d'un shipment au load
-- [ ] Entité de jonction shipment↔load (déverrouille le multi-leg plus tard)
+- [x] Fenêtres temporelles early/late sur TransportOrder, Shipment et Stop : colonnes renommées
+      sans perte de données (RENAME), colonne `late` ajoutée ; `TimeWindow`, `validateWindowPair`,
+      `windowViolations` dans `packages/shared/src/planning/windows.ts`
+- [x] Validations dures (400) : early ≤ late par paire, pickupEarly ≤ deliveryLate — mais
+      pickupLate ≤ deliveryEarly délibérément NON validé (fenêtres qui se chevauchent = légitimes) ;
+      `assertWindowCoherence` + `resolveSplitWindows` dans `window-validation.ts`
+- [x] Avertissements consultatifs `windowWarnings` sur GET order et GET load : compare les fenêtres
+      planifiées des shipments aux bornes demandées par l'ordre (`shipmentWindowWarnings`) — jamais bloquant
+- [x] Capacité 3 axes (poids/volume/palettes) : `checkCapacity` dans
+      `packages/shared/src/planning/capacity.ts` ; axes sans valeur ignorés ; égal à la capacité = OK ;
+      gate dans `shipments.assignToLoad` et `loads.assignResources` avec `force` booléen ;
+      dépassement forcé = entrée d'audit unique consolidée
+- [x] `capacityPallets` ajouté au modèle `Trailer` et exposé dans le DTO trailer
+- [x] Entité de jonction `shipment_load_legs` : migration `20260611120000_phase7_2_plan_integrity`
+      avec backfill des assignations existantes ; maintenue dans la même transaction que
+      `Shipment.loadId` dans `assignToLoad`, `removeFromLoad` et `loads.cancel`
+- [x] Analytics on-time : la borne de comparaison est `plannedDeliveryLate ?? plannedDeliveryEarly`
+      (couvre les données migrées sans `late`)
+- [x] Suite e2e phase7-2 (6 tests) ; 12 migrations au total
 
 ### Chantier 7.3 — Billing sell-side (à faire, débloqué par 7.1)
 

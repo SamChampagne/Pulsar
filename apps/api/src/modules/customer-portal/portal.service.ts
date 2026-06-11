@@ -7,13 +7,16 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
+import { toDate, assertWindowCoherence } from '../transportation/planning/window-validation';
 
 export interface PortalOrderInput {
   originLocationId: string;
   destinationLocationId: string;
   customerReference?: string;
-  requestedPickupDate?: string;
-  requestedDeliveryDate?: string;
+  requestedPickupEarly?: string;
+  requestedPickupLate?: string;
+  requestedDeliveryEarly?: string;
+  requestedDeliveryLate?: string;
   totalWeightKg?: number;
   palletCount?: number;
   notes?: string;
@@ -61,6 +64,12 @@ export class PortalService {
       this.ownership.assertOwned('location', input.destinationLocationId, customer.tenantId),
     ]);
 
+    const pickupEarly = toDate(input.requestedPickupEarly);
+    const pickupLate = toDate(input.requestedPickupLate);
+    const deliveryEarly = toDate(input.requestedDeliveryEarly);
+    const deliveryLate = toDate(input.requestedDeliveryLate);
+    assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
+
     const order = await this.prisma.transportOrder.create({
       data: {
         tenantId: customer.tenantId,
@@ -69,12 +78,10 @@ export class PortalService {
         customerReference: input.customerReference,
         originLocationId: input.originLocationId,
         destinationLocationId: input.destinationLocationId,
-        requestedPickupDate: input.requestedPickupDate
-          ? new Date(input.requestedPickupDate)
-          : undefined,
-        requestedDeliveryDate: input.requestedDeliveryDate
-          ? new Date(input.requestedDeliveryDate)
-          : undefined,
+        requestedPickupEarly: pickupEarly,
+        requestedPickupLate: pickupLate,
+        requestedDeliveryEarly: deliveryEarly,
+        requestedDeliveryLate: deliveryLate,
         totalWeightKg: input.totalWeightKg,
         palletCount: input.palletCount,
         notes: input.notes,
@@ -135,8 +142,10 @@ export class PortalService {
         orderNumber: true,
         customerReference: true,
         status: true,
-        requestedPickupDate: true,
-        requestedDeliveryDate: true,
+        requestedPickupEarly: true,
+        requestedPickupLate: true,
+        requestedDeliveryEarly: true,
+        requestedDeliveryLate: true,
         createdAt: true,
         originLocation: { select: { city: true, state: true } },
         destinationLocation: { select: { city: true, state: true } },

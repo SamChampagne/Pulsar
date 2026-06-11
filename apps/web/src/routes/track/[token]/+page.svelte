@@ -10,13 +10,20 @@
     status: string;
     origin: { city: string; state: string | null };
     destination: { city: string; state: string | null };
-    plannedPickupAt: string | null;
-    plannedDeliveryAt: string | null;
+    plannedPickupEarly: string | null;
+    plannedPickupLate: string | null;
+    plannedDeliveryEarly: string | null;
+    plannedDeliveryLate: string | null;
     actualPickupAt: string | null;
     actualDeliveryAt: string | null;
     proofOfDelivery: { signedByName: string | null; signedAt: string } | null;
     events: TimelineEvent[];
   }
+
+  const fmtWindow = (early: string | null, late?: string | null) =>
+    early
+      ? new Date(early).toLocaleString() + (late ? ' → ' + new Date(late).toLocaleString() : '')
+      : '—';
 
   const token = $derived(page.params.token);
 
@@ -53,9 +60,9 @@
 
       <table style="margin-bottom: 16px;">
         <tbody>
-          <tr><td class="muted">Planned pickup</td><td>{fmt(view.plannedPickupAt)}</td></tr>
+          <tr><td class="muted">Planned pickup</td><td>{fmtWindow(view.plannedPickupEarly, view.plannedPickupLate)}</td></tr>
           <tr><td class="muted">Actual pickup</td><td>{fmt(view.actualPickupAt)}</td></tr>
-          <tr><td class="muted">Planned delivery</td><td>{fmt(view.plannedDeliveryAt)}</td></tr>
+          <tr><td class="muted">Planned delivery</td><td>{fmtWindow(view.plannedDeliveryEarly, view.plannedDeliveryLate)}</td></tr>
           <tr><td class="muted">Actual delivery</td><td>{fmt(view.actualDeliveryAt)}</td></tr>
         </tbody>
       </table>

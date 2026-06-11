@@ -30,7 +30,11 @@ export class StopInputDto {
 
   @IsOptional()
   @IsDateString()
-  plannedArrivalAt?: string;
+  plannedArrivalEarly?: string;
+
+  @IsOptional()
+  @IsDateString()
+  plannedArrivalLate?: string;
 
   @IsOptional()
   @IsDateString()

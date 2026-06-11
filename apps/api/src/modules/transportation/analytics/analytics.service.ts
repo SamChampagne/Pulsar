@@ -12,7 +12,7 @@ export interface CarrierScorecard {
   tendersAccepted: number;
   /** Accepted / responded (accepted+declined), in percent. Null when no responses yet. */
   acceptanceRatePct: number | null;
-  /** Delivered on or before plannedDeliveryAt, in percent. Null when not measurable. */
+  /** Delivered on or before the latest known planned bound (plannedDeliveryLate ?? plannedDeliveryEarly), in percent. Null when not measurable. */
   onTimeDeliveryPct: number | null;
   totalEstimatedCost: number;
 }
@@ -44,7 +44,8 @@ export class AnalyticsService {
           load: { carrierId: { not: null } },
         },
         select: {
-          plannedDeliveryAt: true,
+          plannedDeliveryEarly: true,
+          plannedDeliveryLate: true,
           actualDeliveryAt: true,
           load: { select: { carrierId: true } },
         },
@@ -65,10 +66,13 @@ export class AnalyticsService {
         accepted + carrierTenders.filter((t) => t.status === TenderStatus.DECLINED).length;
 
       const deliveries = deliveredShipments.filter((s) => s.load?.carrierId === carrier.id);
-      const measurable = deliveries.filter((s) => s.plannedDeliveryAt !== null);
-      const onTime = measurable.filter(
-        (s) => s.actualDeliveryAt! <= s.plannedDeliveryAt!,
-      ).length;
+      const measurable = deliveries.filter(
+        (s) => s.plannedDeliveryLate !== null || s.plannedDeliveryEarly !== null,
+      );
+      const onTime = measurable.filter((s) => {
+        const bound = s.plannedDeliveryLate ?? s.plannedDeliveryEarly;
+        return s.actualDeliveryAt! <= bound!;
+      }).length;
 
       const pct = (num: number, den: number) =>
         den === 0 ? null : Math.round((num / den) * 1000) / 10;

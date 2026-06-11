@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/commo
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { MODULE_KEYS, PERMISSIONS, ShipmentStatus } from '@pulsar/shared';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
@@ -18,6 +18,11 @@ class ShipmentListQueryDto extends ListQueryDto {
 class AssignLoadDto {
   @IsString()
   loadId!: string;
+
+  /** Bypasses the capacity check; the override is written to the audit log. */
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
 }
 
 @ApiTags('transportation/shipments')
@@ -42,7 +47,7 @@ export class ShipmentsController {
   @Post(':id/assign-load')
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
   assignToLoad(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AssignLoadDto) {
-    return this.shipments.assignToLoad(user.tenantId, id, dto.loadId);
+    return this.shipments.assignToLoad(user.tenantId, user.id, id, dto);
   }
 
   @Post(':id/remove-load')

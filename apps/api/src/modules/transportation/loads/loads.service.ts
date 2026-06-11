@@ -8,6 +8,7 @@ import {
   TrackingEventType,
   TransportOrderStatus,
   canTransitionLoad,
+  checkCapacity,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { randomBytes } from 'node:crypto';
@@ -21,6 +22,7 @@ import { EmailService } from '../../../core/email/email.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
 import { LoadCostService } from './load-cost.service';
 import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
+import { shipmentWindowWarnings } from '../planning/window-warnings';
 
 const loadInclude = {
   carrier: { select: { id: true, code: true, name: true } },
@@ -36,7 +38,19 @@ const loadInclude = {
       transportOrderId: true,
       originLocationId: true,
       destinationLocationId: true,
+      plannedPickupEarly: true,
+      plannedPickupLate: true,
+      plannedDeliveryEarly: true,
+      plannedDeliveryLate: true,
       proofOfDelivery: { select: { id: true, signedByName: true, signedAt: true } },
+      transportOrder: {
+        select: {
+          requestedPickupEarly: true,
+          requestedPickupLate: true,
+          requestedDeliveryEarly: true,
+          requestedDeliveryLate: true,
+        },
+      },
     },
   },
   route: { include: { stops: { orderBy: { sequence: 'asc' as const } } } },
@@ -85,7 +99,10 @@ export class LoadsService {
   async get(tenantId: string, id: string) {
     const load = await this.prisma.load.findFirst({ where: { id, tenantId }, include: loadInclude });
     if (!load) throw new NotFoundException('Load not found');
-    return load;
+    return {
+      ...load,
+      windowWarnings: load.shipments.flatMap((s) => shipmentWindowWarnings(s.transportOrder, [s])),
+    };
   }
 
   async create(tenantId: string, userId: string, dto: CreateLoadDto) {
@@ -121,21 +138,56 @@ export class LoadsService {
       this.ownership.assertOwnedIfSet('trailer', dto.trailerId, tenantId),
       this.ownership.assertOwnedIfSet('rate', dto.rateId, tenantId),
     ]);
+    const { force, ...resources } = dto;
+    let capacityOverride: { capacityOverride: true; excesses: unknown } | undefined;
+    if (dto.trailerId) {
+      const trailer = await this.prisma.trailer.findFirst({
+        where: { id: dto.trailerId, tenantId },
+        select: { capacityWeightKg: true, capacityVolumeM3: true, capacityPallets: true },
+      });
+      const shipments = await this.prisma.shipment.findMany({
+        where: { loadId: id, tenantId },
+        select: { weightKg: true, volumeM3: true, palletCount: true },
+      });
+      const sum = (values: (number | null)[]) =>
+        values.some((v) => v !== null) ? values.reduce<number>((acc, v) => acc + (v ?? 0), 0) : null;
+      const excesses = trailer
+        ? checkCapacity(
+            {
+              weightKg: trailer.capacityWeightKg,
+              volumeM3: trailer.capacityVolumeM3,
+              pallets: trailer.capacityPallets,
+            },
+            {
+              weightKg: sum(shipments.map((s) => s.weightKg)),
+              volumeM3: sum(shipments.map((s) => s.volumeM3)),
+              pallets: sum(shipments.map((s) => s.palletCount)),
+            },
+          )
+        : [];
+      if (excesses.length > 0 && !force) {
+        throw new BadRequestException({ message: 'Trailer capacity exceeded', excesses });
+      }
+      if (excesses.length > 0 && force) {
+        capacityOverride = { capacityOverride: true, excesses };
+      }
+    }
     await this.prisma.load.update({
       where: { id },
       data: {
-        ...dto,
+        ...resources,
         status: load.status === LoadStatus.OPEN ? LoadStatus.PLANNED : undefined,
       },
     });
     await this.cost.recompute(tenantId, id);
+    // Single audit entry: the resource change and (when forced) the override reason together.
     await this.audit.log({
       tenantId,
       userId,
       action: AuditAction.UPDATE,
       entityType: 'load',
       entityId: id,
-      after: dto,
+      after: { ...resources, ...capacityOverride },
     });
     return this.get(tenantId, id);
   }
@@ -405,6 +457,8 @@ export class LoadsService {
         where: { loadId: id, status: TenderStatus.PENDING },
         data: { status: TenderStatus.CANCELLED, respondedAt: new Date() },
       }),
+      // Junction follows the pool return (spec invariant: legs stay in sync with Shipment.loadId).
+      this.prisma.shipmentLoadLeg.deleteMany({ where: { loadId: id } }),
     ]);
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.CANCELLED);
     return updated;

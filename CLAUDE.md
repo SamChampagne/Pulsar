@@ -68,6 +68,9 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     et le rapprochement de factures lit `estimatedCost`/`costDetail`, jamais un recalcul.
 17. Le lane matching passe par les clés normalisées (`@pulsar/shared` rating/lane-key) et
     l'ordre `compareLanes` — ne jamais réimplémenter la normalisation ou le tie-break.
+18. Tout endpoint qui modifie poids/volume/palettes d'un shipment ASSIGNÉ à un load doit
+    re-déclencher `checkCapacity` sur ce load (niveau warning) ; et toute écriture de
+    `Shipment.loadId` doit maintenir `shipment_load_legs` dans la même transaction.
 
 ## Adding a business module (the recipe)
 

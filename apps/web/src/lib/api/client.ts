@@ -5,11 +5,14 @@ import type { LoginResponse } from '@pulsar/shared';
 const BASE = '/api/v1';
 
 export class ApiError extends Error {
+  body?: unknown;
   constructor(
     public statusCode: number,
     message: string,
+    body?: unknown,
   ) {
     super(message);
+    this.body = body;
   }
 }
 
@@ -76,7 +79,7 @@ export async function api<T>(path: string, options: ApiOptions = {}, isRetry = f
     const message = Array.isArray(payload?.message)
       ? payload.message.join(', ')
       : (payload?.message ?? response.statusText);
-    throw new ApiError(response.status, message);
+    throw new ApiError(response.status, message, payload);
   }
 
   if (response.status === 204) return undefined as T;

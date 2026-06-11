@@ -147,7 +147,7 @@ describe('Phase 3 (e2e)', () => {
             type: 'DELIVERY',
             locationId: ids.destination,
             shipmentId: ids.shipmentB,
-            plannedArrivalAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+            plannedArrivalEarly: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
           },
           { sequence: 4, type: 'DELIVERY', locationId: ids.destination, shipmentId: ids.shipmentA },
         ],
@@ -155,7 +155,7 @@ describe('Phase 3 (e2e)', () => {
       .expect(201);
     expect(rebuilt.body.totalDistanceKm).toBe(142);
     expect(rebuilt.body.stops[2].shipmentId).toBe(ids.shipmentB);
-    expect(rebuilt.body.stops[2].plannedArrivalAt).toBeDefined();
+    expect(rebuilt.body.stops[2].plannedArrivalEarly).toBeDefined();
   });
 
   it('invites a user and activates the account through the invitation link', async () => {

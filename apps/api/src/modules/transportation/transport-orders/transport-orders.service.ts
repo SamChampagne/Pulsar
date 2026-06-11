@@ -18,12 +18,25 @@ import {
   ShipmentSplitDto,
   UpdateTransportOrderDto,
 } from './dto/transport-order.dto';
+import { toDate, assertWindowCoherence, resolveSplitWindows } from '../planning/window-validation';
+import { shipmentWindowWarnings } from '../planning/window-warnings';
 
 const orderInclude = {
   customer: { select: { id: true, code: true, name: true } },
   originLocation: { select: { id: true, code: true, name: true, city: true } },
   destinationLocation: { select: { id: true, code: true, name: true, city: true } },
-  shipments: { select: { id: true, shipmentNumber: true, status: true, loadId: true } },
+  shipments: {
+    select: {
+      id: true,
+      shipmentNumber: true,
+      status: true,
+      loadId: true,
+      plannedPickupEarly: true,
+      plannedPickupLate: true,
+      plannedDeliveryEarly: true,
+      plannedDeliveryLate: true,
+    },
+  },
 } satisfies Prisma.TransportOrderInclude;
 
 @Injectable()
@@ -77,21 +90,26 @@ export class TransportOrdersService {
       include: orderInclude,
     });
     if (!order) throw new NotFoundException('Transport order not found');
-    return order;
+    return { ...order, windowWarnings: shipmentWindowWarnings(order, order.shipments) };
   }
 
   async create(tenantId: string, userId: string, dto: CreateTransportOrderDto) {
     await this.assertReferences(tenantId, dto);
+    const pickupEarly = toDate(dto.requestedPickupEarly);
+    const pickupLate = toDate(dto.requestedPickupLate);
+    const deliveryEarly = toDate(dto.requestedDeliveryEarly);
+    const deliveryLate = toDate(dto.requestedDeliveryLate);
+    assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
     const order = await this.prisma.transportOrder.create({
       data: {
         tenantId,
         orderNumber: await this.sequences.nextNumber(tenantId, 'transport-order'),
         createdById: userId,
         ...dto,
-        requestedPickupDate: dto.requestedPickupDate ? new Date(dto.requestedPickupDate) : undefined,
-        requestedDeliveryDate: dto.requestedDeliveryDate
-          ? new Date(dto.requestedDeliveryDate)
-          : undefined,
+        requestedPickupEarly: pickupEarly,
+        requestedPickupLate: pickupLate,
+        requestedDeliveryEarly: deliveryEarly,
+        requestedDeliveryLate: deliveryLate,
       },
       include: orderInclude,
     });
@@ -112,14 +130,19 @@ export class TransportOrdersService {
       throw new BadRequestException('Only DRAFT orders can be edited');
     }
     await this.assertReferences(tenantId, dto);
+    const pickupEarly = dto.requestedPickupEarly !== undefined ? toDate(dto.requestedPickupEarly) : order.requestedPickupEarly;
+    const pickupLate = dto.requestedPickupLate !== undefined ? toDate(dto.requestedPickupLate) : order.requestedPickupLate;
+    const deliveryEarly = dto.requestedDeliveryEarly !== undefined ? toDate(dto.requestedDeliveryEarly) : order.requestedDeliveryEarly;
+    const deliveryLate = dto.requestedDeliveryLate !== undefined ? toDate(dto.requestedDeliveryLate) : order.requestedDeliveryLate;
+    assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
     return this.prisma.transportOrder.update({
       where: { id },
       data: {
         ...dto,
-        requestedPickupDate: dto.requestedPickupDate ? new Date(dto.requestedPickupDate) : undefined,
-        requestedDeliveryDate: dto.requestedDeliveryDate
-          ? new Date(dto.requestedDeliveryDate)
-          : undefined,
+        requestedPickupEarly: pickupEarly,
+        requestedPickupLate: pickupLate,
+        requestedDeliveryEarly: deliveryEarly,
+        requestedDeliveryLate: deliveryLate,
       },
       include: orderInclude,
     });
@@ -157,6 +180,7 @@ export class TransportOrdersService {
     ];
 
     for (const split of splits) {
+      const windows = resolveSplitWindows(order, split);
       await this.prisma.shipment.create({
         data: {
           tenantId,
@@ -168,12 +192,7 @@ export class TransportOrdersService {
           weightKg: split.weightKg,
           volumeM3: split.volumeM3,
           palletCount: split.palletCount,
-          plannedPickupAt: split.plannedPickupAt
-            ? new Date(split.plannedPickupAt)
-            : order.requestedPickupDate,
-          plannedDeliveryAt: split.plannedDeliveryAt
-            ? new Date(split.plannedDeliveryAt)
-            : order.requestedDeliveryDate,
+          ...windows,
         },
       });
     }
@@ -186,6 +205,7 @@ export class TransportOrdersService {
     if (order.status !== TransportOrderStatus.PLANNED) {
       throw new BadRequestException('Shipments can only be added to PLANNED orders');
     }
+    const windows = resolveSplitWindows(order, split);
     const shipment = await this.prisma.shipment.create({
       data: {
         tenantId,
@@ -197,12 +217,7 @@ export class TransportOrdersService {
         weightKg: split.weightKg,
         volumeM3: split.volumeM3,
         palletCount: split.palletCount,
-        plannedPickupAt: split.plannedPickupAt
-          ? new Date(split.plannedPickupAt)
-          : order.requestedPickupDate,
-        plannedDeliveryAt: split.plannedDeliveryAt
-          ? new Date(split.plannedDeliveryAt)
-          : order.requestedDeliveryDate,
+        ...windows,
       },
     });
     await this.audit.log({

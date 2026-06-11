@@ -212,6 +212,7 @@ async function main() {
       unitNumber: 'TRL-201',
       type: 'DRY_VAN',
       capacityWeightKg: 20000,
+      capacityPallets: 26,
     },
   });
 
@@ -360,8 +361,9 @@ async function main() {
       status: TransportOrderStatus.DRAFT,
       originLocationId: plant.id,
       destinationLocationId: dc.id,
-      requestedPickupDate: new Date(Date.now() + 2 * 24 * 3600 * 1000),
-      requestedDeliveryDate: new Date(Date.now() + 3 * 24 * 3600 * 1000),
+      requestedPickupEarly: new Date(Date.now() + 2 * 24 * 3600 * 1000),
+      requestedPickupLate: new Date(Date.now() + 3 * 24 * 3600 * 1000),
+      requestedDeliveryEarly: new Date(Date.now() + 3 * 24 * 3600 * 1000),
       totalWeightKg: 12500,
       palletCount: 22,
       createdById: admin.id,

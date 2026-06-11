@@ -1,6 +1,6 @@
 import { PartialType } from '@nestjs/swagger';
 import { AssetStatus, TrailerType } from '@pulsar/shared';
-import { IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateTrailerDto {
   @IsString()
@@ -20,6 +20,11 @@ export class CreateTrailerDto {
   @IsOptional()
   @IsNumber()
   capacityVolumeM3?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  capacityPallets?: number;
 
   @IsOptional()
   @IsString()

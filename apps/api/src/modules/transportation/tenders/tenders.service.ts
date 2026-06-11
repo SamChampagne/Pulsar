@@ -242,7 +242,8 @@ export class TendersService {
                   select: {
                     sequence: true,
                     type: true,
-                    plannedArrivalAt: true,
+                    plannedArrivalEarly: true,
+                    plannedArrivalLate: true,
                     location: { select: { name: true, city: true, state: true } },
                   },
                 },

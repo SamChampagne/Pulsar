@@ -5,13 +5,23 @@
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
   import { toast } from '$lib/stores/toast';
 
+  interface WindowWarning {
+    shipmentNumber: string;
+    field: 'pickup' | 'delivery';
+    kind: 'BEFORE_EARLY' | 'AFTER_LATE';
+    requested: string;
+    planned: string;
+  }
+
   interface OrderDetail {
     id: string;
     orderNumber: string;
     status: string;
     customerReference: string | null;
-    requestedPickupDate: string | null;
-    requestedDeliveryDate: string | null;
+    requestedPickupEarly: string | null;
+    requestedPickupLate: string | null;
+    requestedDeliveryEarly: string | null;
+    requestedDeliveryLate: string | null;
     totalWeightKg: number | null;
     totalVolumeM3: number | null;
     palletCount: number | null;
@@ -21,6 +31,7 @@
     originLocation: { id: string; code: string; name: string; city: string };
     destinationLocation: { id: string; code: string; name: string; city: string };
     shipments: { id: string; shipmentNumber: string; status: string; loadId: string | null }[];
+    windowWarnings?: WindowWarning[];
   }
 
   const orderId = $derived(page.params.id);
@@ -91,6 +102,18 @@
 
   function fmtDate(value: string | null): string {
     return value ? new Date(value).toLocaleDateString() : '—';
+  }
+
+  const fmtWindow = (early: string | null, late?: string | null) =>
+    early
+      ? new Date(early).toLocaleDateString() + (late ? ' → ' + new Date(late).toLocaleDateString() : '')
+      : '—';
+
+  function warningText(w: WindowWarning): string {
+    const kindLabel = w.kind === 'BEFORE_EARLY' ? 'avant' : 'après';
+    const fieldLabel = w.field === 'pickup' ? 'pickup' : 'delivery';
+    const bound = w.kind === 'BEFORE_EARLY' ? 'la borne minimale' : 'la fenêtre demandée';
+    return `${w.shipmentNumber} — ${fieldLabel} planifié ${kindLabel} ${bound} (demandé ${fmtDate(w.requested)}, planifié ${fmtDate(w.planned)})`;
   }
 
   $effect(() => {
@@ -176,9 +199,9 @@
         <dt>Destination</dt>
         <dd>{order.destinationLocation.name}, {order.destinationLocation.city}</dd>
         <dt>Requested pickup</dt>
-        <dd>{fmtDate(order.requestedPickupDate)}</dd>
+        <dd>{fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}</dd>
         <dt>Requested delivery</dt>
-        <dd>{fmtDate(order.requestedDeliveryDate)}</dd>
+        <dd>{fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}</dd>
         <dt>Weight / Volume / Pallets</dt>
         <dd>
           {order.totalWeightKg ?? '—'} kg / {order.totalVolumeM3 ?? '—'} m³ /
@@ -222,11 +245,36 @@
       <TrackingTimeline {events} />
     </div>
   </div>
+
+  {#if order.windowWarnings && order.windowWarnings.length > 0}
+    <div class="card" style="margin-top: 16px; border-left: 3px solid var(--color-warning, #f59e0b);">
+      <h2 style="margin-top: 0;">
+        ⚠ Avertissements de fenêtre
+        <span class="badge-warning">{order.windowWarnings.length}</span>
+      </h2>
+      <ul style="margin: 0; padding-left: 20px;">
+        {#each order.windowWarnings as w (w.shipmentNumber + w.field + w.kind)}
+          <li style="margin-bottom: 6px;">{warningText(w)}</li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
 {:else}
   <p class="muted">Loading…</p>
 {/if}
 
 <style>
+  .badge-warning {
+    display: inline-block;
+    background: var(--color-warning, #f59e0b);
+    color: #fff;
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 8px;
+  }
+
   .detail-grid {
     display: grid;
     grid-template-columns: 1fr 1.2fr;

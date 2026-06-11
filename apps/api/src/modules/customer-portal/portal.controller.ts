@@ -22,11 +22,19 @@ class PortalOrderDto {
 
   @IsOptional()
   @IsDateString()
-  requestedPickupDate?: string;
+  requestedPickupEarly?: string;
 
   @IsOptional()
   @IsDateString()
-  requestedDeliveryDate?: string;
+  requestedPickupLate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  requestedDeliveryEarly?: string;
+
+  @IsOptional()
+  @IsDateString()
+  requestedDeliveryLate?: string;
 
   @IsOptional()
   @IsNumber()
