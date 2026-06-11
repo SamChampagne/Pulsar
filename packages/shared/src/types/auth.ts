@@ -31,3 +31,23 @@ export interface LoginResponse {
     enabledModules: ModuleKey[];
   };
 }
+
+/** Payload of a platform-plane access token. Tenant guards MUST reject it. */
+export interface PlatformJwtPayload {
+  /** PlatformUser id */
+  sub: string;
+  email: string;
+  platformAdmin: true;
+}
+
+export interface PlatformAuthUser {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+}
+
+export interface PlatformLoginResponse {
+  accessToken: string;
+  user: PlatformAuthUser;
+}
