@@ -120,6 +120,10 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
       (défense en profondeur contre le rejeu d'états entre tenants)
 - [ ] Cache du `Issuer.discover` par issuer (un aller-retour de découverte par login OIDC)
 - [ ] MFA (TOTP + recovery) pour les comptes plateforme — phase 7 (voir spec phase 6)
+- [ ] Export CSV factures : préfixer les champs libres commençant par `=+-@` (injection de
+      formule tableur) — risque faible (outil interne mono-tenant), à durcir avant exposition
+- [ ] Gardes de statut des factures dans la transaction (`updateMany` conditionnel + count)
+      plutôt que read-then-write — fenêtre TOCTOU acceptable en UI d'ops, à fermer si API publique
 
 ## Phase 3 — Platform & integrations
 

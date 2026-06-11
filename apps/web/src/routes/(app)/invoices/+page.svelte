@@ -79,6 +79,11 @@
     invoicedAmounts = Object.fromEntries(
       invoice.lines.map((l) => [l.id, l.invoicedAmount ?? l.amount]),
     );
+    // The dispute form state is shared across rows — reset it so invoice A's
+    // resolution/note never pre-fills invoice B's form.
+    resolution = 'ACCEPT_INVOICED';
+    reasonCode = 'RATE_MISMATCH';
+    disputeNote = '';
   }
 
   async function draft() {
@@ -100,10 +105,17 @@
         method: 'POST',
         body: {
           carrierInvoiceNumber,
-          lines: invoice.lines.map((l) => ({
-            lineId: l.id,
-            invoicedAmount: Number(invoicedAmounts[l.id] ?? l.amount),
-          })),
+          lines: invoice.lines.map((l) => {
+            // An emptied input must mean "unchanged", not "invoiced 0".
+            const parsed = Number(invoicedAmounts[l.id]);
+            return {
+              lineId: l.id,
+              invoicedAmount:
+                Number.isFinite(parsed) && invoicedAmounts[l.id] !== ''
+                  ? parsed
+                  : Number(l.amount),
+            };
+          }),
         },
       });
       toast.success(

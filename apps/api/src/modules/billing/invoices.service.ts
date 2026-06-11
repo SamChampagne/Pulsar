@@ -139,12 +139,19 @@ export class InvoicesService {
       where: { tenantId, module: { key: MODULE_KEYS.BILLING } },
     });
     const settings = (tenantModule?.settings ?? {}) as {
-      tolerancePct?: number;
-      toleranceAbsolute?: number;
+      tolerancePct?: unknown;
+      toleranceAbsolute?: unknown;
+    };
+    // Settings come from a free-form Json column: coerce and reject bad types
+    // and negatives, otherwise a stray "2%" string would NaN the threshold and
+    // silently route EVERY invoice to DISPUTED.
+    const sane = (value: unknown, fallback: number) => {
+      const n = Number(value);
+      return Number.isFinite(n) && n >= 0 ? n : fallback;
     };
     return {
-      tolerancePct: settings.tolerancePct ?? 2,
-      toleranceAbsolute: settings.toleranceAbsolute ?? 25,
+      tolerancePct: sane(settings.tolerancePct, 2),
+      toleranceAbsolute: sane(settings.toleranceAbsolute, 25),
     };
   }
 
@@ -236,6 +243,11 @@ export class InvoicesService {
         approvedAt: new Date(),
         disputeReasonCode: dto.reasonCode,
         disputeNote: dto.note,
+        // ACCEPT_INVOICED makes the HEADER totalAmount the authoritative
+        // payable; line `amount`s deliberately keep the expected values as the
+        // audit trail (invoicedAmount/variance carry the carrier's figures).
+        // Consequence: sum(lines.amount) ≠ totalAmount on such invoices —
+        // never re-derive the payable from line amounts.
         ...(dto.resolution === 'ACCEPT_INVOICED'
           ? { totalAmount: invoice.invoicedTotal! }
           : {}),
