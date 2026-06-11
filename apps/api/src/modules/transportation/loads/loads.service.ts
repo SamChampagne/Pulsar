@@ -20,7 +20,7 @@ import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { EmailService } from '../../../core/email/email.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
 import { LoadCostService } from './load-cost.service';
-import { AssignLoadResourcesDto, CreateLoadDto } from './dto/load.dto';
+import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
 
 const loadInclude = {
   carrier: { select: { id: true, code: true, name: true } },
@@ -40,6 +40,13 @@ const loadInclude = {
     },
   },
   route: { include: { stops: { orderBy: { sequence: 'asc' as const } } } },
+  accessorials: {
+    select: {
+      id: true,
+      quantity: true,
+      accessorial: { select: { id: true, code: true, name: true, unit: true } },
+    },
+  },
 } satisfies Prisma.LoadInclude;
 
 @Injectable()
@@ -129,6 +136,46 @@ export class LoadsService {
       entityType: 'load',
       entityId: id,
       after: dto,
+    });
+    return this.get(tenantId, id);
+  }
+
+  /** Replaces the load's accessorial flags and recomputes the cost snapshot. */
+  async setAccessorials(tenantId: string, userId: string, id: string, dto: SetLoadAccessorialsDto) {
+    const load = await this.get(tenantId, id);
+    if (load.status === LoadStatus.COMPLETED || load.status === LoadStatus.CANCELLED) {
+      throw new BadRequestException('Accessorials cannot be changed on a COMPLETED or CANCELLED load');
+    }
+    const ids = dto.items.map((i) => i.accessorialId);
+    if (new Set(ids).size !== ids.length) {
+      throw new BadRequestException('Duplicate accessorials in the list');
+    }
+    await Promise.all(ids.map((aid) => this.ownership.assertOwned('accessorial', aid, tenantId)));
+
+    const catalog = await this.prisma.accessorial.findMany({
+      where: { id: { in: ids }, tenantId },
+      select: { id: true, unit: true },
+    });
+    const unitOf = new Map(catalog.map((a) => [a.id, a.unit]));
+
+    await this.prisma.$transaction([
+      this.prisma.loadAccessorial.deleteMany({ where: { loadId: id } }),
+      this.prisma.loadAccessorial.createMany({
+        data: dto.items.map((i) => ({
+          loadId: id,
+          accessorialId: i.accessorialId,
+          quantity: unitOf.get(i.accessorialId) === 'FLAT' ? 1 : (i.quantity ?? 1),
+        })),
+      }),
+    ]);
+    await this.cost.recompute(tenantId, id);
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'load',
+      entityId: id,
+      after: { accessorials: dto.items },
     });
     return this.get(tenantId, id);
   }
