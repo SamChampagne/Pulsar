@@ -45,7 +45,7 @@ export class OidcController {
   @Put('oidc-config')
   @RequirePermissions(PERMISSIONS.CORE.TENANT_MANAGE)
   putConfig(@CurrentUser() user: AuthUser, @Body() dto: OidcConfigDto) {
-    return this.oidc.putConfig(user.tenantId, dto);
+    return this.oidc.putConfig(user.tenantId, user.id, dto);
   }
 
   @Public()

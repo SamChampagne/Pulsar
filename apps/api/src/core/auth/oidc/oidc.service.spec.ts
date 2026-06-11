@@ -84,4 +84,24 @@ describe('OidcService.lookupOrProvision', () => {
       service.lookupOrProvision(prisma as never, 't1', claims, 'role1'),
     ).rejects.toThrow(UnauthorizedException);
   });
+
+  it('provisions a new user when email_verified is false (never binds to existing account)', async () => {
+    // An existing account has this email but no oidcSubject.
+    // The IdP says email_verified: false — we must NOT bind to the existing account
+    // (account-takeover hardening). Instead provision a fresh user.
+    const prisma = fakePrisma([
+      { id: 'u-existing', email: 'jane@corp.test', oidcSubject: null, status: 'ACTIVE' },
+    ]);
+    const unverifiedClaims = { sub: 'idp-sub-unverified', email: 'jane@corp.test', email_verified: false };
+    const { user, provisioned } = await service.lookupOrProvision(
+      prisma as never,
+      't1',
+      unverifiedClaims,
+      'role1',
+    );
+    expect(provisioned).toBe(true);
+    expect(user.id).toBe('new-user');
+    // The existing account must NOT have been updated (no binding).
+    expect(prisma.updated).toHaveLength(0);
+  });
 });

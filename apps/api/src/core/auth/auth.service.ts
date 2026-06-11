@@ -159,6 +159,14 @@ export class AuthService {
       where: { id: userId },
       include: { tenant: true },
     });
+    // issueSession is the single issuance chokepoint: every caller (password
+    // login, refresh, OIDC exchange) gets these gates, whatever it checked before.
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('User is disabled');
+    }
+    if (user.tenant.status === 'SUSPENDED') {
+      throw new UnauthorizedException('Tenant is suspended');
+    }
     const permissions = await this.getUserPermissions(user.id);
     const enabledModules = await this.getEnabledModules(user.tenantId);
 

@@ -23,7 +23,7 @@ export interface OidcConfig {
   enabled: boolean;
   issuer: string;
   clientId: string;
-  /** Stored encrypted (enc:v1). */
+  /** Encrypted (enc:v1) at rest; plaintext or '***' mask on the wire. */
   clientSecret: string;
   defaultRoleId: string;
 }
@@ -31,6 +31,7 @@ export interface OidcConfig {
 export interface OidcClaims {
   sub: string;
   email?: string;
+  email_verified?: boolean;
   given_name?: string;
   family_name?: string;
 }
@@ -55,7 +56,7 @@ export class OidcService {
     return { ...stored, clientSecret: stored.clientSecret ? MASK : '' };
   }
 
-  async putConfig(tenantId: string, input: OidcConfig) {
+  async putConfig(tenantId: string, userId: string, input: OidcConfig) {
     const role = await this.prisma.role.findFirst({
       where: { id: input.defaultRoleId, tenantId },
     });
@@ -71,6 +72,24 @@ export class OidcService {
     await this.prisma.tenant.update({
       where: { id: tenantId },
       data: { authConfig: { ...input, clientSecret } },
+    });
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'oidc-config',
+      entityId: tenantId,
+      // Never the secret — only whether it changed.
+      before: stored
+        ? { enabled: stored.enabled, issuer: stored.issuer, clientId: stored.clientId }
+        : undefined,
+      after: {
+        enabled: input.enabled,
+        issuer: input.issuer,
+        clientId: input.clientId,
+        defaultRoleId: input.defaultRoleId,
+        clientSecretChanged: input.clientSecret !== MASK,
+      },
     });
     return this.getConfig(tenantId);
   }
@@ -184,9 +203,14 @@ export class OidcService {
       if (bySub.status === 'DISABLED') throw new UnauthorizedException('Account is disabled');
       return { user: bySub, provisioned: false };
     }
-    const byEmail = claims.email
-      ? await tx.user.findFirst({ where: { tenantId, email: claims.email.toLowerCase() } })
-      : null;
+    // The email claim is only trusted as a BINDING key when the IdP asserts it
+    // verified (absent claim = legacy IdP, accepted; explicit false = refused —
+    // an attacker-set unverified email must not capture an existing account).
+    const emailTrustedForBinding = claims.email_verified !== false;
+    const byEmail =
+      claims.email && emailTrustedForBinding
+        ? await tx.user.findFirst({ where: { tenantId, email: claims.email.toLowerCase() } })
+        : null;
     if (byEmail) {
       if (byEmail.status === 'DISABLED') throw new UnauthorizedException('Account is disabled');
       const bound = await tx.user.update({
