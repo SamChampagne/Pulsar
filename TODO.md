@@ -206,7 +206,7 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [x] `CustomerInvoicesController` sous `@RequireModule(BILLING)`, chaque endpoint décoré
       `@RequirePermissions`
 - [x] Web : page Invoices enrichie avec deux onglets (carrier / customer statements)
-- [x] Suite e2e `phase7-3-sell-side` (7 tests) ; 14ᵉ migration
+- [x] Suite e2e `phase7-3-sell-side` (7 tests) ; 13ᵉ migration
 
 ### Chantier 7.4 — Durcissements différés phase 6 (à faire)
 
