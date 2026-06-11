@@ -1,4 +1,4 @@
-import { IsArray, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateLoadDto {
@@ -27,6 +27,11 @@ export class AssignLoadResourcesDto {
   @IsOptional()
   @IsString()
   rateId?: string;
+
+  /** Bypasses the capacity check; the override is written to the audit log. */
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
 }
 
 export class LoadAccessorialItemDto {

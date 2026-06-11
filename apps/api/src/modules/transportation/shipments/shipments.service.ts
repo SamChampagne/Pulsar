@@ -1,11 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { LoadStatus, ShipmentStatus } from '@pulsar/shared';
+import { AuditAction, LoadStatus, ShipmentStatus, checkCapacity } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { randomBytes } from 'node:crypto';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { LoadCostService } from '../loads/load-cost.service';
 
 const shipmentInclude = {
@@ -21,6 +22,7 @@ export class ShipmentsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly cost: LoadCostService,
+    private readonly audit: AuditLogsService,
   ) {}
 
   /** Generates (or returns) the public read-only tracking link for this shipment. */
@@ -72,22 +74,65 @@ export class ShipmentsService {
   }
 
   /** Consolidation step: attach a PENDING shipment to an OPEN load. */
-  async assignToLoad(tenantId: string, id: string, loadId: string) {
+  async assignToLoad(tenantId: string, userId: string, id: string, dto: { loadId: string; force?: boolean }) {
     const shipment = await this.get(tenantId, id);
     if (shipment.status !== ShipmentStatus.PENDING) {
       throw new BadRequestException('Only PENDING shipments can be assigned to a load');
     }
-    const load = await this.prisma.load.findFirst({ where: { id: loadId, tenantId } });
+    const load = await this.prisma.load.findFirst({ where: { id: dto.loadId, tenantId } });
     if (!load) throw new NotFoundException('Load not found');
     if (load.status !== LoadStatus.OPEN && load.status !== LoadStatus.PLANNED) {
       throw new BadRequestException('Shipments can only be added to OPEN or PLANNED loads');
     }
+    if (load.trailerId) {
+      const trailer = await this.prisma.trailer.findFirst({
+        where: { id: load.trailerId, tenantId },
+        select: { capacityWeightKg: true, capacityVolumeM3: true, capacityPallets: true },
+      });
+      if (trailer) {
+        const siblings = await this.prisma.shipment.findMany({
+          where: { loadId: dto.loadId, tenantId },
+          select: { weightKg: true, volumeM3: true, palletCount: true },
+        });
+        const all = [
+          ...siblings,
+          { weightKg: shipment.weightKg, volumeM3: shipment.volumeM3, palletCount: shipment.palletCount },
+        ];
+        const sum = (values: (number | null)[]) =>
+          values.some((v) => v !== null) ? values.reduce<number>((acc, v) => acc + (v ?? 0), 0) : null;
+        const excesses = checkCapacity(
+          {
+            weightKg: trailer.capacityWeightKg,
+            volumeM3: trailer.capacityVolumeM3,
+            pallets: trailer.capacityPallets,
+          },
+          {
+            weightKg: sum(all.map((s) => s.weightKg)),
+            volumeM3: sum(all.map((s) => s.volumeM3)),
+            pallets: sum(all.map((s) => s.palletCount)),
+          },
+        );
+        if (excesses.length > 0 && !dto.force) {
+          throw new BadRequestException({ message: 'Trailer capacity exceeded', excesses });
+        }
+        if (excesses.length > 0 && dto.force) {
+          await this.audit.log({
+            tenantId,
+            userId,
+            action: AuditAction.UPDATE,
+            entityType: 'load',
+            entityId: dto.loadId,
+            after: { capacityOverride: true, excesses, shipmentId: id },
+          });
+        }
+      }
+    }
     const updated = await this.prisma.shipment.update({
       where: { id },
-      data: { loadId, status: ShipmentStatus.PLANNED },
+      data: { loadId: dto.loadId, status: ShipmentStatus.PLANNED },
       include: shipmentInclude,
     });
-    await this.cost.recompute(tenantId, loadId);
+    await this.cost.recompute(tenantId, dto.loadId);
     return updated;
   }
 

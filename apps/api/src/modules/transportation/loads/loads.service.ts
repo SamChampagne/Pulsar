@@ -8,6 +8,7 @@ import {
   TrackingEventType,
   TransportOrderStatus,
   canTransitionLoad,
+  checkCapacity,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { randomBytes } from 'node:crypto';
@@ -137,10 +138,50 @@ export class LoadsService {
       this.ownership.assertOwnedIfSet('trailer', dto.trailerId, tenantId),
       this.ownership.assertOwnedIfSet('rate', dto.rateId, tenantId),
     ]);
+    const { force, ...resources } = dto;
+    if (dto.trailerId) {
+      const trailer = await this.prisma.trailer.findFirst({
+        where: { id: dto.trailerId, tenantId },
+        select: { capacityWeightKg: true, capacityVolumeM3: true, capacityPallets: true },
+      });
+      const shipments = await this.prisma.shipment.findMany({
+        where: { loadId: id, tenantId },
+        select: { weightKg: true, volumeM3: true, palletCount: true },
+      });
+      const sum = (values: (number | null)[]) =>
+        values.some((v) => v !== null) ? values.reduce<number>((acc, v) => acc + (v ?? 0), 0) : null;
+      const excesses = trailer
+        ? checkCapacity(
+            {
+              weightKg: trailer.capacityWeightKg,
+              volumeM3: trailer.capacityVolumeM3,
+              pallets: trailer.capacityPallets,
+            },
+            {
+              weightKg: sum(shipments.map((s) => s.weightKg)),
+              volumeM3: sum(shipments.map((s) => s.volumeM3)),
+              pallets: sum(shipments.map((s) => s.palletCount)),
+            },
+          )
+        : [];
+      if (excesses.length > 0 && !force) {
+        throw new BadRequestException({ message: 'Trailer capacity exceeded', excesses });
+      }
+      if (excesses.length > 0 && force) {
+        await this.audit.log({
+          tenantId,
+          userId,
+          action: AuditAction.UPDATE,
+          entityType: 'load',
+          entityId: id,
+          after: { capacityOverride: true, excesses, trailerId: dto.trailerId },
+        });
+      }
+    }
     await this.prisma.load.update({
       where: { id },
       data: {
-        ...dto,
+        ...resources,
         status: load.status === LoadStatus.OPEN ? LoadStatus.PLANNED : undefined,
       },
     });
@@ -151,7 +192,7 @@ export class LoadsService {
       action: AuditAction.UPDATE,
       entityType: 'load',
       entityId: id,
-      after: dto,
+      after: resources,
     });
     return this.get(tenantId, id);
   }
