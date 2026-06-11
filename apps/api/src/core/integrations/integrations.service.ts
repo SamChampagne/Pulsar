@@ -13,14 +13,23 @@ export interface UpsertIntegrationInput {
 const SENSITIVE_KEY = /secret|password|token|key/i;
 const MASK = '***';
 
-/** API responses never expose secret values — they are replaced by "***". */
+/**
+ * API responses never expose secret values — they are replaced by "***".
+ * FLAT configs only: nested objects pass through verbatim. Every config shape
+ * in use today (WebhookConfig) is flat; a connector with nested secrets must
+ * extend this before shipping.
+ */
 export function maskConfig(config: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(config).map(([k, v]) => [k, SENSITIVE_KEY.test(k) && v ? MASK : v]),
   );
 }
 
-/** A client echoing back "***" means "keep the stored secret unchanged". */
+/**
+ * A client echoing back "***" means "keep the stored secret unchanged" (flat
+ * keys only). Consequence: a literal secret value of "***" cannot be set —
+ * the accepted trade-off of echo-back masking.
+ */
 export function mergePreservingMasked(
   incoming: Record<string, unknown>,
   stored: Record<string, unknown>,

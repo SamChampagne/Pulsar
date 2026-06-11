@@ -2,7 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createReadStream, existsSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import type { Readable } from 'node:stream';
 import type { FileStorage } from './file-storage';
 
@@ -21,7 +21,8 @@ export class LocalStorageService implements FileStorage {
   /** Storage keys are generated server-side, but never trust them as paths. */
   private pathFor(key: string): string {
     const full = resolve(join(this.baseDir, key));
-    if (!full.startsWith(this.baseDir)) {
+    // sep-anchored so a sibling like "<baseDir>-evil" cannot pass the check.
+    if (!full.startsWith(this.baseDir + sep)) {
       throw new NotFoundException('Document not found');
     }
     return full;
