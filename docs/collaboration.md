@@ -57,10 +57,17 @@ manual handling.
 - `EMAIL_DRIVER=log` (default): emails are written to the application log — dev/CI safe.
 - `EMAIL_DRIVER=smtp`: real delivery via nodemailer (`SMTP_*` variables, `EMAIL_FROM`).
 
-Current senders: tender links to carriers (`tenders.service.ts`), user invitations and password
-resets (`users.service.ts` / `auth.service.ts`), delivered notifications to the order's customer
-contact (`loads.service.ts`). Tender responses include `emailedTo` so callers/tests know whether
-the email was handed to the driver.
+Current senders:
+
+| Channel | Wording | Gating | Source |
+| ------- | ------- | ------ | ------ |
+| Tender link to carrier | — | carrier has email address | `tenders.service.ts` |
+| User invitation | — | always sent | `users.service.ts` |
+| Password reset | — | always sent | `auth.service.ts` |
+| Delivered notification | — | order has customer contact email | `loads.service.ts` |
+| Billing statement | `Billing statement <CINV-number>` | customer has email; `EmailService.send` must return `true`; statement must be APPROVED | `customer-invoices.service.ts` |
+
+Tender responses include `emailedTo` so callers/tests know whether the email was handed off.
 
 ## Module cache
 

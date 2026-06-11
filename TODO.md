@@ -186,10 +186,27 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
       (couvre les données migrées sans `late`)
 - [x] Suite e2e phase7-2 (6 tests) ; 12 migrations au total
 
-### Chantier 7.3 — Billing sell-side (à faire, débloqué par 7.1)
+### Chantier 7.3 — Billing sell-side ✅
 
-- [ ] Facturation client : rated loads → invoice drafts sell-side (reporté de la phase 6,
-      attendait le rating engine v2)
+- [x] `CustomerInvoiceStatus` enum + `canTransitionCustomerInvoice` dans `packages/shared`
+      (DRAFT → APPROVED → SENT → PAID ; suppression d'un DRAFT = échappatoire, pas une transition)
+- [x] 4 permissions `billing.customer-invoices.read|manage|send|pay` dans le catalogue
+- [x] Migration Prisma `20260611153442_phase7_3_customer_invoices` : tables
+      `customer_invoices` + `customer_invoice_lines` (`transportOrderId @unique` — anti-double-billing ;
+      lignes cascade à la suppression de la facture, RESTRICT sur l'ordre)
+- [x] Séquence CINV (`customer-invoice`) via `SequencesService.nextNumber`
+- [x] Seed : taux client démo FLAT 1 450 CAD (lane city, rattaché au customer de démo)
+- [x] `RatingService.rateOrder` : taux *client* uniquement (`customerId`), correspondance lane ou
+      catch-all client, date de référence = dernier `actualDeliveryAt` des shipments sinon today,
+      évaluation via `compareRateOptions` → le moins cher retenu
+- [x] `CustomerInvoicesService` : preview billable (`ratable` / `unratable: NO_APPLICABLE_RATE`),
+      `createDrafts` groupés par devise (un relevé par devise), `deleteDraft` (seule échappatoire),
+      transitions conditionnelles `updateMany` (race-safe), `send` conditionné sur email client + succès `EmailService`
+      (libellé « Billing statement »)
+- [x] `CustomerInvoicesController` sous `@RequireModule(BILLING)`, chaque endpoint décoré
+      `@RequirePermissions`
+- [x] Web : page Invoices enrichie avec deux onglets (carrier / customer statements)
+- [x] Suite e2e `phase7-3-sell-side` (7 tests) ; 14ᵉ migration
 
 ### Chantier 7.4 — Durcissements différés phase 6 (à faire)
 
