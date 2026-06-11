@@ -88,7 +88,7 @@ dédié léger (pas de refresh transparent).
 ### Flow (lib `openid-client`)
 
 1. `GET /auth/oidc/:tenantSlug` → 302 vers l'IdP. `state` + `nonce` + PKCE
-   (`code_verifier`) stockés dans un cookie signé httpOnly de 10 min.
+   (`code_verifier`) transportés dans le paramètre `state` chiffré AES-GCM (TTL 10 min, anti-falsification par le tag GCM ; le `nonce` vérifié dans l'ID token lie la réponse à la requête) — décision prise au plan 6C pour éviter une dépendance cookie.
 2. `GET /auth/oidc/:tenantSlug/callback` → vérifie state/nonce, échange le code,
    lit `email` (et `given_name`/`family_name` si présents) de l'ID token.
 3. Lookup `User` par le **claim `sub`** d'abord — nouveau champ `User.oidcSubject
