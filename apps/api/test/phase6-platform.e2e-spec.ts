@@ -92,7 +92,28 @@ describe('Phase 6 — platform plane (e2e)', () => {
       .expect(200);
   });
 
-  it('suspension blocks tenant login; reactivation restores it', async () => {
+  it('suspension blocks tenant login, kills live sessions and gates OIDC; reactivation restores', async () => {
+    // A live session and an enabled SSO config exist BEFORE the suspension —
+    // both must die with it.
+    const session = await request(http)
+      .post('/api/v1/auth/login')
+      .send({ email: adminEmail, password: 'NewP@ss123', tenant: slug })
+      .expect(200);
+    const tenantAuth = { Authorization: `Bearer ${session.body.accessToken}` };
+    const roles = await request(http).get('/api/v1/roles').set(tenantAuth).expect(200);
+    const roleId = (Array.isArray(roles.body) ? roles.body : roles.body.items)[0].id;
+    await request(http)
+      .put('/api/v1/auth/oidc-config')
+      .set(tenantAuth)
+      .send({
+        enabled: true,
+        issuer: 'https://idp.example.test',
+        clientId: 'x',
+        clientSecret: 's',
+        defaultRoleId: roleId,
+      })
+      .expect(200);
+
     await request(http)
       .post(`/api/v1/platform/tenants/${tenantId}/suspend`)
       .set(platformAuth())
@@ -101,6 +122,15 @@ describe('Phase 6 — platform plane (e2e)', () => {
       .post('/api/v1/auth/login')
       .send({ email: adminEmail, password: 'NewP@ss123', tenant: slug })
       .expect(401);
+    // The pre-suspension refresh token was revoked AND refresh() re-checks
+    // tenant status — no session can rotate on a suspended tenant.
+    await request(http)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: session.body.refreshToken })
+      .expect(401);
+    // OIDC start is gated on tenant status even with SSO enabled.
+    await request(http).get(`/api/v1/auth/oidc/${slug}`).expect(404);
+
     await request(http)
       .post(`/api/v1/platform/tenants/${tenantId}/reactivate`)
       .set(platformAuth())
