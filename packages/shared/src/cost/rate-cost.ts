@@ -83,10 +83,8 @@ function weightBase(rate: RateLike, weightKg: number): { base: number; appliedBr
   const applied = index === -1 ? breaks.length - 1 : index;
   let base = cwtOf(weightKg) * breaks[applied].amount;
   let appliedBreak: AppliedBreak = { upToKg: breaks[applied].upToKg, amount: breaks[applied].amount, asIfApplied: false };
-  // As-if (deficit weight): only for the first bracket.
-  // When weight is strictly less than the bracket's upper bound,
-  // check if pricing at the bracket's upper bound with the next bracket's rate is cheaper.
-  if (applied === 0 && weightKg < breaks[applied].upToKg && applied < breaks.length - 1) {
+  if (index !== -1 && applied < breaks.length - 1) {
+    // As-if: price as the next bracket's minimum weight (= this bracket's bound) if cheaper.
     const next = breaks[applied + 1];
     const asIf = cwtOf(breaks[applied].upToKg) * next.amount;
     if (asIf < base) {

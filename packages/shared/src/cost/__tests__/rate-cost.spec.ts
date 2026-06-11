@@ -46,11 +46,18 @@ describe('weight breaks + as-if (deficit weight)', () => {
     ],
   };
 
-  it('picks the bracket containing the weight', () => {
-    const cost = calculateRateCost(rate, { weightKg: 900 });
-    // 900 kg = 19.8415 CWT × 15
-    expect(cost?.total).toBe(297.62);
+  it('picks the bracket containing the weight (own bracket cheaper → no as-if)', () => {
+    const cost = calculateRateCost(rate, { weightKg: 660 });
+    // 660 kg = 14.5505 CWT × 15 = 218.26 < as-if cwt(1000)×10 = 220.46
+    expect(cost?.total).toBe(218.26);
     expect(cost?.appliedBreak).toEqual({ upToKg: 1000, amount: 15, asIfApplied: false });
+  });
+
+  it('as-if applies in middle brackets too, not only the first one', () => {
+    const cost = calculateRateCost(rate, { weightKg: 900 });
+    // own: cwt(900)×15 = 297.62 ; as-if: cwt(1000)×10 = 220.46 → min wins
+    expect(cost?.total).toBe(220.46);
+    expect(cost?.appliedBreak).toEqual({ upToKg: 5000, amount: 10, asIfApplied: true });
   });
 
   it('weights beyond the last bracket use the last bracket', () => {
