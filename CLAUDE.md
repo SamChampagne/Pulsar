@@ -62,6 +62,13 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
 15. Public pages of a business module must re-check module activation in the service
     (`TenantModulesCacheService`) — public routes bypass ModulesGuard (see PortalService).
 
+## Hard rules (continued, phase 7)
+
+16. Le snapshot `Load.costDetail` est figé : jamais de recompute sur un load COMPLETED,
+    et le rapprochement de factures lit `estimatedCost`/`costDetail`, jamais un recalcul.
+17. Le lane matching passe par les clés normalisées (`@pulsar/shared` rating/lane-key) et
+    l'ordre `compareLanes` — ne jamais réimplémenter la normalisation ou le tie-break.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

@@ -103,6 +103,23 @@ The increment that turns Pulsar from an internal tool into a collaborative platf
   rotation script, operational runbooks (key rotation, backup/restore).
 - ✅ Fleet module discovery doc (scope, model sketch, open questions — no code).
 
+## Phase 7 — TMS brain (rating engine v2 + lanes) 🚧
+
+- ✅ **7.1 — Rating engine v2 + Lane entity**: Lane as a first-class entity (geo hierarchy
+  LOCATION < CITY < STATE < COUNTRY, NFD-normalized keys, deterministic specificity ordering);
+  rates attached to lanes with CWT weight breaks and as-if rule; accessorials with per-rate
+  pricing; dated fuel surcharge tables (resolved at earliest planned pickup date); frozen
+  `Load.costDetail` snapshot (never recomputed after COMPLETED, atomic conditional updateMany);
+  rate shopping endpoint (sorted by specificity); auto-tender uses the most specific lane;
+  CRUD for accessorials and fuel tables; 4 new permissions; demo seed; 11 e2e tests; 4 new
+  web pages (rates v2, lanes v2, accessorials, fuel-tables) + enriched load detail.
+- 7.2 — Plan integrity: time windows (early/late per stop), 3-axis capacity check
+  (weight / pallets / volume), shipment↔load junction entity.
+- 7.3 — Billing sell-side: customer invoicing (rated loads → sell-side drafts), unblocked
+  by the rating engine v2.
+- 7.4 — Deferred phase-6 hardening: `@PlatformController()` composite decorator, platform
+  login throttling, OIDC state slug, `Issuer.discover` cache, platform MFA (TOTP).
+
 ## Later / exploratory
 
 - Planning optimization (load building suggestions, carrier selection rules).
