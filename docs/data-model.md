@@ -202,3 +202,106 @@ lane matches the load (or catch-all). Sort order (implemented in `compareRateOpt
 
 Response includes `referenceDate` and, per option: `rateId`, `rateName`, `carrier`,
 `laneSpecificity`, full `breakdown`, and `missingAccessorials`.
+
+## Plan integrity — Time windows, capacity, junction (phase 7.2)
+
+### Time windows
+
+`TransportOrder`, `Shipment`, and `Stop` carry time windows in the form `[early, late?]`.
+
+**Schema changes** (migration `20260611120000_phase7_2_plan_integrity`): the pre-existing
+single-bound columns were **renamed** (never dropped — no data loss):
+`requestedPickupDate` → `requestedPickupEarly`, `plannedPickupAt` → `plannedPickupEarly`,
+`plannedArrivalAt` → `plannedArrivalEarly`. Corresponding `*Late` columns were added as nullable.
+
+**`TimeWindow` interface** (`packages/shared/src/planning/windows.ts`):
+```typescript
+interface TimeWindow { early: Date | null; late: Date | null; }
+```
+
+**Storage and timezone semantics**: all bounds are stored in UTC. The *semantic* of a bound
+is the local time of the site involved (`Location.timezone`). Display conversion to the site's
+timezone is a v1 limitation — the browser renders UTC until a server-side or client-side
+timezone conversion is added.
+
+### Hard window validations (400)
+
+`assertWindowCoherence` in `apps/api/src/modules/transportation/planning/window-validation.ts`
+throws `BadRequestException` on:
+
+- `pickupEarly > pickupLate` (early bound must be ≤ late bound within a pair)
+- `deliveryEarly > deliveryLate` (same rule for the delivery pair)
+- `pickupEarly > deliveryLate` (the overall delivery window must end after the pickup starts)
+
+**Deliberately NOT validated**: `pickupLate ≤ deliveryEarly`. Overlapping pickup and delivery
+windows are legitimate (same-day pickup-and-deliver, customer allowing flexibility). The code
+carries an explicit comment to prevent this check from being added silently.
+
+`resolveSplitWindows` inherits the order's requested bounds for undefined split fields; an
+**explicit `null`** in the payload stays null (open bound). Coherence is validated after
+resolution.
+
+### Advisory window warnings
+
+`shipmentWindowWarnings` (source: `window-warnings.ts`, wired into `GET /orders/:id` and
+`GET /loads/:id`) compares each shipment's *planned* windows against the order's *requested*
+windows. Violations are returned as a `windowWarnings` array — **never blocking**. Planned
+operations decide; the customer asked.
+
+`windowViolations` checks `plannedEarly < requestedEarly` (BEFORE_EARLY) and
+`plannedLatest > requestedLate` (AFTER_LATE), where `plannedLatest = plannedLate ?? plannedEarly`.
+
+### Capacity — 3 axes
+
+`checkCapacity` (`packages/shared/src/planning/capacity.ts`) compares load totals to trailer
+capacity axis by axis (weight kg, volume m³, pallets):
+
+- An axis where **either** the trailer capacity **or** the shipment total is null/unknown is
+  **ignored** — we don't enforce what we can't measure.
+- Exactly-at-capacity is **not** an excess.
+- Values are rounded to 2 decimal places before comparison.
+
+Gates are enforced in two places:
+
+| Gate | Endpoint |
+| ---- | -------- |
+| `shipments.assignToLoad` | `POST /shipments/:id/assign-load` |
+| `loads.assignResources` | `PATCH /loads/:id/assign` |
+
+Both accept a `force: boolean` field. Without `force`, an excess throws 400 with the per-axis
+detail. With `force: true`, the operation proceeds and a **single merged audit entry** is
+written containing both the resource change and `{ capacityOverride: true, excesses: [...] }`.
+
+`Trailer.capacityPallets` (integer, nullable) was added in the 7.2 migration and is exposed on
+the trailer DTO.
+
+### ShipmentLoadLeg junction (`shipment_load_legs`)
+
+**Purpose**: explicit junction table between `Shipment` and `Load`, mirroring the denormalized
+`Shipment.loadId` FK. Current loads only ever have `sequence = 1`; the column is reserved for
+the future multi-leg scenario (one shipment across multiple loads in sequence).
+
+**Schema** (table `shipment_load_legs`): `id`, `tenantId`, `shipmentId`, `loadId`, `sequence`,
+`createdAt`. Unique constraints: `(shipmentId, sequence)` and `(shipmentId, loadId)`. Indexes
+on `tenantId` and `loadId`.
+
+**Same-transaction invariant**: every write to `Shipment.loadId` must maintain
+`shipment_load_legs` in the same `$transaction`. Three operations uphold this:
+
+| Operation | `Shipment.loadId` change | Junction change |
+| --------- | ------------------------ | --------------- |
+| `assignToLoad` | set | upsert (`sequence = 1`) |
+| `removeFromLoad` | null | deleteMany for the shipment |
+| `loads.cancel` | null (via `updateMany`) | deleteMany for the load |
+
+**Backfill**: the 7.2 migration includes an `INSERT … SELECT` that creates one `sequence = 1`
+leg for every shipment that already had a `loadId` at migration time, using a deterministic id
+(`'leg_' || md5(shipmentId || ':' || loadId)`).
+
+### On-time analytics decision
+
+The carrier scorecard's `onTimeDeliveryPct` uses
+`bound = plannedDeliveryLate ?? plannedDeliveryEarly` as the deadline for comparison against
+`actualDeliveryAt`. This means pre-7.2 shipments (which have no `plannedDeliveryLate`) are
+measured against their single planned bound, preserving historical data without requiring a
+backfill of the new column.

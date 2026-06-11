@@ -113,8 +113,13 @@ The increment that turns Pulsar from an internal tool into a collaborative platf
   rate shopping endpoint (sorted by specificity); auto-tender uses the most specific lane;
   CRUD for accessorials and fuel tables; 4 new permissions; demo seed; 11 e2e tests; 4 new
   web pages (rates v2, lanes v2, accessorials, fuel-tables) + enriched load detail.
-- 7.2 — Plan integrity: time windows (early/late per stop), 3-axis capacity check
-  (weight / pallets / volume), shipment↔load junction entity.
+- ✅ **7.2 — Plan integrity**: time windows [early, late?] on TransportOrder/Shipment/Stop (column
+  rename, no data loss); hard coherence 400s (`assertWindowCoherence`) + advisory `windowWarnings`
+  on order and load GET; 3-axis capacity check (`checkCapacity`: weight/volume/pallets, unknown axes
+  ignored, exactly-at-capacity OK) gating `assignToLoad` and `assignResources` with `force` override
+  (single merged audit entry); `shipment_load_legs` junction with same-transaction invariant and
+  backfill migration; on-time analytics uses `plannedDeliveryLate ?? plannedDeliveryEarly`; 7 new e2e
+  tests; 13th migration.
 - 7.3 — Billing sell-side: customer invoicing (rated loads → sell-side drafts), unblocked
   by the rating engine v2.
 - 7.4 — Deferred phase-6 hardening: `@PlatformController()` composite decorator, platform
