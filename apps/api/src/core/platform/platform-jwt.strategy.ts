@@ -14,7 +14,12 @@ export class PlatformJwtStrategy extends PassportStrategy(Strategy, 'platform-jw
     });
   }
 
-  validate(payload: PlatformJwtPayload & { platformAdmin?: boolean }) {
+  validate(payload: PlatformJwtPayload & { platformAdmin?: boolean; scope?: string }) {
+    // Step tokens (mfa-pending / mfa-enroll) carry a scope property and must never
+    // be accepted as platform access tokens.
+    if ('scope' in payload && payload.scope !== undefined) {
+      throw new UnauthorizedException('Step tokens are not valid platform access tokens');
+    }
     if (payload.platformAdmin !== true) {
       throw new UnauthorizedException('Not a platform access token');
     }
