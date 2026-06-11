@@ -1,6 +1,26 @@
 import { PartialType } from '@nestjs/swagger';
 import { RateStatus, RateType } from '@pulsar/shared';
-import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+
+export class RateBreakDto {
+  @IsNumber()
+  @Min(0.001)
+  upToKg!: number;
+
+  @IsNumber()
+  @Min(0)
+  amount!: number;
+}
+
+export class RateAccessorialPriceDto {
+  @IsString()
+  accessorialId!: string;
+
+  @IsNumber()
+  @Min(0)
+  amount!: number;
+}
 
 export class CreateRateDto {
   @IsString()
@@ -24,6 +44,27 @@ export class CreateRateDto {
   @IsOptional()
   @IsString()
   customerId?: string;
+
+  @IsOptional()
+  @IsString()
+  laneId?: string;
+
+  @IsOptional()
+  @IsString()
+  fuelTableId?: string;
+
+  /** PER_HUNDREDWEIGHT only — degressive brackets, amount per CWT up to upToKg. */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RateBreakDto)
+  breaks?: RateBreakDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RateAccessorialPriceDto)
+  accessorialPrices?: RateAccessorialPriceDto[];
 
   @IsOptional()
   @IsNumber()

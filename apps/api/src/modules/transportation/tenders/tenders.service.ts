@@ -130,23 +130,16 @@ export class TendersService {
   ) {
     const load = await this.prisma.load.findFirst({
       where: { id: loadId, tenantId },
-      include: {
-        shipments: { select: { originLocationId: true, destinationLocationId: true }, take: 1 },
-      },
+      select: { id: true, shipments: { select: { id: true }, take: 1 } },
     });
     if (!load) throw new NotFoundException('Load not found');
     if (load.shipments.length === 0) {
       throw new BadRequestException('Cannot auto-tender a load without shipments');
     }
 
-    const { originLocationId, destinationLocationId } = load.shipments[0];
-    const carrierIds = await this.lanes.orderedCarrierIds(
-      tenantId,
-      originLocationId,
-      destinationLocationId,
-    );
+    const carrierIds = await this.lanes.orderedCarrierIdsForLoad(tenantId, loadId);
     if (carrierIds.length === 0) {
-      throw new BadRequestException('No carrier preference list for this lane');
+      throw new BadRequestException('No carrier preference list matches this lane');
     }
 
     const next = await this.nextCarrierInChain(tenantId, loadId, carrierIds);
@@ -183,26 +176,12 @@ export class TendersService {
     try {
       const tender = await this.prisma.tender.findUnique({
         where: { id: tenderId },
-        include: {
-          load: {
-            include: {
-              shipments: {
-                select: { originLocationId: true, destinationLocationId: true },
-                take: 1,
-              },
-            },
-          },
-        },
+        include: { load: { select: { status: true } } },
       });
       if (!tender?.isAuto || tender.load.status !== LoadStatus.PLANNED) return;
-      const shipment = tender.load.shipments[0];
-      if (!shipment) return;
 
-      const carrierIds = await this.lanes.orderedCarrierIds(
-        tender.tenantId,
-        shipment.originLocationId,
-        shipment.destinationLocationId,
-      );
+      const carrierIds = await this.lanes.orderedCarrierIdsForLoad(tender.tenantId, tender.loadId);
+      if (carrierIds.length === 0) return;
       const next = await this.nextCarrierInChain(tender.tenantId, tender.loadId, carrierIds);
       if (next) {
         await this.create(tender.tenantId, undefined, tender.loadId, {

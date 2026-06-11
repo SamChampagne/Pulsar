@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { LoadStatus, MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
@@ -9,8 +9,9 @@ import { RequirePermissions } from '../../../common/decorators/require-permissio
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { IsInt, IsOptional as IsOpt, IsString, Max, Min } from 'class-validator';
 import { TendersService } from '../tenders/tenders.service';
-import { AssignLoadResourcesDto, CreateLoadDto } from './dto/load.dto';
+import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
 import { LoadsService } from './loads.service';
+import { RatingService } from '../rating/rating.service';
 
 class CreateTenderDto {
   @IsOpt()
@@ -42,6 +43,7 @@ export class LoadsController {
   constructor(
     private readonly loads: LoadsService,
     private readonly tenders: TendersService,
+    private readonly rating: RatingService,
   ) {}
 
   @Get()
@@ -131,5 +133,25 @@ export class LoadsController {
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.EXECUTION_MANAGE)
   revokeDriverLink(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.loads.revokeDriverLink(user.tenantId, id);
+  }
+
+  // --- Rating ---------------------------------------------------------------
+
+  /** Replaces the accessorial flags (tailgate, wait…) priced into the load's cost. */
+  @Put(':id/accessorials')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
+  setAccessorials(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: SetLoadAccessorialsDto,
+  ) {
+    return this.loads.setAccessorials(user.tenantId, user.id, id, dto);
+  }
+
+  /** Rate shopping: ranked candidate rates for this load (read-only decision aid). */
+  @Get(':id/rate-options')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.RATES_READ)
+  rateOptions(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.rating.rateOptions(user.tenantId, id);
   }
 }

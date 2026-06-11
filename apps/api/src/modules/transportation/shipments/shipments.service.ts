@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { LoadCostService } from '../loads/load-cost.service';
 
 const shipmentInclude = {
   transportOrder: { select: { id: true, orderNumber: true, status: true } },
@@ -19,6 +20,7 @@ export class ShipmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly cost: LoadCostService,
   ) {}
 
   /** Generates (or returns) the public read-only tracking link for this shipment. */
@@ -80,11 +82,13 @@ export class ShipmentsService {
     if (load.status !== LoadStatus.OPEN && load.status !== LoadStatus.PLANNED) {
       throw new BadRequestException('Shipments can only be added to OPEN or PLANNED loads');
     }
-    return this.prisma.shipment.update({
+    const updated = await this.prisma.shipment.update({
       where: { id },
       data: { loadId, status: ShipmentStatus.PLANNED },
       include: shipmentInclude,
     });
+    await this.cost.recompute(tenantId, loadId);
+    return updated;
   }
 
   /** Cancels an unassigned PENDING shipment (post-planning cleanup). */
@@ -105,10 +109,15 @@ export class ShipmentsService {
     if (shipment.status !== ShipmentStatus.PLANNED) {
       throw new BadRequestException('Only PLANNED shipments can be removed from a load');
     }
-    return this.prisma.shipment.update({
+    const previousLoadId = shipment.loadId;
+    const updated = await this.prisma.shipment.update({
       where: { id },
       data: { loadId: null, status: ShipmentStatus.PENDING },
       include: shipmentInclude,
     });
+    if (previousLoadId) {
+      await this.cost.recompute(tenantId, previousLoadId);
+    }
+    return updated;
   }
 }

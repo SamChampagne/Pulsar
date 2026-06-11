@@ -27,6 +27,62 @@
     carrier: { id: string; name: string };
   }
 
+  interface AccessorialOnLoad {
+    id: string;
+    quantity: number | null;
+    accessorial: { id: string; code: string; name: string; unit: string };
+  }
+
+  interface CostLine {
+    type: string;
+    code?: string;
+    label: string;
+    amount: number;
+  }
+
+  interface AppliedBreak {
+    upToKg: number;
+    amount: number;
+    asIfApplied: boolean;
+    asIfWeightKg?: number;
+  }
+
+  interface CostDetail {
+    version: number;
+    computedAt: string;
+    referenceDate: string;
+    rate: {
+      id: string;
+      name: string;
+      rateType: string;
+      currency: string;
+      baseAmount: number;
+      minCharge: number | null;
+      laneId: string | null;
+      validFrom: string | null;
+      validTo: string | null;
+      validAtReference: boolean;
+      breaks: unknown[];
+      accessorialPrices: { code: string; amount: number }[];
+      fuel: { pct: number; source: 'TABLE' | 'STATIC' | 'NONE'; tableId?: string; effectiveFrom?: string };
+    };
+    inputs: {
+      distanceKm: number | null;
+      weightKg: number | null;
+      palletCount: number | null;
+      accessorials: { code: string; unit: string; quantity: number }[];
+    };
+    result: {
+      lines: CostLine[];
+      base: number;
+      fuelSurcharge: number;
+      accessorialsTotal: number;
+      total: number;
+      appliedBreak: AppliedBreak | null;
+      missingAccessorials: string[];
+    };
+  }
+
   interface LoadDetail {
     id: string;
     loadNumber: string;
@@ -43,6 +99,8 @@
     rate: { id: string; name: string } | null;
     shipments: ShipmentOnLoad[];
     route: { id: string } | null;
+    accessorials: AccessorialOnLoad[];
+    costDetail: CostDetail | null;
   }
 
   interface RouteDetail {
@@ -89,6 +147,38 @@
   let error = $state('');
 
   const latestTender = $derived(tenders[0] ?? null);
+
+  // Accessorials
+  interface CatalogAccessorial {
+    id: string;
+    code: string;
+    name: string;
+    unit: string;
+  }
+  let accessorialCatalog = $state<CatalogAccessorial[]>([]);
+  let accessorialChecked = $state<Record<string, boolean>>({});
+  let accessorialQty = $state<Record<string, number>>({});
+
+  // Rate comparison panel
+  interface RateOption {
+    rateId: string;
+    rateName: string;
+    currency: string;
+    carrier: { id: string; code: string; name: string } | null;
+    laneSpecificity: { originType: string; destinationType: string; total: number } | null;
+    breakdown: {
+      lines: { type: string; code?: string; label: string; amount: number }[];
+      total: number;
+      appliedBreak: { upToKg: number; amount: number; asIfApplied: boolean } | null;
+      missingAccessorials: string[];
+    };
+    missingAccessorials: string[];
+  }
+  let rateOptions = $state<RateOption[]>([]);
+  let rateOptionsOpen = $state(false);
+  let rateOptionsLoading = $state(false);
+  let rateOptionsError = $state('');
+  let expandedRateId = $state<string | null>(null);
 
   // Resource assignment form
   let carriers = $state<Option[]>([]);
@@ -184,6 +274,7 @@
         query: { loadId },
       });
       tenders = await api<TenderRow[]>(`/transportation/loads/${loadId}/tenders`);
+      syncAccessorialState();
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load';
     }
@@ -262,6 +353,74 @@
     vehicles = v.items;
     trailers = t.items;
     rates = r.items;
+
+    const catalog = await api<Paginated<CatalogAccessorial>>('/transportation/accessorials', {
+      query: { pageSize: 100 },
+    });
+    accessorialCatalog = catalog.items;
+    syncAccessorialState();
+  }
+
+  function syncAccessorialState() {
+    if (!detail) return;
+    const checked: Record<string, boolean> = {};
+    const qty: Record<string, number> = {};
+    for (const cat of accessorialCatalog) {
+      const onLoad = detail.accessorials.find((a) => a.accessorial.id === cat.id);
+      checked[cat.id] = !!onLoad;
+      qty[cat.id] = onLoad?.quantity ?? 1;
+    }
+    accessorialChecked = checked;
+    accessorialQty = qty;
+  }
+
+  async function saveAccessorials() {
+    try {
+      const items = accessorialCatalog
+        .filter((cat) => accessorialChecked[cat.id])
+        .map((cat) => ({
+          accessorialId: cat.id,
+          quantity: cat.unit === 'FLAT' ? undefined : (accessorialQty[cat.id] ?? 1),
+        }));
+      await api(`/transportation/loads/${loadId}/accessorials`, {
+        method: 'PUT',
+        body: { items },
+      });
+      toast.success('Accessorials updated — cost recomputed');
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to update accessorials');
+    }
+  }
+
+  async function openRateOptions() {
+    rateOptionsOpen = true;
+    rateOptionsLoading = true;
+    rateOptionsError = '';
+    try {
+      const result = await api<{ referenceDate: string; options: RateOption[] }>(
+        `/transportation/loads/${loadId}/rate-options`,
+      );
+      rateOptions = result.options;
+    } catch (e) {
+      rateOptionsError = e instanceof ApiError ? e.message : 'Failed to load rate options';
+    } finally {
+      rateOptionsLoading = false;
+    }
+  }
+
+  async function assignRate(rateId: string) {
+    try {
+      await api(`/transportation/loads/${loadId}/assign`, {
+        method: 'POST',
+        body: { rateId },
+      });
+      toast.success('Rate assigned');
+      rateOptionsOpen = false;
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to assign rate');
+    }
   }
 
   async function saveResources() {
@@ -437,10 +596,169 @@
           <button class="btn" onclick={saveResources}>Save resources</button>
         {/if}
         {#if detail.estimatedCost !== null}
-          <p style="margin-bottom: 0;">
+          <p style="margin-bottom: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
             <span class="muted">Estimated cost:</span>
             <strong>{Number(detail.estimatedCost).toLocaleString()} {detail.costCurrency}</strong>
+            {#if editable}
+              <button class="btn btn-secondary btn-sm" onclick={openRateOptions}>
+                Compare rates
+              </button>
+            {/if}
           </p>
+        {:else if editable}
+          <p style="margin-bottom: 0;">
+            <button class="btn btn-secondary btn-sm" onclick={openRateOptions}>
+              Compare rates
+            </button>
+          </p>
+        {/if}
+
+        {#if rateOptionsOpen}
+          <div class="rate-options-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong>Rate options</strong>
+              <button class="btn btn-secondary btn-sm" onclick={() => (rateOptionsOpen = false)}>
+                Close
+              </button>
+            </div>
+            {#if rateOptionsLoading}
+              <p class="muted">Loading…</p>
+            {:else if rateOptionsError}
+              <p class="error-text">{rateOptionsError}</p>
+            {:else if rateOptions.length === 0}
+              <p class="muted">No rate options available.</p>
+            {:else}
+              {@const firstCompleteByCurrency = (() => {
+                const seen = new Set<string>();
+                const result = new Set<string>();
+                for (const opt of rateOptions) {
+                  if (opt.missingAccessorials.length === 0 && !seen.has(opt.currency)) {
+                    seen.add(opt.currency);
+                    result.add(opt.rateId);
+                  }
+                }
+                return result;
+              })()}
+              <table class="rate-options-table">
+                <thead>
+                  <tr>
+                    <th>Rate</th>
+                    <th>Carrier</th>
+                    <th>Lane</th>
+                    <th>Total</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each rateOptions as opt (opt.rateId)}
+                    <tr
+                      class="rate-options-row"
+                      onclick={() =>
+                        (expandedRateId = expandedRateId === opt.rateId ? null : opt.rateId)}
+                    >
+                      <td>
+                        {opt.rateName}
+                        {#if firstCompleteByCurrency.has(opt.rateId)}
+                          <span class="badge badge-success" style="margin-left: 4px;">best</span>
+                        {/if}
+                      </td>
+                      <td>{opt.carrier?.name ?? '—'}</td>
+                      <td class="muted" style="font-size: 12px;">
+                        {opt.laneSpecificity
+                          ? `${opt.laneSpecificity.originType}→${opt.laneSpecificity.destinationType} (${opt.laneSpecificity.total})`
+                          : 'catch-all'}
+                      </td>
+                      <td>
+                        <strong>{opt.breakdown.total.toLocaleString()} {opt.currency}</strong>
+                        {#if opt.missingAccessorials.length > 0}
+                          <span class="badge badge-warn" style="margin-left: 4px;">
+                            missing: {opt.missingAccessorials.length}
+                          </span>
+                        {/if}
+                      </td>
+                      <td style="text-align: right;" onclick={(e) => e.stopPropagation()}>
+                        <button class="btn btn-sm" onclick={() => assignRate(opt.rateId)}>
+                          Assign
+                        </button>
+                      </td>
+                    </tr>
+                    {#if expandedRateId === opt.rateId}
+                      <tr class="rate-breakdown-row">
+                        <td colspan="5">
+                          <table class="breakdown-table">
+                            <tbody>
+                              {#each opt.breakdown.lines as line}
+                                <tr>
+                                  <td class="muted" style="font-size: 12px;">{line.label}</td>
+                                  <td style="text-align: right; font-size: 12px;">
+                                    {line.amount.toLocaleString()} {opt.currency}
+                                  </td>
+                                </tr>
+                              {/each}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    {/if}
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
+        {/if}
+
+        {#if detail.costDetail}
+          {@const cd = detail.costDetail}
+          <div class="cost-snapshot">
+            <div class="cost-snapshot-header">
+              <span class="muted" style="font-size: 12px;">
+                Cost snapshot — ref. {new Date(cd.referenceDate).toLocaleDateString()}
+              </span>
+              {#if !cd.rate.validAtReference}
+                <span class="badge badge-warn">rate outside validity window at reference date</span>
+              {/if}
+            </div>
+            <table class="breakdown-table">
+              <tbody>
+                {#each cd.result.lines as line}
+                  <tr>
+                    <td style="font-size: 13px;">{line.label}</td>
+                    <td style="text-align: right; font-size: 13px;">
+                      {line.amount.toLocaleString()} {cd.rate.currency}
+                    </td>
+                  </tr>
+                {/each}
+                <tr>
+                  <td><strong>Total</strong></td>
+                  <td style="text-align: right;">
+                    <strong>{cd.result.total.toLocaleString()} {cd.rate.currency}</strong>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            {#if cd.result.appliedBreak}
+              {@const br = cd.result.appliedBreak}
+              <p style="font-size: 12px; margin: 4px 0;">
+                <span class="muted">Break applied:</span>
+                ≤ {br.upToKg} kg @ {br.amount} $/CWT
+                {#if br.asIfApplied}
+                  <span class="badge badge-warn">as-if</span>
+                {/if}
+              </p>
+            {/if}
+            <p style="font-size: 12px; margin: 4px 0;">
+              <span class="muted">Fuel:</span>
+              {cd.rate.fuel.pct}% — {cd.rate.fuel.source}
+              {#if cd.rate.fuel.source === 'TABLE' && cd.rate.fuel.effectiveFrom}
+                <span class="muted">(eff. {new Date(cd.rate.fuel.effectiveFrom).toLocaleDateString()})</span>
+              {/if}
+            </p>
+            {#if cd.result.missingAccessorials.length > 0}
+              <p class="error-text" style="font-size: 12px; margin: 4px 0;">
+                Missing accessorials: {cd.result.missingAccessorials.join(', ')}
+              </p>
+            {/if}
+          </div>
         {/if}
       </div>
 
@@ -536,6 +854,64 @@
           </button>
         {:else}
           <p class="muted">No route. Add shipments first.</p>
+        {/if}
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top: 0;">Accessorials</h2>
+        {#if accessorialCatalog.length === 0}
+          <p class="muted">No accessorials configured.</p>
+        {:else}
+          <table>
+            <thead>
+              <tr><th></th><th>Code</th><th>Name</th><th>Qty</th><th>Unit</th></tr>
+            </thead>
+            <tbody>
+              {#each accessorialCatalog as cat (cat.id)}
+                <tr>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={accessorialChecked[cat.id] ?? false}
+                      disabled={detail.status === 'COMPLETED' || detail.status === 'CANCELLED'}
+                      onchange={(e) => {
+                        accessorialChecked = {
+                          ...accessorialChecked,
+                          [cat.id]: (e.currentTarget as HTMLInputElement).checked,
+                        };
+                      }}
+                    />
+                  </td>
+                  <td class="muted" style="font-size: 12px;">{cat.code}</td>
+                  <td>{cat.name}</td>
+                  <td>
+                    <input
+                      type="number"
+                      min="1"
+                      style="width: 60px;"
+                      value={accessorialQty[cat.id] ?? 1}
+                      disabled={cat.unit === 'FLAT' ||
+                        !(accessorialChecked[cat.id] ?? false) ||
+                        detail.status === 'COMPLETED' ||
+                        detail.status === 'CANCELLED'}
+                      oninput={(e) => {
+                        const v = Number((e.currentTarget as HTMLInputElement).value);
+                        if (!isNaN(v) && v > 0) {
+                          accessorialQty = { ...accessorialQty, [cat.id]: v };
+                        }
+                      }}
+                    />
+                  </td>
+                  <td class="muted" style="font-size: 12px;">{cat.unit}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+          {#if detail.status !== 'COMPLETED' && detail.status !== 'CANCELLED'}
+            <button class="btn" style="margin-top: 8px;" onclick={saveAccessorials}>
+              Save accessorials
+            </button>
+          {/if}
         {/if}
       </div>
     </div>
@@ -651,5 +1027,66 @@
   .row-actions {
     display: flex;
     gap: 4px;
+  }
+
+  .rate-options-panel {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--color-surface, #f8f9fa);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+  }
+
+  .rate-options-table {
+    width: 100%;
+    font-size: 13px;
+  }
+
+  .rate-options-row {
+    cursor: pointer;
+  }
+
+  .rate-options-row:hover td {
+    background: var(--color-hover, rgba(0, 0, 0, 0.03));
+  }
+
+  .rate-breakdown-row td {
+    padding: 4px 8px 8px;
+    background: var(--color-surface, #f8f9fa);
+  }
+
+  .breakdown-table {
+    width: 100%;
+    font-size: 12px;
+    border-collapse: collapse;
+  }
+
+  .breakdown-table td {
+    padding: 2px 4px;
+  }
+
+  .cost-snapshot {
+    margin-top: 12px;
+    padding: 10px;
+    background: var(--color-surface, #f8f9fa);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+  }
+
+  .cost-snapshot-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+
+  .badge-warn {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffc107;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
   }
 </style>

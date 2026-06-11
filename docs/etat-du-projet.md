@@ -1,7 +1,7 @@
 # État du projet — point de reprise
 
 > 🇫🇷 Document de synthèse pour reprendre le travail (humain ou session Claude Code).
-> Mis à jour à la fin de la **phase 6**. Détail des tâches : [TODO.md](../TODO.md) ·
+> Mis à jour à la fin de la **phase 7.1**. Détail des tâches : [TODO.md](../TODO.md) ·
 > vision : [ROADMAP.md](../ROADMAP.md) · règles de dev : [CLAUDE.md](../CLAUDE.md) ·
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
@@ -18,6 +18,7 @@
 | 4 — Plateforme & 2ᵉ module | ✅ | Clés API entrantes, audit déclaratif (@Audit), URLs pré-signées S3, gestion shipments post-planification, **module Customer Portal v1** |
 | 5 — Portail v2 & Billing | ✅ | Saisie de commandes depuis le portail, comptes de service (clés API en écriture), **module Billing v1** (factures transporteur) |
 | 6 — Commercial readiness | ✅ | **Plan d'admin plateforme** (création/suspension de tenants, PlatformUser disjoint, garde-fous prod), **SSO OIDC par tenant** (PKCE, state chiffré, provisioning), **rapprochement de factures transporteur** (tolérance sur écart brut, litiges codifiés, PAID, export CSV — réorientation issue de l'audit TMS), **secrets chiffrés au repos** (enc:v1 + script de rotation idempotent + runbooks), doc de découverte Fleet |
+| 7.1 — Rating engine v2 + Lane | ✅ | **Lane entité première classe** (hiérarchie géo, clés normalisées NFD, spécificité déterministe), **tarifs v2** (tranches CWT as-if, accessorials, table carburant datée), **snapshot `costDetail` figé** (invariant COMPLETED + updateMany atomique), **rate shopping** (`GET /loads/:id/rate-options`), auto-tender par spécificité, CRUD accessorials + fuel-tables, 4 permissions, seed démo, 4 pages web (rates/lanes/accessorials/fuel-tables) + détail load enrichi, 11ᵉ migration |
 
 **La boucle économique complète fonctionne** : le client commande depuis son portail →
 confirmation → planification (split possible) → tender automatique par lane avec courriel →
@@ -25,8 +26,8 @@ acceptation transporteur sans compte → dispatch → exécution mobile chauffeu
 POD avec photo → facture transporteur brouillon → approbation.
 
 **Chiffres** : 3 modules métier actifs (transportation, customer-portal, billing) + le plan
-d'administration plateforme ; 126 tests (30 vitest shared + 40 jest unitaires API + 56 E2E,
-tous verts et rejouables) ; 11 migrations ; ~55 endpoints ; 28 pages web dont 5 publiques à
+d'administration plateforme ; 168 tests (50 vitest shared + 51 jest unitaires API + 67 E2E,
+tous verts et rejouables) ; 11 migrations ; ~65 endpoints ; 32 pages web dont 5 publiques à
 jeton et 2 plateforme.
 
 ## Carte de la documentation
@@ -41,22 +42,20 @@ jeton et 2 plateforme.
 | Conventions REST | [api-conventions.md](./api-conventions.md) |
 | Démarrage local | [getting-started.md](./getting-started.md) |
 
-## Prochaine session : phase 7 — le « cerveau » TMS (rattrapage de l'audit)
+## Prochaine session : chantier 7.2 — intégrité du plan
 
-L'[audit TMS](./audit-tms-2026-06-10.md) est la boussole. Ordre recommandé :
+L'[audit TMS](./audit-tms-2026-06-10.md) est la boussole. Le chantier 7.1 (rating engine v2
++ entité Lane) est **livré**. Ordre recommandé pour la suite :
 
-1. **Rating engine v2 + entité Lane** — _chantier n°1 de l'audit (§5 + §1)_ : Lane comme
-   entité de première classe (hiérarchie géo simple), tarifs rattachés aux lanes, tranches
-   dégressives (weight breaks), accessorials avec table carburant datée, **persistance du
-   détail de calcul + version du tarif** (auditabilité), rate shopping (évaluer tous les
-   tarifs valides). Préalable de presque tout le reste, y compris le sell-side.
-2. **Intégrité du plan** (§2/§3) — fenêtres temporelles early/late, vérification de capacité
-   3 axes, entité de jonction shipment↔load (déverrouille le multi-leg plus tard).
-3. **Billing sell-side** — la facturation client reportée de la phase 6, une fois le rating
-   engine v2 en place.
-4. **Durcissements différés de la phase 6** (voir TODO.md) — MFA plateforme, impersonation
-   support, throttling login plateforme, décorateur composite `@PlatformController()`,
-   cache `Issuer.discover`, slug dans le state OIDC.
+1. **Intégrité du plan** (§2/§3 de l'audit) — fenêtres temporelles early/late sur les stops
+   (hard constraint vs. soft warning), vérification de capacité 3 axes (poids/palettes/volume)
+   à l'ajout d'un shipment au load, entité de jonction shipment↔load (déverrouille le
+   multi-leg plus tard).
+2. **Billing sell-side** — la facturation client reportée de la phase 6, désormais débloquée
+   par le rating engine v2 (chantier 7.1).
+3. **Durcissements différés de la phase 6** (voir TODO.md) — MFA plateforme, throttling login
+   plateforme, décorateur composite `@PlatformController()`, cache `Issuer.discover`, slug
+   dans le state OIDC.
 
 ### Dette connue à garder en tête (ne pas « réparer » en silence)
 

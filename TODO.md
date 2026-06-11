@@ -137,6 +137,56 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [ ] Gardes de statut des factures dans la transaction (`updateMany` conditionnel + count)
       plutôt que read-then-write — fenêtre TOCTOU acceptable en UI d'ops, à fermer si API publique
 
+## Phase 7 — Le « cerveau » TMS (rattrapage audit)
+
+### Chantier 7.1 — Rating engine v2 + entité Lane ✅
+
+- [x] Lane comme entité de première classe : hiérarchie géo LOCATION < CITY < STATE < COUNTRY,
+      clés normalisées NFD (`originKey`/`destinationKey`), contrainte d'unicité, ordre de
+      spécificité déterministe (`compareLanes`, tie-break `rateId`)
+- [x] Tarifs rattachés aux lanes : tranches CWT (`RateBreak`) avec règle as-if à toutes les
+      bornes, prix d'accessorials (`RateAccessorialPrice`), table carburant datée
+      (`FuelSurchargeTable` / `FuelSurchargeEntry`) — résolution à la date de référence
+      (premier pickup planifié, sinon today), priorité `fuelTableId` sur pourcentage statique
+- [x] Snapshot figé `Load.costDetail` : invariant « jamais de recompute sur COMPLETED »,
+      `updateMany` conditionnel atomique (race-safe), forme documentée dans data-model.md
+- [x] Rate shopping (`GET /loads/:id/rate-options`) : tri devise → complets → total → spécificité
+      → rateId
+- [x] Auto-tender par spécificité : la lane la plus spécifique ayant des préférences est
+      sélectionnée en priorité
+- [x] CRUD accessorials (`/transportation/accessorials`) + tables carburant
+      (`/transportation/fuel-tables`) avec entrées datées
+- [x] 4 nouvelles permissions (`transportation.accessorials.read`/`.manage`,
+      `transportation.fuel-tables.read`/`.manage`) — `transportation.rates.*` pré-existait
+- [x] Seed démo : lanes, accessorials, fuel-table avec entrées, tarifs v2 avec tranches
+- [x] Suite e2e phase7 (11 tests) + migration de la suite tender-automation
+- [x] 4 nouvelles pages web : rates v2, lanes v2, accessorials, fuel-tables ; détail du load
+      enrichi (costDetail snapshot + rate options)
+- [x] Migration Prisma `20260611100309_phase7_rating_engine_lanes` (11ᵉ migration)
+
+### Chantier 7.2 — Intégrité du plan (à faire)
+
+- [ ] Fenêtres temporelles early/late sur les stops (hard constraint vs. soft warning)
+- [ ] Vérification de capacité 3 axes (poids, palettes, volume) à l'ajout d'un shipment au load
+- [ ] Entité de jonction shipment↔load (déverrouille le multi-leg plus tard)
+
+### Chantier 7.3 — Billing sell-side (à faire, débloqué par 7.1)
+
+- [ ] Facturation client : rated loads → invoice drafts sell-side (reporté de la phase 6,
+      attendait le rating engine v2)
+
+### Chantier 7.4 — Durcissements différés phase 6 (à faire)
+
+Voir la liste détaillée déjà présente ci-dessus dans « Dette notée à la revue des plans
+phase 6 » :
+- [ ] Décorateur composite `@PlatformController()`
+- [ ] Throttling sur `POST /platform/auth/login`
+- [ ] Slug du tenant dans le state OIDC chiffré
+- [ ] Cache du `Issuer.discover` par issuer
+- [ ] MFA (TOTP + recovery) pour les comptes plateforme
+- [ ] Injection de formule tableur dans l'export CSV factures
+- [ ] Gardes de statut des factures dans la transaction (`updateMany` conditionnel)
+
 ## Phase 3 — Platform & integrations
 
 - [ ] OIDC SSO per tenant (keep `core/auth` issuance API stable)

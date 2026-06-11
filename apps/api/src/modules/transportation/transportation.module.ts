@@ -35,6 +35,11 @@ import { PublicLinksController } from './public/public-links.controller';
 import { PublicLinksService } from './public/public-links.service';
 import { AnalyticsController } from './analytics/analytics.controller';
 import { AnalyticsService } from './analytics/analytics.service';
+import { AccessorialsController } from './accessorials/accessorials.controller';
+import { AccessorialsService } from './accessorials/accessorials.service';
+import { FuelTablesController } from './fuel-tables/fuel-tables.controller';
+import { FuelTablesService } from './fuel-tables/fuel-tables.service';
+import { RatingService } from './rating/rating.service';
 
 /**
  * Transportation Management module (TMS).
@@ -58,6 +63,8 @@ import { AnalyticsService } from './analytics/analytics.service';
     TrackingController,
     AnalyticsController,
     LanesController,
+    AccessorialsController,
+    FuelTablesController,
     // Public, token-authenticated endpoints (tender response, tracking, driver)
     PublicLinksController,
   ],
@@ -78,8 +85,11 @@ import { AnalyticsService } from './analytics/analytics.service';
     TenderExpiryService,
     LanesService,
     LoadCostService,
+    RatingService,
     PublicLinksService,
     AnalyticsService,
+    AccessorialsService,
+    FuelTablesService,
   ],
 })
 export class TransportationModule {}
