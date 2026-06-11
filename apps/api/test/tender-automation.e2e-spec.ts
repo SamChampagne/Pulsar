@@ -20,6 +20,7 @@ describe('Tender automation (e2e)', () => {
     destination: '',
     carrierA: '',
     carrierB: '',
+    lane: '',
     load: '',
     shipment: '',
   };
@@ -79,17 +80,25 @@ describe('Tender automation (e2e)', () => {
       ids[field] = carrier.body.id;
     }
 
-    const lane = await request(http)
-      .put('/api/v1/transportation/lanes')
+    const createdLane = await request(http)
+      .post('/api/v1/transportation/lanes')
       .set(auth())
       .send({
-        originLocationId: ids.origin,
-        destinationLocationId: ids.destination,
-        carrierIds: [ids.carrierA, ids.carrierB],
+        originType: 'LOCATION',
+        origin: { locationId: ids.origin },
+        destinationType: 'LOCATION',
+        destination: { locationId: ids.destination },
       })
+      .expect(201);
+    ids.lane = createdLane.body.id;
+
+    const lane = await request(http)
+      .put(`/api/v1/transportation/lanes/${ids.lane}/carriers`)
+      .set(auth())
+      .send({ carrierIds: [ids.carrierA, ids.carrierB] })
       .expect(200);
-    expect(lane.body).toHaveLength(2);
-    expect(lane.body[0].rank).toBe(1);
+    expect(lane.body.carrierPreferences).toHaveLength(2);
+    expect(lane.body.carrierPreferences[0].rank).toBe(1);
   });
 
   it('builds a planned load on that lane', async () => {
