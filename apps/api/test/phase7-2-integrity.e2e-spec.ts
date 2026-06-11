@@ -49,7 +49,7 @@ describe('Phase 7.2 plan integrity (e2e)', () => {
       .send({ code: `${suffix}-CARR`, name: 'P72 Carrier' }).expect(201);
     ids.carrier = carrier.body.id;
     const trailer = await request(http).post('/api/v1/transportation/trailers').set(auth())
-      .send({ unitNumber: `${suffix}-TRL`, type: 'DRY_VAN', capacityWeightKg: 1000 }).expect(201);
+      .send({ unitNumber: `${suffix}-TRL`, type: 'DRY_VAN', capacityWeightKg: 1000, capacityPallets: 4 }).expect(201);
     ids.trailer = trailer.body.id;
   });
 
@@ -130,7 +130,7 @@ describe('Phase 7.2 plan integrity (e2e)', () => {
     await request(http)
       .post(`/api/v1/transportation/shipments/${ids.shipment}/assign-load`).set(auth())
       .send({ loadId: ids.load })
-      .expect(201); // 600 kg / 3 pallets fits 1000 kg / 4 pallets
+      .expect(201); // 600 kg / 3 pallets fits within 1000 kg / 4 pallets
 
     const order2 = await request(http).post('/api/v1/transportation/transport-orders').set(auth())
       .send({
@@ -146,11 +146,11 @@ describe('Phase 7.2 plan integrity (e2e)', () => {
       .post(`/api/v1/transportation/shipments/${shipment2}/assign-load`).set(auth())
       .send({ loadId: ids.load })
       .expect(400);
-    // Only the weightKg axis fires: capacityPallets is not exposed in the trailer DTO so it
-    // remains null in the DB, and checkCapacity skips null-capacity axes.
+    // Both axes fire: weight 600+700=1300 > 1000 kg, pallets 3+3=6 > 4.
     expect(rejected.body.excesses).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ axis: 'weightKg', capacity: 1000, requested: 1300, excess: 300 }),
+        expect.objectContaining({ axis: 'pallets', capacity: 4, requested: 6, excess: 2 }),
       ]),
     );
 
