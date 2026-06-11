@@ -156,13 +156,13 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
       sélectionnée en priorité
 - [x] CRUD accessorials (`/transportation/accessorials`) + tables carburant
       (`/transportation/fuel-tables`) avec entrées datées
-- [x] 4 nouvelles permissions (`transportation.rates.read/write`,
-      `transportation.accessorials.read/write`, `transportation.fuel-tables.read/write`)
+- [x] 4 nouvelles permissions (`transportation.accessorials.read`/`.manage`,
+      `transportation.fuel-tables.read`/`.manage`) — `transportation.rates.*` pré-existait
 - [x] Seed démo : lanes, accessorials, fuel-table avec entrées, tarifs v2 avec tranches
 - [x] Suite e2e phase7 (11 tests) + migration de la suite tender-automation
 - [x] 4 nouvelles pages web : rates v2, lanes v2, accessorials, fuel-tables ; détail du load
       enrichi (costDetail snapshot + rate options)
-- [x] Migration Prisma `20260611100309_phase7_rating_engine_lanes` (12ᵉ migration)
+- [x] Migration Prisma `20260611100309_phase7_rating_engine_lanes` (11ᵉ migration)
 
 ### Chantier 7.2 — Intégrité du plan (à faire)
 

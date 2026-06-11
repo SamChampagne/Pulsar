@@ -83,78 +83,122 @@ per-tenant database sequences. Primary keys are cuids.
 
 ### Lane
 
-A `Lane` is a first-class entity that represents an origin/destination corridor for pricing.
+`Lane` is a tenant-scoped first-class entity representing an origin/destination corridor.
 
-**Hierarchy levels** (enum `LaneLevel`): `LOCATION` < `CITY` < `STATE` < `COUNTRY`.  
-A lane is matched against a load's actual origin/destination using **normalized keys** computed
-by `buildLaneKey()` from `@pulsar/shared/rating/lane-key`. Keys are NFD-normalized, lower-cased,
-accent-stripped, whitespace-collapsed strings of the form `"city:state:country"` (or subset
-thereof depending on level).
+**Endpoint hierarchy** (enum `LaneEndpointType`): `LOCATION` (3) > `CITY` (2) > `STATE` (1) >
+`COUNTRY` (0). Numbers are the specificity scores used by `compareLanes`.
 
-**Uniqueness constraint**: `(tenantId, originKey, destinationKey)` is unique in the database.
-The `originKey`/`destinationKey` columns are the canonical storage form; human-readable fields
-(`originCity`, `originState`, etc.) are stored alongside for display.
+**Normalized keys** — `buildEndpointKey()` from `packages/shared/src/rating/lane-key.ts` builds
+`originKey`/`destinationKey` from NFD-normalized (diacritics stripped), trimmed, lowercased
+components. Formats (pipe separator, country first):
 
-**Specificity ordering**: `compareLanes()` (from `@pulsar/shared`) establishes a total order:
-1. Higher `LaneLevel` wins (LOCATION > CITY > STATE > COUNTRY for origin, then destination).
-2. Tie-break: lower `rateId` (string comparison) for determinism.
+| Type | Key format |
+| ---- | ---------- |
+| `LOCATION` | `LOCATION:<locationId>` |
+| `CITY` | `CITY:<country>|<state>|<city>` |
+| `STATE` | `STATE:<country>|<state>` |
+| `COUNTRY` | `COUNTRY:<country>` |
 
-`LaneCarrierPreference` rows are now lane-based (replacing the v1 string-key approach):
-`(laneId, carrierId, rank)` with a unique constraint per lane+carrier.
+`@@unique([tenantId, originKey, destinationKey])` makes strictly identical lanes impossible.
+Human-readable fields (`originCity`, `originState`, `originCountry`, and `destination*`
+equivalents) are stored alongside for display.
 
-### Rate extensions
+**`candidateEndpointKeys(location)`** produces up to four keys (most specific first) that a
+physical `Location` can match against. The rating engine queries `originKey IN (...)` AND
+`destinationKey IN (...)` in one shot.
 
-`Rate` gained two new fields:
-- `laneId` (nullable FK → `Lane`): when set, this rate applies only to that lane. A `null`
-  `laneId` means the rate is a **catch-all** (applied when no lane-specific rate matches).
-- `fuelTableId` (nullable FK → `FuelSurchargeTable`): when set, takes **precedence** over the
-  static `fuelSurchargePct` for computing fuel surcharge.
+**Lane ordering** — `compareLanes()` (total specificity desc → destination specificity desc →
+origin specificity desc → `createdAt` desc). Used by the rating engine and auto-tendering.
 
-**`RateBreak`** (weight breaks for CWT pricing): each row stores `minWeight`, `maxWeight`
-(nullable = no ceiling), and `ratePerCwt`. The **as-if rule** is applied at every break
-boundary: the total cost is `min(cost_at_break_boundary)` across all boundaries up to the
-actual weight, ensuring monotonicity (heavier freight never costs more than lighter freight
-at the next boundary).
+**`LaneCarrierPreference`**: `(tenantId, laneId, carrierId, rank)`. Two unique constraints:
+`(tenantId, laneId, rank)` and `(tenantId, laneId, carrierId)`. Drives auto-tender sequencing.
 
-**`RateAccessorialPrice`**: joins a `Rate` to an `Accessorial` with a `price` override. When
-a load includes an accessorial that has a `RateAccessorialPrice` on the selected rate, that
-price is used; otherwise the `Accessorial.defaultPrice` applies.
+### Rate extensions (phase 7.1)
+
+`Rate` has two new nullable FKs (both `onDelete: Restrict`):
+
+- **`laneId`** → `Lane`: when null the rate is a catch-all; the rating engine includes it for
+  any load.
+- **`fuelTableId`** → `FuelSurchargeTable`: when set, takes precedence over the static
+  `fuelSurchargePct` field for computing the fuel surcharge.
+
+**`RateBreak`** (table `rate_breaks`): one row per CWT weight bracket — fields `upToKg Float`
+(inclusive upper bound) and `amount Decimal` (per-CWT rate for that bracket). The last bracket
+is open-ended (covers all heavier weights). `@@unique([rateId, upToKg])`.
+
+**As-if (deficit-weight) rule**: for actual weight W in bracket i, `calculateRateCost` scans
+every higher bracket j and computes cost as if W = `breaks[j-1].upToKg` at `breaks[j].amount`.
+The global minimum across all candidates is taken; when the rule fires, `appliedBreak` records
+`asIfApplied: true` and `asIfWeightKg`.
+
+**`RateAccessorialPrice`**: joins `Rate` to `Accessorial` with an `amount Decimal`.
+`@@unique([rateId, accessorialId])`. An accessorial requested on a load but not priced in the
+rate goes into `missingAccessorials[]` — there is no `Accessorial.defaultPrice` fallback.
 
 ### Accessorial
 
-`Accessorial` is a tenant-scoped master-data entity (code, name, defaultPrice). Loads reference
-accessorials via `LoadAccessorial` (load ↔ accessorial join with the resolved `price` stored at
-booking time).
+Tenant-scoped catalog entity — fields: `code` (unique per tenant), `name`,
+`unit AccessorialUnit` (`FLAT | PER_HOUR | PER_UNIT`). No `defaultPrice`.
+
+`LoadAccessorial` (table `load_accessorials`): join between a load and an accessorial flagged
+by the planner — fields `loadId`, `accessorialId`, `quantity Float @default(1)`. No stored
+price; the price is read from `RateAccessorialPrice` at rating time.
 
 ### FuelSurchargeTable / FuelSurchargeEntry
 
-`FuelSurchargeTable` groups a set of dated `FuelSurchargeEntry` rows (each with an `effectiveDate`
-and a `surchargePct`). At rating time the **reference date** is the earliest planned pickup date
-on the load (or today if none exists). The entry with the greatest `effectiveDate` ≤ reference
-date is selected — i.e., the most recent entry that was already in effect.
+`FuelSurchargeTable`: `(tenantId, name)`. `FuelSurchargeEntry`: `(tableId, effectiveFrom
+DateTime, pct Float)`, `@@unique([tableId, effectiveFrom])`.
+
+`pickFuelEntry(entries, referenceDate)` selects the entry with the greatest `effectiveFrom` ≤
+reference date (i.e., the most recent entry in effect). Returns null when no entry qualifies
+(fuel surcharge treated as 0).
+
+**Reference date**: earliest `plannedPickupAt` across the load's shipments, or `new Date()` if
+none is set. Governs both fuel-entry selection and `validFrom`/`validTo` rate validity.
 
 ### Load.costDetail snapshot
 
-`Load.costDetail` is a JSON column that stores the full breakdown of the estimated cost at the
-moment it was last computed, including: base amount, fuel surcharge amount, accessorial amounts,
-applied rate id/version, and the reference date used for the fuel table.
+`Load.costDetail Json?` stores the full calculation breakdown frozen at the moment of the last
+`recompute()`. Snapshot shape:
 
-**INVARIANT 1 — no recompute on COMPLETED**: `LoadCostService.recompute()` is a no-op (early
-return) when `load.status === LoadStatus.COMPLETED`. The snapshot is frozen at completion.
+```
+{
+  version: 1,
+  computedAt: ISO string,
+  referenceDate: ISO string,
+  rate: { id, name, rateType, currency, baseAmount, minCharge, laneId,
+          validFrom, validTo, validAtReference,
+          breaks: [{ upToKg, amount }],
+          accessorialPrices: [{ code, amount }],
+          fuel: { pct, source, tableId?, effectiveFrom? } },
+  inputs: { distanceKm, weightKg, palletCount, accessorials: [{ code, unit, quantity }] },
+  result: CostBreakdown  // lines[], base, fuelSurcharge, accessorialsTotal, total, appliedBreak
+}
+```
 
-**INVARIANT 2 — reconciliation reads the snapshot**: billing reconciliation reads
-`Load.estimatedCost` and the `costDetail` JSON. It never triggers a recompute. This ensures
-the invoice total matches the cost that was visible to the dispatcher at dispatch time, not a
-potentially-different recalculation.
+`sum(lines[].amount) === total` is an invariant of `calculateRateCost`. A `MIN_CHARGE_ADJUSTMENT`
+line is appended when `minCharge` is triggered (it makes up the difference).
 
-The `updateMany` call that persists a new snapshot uses a conditional `WHERE status != COMPLETED`
-clause, making the freeze atomic and race-safe.
+**INVARIANT 1 — no recompute on COMPLETED**: `LoadCostService.recompute()` returns early when
+`load.status === LoadStatus.COMPLETED`. The snapshot is permanently frozen at that point.
+
+**INVARIANT 2 — reconciliation reads the snapshot**: billing reads `Load.estimatedCost` and
+`costDetail`; it never triggers a recompute. Mutating a rate after a load is completed cannot
+silently rewrite historical cost data.
+
+The `updateMany` that persists a new snapshot uses `WHERE status != COMPLETED`, making the
+freeze atomic and race-safe.
 
 ### Rate shopping
 
-`GET /loads/:id/rate-options` returns all rates that are valid for the load's lane, sorted by:
-1. Currency (tenant's base currency first).
-2. Complete vs. partial match (rates covering all accessorials first).
-3. Total estimated cost (ascending).
-4. Lane specificity (most specific first, using `compareLanes`).
-5. `rateId` for determinism.
+`GET /loads/:id/rate-options` evaluates all `ACTIVE` rates valid at the reference date whose
+lane matches the load (or catch-all). Sort order (implemented in `compareRateOptions`):
+
+1. `currency` ascending (plain alphabetical — no currency conversion).
+2. Complete candidates first (rates with no `missingAccessorials` before partial ones).
+3. `breakdown.total` ascending.
+4. Lane `laneSpecificity.total` descending (most specific lane first).
+5. `rateId` ascending (deterministic tie-break).
+
+Response includes `referenceDate` and, per option: `rateId`, `rateName`, `carrier`,
+`laneSpecificity`, full `breakdown`, and `missingAccessorials`.

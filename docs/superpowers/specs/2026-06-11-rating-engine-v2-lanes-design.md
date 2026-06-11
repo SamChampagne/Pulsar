@@ -10,7 +10,7 @@
 
 | Décision | Choix | Pourquoi |
 | -------- | ----- | -------- |
-| Modèle de lane | Entité `Lane` de première classe, hiérarchie géo **site < ville < province < pays** | Support commun exigé par l'audit pour tarifs, routing guide (auto-tender) et KPI par lane. Les zones génériques (grilles zone×zone, niveau OTM) et les préfixes postaux (FSA/ZIP3) sont écartés — la hiérarchie choisie n'y ferme pas la porte |
+| Modèle de lane | Entité `Lane` de première classe, hiérarchie géo **site < ville < province < pays** | Support commun exigé par l'audit pour tarifs, routing guide (auto-tender) et KPI par lane. Les zones génériques (grilles zone×zone, niveau OTM) et les préfixes postaux (FSA/ZIP3) sont écartés — la hiérarchie choisie n'y ferme pas la porte. **Implémenté comme `STATE`** dans l'enum `LaneEndpointType` (aligné sur la colonne `Location.state` du schéma) plutôt que `PROVINCE`. |
 | Auditabilité du calcul | **Snapshot Json figé** sur le load (`costDetail`), pas de versions immuables de tarifs | Le snapshot autonome (tarif tel qu'utilisé + intrants + lignes) suffit à l'exigence « tout calcul ré-explicable a posteriori » sans la machinerie de publication/versionnage. Voir les **invariants du snapshot** ci-dessous — ce sont eux qui rendent les tarifs mutables tolérables |
 | Rate shopping | Liste classée, choix manuel ; le meilleur mis en avant | Garde le contrôle au planificateur tant que les grilles sont incomplètes ; l'assignation existante reste le seul chemin d'écriture |
 | Accessorials | Catalogue par tenant + prix par tarif + flags sur le load | Le rate shopping compare les transporteurs à périmètre égal ; texte libre par tarif rendrait la comparaison impossible |
