@@ -816,8 +816,10 @@ model Lane {
   updatedAt             DateTime         @updatedAt
 
   tenant              Tenant                  @relation(fields: [tenantId], references: [id])
-  originLocation      Location?               @relation("LaneOrigin", fields: [originLocationId], references: [id])
-  destinationLocation Location?               @relation("LaneDestination", fields: [destinationLocationId], references: [id])
+  // Restrict intentionally: a LOCATION-level lane's originKey embeds the location id —
+  // SET NULL would orphan the key. Same policy as every rating-entity reference.
+  originLocation      Location?               @relation("LaneOrigin", fields: [originLocationId], references: [id], onDelete: Restrict)
+  destinationLocation Location?               @relation("LaneDestination", fields: [destinationLocationId], references: [id], onDelete: Restrict)
   rates               Rate[]
   carrierPreferences  LaneCarrierPreference[]
 
@@ -938,6 +940,8 @@ model Rate {
   tenant            Tenant                 @relation(fields: [tenantId], references: [id])
   carrier           Carrier?               @relation(fields: [carrierId], references: [id])
   customer          Customer?              @relation(fields: [customerId], references: [id])
+  // Restrict intentionally: deleting a lane/fuel table with live rates must fail loudly,
+  // never silently detach pricing (see plan phase 7.1, deletion policy).
   lane              Lane?                  @relation(fields: [laneId], references: [id], onDelete: Restrict)
   fuelTable         FuelSurchargeTable?    @relation(fields: [fuelTableId], references: [id], onDelete: Restrict)
   breaks            RateBreak[]

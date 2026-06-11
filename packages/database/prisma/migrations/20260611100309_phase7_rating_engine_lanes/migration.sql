@@ -105,7 +105,7 @@ INSERT INTO "lanes" ("id", "tenantId", "originType", "originLocationId", "destin
                      "destinationLocationId", "originKey", "destinationKey", "createdAt", "updatedAt")
 SELECT 'lane_' || md5(p."tenantId" || ':' || p."originLocationId" || ':' || p."destinationLocationId"),
        p."tenantId", 'LOCATION', p."originLocationId", 'LOCATION', p."destinationLocationId",
-       'LOCATION:' || p."originLocationId", 'LOCATION:' || p."destinationLocationId", now(), now()
+       'LOCATION:' || p."originLocationId", 'LOCATION:' || p."destinationLocationId", CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM (SELECT DISTINCT "tenantId", "originLocationId", "destinationLocationId"
       FROM "lane_carrier_preferences") p;
 
