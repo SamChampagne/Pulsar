@@ -192,6 +192,11 @@ model PlatformUser {
   lastName     String
   status       PlatformUserStatus @default(ACTIVE)
   lastLoginAt  DateTime?
+  // MFA (TOTP). totpSecret encrypted at rest (enc:v1, CryptoService); recovery
+  // codes are bcrypt-hashed and single-use (consumed codes are removed).
+  totpSecret    String?
+  mfaEnabledAt  DateTime?
+  recoveryCodes String[]  @default([])
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
