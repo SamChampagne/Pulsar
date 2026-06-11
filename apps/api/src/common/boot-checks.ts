@@ -25,6 +25,9 @@ export function assertProductionSecrets(env: Record<string, string | undefined>)
   }
   for (const [name, examples] of Object.entries(PUBLISHED_EXAMPLES)) {
     const value = env[name];
+    // Unset is deliberately NOT handled here: JWT_SECRET (getOrThrow) and
+    // ENCRYPTION_KEY (CryptoService constructor) already abort the boot when
+    // missing. This check only adds the published-example rejection layer.
     if (value && examples.includes(value)) {
       throw new Error(
         `${name} is set to a published example value (.env.example / CI) — generate a real secret for production.`,
