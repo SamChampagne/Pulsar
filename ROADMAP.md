@@ -118,8 +118,8 @@ The increment that turns Pulsar from an internal tool into a collaborative platf
   on order and load GET; 3-axis capacity check (`checkCapacity`: weight/volume/pallets, unknown axes
   ignored, exactly-at-capacity OK) gating `assignToLoad` and `assignResources` with `force` override
   (single merged audit entry); `shipment_load_legs` junction with same-transaction invariant and
-  backfill migration; on-time analytics uses `plannedDeliveryLate ?? plannedDeliveryEarly`; 7 new e2e
-  tests; 13th migration.
+  backfill migration; on-time analytics uses `plannedDeliveryLate ?? plannedDeliveryEarly`; 6 new e2e
+  tests; 12th migration.
 - 7.3 — Billing sell-side: customer invoicing (rated loads → sell-side drafts), unblocked
   by the rating engine v2.
 - 7.4 — Deferred phase-6 hardening: `@PlatformController()` composite decorator, platform

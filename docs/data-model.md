@@ -259,14 +259,15 @@ capacity axis by axis (weight kg, volume m³, pallets):
 - An axis where **either** the trailer capacity **or** the shipment total is null/unknown is
   **ignored** — we don't enforce what we can't measure.
 - Exactly-at-capacity is **not** an excess.
-- Values are rounded to 2 decimal places before comparison.
+- The requested total is rounded to 2 decimal places before comparison (capacity is
+  compared as entered) — sub-cent overages are not excesses.
 
 Gates are enforced in two places:
 
 | Gate | Endpoint |
 | ---- | -------- |
 | `shipments.assignToLoad` | `POST /shipments/:id/assign-load` |
-| `loads.assignResources` | `PATCH /loads/:id/assign` |
+| `loads.assignResources` | `POST /loads/:id/assign` |
 
 Both accept a `force: boolean` field. Without `force`, an excess throws 400 with the per-axis
 detail. With `force: true`, the operation proceeds and a **single merged audit entry** is
