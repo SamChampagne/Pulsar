@@ -107,6 +107,8 @@ export class ApiKeysService {
       firstName: 'API',
       lastName: key.name,
       permissions: key.scopes as PermissionKey[],
+      // API keys are tenant-scoped service accounts — never platform staff.
+      isPlatformAdmin: false,
     };
   }
 }

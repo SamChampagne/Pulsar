@@ -87,9 +87,12 @@ The increment that turns Pulsar from an internal tool into a collaborative platf
 - ✅ **Billing module v1** — third business module: completed loads' estimated costs → carrier
   invoice drafts (INV- sequence, one line per load, double-billing impossible) → approval.
 
-## Phase 6 — Commercial readiness
+## Phase 6 — Commercial readiness (in progress)
 
-- SSO (OIDC) per tenant; platform administration plane (cross-tenant ops).
+- ✅ Platform administration plane (cross-tenant ops): create tenants + initial admin + modules,
+  suspend/activate, module toggling, platform overview. Gated by `isPlatformAdmin` /
+  `PlatformAdminGuard` without weakening per-tenant isolation (see docs/platform-admin.md).
+- SSO (OIDC) per tenant.
 - Billing v2: customer invoicing, payment tracking, invoice export.
 - Fleet module discovery (maintenance, compliance).
 - SOC2-track hardening: secrets management, encrypted integration configs, backup/restore runbook.

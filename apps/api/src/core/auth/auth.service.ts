@@ -120,13 +120,18 @@ export class AuthService {
   async refresh(refreshToken: string): Promise<LoginResponse> {
     const record = await this.prisma.refreshToken.findUnique({
       where: { tokenHash: sha256(refreshToken) },
-      include: { user: true },
+      include: { user: { include: { tenant: true } } },
     });
     if (!record || record.revokedAt || record.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid refresh token');
     }
     if (record.user.status !== 'ACTIVE') {
       throw new UnauthorizedException('User is disabled');
+    }
+    // Tenant suspension is a kill switch: it must also stop active sessions from
+    // renewing, not just block fresh logins. Effective at the next refresh (≤15 min).
+    if (record.user.tenant.status === 'SUSPENDED') {
+      throw new UnauthorizedException('Tenant is suspended');
     }
     await this.prisma.refreshToken.update({
       where: { id: record.id },
@@ -156,6 +161,7 @@ export class AuthService {
       tenantId: user.tenantId,
       email: user.email,
       permissions,
+      ...(user.isPlatformAdmin ? { platformAdmin: true } : {}),
     };
 
     const refreshToken = randomBytes(48).toString('base64url');
@@ -178,6 +184,7 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         permissions,
+        isPlatformAdmin: user.isPlatformAdmin,
       },
       tenant: {
         id: user.tenant.id,

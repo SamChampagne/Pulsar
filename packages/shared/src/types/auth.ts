@@ -8,6 +8,8 @@ export interface JwtPayload {
   tenantId: string;
   email: string;
   permissions: PermissionKey[];
+  /** Platform staff flag — grants access to the cross-tenant /platform plane. */
+  platformAdmin?: boolean;
 }
 
 export interface AuthUser {
@@ -17,6 +19,8 @@ export interface AuthUser {
   firstName: string;
   lastName: string;
   permissions: PermissionKey[];
+  /** Platform staff flag — grants access to the cross-tenant /platform plane. */
+  isPlatformAdmin: boolean;
 }
 
 export interface LoginResponse {
@@ -30,4 +34,15 @@ export interface LoginResponse {
     name: string;
     enabledModules: ModuleKey[];
   };
+}
+
+/** Tenant summary as seen from the cross-tenant platform plane. */
+export interface PlatformTenantSummary {
+  id: string;
+  slug: string;
+  name: string;
+  status: 'TRIAL' | 'ACTIVE' | 'SUSPENDED';
+  createdAt: string;
+  userCount: number;
+  enabledModules: ModuleKey[];
 }

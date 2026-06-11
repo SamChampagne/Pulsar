@@ -90,6 +90,10 @@ model User {
   firstName    String
   lastName     String
   status       UserStatus @default(ACTIVE)
+  // Platform staff flag. Grants cross-tenant access through /platform/* endpoints
+  // only (see PlatformAdminGuard). The user still belongs to a (platform) tenant,
+  // so tenantId stays non-null and the existing isolation invariant is untouched.
+  isPlatformAdmin Boolean  @default(false)
   lastLoginAt  DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt

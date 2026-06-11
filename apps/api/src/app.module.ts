@@ -9,7 +9,9 @@ import { EmailModule } from './core/email/email.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { ModulesGuard } from './common/guards/modules.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
+import { PlatformAdminGuard } from './common/guards/platform-admin.guard';
 import { AuthModule } from './core/auth/auth.module';
+import { PlatformModule } from './core/platform/platform.module';
 import { TenantsModule } from './core/tenants/tenants.module';
 import { UsersModule } from './core/users/users.module';
 import { RolesModule } from './core/roles/roles.module';
@@ -45,14 +47,17 @@ import { BillingModule } from './modules/billing/billing.module';
     NotificationsModule,
     IntegrationsModule,
     ModuleRegistryModule,
+    PlatformModule,
     // Business modules (activable per tenant — see ModulesGuard)
     TransportationModule,
     CustomerPortalModule,
     BillingModule,
   ],
   providers: [
-    // Guard order matters: authenticate, then check module activation, then permissions.
+    // Guard order matters: authenticate, gate the platform plane, then check
+    // module activation, then permissions.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: PlatformAdminGuard },
     { provide: APP_GUARD, useClass: ModulesGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },

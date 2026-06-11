@@ -62,6 +62,15 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
 15. Public pages of a business module must re-check module activation in the service
     (`TenantModulesCacheService`) — public routes bypass ModulesGuard (see PortalService).
 
+## Hard rules (continued, phase 6)
+
+16. The cross-tenant **platform plane** (`/platform/*`, `PlatformController`) is the only
+    place that operates across tenants. Gate every such route with `@PlatformAdmin()`
+    (enforced by `PlatformAdminGuard`), take an explicit `:id`/`:tenantId`, and **never**
+    derive scope from the caller's `tenantId`. Platform staff are normal users in the seeded
+    `platform` tenant with `User.isPlatformAdmin` — keep `tenantId` non-null and do not grant
+    cross-tenant power any other way. See docs/platform-admin.md.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

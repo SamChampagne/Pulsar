@@ -23,4 +23,7 @@ packages/database/generated/
 .idea/
 .vscode/*
 !.vscode/extensions.json
-storage/
+
+# Local file-storage uploads (runtime only). Anchored to the API working dir so
+# it does NOT swallow source directories named "storage" (e.g. documents/storage).
+/apps/api/storage/

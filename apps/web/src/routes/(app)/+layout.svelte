@@ -18,6 +18,7 @@
   const hasBilling = $derived(
     $auth?.tenant.enabledModules.includes(MODULE_KEYS.BILLING) ?? false,
   );
+  const isPlatformAdmin = $derived($auth?.user.isPlatformAdmin ?? false);
 
   const coreNav = [{ href: '/dashboard', label: 'Dashboard' }];
   const tmsNav = [
@@ -82,6 +83,11 @@
         {#each adminNav as item (item.href)}
           <a href={item.href} class:active={isActive(item.href)}>{item.label}</a>
         {/each}
+
+        {#if isPlatformAdmin}
+          <div class="nav-section">Platform</div>
+          <a href="/platform/tenants" class:active={isActive('/platform')}>Tenants</a>
+        {/if}
       </nav>
 
       <div class="sidebar-footer">

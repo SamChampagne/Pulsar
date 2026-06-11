@@ -97,6 +97,66 @@ async function main() {
   });
   console.log(`Tenant "${tenant.slug}" ready — admin@pulsar.dev / admin123`);
 
+  // --- Platform staff --------------------------------------------------------
+  // A dedicated "platform" tenant hosts cross-tenant administrators. They wield
+  // platform powers via the isPlatformAdmin flag (see /platform endpoints), not
+  // through any business module, and keep a non-null tenantId like everyone else.
+  const platformTenant = await prisma.tenant.upsert({
+    where: { slug: 'platform' },
+    update: {},
+    create: { slug: 'platform', name: 'Pulsar Platform', status: 'ACTIVE' },
+  });
+  const coreModule = await prisma.moduleDefinition.findUniqueOrThrow({
+    where: { key: MODULE_KEYS.CORE },
+  });
+  await prisma.tenantModule.upsert({
+    where: { tenantId_moduleId: { tenantId: platformTenant.id, moduleId: coreModule.id } },
+    update: { enabled: true },
+    create: {
+      tenantId: platformTenant.id,
+      moduleId: coreModule.id,
+      enabled: true,
+      enabledAt: new Date(),
+    },
+  });
+  const platformRole = await prisma.role.upsert({
+    where: { tenantId_key: { tenantId: platformTenant.id, key: 'admin' } },
+    update: {},
+    create: {
+      tenantId: platformTenant.id,
+      key: 'admin',
+      name: 'Administrator',
+      description: 'Full access to all modules',
+      isSystem: true,
+    },
+  });
+  for (const permission of allPermissions) {
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: platformRole.id, permissionId: permission.id } },
+      update: {},
+      create: { roleId: platformRole.id, permissionId: permission.id },
+    });
+  }
+  const platformAdmin = await prisma.user.upsert({
+    where: { tenantId_email: { tenantId: platformTenant.id, email: 'platform@pulsar.dev' } },
+    update: { isPlatformAdmin: true },
+    create: {
+      tenantId: platformTenant.id,
+      email: 'platform@pulsar.dev',
+      passwordHash: hashSync('platform123', 10),
+      firstName: 'Platform',
+      lastName: 'Admin',
+      status: 'ACTIVE',
+      isPlatformAdmin: true,
+    },
+  });
+  await prisma.userRole.upsert({
+    where: { userId_roleId: { userId: platformAdmin.id, roleId: platformRole.id } },
+    update: {},
+    create: { userId: platformAdmin.id, roleId: platformRole.id },
+  });
+  console.log('Platform admin ready — platform@pulsar.dev / platform123');
+
   // --- Sample TMS master data --------------------------------------------------
   const customer = await prisma.customer.upsert({
     where: { tenantId_code: { tenantId: tenant.id, code: 'CUST-001' } },

@@ -101,10 +101,16 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
       loads' estimated costs, billable preview, approval, double-billing prevented by schema
 - [x] Phase 5 e2e suite (4 tests; module-state resets make suites rerun-safe)
 
-## Phase 6 — Next
+## Phase 6 — Commercial readiness
 
+- [x] Platform administration plane (`User.isPlatformAdmin` + `platform` tenant,
+      `@PlatformAdmin()`/`PlatformAdminGuard`, `/platform/tenants` CRUD + suspend/activate +
+      module toggle, provisioning recipe in one transaction, web pages, e2e suite — 10 tests)
+- [x] Fix: `.gitignore` `storage/` rule was swallowing the **source** dir
+      `documents/storage/` → the file-storage driver (FileStorage + Local/S3) had never been
+      committed and a fresh clone could not build. Rule anchored to `/apps/api/storage/` and
+      the three driver files restored.
 - [ ] SSO (OIDC) per tenant
-- [ ] Platform administration plane (cross-tenant ops: create/suspend tenants)
 - [ ] Billing v2: customer invoicing, payment tracking, invoice PDF/export
 - [ ] Fleet module discovery (maintenance, compliance)
 - [ ] SOC2-track hardening: secrets management, encrypted integration configs, backups

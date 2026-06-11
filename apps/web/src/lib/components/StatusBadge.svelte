@@ -22,6 +22,8 @@
     INACTIVE: 'badge-danger',
     INVITED: 'badge-warning',
     DISABLED: 'badge-danger',
+    TRIAL: 'badge-warning',
+    SUSPENDED: 'badge-danger',
   };
 </script>
 
