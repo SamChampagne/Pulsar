@@ -10,7 +10,7 @@
  */
 import { PrismaClient, TransportOrderStatus } from '@prisma/client';
 import { hashSync } from 'bcryptjs';
-import { MODULE_CATALOG, PERMISSION_CATALOG, MODULE_KEYS } from '@pulsar/shared';
+import { MODULE_CATALOG, PERMISSION_CATALOG, MODULE_KEYS, LaneEndpointType, buildEndpointKey } from '@pulsar/shared';
 
 const prisma = new PrismaClient();
 
@@ -214,6 +214,140 @@ async function main() {
       capacityWeightKg: 20000,
     },
   });
+
+  // --- Phase 7: rating master data -------------------------------------------------
+
+  const accessorials = [
+    { code: 'TAILGATE', name: 'Tailgate service', unit: 'FLAT' as const },
+    { code: 'WAIT_HOUR', name: 'Waiting time (per hour)', unit: 'PER_HOUR' as const },
+    { code: 'RESIDENTIAL', name: 'Residential delivery', unit: 'FLAT' as const },
+  ];
+  const accessorialRows = [] as { id: string; code: string }[];
+  for (const a of accessorials) {
+    const row = await prisma.accessorial.upsert({
+      where: { tenantId_code: { tenantId: tenant.id, code: a.code } },
+      update: {},
+      create: { tenantId: tenant.id, ...a },
+    });
+    accessorialRows.push(row);
+  }
+
+  let fuelTable = await prisma.fuelSurchargeTable.findFirst({
+    where: { tenantId: tenant.id, name: 'Standard diesel index' },
+  });
+  if (!fuelTable) {
+    fuelTable = await prisma.fuelSurchargeTable.create({
+      data: {
+        tenantId: tenant.id,
+        name: 'Standard diesel index',
+        entries: {
+          create: [
+            { effectiveFrom: new Date('2026-01-01'), pct: 8 },
+            { effectiveFrom: new Date('2026-06-01'), pct: 11.5 },
+          ],
+        },
+      },
+    });
+  }
+
+  // LOCATION→LOCATION lane (plant → dc) carrying the carrier preference list.
+  const siteOriginKey = buildEndpointKey(LaneEndpointType.LOCATION, { locationId: plant.id });
+  const siteDestinationKey = buildEndpointKey(LaneEndpointType.LOCATION, { locationId: dc.id });
+  const siteLane = await prisma.lane.upsert({
+    where: {
+      tenantId_originKey_destinationKey: {
+        tenantId: tenant.id,
+        originKey: siteOriginKey,
+        destinationKey: siteDestinationKey,
+      },
+    },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      name: 'Plant → DC (site level)',
+      originType: 'LOCATION',
+      originLocationId: plant.id,
+      destinationType: 'LOCATION',
+      destinationLocationId: dc.id,
+      originKey: siteOriginKey,
+      destinationKey: siteDestinationKey,
+    },
+  });
+  await prisma.laneCarrierPreference.upsert({
+    where: {
+      tenantId_laneId_carrierId: { tenantId: tenant.id, laneId: siteLane.id, carrierId: carrier.id },
+    },
+    update: { rank: 1 },
+    create: { tenantId: tenant.id, laneId: siteLane.id, carrierId: carrier.id, rank: 1 },
+  });
+
+  // CITY→CITY lane derived from the same two locations (state/country fall back to QC/CA
+  // when the seeded locations don't carry them).
+  const cityOf = (loc: { city: string; state: string | null; country: string }) => ({
+    city: loc.city,
+    state: loc.state ?? 'QC',
+    country: loc.country,
+  });
+  const cityOriginKey = buildEndpointKey(LaneEndpointType.CITY, cityOf(plant));
+  const cityDestinationKey = buildEndpointKey(LaneEndpointType.CITY, cityOf(dc));
+  const cityLane = await prisma.lane.upsert({
+    where: {
+      tenantId_originKey_destinationKey: {
+        tenantId: tenant.id,
+        originKey: cityOriginKey,
+        destinationKey: cityDestinationKey,
+      },
+    },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      name: `${plant.city} → ${dc.city} (city level)`,
+      originType: 'CITY',
+      originCity: plant.city,
+      originState: plant.state ?? 'QC',
+      originCountry: plant.country,
+      destinationType: 'CITY',
+      destinationCity: dc.city,
+      destinationState: dc.state ?? 'QC',
+      destinationCountry: dc.country,
+      originKey: cityOriginKey,
+      destinationKey: cityDestinationKey,
+    },
+  });
+
+  // A complete demo rate: CWT brackets + accessorial prices + dated fuel table, on the city lane.
+  const demoRateName = 'Demo CWT grid (city lane)';
+  const existingDemoRate = await prisma.rate.findFirst({
+    where: { tenantId: tenant.id, name: demoRateName },
+  });
+  if (!existingDemoRate) {
+    await prisma.rate.create({
+      data: {
+        tenantId: tenant.id,
+        name: demoRateName,
+        carrierId: carrier.id,
+        laneId: cityLane.id,
+        fuelTableId: fuelTable.id,
+        rateType: 'PER_HUNDREDWEIGHT',
+        baseAmount: 25,
+        minCharge: 150,
+        status: 'ACTIVE',
+        breaks: {
+          create: [
+            { upToKg: 500, amount: 25 },
+            { upToKg: 2000, amount: 18 },
+            { upToKg: 10000, amount: 12 },
+          ],
+        },
+        accessorialPrices: {
+          create: [
+            { accessorialId: accessorialRows[0].id, amount: 75 },
+            { accessorialId: accessorialRows[1].id, amount: 60 },
+          ],
+        },
+      },
+    });
+  }
 
   await prisma.transportOrder.upsert({
     where: { tenantId_orderNumber: { tenantId: tenant.id, orderNumber: 'TO-000001' } },
