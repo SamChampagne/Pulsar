@@ -28,16 +28,16 @@ export class LoadCostService {
     if (load.status === LoadStatus.COMPLETED) return;
 
     if (!load.rateId) {
-      await this.prisma.load.update({
-        where: { id: loadId },
+      await this.prisma.load.updateMany({
+        where: { id: loadId, tenantId, status: { not: LoadStatus.COMPLETED } },
         data: { estimatedCost: null, costCurrency: null, costDetail: Prisma.DbNull },
       });
       return;
     }
 
     const evaluation = await this.rating.evaluateAssignedRate(tenantId, loadId);
-    await this.prisma.load.update({
-      where: { id: loadId },
+    await this.prisma.load.updateMany({
+      where: { id: loadId, tenantId, status: { not: LoadStatus.COMPLETED } },
       data: {
         estimatedCost: evaluation ? evaluation.breakdown.total : null,
         costCurrency: evaluation ? evaluation.currency : null,

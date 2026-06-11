@@ -15,6 +15,31 @@ import {
 import { PrismaService } from '../../../prisma/prisma.service';
 import { resolveLoadEndpoints } from './load-endpoints';
 
+export interface RateOption {
+  rateId: string;
+  currency: string;
+  breakdown: { total: number };
+  missingAccessorials: unknown[];
+  laneSpecificity: { total: number } | null;
+}
+
+/**
+ * Deterministic comparator for rate options.
+ * Sort order: currency asc → incomplete last → total asc → laneSpecificity desc →
+ * rateId asc (guarantees a stable order when all other fields tie).
+ */
+export function compareRateOptions(a: RateOption, b: RateOption): number {
+  if (a.currency !== b.currency) return a.currency.localeCompare(b.currency);
+  const aIncomplete = a.missingAccessorials.length > 0 ? 1 : 0;
+  const bIncomplete = b.missingAccessorials.length > 0 ? 1 : 0;
+  if (aIncomplete !== bIncomplete) return aIncomplete - bIncomplete;
+  if (a.breakdown.total !== b.breakdown.total) return a.breakdown.total - b.breakdown.total;
+  const aSpec = a.laneSpecificity?.total ?? -1;
+  const bSpec = b.laneSpecificity?.total ?? -1;
+  if (aSpec !== bSpec) return bSpec - aSpec;
+  return a.rateId.localeCompare(b.rateId);
+}
+
 const rateDetailInclude = {
   carrier: { select: { id: true, code: true, name: true } },
   lane: { select: { id: true, name: true, originType: true, destinationType: true, createdAt: true } },
@@ -59,6 +84,16 @@ export class RatingService {
     return dates.length > 0 ? new Date(Math.min(...dates)) : new Date();
   }
 
+  /**
+   * Returns true when `date` falls within the rate's validity window.
+   *
+   * Used in two contexts:
+   * 1. SQL-mirror for rate shopping (`rateOptions`): only rates valid at the
+   *    reference date are fetched, so this is a server-side cross-check.
+   * 2. Snapshot flag for assigned rates (`evaluate`): the planner's explicit
+   *    assignment is never blocked by validity, but `validAtReference` is written
+   *    into the cost snapshot so the choice is auditable after the fact.
+   */
   isValidAt(rate: { validFrom: Date | null; validTo: Date | null }, date: Date): boolean {
     if (rate.validFrom && rate.validFrom.getTime() > date.getTime()) return false;
     if (rate.validTo && rate.validTo.getTime() < date.getTime()) return false;
@@ -117,6 +152,10 @@ export class RatingService {
   /**
    * Evaluates one rate against one load. The snapshot is self-contained: the rate as
    * used, the inputs and the result — re-explainable without touching the live rate.
+   *
+   * Note: for assigned-rate evaluation (recompute path), validity is not enforced
+   * (the planner's explicit choice wins), but `validAtReference` is recorded in the
+   * snapshot so the choice is auditable.
    */
   evaluate(rate: RateDetail, load: LoadForRating, referenceDate: Date): RateEvaluation | null {
     const fuel = this.resolveFuel(rate, referenceDate);
@@ -153,6 +192,7 @@ export class RatingService {
         laneId: rate.laneId,
         validFrom: rate.validFrom?.toISOString() ?? null,
         validTo: rate.validTo?.toISOString() ?? null,
+        validAtReference: this.isValidAt(rate, referenceDate),
         breaks: rate.breaks.map((b) => ({ upToKg: b.upToKg, amount: Number(b.amount) })),
         accessorialPrices: rate.accessorialPrices.map((p) => ({
           code: p.accessorial.code,
@@ -242,13 +282,7 @@ export class RatingService {
         breakdown: evaluation.breakdown,
         missingAccessorials: evaluation.breakdown.missingAccessorials,
       }))
-      .sort((a, b) => {
-        if (a.currency !== b.currency) return a.currency.localeCompare(b.currency);
-        const aIncomplete = a.missingAccessorials.length > 0 ? 1 : 0;
-        const bIncomplete = b.missingAccessorials.length > 0 ? 1 : 0;
-        if (aIncomplete !== bIncomplete) return aIncomplete - bIncomplete;
-        return a.breakdown.total - b.breakdown.total;
-      });
+      .sort(compareRateOptions);
 
     return { referenceDate: date.toISOString(), options };
   }
