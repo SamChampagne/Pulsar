@@ -56,8 +56,11 @@ model Tenant {
   shipments         Shipment[]
   loads             Load[]
   tenders           Tender[]
-  lanePreferences   LaneCarrierPreference[]
-  invoices          Invoice[]
+  lanePreferences     LaneCarrierPreference[]
+  lanes               Lane[]
+  accessorials        Accessorial[]
+  fuelSurchargeTables FuelSurchargeTable[]
+  invoices            Invoice[]
   routes            Route[]
   stops             Stop[]
   rates             Rate[]
@@ -461,8 +464,8 @@ model Location {
   originShipments      Shipment[]       @relation("ShipmentOrigin")
   destinationShipments Shipment[]       @relation("ShipmentDestination")
   stops                Stop[]
-  laneOrigins          LaneCarrierPreference[] @relation("LaneOrigin")
-  laneDestinations     LaneCarrierPreference[] @relation("LaneDestination")
+  laneOrigins          Lane[] @relation("LaneOrigin")
+  laneDestinations     Lane[] @relation("LaneDestination")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -718,6 +721,9 @@ model Load {
   // Estimated buy-side cost computed from the assigned rate (see calculateRateCost).
   estimatedCost Decimal?   @db.Decimal(12, 2)
   costCurrency  String?
+  // Frozen calculation snapshot (rate as used + inputs + lines). See spec invariants:
+  // a COMPLETED load is never recomputed; reconciliation reads this, never recomputes.
+  costDetail    Json?
   // Public driver token: grants stop check-in/out + POD capture on this load only.
   driverToken   String?    @unique
   dispatchedAt  DateTime?
@@ -736,6 +742,7 @@ model Load {
   route          Route?
   trackingEvents TrackingEvent[]
   tenders        Tender[]
+  accessorials   LoadAccessorial[]
   invoiceLine    InvoiceLine?
 
   @@unique([tenantId, loadNumber])
@@ -778,23 +785,62 @@ model Tender {
   @@map("tenders")
 }
 
+// Geographic level of a lane endpoint, most → least specific (mirror of @pulsar/shared).
+enum LaneEndpointType {
+  LOCATION
+  CITY
+  STATE
+  COUNTRY
+}
+
+// First-class lane: each endpoint is one level of the geo hierarchy site < city < state < country.
+// originKey/destinationKey are normalized matching keys (see packages/shared rating/lane-key.ts);
+// the unique below makes strictly identical lanes impossible.
+model Lane {
+  id                    String           @id @default(cuid())
+  tenantId              String
+  name                  String?
+  originType            LaneEndpointType
+  originLocationId      String?
+  originCity            String?
+  originState           String?
+  originCountry         String?
+  destinationType       LaneEndpointType
+  destinationLocationId String?
+  destinationCity       String?
+  destinationState      String?
+  destinationCountry    String?
+  originKey             String
+  destinationKey        String
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  tenant              Tenant                  @relation(fields: [tenantId], references: [id])
+  originLocation      Location?               @relation("LaneOrigin", fields: [originLocationId], references: [id])
+  destinationLocation Location?               @relation("LaneDestination", fields: [destinationLocationId], references: [id])
+  rates               Rate[]
+  carrierPreferences  LaneCarrierPreference[]
+
+  @@unique([tenantId, originKey, destinationKey])
+  @@index([tenantId])
+  @@map("lanes")
+}
+
 // Ordered carrier preference per lane (origin → destination pair).
 // Drives auto-tendering: rank 1 is offered first, then rank 2 on decline/expiry, etc.
 model LaneCarrierPreference {
-  id                    String @id @default(cuid())
-  tenantId              String
-  originLocationId      String
-  destinationLocationId String
-  carrierId             String
-  rank                  Int
+  id        String @id @default(cuid())
+  tenantId  String
+  laneId    String
+  carrierId String
+  rank      Int
 
-  tenant              Tenant   @relation(fields: [tenantId], references: [id])
-  originLocation      Location @relation("LaneOrigin", fields: [originLocationId], references: [id])
-  destinationLocation Location @relation("LaneDestination", fields: [destinationLocationId], references: [id])
-  carrier             Carrier  @relation(fields: [carrierId], references: [id])
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  lane    Lane    @relation(fields: [laneId], references: [id], onDelete: Restrict)
+  carrier Carrier @relation(fields: [carrierId], references: [id])
 
-  @@unique([tenantId, originLocationId, destinationLocationId, rank], map: "lane_prefs_lane_rank_key")
-  @@unique([tenantId, originLocationId, destinationLocationId, carrierId], map: "lane_prefs_lane_carrier_key")
+  @@unique([tenantId, laneId, rank], map: "lane_prefs_lane_rank_key")
+  @@unique([tenantId, laneId, carrierId], map: "lane_prefs_lane_carrier_key")
   @@map("lane_carrier_preferences")
 }
 
@@ -876,6 +922,8 @@ model Rate {
   name             String
   carrierId        String?
   customerId       String?
+  laneId           String?
+  fuelTableId      String?
   rateType         RateType   @default(FLAT)
   currency         String     @default("CAD")
   baseAmount       Decimal    @db.Decimal(12, 2)
@@ -887,13 +935,112 @@ model Rate {
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id])
-  carrier  Carrier?  @relation(fields: [carrierId], references: [id])
-  customer Customer? @relation(fields: [customerId], references: [id])
-  loads    Load[]
+  tenant            Tenant                 @relation(fields: [tenantId], references: [id])
+  carrier           Carrier?               @relation(fields: [carrierId], references: [id])
+  customer          Customer?              @relation(fields: [customerId], references: [id])
+  lane              Lane?                  @relation(fields: [laneId], references: [id], onDelete: Restrict)
+  fuelTable         FuelSurchargeTable?    @relation(fields: [fuelTableId], references: [id], onDelete: Restrict)
+  breaks            RateBreak[]
+  accessorialPrices RateAccessorialPrice[]
+  loads             Load[]
 
   @@index([tenantId])
+  @@index([tenantId, laneId])
   @@map("rates")
+}
+
+// Degressive weight bracket of a PER_HUNDREDWEIGHT rate (amount per CWT up to upToKg).
+model RateBreak {
+  id     String  @id @default(cuid())
+  rateId String
+  upToKg Float
+  amount Decimal @db.Decimal(12, 2)
+
+  rate Rate @relation(fields: [rateId], references: [id], onDelete: Cascade)
+
+  @@unique([rateId, upToKg])
+  @@map("rate_breaks")
+}
+
+// Pricing unit of an accessorial charge (mirror of @pulsar/shared).
+enum AccessorialUnit {
+  FLAT
+  PER_HOUR
+  PER_UNIT
+}
+
+// Tenant accessorial catalog (tailgate, wait time, residential…).
+model Accessorial {
+  id        String          @id @default(cuid())
+  tenantId  String
+  code      String
+  name      String
+  unit      AccessorialUnit @default(FLAT)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  tenant           Tenant                 @relation(fields: [tenantId], references: [id])
+  ratePrices       RateAccessorialPrice[]
+  loadAccessorials LoadAccessorial[]
+
+  @@unique([tenantId, code])
+  @@map("accessorials")
+}
+
+// Price of one accessorial under one rate — lets rate shopping compare carriers like for like.
+model RateAccessorialPrice {
+  id            String  @id @default(cuid())
+  rateId        String
+  accessorialId String
+  amount        Decimal @db.Decimal(12, 2)
+
+  rate        Rate        @relation(fields: [rateId], references: [id], onDelete: Cascade)
+  accessorial Accessorial @relation(fields: [accessorialId], references: [id], onDelete: Restrict)
+
+  @@unique([rateId, accessorialId])
+  @@map("rate_accessorial_prices")
+}
+
+// Accessorials the planner flagged on a load (quantity forced to 1 for FLAT units).
+model LoadAccessorial {
+  id            String @id @default(cuid())
+  loadId        String
+  accessorialId String
+  quantity      Float  @default(1)
+
+  load        Load        @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  accessorial Accessorial @relation(fields: [accessorialId], references: [id], onDelete: Restrict)
+
+  @@unique([loadId, accessorialId])
+  @@map("load_accessorials")
+}
+
+// Dated fuel surcharge table; the entry in force at the load's reference date applies.
+model FuelSurchargeTable {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant               @relation(fields: [tenantId], references: [id])
+  entries FuelSurchargeEntry[]
+  rates   Rate[]
+
+  @@index([tenantId])
+  @@map("fuel_surcharge_tables")
+}
+
+model FuelSurchargeEntry {
+  id            String   @id @default(cuid())
+  tableId       String
+  effectiveFrom DateTime
+  pct           Float
+
+  table FuelSurchargeTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@unique([tableId, effectiveFrom])
+  @@map("fuel_surcharge_entries")
 }
 
 enum TrackingEventType {
