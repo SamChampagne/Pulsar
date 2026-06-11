@@ -6,16 +6,16 @@ describe('RatingService (pure helpers)', () => {
   describe('referenceDate', () => {
     it('uses the earliest planned pickup of the shipments', () => {
       const date = service.referenceDate([
-        { plannedPickupAt: new Date('2026-07-02') },
-        { plannedPickupAt: new Date('2026-07-01') },
-        { plannedPickupAt: null },
+        { plannedPickupEarly: new Date('2026-07-02') },
+        { plannedPickupEarly: new Date('2026-07-01') },
+        { plannedPickupEarly: null },
       ]);
       expect(date.toISOString()).toBe(new Date('2026-07-01').toISOString());
     });
 
     it('falls back to now when no shipment has a planned pickup', () => {
       const before = Date.now();
-      const date = service.referenceDate([{ plannedPickupAt: null }]);
+      const date = service.referenceDate([{ plannedPickupEarly: null }]);
       expect(date.getTime()).toBeGreaterThanOrEqual(before);
     });
   });

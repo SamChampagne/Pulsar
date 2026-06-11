@@ -12,8 +12,10 @@ export interface PortalOrderInput {
   originLocationId: string;
   destinationLocationId: string;
   customerReference?: string;
-  requestedPickupDate?: string;
-  requestedDeliveryDate?: string;
+  requestedPickupEarly?: string;
+  requestedPickupLate?: string;
+  requestedDeliveryEarly?: string;
+  requestedDeliveryLate?: string;
   totalWeightKg?: number;
   palletCount?: number;
   notes?: string;
@@ -69,11 +71,17 @@ export class PortalService {
         customerReference: input.customerReference,
         originLocationId: input.originLocationId,
         destinationLocationId: input.destinationLocationId,
-        requestedPickupDate: input.requestedPickupDate
-          ? new Date(input.requestedPickupDate)
+        requestedPickupEarly: input.requestedPickupEarly
+          ? new Date(input.requestedPickupEarly)
           : undefined,
-        requestedDeliveryDate: input.requestedDeliveryDate
-          ? new Date(input.requestedDeliveryDate)
+        requestedPickupLate: input.requestedPickupLate
+          ? new Date(input.requestedPickupLate)
+          : undefined,
+        requestedDeliveryEarly: input.requestedDeliveryEarly
+          ? new Date(input.requestedDeliveryEarly)
+          : undefined,
+        requestedDeliveryLate: input.requestedDeliveryLate
+          ? new Date(input.requestedDeliveryLate)
           : undefined,
         totalWeightKg: input.totalWeightKg,
         palletCount: input.palletCount,
@@ -135,8 +143,10 @@ export class PortalService {
         orderNumber: true,
         customerReference: true,
         status: true,
-        requestedPickupDate: true,
-        requestedDeliveryDate: true,
+        requestedPickupEarly: true,
+        requestedPickupLate: true,
+        requestedDeliveryEarly: true,
+        requestedDeliveryLate: true,
         createdAt: true,
         originLocation: { select: { city: true, state: true } },
         destinationLocation: { select: { city: true, state: true } },

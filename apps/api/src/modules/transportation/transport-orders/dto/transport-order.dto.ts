@@ -28,11 +28,19 @@ export class CreateTransportOrderDto {
 
   @IsOptional()
   @IsDateString()
-  requestedPickupDate?: string;
+  requestedPickupEarly?: string;
 
   @IsOptional()
   @IsDateString()
-  requestedDeliveryDate?: string;
+  requestedPickupLate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  requestedDeliveryEarly?: string;
+
+  @IsOptional()
+  @IsDateString()
+  requestedDeliveryLate?: string;
 
   @IsOptional()
   @IsNumber()
@@ -74,11 +82,19 @@ export class ShipmentSplitDto {
 
   @IsOptional()
   @IsDateString()
-  plannedPickupAt?: string;
+  plannedPickupEarly?: string;
 
   @IsOptional()
   @IsDateString()
-  plannedDeliveryAt?: string;
+  plannedPickupLate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  plannedDeliveryEarly?: string;
+
+  @IsOptional()
+  @IsDateString()
+  plannedDeliveryLate?: string;
 }
 
 export class PlanTransportOrderDto {

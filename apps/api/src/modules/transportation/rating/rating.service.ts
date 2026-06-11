@@ -53,7 +53,7 @@ type RateDetail = Prisma.RateGetPayload<{ include: typeof rateDetailInclude }>;
 interface LoadForRating {
   id: string;
   route: { totalDistanceKm: number | null } | null;
-  shipments: { weightKg: number | null; palletCount: number | null; plannedPickupAt: Date | null }[];
+  shipments: { weightKg: number | null; palletCount: number | null; plannedPickupEarly: Date | null }[];
   accessorials: { quantity: number; accessorial: { code: string; unit: string } }[];
 }
 
@@ -75,10 +75,10 @@ export interface RateEvaluation {
 export class RatingService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Reference date: earliest planned pickup, else today. Governs fuel AND validity. */
-  referenceDate(shipments: { plannedPickupAt: Date | null }[]): Date {
+  /** Reference date: earliest planned pickup early bound, else today. Governs fuel AND validity. */
+  referenceDate(shipments: { plannedPickupEarly: Date | null }[]): Date {
     const dates = shipments
-      .map((s) => s.plannedPickupAt)
+      .map((s) => s.plannedPickupEarly)
       .filter((d): d is Date => d !== null)
       .map((d) => d.getTime());
     return dates.length > 0 ? new Date(Math.min(...dates)) : new Date();
@@ -143,7 +143,7 @@ export class RatingService {
         status: true,
         rateId: true,
         route: { select: { totalDistanceKm: true } },
-        shipments: { select: { weightKg: true, palletCount: true, plannedPickupAt: true } },
+        shipments: { select: { weightKg: true, palletCount: true, plannedPickupEarly: true } },
         accessorials: { select: { quantity: true, accessorial: { select: { code: true, unit: true } } } },
       },
     });

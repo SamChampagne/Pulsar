@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { LoadStatus, StopStatus, TrackingEventType } from '@pulsar/shared';
+import { LoadStatus, StopStatus, TrackingEventType, validateWindowPair } from '@pulsar/shared';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -56,6 +56,17 @@ export class RoutesService {
       ]),
     );
 
+    // Validate arrival windows before writing.
+    for (const s of dto.stops) {
+      const arrivalError = validateWindowPair({
+        early: s.plannedArrivalEarly ? new Date(s.plannedArrivalEarly) : null,
+        late: s.plannedArrivalLate ? new Date(s.plannedArrivalLate) : null,
+      });
+      if (arrivalError) {
+        throw new BadRequestException(`Stop ${s.sequence} arrival window: ${arrivalError}`);
+      }
+    }
+
     // Rebuild from scratch — the route is fully owned by its load.
     await this.prisma.route.deleteMany({ where: { loadId: dto.loadId, tenantId } });
     const route = await this.prisma.route.create({
@@ -71,7 +82,8 @@ export class RoutesService {
             type: s.type,
             locationId: s.locationId,
             shipmentId: s.shipmentId,
-            plannedArrivalAt: s.plannedArrivalAt ? new Date(s.plannedArrivalAt) : undefined,
+            plannedArrivalEarly: s.plannedArrivalEarly ? new Date(s.plannedArrivalEarly) : undefined,
+            plannedArrivalLate: s.plannedArrivalLate ? new Date(s.plannedArrivalLate) : undefined,
             plannedDepartureAt: s.plannedDepartureAt ? new Date(s.plannedDepartureAt) : undefined,
           })),
         },
