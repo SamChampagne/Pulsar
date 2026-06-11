@@ -3,16 +3,19 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 /** Encrypted-at-rest format: enc:v1:<iv b64>:<auth tag b64>:<ciphertext b64> */
 const PREFIX = 'enc:v1:';
 
-export function parseEncryptionKey(raw: string | undefined): Buffer {
+export function parseEncryptionKey(
+  raw: string | undefined,
+  varName = 'ENCRYPTION_KEY',
+): Buffer {
   if (!raw) {
     throw new Error(
-      'ENCRYPTION_KEY is required (32 bytes, base64). Generate one with: ' +
+      `${varName} is required (32 bytes, base64). Generate one with: ` +
         'node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64\'))"',
     );
   }
   const key = Buffer.from(raw, 'base64');
   if (key.length !== 32) {
-    throw new Error('ENCRYPTION_KEY must decode to exactly 32 bytes (AES-256-GCM).');
+    throw new Error(`${varName} must decode to exactly 32 bytes (AES-256-GCM).`);
   }
   return key;
 }

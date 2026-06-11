@@ -12,8 +12,11 @@ import { reencryptIntegrations } from '../src/core/crypto/reencrypt';
 async function main() {
   const newKey = parseEncryptionKey(process.env.ENCRYPTION_KEY);
   const oldKey = process.env.ENCRYPTION_KEY_OLD
-    ? parseEncryptionKey(process.env.ENCRYPTION_KEY_OLD)
+    ? parseEncryptionKey(process.env.ENCRYPTION_KEY_OLD, 'ENCRYPTION_KEY_OLD')
     : null;
+  if (oldKey?.equals(newKey)) {
+    throw new Error('ENCRYPTION_KEY_OLD equals ENCRYPTION_KEY — nothing to rotate.');
+  }
   const prisma = new PrismaClient();
   try {
     const count = await reencryptIntegrations(prisma, oldKey, newKey);
@@ -23,4 +26,7 @@ async function main() {
   }
 }
 
-void main();
+main().catch((err) => {
+  console.error('[reencrypt-secrets] Fatal:', err);
+  process.exit(1);
+});

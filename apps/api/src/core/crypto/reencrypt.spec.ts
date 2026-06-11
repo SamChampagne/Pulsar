@@ -38,4 +38,23 @@ describe('reencryptIntegrations', () => {
       /ENCRYPTION_KEY_OLD/,
     );
   });
+
+  it('is idempotent: rows already rotated to the new key are skipped on re-run', async () => {
+    const prisma = fakePrisma([
+      { id: 'd', config: encryptValue(NEW, '{"secret":"s"}') }, // already rotated
+      { id: 'e', config: encryptValue(OLD, '{"secret":"t"}') }, // not yet
+    ]);
+    const count = await reencryptIntegrations(prisma as never, OLD, NEW);
+    expect(count).toBe(1);
+    expect(prisma.updates).toHaveLength(1);
+    expect(prisma.updates[0].id).toBe('e');
+  });
+
+  it('fails loudly when a row decrypts with neither key', async () => {
+    const OTHER = parseEncryptionKey(Buffer.alloc(32, 3).toString('base64'));
+    const prisma = fakePrisma([{ id: 'f', config: encryptValue(OTHER, '{}') }]);
+    await expect(reencryptIntegrations(prisma as never, OLD, NEW)).rejects.toThrow(
+      /neither the old nor the new key/,
+    );
+  });
 });
