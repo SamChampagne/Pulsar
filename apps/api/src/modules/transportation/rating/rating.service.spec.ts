@@ -20,6 +20,21 @@ describe('RatingService (pure helpers)', () => {
     });
   });
 
+  describe('orderReferenceDate', () => {
+    it('uses the latest actual delivery of the shipments', () => {
+      const date = service.orderReferenceDate([
+        { actualDeliveryAt: new Date('2026-07-01') },
+        { actualDeliveryAt: new Date('2026-07-03') },
+        { actualDeliveryAt: null },
+      ]);
+      expect(date.toISOString()).toBe(new Date('2026-07-03').toISOString());
+    });
+    it('falls back to now when nothing is delivered yet', () => {
+      const before = Date.now();
+      expect(service.orderReferenceDate([{ actualDeliveryAt: null }]).getTime()).toBeGreaterThanOrEqual(before);
+    });
+  });
+
   describe('isValidAt — same reference date governs validFrom/validTo AND fuel entries', () => {
     const date = new Date('2026-07-01');
     it('open-ended rates are valid', () => {

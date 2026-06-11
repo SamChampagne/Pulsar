@@ -212,6 +212,99 @@ export class RatingService {
     };
   }
 
+  /** Sell-side reference date: the real delivery (latest actualDeliveryAt), else today. */
+  orderReferenceDate(shipments: { actualDeliveryAt: Date | null }[]): Date {
+    const dates = shipments
+      .map((s) => s.actualDeliveryAt)
+      .filter((d): d is Date => d !== null)
+      .map((d) => d.getTime());
+    return dates.length > 0 ? new Date(Math.max(...dates)) : new Date();
+  }
+
+  /**
+   * Sell-side rating of a delivered order with the CUSTOMER's rates (status
+   * ACTIVE, customerId = order.customerId, lane match or customer catch-all).
+   * Returns the cheapest evaluation (deterministic compareRateOptions order)
+   * with a self-contained snapshot, or null when no rate applies.
+   */
+  async rateOrder(tenantId: string, orderId: string): Promise<RateEvaluation | null> {
+    const order = await this.prisma.transportOrder.findFirst({
+      where: { id: orderId, tenantId },
+      select: {
+        customerId: true,
+        totalWeightKg: true,
+        totalVolumeM3: true,
+        palletCount: true,
+        originLocation: { select: { id: true, city: true, state: true, country: true } },
+        destinationLocation: { select: { id: true, city: true, state: true, country: true } },
+        shipments: { select: { actualDeliveryAt: true } },
+      },
+    });
+    if (!order) return null;
+    const date = this.orderReferenceDate(order.shipments);
+
+    const rates = await this.prisma.rate.findMany({
+      where: {
+        tenantId,
+        status: RateStatus.ACTIVE,
+        customerId: order.customerId,
+        AND: [
+          {
+            OR: [
+              { laneId: null },
+              {
+                lane: {
+                  originKey: { in: candidateEndpointKeys(order.originLocation) },
+                  destinationKey: { in: candidateEndpointKeys(order.destinationLocation) },
+                },
+              },
+            ],
+          },
+          { OR: [{ validFrom: null }, { validFrom: { lte: date } }] },
+          { OR: [{ validTo: null }, { validTo: { gte: date } }] },
+        ],
+      },
+      include: rateDetailInclude,
+    });
+
+    // The order is rated as a single pseudo-shipment carrying its totals; no
+    // accessorials sell-side in v1 (spec §2). volumeM3 is not a cost metric.
+    const orderAsLoad: LoadForRating = {
+      id: orderId,
+      route: null,
+      shipments: [
+        {
+          weightKg: order.totalWeightKg,
+          palletCount: order.palletCount,
+          plannedPickupEarly: null,
+        },
+      ],
+      accessorials: [],
+    };
+
+    const candidates = rates
+      .map((rate) => ({ rate, evaluation: this.evaluate(rate, orderAsLoad, date) }))
+      .filter((c): c is { rate: RateDetail; evaluation: RateEvaluation } => c.evaluation !== null);
+
+    const sortable = candidates.map(({ rate, evaluation }) => ({
+      rateId: rate.id,
+      currency: rate.currency,
+      breakdown: evaluation.breakdown,
+      missingAccessorials: evaluation.breakdown.missingAccessorials,
+      laneSpecificity: rate.lane
+        ? {
+            total:
+              ENDPOINT_SPECIFICITY[rate.lane.originType as keyof typeof ENDPOINT_SPECIFICITY] +
+              ENDPOINT_SPECIFICITY[rate.lane.destinationType as keyof typeof ENDPOINT_SPECIFICITY],
+          }
+        : null,
+      evaluation,
+    }));
+
+    const sorted = sortable.sort(compareRateOptions);
+    return sorted[0]?.evaluation ?? null;
+  }
+
   /** Evaluation of the load's assigned rate — what recompute() persists. */
   async evaluateAssignedRate(tenantId: string, loadId: string): Promise<RateEvaluation | null> {
     const load = await this.loadForRating(tenantId, loadId);
