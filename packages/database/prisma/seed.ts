@@ -97,6 +97,22 @@ async function main() {
   });
   console.log(`Tenant "${tenant.slug}" ready — admin@pulsar.dev / admin123`);
 
+  // --- Platform admin --------------------------------------------------------
+  const platformEmail = process.env.PLATFORM_ADMIN_EMAIL ?? 'platform@pulsar.dev';
+  const platformPassword = process.env.PLATFORM_ADMIN_PASSWORD ?? 'admin123';
+  await prisma.platformUser.upsert({
+    where: { email: platformEmail },
+    update: {},
+    create: {
+      email: platformEmail,
+      passwordHash: hashSync(platformPassword, 10),
+      firstName: 'Platform',
+      lastName: 'Admin',
+      status: 'ACTIVE',
+    },
+  });
+  console.log(`Platform admin ready — ${platformEmail}`);
+
   // --- Sample TMS master data --------------------------------------------------
   const customer = await prisma.customer.upsert({
     where: { tenantId_code: { tenantId: tenant.id, code: 'CUST-001' } },

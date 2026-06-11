@@ -166,6 +166,27 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
+enum PlatformUserStatus {
+  ACTIVE
+  DISABLED
+}
+
+// Cross-tenant operators (create/suspend tenants). Deliberately has NO relation
+// to any tenant-scoped model — the platform plane never mixes with tenant data.
+model PlatformUser {
+  id           String             @id @default(cuid())
+  email        String             @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  status       PlatformUserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@map("platform_users")
+}
+
 model Role {
   id          String   @id @default(cuid())
   tenantId    String
