@@ -52,6 +52,12 @@
       });
       inviteUrl = created.inviteUrl;
       showForm = false;
+      slug = '';
+      name = '';
+      adminEmail = '';
+      adminFirstName = '';
+      adminLastName = '';
+      modules = ['transportation'];
       await load();
     } catch (e) {
       error = e instanceof PlatformApiError ? e.message : 'Failed to create tenant';
