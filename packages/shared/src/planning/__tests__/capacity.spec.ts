@@ -30,4 +30,8 @@ describe('checkCapacity — 3 axes, unknown axes ignored', () => {
       { axis: 'weightKg', capacity: 100, requested: 100.01, excess: 0.01 },
     ]);
   });
+
+  it('sub-rounding overage (< 0.005) is not an excess at all', () => {
+    expect(checkCapacity({ weightKg: 100, volumeM3: null, pallets: null }, { weightKg: 100.004, volumeM3: null, pallets: null })).toEqual([]);
+  });
 });

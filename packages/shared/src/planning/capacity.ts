@@ -29,13 +29,13 @@ export function checkCapacity(capacities: CapacityAxes, totals: CapacityAxes): C
     const capacity = capacities[axis];
     const requested = totals[axis];
     if (capacity == null || requested == null) continue;
-    if (requested > capacity) {
-      const roundedRequested = round2(requested);
+    const requestedRounded = round2(requested);
+    if (requestedRounded > capacity) {
       excesses.push({
         axis,
         capacity,
-        requested: roundedRequested,
-        excess: round2(roundedRequested - capacity),
+        requested: requestedRounded,
+        excess: round2(requestedRounded - capacity),
       });
     }
   }
