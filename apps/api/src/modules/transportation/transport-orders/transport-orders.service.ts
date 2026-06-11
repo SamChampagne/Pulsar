@@ -4,7 +4,6 @@ import {
   ShipmentStatus,
   TransportOrderStatus,
   canTransitionTransportOrder,
-  validateWindowPair,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
@@ -19,30 +18,7 @@ import {
   ShipmentSplitDto,
   UpdateTransportOrderDto,
 } from './dto/transport-order.dto';
-
-const toDate = (value?: string | null): Date | null | undefined =>
-  value === undefined ? undefined : value === null ? null : new Date(value);
-
-/** 400 on incoherent windows: early ≤ late per pair, pickupEarly ≤ deliveryLate. */
-function assertWindowCoherence(windows: {
-  pickupEarly?: Date | null;
-  pickupLate?: Date | null;
-  deliveryEarly?: Date | null;
-  deliveryLate?: Date | null;
-}) {
-  const pickupError = validateWindowPair({ early: windows.pickupEarly ?? null, late: windows.pickupLate ?? null });
-  if (pickupError) throw new BadRequestException(`Pickup window: ${pickupError}`);
-  const deliveryError = validateWindowPair({ early: windows.deliveryEarly ?? null, late: windows.deliveryLate ?? null });
-  if (deliveryError) throw new BadRequestException(`Delivery window: ${deliveryError}`);
-  if (
-    windows.pickupEarly &&
-    windows.deliveryLate &&
-    windows.pickupEarly.getTime() > windows.deliveryLate.getTime()
-  ) {
-    throw new BadRequestException('Pickup window must start before the delivery window ends');
-  }
-  // Deliberately NOT validating pickupLate ≤ deliveryEarly: overlapping windows are legitimate.
-}
+import { toDate, assertWindowCoherence, resolveSplitWindows } from '../planning/window-validation';
 
 const orderInclude = {
   customer: { select: { id: true, code: true, name: true } },
@@ -192,16 +168,7 @@ export class TransportOrdersService {
     ];
 
     for (const split of splits) {
-      const plannedPickupEarly = split.plannedPickupEarly ? new Date(split.plannedPickupEarly) : order.requestedPickupEarly;
-      const plannedPickupLate = split.plannedPickupLate ? new Date(split.plannedPickupLate) : order.requestedPickupLate;
-      const plannedDeliveryEarly = split.plannedDeliveryEarly ? new Date(split.plannedDeliveryEarly) : order.requestedDeliveryEarly;
-      const plannedDeliveryLate = split.plannedDeliveryLate ? new Date(split.plannedDeliveryLate) : order.requestedDeliveryLate;
-      assertWindowCoherence({
-        pickupEarly: plannedPickupEarly,
-        pickupLate: plannedPickupLate,
-        deliveryEarly: plannedDeliveryEarly,
-        deliveryLate: plannedDeliveryLate,
-      });
+      const windows = resolveSplitWindows(order, split);
       await this.prisma.shipment.create({
         data: {
           tenantId,
@@ -213,10 +180,7 @@ export class TransportOrdersService {
           weightKg: split.weightKg,
           volumeM3: split.volumeM3,
           palletCount: split.palletCount,
-          plannedPickupEarly,
-          plannedPickupLate,
-          plannedDeliveryEarly,
-          plannedDeliveryLate,
+          ...windows,
         },
       });
     }
@@ -229,16 +193,7 @@ export class TransportOrdersService {
     if (order.status !== TransportOrderStatus.PLANNED) {
       throw new BadRequestException('Shipments can only be added to PLANNED orders');
     }
-    const plannedPickupEarly = split.plannedPickupEarly ? new Date(split.plannedPickupEarly) : order.requestedPickupEarly;
-    const plannedPickupLate = split.plannedPickupLate ? new Date(split.plannedPickupLate) : order.requestedPickupLate;
-    const plannedDeliveryEarly = split.plannedDeliveryEarly ? new Date(split.plannedDeliveryEarly) : order.requestedDeliveryEarly;
-    const plannedDeliveryLate = split.plannedDeliveryLate ? new Date(split.plannedDeliveryLate) : order.requestedDeliveryLate;
-    assertWindowCoherence({
-      pickupEarly: plannedPickupEarly,
-      pickupLate: plannedPickupLate,
-      deliveryEarly: plannedDeliveryEarly,
-      deliveryLate: plannedDeliveryLate,
-    });
+    const windows = resolveSplitWindows(order, split);
     const shipment = await this.prisma.shipment.create({
       data: {
         tenantId,
@@ -250,10 +205,7 @@ export class TransportOrdersService {
         weightKg: split.weightKg,
         volumeM3: split.volumeM3,
         palletCount: split.palletCount,
-        plannedPickupEarly,
-        plannedPickupLate,
-        plannedDeliveryEarly,
-        plannedDeliveryLate,
+        ...windows,
       },
     });
     await this.audit.log({

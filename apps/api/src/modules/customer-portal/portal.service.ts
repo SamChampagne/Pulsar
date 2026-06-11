@@ -7,6 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
+import { toDate, assertWindowCoherence } from '../transportation/planning/window-validation';
 
 export interface PortalOrderInput {
   originLocationId: string;
@@ -63,6 +64,12 @@ export class PortalService {
       this.ownership.assertOwned('location', input.destinationLocationId, customer.tenantId),
     ]);
 
+    const pickupEarly = toDate(input.requestedPickupEarly);
+    const pickupLate = toDate(input.requestedPickupLate);
+    const deliveryEarly = toDate(input.requestedDeliveryEarly);
+    const deliveryLate = toDate(input.requestedDeliveryLate);
+    assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
+
     const order = await this.prisma.transportOrder.create({
       data: {
         tenantId: customer.tenantId,
@@ -71,18 +78,10 @@ export class PortalService {
         customerReference: input.customerReference,
         originLocationId: input.originLocationId,
         destinationLocationId: input.destinationLocationId,
-        requestedPickupEarly: input.requestedPickupEarly
-          ? new Date(input.requestedPickupEarly)
-          : undefined,
-        requestedPickupLate: input.requestedPickupLate
-          ? new Date(input.requestedPickupLate)
-          : undefined,
-        requestedDeliveryEarly: input.requestedDeliveryEarly
-          ? new Date(input.requestedDeliveryEarly)
-          : undefined,
-        requestedDeliveryLate: input.requestedDeliveryLate
-          ? new Date(input.requestedDeliveryLate)
-          : undefined,
+        requestedPickupEarly: pickupEarly,
+        requestedPickupLate: pickupLate,
+        requestedDeliveryEarly: deliveryEarly,
+        requestedDeliveryLate: deliveryLate,
         totalWeightKg: input.totalWeightKg,
         palletCount: input.palletCount,
         notes: input.notes,
