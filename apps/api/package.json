@@ -8,6 +8,7 @@
     "build": "nest build",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "jest --config test/jest-unit.json --passWithNoTests",
     "test:e2e": "jest --config test/jest-e2e.json --runInBand"
   },
   "dependencies": {
