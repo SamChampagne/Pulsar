@@ -66,6 +66,7 @@ model Tenant {
   rates             Rate[]
   trackingEvents    TrackingEvent[]
   proofsOfDelivery  ProofOfDelivery[]
+  shipmentLoadLegs  ShipmentLoadLeg[]
 
   @@map("tenants")
 }
@@ -587,6 +588,7 @@ model Trailer {
   type             TrailerType @default(DRY_VAN)
   capacityWeightKg Float?
   capacityVolumeM3 Float?
+  capacityPallets  Int?
   plate            String?
   status           AssetStatus @default(AVAILABLE)
   createdAt        DateTime    @default(now())
@@ -627,8 +629,10 @@ model TransportOrder {
   status                TransportOrderStatus @default(DRAFT)
   originLocationId      String
   destinationLocationId String
-  requestedPickupDate   DateTime?
-  requestedDeliveryDate DateTime?
+  requestedPickupEarly   DateTime?
+  requestedPickupLate    DateTime?
+  requestedDeliveryEarly DateTime?
+  requestedDeliveryLate  DateTime?
   totalWeightKg         Float?
   totalVolumeM3         Float?
   palletCount           Int?
@@ -675,8 +679,10 @@ model Shipment {
   weightKg              Float?
   volumeM3              Float?
   palletCount           Int?
-  plannedPickupAt       DateTime?
-  plannedDeliveryAt     DateTime?
+  plannedPickupEarly    DateTime?
+  plannedPickupLate     DateTime?
+  plannedDeliveryEarly  DateTime?
+  plannedDeliveryLate   DateTime?
   actualPickupAt        DateTime?
   actualDeliveryAt      DateTime?
   createdAt             DateTime       @default(now())
@@ -690,6 +696,7 @@ model Shipment {
   stops               Stop[]
   trackingEvents      TrackingEvent[]
   proofOfDelivery     ProofOfDelivery?
+  legs                ShipmentLoadLeg[]
 
   @@unique([tenantId, shipmentNumber])
   @@index([tenantId, status])
@@ -744,10 +751,33 @@ model Load {
   tenders        Tender[]
   accessorials   LoadAccessorial[]
   invoiceLine    InvoiceLine?
+  legs           ShipmentLoadLeg[]
 
   @@unique([tenantId, loadNumber])
   @@index([tenantId, status])
   @@map("loads")
+}
+
+// Junction shipment×load×sequence — unlocks future multi-leg (audit §3). In v1
+// (single-leg) it mirrors Shipment.loadId, written in the SAME transaction: never
+// divergent. loadId stays as the "current leg" denormalization for existing readers.
+model ShipmentLoadLeg {
+  id         String   @id @default(cuid())
+  tenantId   String
+  shipmentId String
+  loadId     String
+  sequence   Int      @default(1)
+  createdAt  DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  load     Load     @relation(fields: [loadId], references: [id], onDelete: Restrict)
+
+  @@unique([shipmentId, sequence])
+  @@unique([shipmentId, loadId])
+  @@index([tenantId])
+  @@index([loadId])
+  @@map("shipment_load_legs")
 }
 
 enum TenderStatus {
@@ -886,7 +916,8 @@ model Stop {
   status             StopStatus @default(PENDING)
   locationId         String
   shipmentId         String?
-  plannedArrivalAt   DateTime?
+  plannedArrivalEarly DateTime?
+  plannedArrivalLate  DateTime?
   plannedDepartureAt DateTime?
   actualArrivalAt    DateTime?
   actualDepartureAt  DateTime?
