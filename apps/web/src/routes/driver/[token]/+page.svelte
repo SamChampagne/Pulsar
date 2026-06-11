@@ -20,7 +20,8 @@
       sequence: number;
       type: string;
       status: string;
-      plannedArrivalAt: string | null;
+      plannedArrivalEarly: string | null;
+      plannedArrivalLate: string | null;
       actualArrivalAt: string | null;
       actualDepartureAt: string | null;
       location: { name: string; addressLine1: string; city: string; state: string | null };
@@ -98,6 +99,11 @@
     }
   }
 
+  const fmtWindow = (early: string | null, late?: string | null) =>
+    early
+      ? new Date(early).toLocaleString() + (late ? ' → ' + new Date(late).toLocaleString() : '')
+      : '—';
+
   const podCandidates = $derived(
     view?.shipments.filter(
       (s) => !s.proofOfDelivery && (s.status === 'IN_TRANSIT' || s.status === 'DELIVERED'),
@@ -135,7 +141,10 @@
           </div>
           <div class="muted">
             {stop.location.name}<br />
-            {stop.location.addressLine1}, {stop.location.city}
+            {stop.location.addressLine1}, {stop.location.city}<br />
+            {#if stop.plannedArrivalEarly}
+              Planned: {fmtWindow(stop.plannedArrivalEarly, stop.plannedArrivalLate)}
+            {/if}
           </div>
         </div>
         <div class="stop-actions">

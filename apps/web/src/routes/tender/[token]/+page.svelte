@@ -18,7 +18,8 @@
         stops: {
           sequence: number;
           type: string;
-          plannedArrivalAt: string | null;
+          plannedArrivalEarly: string | null;
+          plannedArrivalLate: string | null;
           location: { name: string; city: string; state: string | null };
         }[];
       } | null;
@@ -55,6 +56,11 @@
       busy = false;
     }
   }
+
+  const fmtWindow = (early: string | null, late?: string | null) =>
+    early
+      ? new Date(early).toLocaleString() + (late ? ' → ' + new Date(late).toLocaleString() : '')
+      : '—';
 
   const totalWeight = $derived(
     tender?.load.shipments.reduce((acc, s) => acc + (s.weightKg ?? 0), 0) ?? 0,
@@ -104,7 +110,7 @@
                 <td>{stop.sequence}</td>
                 <td>{stop.type}</td>
                 <td>{stop.location.name}, {stop.location.city}{stop.location.state ? `, ${stop.location.state}` : ''}</td>
-                <td>{stop.plannedArrivalAt ? new Date(stop.plannedArrivalAt).toLocaleString() : '—'}</td>
+                <td>{fmtWindow(stop.plannedArrivalEarly, stop.plannedArrivalLate)}</td>
               </tr>
             {/each}
           </tbody>

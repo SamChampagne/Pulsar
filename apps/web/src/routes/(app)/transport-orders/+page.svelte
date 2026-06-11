@@ -8,8 +8,10 @@
     orderNumber: string;
     status: string;
     customerReference: string | null;
-    requestedPickupDate: string | null;
-    requestedDeliveryDate: string | null;
+    requestedPickupEarly: string | null;
+    requestedPickupLate: string | null;
+    requestedDeliveryEarly: string | null;
+    requestedDeliveryLate: string | null;
     customer: { id: string; name: string };
     originLocation: { name: string; city: string };
     destinationLocation: { name: string; city: string };
@@ -34,11 +36,18 @@
     originLocationId: '',
     destinationLocationId: '',
     customerReference: '',
-    requestedPickupDate: '',
-    requestedDeliveryDate: '',
+    requestedPickupEarly: '',
+    requestedPickupLate: '',
+    requestedDeliveryEarly: '',
+    requestedDeliveryLate: '',
     totalWeightKg: '',
     palletCount: '',
   });
+
+  const fmtWindow = (early: string | null, late?: string | null) =>
+    early
+      ? new Date(early).toLocaleDateString() + (late ? ' → ' + new Date(late).toLocaleDateString() : '')
+      : '—';
 
   async function load() {
     try {
@@ -73,11 +82,17 @@
           originLocationId: form.originLocationId,
           destinationLocationId: form.destinationLocationId,
           customerReference: form.customerReference || undefined,
-          requestedPickupDate: form.requestedPickupDate
-            ? new Date(form.requestedPickupDate).toISOString()
+          requestedPickupEarly: form.requestedPickupEarly
+            ? new Date(form.requestedPickupEarly).toISOString()
             : undefined,
-          requestedDeliveryDate: form.requestedDeliveryDate
-            ? new Date(form.requestedDeliveryDate).toISOString()
+          requestedPickupLate: form.requestedPickupLate
+            ? new Date(form.requestedPickupLate).toISOString()
+            : undefined,
+          requestedDeliveryEarly: form.requestedDeliveryEarly
+            ? new Date(form.requestedDeliveryEarly).toISOString()
+            : undefined,
+          requestedDeliveryLate: form.requestedDeliveryLate
+            ? new Date(form.requestedDeliveryLate).toISOString()
             : undefined,
           totalWeightKg: form.totalWeightKg ? Number(form.totalWeightKg) : undefined,
           palletCount: form.palletCount ? Number(form.palletCount) : undefined,
@@ -150,12 +165,20 @@
         </select>
       </div>
       <div class="field">
-        <label for="pickup">Requested pickup</label>
-        <input id="pickup" type="date" bind:value={form.requestedPickupDate} />
+        <label for="pickup-from">Pickup from</label>
+        <input id="pickup-from" type="date" bind:value={form.requestedPickupEarly} />
       </div>
       <div class="field">
-        <label for="delivery">Requested delivery</label>
-        <input id="delivery" type="date" bind:value={form.requestedDeliveryDate} />
+        <label for="pickup-to">Pickup to (optional)</label>
+        <input id="pickup-to" type="date" bind:value={form.requestedPickupLate} />
+      </div>
+      <div class="field">
+        <label for="delivery-from">Delivery from</label>
+        <input id="delivery-from" type="date" bind:value={form.requestedDeliveryEarly} />
+      </div>
+      <div class="field">
+        <label for="delivery-to">Delivery to (optional)</label>
+        <input id="delivery-to" type="date" bind:value={form.requestedDeliveryLate} />
       </div>
       <div class="field">
         <label for="weight">Weight (kg)</label>
@@ -203,11 +226,7 @@
           <td>{order.customer.name}</td>
           <td>{order.originLocation.city}</td>
           <td>{order.destinationLocation.city}</td>
-          <td>
-            {order.requestedPickupDate
-              ? new Date(order.requestedPickupDate).toLocaleDateString()
-              : '—'}
-          </td>
+          <td>{fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}</td>
           <td><StatusBadge status={order.status} /></td>
           <td style="text-align: right; white-space: nowrap;">
             {#if order.status === 'DRAFT'}

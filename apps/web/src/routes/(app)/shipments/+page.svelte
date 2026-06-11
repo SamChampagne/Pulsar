@@ -8,13 +8,20 @@
     id: string;
     shipmentNumber: string;
     status: string;
-    plannedPickupAt: string | null;
-    plannedDeliveryAt: string | null;
+    plannedPickupEarly: string | null;
+    plannedPickupLate: string | null;
+    plannedDeliveryEarly: string | null;
+    plannedDeliveryLate: string | null;
     transportOrder: { id: string; orderNumber: string };
     originLocation: { name: string; city: string };
     destinationLocation: { name: string; city: string };
     load: { id: string; loadNumber: string; status: string } | null;
   }
+
+  const fmtWindow = (early: string | null, late?: string | null) =>
+    early
+      ? new Date(early).toLocaleDateString() + (late ? ' → ' + new Date(late).toLocaleDateString() : '')
+      : '—';
 
   interface LoadOption {
     id: string;
@@ -152,6 +159,8 @@
         <th>Order</th>
         <th>Origin</th>
         <th>Destination</th>
+        <th>Pickup</th>
+        <th>Delivery</th>
         <th>Status</th>
         <th>Load</th>
         <th></th>
@@ -168,6 +177,8 @@
           </td>
           <td>{shipment.originLocation.city}</td>
           <td>{shipment.destinationLocation.city}</td>
+          <td>{fmtWindow(shipment.plannedPickupEarly, shipment.plannedPickupLate)}</td>
+          <td>{fmtWindow(shipment.plannedDeliveryEarly, shipment.plannedDeliveryLate)}</td>
           <td><StatusBadge status={shipment.status} /></td>
           <td>
             {#if shipment.load}
@@ -193,7 +204,7 @@
           </td>
         </tr>
       {:else}
-        <tr><td colspan="7" class="muted">No shipments. Plan a confirmed transport order to create one.</td></tr>
+        <tr><td colspan="9" class="muted">No shipments. Plan a confirmed transport order to create one.</td></tr>
       {/each}
     </tbody>
   </table>
