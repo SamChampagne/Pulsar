@@ -127,11 +127,19 @@ export class ShipmentsService {
         }
       }
     }
-    const updated = await this.prisma.shipment.update({
-      where: { id },
-      data: { loadId: dto.loadId, status: ShipmentStatus.PLANNED },
-      include: shipmentInclude,
-    });
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.shipment.update({
+        where: { id },
+        data: { loadId: dto.loadId, status: ShipmentStatus.PLANNED },
+        include: shipmentInclude,
+      }),
+      // Junction mirrors the denormalized loadId in the SAME transaction (spec invariant).
+      this.prisma.shipmentLoadLeg.upsert({
+        where: { shipmentId_sequence: { shipmentId: id, sequence: 1 } },
+        update: { loadId: dto.loadId },
+        create: { tenantId, shipmentId: id, loadId: dto.loadId, sequence: 1 },
+      }),
+    ]);
     await this.cost.recompute(tenantId, dto.loadId);
     return updated;
   }
@@ -155,11 +163,15 @@ export class ShipmentsService {
       throw new BadRequestException('Only PLANNED shipments can be removed from a load');
     }
     const previousLoadId = shipment.loadId;
-    const updated = await this.prisma.shipment.update({
-      where: { id },
-      data: { loadId: null, status: ShipmentStatus.PENDING },
-      include: shipmentInclude,
-    });
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.shipment.update({
+        where: { id },
+        data: { loadId: null, status: ShipmentStatus.PENDING },
+        include: shipmentInclude,
+      }),
+      // Junction follows the pool return in the SAME transaction (spec invariant).
+      this.prisma.shipmentLoadLeg.deleteMany({ where: { shipmentId: id } }),
+    ]);
     if (previousLoadId) {
       await this.cost.recompute(tenantId, previousLoadId);
     }

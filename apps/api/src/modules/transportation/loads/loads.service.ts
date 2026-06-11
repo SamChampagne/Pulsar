@@ -457,6 +457,8 @@ export class LoadsService {
         where: { loadId: id, status: TenderStatus.PENDING },
         data: { status: TenderStatus.CANCELLED, respondedAt: new Date() },
       }),
+      // Junction follows the pool return (spec invariant: legs stay in sync with Shipment.loadId).
+      this.prisma.shipmentLoadLeg.deleteMany({ where: { loadId: id } }),
     ]);
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.CANCELLED);
     return updated;
