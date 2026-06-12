@@ -138,3 +138,10 @@ export enum AccessorialUnit {
   PER_HOUR = 'PER_HOUR',
   PER_UNIT = 'PER_UNIT',
 }
+
+/** Shipping mode. Mirrored in schema.prisma. Default FTL. */
+export enum TransportMode {
+  FTL = 'FTL',
+  LTL = 'LTL',
+  PARCEL = 'PARCEL',
+}
