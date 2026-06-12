@@ -2,6 +2,18 @@
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import { formatDate } from '$lib/format';
+  import {
+    PageHeader,
+    Button,
+    Card,
+    Table,
+    EmptyState,
+    Skeleton,
+    Modal,
+    Field,
+    Input,
+  } from '$lib/components/ui';
 
   interface FuelEntry {
     id: string;
@@ -24,6 +36,7 @@
   let total = $state(0);
   let error = $state('');
   let showForm = $state(false);
+  let loading = $state(true);
 
   // Form state
   let editingId = $state<string | null>(null);
@@ -39,6 +52,8 @@
       total = result.total;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load fuel tables';
+    } finally {
+      loading = false;
     }
   }
 
@@ -124,171 +139,88 @@
   });
 </script>
 
-<div class="page-header">
-  <h1>Fuel Tables <span class="muted">({total})</span></h1>
-  <button class="btn" onclick={() => { reset(); showForm = !showForm; }}>New fuel table</button>
-</div>
+<PageHeader title="Fuel Tables" count={total}>
+  {#snippet actions()}
+    <Button onclick={() => { reset(); showForm = true; }}>New fuel table</Button>
+  {/snippet}
+</PageHeader>
 
-{#if error}
-  <p class="error-text">{error}</p>
-{/if}
+{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
-{#if showForm}
-  <form class="card" style="margin-bottom: 20px;" onsubmit={save}>
-    <h2 style="margin-top: 0;">{editingId ? 'Edit fuel table' : 'New fuel table'}</h2>
-
-    <div class="field" style="max-width: 320px;">
-      <label for="ft-name">Name</label>
-      <input id="ft-name" bind:value={tableName} required placeholder="Summer 2025" />
-    </div>
-
-    <div class="section-header">
-      <strong>Entries</strong>
-      <button class="btn btn-secondary btn-sm" type="button" onclick={addEntry}>Add entry</button>
-    </div>
-
-    {#if entries.length === 0}
-      <p class="muted" style="font-size: 12px; margin: 4px 0 12px;">
-        {editingId ? 'At least one entry required.' : 'No entries — add entries below (optional for new tables).'}
-      </p>
-    {:else}
-      <div class="entries-list">
-        {#each entries as entry, i (i)}
-          <div class="entry-row">
-            <div class="field" style="margin-bottom: 0;">
-              <label for="entry-date-{i}">Effective from</label>
-              <input
-                id="entry-date-{i}"
-                type="date"
-                bind:value={entry.date}
-                required
-              />
-            </div>
-            <div class="field" style="margin-bottom: 0;">
-              <label for="entry-pct-{i}">Surcharge %</label>
-              <input
-                id="entry-pct-{i}"
-                type="number"
-                step="0.01"
-                min="0"
-                bind:value={entry.pct}
-                required
-              />
-            </div>
-            <button
-              class="btn btn-danger btn-sm"
-              type="button"
-              style="align-self: flex-end;"
-              onclick={() => removeEntry(i)}
-            >
-              Remove
-            </button>
+{#if loading}
+  <Card padded={false}><Skeleton rows={6} /></Card>
+{:else}
+<Table>
+  {#snippet head()}
+    <th>Name</th><th>Entries</th><th>Latest effective</th><th>Latest surcharge</th><th></th>
+  {/snippet}
+  {#snippet body()}
+    {#each fuelTables as ft (ft.id)}
+      {@const latest = ft.entries.length > 0 ? ft.entries[ft.entries.length - 1] : null}
+      <tr>
+        <td><span class="font-semibold text-ink">{ft.name}</span></td>
+        <td class="tabular-nums">{ft.entries.length}</td>
+        <td class="text-sm text-ink-muted">
+          {formatDate(latest?.effectiveFrom)}
+        </td>
+        <td class="tabular-nums">
+          {latest ? `${latest.pct}%` : '—'}
+        </td>
+        <td class="text-right">
+          <div class="inline-flex gap-2">
+            <Button variant="secondary" onclick={() => edit(ft)}>Edit</Button>
+            <Button variant="danger" onclick={() => remove(ft)}>Delete</Button>
           </div>
-        {/each}
-      </div>
-    {/if}
-
-    <div style="display: flex; gap: 8px; margin-top: 12px;">
-      <button
-        class="btn"
-        type="submit"
-        disabled={editingId !== null && entries.length === 0}
-      >
-        {editingId ? 'Update' : 'Create'}
-      </button>
-      <button class="btn btn-secondary" type="button" onclick={reset}>Cancel</button>
-    </div>
-  </form>
+        </td>
+      </tr>
+    {:else}
+      <tr><td colspan="5"><EmptyState message="No fuel tables yet." /></td></tr>
+    {/each}
+  {/snippet}
+</Table>
 {/if}
 
-<div class="tables-list">
-  {#each fuelTables as ft (ft.id)}
-    <div class="card fuel-card">
-      <div class="card-header">
-        <strong class="card-title">{ft.name}</strong>
-        <div style="display: flex; gap: 8px;">
-          <button class="btn btn-secondary btn-sm" onclick={() => edit(ft)}>Edit</button>
-          <button class="btn btn-danger btn-sm" onclick={() => remove(ft)}>Delete</button>
+<!-- ─── Fuel table form Modal ─────────────────────────────────────────────────── -->
+<Modal bind:open={showForm} title={editingId ? 'Edit fuel table' : 'New fuel table'}>
+  {#snippet children()}
+    <form onsubmit={save}>
+      <Field label="Name">
+        <Input bind:value={tableName} required placeholder="Summer 2025" />
+      </Field>
+
+      <div class="mt-4">
+        <div class="mb-2 flex items-center justify-between">
+          <span class="text-sm font-semibold text-ink">Entries</span>
+          <Button variant="secondary" onclick={addEntry}>Add entry</Button>
         </div>
-      </div>
-      {#if ft.entries.length === 0}
-        <p class="muted" style="font-size: 13px; margin: 8px 0 0;">No entries.</p>
-      {:else}
-        <table class="entries-table">
-          <thead>
-            <tr>
-              <th>Effective from</th>
-              <th>Surcharge %</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each ft.entries as entry (entry.id)}
-              <tr>
-                <td>{entry.effectiveFrom.slice(0, 10)}</td>
-                <td>{entry.pct}%</td>
-              </tr>
+
+        {#if entries.length === 0}
+          <p class="text-xs text-ink-muted">
+            {editingId ? 'At least one entry required.' : 'No entries — add entries below (optional for new tables).'}
+          </p>
+        {:else}
+          <div class="space-y-2">
+            {#each entries as entry, i (i)}
+              <div class="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
+                <Field label="Effective from">
+                  <Input type="date" bind:value={entry.date} required />
+                </Field>
+                <Field label="Surcharge %">
+                  <Input type="number" step="0.01" min="0" bind:value={entry.pct} required />
+                </Field>
+                <Button variant="danger" onclick={() => removeEntry(i)}>Remove</Button>
+              </div>
             {/each}
-          </tbody>
-        </table>
-      {/if}
-    </div>
-  {:else}
-    <p class="muted">No fuel tables yet.</p>
-  {/each}
-</div>
+          </div>
+        {/if}
+      </div>
 
-<style>
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-  }
-
-  .entries-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 12px;
-    max-width: 640px;
-  }
-
-  .entry-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr auto;
-    gap: 12px;
-    align-items: flex-start;
-  }
-
-  .tables-list {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .fuel-card {
-    padding: 16px;
-  }
-
-  .card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-  }
-
-  .card-title {
-    font-size: 15px;
-  }
-
-  .entries-table {
-    width: auto;
-    min-width: 320px;
-    font-size: 13px;
-  }
-
-  .entries-table th,
-  .entries-table td {
-    padding: 4px 12px;
-  }
-</style>
+      <div class="flex justify-end gap-2 pt-2">
+        <Button variant="secondary" onclick={reset}>Cancel</Button>
+        <Button type="submit" disabled={editingId !== null && entries.length === 0}>
+          {editingId ? 'Update' : 'Create'}
+        </Button>
+      </div>
+    </form>
+  {/snippet}
+</Modal>

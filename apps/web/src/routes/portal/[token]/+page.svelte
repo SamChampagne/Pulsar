@@ -2,7 +2,10 @@
   import { page } from '$app/state';
   import { suggestMode, TransportMode } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import StatusBadge from '$lib/components/StatusBadge.svelte';
+  import PublicShell from '$lib/components/PublicShell.svelte';
+  import { Badge, Button, Card, Field, Input, Select, Textarea } from '$lib/components/ui';
+  import { toneFor, labelFor } from '$lib/components/ui';
+  import { formatDate } from '$lib/format';
 
   interface PortalView {
     shipper: string;
@@ -55,11 +58,11 @@
 
   const fmtWindow = (early: string | null, late?: string | null) =>
     early
-      ? new Date(early).toLocaleDateString() + (late ? ' → ' + new Date(late).toLocaleDateString() : '')
+      ? formatDate(early) + (late ? ' → ' + formatDate(late) : '')
       : '—';
 
   function fmt(value: string | null): string {
-    return value ? new Date(value).toLocaleDateString() : '—';
+    return value ? formatDate(value) : '—';
   }
 
   async function load() {
@@ -124,165 +127,146 @@
   });
 </script>
 
-<div class="public-page">
-  <div class="card public-card">
-    {#if error}
-      <p class="error-text">{error}</p>
-    {:else if view}
-      <p class="muted" style="margin-top: 0;">Customer portal · {view.shipper}</p>
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h1>{view.customer}</h1>
-        <button class="btn" onclick={() => (showRequest = !showRequest)}>Request a transport</button>
-      </div>
+<PublicShell maxWidth="max-w-3xl">
+  {#if error}
+    <p class="text-sm text-danger">{error}</p>
+  {:else if view}
+    <p class="mb-1 text-sm text-ink-muted">Customer portal · {view.shipper}</p>
+    <div class="mb-4 flex items-center justify-between gap-4">
+      <h1 class="text-xl font-bold text-ink">{view.customer}</h1>
+      <Button onclick={() => { showRequest = !showRequest; }}>Request a transport</Button>
+    </div>
 
-      {#if requestNotice}
-        <p class="muted">{requestNotice}</p>
-      {/if}
+    {#if requestNotice}
+      <p class="mb-4 text-sm text-ok">{requestNotice}</p>
+    {/if}
 
-      {#if showRequest}
-        <form class="request-form" onsubmit={submitRequest}>
-          <div class="grid2">
-            <div class="field">
-              <label for="origin">Origin</label>
-              <select id="origin" bind:value={request.originLocationId} required>
+    <!-- New request form -->
+    {#if showRequest}
+      <Card>
+        <h2 class="mb-4 text-base font-semibold text-ink">New transport request</h2>
+        <form onsubmit={submitRequest} class="flex flex-col gap-4">
+          <!-- Route section -->
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Origin">
+              <Select bind:value={request.originLocationId} required>
                 <option value="" disabled>Select…</option>
-                {#each view.locations as l (l.id)}<option value={l.id}>{l.name} ({l.city})</option>{/each}
-              </select>
-            </div>
-            <div class="field">
-              <label for="destination">Destination</label>
-              <select id="destination" bind:value={request.destinationLocationId} required>
-                <option value="" disabled>Select…</option>
-                {#each view.locations as l (l.id)}<option value={l.id}>{l.name} ({l.city})</option>{/each}
-              </select>
-            </div>
-            <div class="field">
-              <label for="ref">Your reference</label>
-              <input id="ref" bind:value={request.customerReference} placeholder="PO-12345" />
-            </div>
-            <div class="field">
-              <label for="pickup-from">Pickup from</label>
-              <input id="pickup-from" type="date" bind:value={request.requestedPickupEarly} />
-            </div>
-            <div class="field">
-              <label for="pickup-to">Pickup to (optional)</label>
-              <input id="pickup-to" type="date" bind:value={request.requestedPickupLate} />
-            </div>
-            <div class="field">
-              <label for="delivery-from">Delivery from</label>
-              <input id="delivery-from" type="date" bind:value={request.requestedDeliveryEarly} />
-            </div>
-            <div class="field">
-              <label for="delivery-to">Delivery to (optional)</label>
-              <input id="delivery-to" type="date" bind:value={request.requestedDeliveryLate} />
-            </div>
-            <div class="field">
-              <label for="pallets">Pallets</label>
-              <input id="pallets" type="number" min="0" bind:value={request.palletCount} />
-            </div>
-            <div class="field">
-              <label for="weight">Weight (kg)</label>
-              <input id="weight" type="number" min="0" bind:value={request.totalWeightKg} />
-            </div>
-            <div class="field">
-              <label for="portal-mode">Mode</label>
-              <select id="portal-mode" bind:value={request.mode}>
-                {#each Object.values(TransportMode) as m (m)}
-                  <option value={m}>{m}</option>
+                {#each view.locations as l (l.id)}
+                  <option value={l.id}>{l.name} ({l.city})</option>
                 {/each}
-              </select>
+              </Select>
+            </Field>
+            <Field label="Destination">
+              <Select bind:value={request.destinationLocationId} required>
+                <option value="" disabled>Select…</option>
+                {#each view.locations as l (l.id)}
+                  <option value={l.id}>{l.name} ({l.city})</option>
+                {/each}
+              </Select>
+            </Field>
+          </div>
+
+          <!-- Reference + dates section -->
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Your reference">
+              <Input bind:value={request.customerReference} placeholder="PO-12345" />
+            </Field>
+            <Field label="Pickup from">
+              <Input type="date" bind:value={request.requestedPickupEarly} />
+            </Field>
+            <Field label="Pickup to (optional)">
+              <Input type="date" bind:value={request.requestedPickupLate} />
+            </Field>
+            <Field label="Delivery from">
+              <Input type="date" bind:value={request.requestedDeliveryEarly} />
+            </Field>
+            <Field label="Delivery to (optional)">
+              <Input type="date" bind:value={request.requestedDeliveryLate} />
+            </Field>
+          </div>
+
+          <!-- Load section -->
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Pallets">
+              <Input type="number" min="0" bind:value={request.palletCount} />
+            </Field>
+            <Field label="Weight (kg)">
+              <Input type="number" min="0" bind:value={request.totalWeightKg} />
+            </Field>
+            <div>
+              <Field label="Mode">
+                <Select bind:value={request.mode}>
+                  {#each Object.values(TransportMode) as m (m)}
+                    <option value={m}>{m}</option>
+                  {/each}
+                </Select>
+              </Field>
               {#if portalModeSuggestion()}
-                <small style="color: #64748b;">Suggested: {portalModeSuggestion()} based on weight</small>
+                <p class="mt-1 text-xs text-ink-muted">Suggested: {portalModeSuggestion()} based on weight</p>
               {/if}
             </div>
           </div>
-          <div class="field">
-            <label for="notes">Notes</label>
-            <textarea id="notes" rows="2" bind:value={request.notes}></textarea>
+
+          <Field label="Notes">
+            <Textarea bind:value={request.notes} rows={2} />
+          </Field>
+
+          <div class="flex justify-end">
+            <Button type="submit">Submit request</Button>
           </div>
-          <button class="btn" type="submit">Submit request</button>
         </form>
-      {/if}
-
-      {#each view.orders as order (order.orderNumber)}
-        <div class="order">
-          <div class="order-head">
-            <strong>{order.orderNumber}</strong>
-            {#if order.customerReference}
-              <span class="muted">ref {order.customerReference}</span>
-            {/if}
-            <StatusBadge status={order.status} />
-          </div>
-          <div class="muted">
-            {order.originLocation.city} → {order.destinationLocation.city}
-            · pickup {fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}
-            · delivery {fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}
-          </div>
-          {#if order.shipments.length > 0}
-            <table>
-              <tbody>
-                {#each order.shipments as shipment (shipment.shipmentNumber)}
-                  <tr>
-                    <td>{shipment.shipmentNumber}</td>
-                    <td><StatusBadge status={shipment.status} /></td>
-                    <td>{shipment.actualDeliveryAt ? `delivered ${fmt(shipment.actualDeliveryAt)}` : ''}</td>
-                    <td style="text-align: right;">
-                      {#if shipment.trackingUrl}
-                        <a href={shipment.trackingUrl}>Track</a>
-                      {/if}
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          {/if}
-        </div>
-      {:else}
-        <p class="muted">No orders yet.</p>
-      {/each}
-    {:else}
-      <p class="muted">Loading…</p>
+      </Card>
     {/if}
-    <p class="muted" style="margin-bottom: 0; font-size: 11px;">Powered by Pulsar</p>
-  </div>
-</div>
 
-<style>
-  .public-page {
-    min-height: 100vh;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding: 32px 16px;
-  }
+    <!-- Orders list -->
+    {#if view.orders.length === 0}
+      <p class="mt-4 text-sm text-ink-muted">No orders yet.</p>
+    {:else}
+      <div class="mt-2 flex flex-col divide-y divide-edge">
+        {#each view.orders as order (order.orderNumber)}
+          <div class="py-4">
+            <div class="mb-1 flex flex-wrap items-center gap-2">
+              <strong class="text-ink">{order.orderNumber}</strong>
+              {#if order.customerReference}
+                <span class="text-sm text-ink-muted">ref {order.customerReference}</span>
+              {/if}
+              <Badge tone={toneFor(order.status)}>{labelFor(order.status)}</Badge>
+            </div>
+            <p class="mb-2 text-sm text-ink-muted">
+              {order.originLocation.city}{order.originLocation.state ? `, ${order.originLocation.state}` : ''}
+              → {order.destinationLocation.city}{order.destinationLocation.state ? `, ${order.destinationLocation.state}` : ''}
+              · pickup {fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}
+              · delivery {fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}
+            </p>
+            {#if order.shipments.length > 0}
+              <table class="w-full text-sm">
+                <tbody>
+                  {#each order.shipments as shipment (shipment.shipmentNumber)}
+                    <tr class="border-b border-edge last:border-0">
+                      <td class="py-1.5 pr-3 text-ink">{shipment.shipmentNumber}</td>
+                      <td class="py-1.5 pr-3">
+                        <Badge tone={toneFor(shipment.status)}>{labelFor(shipment.status)}</Badge>
+                      </td>
+                      <td class="py-1.5 pr-3 text-ink-muted">
+                        {shipment.actualDeliveryAt ? `delivered ${fmt(shipment.actualDeliveryAt)}` : ''}
+                      </td>
+                      <td class="py-1.5 text-right">
+                        {#if shipment.trackingUrl}
+                          <a href={shipment.trackingUrl} class="text-accent hover:underline">Track</a>
+                        {/if}
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
 
-  .public-card {
-    width: 100%;
-    max-width: 720px;
-  }
-
-  .order {
-    border-top: 1px solid var(--color-border);
-    padding: 14px 0;
-  }
-
-  .order-head {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .request-form {
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: 14px;
-    margin-bottom: 16px;
-    background: var(--color-bg);
-  }
-
-  .grid2 {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 16px;
-  }
-</style>
+    <p class="mt-6 text-center text-xs text-ink-faint">Powered by Pulsar</p>
+  {:else}
+    <p class="text-sm text-ink-muted">Loading…</p>
+  {/if}
+</PublicShell>

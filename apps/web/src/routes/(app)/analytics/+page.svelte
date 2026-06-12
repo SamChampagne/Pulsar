@@ -1,5 +1,15 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
+  import {
+    PageHeader,
+    Table,
+    Badge,
+    EmptyState,
+    Card,
+    Skeleton,
+    toneFor,
+    labelFor,
+  } from '$lib/components/ui';
 
   interface Scorecard {
     carrierId: string;
@@ -16,6 +26,7 @@
 
   let rows = $state<Scorecard[]>([]);
   let error = $state('');
+  let loading = $state(true);
 
   function pct(value: number | null): string {
     return value === null ? '—' : `${value} %`;
@@ -23,51 +34,56 @@
 
   $effect(() => {
     api<Scorecard[]>('/transportation/analytics/carriers')
-      .then((r) => (rows = r))
-      .catch((e) => (error = e instanceof ApiError ? e.message : 'Failed to load analytics'));
+      .then((r) => {
+        rows = r;
+        loading = false;
+      })
+      .catch((e) => {
+        error = e instanceof ApiError ? e.message : 'Failed to load analytics';
+        loading = false;
+      });
   });
 </script>
 
-<div class="page-header">
-  <h1>Carrier scorecard</h1>
-</div>
+<PageHeader title="Carrier scorecard" />
 
-<p class="muted">
+<p class="mb-4 text-sm text-ink-muted">
   On-time = delivered on or before the planned delivery date. Acceptance = accepted tenders over
   responded tenders.
 </p>
 
-{#if error}
-  <p class="error-text">{error}</p>
-{/if}
+{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
-<div class="card" style="padding: 0;">
-  <table>
-    <thead>
+{#if loading}
+  <Card padded={false}><Skeleton rows={6} /></Card>
+{:else}
+<Table>
+  {#snippet head()}
+    <th>Carrier</th>
+    <th>Loads completed</th>
+    <th>Active</th>
+    <th>Tenders (sent / accepted)</th>
+    <th>Acceptance</th>
+    <th>On-time delivery</th>
+    <th class="text-right">Est. spend</th>
+  {/snippet}
+  {#snippet body()}
+    {#each rows as row (row.carrierId)}
       <tr>
-        <th>Carrier</th>
-        <th>Loads completed</th>
-        <th>Active</th>
-        <th>Tenders (sent / accepted)</th>
-        <th>Acceptance</th>
-        <th>On-time delivery</th>
-        <th>Est. spend</th>
+        <td>
+          <span class="font-semibold text-ink">{row.name}</span>
+          <span class="ml-1 text-xs text-ink-muted">({row.code})</span>
+        </td>
+        <td>{row.loadsCompleted}</td>
+        <td>{row.loadsActive}</td>
+        <td>{row.tendersSent} / {row.tendersAccepted}</td>
+        <td>{pct(row.acceptanceRatePct)}</td>
+        <td>{pct(row.onTimeDeliveryPct)}</td>
+        <td class="text-right">{row.totalEstimatedCost.toLocaleString()}</td>
       </tr>
-    </thead>
-    <tbody>
-      {#each rows as row (row.carrierId)}
-        <tr>
-          <td><strong>{row.name}</strong> <span class="muted">({row.code})</span></td>
-          <td>{row.loadsCompleted}</td>
-          <td>{row.loadsActive}</td>
-          <td>{row.tendersSent} / {row.tendersAccepted}</td>
-          <td>{pct(row.acceptanceRatePct)}</td>
-          <td>{pct(row.onTimeDeliveryPct)}</td>
-          <td>{row.totalEstimatedCost.toLocaleString()}</td>
-        </tr>
-      {:else}
-        <tr><td colspan="7" class="muted">No carrier activity yet.</td></tr>
-      {/each}
-    </tbody>
-  </table>
-</div>
+    {:else}
+      <tr><td colspan="7"><EmptyState message="No carrier activity yet." /></td></tr>
+    {/each}
+  {/snippet}
+</Table>
+{/if}

@@ -2,6 +2,19 @@
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import {
+    PageHeader,
+    Button,
+    Card,
+    Table,
+    Badge,
+    EmptyState,
+    Skeleton,
+    Modal,
+    Field,
+    Input,
+    Select,
+  } from '$lib/components/ui';
 
   interface Accessorial {
     id: string;
@@ -14,6 +27,7 @@
   let total = $state(0);
   let error = $state('');
   let showForm = $state(false);
+  let loading = $state(true);
 
   // Form state
   let editingId = $state<string | null>(null);
@@ -30,6 +44,8 @@
       total = result.total;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load accessorials';
+    } finally {
+      loading = false;
     }
   }
 
@@ -87,85 +103,70 @@
   });
 </script>
 
-<div class="page-header">
-  <h1>Accessorials <span class="muted">({total})</span></h1>
-  <button class="btn" onclick={() => { reset(); showForm = !showForm; }}>New accessorial</button>
-</div>
+<PageHeader title="Accessorials" count={total}>
+  {#snippet actions()}
+    <Button onclick={() => { reset(); showForm = true; }}>New accessorial</Button>
+  {/snippet}
+</PageHeader>
 
-{#if error}
-  <p class="error-text">{error}</p>
-{/if}
+{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
-{#if showForm}
-  <form class="card" style="margin-bottom: 20px;" onsubmit={save}>
-    <h2 style="margin-top: 0;">{editingId ? 'Edit accessorial' : 'New accessorial'}</h2>
-
-    <div class="form-grid">
-      <div class="field">
-        <label for="acc-code">Code</label>
-        <input
-          id="acc-code"
-          bind:value={code}
-          required
-          placeholder="FUEL_SUR"
-          oninput={(e) => { code = (e.target as HTMLInputElement).value.toUpperCase(); }}
-        />
-      </div>
-      <div class="field">
-        <label for="acc-name">Name</label>
-        <input id="acc-name" bind:value={name} required placeholder="Fuel surcharge" />
-      </div>
-      <div class="field">
-        <label for="acc-unit">Unit</label>
-        <select id="acc-unit" bind:value={unit} required>
-          <option value="FLAT">FLAT</option>
-          <option value="PER_HOUR">PER_HOUR</option>
-          <option value="PER_UNIT">PER_UNIT</option>
-        </select>
-      </div>
-    </div>
-
-    <div style="display: flex; gap: 8px; margin-top: 12px;">
-      <button class="btn" type="submit">{editingId ? 'Update' : 'Create'}</button>
-      <button class="btn btn-secondary" type="button" onclick={reset}>Cancel</button>
-    </div>
-  </form>
-{/if}
-
-<div class="card" style="padding: 0;">
-  <table>
-    <thead>
+{#if loading}
+  <Card padded={false}><Skeleton rows={6} /></Card>
+{:else}
+<Table>
+  {#snippet head()}
+    <th>Code</th><th>Name</th><th>Unit</th><th></th>
+  {/snippet}
+  {#snippet body()}
+    {#each accessorials as acc (acc.id)}
       <tr>
-        <th>Code</th>
-        <th>Name</th>
-        <th>Unit</th>
-        <th></th>
+        <td><span class="font-semibold text-ink">{acc.code}</span></td>
+        <td>{acc.name}</td>
+        <td><Badge tone="neutral">{acc.unit}</Badge></td>
+        <td class="text-right">
+          <div class="inline-flex gap-2">
+            <Button variant="secondary" onclick={() => edit(acc)}>Edit</Button>
+            <Button variant="danger" onclick={() => remove(acc)}>Delete</Button>
+          </div>
+        </td>
       </tr>
-    </thead>
-    <tbody>
-      {#each accessorials as acc (acc.id)}
-        <tr>
-          <td><strong>{acc.code}</strong></td>
-          <td>{acc.name}</td>
-          <td>
-            <span class="badge badge-muted">{acc.unit}</span>
-          </td>
-          <td style="text-align: right;">
-            <button class="btn btn-secondary btn-sm" onclick={() => edit(acc)}>Edit</button>
-            <button class="btn btn-danger btn-sm" onclick={() => remove(acc)}>Delete</button>
-          </td>
-        </tr>
-      {:else}
-        <tr><td colspan="4" class="muted">No accessorials yet.</td></tr>
-      {/each}
-    </tbody>
-  </table>
-</div>
+    {:else}
+      <tr><td colspan="4"><EmptyState message="No accessorials yet." /></td></tr>
+    {/each}
+  {/snippet}
+</Table>
+{/if}
 
-<style>
-  .form-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0 20px;
-  }
-</style>
+<!-- ─── Accessorial form Modal ────────────────────────────────────────────────── -->
+<Modal bind:open={showForm} title={editingId ? 'Edit accessorial' : 'New accessorial'}>
+  {#snippet children()}
+    <form onsubmit={save}>
+      <div class="grid grid-cols-3 gap-4">
+        <Field label="Code">
+          <Input
+            bind:value={code}
+            required
+            placeholder="FUEL_SUR"
+            oninput={(e) => { code = e.currentTarget.value.toUpperCase(); }}
+          />
+        </Field>
+        <Field label="Name">
+          <Input bind:value={name} required placeholder="Fuel surcharge" />
+        </Field>
+        <Field label="Unit">
+          <Select bind:value={unit} required>
+            <option value="FLAT">FLAT</option>
+            <option value="PER_HOUR">PER_HOUR</option>
+            <option value="PER_UNIT">PER_UNIT</option>
+          </Select>
+        </Field>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <Button variant="secondary" onclick={reset}>Cancel</Button>
+        <Button type="submit">{editingId ? 'Update' : 'Create'}</Button>
+      </div>
+    </form>
+  {/snippet}
+</Modal>

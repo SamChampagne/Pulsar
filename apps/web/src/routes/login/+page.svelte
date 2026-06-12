@@ -3,6 +3,8 @@
   import type { LoginResponse } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { setAuth } from '$lib/stores/auth';
+  import PublicShell from '$lib/components/PublicShell.svelte';
+  import { Button, Field, Input } from '$lib/components/ui';
 
   let email = $state('admin@pulsar.dev');
   let password = $state('');
@@ -29,74 +31,37 @@
   }
 </script>
 
-<div class="login-page">
-  <form class="card login-card" onsubmit={submit}>
-    <div class="logo">
-      <span class="logo-dot"></span>
-      <span class="logo-text">Pulsar</span>
-    </div>
-    <p class="muted">Modular logistics platform</p>
-
-    <div class="field">
-      <label for="email">Email</label>
-      <input id="email" type="email" bind:value={email} required autocomplete="email" />
-    </div>
-    <div class="field">
-      <label for="password">Password</label>
-      <input id="password" type="password" bind:value={password} required autocomplete="current-password" />
-    </div>
-    <div class="field">
-      <label for="tenant">Tenant (optional)</label>
-      <input id="tenant" type="text" bind:value={tenant} placeholder="acme" />
-    </div>
+<PublicShell title="Sign in" subtitle="Modular logistics platform">
+  <form onsubmit={submit} class="flex flex-col gap-4">
+    <Field label="Email">
+      <Input type="email" bind:value={email} required name="email" />
+    </Field>
+    <Field label="Password">
+      <Input type="password" bind:value={password} required name="password" />
+    </Field>
+    <Field label="Tenant (optional)">
+      <Input bind:value={tenant} placeholder="acme" name="tenant" />
+    </Field>
 
     {#if error}
-      <p class="error-text">{error}</p>
+      <p class="text-sm text-danger">{error}</p>
     {/if}
 
-    <button class="btn" type="submit" disabled={loading} style="width: 100%; justify-content: center;">
+    <Button type="submit" {loading} disabled={loading}>
       {loading ? 'Signing in…' : 'Sign in'}
-    </button>
+    </Button>
+
     {#if tenant}
-      <a class="muted" href={`/api/v1/auth/oidc/${tenant}`} style="display: block; margin-top: 12px; text-align: center; font-size: 13px;">
+      <a
+        href={`/api/v1/auth/oidc/${tenant}`}
+        class="block text-center text-sm text-ink-muted hover:text-ink"
+      >
         Sign in with SSO ({tenant})
       </a>
     {/if}
-    <p style="text-align: center; margin-bottom: 0;">
-      <a href="/forgot-password" class="muted" style="font-size: 12px;">Forgot password?</a>
+
+    <p class="text-center">
+      <a href="/forgot-password" class="text-xs text-ink-muted hover:text-ink">Forgot password?</a>
     </p>
   </form>
-</div>
-
-<style>
-  .login-page {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .login-card {
-    width: 360px;
-    padding: 32px;
-  }
-
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .logo-dot {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--color-primary);
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 20%, transparent);
-  }
-
-  .logo-text {
-    font-size: 1.3rem;
-    font-weight: 700;
-  }
-</style>
+</PublicShell>

@@ -2,6 +2,19 @@
   import { PERMISSION_CATALOG } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import { formatDateTime } from '$lib/format';
+  import {
+    PageHeader,
+    Button,
+    Field,
+    Input,
+    Table,
+    Badge,
+    EmptyState,
+    Card,
+    Skeleton,
+    Modal,
+  } from '$lib/components/ui';
 
   interface KeyRow {
     id: string;
@@ -17,6 +30,7 @@
 
   let keys = $state<KeyRow[]>([]);
   let error = $state('');
+  let loading = $state(true);
   let showForm = $state(false);
   let name = $state('');
   let scopes = $state<string[]>([]);
@@ -27,6 +41,8 @@
       keys = await api<KeyRow[]>('/api-keys');
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load API keys';
+    } finally {
+      loading = false;
     }
   }
 
@@ -44,6 +60,7 @@
       createdKey = created.key;
       name = '';
       scopes = [];
+      showForm = false;
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Failed to create key');
@@ -70,112 +87,101 @@
   });
 </script>
 
-<div class="page-header">
-  <h1>API keys</h1>
-  <button class="btn" onclick={() => (showForm = !showForm)}>New API key</button>
-</div>
+<PageHeader title="API keys">
+  {#snippet actions()}
+    <Button onclick={() => { showForm = true; }}>New API key</Button>
+  {/snippet}
+</PageHeader>
 
-<p class="muted">
-  Machine-to-machine access via the <code>X-Api-Key</code> header. Read-only scopes for now —
-  write access will come with service accounts.
+<p class="mb-4 text-sm text-ink-muted">
+  Machine-to-machine access via the <code class="rounded bg-surface-muted px-1 text-xs">X-Api-Key</code> header.
+  Read-only scopes for now — write access will come with service accounts.
 </p>
 
-{#if error}
-  <p class="error-text">{error}</p>
+{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+
+{#if createdKey}
+  <Card>
+    <div class="flex flex-wrap items-center gap-3">
+      <div class="flex-1">
+        <p class="mb-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">Your new API key — shown once</p>
+        <code class="break-all text-sm text-ink">{createdKey}</code>
+      </div>
+      <Button variant="secondary" onclick={copyKey}>Copy</Button>
+    </div>
+    <p class="mt-2 text-xs text-ink-muted">Store it somewhere safe. You will not be able to view it again.</p>
+  </Card>
 {/if}
 
-{#if showForm}
-  <form class="card" style="margin-bottom: 20px;" onsubmit={create}>
-    <h2 style="margin-top: 0;">New API key</h2>
-    <div class="field" style="max-width: 360px;">
-      <label for="name">Name</label>
-      <input id="name" bind:value={name} required placeholder="ERP read access" />
-    </div>
-    <div class="field">
-      <span class="muted" style="font-size: 12px; font-weight: 550;">Scopes</span>
-      <div class="scopes">
-        {#each readScopes as scope (scope.key)}
-          <label class="scope-check">
-            <input
-              type="checkbox"
-              checked={scopes.includes(scope.key)}
-              onchange={() => toggleScope(scope.key)}
-            />
-            <code>{scope.key}</code>
-          </label>
-        {/each}
-      </div>
-    </div>
-    <button class="btn" type="submit" disabled={scopes.length === 0}>Create key</button>
-    {#if createdKey}
-      <div class="created-key">
-        <code>{createdKey}</code>
-        <button class="btn btn-secondary btn-sm" type="button" onclick={copyKey}>Copy</button>
-        <span class="muted">Shown once — store it safely.</span>
-      </div>
-    {/if}
-  </form>
-{/if}
-
-<div class="card" style="padding: 0;">
-  <table>
-    <thead>
-      <tr><th>Name</th><th>Prefix</th><th>Scopes</th><th>Last used</th><th>Status</th><th></th></tr>
-    </thead>
-    <tbody>
+{#if loading}
+  <Card padded={false}><Skeleton rows={5} /></Card>
+{:else}
+  <Table>
+    {#snippet head()}
+      <th>Name</th>
+      <th>Prefix</th>
+      <th>Scopes</th>
+      <th>Last used</th>
+      <th>Status</th>
+      <th></th>
+    {/snippet}
+    {#snippet body()}
       {#each keys as key (key.id)}
         <tr>
-          <td><strong>{key.name}</strong></td>
-          <td><code>{key.prefix}…</code></td>
-          <td class="muted" style="max-width: 320px;">{key.scopes.join(', ')}</td>
-          <td>{key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : '—'}</td>
+          <td class="font-semibold">{key.name}</td>
+          <td><code class="text-xs text-ink-muted">{key.prefix}…</code></td>
+          <td class="max-w-xs truncate text-xs text-ink-muted">{key.scopes.join(', ')}</td>
+          <td class="text-ink-muted">{formatDateTime(key.lastUsedAt)}</td>
           <td>
-            <span class="badge {key.revokedAt ? 'badge-danger' : 'badge-success'}">
-              {key.revokedAt ? 'REVOKED' : 'ACTIVE'}
-            </span>
+            {#if key.revokedAt}
+              <Badge tone="danger">Revoked</Badge>
+            {:else}
+              <Badge tone="ok">Active</Badge>
+            {/if}
           </td>
-          <td style="text-align: right;">
+          <td class="text-right">
             {#if !key.revokedAt}
-              <button class="btn btn-danger btn-sm" onclick={() => revoke(key)}>Revoke</button>
+              <Button
+                variant="danger"
+                onclick={(e) => { e.stopPropagation(); void revoke(key); }}
+              >Revoke</Button>
             {/if}
           </td>
         </tr>
       {:else}
-        <tr><td colspan="6" class="muted">No API keys yet.</td></tr>
+        <tr>
+          <td colspan={6}><EmptyState message="No API keys yet." /></td>
+        </tr>
       {/each}
-    </tbody>
-  </table>
-</div>
+    {/snippet}
+  </Table>
+{/if}
 
-<style>
-  .scopes {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 6px;
-    margin-top: 6px;
-  }
-
-  .scope-check {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: var(--color-text);
-  }
-
-  .scope-check input {
-    width: auto;
-  }
-
-  .created-key {
-    margin-top: 14px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: 10px;
-  }
-</style>
+<Modal bind:open={showForm} title="New API key">
+  {#snippet children()}
+    <form onsubmit={create}>
+      <Field label="Name">
+        <Input bind:value={name} required placeholder="ERP read access" />
+      </Field>
+      <div class="mt-3">
+        <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Scopes</span>
+        <div class="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          {#each readScopes as scope (scope.key)}
+            <label class="flex cursor-pointer items-center gap-1.5 text-xs text-ink">
+              <input
+                type="checkbox"
+                checked={scopes.includes(scope.key)}
+                onchange={() => toggleScope(scope.key)}
+              />
+              <code class="text-ink-muted">{scope.key}</code>
+            </label>
+          {/each}
+        </div>
+      </div>
+      <div class="mt-4 flex justify-end gap-2 border-t border-edge pt-3">
+        <Button variant="secondary" onclick={() => { showForm = false; }}>Cancel</Button>
+        <Button variant="primary" type="submit" disabled={scopes.length === 0}>Create key</Button>
+      </div>
+    </form>
+  {/snippet}
+</Modal>

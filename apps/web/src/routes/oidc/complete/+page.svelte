@@ -3,6 +3,7 @@
   import { page } from '$app/state';
   import type { LoginResponse } from '@pulsar/shared';
   import { setAuth } from '$lib/stores/auth';
+  import PublicShell from '$lib/components/PublicShell.svelte';
 
   let error = $state('');
 
@@ -26,7 +27,7 @@
         });
         if (!res.ok) throw new Error('Exchange failed');
         setAuth((await res.json()) as LoginResponse);
-        void goto('/dashboard');
+        void goto('/dashboard', { replaceState: true });
       } catch {
         error = 'SSO sign-in failed — the link may have expired. Try again.';
       }
@@ -34,8 +35,10 @@
   });
 </script>
 
-{#if error}
-  <p class="error-text" style="margin: 64px auto; max-width: 360px;">{error}</p>
-{:else}
-  <p class="muted" style="margin: 64px auto; max-width: 360px;">Signing you in…</p>
-{/if}
+<PublicShell>
+  {#if error}
+    <p class="text-sm text-danger">{error}</p>
+  {:else}
+    <p class="text-sm text-ink-muted">Signing you in…</p>
+  {/if}
+</PublicShell>

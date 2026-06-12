@@ -4,6 +4,8 @@
   import { MODULE_KEYS } from '@pulsar/shared';
   import { api } from '$lib/api/client';
   import { auth, clearAuth, getRefreshToken } from '$lib/stores/auth';
+  import { ChevronDown, ChevronRight, Bell, LogOut, Search } from 'lucide-svelte';
+  import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
 
   let { children } = $props();
 
@@ -58,26 +60,6 @@
     $auth?.tenant.enabledModules.includes(MODULE_KEYS.BILLING) ?? false,
   );
 
-  const coreNav = [{ href: '/dashboard', label: 'Dashboard' }];
-  const tmsNav = [
-    { href: '/transport-orders', label: 'Transport Orders' },
-    { href: '/shipments', label: 'Shipments' },
-    { href: '/loads', label: 'Loads' },
-    { href: '/customers', label: 'Customers' },
-    { href: '/carriers', label: 'Carriers' },
-    { href: '/lanes', label: 'Lanes' },
-    { href: '/rates', label: 'Rates' },
-    { href: '/accessorials', label: 'Accessorials' },
-    { href: '/fuel-tables', label: 'Fuel tables' },
-  ];
-  const tmsAnalyticsNav = [{ href: '/analytics', label: 'Analytics' }];
-  const adminNav = [
-    { href: '/settings/users', label: 'Users' },
-    { href: '/settings/api-keys', label: 'API keys' },
-    { href: '/settings/modules', label: 'Modules' },
-    { href: '/settings/sso', label: 'SSO' },
-  ];
-
   function isActive(href: string): boolean {
     return page.url.pathname.startsWith(href);
   }
@@ -90,71 +72,127 @@
     clearAuth();
     void goto('/login');
   }
+
+  interface NavGroup { label: string; items: { href: string; label: string }[]; visible: boolean }
+
+  const groups = $derived<NavGroup[]>([
+    { label: 'Opérations', visible: hasTransportation, items: [
+      { href: '/transport-orders', label: 'Transport Orders' },
+      { href: '/shipments', label: 'Shipments' },
+      { href: '/loads', label: 'Loads' },
+    ]},
+    { label: 'Tarification', visible: hasTransportation, items: [
+      { href: '/lanes', label: 'Lanes' },
+      { href: '/rates', label: 'Rates' },
+      { href: '/accessorials', label: 'Accessorials' },
+      { href: '/fuel-tables', label: 'Fuel tables' },
+    ]},
+    { label: 'Partenaires', visible: hasTransportation, items: [
+      { href: '/customers', label: 'Customers' },
+      { href: '/carriers', label: 'Carriers' },
+    ]},
+    { label: 'Facturation', visible: hasBilling, items: [{ href: '/invoices', label: 'Invoices' }] },
+    { label: 'Analytics', visible: hasTransportation, items: [{ href: '/analytics', label: 'Analytics' }] },
+    { label: 'Réglages', visible: true, items: [
+      { href: '/settings/users', label: 'Users' },
+      { href: '/settings/api-keys', label: 'API keys' },
+      { href: '/settings/modules', label: 'Modules' },
+      { href: '/settings/sso', label: 'SSO' },
+    ]},
+  ]);
+
+  let openGroups = $state<Record<string, boolean>>({});
+  $effect(() => {
+    for (const g of groups) {
+      if (g.items.some((i) => isActive(i.href))) openGroups[g.label] = true;
+    }
+  });
+
+  let paletteOpen = $state(false);
+  const paletteCommands = $derived([
+    { label: 'Dashboard', hint: 'page', run: () => goto('/dashboard') },
+    ...groups.filter((g) => g.visible).flatMap((g) =>
+      g.items.map((i) => ({ label: i.label, hint: g.label, run: () => goto(i.href) })),
+    ),
+    ...(hasTransportation
+      ? [
+          { label: 'New transport order', hint: 'action', run: () => goto('/transport-orders') },
+          { label: 'New load', hint: 'action', run: () => goto('/loads') },
+        ]
+      : []),
+  ]);
 </script>
 
 {#if $auth}
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <span class="brand-dot"></span>
-        Pulsar
-      </div>
-      <div class="tenant-name">{$auth.tenant.name}</div>
+  <div class="flex min-h-screen">
+    <aside class="relative flex w-56 flex-col bg-sidebar px-3 py-4 text-sm">
+      <div class="px-2 font-bold text-white">⬢ PULSAR</div>
+      <div class="mb-3 px-2 text-xs text-ink-faint">{$auth.tenant.name}</div>
 
-      <nav>
-        {#each coreNav as item (item.href)}
-          <a href={item.href} class:active={isActive(item.href)}>{item.label}</a>
-        {/each}
+      <button
+        class="mb-3 flex items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-hover px-2 py-1.5 text-xs text-ink-faint"
+        onclick={() => (paletteOpen = true)}
+      >
+        <Search class="size-3.5" /> Search…
+        <kbd class="ml-auto rounded border border-sidebar-border px-1 text-[10px]">⌘K</kbd>
+      </button>
 
-        {#if hasTransportation}
-          <div class="nav-section">Transportation</div>
-          {#each tmsNav as item (item.href)}
-            <a href={item.href} class:active={isActive(item.href)}>{item.label}</a>
-          {/each}
-          {#each tmsAnalyticsNav as item (item.href)}
-            <a href={item.href} class:active={isActive(item.href)}>{item.label}</a>
-          {/each}
-        {/if}
-
-        {#if hasBilling}
-          <div class="nav-section">Billing</div>
-          <a href="/invoices" class:active={isActive('/invoices')}>Invoices</a>
-        {/if}
-
-        <div class="nav-section">Administration</div>
-        {#each adminNav as item (item.href)}
-          <a href={item.href} class:active={isActive(item.href)}>{item.label}</a>
+      <nav class="flex-1 space-y-0.5 overflow-y-auto">
+        <a href="/dashboard"
+           class={`block rounded-md px-2 py-1.5 ${isActive('/dashboard') ? 'bg-accent text-white' : 'text-ink-faint hover:bg-sidebar-hover hover:text-white'}`}>
+          Dashboard
+        </a>
+        {#each groups.filter((g) => g.visible) as group (group.label)}
+          <button
+            class="flex w-full items-center gap-1 rounded-md px-2 py-1.5 font-semibold text-slate-200 hover:bg-sidebar-hover"
+            onclick={() => (openGroups[group.label] = !openGroups[group.label])}
+            aria-expanded={openGroups[group.label] ?? false}
+          >
+            {#if openGroups[group.label]}<ChevronDown class="size-3.5" />{:else}<ChevronRight class="size-3.5" />{/if}
+            {group.label}
+          </button>
+          {#if openGroups[group.label]}
+            {#each group.items as item (item.href)}
+              <a href={item.href}
+                 class={`block rounded-md py-1.5 pr-2 pl-7 ${isActive(item.href) ? 'bg-accent text-white' : 'text-ink-faint hover:bg-sidebar-hover hover:text-white'}`}>
+                {item.label}
+              </a>
+            {/each}
+          {/if}
         {/each}
       </nav>
 
-      <div class="notif-area">
+      <div class="border-t border-sidebar-border pt-3">
+        <!-- notifications bell row -->
         <button
-          class="notif-bell"
+          class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-ink-faint hover:bg-sidebar-hover hover:text-white"
           onclick={() => (notifOpen = !notifOpen)}
           aria-label="Notifications"
+          aria-expanded={notifOpen}
         >
-          🔔
+          <Bell class="size-4" />
+          <span class="flex-1 text-left text-xs">Notifications</span>
           {#if unreadCount > 0}
-            <span class="notif-badge">{unreadCount}</span>
+            <span class="rounded-full bg-danger px-1.5 text-[10px] text-white">{unreadCount}</span>
           {/if}
         </button>
+
         {#if notifOpen}
-          <div class="notif-dropdown">
-            <div class="notif-header">
-              <strong>Notifications</strong>
-              <button class="btn-close" onclick={() => (notifOpen = false)}>✕</button>
-            </div>
+          <div class="absolute bottom-14 left-3 z-30 max-h-80 w-64 overflow-y-auto rounded-card border border-edge bg-surface p-2 shadow-pop">
             {#if notifications.length === 0}
-              <p class="notif-empty">No unread notifications.</p>
+              <p class="px-2 py-3 text-center text-xs text-ink-faint">No notifications</p>
             {:else}
               {#each notifications as n (n.id)}
-                <div class="notif-item {n.readAt ? 'notif-read' : ''}">
-                  <div class="notif-title">{n.title}</div>
-                  <div class="notif-body">{n.body}</div>
-                  <div class="notif-footer-row">
-                    <span class="notif-time">{new Date(n.createdAt).toLocaleString()}</span>
+                <div class={`mb-1 rounded p-2 text-xs ${n.readAt ? 'opacity-60' : ''}`}>
+                  <div class="font-semibold text-ink">{n.title}</div>
+                  <div class="text-ink-muted">{n.body}</div>
+                  <div class="mt-1 flex items-center justify-between">
+                    <span class="text-ink-faint">{new Date(n.createdAt).toLocaleString()}</span>
                     {#if !n.readAt}
-                      <button class="btn btn-sm btn-secondary" onclick={() => markRead(n.id)}>
+                      <button
+                        class="rounded px-1.5 py-0.5 text-[10px] text-accent hover:bg-accent-soft"
+                        onclick={() => markRead(n.id)}
+                      >
                         Mark read
                       </button>
                     {/if}
@@ -164,226 +202,22 @@
             {/if}
           </div>
         {/if}
-      </div>
 
-      <div class="sidebar-footer">
-        <div class="user">
-          {$auth.user.firstName}
-          {$auth.user.lastName}
+        <!-- user row -->
+        <div class="mt-1 flex items-center gap-2 px-2 py-1.5">
+          <span class="flex-1 truncate text-xs text-ink-faint">{$auth.user.email}</span>
+          <button
+            class="rounded p-1 text-ink-faint hover:bg-sidebar-hover hover:text-white"
+            onclick={logout}
+            aria-label="Sign out"
+          >
+            <LogOut class="size-3.5" />
+          </button>
         </div>
-        <button class="btn btn-secondary btn-sm" onclick={logout}>Sign out</button>
       </div>
     </aside>
 
-    <main class="content">
-      {@render children()}
-    </main>
+    <main class="min-w-0 flex-1 p-6">{@render children()}</main>
   </div>
+  <CommandPalette bind:open={paletteOpen} commands={paletteCommands} />
 {/if}
-
-<style>
-  .shell {
-    display: grid;
-    grid-template-columns: 230px 1fr;
-    min-height: 100vh;
-  }
-
-  .sidebar {
-    background: #0f172a;
-    color: #cbd5e1;
-    display: flex;
-    flex-direction: column;
-    padding: 20px 14px;
-  }
-
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: #fff;
-    font-weight: 700;
-    font-size: 1.1rem;
-  }
-
-  .brand-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #60a5fa;
-  }
-
-  .tenant-name {
-    font-size: 11px;
-    color: #64748b;
-    margin: 4px 0 20px 18px;
-  }
-
-  nav {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    flex: 1;
-  }
-
-  nav a {
-    color: #cbd5e1;
-    padding: 8px 10px;
-    border-radius: 6px;
-    font-size: 13px;
-  }
-
-  nav a:hover {
-    background: #1e293b;
-  }
-
-  nav a.active {
-    background: #1d4ed8;
-    color: #fff;
-  }
-
-  .nav-section {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #64748b;
-    margin: 16px 10px 4px;
-  }
-
-  .sidebar-footer {
-    border-top: 1px solid #1e293b;
-    padding-top: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .user {
-    font-size: 12px;
-  }
-
-  .content {
-    padding: 28px 32px;
-    max-width: 1200px;
-  }
-
-  /* Notification bell */
-  .notif-area {
-    position: relative;
-    border-top: 1px solid #1e293b;
-    padding-top: 10px;
-    padding-bottom: 8px;
-  }
-
-  .notif-bell {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 18px;
-    padding: 4px 8px;
-    border-radius: 6px;
-    color: #cbd5e1;
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .notif-bell:hover {
-    background: #1e293b;
-  }
-
-  .notif-badge {
-    background: #dc2626;
-    color: #fff;
-    border-radius: 10px;
-    font-size: 10px;
-    font-weight: 700;
-    padding: 0 5px;
-    min-width: 16px;
-    text-align: center;
-  }
-
-  .notif-dropdown {
-    position: absolute;
-    bottom: calc(100% + 4px);
-    left: 0;
-    width: 280px;
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 8px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-    z-index: 100;
-    max-height: 400px;
-    overflow-y: auto;
-  }
-
-  .notif-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 12px;
-    border-bottom: 1px solid #334155;
-    color: #f1f5f9;
-    font-size: 13px;
-  }
-
-  .btn-close {
-    background: none;
-    border: none;
-    color: #94a3b8;
-    cursor: pointer;
-    font-size: 12px;
-    padding: 2px 6px;
-    border-radius: 4px;
-  }
-
-  .btn-close:hover {
-    background: #334155;
-    color: #f1f5f9;
-  }
-
-  .notif-empty {
-    padding: 12px;
-    color: #64748b;
-    font-size: 12px;
-    margin: 0;
-  }
-
-  .notif-item {
-    padding: 10px 12px;
-    border-bottom: 1px solid #334155;
-  }
-
-  .notif-item:last-child {
-    border-bottom: none;
-  }
-
-  .notif-read {
-    opacity: 0.6;
-  }
-
-  .notif-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: #f1f5f9;
-    margin-bottom: 3px;
-  }
-
-  .notif-body {
-    font-size: 12px;
-    color: #94a3b8;
-    margin-bottom: 6px;
-  }
-
-  .notif-footer-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .notif-time {
-    font-size: 11px;
-    color: #64748b;
-  }
-</style>

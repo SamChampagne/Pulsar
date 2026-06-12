@@ -2,8 +2,21 @@
   import { goto } from '$app/navigation';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import StatusBadge from '$lib/components/StatusBadge.svelte';
   import { toast } from '$lib/stores/toast';
+  import {
+    PageHeader,
+    Button,
+    FilterBar,
+    Select,
+    Table,
+    Badge,
+    EmptyState,
+    Panel,
+    Card,
+    Skeleton,
+    toneFor,
+    labelFor,
+  } from '$lib/components/ui';
 
   interface LoadRow {
     id: string;
@@ -20,6 +33,8 @@
   let total = $state(0);
   let statusFilter = $state('');
   let error = $state('');
+  let selected = $state<LoadRow | null>(null);
+  let loading = $state(true);
 
   async function load() {
     try {
@@ -30,6 +45,8 @@
       total = result.total;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load loads';
+    } finally {
+      loading = false;
     }
   }
 
@@ -49,68 +66,81 @@
   });
 </script>
 
-<div class="page-header">
-  <h1>Loads <span class="muted">({total})</span></h1>
-  <div style="display: flex; gap: 8px;">
-    <select bind:value={statusFilter} style="width: 180px;">
+<PageHeader title="Loads" count={total}>
+  {#snippet actions()}
+    <Button onclick={createLoad}>New load</Button>
+  {/snippet}
+</PageHeader>
+
+{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+
+<FilterBar>
+  <div class="w-44">
+    <Select bind:value={statusFilter}>
       <option value="">All statuses</option>
       {#each ['OPEN', 'PLANNED', 'DISPATCHED', 'IN_TRANSIT', 'COMPLETED', 'CANCELLED'] as s (s)}
         <option value={s}>{s.replaceAll('_', ' ')}</option>
       {/each}
-    </select>
-    <button class="btn" onclick={createLoad}>New load</button>
+    </Select>
   </div>
-</div>
+</FilterBar>
 
-{#if error}
-  <p class="error-text">{error}</p>
+{#if loading}
+  <Card padded={false}><Skeleton rows={6} /></Card>
+{:else}
+<Table>
+  {#snippet head()}
+    <th>Load #</th><th>Carrier</th><th>Driver</th><th>Shipments</th>
+    <th>Dispatched</th><th>Mode</th><th>Status</th>
+  {/snippet}
+  {#snippet body()}
+    {#each loads as row (row.id)}
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <tr class="cursor-pointer" onclick={() => (selected = row)}>
+        <td>
+          <a href={`/loads/${row.id}`} class="font-semibold text-accent hover:underline"
+             onclick={(e) => e.stopPropagation()}>{row.loadNumber}</a>
+        </td>
+        <td>{row.carrier?.name ?? '—'}</td>
+        <td>{row.driver ? `${row.driver.firstName} ${row.driver.lastName}` : '—'}</td>
+        <td>{row.shipments.length}</td>
+        <td>{row.dispatchedAt ? new Date(row.dispatchedAt).toLocaleString() : '—'}</td>
+        <td>{#if row.mode}<span class="rounded border border-edge px-1.5 text-xs text-neutral">{row.mode}</span>{:else}—{/if}</td>
+        <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
+      </tr>
+    {:else}
+      <tr><td colspan="7"><EmptyState message="No loads yet." /></td></tr>
+    {/each}
+  {/snippet}
+</Table>
 {/if}
 
-<div class="card" style="padding: 0;">
-  <table>
-    <thead>
-      <tr>
-        <th>Load #</th>
-        <th>Carrier</th>
-        <th>Driver</th>
-        <th>Shipments</th>
-        <th>Dispatched</th>
-        <th>Mode</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each loads as row (row.id)}
-        <tr>
-          <td><a href={`/loads/${row.id}`}><strong>{row.loadNumber}</strong></a></td>
-          <td>{row.carrier?.name ?? '—'}</td>
-          <td>{row.driver ? `${row.driver.firstName} ${row.driver.lastName}` : '—'}</td>
-          <td>{row.shipments.length}</td>
-          <td>{row.dispatchedAt ? new Date(row.dispatchedAt).toLocaleString() : '—'}</td>
-          <td>
-            {#if row.mode}
-              <span class="badge-mode">{row.mode}</span>
-            {:else}
-              <span class="muted">—</span>
-            {/if}
-          </td>
-          <td><StatusBadge status={row.status} /></td>
-        </tr>
-      {:else}
-        <tr><td colspan="7" class="muted">No loads yet.</td></tr>
-      {/each}
-    </tbody>
-  </table>
-</div>
-
-<style>
-  .badge-mode {
-    background: #e0e7ff;
-    color: #3730a3;
-    border: 1px solid #c7d2fe;
-    padding: 1px 7px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
-  }
-</style>
+{#if selected}
+  {@const sel = selected}
+  <Panel open={true} title={sel.loadNumber} href={`/loads/${sel.id}`} onclose={() => (selected = null)}>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Status</div>
+      <div class="text-sm text-ink"><Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge></div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Carrier</div>
+      <div class="text-sm text-ink">{sel.carrier?.name ?? 'Unassigned'}</div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Driver</div>
+      <div class="text-sm text-ink">{sel.driver ? `${sel.driver.firstName} ${sel.driver.lastName}` : 'Unassigned'}</div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Shipments</div>
+      <div class="text-sm text-ink">{sel.shipments.length}</div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Dispatched</div>
+      <div class="text-sm text-ink">{sel.dispatchedAt ? new Date(sel.dispatchedAt).toLocaleString() : '—'}</div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Mode</div>
+      <div class="text-sm text-ink">{sel.mode ?? 'All modes'}</div>
+    </div>
+  </Panel>
+{/if}

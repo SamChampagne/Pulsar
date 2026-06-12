@@ -3,6 +3,8 @@
   import { page } from '$app/state';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import PublicShell from '$lib/components/PublicShell.svelte';
+  import { Button, Field, Input } from '$lib/components/ui';
 
   const token = $derived(page.params.token);
 
@@ -31,37 +33,19 @@
   }
 </script>
 
-<div class="public-page">
-  <form class="card public-card" onsubmit={submit}>
-    <h1 style="margin-bottom: 4px;">Choose a password</h1>
-    <p class="muted">This activates your account or replaces your previous password.</p>
-    <div class="field">
-      <label for="password">New password (min. 8 characters)</label>
-      <input id="password" type="password" bind:value={password} required minlength="8" autocomplete="new-password" />
-    </div>
-    <div class="field">
-      <label for="confirm">Confirm password</label>
-      <input id="confirm" type="password" bind:value={confirm} required autocomplete="new-password" />
-    </div>
+<PublicShell title="Choose a password" subtitle="This activates your account or replaces your previous password.">
+  <form onsubmit={submit} class="flex flex-col gap-4">
+    <Field label="New password (min. 8 characters)">
+      <Input type="password" bind:value={password} required name="password" minlength={8} />
+    </Field>
+    <Field label="Confirm password">
+      <Input type="password" bind:value={confirm} required name="confirm" />
+    </Field>
     {#if error}
-      <p class="error-text">{error}</p>
+      <p class="text-sm text-danger">{error}</p>
     {/if}
-    <button class="btn" type="submit" disabled={loading} style="width: 100%; justify-content: center;">
+    <Button type="submit" {loading} disabled={loading}>
       {loading ? 'Saving…' : 'Set password'}
-    </button>
+    </Button>
   </form>
-</div>
-
-<style>
-  .public-page {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .public-card {
-    width: 380px;
-    padding: 32px;
-  }
-</style>
+</PublicShell>

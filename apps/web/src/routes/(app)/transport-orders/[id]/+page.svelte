@@ -1,7 +1,10 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { api, ApiError } from '$lib/api/client';
-  import StatusBadge from '$lib/components/StatusBadge.svelte';
+  import {
+    Badge, Button, Card, Field, PageHeader,
+    toneFor, labelFor,
+  } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
   import { toast } from '$lib/stores/toast';
 
@@ -40,6 +43,7 @@
   let order = $state<OrderDetail | null>(null);
   let events = $state<TimelineEvent[]>([]);
   let error = $state('');
+  let eventsError = $state(false);
 
   // Plan-with-split form
   let showPlanForm = $state(false);
@@ -78,16 +82,26 @@
   }
 
   async function load() {
+    error = '';
+    let detail: OrderDetail;
     try {
-      order = await api<OrderDetail>(`/transportation/transport-orders/${orderId}`);
+      detail = await api<OrderDetail>(`/transportation/transport-orders/${orderId}`);
+    } catch (e) {
+      error = e instanceof ApiError ? e.message : `Failed to load order — ${String(e)}`;
+      return;
+    }
+    order = detail;
+    eventsError = false;
+    try {
       const lists = await Promise.all(
-        order.shipments.map((s) =>
+        detail.shipments.map((s) =>
           api<TimelineEvent[]>('/transportation/tracking/events', { query: { shipmentId: s.id } }),
         ),
       );
-      events = lists.flat().sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
-    } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load order';
+      events = lists.flat().sort((a, b) => (b.occurredAt ?? '').localeCompare(a.occurredAt ?? ''));
+    } catch {
+      events = [];
+      eventsError = true;
     }
   }
 
@@ -123,204 +137,223 @@
 </script>
 
 {#if error}
-  <p class="error-text">{error}</p>
+  <p class="text-sm text-danger">{error}</p>
 {:else if order}
-  <div class="page-header">
-    <div style="display: flex; align-items: center; gap: 12px;">
-      <a href="/transport-orders" class="muted">← Orders</a>
-      <h1>{order.orderNumber}</h1>
-      <StatusBadge status={order.status} />
-      {#if order.mode}
-        <span class="badge-mode">{order.mode}</span>
-      {/if}
-    </div>
-    <div style="display: flex; gap: 8px;">
-      {#if order.status === 'DRAFT'}
-        <button class="btn" onclick={() => action('confirm')}>Confirm</button>
-        <button class="btn btn-danger" onclick={() => action('cancel')}>Cancel</button>
-      {:else if order.status === 'CONFIRMED'}
-        <button class="btn" onclick={() => (showPlanForm = !showPlanForm)}>Plan…</button>
-        <button class="btn btn-danger" onclick={() => action('cancel')}>Cancel</button>
-      {:else if order.status === 'PLANNED'}
-        <button class="btn btn-secondary" onclick={() => (showPlanForm = !showPlanForm)}>
-          Add shipment…
-        </button>
-      {:else if order.status === 'COMPLETED'}
-        <button class="btn" onclick={() => action('close')}>Close</button>
-      {/if}
-    </div>
-  </div>
-
-  {#if showPlanForm}
-    <form class="card" style="margin-bottom: 16px;" onsubmit={submitPlan}>
-      <h2 style="margin-top: 0;">Plan — split into shipments</h2>
-      <p class="muted">
-        One shipment per row. Leave a single empty row to create one shipment with the full order
-        quantities.
-      </p>
-      {#each splitRows as row, index (index)}
-        <div class="split-row">
-          <span class="muted">#{index + 1}</span>
-          <input type="number" min="0" placeholder="Weight (kg)" bind:value={row.weightKg} />
-          <input type="number" min="0" placeholder="Pallets" bind:value={row.palletCount} />
-          {#if splitRows.length > 1}
-            <button
-              class="btn btn-danger btn-sm"
-              type="button"
-              onclick={() => (splitRows = splitRows.filter((_, i) => i !== index))}
-            >
-              ✕
-            </button>
-          {/if}
-        </div>
-      {/each}
-      <div style="display: flex; gap: 8px; margin-top: 10px;">
-        <button
-          class="btn btn-secondary"
-          type="button"
-          onclick={() => (splitRows = [...splitRows, { weightKg: '', palletCount: '' }])}
-        >
-          Add shipment
-        </button>
-        <button class="btn" type="submit">Plan order</button>
-        <button class="btn btn-secondary" type="button" onclick={() => (showPlanForm = false)}>
-          Cancel
-        </button>
-      </div>
-    </form>
-  {/if}
-
-  <div class="detail-grid">
-    <div class="card">
-      <h2 style="margin-top: 0;">Order</h2>
-      <dl>
-        <dt>Customer</dt>
-        <dd>{order.customer.name} <span class="muted">({order.customer.code})</span></dd>
-        <dt>Customer reference</dt>
-        <dd>{order.customerReference ?? '—'}</dd>
-        <dt>Origin</dt>
-        <dd>{order.originLocation.name}, {order.originLocation.city}</dd>
-        <dt>Destination</dt>
-        <dd>{order.destinationLocation.name}, {order.destinationLocation.city}</dd>
-        <dt>Requested pickup</dt>
-        <dd>{fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}</dd>
-        <dt>Requested delivery</dt>
-        <dd>{fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}</dd>
-        <dt>Mode</dt>
-        <dd>{order.mode ?? '—'}</dd>
-        <dt>Weight / Volume / Pallets</dt>
-        <dd>
-          {order.totalWeightKg ?? '—'} kg / {order.totalVolumeM3 ?? '—'} m³ /
-          {order.palletCount ?? '—'}
-        </dd>
-        {#if order.notes}
-          <dt>Notes</dt>
-          <dd>{order.notes}</dd>
-        {/if}
-      </dl>
-    </div>
-
-    <div class="card">
-      <h2 style="margin-top: 0;">Shipments</h2>
-      {#if order.shipments.length === 0}
-        <p class="muted">No shipments yet — confirm then plan the order.</p>
-      {:else}
-        <table>
-          <thead>
-            <tr><th>Shipment #</th><th>Status</th><th>Load</th></tr>
-          </thead>
-          <tbody>
-            {#each order.shipments as shipment (shipment.id)}
-              <tr>
-                <td><strong>{shipment.shipmentNumber}</strong></td>
-                <td><StatusBadge status={shipment.status} /></td>
-                <td>
-                  {#if shipment.loadId}
-                    <a href={`/loads/${shipment.loadId}`}>View load</a>
-                  {:else}
-                    <a href="/shipments">Assign via Shipments</a>
-                  {/if}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+  <PageHeader title={order.orderNumber}>
+    {#snippet actions()}
+      <Badge tone={toneFor(order!.status)}>{labelFor(order!.status)}</Badge>
+      {#if order!.mode}
+        <Badge tone="info">{order!.mode}</Badge>
       {/if}
 
-      <h2>Tracking</h2>
-      <TrackingTimeline {events} />
-    </div>
-  </div>
+      {#if order!.status === 'DRAFT'}
+        <Button variant="primary" onclick={() => { void action('confirm'); }}>Confirm</Button>
+        <Button variant="danger" onclick={() => { void action('cancel'); }}>Cancel</Button>
+      {:else if order!.status === 'CONFIRMED'}
+        <Button variant="primary" onclick={() => { showPlanForm = !showPlanForm; }}>Plan…</Button>
+        <Button variant="danger" onclick={() => { void action('cancel'); }}>Cancel</Button>
+      {:else if order!.status === 'PLANNED'}
+        <Button variant="secondary" onclick={() => { showPlanForm = !showPlanForm; }}>Add shipment…</Button>
+      {:else if order!.status === 'COMPLETED'}
+        <Button variant="primary" onclick={() => { void action('close'); }}>Close</Button>
+      {/if}
+    {/snippet}
+  </PageHeader>
 
   {#if order.windowWarnings && order.windowWarnings.length > 0}
-    <div class="card" style="margin-top: 16px; border-left: 3px solid var(--color-warning, #f59e0b);">
-      <h2 style="margin-top: 0;">
-        ⚠ Avertissements de fenêtre
-        <span class="badge-warning">{order.windowWarnings.length}</span>
-      </h2>
-      <ul style="margin: 0; padding-left: 20px;">
-        {#each order.windowWarnings as w (w.shipmentNumber + w.field + w.kind)}
-          <li style="margin-bottom: 6px;">{warningText(w)}</li>
-        {/each}
-      </ul>
+    <div class="mb-4 flex flex-col gap-2">
+      {#each order.windowWarnings as w (w.shipmentNumber + w.field + w.kind)}
+        <div class="rounded-card bg-warn-soft text-warn p-3 text-sm">
+          {warningText(w)}
+        </div>
+      {/each}
     </div>
   {/if}
+
+  <div class="grid gap-4 lg:grid-cols-3">
+    <!-- Left 2/3: Shipments + Plan form -->
+    <div class="flex flex-col gap-4 lg:col-span-2">
+
+      <!-- Plan / Add shipment card -->
+      {#if showPlanForm}
+        <Card>
+          <h2 class="mb-1 font-semibold text-ink">
+            {order.status === 'PLANNED' ? 'Add shipment' : 'Plan — split into shipments'}
+          </h2>
+          <p class="mb-3 text-xs text-ink-muted">
+            One shipment per row. Leave a single empty row to create one shipment with the full order quantities.
+          </p>
+          <form onsubmit={submitPlan}>
+            <div class="flex flex-col gap-2">
+              {#each splitRows as row, index (index)}
+                <div class="grid grid-cols-[32px_1fr_1fr_40px] items-center gap-2">
+                  <span class="text-xs text-ink-muted">#{index + 1}</span>
+                  <Field label="Weight (kg)">
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Weight (kg)"
+                      bind:value={row.weightKg}
+                      class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+                    />
+                  </Field>
+                  <Field label="Pallets">
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Pallets"
+                      bind:value={row.palletCount}
+                      class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+                    />
+                  </Field>
+                  {#if splitRows.length > 1}
+                    <div class="mt-5">
+                      <Button variant="danger" onclick={() => { splitRows = splitRows.filter((_, i) => i !== index); }}>✕</Button>
+                    </div>
+                  {:else}
+                    <span></span>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+            <div class="mt-3 flex gap-2">
+              <Button
+                variant="secondary"
+                type="button"
+                onclick={() => { splitRows = [...splitRows, { weightKg: '', palletCount: '' }]; }}
+              >
+                Add shipment
+              </Button>
+              <Button variant="primary" type="submit">
+                {order.status === 'PLANNED' ? 'Add' : 'Plan order'}
+              </Button>
+              <Button variant="secondary" type="button" onclick={() => { showPlanForm = false; }}>Cancel</Button>
+            </div>
+          </form>
+        </Card>
+      {/if}
+
+      <!-- Shipments card -->
+      <Card>
+        <h2 class="mb-3 font-semibold text-ink">Shipments</h2>
+        {#if order.shipments.length === 0}
+          <p class="text-sm text-ink-muted">No shipments yet — confirm then plan the order.</p>
+        {:else}
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-edge text-xs text-ink-muted uppercase tracking-wide">
+                  <th class="pb-2 text-left font-semibold">Shipment #</th>
+                  <th class="pb-2 text-left font-semibold">Status</th>
+                  <th class="pb-2 text-left font-semibold">Load</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each order.shipments as shipment (shipment.id)}
+                  <tr class="border-b border-edge last:border-0">
+                    <td class="py-2 pr-2 font-semibold">{shipment.shipmentNumber}</td>
+                    <td class="py-2 pr-2">
+                      <Badge tone={toneFor(shipment.status)}>{labelFor(shipment.status)}</Badge>
+                    </td>
+                    <td class="py-2">
+                      {#if shipment.loadId}
+                        <a href={`/loads/${shipment.loadId}`} class="text-accent hover:underline">View load</a>
+                      {:else}
+                        <a href="/shipments" class="text-accent hover:underline">Assign via Shipments</a>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      </Card>
+
+      <!-- Tracking card -->
+      <Card>
+        <h2 class="mb-3 font-semibold text-ink">Tracking</h2>
+        {#if eventsError}
+          <p class="text-sm text-warn">Tracking events unavailable — reload to retry.</p>
+        {/if}
+        <TrackingTimeline {events} />
+      </Card>
+    </div>
+
+    <!-- Right 1/3: Summary + warnings -->
+    <div class="flex flex-col gap-4">
+
+      <!-- Summary card -->
+      <Card>
+        <h2 class="mb-3 font-semibold text-ink">Summary</h2>
+        <dl class="flex flex-col gap-2 text-sm">
+          <div class="flex items-start justify-between gap-2">
+            <dt class="text-ink-muted shrink-0">Customer</dt>
+            <dd class="font-medium text-right">{order.customer.name} <span class="text-xs text-ink-muted">({order.customer.code})</span></dd>
+          </div>
+          {#if order.customerReference}
+            <div class="flex items-center justify-between gap-2">
+              <dt class="text-ink-muted">Reference</dt>
+              <dd class="font-medium">{order.customerReference}</dd>
+            </div>
+          {/if}
+          <div class="flex items-start justify-between gap-2">
+            <dt class="text-ink-muted shrink-0">Origin</dt>
+            <dd class="font-medium text-right">{order.originLocation.name}, {order.originLocation.city}</dd>
+          </div>
+          <div class="flex items-start justify-between gap-2">
+            <dt class="text-ink-muted shrink-0">Destination</dt>
+            <dd class="font-medium text-right">{order.destinationLocation.name}, {order.destinationLocation.city}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-ink-muted">Pickup window</dt>
+            <dd class="font-medium">{fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-ink-muted">Delivery window</dt>
+            <dd class="font-medium">{fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-ink-muted">Mode</dt>
+            <dd class="font-medium">{order.mode ?? '—'}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-ink-muted">Weight</dt>
+            <dd class="font-medium">{order.totalWeightKg != null ? `${order.totalWeightKg} kg` : '—'}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-ink-muted">Volume</dt>
+            <dd class="font-medium">{order.totalVolumeM3 != null ? `${order.totalVolumeM3} m³` : '—'}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-ink-muted">Pallets</dt>
+            <dd class="font-medium">{order.palletCount ?? '—'}</dd>
+          </div>
+          {#if order.notes}
+            <div class="flex items-start justify-between gap-2">
+              <dt class="text-ink-muted shrink-0">Notes</dt>
+              <dd class="font-medium text-right">{order.notes}</dd>
+            </div>
+          {/if}
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-ink-muted">Created</dt>
+            <dd class="font-medium">{fmtDate(order.createdAt)}</dd>
+          </div>
+        </dl>
+      </Card>
+
+      {#if order.windowWarnings && order.windowWarnings.length > 0}
+        <div class="rounded-card bg-warn-soft text-warn p-3 text-sm">
+          <p class="mb-2 font-semibold">Window warnings ({order.windowWarnings.length})</p>
+          <ul class="flex flex-col gap-1">
+            {#each order.windowWarnings as w (w.shipmentNumber + w.field + w.kind)}
+              <li>{warningText(w)}</li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+    </div>
+  </div>
 {:else}
-  <p class="muted">Loading…</p>
+  <p class="text-sm text-ink-muted">Loading…</p>
 {/if}
-
-<style>
-  .badge-warning {
-    display: inline-block;
-    background: var(--color-warning, #f59e0b);
-    color: #fff;
-    border-radius: 10px;
-    padding: 1px 8px;
-    font-size: 12px;
-    font-weight: 600;
-    margin-left: 8px;
-  }
-
-  .badge-mode {
-    background: #e0e7ff;
-    color: #3730a3;
-    border: 1px solid #c7d2fe;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
-  }
-
-  .detail-grid {
-    display: grid;
-    grid-template-columns: 1fr 1.2fr;
-    gap: 16px;
-    align-items: start;
-  }
-
-  dl {
-    display: grid;
-    grid-template-columns: 160px 1fr;
-    row-gap: 8px;
-    margin: 0;
-  }
-
-  dt {
-    color: var(--color-text-muted);
-    font-size: 12px;
-  }
-
-  dd {
-    margin: 0;
-    font-size: 13px;
-  }
-
-  .split-row {
-    display: grid;
-    grid-template-columns: 32px 1fr 1fr 40px;
-    gap: 8px;
-    align-items: center;
-    margin-bottom: 8px;
-    max-width: 480px;
-  }
-</style>

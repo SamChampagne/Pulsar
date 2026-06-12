@@ -2,38 +2,12 @@
   import { toasts } from '$lib/stores/toast';
 </script>
 
-<div class="toasts">
+<div class="fixed bottom-5 right-5 z-50 flex flex-col gap-2">
   {#each $toasts as t (t.id)}
-    <div class="toast toast-{t.kind}">{t.message}</div>
+    <div
+      class={`rounded-card border border-edge bg-surface px-4 py-2.5 text-sm font-semibold shadow-pop max-w-sm ${t.kind === 'success' ? 'text-ok' : 'text-danger'}`}
+    >
+      {t.message}
+    </div>
   {/each}
 </div>
-
-<style>
-  .toasts {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    z-index: 100;
-  }
-
-  .toast {
-    padding: 10px 16px;
-    border-radius: var(--radius);
-    box-shadow: 0 4px 12px rgba(16, 24, 40, 0.18);
-    font-size: 13px;
-    font-weight: 550;
-    color: #fff;
-    max-width: 360px;
-  }
-
-  .toast-success {
-    background: var(--color-success);
-  }
-
-  .toast-error {
-    background: var(--color-danger);
-  }
-</style>

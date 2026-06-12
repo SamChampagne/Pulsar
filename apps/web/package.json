@@ -11,15 +11,21 @@
     "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
-    "@pulsar/shared": "workspace:*"
+    "@fontsource-variable/inter": "^5.2.8",
+    "@pulsar/shared": "workspace:*",
+    "leaflet": "^1.9.4",
+    "lucide-svelte": "^1.0.1"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.8",
     "@sveltejs/kit": "^2.21.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^22.19.20",
     "svelte": "^5.28.0",
     "svelte-check": "^4.1.7",
+    "tailwindcss": "^4.3.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"
   }

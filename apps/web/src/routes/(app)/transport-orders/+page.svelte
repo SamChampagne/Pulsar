@@ -2,7 +2,24 @@
   import type { Paginated } from '@pulsar/shared';
   import { suggestMode, TransportMode } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import StatusBadge from '$lib/components/StatusBadge.svelte';
+  import {
+    PageHeader,
+    Button,
+    FilterBar,
+    Select,
+    Input,
+    Field,
+    Table,
+    Badge,
+    EmptyState,
+    Panel,
+    Modal,
+    Card,
+    Skeleton,
+    toneFor,
+    labelFor,
+  } from '$lib/components/ui';
+  import { toast } from '$lib/stores/toast';
 
   interface OrderRow {
     id: string;
@@ -28,7 +45,9 @@
   let total = $state(0);
   let search = $state('');
   let error = $state('');
+  let selected = $state<OrderRow | null>(null);
   let showForm = $state(false);
+  let loading = $state(true);
 
   // Create form state
   let customers = $state<Option[]>([]);
@@ -67,6 +86,8 @@
       total = result.total;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load orders';
+    } finally {
+      loading = false;
     }
   }
 
@@ -116,12 +137,11 @@
   }
 
   async function action(id: string, name: 'confirm' | 'plan' | 'cancel') {
-    error = '';
     try {
       await api(`/transportation/transport-orders/${id}/${name}`, { method: 'POST' });
       await load();
     } catch (e) {
-      error = e instanceof ApiError ? e.message : `Failed to ${name} order`;
+      toast.error(e instanceof ApiError ? e.message : `Failed to ${name} order`);
     }
   }
 
@@ -130,165 +150,170 @@
   });
 </script>
 
-<div class="page-header">
-  <h1>Transport Orders <span class="muted">({total})</span></h1>
-  <button class="btn" onclick={openForm}>New order</button>
-</div>
+<PageHeader title="Transport Orders" count={total}>
+  {#snippet actions()}
+    <Button onclick={openForm}>New order</Button>
+  {/snippet}
+</PageHeader>
 
-{#if error}
-  <p class="error-text">{error}</p>
-{/if}
+{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
-{#if showForm}
-  <form class="card" style="margin-bottom: 20px;" onsubmit={createOrder}>
-    <h2 style="margin-top: 0;">New transport order</h2>
-    <div class="form-grid">
-      <div class="field">
-        <label for="customer">Customer</label>
-        <select id="customer" bind:value={form.customerId} required>
-          <option value="" disabled>Select…</option>
-          {#each customers as c (c.id)}
-            <option value={c.id}>{c.name}</option>
-          {/each}
-        </select>
-      </div>
-      <div class="field">
-        <label for="reference">Customer reference</label>
-        <input id="reference" bind:value={form.customerReference} placeholder="PO-12345" />
-      </div>
-      <div class="field">
-        <label for="origin">Origin</label>
-        <select id="origin" bind:value={form.originLocationId} required>
-          <option value="" disabled>Select…</option>
-          {#each locations as l (l.id)}
-            <option value={l.id}>{l.name}</option>
-          {/each}
-        </select>
-      </div>
-      <div class="field">
-        <label for="destination">Destination</label>
-        <select id="destination" bind:value={form.destinationLocationId} required>
-          <option value="" disabled>Select…</option>
-          {#each locations as l (l.id)}
-            <option value={l.id}>{l.name}</option>
-          {/each}
-        </select>
-      </div>
-      <div class="field">
-        <label for="pickup-from">Pickup from</label>
-        <input id="pickup-from" type="date" bind:value={form.requestedPickupEarly} />
-      </div>
-      <div class="field">
-        <label for="pickup-to">Pickup to (optional)</label>
-        <input id="pickup-to" type="date" bind:value={form.requestedPickupLate} />
-      </div>
-      <div class="field">
-        <label for="delivery-from">Delivery from</label>
-        <input id="delivery-from" type="date" bind:value={form.requestedDeliveryEarly} />
-      </div>
-      <div class="field">
-        <label for="delivery-to">Delivery to (optional)</label>
-        <input id="delivery-to" type="date" bind:value={form.requestedDeliveryLate} />
-      </div>
-      <div class="field">
-        <label for="weight">Weight (kg)</label>
-        <input id="weight" type="number" min="0" bind:value={form.totalWeightKg} />
-      </div>
-      <div class="field">
-        <label for="pallets">Pallets</label>
-        <input id="pallets" type="number" min="0" bind:value={form.palletCount} />
-      </div>
-      <div class="field">
-        <label for="mode">Mode</label>
-        <select id="mode" bind:value={form.mode}>
-          {#each Object.values(TransportMode) as m (m)}
-            <option value={m}>{m}</option>
-          {/each}
-        </select>
-        {#if modeSuggestion()}
-          <small class="muted">Suggested: {modeSuggestion()} based on weight</small>
-        {/if}
-      </div>
-    </div>
-    <div style="display: flex; gap: 8px;">
-      <button class="btn" type="submit">Create</button>
-      <button class="btn btn-secondary" type="button" onclick={() => (showForm = false)}>
-        Cancel
-      </button>
-    </div>
-  </form>
-{/if}
-
-<div class="card" style="padding: 0;">
-  <div style="padding: 14px 12px;">
+<FilterBar>
+  <div class="w-72">
     <input
       placeholder="Search order #, reference, customer…"
       bind:value={search}
-      onkeydown={(e) => e.key === 'Enter' && load()}
-      style="max-width: 320px;"
+      onkeydown={(e) => { if (e.key === 'Enter') void load(); }}
+      class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
     />
   </div>
-  <table>
-    <thead>
-      <tr>
-        <th>Order #</th>
-        <th>Customer</th>
-        <th>Origin</th>
-        <th>Destination</th>
-        <th>Pickup</th>
-        <th>Mode</th>
-        <th>Status</th>
-        <th></th>
+</FilterBar>
+
+{#if loading}
+  <Card padded={false}><Skeleton rows={6} /></Card>
+{:else}
+<Table>
+  {#snippet head()}
+    <th>Order #</th><th>Customer</th><th>Origin → Destination</th>
+    <th>Mode</th><th>Requested pickup</th><th>Status</th>
+  {/snippet}
+  {#snippet body()}
+    {#each orders as row (row.id)}
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <tr class="cursor-pointer" onclick={() => (selected = row)}>
+        <td>
+          <a href={`/transport-orders/${row.id}`} class="font-semibold text-accent hover:underline"
+             onclick={(e) => e.stopPropagation()}>{row.orderNumber}</a>
+        </td>
+        <td>{row.customer.name}</td>
+        <td>{row.originLocation.city} → {row.destinationLocation.city}</td>
+        <td>
+          {#if row.mode}
+            <span class="rounded border border-edge px-1.5 text-xs text-neutral">{row.mode}</span>
+          {:else}
+            —
+          {/if}
+        </td>
+        <td>{fmtWindow(row.requestedPickupEarly, row.requestedPickupLate)}</td>
+        <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
       </tr>
-    </thead>
-    <tbody>
-      {#each orders as order (order.id)}
-        <tr>
-          <td><a href={`/transport-orders/${order.id}`}><strong>{order.orderNumber}</strong></a></td>
-          <td>{order.customer.name}</td>
-          <td>{order.originLocation.city}</td>
-          <td>{order.destinationLocation.city}</td>
-          <td>{fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}</td>
-          <td>
-            {#if order.mode}
-              <span class="badge badge-mode">{order.mode}</span>
-            {:else}
-              <span class="muted">—</span>
-            {/if}
-          </td>
-          <td><StatusBadge status={order.status} /></td>
-          <td style="text-align: right; white-space: nowrap;">
-            {#if order.status === 'DRAFT'}
-              <button class="btn btn-sm" onclick={() => action(order.id, 'confirm')}>Confirm</button>
-              <button class="btn btn-secondary btn-sm" onclick={() => action(order.id, 'cancel')}>
-                Cancel
-              </button>
-            {:else if order.status === 'CONFIRMED'}
-              <button class="btn btn-sm" onclick={() => action(order.id, 'plan')}>Plan</button>
-            {/if}
-          </td>
-        </tr>
-      {:else}
-        <tr><td colspan="8" class="muted">No transport orders yet.</td></tr>
-      {/each}
-    </tbody>
-  </table>
-</div>
+    {:else}
+      <tr><td colspan="6"><EmptyState message="No transport orders yet." /></td></tr>
+    {/each}
+  {/snippet}
+</Table>
+{/if}
 
-<style>
-  .form-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 20px;
-  }
+{#if selected}
+  {@const sel = selected}
+  <Panel open={true} title={sel.orderNumber} href={`/transport-orders/${sel.id}`} onclose={() => (selected = null)}>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Status</div>
+      <div class="text-sm text-ink"><Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge></div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Customer</div>
+      <div class="text-sm text-ink">{sel.customer.name}</div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Origin → Destination</div>
+      <div class="text-sm text-ink">{sel.originLocation.name}, {sel.originLocation.city} → {sel.destinationLocation.name}, {sel.destinationLocation.city}</div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Requested pickup</div>
+      <div class="text-sm text-ink">{fmtWindow(sel.requestedPickupEarly, sel.requestedPickupLate)}</div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Requested delivery</div>
+      <div class="text-sm text-ink">{fmtWindow(sel.requestedDeliveryEarly, sel.requestedDeliveryLate)}</div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Mode</div>
+      <div class="text-sm text-ink">{sel.mode ?? '—'}</div>
+    </div>
+    {#if sel.customerReference}
+      <div class="mb-3">
+        <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Reference</div>
+        <div class="text-sm text-ink">{sel.customerReference}</div>
+      </div>
+    {/if}
+  {#snippet footer()}
+    {#if sel.status === 'DRAFT'}
+      <Button variant="primary" onclick={async () => { await action(sel.id, 'confirm'); selected = null; }}>Confirm</Button>
+      <Button variant="danger" onclick={async () => { await action(sel.id, 'cancel'); selected = null; }}>Cancel</Button>
+    {:else if sel.status === 'CONFIRMED'}
+      <Button variant="primary" onclick={async () => { await action(sel.id, 'plan'); selected = null; }}>Plan</Button>
+    {/if}
+  {/snippet}
+  </Panel>
+{/if}
 
-  .badge-mode {
-    background: #e0e7ff;
-    color: #3730a3;
-    border: 1px solid #c7d2fe;
-    padding: 1px 7px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
-  }
-</style>
+<Modal bind:open={showForm} title="New transport order">
+  {#snippet children()}
+    <form onsubmit={createOrder}>
+      <div class="grid grid-cols-2 gap-x-4 gap-y-3">
+        <Field label="Customer">
+          <Select bind:value={form.customerId} required>
+            <option value="" disabled>Select…</option>
+            {#each customers as c (c.id)}
+              <option value={c.id}>{c.name}</option>
+            {/each}
+          </Select>
+        </Field>
+        <Field label="Customer reference">
+          <Input bind:value={form.customerReference} placeholder="PO-12345" />
+        </Field>
+        <Field label="Origin">
+          <Select bind:value={form.originLocationId} required>
+            <option value="" disabled>Select…</option>
+            {#each locations as l (l.id)}
+              <option value={l.id}>{l.name}</option>
+            {/each}
+          </Select>
+        </Field>
+        <Field label="Destination">
+          <Select bind:value={form.destinationLocationId} required>
+            <option value="" disabled>Select…</option>
+            {#each locations as l (l.id)}
+              <option value={l.id}>{l.name}</option>
+            {/each}
+          </Select>
+        </Field>
+        <Field label="Pickup from">
+          <Input type="date" bind:value={form.requestedPickupEarly} />
+        </Field>
+        <Field label="Pickup to (optional)">
+          <Input type="date" bind:value={form.requestedPickupLate} />
+        </Field>
+        <Field label="Delivery from">
+          <Input type="date" bind:value={form.requestedDeliveryEarly} />
+        </Field>
+        <Field label="Delivery to (optional)">
+          <Input type="date" bind:value={form.requestedDeliveryLate} />
+        </Field>
+        <Field label="Weight (kg)">
+          <Input type="number" min="0" bind:value={form.totalWeightKg} />
+        </Field>
+        <Field label="Pallets">
+          <Input type="number" min="0" bind:value={form.palletCount} />
+        </Field>
+        <div class="col-span-2">
+          <Field label="Mode">
+            <Select bind:value={form.mode}>
+              {#each Object.values(TransportMode) as m (m)}
+                <option value={m}>{m}</option>
+              {/each}
+            </Select>
+            {#if modeSuggestion()}
+              <p class="mt-1 text-xs text-ink-muted">Suggested: {modeSuggestion()} based on weight</p>
+            {/if}
+          </Field>
+        </div>
+      </div>
+      <div class="mt-4 flex justify-end gap-2 border-t border-edge pt-3">
+        <Button variant="secondary" onclick={() => { showForm = false; }}>Cancel</Button>
+        <Button variant="primary" type="submit">Create</Button>
+      </div>
+    </form>
+  {/snippet}
+</Modal>

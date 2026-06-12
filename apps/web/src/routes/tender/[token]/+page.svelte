@@ -1,7 +1,10 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { api, ApiError } from '$lib/api/client';
-  import StatusBadge from '$lib/components/StatusBadge.svelte';
+  import PublicShell from '$lib/components/PublicShell.svelte';
+  import { Badge, Button, Card, Field, Input } from '$lib/components/ui';
+  import { toneFor, labelFor } from '$lib/components/ui';
+  import { formatDateTime } from '$lib/format';
 
   interface TenderView {
     status: string;
@@ -59,7 +62,7 @@
 
   const fmtWindow = (early: string | null, late?: string | null) =>
     early
-      ? new Date(early).toLocaleString() + (late ? ' → ' + new Date(late).toLocaleString() : '')
+      ? formatDateTime(early) + (late ? ' → ' + formatDateTime(late) : '')
       : '—';
 
   const totalWeight = $derived(
@@ -74,23 +77,25 @@
   });
 </script>
 
-<div class="public-page">
-  <div class="card public-card">
-    {#if error}
-      <p class="error-text">{error}</p>
-    {:else if tender}
-      <p class="muted" style="margin-top: 0;">Transport offer from <strong>{tender.shipper}</strong></p>
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <h1>{tender.load.loadNumber}</h1>
-        <StatusBadge status={tender.status} />
-      </div>
-      <p class="muted">For {tender.carrier} · expires {new Date(tender.expiresAt).toLocaleString()}</p>
+<PublicShell maxWidth="max-w-2xl">
+  {#if error}
+    <p class="text-sm text-danger">{error}</p>
+  {:else if tender}
+    <p class="mb-1 text-sm text-ink-muted">Transport offer from <strong>{tender.shipper}</strong></p>
+    <div class="mb-1 flex items-center gap-3">
+      <h1 class="text-xl font-bold text-ink">{tender.load.loadNumber}</h1>
+      <Badge tone={toneFor(tender.status)}>{labelFor(tender.status)}</Badge>
+    </div>
+    <p class="mb-4 text-sm text-ink-muted">
+      For {tender.carrier} · expires {formatDateTime(tender.expiresAt)}
+    </p>
 
-      {#if tender.message}
-        <p>{tender.message}</p>
-      {/if}
+    {#if tender.message}
+      <p class="mb-4 text-sm text-ink">{tender.message}</p>
+    {/if}
 
-      <p>
+    <Card>
+      <p class="text-sm text-ink">
         <strong>{tender.load.shipments.length}</strong> shipment(s) ·
         <strong>{totalWeight.toLocaleString()}</strong> kg ·
         <strong>{totalPallets}</strong> pallets
@@ -98,68 +103,62 @@
           · {tender.load.route.totalDistanceKm} km
         {/if}
       </p>
+    </Card>
 
-      {#if tender.load.route}
-        <table>
+    {#if tender.load.route}
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full text-sm">
           <thead>
-            <tr><th>#</th><th>Type</th><th>Location</th><th>Planned</th></tr>
+            <tr class="border-b border-edge text-left text-xs font-semibold text-ink-muted uppercase tracking-wide">
+              <th class="pb-2 pr-4">#</th>
+              <th class="pb-2 pr-4">Type</th>
+              <th class="pb-2 pr-4">Location</th>
+              <th class="pb-2">Planned window</th>
+            </tr>
           </thead>
           <tbody>
             {#each tender.load.route.stops as stop (stop.sequence)}
-              <tr>
-                <td>{stop.sequence}</td>
-                <td>{stop.type}</td>
-                <td>{stop.location.name}, {stop.location.city}{stop.location.state ? `, ${stop.location.state}` : ''}</td>
-                <td>{fmtWindow(stop.plannedArrivalEarly, stop.plannedArrivalLate)}</td>
+              <tr class="border-b border-edge last:border-0">
+                <td class="py-2 pr-4 text-ink-muted">{stop.sequence}</td>
+                <td class="py-2 pr-4 font-medium text-ink">{stop.type}</td>
+                <td class="py-2 pr-4 text-ink">
+                  {stop.location.name}, {stop.location.city}{stop.location.state ? `, ${stop.location.state}` : ''}
+                </td>
+                <td class="py-2 text-ink-muted">{fmtWindow(stop.plannedArrivalEarly, stop.plannedArrivalLate)}</td>
               </tr>
             {/each}
           </tbody>
         </table>
-      {/if}
-
-      {#if tender.status === 'PENDING'}
-        <div style="display: flex; gap: 10px; margin-top: 20px;">
-          <button class="btn" disabled={busy} onclick={() => respond(true)}>Accept</button>
-          <button class="btn btn-danger" disabled={busy} onclick={() => (showDecline = !showDecline)}>
-            Decline
-          </button>
-        </div>
-        {#if showDecline}
-          <div style="margin-top: 12px;">
-            <div class="field">
-              <label for="reason">Reason (optional)</label>
-              <input id="reason" bind:value={declineReason} placeholder="No capacity this week" />
-            </div>
-            <button class="btn btn-danger" disabled={busy} onclick={() => respond(false)}>
-              Confirm decline
-            </button>
-          </div>
-        {/if}
-      {:else if tender.status === 'ACCEPTED'}
-        <p class="muted">✅ Offer accepted. The shipper will dispatch the load.</p>
-      {:else if tender.status === 'DECLINED'}
-        <p class="muted">This offer was declined.</p>
-      {:else}
-        <p class="muted">This offer is no longer open ({tender.status.toLowerCase()}).</p>
-      {/if}
-    {:else}
-      <p class="muted">Loading…</p>
+      </div>
     {/if}
-    <p class="muted" style="margin-bottom: 0; font-size: 11px;">Powered by Pulsar</p>
-  </div>
-</div>
 
-<style>
-  .public-page {
-    min-height: 100vh;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding: 32px 16px;
-  }
+    {#if tender.status === 'PENDING'}
+      <div class="mt-6 flex gap-3">
+        <Button variant="primary" disabled={busy} onclick={() => respond(true)}>Accept</Button>
+        <Button variant="danger" disabled={busy} onclick={() => { showDecline = !showDecline; }}>
+          Decline
+        </Button>
+      </div>
+      {#if showDecline}
+        <div class="mt-4 flex flex-col gap-3">
+          <Field label="Reason (optional)">
+            <Input bind:value={declineReason} placeholder="No capacity this week" />
+          </Field>
+          <Button variant="danger" disabled={busy} onclick={() => respond(false)}>
+            Confirm decline
+          </Button>
+        </div>
+      {/if}
+    {:else if tender.status === 'ACCEPTED'}
+      <p class="mt-4 text-sm text-ok">Offer accepted. The shipper will dispatch the load.</p>
+    {:else if tender.status === 'DECLINED'}
+      <p class="mt-4 text-sm text-ink-muted">This offer was declined.</p>
+    {:else}
+      <p class="mt-4 text-sm text-ink-muted">This offer is no longer open ({tender.status.toLowerCase()}).</p>
+    {/if}
 
-  .public-card {
-    width: 100%;
-    max-width: 640px;
-  }
-</style>
+    <p class="mt-6 text-center text-xs text-ink-faint">Powered by Pulsar</p>
+  {:else}
+    <p class="text-sm text-ink-muted">Loading…</p>
+  {/if}
+</PublicShell>
