@@ -23,6 +23,7 @@
 | 7.3 — Billing sell-side | ✅ | **Relevés client** depuis les ordres livrés et ratés (`CustomerInvoiceStatus` DRAFT→APPROVED→SENT→PAID) ; `RatingService.rateOrder` (taux client uniquement, lane ou catch-all client, date de référence = dernier `actualDeliveryAt` sinon today, moins cher retenu) ; un relevé par devise (`groupByCurrency`) ; anti-double-billing (`transportOrderId @unique`) ; échappatoire DRAFT (suppression libère les ordres) ; envoi conditionné sur email client + succès email (libellé « Billing statement ») ; 4 permissions `billing.customer-invoices.*` ; séquence CINV ; 8 tests e2e ; 13ᵉ migration |
 | 7.4 — Durcissements différés phase 6 | ✅ | **MFA plateforme** (TOTP otplib ±1, `totpSecret enc:v1` + `mfaEnabledAt` + `recoveryCodes` bcrypt à usage unique, step tokens `mfa-enroll`/`mfa-pending` rejetés par `PlatformJwtStrategy`, 3 branches login dont `PLATFORM_MFA_ENFORCED`, `enroll-start` authentifié) ; **throttling** `PlatformAuthController` 20 req/min/IP ; **`@PlatformController()`** composite `Public + PlatformGuard` ; **cache `Issuer.discover`** TTL 1 h + retry-once ; **slug tenant dans le state OIDC** vérifié au callback ; **`csvSafe()`** sur les champs libres de l'export CSV ; **`updateMany` conditionnel** sur les transitions buy-side + `createDrafts` transactionnel `P2002 → 409` ; 6 tests e2e ; 14ᵉ migration |
 | 8 — Ligne MVP audit fermée (BOL, modes, exceptions) | ✅ | **BOL généré** : `buildBolData` pure (shipper = 1er stop PICKUP / fallback originLocation ; consignee = dernier DELIVERY / fallback destinationLocation), `renderBol` pdfkit (LETTER, 3 blocs signature + lignes exceptions + conditions), `BolService.generate` (DISPATCHED+, séquence BOL-, entityType `bill-of-lading`, audité), `POST /loads/:id/bol`, `GET /loads/:id/documents`, `GET /public/driver/:token/bol` (token-résolu, pas d'id interne dans le payload public, 404 si pas encore généré) ; **mode de transport** : enum `TransportMode` (FTL/LTL/PARCEL) sur `TransportOrder`, `Load`, `Rate` (null = tous modes), filtrage des deux côtés au rating, héritage premier-assign, `modeWarning` non bloquant, `suggestMode` hint (≤30 kg PARCEL / ≤4000 kg LTL / au-dessus FTL) — arbitrage à seuils non couvert (§4) ; **moteur d'exceptions** : `isLate` pure, cron 5 min + `tick(now)`, dedup `(stopId, deadline)`, événement `DELAYED` + `Notification` tenant (userId nullable, read-by-one = read-for-all v1), cloche UI ; 15ᵉ migration |
+| 9 — Refonte UI (console hybride) | ✅ | **Design system maison** (Tailwind 4, tokens CSS prêts dark-mode, 17 composants `$lib/components/ui` + barrel), **shell repliable** (sidebar sombre par groupes, palette ⌘K navigation+actions avec slot assistant IA réservé, cloche notifications, pile d'overlays Escape), **28 pages refondues** (pattern liste+Panel, densité commutable persistée, skeletons, Modals form-in-children, helpers format), **LoadMap Leaflet** (détail load interne : stops + dernière position, lecture seule), pages publiques re-skinnées **sans exposition supplémentaire** (notes tender et liste shipments chauffeur retirées au passage), plan plateforme distinct (badge danger). **Zéro changement API** (`git diff main -- apps/api packages` vide) ; 93 e2e + 89 unit verts. Carte publique différée (payload sans coordonnées) ; UI MFA plateforme inexistante (gap préexistant noté) |
 
 **La boucle économique complète fonctionne** : le client commande depuis son portail →
 confirmation → planification (split possible) → tender automatique par lane avec courriel →
@@ -31,8 +32,8 @@ POD avec photo → BOL PDF généré → détection automatique des retards → 
 brouillon → approbation → relevé client.
 
 **Chiffres** : 3 modules métier actifs (transportation, customer-portal, billing) + le plan
-d'administration plateforme ; 15 migrations ; ~78 endpoints ; pages web enrichies (BOL, cloche
-notifications).
+d'administration plateforme ; 16 migrations ; ~78 endpoints ; 28 pages web sur le design
+system phase 9 (Tailwind 4, 17 composants partagés, carte Leaflet sur le détail load).
 
 ## Carte de la documentation
 
@@ -46,17 +47,27 @@ notifications).
 | Conventions REST | [api-conventions.md](./api-conventions.md) |
 | Démarrage local | [getting-started.md](./getting-started.md) |
 
-## Prochaine session — refonte UI (décision produit du 2026-06-11)
+## Prochaine session — phase 10 : OSRM + carte opérationnelle (décidé au brainstorming du 2026-06-12)
 
-**Chantier décidé : refonte complète de l'UI du SPA.** Verdict du test manuel de fin de
-phase 8 : l'interface actuelle est « de basse gamme » — fonctionnelle mais pas vendable.
-Périmètre à cadrer en brainstorming (design system, navigation, densité des tableaux,
-pages publiques incluses ou non), puis spec → plan → exécution comme les phases
-précédentes. Le skill `frontend-design` est l'outil indiqué pour ce chantier.
-Contrainte : ne PAS toucher aux contrats API (le chantier est purement front) ; les
-249 tests doivent rester verts.
+La refonte UI (phase 9) est livrée — spec : [2026-06-12-refonte-ui-design.md](./superpowers/specs/2026-06-12-refonte-ui-design.md).
+**Test manuel humain encore à faire** sur la branche `phase-9` avant merge (les e2e ne
+couvrent pas le rendu visuel).
 
-Après la refonte UI, les deux options stratégiques restent ouvertes (ci-dessous).
+**Phase 10 cadrée (hors périmètre phase 9, décidé au brainstorming)** :
+- Moteur carto **OSRM** (backend) : distances/temps automatiques sur les routes,
+  fiabilise PER_KM (recommandation audit §7 « intégrer, ne pas écrire » ; Fleetbase
+  valide le pattern `OSRM_HOST` configurable).
+- **Carte opérationnelle live** sur le dashboard : loads actifs, dernières positions,
+  retards en rouge (le composant `LoadMap` de la phase 9 est le germe).
+- **Décision d'exposition** : coordonnées dans le payload public de suivi (oui/non)
+  pour la carte publique — différée de la phase 9 exprès.
+
+Puis **phase 11 : différenciateurs IA** (§19.2 agent opérationnel avec file « actions
+proposées » — la palette ⌘K de la phase 9 lui réserve déjà sa place dans l'UI ;
+§19.1 ingestion de grilles ; §19.4 extraction factures PDF). Voir le benchmark
+Fleetbase (2026-06-12) : aucune IA chez eux, c'est l'axe de différenciation.
+
+Les deux options stratégiques antérieures restent valides (ci-dessous).
 
 La **phase 8 est complète**. Les trois trous sous la ligne MVP de l'[audit TMS](./audit-tms-2026-06-10.md)
 (tarification §5, BOL §9, exceptions §10) sont tous soldés (§5 et §11 par les phases 7.1/7.3,
@@ -87,6 +98,10 @@ premier client réel :
 - Webhooks limités à 5 tentatives ; configs d'intégration legacy encore en clair jusqu'au
   premier passage du script `reencrypt-secrets` (sweep initial documenté dans runbooks.md).
 - L'utilisateur `service-account@pulsar.local` apparaît dans la page Users (cosmétique).
+- **L'UI du login plateforme n'a aucun écran MFA** (constat phase 9) : le backend 7.4
+  gère TOTP/recovery/step-tokens, mais le front `platform/login` ne fait que
+  email+mot de passe — un compte avec MFA actif ne peut pas compléter son login en UI.
+  À traiter quand `PLATFORM_MFA_ENFORCED` sera activé quelque part.
 - Le driver S3 (restauré en phase 6 après l'incident `.gitignore`) n'a jamais tourné en CI
   (CI = driver local) — smoke test contre un vrai bucket avant le premier déploiement S3.
 - `pnpm-workspace.yaml` local porte des placeholders auto-générés par pnpm (« set this to
