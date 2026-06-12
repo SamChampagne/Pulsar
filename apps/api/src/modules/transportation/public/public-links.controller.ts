@@ -14,7 +14,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { StopStatus } from '@pulsar/shared';
 import type { Response } from 'express';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Public } from '../../../common/decorators/public.decorator';
 import { TendersService } from '../tenders/tenders.service';
 import { BolService } from '../bol/bol.service';
@@ -42,6 +42,18 @@ class DriverPodDto {
   @IsOptional()
   @IsString()
   notes?: string;
+}
+
+class DriverPositionDto {
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude!: number;
+
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude!: number;
 }
 
 /**
@@ -104,6 +116,13 @@ export class PublicLinksController {
   @Post('driver/:token/pod')
   driverPod(@Param('token') token: string, @Body() dto: DriverPodDto) {
     return this.links.driverCreatePod(token, dto);
+  }
+
+  /** Geolocation ping from the driver page. Deduped server-side (≥60s apart). */
+  @Post('driver/:token/position')
+  @HttpCode(200)
+  driverPosition(@Param('token') token: string, @Body() dto: DriverPositionDto) {
+    return this.links.driverRecordPosition(token, dto.latitude, dto.longitude);
   }
 
   @Post('driver/:token/pod/:shipmentId/photo')

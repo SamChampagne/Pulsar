@@ -1,7 +1,19 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { ShipmentStatus, StopStatus } from '@pulsar/shared';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  LoadStatus,
+  MODULE_KEYS,
+  ShipmentStatus,
+  StopStatus,
+  TrackingEventType,
+} from '@pulsar/shared';
 import { DocumentsService } from '../../../core/documents/documents.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
 import { RoutesService } from '../routes/routes.service';
 import { TrackingService } from '../tracking/tracking.service';
 
@@ -19,6 +31,7 @@ export class PublicLinksService {
     private readonly routes: RoutesService,
     private readonly tracking: TrackingService,
     private readonly documents: DocumentsService,
+    private readonly modulesCache: TenantModulesCacheService,
   ) {}
 
   // --- Customer tracking -----------------------------------------------------
@@ -155,5 +168,38 @@ export class PublicLinksService {
       mimeType: file.mimetype,
       body: file.buffer,
     });
+  }
+
+  /** Driver position ping. Bounded DTO upstream, deduped 60s here. */
+  async driverRecordPosition(token: string, latitude: number, longitude: number) {
+    const load = await this.loadByDriverToken(token);
+    // Public routes bypass ModulesGuard — re-check activation (CLAUDE.md rule 15).
+    const enabled = await this.modulesCache.getEnabledKeys(load.tenantId);
+    if (!enabled.has(MODULE_KEYS.TRANSPORTATION)) {
+      throw new ForbiddenException('Transportation is not enabled for this shipper');
+    }
+    if (load.status !== LoadStatus.DISPATCHED && load.status !== LoadStatus.IN_TRANSIT) {
+      throw new BadRequestException(
+        'Positions can only be recorded on DISPATCHED or IN_TRANSIT loads',
+      );
+    }
+    const last = await this.prisma.trackingEvent.findFirst({
+      where: { tenantId: load.tenantId, loadId: load.id, type: TrackingEventType.POSITION_UPDATE },
+      orderBy: { occurredAt: 'desc' },
+      select: { occurredAt: true },
+    });
+    if (last && Date.now() - last.occurredAt.getTime() < 60_000) {
+      return { recorded: false }; // at most one stored position per minute per load
+    }
+    await this.prisma.trackingEvent.create({
+      data: {
+        tenantId: load.tenantId,
+        type: TrackingEventType.POSITION_UPDATE,
+        loadId: load.id,
+        latitude,
+        longitude,
+      },
+    });
+    return { recorded: true };
   }
 }
