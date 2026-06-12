@@ -1,7 +1,19 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { getPlatformToken, platformApi, PlatformApiError } from '$lib/api/platform';
-  import StatusBadge from '$lib/components/StatusBadge.svelte';
+  import {
+    Badge,
+    Button,
+    EmptyState,
+    Field,
+    Input,
+    Modal,
+    PageHeader,
+    Skeleton,
+    Table,
+    toneFor,
+    labelFor,
+  } from '$lib/components/ui';
 
   interface TenantRow {
     id: string;
@@ -16,6 +28,7 @@
   let error = $state('');
   let inviteUrl = $state('');
   let showForm = $state(false);
+  let loadingData = $state(true);
 
   let slug = $state('');
   let name = $state('');
@@ -30,10 +43,13 @@
       void goto('/platform/login');
       return;
     }
+    loadingData = true;
     try {
       tenants = await platformApi<TenantRow[]>('/platform/tenants');
     } catch (e) {
       error = e instanceof PlatformApiError ? e.message : 'Failed to load tenants';
+    } finally {
+      loadingData = false;
     }
   }
 
@@ -79,68 +95,118 @@
   });
 </script>
 
-<div class="page-header">
-  <h1>Tenants</h1>
-  <button class="btn" onclick={() => (showForm = !showForm)}>
-    {showForm ? 'Cancel' : 'New tenant'}
-  </button>
-</div>
+<!-- Platform context marker: thin danger top border -->
+<div class="border-t-4 border-danger">
+  <div class="mx-auto max-w-4xl px-6 py-6">
+    <!-- Platform identity header -->
+    <div class="mb-6 flex items-center gap-3 border-b border-edge pb-4">
+      <span class="text-xl font-bold text-ink">
+        <span class="text-accent">⬢</span> PULSAR
+      </span>
+      <Badge tone="danger">Platform admin</Badge>
+    </div>
 
-{#if error}<p class="error-text">{error}</p>{/if}
-{#if inviteUrl}
-  <div class="card" style="padding: 12px; margin-bottom: 16px;">
-    <strong>Tenant created.</strong> Admin invitation link (also emailed):
-    <code style="word-break: break-all;">{inviteUrl}</code>
+    <PageHeader title="Tenants" count={loadingData ? undefined : tenants.length}>
+      {#snippet actions()}
+        <Button variant="primary" onclick={() => { showForm = true; }}>New tenant</Button>
+      {/snippet}
+    </PageHeader>
+
+    {#if error}
+      <p class="mb-4 text-sm text-danger">{error}</p>
+    {/if}
+
+    {#if inviteUrl}
+      <div class="mb-4 rounded-card border border-ok bg-ok-soft p-4">
+        <p class="mb-1 text-sm font-semibold text-ok">Tenant created. Admin invitation link (also emailed):</p>
+        <code class="break-all text-xs text-ink">{inviteUrl}</code>
+      </div>
+    {/if}
+
+    {#if loadingData}
+      <Skeleton rows={5} />
+    {:else}
+      <Table>
+        {#snippet head()}
+          <th>Slug</th>
+          <th>Name</th>
+          <th>Status</th>
+          <th>Users</th>
+          <th>Modules</th>
+          <th></th>
+        {/snippet}
+        {#snippet body()}
+          {#each tenants as tenant (tenant.id)}
+            <tr>
+              <td><span class="font-mono text-xs font-semibold text-ink">{tenant.slug}</span></td>
+              <td class="font-medium text-ink">{tenant.name}</td>
+              <td><Badge tone={toneFor(tenant.status)}>{labelFor(tenant.status)}</Badge></td>
+              <td class="text-ink-muted">{tenant.userCount}</td>
+              <td class="text-xs text-ink-muted">{tenant.enabledModules.join(', ')}</td>
+              <td class="text-right">
+                {#if tenant.status === 'SUSPENDED'}
+                  <Button variant="secondary" onclick={() => setStatus(tenant, 'reactivate')}>
+                    Reactivate
+                  </Button>
+                {:else}
+                  <Button variant="danger" onclick={() => setStatus(tenant, 'suspend')}>
+                    Suspend
+                  </Button>
+                {/if}
+              </td>
+            </tr>
+          {:else}
+            <tr>
+              <td colspan="6">
+                <EmptyState message="No tenants yet. Create the first one." />
+              </td>
+            </tr>
+          {/each}
+        {/snippet}
+      </Table>
+    {/if}
   </div>
-{/if}
-
-{#if showForm}
-  <form class="card" style="padding: 16px; margin-bottom: 16px;" onsubmit={createTenant}>
-    <label>Slug <input bind:value={slug} required pattern="[a-z0-9-]+" /></label>
-    <label>Name <input bind:value={name} required /></label>
-    <fieldset>
-      <legend>Modules</legend>
-      {#each availableModules as key (key)}
-        <label style="display: inline-flex; gap: 4px; margin-right: 12px;">
-          <input type="checkbox" value={key} bind:group={modules} />{key}
-        </label>
-      {/each}
-    </fieldset>
-    <label>Admin email <input type="email" bind:value={adminEmail} required /></label>
-    <label>Admin first name <input bind:value={adminFirstName} required /></label>
-    <label>Admin last name <input bind:value={adminLastName} required /></label>
-    <button class="btn" type="submit">Create</button>
-  </form>
-{/if}
-
-<div class="card" style="padding: 0;">
-  <table>
-    <thead>
-      <tr><th>Slug</th><th>Name</th><th>Status</th><th>Users</th><th>Modules</th><th></th></tr>
-    </thead>
-    <tbody>
-      {#each tenants as tenant (tenant.id)}
-        <tr>
-          <td><strong>{tenant.slug}</strong></td>
-          <td>{tenant.name}</td>
-          <td><StatusBadge status={tenant.status} /></td>
-          <td>{tenant.userCount}</td>
-          <td>{tenant.enabledModules.join(', ')}</td>
-          <td style="text-align: right;">
-            {#if tenant.status === 'SUSPENDED'}
-              <button class="btn btn-sm" onclick={() => setStatus(tenant, 'reactivate')}>
-                Reactivate
-              </button>
-            {:else}
-              <button class="btn btn-sm" onclick={() => setStatus(tenant, 'suspend')}>
-                Suspend
-              </button>
-            {/if}
-          </td>
-        </tr>
-      {:else}
-        <tr><td colspan="6" class="muted">No tenants.</td></tr>
-      {/each}
-    </tbody>
-  </table>
 </div>
+
+<!-- Create tenant modal -->
+<Modal bind:open={showForm} title="New tenant">
+  <form onsubmit={createTenant} class="space-y-4">
+    <Field label="Slug">
+      <Input bind:value={slug} required placeholder="acme" />
+    </Field>
+    <Field label="Name">
+      <Input bind:value={name} required placeholder="Acme Corp" />
+    </Field>
+
+    <fieldset class="space-y-2">
+      <legend class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Modules</legend>
+      <div class="flex flex-wrap gap-3">
+        {#each availableModules as key (key)}
+          <label class="flex cursor-pointer items-center gap-2 text-sm text-ink">
+            <input type="checkbox" value={key} bind:group={modules} class="rounded border-edge accent-accent" />
+            {key}
+          </label>
+        {/each}
+      </div>
+    </fieldset>
+
+    <Field label="Admin email">
+      <Input type="email" bind:value={adminEmail} required placeholder="admin@acme.com" />
+    </Field>
+    <Field label="Admin first name">
+      <Input bind:value={adminFirstName} required placeholder="Jane" />
+    </Field>
+    <Field label="Admin last name">
+      <Input bind:value={adminLastName} required placeholder="Doe" />
+    </Field>
+
+    {#if error}
+      <p class="text-sm text-danger">{error}</p>
+    {/if}
+
+    <div class="flex justify-end gap-2 pt-2">
+      <Button variant="secondary" onclick={() => { showForm = false; }}>Cancel</Button>
+      <Button type="submit" variant="primary">Create tenant</Button>
+    </div>
+  </form>
+</Modal>
