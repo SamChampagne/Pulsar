@@ -2,7 +2,7 @@
   import { X } from 'lucide-svelte';
   import { pushOverlay, popOverlay, isTopOverlay } from '$lib/stores/overlay-stack';
 
-  let { open = $bindable(false), title = '', children, footer = undefined } = $props();
+  let { open = $bindable(false), title = '', children, footer = undefined, maxWidth = 'max-w-lg' } = $props();
 
   let token = $state<symbol | null>(null);
   $effect(() => {
@@ -28,7 +28,7 @@
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-sidebar/40 p-4"
        onclick={(e) => { if (e.target === e.currentTarget) open = false; }}
        role="presentation">
-    <div class="w-full max-w-lg rounded-card bg-surface shadow-pop" role="dialog" aria-modal="true">
+    <div class="w-full {maxWidth} rounded-card bg-surface shadow-pop" role="dialog" aria-modal="true">
       <div class="flex items-center justify-between border-b border-edge px-4 py-3">
         <h2 class="text-sm font-bold text-ink">{title}</h2>
         <button class="text-ink-faint hover:text-ink" onclick={() => (open = false)} aria-label="Close">

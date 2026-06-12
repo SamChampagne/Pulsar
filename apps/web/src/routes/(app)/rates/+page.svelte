@@ -277,10 +277,10 @@
 {/if}
 
 <!-- ─── Rate form Modal ───────────────────────────────────────────────────────── -->
-<Modal bind:open={showForm} title={editingId ? 'Edit rate' : 'New rate'}>
+<Modal bind:open={showForm} title={editingId ? 'Edit rate' : 'New rate'} maxWidth="max-w-2xl">
   {#snippet children()}
     <form onsubmit={save}>
-      <div class="grid grid-cols-3 gap-x-4">
+      <div class="grid grid-cols-3 gap-4">
         <div class="col-span-3">
           <Field label="Name">
             <Input bind:value={name} required placeholder="Base rate – East" />

@@ -142,7 +142,7 @@
 <Modal bind:open={showForm} title={editingId ? 'Edit accessorial' : 'New accessorial'}>
   {#snippet children()}
     <form onsubmit={save}>
-      <div class="grid grid-cols-3 gap-x-4">
+      <div class="grid grid-cols-3 gap-4">
         <Field label="Code">
           <Input
             bind:value={code}
