@@ -1,9 +1,11 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
   import { api } from '$lib/api/client';
+  import { PageHeader, Card, Skeleton } from '$lib/components/ui';
 
   let stats = $state<{ label: string; value: number | string; href: string }[]>([]);
   let error = $state('');
+  let loading = $state(true);
 
   async function loadStats() {
     try {
@@ -21,6 +23,8 @@
       ];
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load stats';
+    } finally {
+      loading = false;
     }
   }
 
@@ -29,57 +33,39 @@
   });
 </script>
 
-<div class="page-header">
-  <h1>Dashboard</h1>
-</div>
+<PageHeader title="Dashboard" />
 
-{#if error}
-  <p class="error-text">{error}</p>
-{/if}
+{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
-<div class="stats-grid">
+{#if loading}
+  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    {#each { length: 4 } as _, i (i)}
+      <Card><Skeleton rows={2} /></Card>
+    {/each}
+  </div>
+{:else}
+<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
   {#each stats as stat (stat.label)}
-    <a class="card stat" href={stat.href}>
-      <div class="stat-value">{stat.value}</div>
-      <div class="stat-label">{stat.label}</div>
+    <a
+      href={stat.href}
+      class="block rounded-card border border-edge bg-surface p-4 transition-colors hover:border-accent"
+    >
+      <div class="text-2xl font-bold text-ink">{stat.value}</div>
+      <div class="text-xs uppercase tracking-wide text-ink-muted mt-1">{stat.label}</div>
     </a>
   {/each}
 </div>
+{/if}
 
-<div class="card" style="margin-top: 20px;">
-  <h2>Workflow</h2>
-  <p class="muted">
-    Transport Order → Shipment → Load → Route → Dispatch → In Transit → Delivered → Closed
-  </p>
-  <p class="muted">
-    Create a transport order, confirm and plan it to generate a shipment, build a load, assign a
-    carrier, then dispatch.
-  </p>
+<div class="mt-4">
+  <Card>
+    <h2 class="text-sm font-bold text-ink mb-2">Workflow</h2>
+    <p class="text-sm text-ink-muted">
+      Transport Order → Shipment → Load → Route → Dispatch → In Transit → Delivered → Closed
+    </p>
+    <p class="text-sm text-ink-muted mt-2">
+      Create a transport order, confirm and plan it to generate a shipment, build a load, assign a
+      carrier, then dispatch.
+    </p>
+  </Card>
 </div>
-
-<style>
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 16px;
-  }
-
-  .stat {
-    display: block;
-    color: inherit;
-  }
-
-  .stat:hover {
-    border-color: var(--color-primary);
-  }
-
-  .stat-value {
-    font-size: 1.8rem;
-    font-weight: 700;
-  }
-
-  .stat-label {
-    color: var(--color-text-muted);
-    font-size: 12px;
-  }
-</style>
