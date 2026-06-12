@@ -9,6 +9,7 @@
     id: string;
     loadNumber: string;
     status: string;
+    mode: string | null;
     dispatchedAt: string | null;
     carrier: { name: string } | null;
     driver: { firstName: string; lastName: string } | null;
@@ -74,6 +75,7 @@
         <th>Driver</th>
         <th>Shipments</th>
         <th>Dispatched</th>
+        <th>Mode</th>
         <th>Status</th>
       </tr>
     </thead>
@@ -85,11 +87,30 @@
           <td>{row.driver ? `${row.driver.firstName} ${row.driver.lastName}` : '—'}</td>
           <td>{row.shipments.length}</td>
           <td>{row.dispatchedAt ? new Date(row.dispatchedAt).toLocaleString() : '—'}</td>
+          <td>
+            {#if row.mode}
+              <span class="badge-mode">{row.mode}</span>
+            {:else}
+              <span class="muted">—</span>
+            {/if}
+          </td>
           <td><StatusBadge status={row.status} /></td>
         </tr>
       {:else}
-        <tr><td colspan="6" class="muted">No loads yet.</td></tr>
+        <tr><td colspan="7" class="muted">No loads yet.</td></tr>
       {/each}
     </tbody>
   </table>
 </div>
+
+<style>
+  .badge-mode {
+    background: #e0e7ff;
+    color: #3730a3;
+    border: 1px solid #c7d2fe;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+</style>

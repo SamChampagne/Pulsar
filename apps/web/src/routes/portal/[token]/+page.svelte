@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import { suggestMode, TransportMode } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
 
@@ -43,6 +44,13 @@
     palletCount: '',
     totalWeightKg: '',
     notes: '',
+    mode: TransportMode.FTL as string,
+  });
+
+  const portalModeSuggestion = $derived(() => {
+    const w = request.totalWeightKg ? Number(request.totalWeightKg) : null;
+    const suggested = suggestMode(w);
+    return suggested && suggested !== request.mode ? suggested : null;
   });
 
   const fmtWindow = (early: string | null, late?: string | null) =>
@@ -87,6 +95,7 @@
           palletCount: request.palletCount ? Number(request.palletCount) : undefined,
           totalWeightKg: request.totalWeightKg ? Number(request.totalWeightKg) : undefined,
           notes: request.notes || undefined,
+          mode: request.mode || undefined,
         },
       });
       requestNotice = `Request submitted — order ${created.orderNumber} awaits confirmation.`;
@@ -102,6 +111,7 @@
         palletCount: '',
         totalWeightKg: '',
         notes: '',
+        mode: TransportMode.FTL,
       };
       await load();
     } catch (e) {
@@ -173,6 +183,17 @@
             <div class="field">
               <label for="weight">Weight (kg)</label>
               <input id="weight" type="number" min="0" bind:value={request.totalWeightKg} />
+            </div>
+            <div class="field">
+              <label for="portal-mode">Mode</label>
+              <select id="portal-mode" bind:value={request.mode}>
+                {#each Object.values(TransportMode) as m (m)}
+                  <option value={m}>{m}</option>
+                {/each}
+              </select>
+              {#if portalModeSuggestion()}
+                <small style="color: #64748b;">Suggested: {portalModeSuggestion()} based on weight</small>
+              {/if}
             </div>
           </div>
           <div class="field">

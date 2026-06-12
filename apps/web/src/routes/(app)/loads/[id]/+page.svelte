@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
+  import { TransportMode } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
@@ -91,10 +92,17 @@
     planned: string;
   }
 
+  interface LoadDocument {
+    id: string;
+    fileName: string;
+    createdAt: string;
+  }
+
   interface LoadDetail {
     id: string;
     loadNumber: string;
     status: string;
+    mode: string | null;
     notes: string | null;
     estimatedCost: string | null;
     costCurrency: string | null;
@@ -198,13 +206,16 @@
     excess: number;
   }
 
+  // Documents
+  let documents = $state<LoadDocument[]>([]);
+
   // Resource assignment form
   let carriers = $state<Option[]>([]);
   let drivers = $state<Option[]>([]);
   let vehicles = $state<Option[]>([]);
   let trailers = $state<Option[]>([]);
   let rates = $state<Option[]>([]);
-  let form = $state({ carrierId: '', driverId: '', vehicleId: '', trailerId: '', rateId: '' });
+  let form = $state({ carrierId: '', driverId: '', vehicleId: '', trailerId: '', rateId: '', mode: '' });
   let resourcesCapacityExcesses = $state<CapacityExcess[]>([]);
   let resourcesForce = $state(false);
 
@@ -280,6 +291,17 @@
 
   const editable = $derived(detail?.status === 'OPEN' || detail?.status === 'PLANNED');
   const executing = $derived(detail?.status === 'DISPATCHED' || detail?.status === 'IN_TRANSIT');
+  const canBol = $derived(
+    detail?.status === 'DISPATCHED' ||
+    detail?.status === 'IN_TRANSIT' ||
+    detail?.status === 'COMPLETED',
+  );
+  /** Simple heuristic: any DELAYED event present and load not COMPLETED → show badge. */
+  const isDelayed = $derived(
+    detail?.status !== 'COMPLETED' &&
+    detail?.status !== 'CANCELLED' &&
+    events.some((e) => e.type === 'DELAYED'),
+  );
 
   async function load() {
     try {
@@ -290,7 +312,9 @@
         vehicleId: detail.vehicle?.id ?? '',
         trailerId: detail.trailer?.id ?? '',
         rateId: detail.rate?.id ?? '',
+        mode: detail.mode ?? '',
       };
+      documents = await api<LoadDocument[]>(`/transportation/loads/${loadId}/documents`);
       route = detail.route
         ? await api<RouteDetail>(`/transportation/routes/${detail.route.id}`)
         : null;
@@ -449,17 +473,25 @@
 
   async function saveResources() {
     try {
-      await api(`/transportation/loads/${loadId}/assign`, {
-        method: 'POST',
-        body: {
-          carrierId: form.carrierId || undefined,
-          driverId: form.driverId || undefined,
-          vehicleId: form.vehicleId || undefined,
-          trailerId: form.trailerId || undefined,
-          rateId: form.rateId || undefined,
-          ...(resourcesForce ? { force: true } : {}),
+      const resp = await api<{ modeWarning?: { loadMode: string; orderMode: string } }>(
+        `/transportation/loads/${loadId}/assign`,
+        {
+          method: 'POST',
+          body: {
+            carrierId: form.carrierId || undefined,
+            driverId: form.driverId || undefined,
+            vehicleId: form.vehicleId || undefined,
+            trailerId: form.trailerId || undefined,
+            rateId: form.rateId || undefined,
+            mode: form.mode || undefined,
+            ...(resourcesForce ? { force: true } : {}),
+          },
         },
-      });
+      );
+      if (resp?.modeWarning) {
+        const { loadMode, orderMode } = resp.modeWarning;
+        toast.error(`Mode mismatch: load ${loadMode} / order ${orderMode} — assigned anyway`);
+      }
       toast.success('Resources assigned');
       resourcesCapacityExcesses = [];
       resourcesForce = false;
@@ -473,6 +505,16 @@
         }
       }
       toast.error(e instanceof ApiError ? e.message : 'Failed to assign resources');
+    }
+  }
+
+  async function generateBol() {
+    try {
+      await api(`/transportation/loads/${loadId}/bol`, { method: 'POST' });
+      toast.success('BOL generated');
+      documents = await api<LoadDocument[]>(`/transportation/loads/${loadId}/documents`);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to generate BOL');
     }
   }
 
@@ -560,6 +602,12 @@
       <a href="/loads" class="muted">← Loads</a>
       <h1>{detail.loadNumber}</h1>
       <StatusBadge status={detail.status} />
+      {#if detail.mode}
+        <span class="badge-mode">{detail.mode}</span>
+      {/if}
+      {#if isDelayed}
+        <span class="badge-delayed">Delayed</span>
+      {/if}
     </div>
     <div style="display: flex; gap: 8px;">
       {#if detail.status === 'PLANNED'}
@@ -624,6 +672,15 @@
           <select id="rate" bind:value={form.rateId} disabled={!editable}>
             <option value="">—</option>
             {#each rates as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
+          </select>
+        </div>
+        <div class="field">
+          <label for="load-mode">Mode</label>
+          <select id="load-mode" bind:value={form.mode} disabled={!editable}>
+            <option value="">— inherit —</option>
+            {#each Object.values(TransportMode) as m (m)}
+              <option value={m}>{m}</option>
+            {/each}
           </select>
         </div>
         {#if editable}
@@ -1066,6 +1123,35 @@
         <h2 style="margin-top: 0;">Tracking</h2>
         <TrackingTimeline {events} />
       </div>
+
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h2 style="margin-top: 0;">Documents</h2>
+          {#if canBol}
+            <button class="btn btn-secondary btn-sm" onclick={generateBol}>Generate BOL</button>
+          {/if}
+        </div>
+        {#if documents.length === 0}
+          <p class="muted">No documents yet.</p>
+        {:else}
+          <table>
+            <thead>
+              <tr><th>File</th><th>Date</th><th></th></tr>
+            </thead>
+            <tbody>
+              {#each documents as doc (doc.id)}
+                <tr>
+                  <td>{doc.fileName}</td>
+                  <td class="muted" style="font-size: 12px;">{new Date(doc.createdAt).toLocaleString()}</td>
+                  <td style="text-align: right;">
+                    <a href={`/api/v1/documents/${doc.id}/download`} target="_blank" class="btn btn-secondary btn-sm">Download</a>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      </div>
     </div>
   </div>
 
@@ -1221,5 +1307,25 @@
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 11px;
+  }
+
+  .badge-mode {
+    background: #e0e7ff;
+    color: #3730a3;
+    border: 1px solid #c7d2fe;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .badge-delayed {
+    background: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fca5a5;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
   }
 </style>

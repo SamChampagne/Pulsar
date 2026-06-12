@@ -81,11 +81,19 @@
         const created = await api<LoadOption>('/transportation/loads', { method: 'POST', body: {} });
         loadId = created.id;
       }
-      await api(`/transportation/shipments/${assigning.id}/assign-load`, {
-        method: 'POST',
-        body: force ? { loadId, force: true } : { loadId },
-      });
-      toast.success(`${assigning.shipmentNumber} assigned to load`);
+      const resp = await api<{ modeWarning?: { loadMode: string; orderMode: string } }>(
+        `/transportation/shipments/${assigning.id}/assign-load`,
+        {
+          method: 'POST',
+          body: force ? { loadId, force: true } : { loadId },
+        },
+      );
+      if (resp?.modeWarning) {
+        const { loadMode, orderMode } = resp.modeWarning;
+        toast.error(`Mode mismatch: load ${loadMode} / order ${orderMode} — assigned anyway`);
+      } else {
+        toast.success(`${assigning.shipmentNumber} assigned to load`);
+      }
       assigning = null;
       assignCapacityExcesses = [];
       assignForce = false;

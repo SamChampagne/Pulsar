@@ -17,6 +17,7 @@
     id: string;
     orderNumber: string;
     status: string;
+    mode: string | null;
     customerReference: string | null;
     requestedPickupEarly: string | null;
     requestedPickupLate: string | null;
@@ -129,6 +130,9 @@
       <a href="/transport-orders" class="muted">← Orders</a>
       <h1>{order.orderNumber}</h1>
       <StatusBadge status={order.status} />
+      {#if order.mode}
+        <span class="badge-mode">{order.mode}</span>
+      {/if}
     </div>
     <div style="display: flex; gap: 8px;">
       {#if order.status === 'DRAFT'}
@@ -202,6 +206,8 @@
         <dd>{fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}</dd>
         <dt>Requested delivery</dt>
         <dd>{fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}</dd>
+        <dt>Mode</dt>
+        <dd>{order.mode ?? '—'}</dd>
         <dt>Weight / Volume / Pallets</dt>
         <dd>
           {order.totalWeightKg ?? '—'} kg / {order.totalVolumeM3 ?? '—'} m³ /
@@ -273,6 +279,16 @@
     font-size: 12px;
     font-weight: 600;
     margin-left: 8px;
+  }
+
+  .badge-mode {
+    background: #e0e7ff;
+    color: #3730a3;
+    border: 1px solid #c7d2fe;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
   }
 
   .detail-grid {

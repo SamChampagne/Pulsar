@@ -126,6 +126,16 @@
         <StatusBadge status={view.status} />
       </div>
       {#if view.notes}<p class="muted">{view.notes}</p>{/if}
+      <p>
+        <a
+          href={`/api/v1/public/driver/${token}/bol`}
+          target="_blank"
+          class="btn btn-secondary"
+          style="display: inline-block;"
+        >
+          Download BOL (if generated)
+        </a>
+      </p>
     </header>
 
     {#if notice}
