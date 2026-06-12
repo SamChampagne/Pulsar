@@ -56,17 +56,19 @@ curl -L -o osrm-data/region.osm.pbf \
   https://download.geofabrik.de/north-america/canada/quebec-latest.osm.pbf
 
 # 2. Prepare the extract (one-time, ~10 min; disposable containers)
-docker run --rm -t -v ./osrm-data:/data ghcr.io/project-osrm/osrm-backend:v6.0.0 \
+docker run --rm -t -v "${PWD}/osrm-data:/data" ghcr.io/project-osrm/osrm-backend:v6.0.0 \
   osrm-extract -p /opt/car.lua /data/region.osm.pbf
-docker run --rm -t -v ./osrm-data:/data ghcr.io/project-osrm/osrm-backend:v6.0.0 \
+docker run --rm -t -v "${PWD}/osrm-data:/data" ghcr.io/project-osrm/osrm-backend:v6.0.0 \
   osrm-partition /data/region.osrm
-docker run --rm -t -v ./osrm-data:/data ghcr.io/project-osrm/osrm-backend:v6.0.0 \
+docker run --rm -t -v "${PWD}/osrm-data:/data" ghcr.io/project-osrm/osrm-backend:v6.0.0 \
   osrm-customize /data/region.osrm
 
 # 3. Start the server (opt-in profile — not started by pnpm db:up)
 docker compose --profile osrm up -d osrm
 curl "http://localhost:5000/route/v1/driving/-73.5674,45.5019;-71.2075,46.8131?overview=false"
 ````
+
+On Windows PowerShell, use `curl.exe` instead of `curl` (the bare name aliases `Invoke-WebRequest`), or run these commands in Git Bash / WSL.
 
 Then in `.env`: `ROUTING_DRIVER=osrm` and `OSRM_HOST=http://localhost:5000`.
 Geocoding: `GEOCODING_DRIVER=nominatim` uses the public Nominatim service (1 req/s,
