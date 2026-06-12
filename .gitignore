@@ -26,6 +26,12 @@ packages/database/generated/
 .vscode/*
 !.vscode/extensions.json
 
+# Fleetbase OSS checkout kept locally for benchmarking only (analysis 2026-06-12)
+/fleetbase/
+
+# Brainstorming visual companion sessions
+.superpowers/
+
 # Runtime file storage of the local driver ONLY — a bare "storage/" rule once
 # swallowed the apps/api/src/core/documents/storage/ SOURCES (lost, re-authored
 # in phase 6). Keep this path-anchored.
