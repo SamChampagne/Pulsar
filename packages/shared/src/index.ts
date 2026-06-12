@@ -13,5 +13,6 @@ export * from './cost/rate-cost';
 export * from './rating/lane-key';
 export * from './planning/windows';
 export * from './planning/capacity';
+export * from './planning/mode';
 export * from './types/api';
 export * from './types/auth';

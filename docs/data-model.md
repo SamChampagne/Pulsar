@@ -394,3 +394,71 @@ all in the `invoices` array response. There is no currency conversion.
 - Calls `EmailService.send` with subject `Billing statement <CINV-number>`. A mail failure
   also returns 400 and leaves the statement in APPROVED.
 - On success, transitions to SENT via the conditional `updateMany`.
+
+## Phase 8 additions — Transport Mode, BOL, Notifications, Exceptions
+
+### TransportMode
+
+`TransportMode` enum (source: `packages/shared/src/enums/transportation.ts`, mirrored in
+`schema.prisma`): `FTL | LTL | PARCEL`.
+
+**Where it appears**:
+- `TransportOrder.mode TransportMode?` — the mode requested by the order.
+- `Load.mode TransportMode?` — the mode the carrier will execute under.
+- `Rate.mode TransportMode?` — **null means the rate applies to all modes**. When a load has
+  a mode set, the rating engine includes only rates whose `mode` is null or matches.
+
+**First-assign mode inheritance**: when a shipment is assigned to a load, if the load has no
+mode and the order has one, the load's mode is set to the order's mode. This is non-blocking —
+the assignment always succeeds. If the load already has a mode that differs from the order's
+mode, a `modeWarning: { loadMode, orderMode }` is returned alongside the updated shipment
+(never a 400).
+
+**`suggestMode` hint** (`packages/shared/src/planning/mode.ts`): pure, non-binding function
+returning a mode suggestion based on total weight (≤30 kg → PARCEL, ≤4000 kg → LTL, above →
+FTL). Thresholds are constants (not tenant-configurable in v1). Used by the UI to surface a
+recommendation — never applied automatically.
+
+### Bill of Lading (BOL)
+
+BOLs are `Document` rows with `entityType = 'bill-of-lading'` and `entityId = loadId`.
+
+**Sequence**: `SequencesService.nextNumber(tenantId, 'bol')` → `BOL-000001`, `BOL-000002`, …
+
+**Generation rules**:
+- Only allowed when the load is in DISPATCHED, IN_TRANSIT, or COMPLETED status.
+- Each call to `POST /loads/:id/bol` creates a **new** document — there is no replacement of
+  previous BOLs. The latest BOL is the last document ordered by `createdAt desc`.
+- `GET /loads/:id/documents` lists all BOL documents for a load (oldest to newest).
+- `GET /public/driver/:token/bol` streams the latest BOL by driver token; returns 404 when no
+  BOL has been generated yet. The internal document id is never exposed in the public payload.
+
+**Data shape** (`BolData` from `bol-data.ts`): `bolNumber`, `generatedAt`, carrier (name +
+SCAC), driverName, equipment (vehicle + trailer unit numbers), shipper party (name/address/city
+— first PICKUP stop, fallback to `Shipment.originLocation`), consignee party (last DELIVERY
+stop, fallback to `Shipment.destinationLocation`), shipment lines (one per shipment: number,
+order number, customer reference, weight, pallets), totals, notes, conditions string.
+
+### Notification — userId nullable (broadcast)
+
+`Notification.userId` is nullable. When null, the notification is **tenant-wide**: every user
+in the tenant can see it via `listMine` (`OR [{ userId }, { userId: null }]`).
+
+**Read-by-one = read-for-all (v1)**: `markRead` sets `readAt` on the notification row itself.
+If the notification is tenant-wide (userId null), marking it read from any user's session marks
+it globally. This is a deliberate v1 simplification; per-user read state is deferred.
+
+### Exception deduplication — (stopId, deadline)
+
+`DelayDetectionService` creates one `DELAYED` `TrackingEvent` per `(stopId, deadline)` pair
+where `deadline = plannedArrivalLate ?? plannedArrivalEarly`.
+
+**Dedup key design rationale**: if a stop's planned time is replanned to a later window and
+that window is then also missed, a **new** DELAYED event is created (the deadline has changed,
+so the `(stopId, deadline)` key is different). This is intentional — a replanned-then-missed
+window should re-alert. The dedup is stored in `TrackingEvent.payload.deadline` as an ISO
+string and queried with a Prisma JSON path filter.
+
+**Post-dispatch replanning limitation (phase 8)**: route rebuild (stop replanning) is
+API-restricted to OPEN/PLANNED loads. The re-alert path is correctly designed but not
+exercisable over HTTP until continuous planning lands (audit §19.5).

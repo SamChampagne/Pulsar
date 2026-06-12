@@ -127,7 +127,31 @@ export class ShipmentsService {
         }
       }
     }
-    const [updated] = await this.prisma.$transaction([
+    // --- Mode inheritance ---
+    const orderMode = (
+      await this.prisma.transportOrder.findFirst({
+        where: { id: shipment.transportOrderId, tenantId },
+        select: { mode: true },
+      })
+    )?.mode;
+    const siblingsCount = await this.prisma.shipment.count({ where: { loadId: dto.loadId, tenantId } });
+    let modeWarning: { loadMode: string; orderMode: string } | undefined;
+
+    // Build the transaction. Always: shipment update + junction upsert. Conditionally: load mode update.
+    // First-assign inheritance: only inherit when the load's mode is still the default (FTL),
+    // meaning the dispatcher has not intentionally set it. If mode was explicitly changed away from
+    // FTL, preserve it and surface a warning instead of silently overwriting it.
+    const modeUpdateNeeded =
+      siblingsCount === 0 && orderMode && orderMode !== load.mode && load.mode === 'FTL';
+    if (siblingsCount === 0 && orderMode && orderMode !== load.mode && load.mode !== 'FTL') {
+      // Empty load but mode was explicitly set to non-FTL — do not overwrite; warn instead.
+      modeWarning = { loadMode: load.mode, orderMode };
+    } else if (siblingsCount > 0 && orderMode && orderMode !== load.mode) {
+      // Mixed-mode consolidation: non-blocking warning returned to the caller.
+      modeWarning = { loadMode: load.mode, orderMode };
+    }
+
+    const txOps: Prisma.PrismaPromise<unknown>[] = [
       this.prisma.shipment.update({
         where: { id },
         data: { loadId: dto.loadId, status: ShipmentStatus.PLANNED },
@@ -139,9 +163,32 @@ export class ShipmentsService {
         update: { loadId: dto.loadId },
         create: { tenantId, shipmentId: id, loadId: dto.loadId, sequence: 1 },
       }),
-    ]);
+    ];
+
+    if (modeUpdateNeeded) {
+      // First shipment on this load: inherit the order's transport mode.
+      txOps.push(this.prisma.load.update({ where: { id: dto.loadId }, data: { mode: orderMode } }));
+    }
+
+    const [updated] = (await this.prisma.$transaction(txOps)) as [
+      Awaited<ReturnType<typeof this.prisma.shipment.update>>,
+      ...unknown[],
+    ];
+
+    if (modeUpdateNeeded && orderMode) {
+      // Audit the automatic mode inheritance so dispatchers can trace why the load mode changed.
+      await this.audit.log({
+        tenantId,
+        userId,
+        action: AuditAction.UPDATE,
+        entityType: 'load',
+        entityId: dto.loadId,
+        after: { modeInherited: orderMode, fromOrder: shipment.transportOrderId },
+      });
+    }
+
     await this.cost.recompute(tenantId, dto.loadId);
-    return updated;
+    return { ...updated, ...(modeWarning ? { modeWarning } : {}) };
   }
 
   /** Cancels an unassigned PENDING shipment (post-planning cleanup). */

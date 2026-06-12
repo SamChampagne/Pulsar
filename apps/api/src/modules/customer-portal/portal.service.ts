@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AuditAction, MODULE_KEYS } from '@pulsar/shared';
+import { AuditAction, MODULE_KEYS, TransportMode } from '@pulsar/shared';
 import { randomBytes } from 'node:crypto';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -20,6 +20,7 @@ export interface PortalOrderInput {
   totalWeightKg?: number;
   palletCount?: number;
   notes?: string;
+  mode?: TransportMode;
 }
 
 /**
@@ -85,6 +86,7 @@ export class PortalService {
         totalWeightKg: input.totalWeightKg,
         palletCount: input.palletCount,
         notes: input.notes,
+        ...(input.mode ? { mode: input.mode } : {}),
         // No createdById: the author is the customer via the portal, not a tenant user.
       },
     });

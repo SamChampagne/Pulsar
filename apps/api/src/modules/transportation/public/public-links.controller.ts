@@ -6,15 +6,18 @@ import {
   HttpCode,
   Param,
   Post,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { StopStatus } from '@pulsar/shared';
+import type { Response } from 'express';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { Public } from '../../../common/decorators/public.decorator';
 import { TendersService } from '../tenders/tenders.service';
+import { BolService } from '../bol/bol.service';
 import { PublicLinksService } from './public-links.service';
 
 class DeclineTenderDto {
@@ -52,6 +55,7 @@ export class PublicLinksController {
   constructor(
     private readonly tenders: TendersService,
     private readonly links: PublicLinksService,
+    private readonly bol: BolService,
   ) {}
 
   // --- Carrier tender response ---------------------------------------------
@@ -112,5 +116,18 @@ export class PublicLinksController {
   ) {
     if (!file) throw new BadRequestException('Missing "file" field (multipart/form-data)');
     return this.links.driverAttachPodPhoto(token, shipmentId, file);
+  }
+
+  /** Stream the latest BOL PDF for this driver's load. Token is the only credential. */
+  @Get('driver/:token/bol')
+  async driverBol(@Param('token') token: string, @Res() res: Response) {
+    const { stream, fileName, mimeType } = await this.bol.driverBol(token);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+    stream.on('error', () => {
+      if (!res.headersSent) res.status(500).end();
+      else res.destroy();
+    });
+    stream.pipe(res);
   }
 }

@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { DocumentsModule } from '../../core/documents/documents.module';
 import { IntegrationsModule } from '../../core/integrations/integrations.module';
+import { NotificationsModule } from '../../core/notifications/notifications.module';
+import { DelayDetectionService } from './exceptions/delay-detection.service';
 import { CustomersController } from './customers/customers.controller';
 import { CustomersService } from './customers/customers.service';
 import { LocationsController } from './locations/locations.controller';
@@ -40,6 +42,7 @@ import { AccessorialsService } from './accessorials/accessorials.service';
 import { FuelTablesController } from './fuel-tables/fuel-tables.controller';
 import { FuelTablesService } from './fuel-tables/fuel-tables.service';
 import { RatingService } from './rating/rating.service';
+import { BolService } from './bol/bol.service';
 
 /**
  * Transportation Management module (TMS).
@@ -47,7 +50,7 @@ import { RatingService } from './rating/rating.service';
  * tenants without the module enabled get a 403 from ModulesGuard.
  */
 @Module({
-  imports: [AuditLogsModule, DocumentsModule, IntegrationsModule],
+  imports: [AuditLogsModule, DocumentsModule, IntegrationsModule, NotificationsModule],
   controllers: [
     CustomersController,
     LocationsController,
@@ -90,6 +93,8 @@ import { RatingService } from './rating/rating.service';
     AnalyticsService,
     AccessorialsService,
     FuelTablesService,
+    BolService,
+    DelayDetectionService,
   ],
   exports: [RatingService],
 })

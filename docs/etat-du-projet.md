@@ -1,7 +1,7 @@
 # État du projet — point de reprise
 
 > 🇫🇷 Document de synthèse pour reprendre le travail (humain ou session Claude Code).
-> Mis à jour à la fin de la **phase 7.4**. Détail des tâches : [TODO.md](../TODO.md) ·
+> Mis à jour à la fin de la **phase 8**. Détail des tâches : [TODO.md](../TODO.md) ·
 > vision : [ROADMAP.md](../ROADMAP.md) · règles de dev : [CLAUDE.md](../CLAUDE.md) ·
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
@@ -22,16 +22,17 @@
 | 7.2 — Intégrité du plan | ✅ | **Fenêtres temporelles early/late** sur TransportOrder, Shipment et Stop (RENAME sans perte de données) ; validations dures 400 (`assertWindowCoherence`) + avertissements consultatifs `windowWarnings` sur GET order/load ; **capacité 3 axes** (`checkCapacity` poids/volume/palettes, axe inconnu ignoré, dépassement forcé = audit consolidé) ; `capacityPallets` Trailer ; **jonction `shipment_load_legs`** maintenue dans la même transaction + backfill ; on-time analytics `plannedDeliveryLate ?? plannedDeliveryEarly` ; 6 tests e2e ; 12ᵉ migration |
 | 7.3 — Billing sell-side | ✅ | **Relevés client** depuis les ordres livrés et ratés (`CustomerInvoiceStatus` DRAFT→APPROVED→SENT→PAID) ; `RatingService.rateOrder` (taux client uniquement, lane ou catch-all client, date de référence = dernier `actualDeliveryAt` sinon today, moins cher retenu) ; un relevé par devise (`groupByCurrency`) ; anti-double-billing (`transportOrderId @unique`) ; échappatoire DRAFT (suppression libère les ordres) ; envoi conditionné sur email client + succès email (libellé « Billing statement ») ; 4 permissions `billing.customer-invoices.*` ; séquence CINV ; 8 tests e2e ; 13ᵉ migration |
 | 7.4 — Durcissements différés phase 6 | ✅ | **MFA plateforme** (TOTP otplib ±1, `totpSecret enc:v1` + `mfaEnabledAt` + `recoveryCodes` bcrypt à usage unique, step tokens `mfa-enroll`/`mfa-pending` rejetés par `PlatformJwtStrategy`, 3 branches login dont `PLATFORM_MFA_ENFORCED`, `enroll-start` authentifié) ; **throttling** `PlatformAuthController` 20 req/min/IP ; **`@PlatformController()`** composite `Public + PlatformGuard` ; **cache `Issuer.discover`** TTL 1 h + retry-once ; **slug tenant dans le state OIDC** vérifié au callback ; **`csvSafe()`** sur les champs libres de l'export CSV ; **`updateMany` conditionnel** sur les transitions buy-side + `createDrafts` transactionnel `P2002 → 409` ; 6 tests e2e ; 14ᵉ migration |
+| 8 — Ligne MVP audit fermée (BOL, modes, exceptions) | ✅ | **BOL généré** : `buildBolData` pure (shipper = 1er stop PICKUP / fallback originLocation ; consignee = dernier DELIVERY / fallback destinationLocation), `renderBol` pdfkit (LETTER, 3 blocs signature + lignes exceptions + conditions), `BolService.generate` (DISPATCHED+, séquence BOL-, entityType `bill-of-lading`, audité), `POST /loads/:id/bol`, `GET /loads/:id/documents`, `GET /public/driver/:token/bol` (token-résolu, pas d'id interne dans le payload public, 404 si pas encore généré) ; **mode de transport** : enum `TransportMode` (FTL/LTL/PARCEL) sur `TransportOrder`, `Load`, `Rate` (null = tous modes), filtrage des deux côtés au rating, héritage premier-assign, `modeWarning` non bloquant, `suggestMode` hint (≤30 kg PARCEL / ≤4000 kg LTL / au-dessus FTL) — arbitrage à seuils non couvert (§4) ; **moteur d'exceptions** : `isLate` pure, cron 5 min + `tick(now)`, dedup `(stopId, deadline)`, événement `DELAYED` + `Notification` tenant (userId nullable, read-by-one = read-for-all v1), cloche UI ; 15ᵉ migration |
 
 **La boucle économique complète fonctionne** : le client commande depuis son portail →
 confirmation → planification (split possible) → tender automatique par lane avec courriel →
 acceptation transporteur sans compte → dispatch → exécution mobile chauffeur → suivi public →
-POD avec photo → facture transporteur brouillon → approbation.
+POD avec photo → BOL PDF généré → détection automatique des retards → facture transporteur
+brouillon → approbation → relevé client.
 
 **Chiffres** : 3 modules métier actifs (transportation, customer-portal, billing) + le plan
-d'administration plateforme ; 219 tests (65 vitest shared + 67 jest unitaires API + 87 E2E,
-tous verts et rejouables) ; 14 migrations ; ~75 endpoints ; 32 pages web dont 5 publiques à
-jeton et 2 plateforme.
+d'administration plateforme ; 15 migrations ; ~78 endpoints ; pages web enrichies (BOL, cloche
+notifications).
 
 ## Carte de la documentation
 
@@ -45,18 +46,26 @@ jeton et 2 plateforme.
 | Conventions REST | [api-conventions.md](./api-conventions.md) |
 | Démarrage local | [getting-started.md](./getting-started.md) |
 
-## Prochaine session : Phase 8
+## Prochaine session — la ligne MVP de l'audit est fermée
 
-L'[audit TMS](./audit-tms-2026-06-10.md) est la boussole. La phase 7 est **complète** (7.1, 7.2,
-7.3, 7.4 tous livrés). Phase 8 recommandée :
+La **phase 8 est complète**. Les trois trous sous la ligne MVP de l'[audit TMS](./audit-tms-2026-06-10.md)
+(tarification §5, BOL §9, exceptions §10) sont tous soldés (§5 et §11 par les phases 7.1/7.3,
+§9 et §10 par la phase 8). Il n'y a plus de blocage MVP.
 
-1. **BOL généré** — Lettre de transport (Bill of Lading) PDF générée à partir des données du load ;
-   numéro de séquence dédié (BOL) ; endpoint de téléchargement ; intégration dans la page load.
-2. **Sélection de mode LTL / FTL** — champ mode sur TransportOrder et Load ; filtrage des taux
-   par mode (audit TMS §4) ; affichage dans l'UI et les exports.
-3. **Moteur d'exceptions simple** — détection des retards (fenêtres temporelles 7.2 vs
-   `actualArrivalAt`) ; alertes dans l'UI (badge sur le load) ; événement de tracking
-   `DELAY_DETECTED` ; correspond aux trous §9/§4/§10 de l'audit sous la ligne MVP.
+**Deux options, sans choix imposé :**
+
+**(a) Pilote client** — stabilisation opérationnelle avant de mettre Pulsar entre les mains d'un
+premier client réel :
+- Taxes sell-side (GST/QST/TVA) sur `CustomerInvoice` / `CustomerInvoiceLine`
+- Smoke test S3 en vrai bucket (le driver est restauré mais n'a jamais tourné en CI)
+- Durcissement opérationnel (erreurs standards machine-lisibles, throttling sur les endpoints
+  publics à fort trafic potentiel, alerte épuisement de liste tender)
+
+**(b) Différenciateurs de l'audit §19** — les deux paris jugés atteignables avec refactoring ciblé :
+- **Freight audit autonome (§19.4)** : entité « facture transporteur entrante », import/match
+  contre `Load.estimatedCost`, tolérance, dispute — ROI le plus démontrable (2-5 % des montants)
+- **Agent opérationnel (§19.2)** : clés d'idempotence explicites, file « actions proposées »
+  pour validation humaine — le substrat (API permissionnées, compte de service, audit) est déjà là
 
 ### Dette connue à garder en tête (ne pas « réparer » en silence)
 

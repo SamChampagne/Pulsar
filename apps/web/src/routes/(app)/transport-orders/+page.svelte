@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { suggestMode, TransportMode } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
 
@@ -7,6 +8,7 @@
     id: string;
     orderNumber: string;
     status: string;
+    mode: string | null;
     customerReference: string | null;
     requestedPickupEarly: string | null;
     requestedPickupLate: string | null;
@@ -42,6 +44,13 @@
     requestedDeliveryLate: '',
     totalWeightKg: '',
     palletCount: '',
+    mode: TransportMode.FTL,
+  });
+
+  const modeSuggestion = $derived(() => {
+    const w = form.totalWeightKg ? Number(form.totalWeightKg) : null;
+    const suggested = suggestMode(w);
+    return suggested && suggested !== form.mode ? suggested : null;
   });
 
   const fmtWindow = (early: string | null, late?: string | null) =>
@@ -96,6 +105,7 @@
             : undefined,
           totalWeightKg: form.totalWeightKg ? Number(form.totalWeightKg) : undefined,
           palletCount: form.palletCount ? Number(form.palletCount) : undefined,
+          mode: form.mode,
         },
       });
       showForm = false;
@@ -188,6 +198,17 @@
         <label for="pallets">Pallets</label>
         <input id="pallets" type="number" min="0" bind:value={form.palletCount} />
       </div>
+      <div class="field">
+        <label for="mode">Mode</label>
+        <select id="mode" bind:value={form.mode}>
+          {#each Object.values(TransportMode) as m (m)}
+            <option value={m}>{m}</option>
+          {/each}
+        </select>
+        {#if modeSuggestion()}
+          <small class="muted">Suggested: {modeSuggestion()} based on weight</small>
+        {/if}
+      </div>
     </div>
     <div style="display: flex; gap: 8px;">
       <button class="btn" type="submit">Create</button>
@@ -215,6 +236,7 @@
         <th>Origin</th>
         <th>Destination</th>
         <th>Pickup</th>
+        <th>Mode</th>
         <th>Status</th>
         <th></th>
       </tr>
@@ -227,6 +249,13 @@
           <td>{order.originLocation.city}</td>
           <td>{order.destinationLocation.city}</td>
           <td>{fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}</td>
+          <td>
+            {#if order.mode}
+              <span class="badge badge-mode">{order.mode}</span>
+            {:else}
+              <span class="muted">—</span>
+            {/if}
+          </td>
           <td><StatusBadge status={order.status} /></td>
           <td style="text-align: right; white-space: nowrap;">
             {#if order.status === 'DRAFT'}
@@ -240,7 +269,7 @@
           </td>
         </tr>
       {:else}
-        <tr><td colspan="7" class="muted">No transport orders yet.</td></tr>
+        <tr><td colspan="8" class="muted">No transport orders yet.</td></tr>
       {/each}
     </tbody>
   </table>
@@ -251,5 +280,15 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0 20px;
+  }
+
+  .badge-mode {
+    background: #e0e7ff;
+    color: #3730a3;
+    border: 1px solid #c7d2fe;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
   }
 </style>

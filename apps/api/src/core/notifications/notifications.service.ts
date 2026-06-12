@@ -5,7 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 export interface NotifyInput {
   tenantId: string;
-  userId: string;
+  userId?: string;
   title: string;
   body: string;
   level?: NotificationLevel;
@@ -24,7 +24,7 @@ export class NotificationsService {
     return this.prisma.notification.create({
       data: {
         tenantId: input.tenantId,
-        userId: input.userId,
+        userId: input.userId ?? null,
         title: input.title,
         body: input.body,
         level: input.level ?? NotificationLevel.INFO,
@@ -35,7 +35,11 @@ export class NotificationsService {
 
   listMine(tenantId: string, userId: string, unreadOnly = false) {
     return this.prisma.notification.findMany({
-      where: { tenantId, userId, ...(unreadOnly ? { readAt: null } : {}) },
+      where: {
+        tenantId,
+        OR: [{ userId }, { userId: null }],
+        ...(unreadOnly ? { readAt: null } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
@@ -43,9 +47,13 @@ export class NotificationsService {
 
   async markRead(tenantId: string, userId: string, id: string) {
     const notification = await this.prisma.notification.findFirst({
-      where: { id, tenantId, userId },
+      where: { id, tenantId, OR: [{ userId }, { userId: null }] },
     });
     if (!notification) throw new NotFoundException('Notification not found');
-    return this.prisma.notification.update({ where: { id }, data: { readAt: new Date() } });
+    // Tenant-wide notifications: read-by-one = read-for-all (v1 — see phase 8 spec).
+    // Use updateMany with tenantId to enforce tenant isolation on the write path.
+    await this.prisma.notification.updateMany({ where: { id, tenantId }, data: { readAt: new Date() } });
+    // Re-read and return the updated notification so the response shape is unchanged.
+    return this.prisma.notification.findFirst({ where: { id, tenantId } });
   }
 }

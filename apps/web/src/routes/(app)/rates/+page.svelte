@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { TransportMode } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
 
@@ -16,6 +17,7 @@
     id: string;
     name: string;
     rateType: string;
+    mode: string | null;
     status: string;
     currency: string;
     baseAmount: string;
@@ -44,6 +46,7 @@
   let editingId = $state<string | null>(null);
   let name = $state('');
   let rateType = $state('FLAT');
+  let rateMode = $state<string>('');
   let baseAmount = $state(0);
   let currency = $state('CAD');
   let minCharge = $state<number | null>(null);
@@ -85,6 +88,7 @@
     editingId = null;
     name = '';
     rateType = 'FLAT';
+    rateMode = '';
     baseAmount = 0;
     currency = 'CAD';
     minCharge = null;
@@ -105,6 +109,7 @@
     editingId = rate.id;
     name = rate.name;
     rateType = rate.rateType;
+    rateMode = rate.mode ?? '';
     baseAmount = parseFloat(rate.baseAmount);
     currency = rate.currency;
     minCharge = rate.minCharge !== null ? parseFloat(rate.minCharge) : null;
@@ -145,6 +150,7 @@
       const body: Record<string, unknown> = {
         name,
         rateType,
+        mode: rateMode || undefined,
         baseAmount: Number(baseAmount),
         currency: currency || undefined,
         carrierId: carrierId || undefined,
@@ -249,6 +255,15 @@
           }}
           placeholder="optional"
         />
+      </div>
+      <div class="field">
+        <label for="rate-mode">Mode</label>
+        <select id="rate-mode" bind:value={rateMode}>
+          <option value="">— all modes —</option>
+          {#each Object.values(TransportMode) as m (m)}
+            <option value={m}>{m}</option>
+          {/each}
+        </select>
       </div>
       <div class="field">
         <label for="carrier-select">Carrier</label>
@@ -373,6 +388,7 @@
       <tr>
         <th>Name</th>
         <th>Type</th>
+        <th>Mode</th>
         <th>Lane</th>
         <th>Carrier</th>
         <th>Base</th>
@@ -388,6 +404,13 @@
             {rate.rateType}
             {#if rate.breaks.length > 0}
               <span class="muted">({rate.breaks.length} breaks)</span>
+            {/if}
+          </td>
+          <td>
+            {#if rate.mode}
+              <span class="badge-mode">{rate.mode}</span>
+            {:else}
+              <span class="muted">all</span>
             {/if}
           </td>
           <td>
@@ -415,7 +438,7 @@
           </td>
         </tr>
       {:else}
-        <tr><td colspan="7" class="muted">No rates yet.</td></tr>
+        <tr><td colspan="8" class="muted">No rates yet.</td></tr>
       {/each}
     </tbody>
   </table>
@@ -448,5 +471,15 @@
     grid-template-columns: 1fr 1fr auto;
     gap: 12px;
     align-items: flex-start;
+  }
+
+  .badge-mode {
+    background: #e0e7ff;
+    color: #3730a3;
+    border: 1px solid #c7d2fe;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
   }
 </style>

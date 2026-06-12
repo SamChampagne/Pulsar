@@ -242,6 +242,56 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
       transactionnel `P2002 → 409`
 - [x] Suite e2e `phase7-4-hardening` (6 tests) ; 14ᵉ migration
 
+## Phase 8 — Audit MVP line closed (BOL, Transport Mode, Exceptions)
+
+### Chantier 8.1 — Bill of Lading (BOL) ✅
+
+- [x] `bol-data.ts` : pure builder `buildBolData` (shipper = first PICKUP stop, fallback
+      shipment originLocation ; consignee = last DELIVERY stop, fallback destinationLocation)
+- [x] `bol-render.ts` : pdfkit (LETTER, 3 signature blocks + exceptions/damages lines +
+      conditions footer)
+- [x] `BolService.generate` : allowed on DISPATCHED/IN_TRANSIT/COMPLETED ; BOL- sequence via
+      `SequencesService` ; `DocumentsService.upload` with `entityType = 'bill-of-lading'` ;
+      audited (AuditAction.CREATE)
+- [x] `POST /loads/:id/bol` — generate (or regenerate; each call = new document)
+- [x] `GET /loads/:id/documents` — list all BOL documents for a load
+- [x] `GET /public/driver/:token/bol` — latest BOL for the load resolved by driver token;
+      no document id exposed in public payloads; 404 when no BOL has been generated yet
+
+### Chantier 8.2 — Transport Mode (FTL / LTL / PARCEL) ✅
+
+- [x] `TransportMode` enum (FTL / LTL / PARCEL) in `packages/shared/src/enums/transportation.ts`
+      ; mirrored in `schema.prisma`
+- [x] `mode` field on `TransportOrder`, `Load`, and `Rate` (null on Rate = applies to all modes)
+- [x] Rating engine filters both load mode and rate mode when evaluating options
+- [x] First-assign mode inheritance: when a shipment is assigned to a load, the load's mode is
+      inherited from the order if the load has none
+- [x] `modeWarning` (non-blocking) returned by `assign-load` when load mode and order mode differ
+- [x] `suggestMode` pure function (PARCEL ≤ 30 kg, LTL ≤ 4000 kg, FTL above) in
+      `packages/shared/src/planning/mode.ts` — hint only, no automatic threshold arbitrage
+      (assumed gap vs audit §4 — parameterizable thresholds deferred)
+- [x] 15th Prisma migration `20260611200000_phase8_mode_notifications_bol`
+
+### Chantier 8.3 — Exception & delay detection ✅
+
+- [x] `isLate` pure function : deadline = `plannedArrivalLate ?? plannedArrivalEarly` ; never
+      late if stop has been arrived at or if no deadline is defined
+- [x] `DelayDetectionService` cron every 5 minutes; public `tick(now)` for E2E injection
+- [x] Dedup on `(stopId, deadline)` stored in `TrackingEvent.payload.deadline` — a
+      replanned-then-missed window re-alerts (new deadline = new key)
+- [x] Creates a `DELAYED` `TrackingEvent` + a tenant-wide `Notification` (userId nullable)
+      per late stop
+- [x] `Notification.userId` nullable — broadcast: `OR [{ userId }, { userId: null }]` ;
+      read-by-one = read-for-all v1 (cosmetic; real per-user read state deferred)
+- [x] Bell UI integration in web shell
+
+### Limitation connue — réplanning / alertes multiples (post-dispatch)
+
+- Route rebuild (stop replanning) is API-restricted to OPEN/PLANNED loads today. The
+  dedup key design correctly handles the replanned-window re-alert path (new deadline =
+  new dedup key), but this code path is not exercisable over HTTP until continuous planning
+  is shipped (audit §19.5). Noted for the future; not a phase-8 gap.
+
 ## Phase 3 — Platform & integrations
 
 - [ ] OIDC SSO per tenant (keep `core/auth` issuance API stable)

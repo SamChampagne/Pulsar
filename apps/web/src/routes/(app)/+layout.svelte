@@ -7,6 +7,45 @@
 
   let { children } = $props();
 
+  interface Notification {
+    id: string;
+    level: string;
+    title: string;
+    body: string;
+    readAt: string | null;
+    createdAt: string;
+  }
+
+  let notifications = $state<Notification[]>([]);
+  let notifOpen = $state(false);
+
+  const unreadCount = $derived(notifications.filter((n) => !n.readAt).length);
+
+  async function loadNotifications() {
+    try {
+      notifications = await api<Notification[]>('/notifications', { query: { unread: 'true' } });
+    } catch {
+      // silent — notifications are non-critical
+    }
+  }
+
+  async function markRead(id: string) {
+    try {
+      await api(`/notifications/${id}/read`, { method: 'POST' });
+      await loadNotifications();
+    } catch {
+      // silent
+    }
+  }
+
+  $effect(() => {
+    if ($auth) {
+      void loadNotifications();
+      const interval = setInterval(() => void loadNotifications(), 60_000);
+      return () => clearInterval(interval);
+    }
+  });
+
   // Client-side auth guard for every page in the (app) group.
   $effect(() => {
     if (!$auth) void goto('/login');
@@ -87,6 +126,45 @@
           <a href={item.href} class:active={isActive(item.href)}>{item.label}</a>
         {/each}
       </nav>
+
+      <div class="notif-area">
+        <button
+          class="notif-bell"
+          onclick={() => (notifOpen = !notifOpen)}
+          aria-label="Notifications"
+        >
+          🔔
+          {#if unreadCount > 0}
+            <span class="notif-badge">{unreadCount}</span>
+          {/if}
+        </button>
+        {#if notifOpen}
+          <div class="notif-dropdown">
+            <div class="notif-header">
+              <strong>Notifications</strong>
+              <button class="btn-close" onclick={() => (notifOpen = false)}>✕</button>
+            </div>
+            {#if notifications.length === 0}
+              <p class="notif-empty">No unread notifications.</p>
+            {:else}
+              {#each notifications as n (n.id)}
+                <div class="notif-item {n.readAt ? 'notif-read' : ''}">
+                  <div class="notif-title">{n.title}</div>
+                  <div class="notif-body">{n.body}</div>
+                  <div class="notif-footer-row">
+                    <span class="notif-time">{new Date(n.createdAt).toLocaleString()}</span>
+                    {#if !n.readAt}
+                      <button class="btn btn-sm btn-secondary" onclick={() => markRead(n.id)}>
+                        Mark read
+                      </button>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
+            {/if}
+          </div>
+        {/if}
+      </div>
 
       <div class="sidebar-footer">
         <div class="user">
@@ -187,5 +265,125 @@
   .content {
     padding: 28px 32px;
     max-width: 1200px;
+  }
+
+  /* Notification bell */
+  .notif-area {
+    position: relative;
+    border-top: 1px solid #1e293b;
+    padding-top: 10px;
+    padding-bottom: 8px;
+  }
+
+  .notif-bell {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    color: #cbd5e1;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .notif-bell:hover {
+    background: #1e293b;
+  }
+
+  .notif-badge {
+    background: #dc2626;
+    color: #fff;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 0 5px;
+    min-width: 16px;
+    text-align: center;
+  }
+
+  .notif-dropdown {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    width: 280px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    z-index: 100;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .notif-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid #334155;
+    color: #f1f5f9;
+    font-size: 13px;
+  }
+
+  .btn-close {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .btn-close:hover {
+    background: #334155;
+    color: #f1f5f9;
+  }
+
+  .notif-empty {
+    padding: 12px;
+    color: #64748b;
+    font-size: 12px;
+    margin: 0;
+  }
+
+  .notif-item {
+    padding: 10px 12px;
+    border-bottom: 1px solid #334155;
+  }
+
+  .notif-item:last-child {
+    border-bottom: none;
+  }
+
+  .notif-read {
+    opacity: 0.6;
+  }
+
+  .notif-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin-bottom: 3px;
+  }
+
+  .notif-body {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-bottom: 6px;
+  }
+
+  .notif-footer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .notif-time {
+    font-size: 11px;
+    color: #64748b;
   }
 </style>
