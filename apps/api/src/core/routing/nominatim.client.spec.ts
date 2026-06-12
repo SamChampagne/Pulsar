@@ -24,13 +24,18 @@ describe('NominatimClient', () => {
   });
 
   it('returns null on empty results, HTTP error and network failure', async () => {
-    const client = new NominatimClient('https://nominatim.test');
     global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => [] }) as unknown as typeof fetch;
-    expect(await client.geocode('nowhere')).toBeNull();
+    expect(await new NominatimClient('https://nominatim.test').geocode('nowhere')).toBeNull();
     global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 429 }) as unknown as typeof fetch;
-    expect(await client.geocode('nowhere')).toBeNull();
+    expect(await new NominatimClient('https://nominatim.test').geocode('nowhere')).toBeNull();
     global.fetch = jest.fn().mockRejectedValue(new Error('aborted')) as unknown as typeof fetch;
-    expect(await client.geocode('nowhere')).toBeNull();
+    expect(await new NominatimClient('https://nominatim.test').geocode('nowhere')).toBeNull();
+  });
+
+  it('returns null (not a rejection) on an un-encodable address', async () => {
+    global.fetch = jest.fn() as unknown as typeof fetch;
+    const client = new NominatimClient('https://nominatim.test');
+    await expect(client.geocode('\uD800')).resolves.toBeNull();
   });
 
   it('spaces consecutive calls by at least ~1s (in-process throttle)', async () => {

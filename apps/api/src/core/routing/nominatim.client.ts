@@ -27,8 +27,8 @@ export class NominatimClient {
   }
 
   private async fetchGeocode(address: string): Promise<LatLng | null> {
-    const url = `${this.host}/search?format=jsonv2&limit=1&q=${encodeURIComponent(address)}`;
     try {
+      const url = `${this.host}/search?format=jsonv2&limit=1&q=${encodeURIComponent(address)}`;
       const response = await fetch(url, {
         headers: { 'User-Agent': USER_AGENT },
         signal: AbortSignal.timeout(TIMEOUT_MS),
