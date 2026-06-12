@@ -36,3 +36,6 @@ packages/database/generated/
 # swallowed the apps/api/src/core/documents/storage/ SOURCES (lost, re-authored
 # in phase 6). Keep this path-anchored.
 /apps/api/storage/
+
+# OSRM extract data (phase 10, see docs/getting-started.md)
+osrm-data/

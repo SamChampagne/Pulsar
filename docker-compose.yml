@@ -17,5 +17,19 @@ services:
       timeout: 3s
       retries: 10
 
+  # Optional self-hosted routing engine (phase 10). Opt-in profile:
+  #   docker compose --profile osrm up -d osrm
+  # Requires a prepared extract in ./osrm-data — see docs/getting-started.md.
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:v6.0.0
+    container_name: pulsar-osrm
+    profiles: ["osrm"]
+    restart: unless-stopped
+    command: osrm-routed --algorithm mld /data/region.osrm
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./osrm-data:/data
+
 volumes:
   pulsar-pgdata:
