@@ -40,6 +40,7 @@ import { AccessorialsService } from './accessorials/accessorials.service';
 import { FuelTablesController } from './fuel-tables/fuel-tables.controller';
 import { FuelTablesService } from './fuel-tables/fuel-tables.service';
 import { RatingService } from './rating/rating.service';
+import { BolService } from './bol/bol.service';
 
 /**
  * Transportation Management module (TMS).
@@ -90,6 +91,7 @@ import { RatingService } from './rating/rating.service';
     AnalyticsService,
     AccessorialsService,
     FuelTablesService,
+    BolService,
   ],
   exports: [RatingService],
 })

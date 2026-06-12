@@ -12,6 +12,7 @@ import { TendersService } from '../tenders/tenders.service';
 import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
 import { LoadsService } from './loads.service';
 import { RatingService } from '../rating/rating.service';
+import { BolService } from '../bol/bol.service';
 
 class CreateTenderDto {
   @IsOpt()
@@ -44,6 +45,7 @@ export class LoadsController {
     private readonly loads: LoadsService,
     private readonly tenders: TendersService,
     private readonly rating: RatingService,
+    private readonly bol: BolService,
   ) {}
 
   @Get()
@@ -153,5 +155,21 @@ export class LoadsController {
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.RATES_READ)
   rateOptions(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.rating.rateOptions(user.tenantId, id);
+  }
+
+  // --- Bill of Lading -------------------------------------------------------
+
+  /** Generate (or regenerate) a BOL PDF for a dispatched/in-transit/completed load. */
+  @Post(':id/bol')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.EXECUTION_MANAGE)
+  generateBol(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.bol.generate(user.tenantId, user.id, id);
+  }
+
+  /** List all BOL documents for a load. */
+  @Get(':id/documents')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_READ)
+  listDocuments(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.bol.listBols(user.tenantId, id);
   }
 }
