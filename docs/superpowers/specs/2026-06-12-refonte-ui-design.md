@@ -26,7 +26,7 @@ dispatcher, cohérente sur les 28 pages (app interne, pages publiques, plan plat
 | Périmètre | **Toutes les pages** : app interne (18) + publiques (tender/track/driver/portal) + login/reset + plan plateforme |
 | Navigation | Sidebar à **groupes repliables** (seul le groupe actif déployé) : Opérations, Tarification, Partenaires, Facturation, Analytics, Réglages — conditionnés aux modules actifs du tenant comme aujourd'hui |
 | Densité des tableaux | **Commutable** : confortable par défaut, toggle compact persisté par utilisateur (localStorage) |
-| Carte | **Leaflet + tuiles OSM, lecture seule** : mini-carte sur le panneau/détail load (stops numérotés + dernière position issue des tracking events) et carte sur la page de suivi public. Pas de carte dashboard cette phase |
+| Carte | **Leaflet + tuiles OSM, lecture seule** : mini-carte sur le panneau/détail load (stops numérotés + dernière position issue des tracking events). **Interne uniquement** — vérification faite : le payload public de suivi n'expose pas de coordonnées (règle n°10) ; la carte publique exigerait un changement d'API → différée en phase 10. Pas de carte dashboard cette phase |
 | IA | **Coquille seulement** : command palette ⌘K (navigation + recherche d'entités, sans IA) avec slot assistant désactivé — le backend IA se branchera en phase 11 sans retoucher l'UI |
 | Dark mode | **Tokens prêts, thème plus tard** : toutes les couleurs en variables CSS, seul le thème clair est livré |
 | Stack | **Tailwind CSS 4** + tokens variables CSS + composants maison, icônes **Lucide**, police **Inter**, **Leaflet** pour les cartes. Pas de librairie de composants tierce |
@@ -63,10 +63,11 @@ Les pages liste conservent URL et appels API actuels. Clic sur une ligne → Pan
 
 ### Carte (lecture seule)
 
-Composant `LoadMap` : stops numérotés (lat/long des locations), tracé polyline naïf
-(droites entre stops — le tracé routier réel arrive avec OSRM en phase 10), dernière
-position connue (tracking events POSITION_UPDATE). Utilisé sur le détail load et la
-page de suivi public. Dégradé propre si lat/long absents (carte masquée).
+Composant `LoadMap` : stops numérotés (lat/long des locations, résolues via
+`GET /transportation/locations` existant), tracé polyline naïf (droites entre stops —
+le tracé routier réel arrive avec OSRM en phase 10), dernière position connue
+(tracking events POSITION_UPDATE via `GET /transportation/tracking/events`). Utilisé
+sur le détail load interne uniquement. Dégradé propre si lat/long absents (carte masquée).
 
 ## Ordre d'exécution
 
@@ -92,7 +93,8 @@ pages cohabitent avec les nouvelles pendant la migration).
 
 - **Phase 10** : moteur carto OSRM (backend : distances/temps auto, fiabilise PER_KM)
   + carte opérationnelle live sur le dashboard (loads actifs, positions, retards) —
-  la « live map » complète a besoin d'OSRM pour les tracés et ETA.
+  la « live map » complète a besoin d'OSRM pour les tracés et ETA. Inclut la décision
+  d'exposer (ou non) des coordonnées dans le payload public pour la carte de suivi.
 - **Phase 11** : différenciateurs IA — agent opérationnel (file « actions proposées »,
   pattern commit/discard), ingestion de grilles tarifaires, extraction de factures PDF.
   L'UI de la phase 9 lui réserve la palette ⌘K.
