@@ -43,6 +43,7 @@
   let order = $state<OrderDetail | null>(null);
   let events = $state<TimelineEvent[]>([]);
   let error = $state('');
+  let eventsError = $state(false);
 
   // Plan-with-split form
   let showPlanForm = $state(false);
@@ -81,16 +82,26 @@
   }
 
   async function load() {
+    error = '';
+    let detail: OrderDetail;
     try {
-      order = await api<OrderDetail>(`/transportation/transport-orders/${orderId}`);
+      detail = await api<OrderDetail>(`/transportation/transport-orders/${orderId}`);
+    } catch (e) {
+      error = e instanceof ApiError ? e.message : `Failed to load order — ${String(e)}`;
+      return;
+    }
+    order = detail;
+    eventsError = false;
+    try {
       const lists = await Promise.all(
-        order.shipments.map((s) =>
+        detail.shipments.map((s) =>
           api<TimelineEvent[]>('/transportation/tracking/events', { query: { shipmentId: s.id } }),
         ),
       );
-      events = lists.flat().sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
-    } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load order';
+      events = lists.flat().sort((a, b) => (b.occurredAt ?? '').localeCompare(a.occurredAt ?? ''));
+    } catch {
+      events = [];
+      eventsError = true;
     }
   }
 
@@ -262,6 +273,9 @@
       <!-- Tracking card -->
       <Card>
         <h2 class="mb-3 font-semibold text-ink">Tracking</h2>
+        {#if eventsError}
+          <p class="text-sm text-warn">Tracking events unavailable — reload to retry.</p>
+        {/if}
         <TrackingTimeline {events} />
       </Card>
     </div>

@@ -168,6 +168,7 @@
   let events = $state<TimelineEvent[]>([]);
   let tenders = $state<TenderRow[]>([]);
   let error = $state('');
+  let auxError = $state(false);
 
   const latestTender = $derived(tenders[0] ?? null);
 
@@ -318,18 +319,23 @@
         rateId: detail.rate?.id ?? '',
         mode: detail.mode ?? '',
       };
-      documents = await api<LoadDocument[]>(`/transportation/loads/${loadId}/documents`);
-      route = detail.route
-        ? await api<RouteDetail>(`/transportation/routes/${detail.route.id}`)
-        : null;
-      events = await api<TimelineEvent[]>('/transportation/tracking/events', {
-        query: { loadId },
-      });
-      tenders = await api<TenderRow[]>(`/transportation/loads/${loadId}/tenders`);
-      syncAccessorialState();
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load';
+      error = e instanceof ApiError ? e.message : `Failed to load — ${String(e)}`;
+      return;
     }
+    auxError = false;
+    const [docsR, routeR, eventsR, tendersR] = await Promise.allSettled([
+      api<LoadDocument[]>(`/transportation/loads/${loadId}/documents`),
+      detail.route ? api<RouteDetail>(`/transportation/routes/${detail.route.id}`) : Promise.resolve(null),
+      api<TimelineEvent[]>('/transportation/tracking/events', { query: { loadId } }),
+      api<TenderRow[]>(`/transportation/loads/${loadId}/tenders`),
+    ]);
+    documents = docsR.status === 'fulfilled' ? docsR.value : [];
+    route = routeR.status === 'fulfilled' ? routeR.value : null;
+    events = eventsR.status === 'fulfilled' ? eventsR.value : [];
+    tenders = tendersR.status === 'fulfilled' ? tendersR.value : [];
+    auxError = [docsR, routeR, eventsR, tendersR].some((r) => r.status === 'rejected');
+    syncAccessorialState();
   }
 
   async function copyToClipboard(text: string, label: string) {
@@ -654,6 +660,10 @@
         </div>
       {/each}
     </div>
+  {/if}
+
+  {#if auxError}
+    <div class="mb-4 rounded-card bg-warn-soft p-3 text-sm text-warn">Some sections failed to load (documents, route, tracking or tenders) — reload to retry.</div>
   {/if}
 
   <!-- Main grid: 2 cols on large screens -->
