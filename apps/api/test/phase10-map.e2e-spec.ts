@@ -250,4 +250,147 @@ describe('Phase 10 — positions, public coords, active-map, haversine (e2e)', (
       .send({ latitude: 45, longitude: -73 })
       .expect(400);
   });
+
+  it('haversine fallback: route built without manual distance got HAVERSINE source ~233 km', async () => {
+    const loadDetail = await request(http)
+      .get(`/api/v1/transportation/loads/${ids.loadId}`)
+      .set(auth())
+      .expect(200);
+    const route = loadDetail.body.route;
+    expect(route.distanceSource).toBe('HAVERSINE');
+    expect(route.totalDistanceKm).toBeGreaterThan(225);
+    expect(route.totalDistanceKm).toBeLessThan(242);
+    expect(route.estimatedDurationMin).toBeNull(); // haversine gives no duration
+  });
+
+  it('manual distance wins: MANUAL source, value untouched, no haversine overwrite', async () => {
+    const order = await request(http)
+      .post('/api/v1/transportation/transport-orders')
+      .set(auth())
+      .send({
+        customerId: ids.customer,
+        originLocationId: ids.origin,
+        destinationLocationId: ids.destination,
+      })
+      .expect(201);
+    await request(http)
+      .post(`/api/v1/transportation/transport-orders/${order.body.id}/confirm`)
+      .set(auth())
+      .expect(201);
+    const planned = await request(http)
+      .post(`/api/v1/transportation/transport-orders/${order.body.id}/plan`)
+      .set(auth())
+      .send({})
+      .expect(201);
+    const load = await request(http)
+      .post('/api/v1/transportation/loads')
+      .set(auth())
+      .send({})
+      .expect(201);
+    await request(http)
+      .post(`/api/v1/transportation/shipments/${planned.body.shipments[0].id}/assign-load`)
+      .set(auth())
+      .send({ loadId: load.body.id })
+      .expect(201);
+
+    const route = await request(http)
+      .post('/api/v1/transportation/routes')
+      .set(auth())
+      .send({
+        loadId: load.body.id,
+        totalDistanceKm: 500,
+        stops: [
+          { sequence: 1, type: 'PICKUP', locationId: ids.origin },
+          { sequence: 2, type: 'DELIVERY', locationId: ids.destination },
+        ],
+      })
+      .expect(201);
+    expect(route.body.totalDistanceKm).toBe(500);
+    expect(route.body.distanceSource).toBe('MANUAL');
+  });
+
+  it('active-map: dispatched load listed with stops coords, lastPosition, isLate=false', async () => {
+    const map = await request(http)
+      .get('/api/v1/transportation/loads/active-map')
+      .set(auth())
+      .expect(200);
+    const entry = map.body.find((l: { id: string }) => l.id === ids.loadId);
+    expect(entry).toBeDefined();
+    expect(entry.loadNumber).toBe(ids.loadNumber);
+    expect(entry.carrier).toBe('P10 Carrier');
+    expect(entry.isLate).toBe(false);
+    expect(entry.lastPosition).toMatchObject({ latitude: 45.6, longitude: -73.2 });
+    expect(entry.stops).toHaveLength(2);
+    expect(entry.stops[0]).toMatchObject({
+      sequence: 1, type: 'PICKUP', city: 'Montréal', latitude: 45.5019,
+    });
+    // Spec §C: no geometry in this payload (markers only)
+    expect(entry.geometry).toBeUndefined();
+  });
+
+  it('active-map: late stop flips isLate (same isLate as the exception engine)', async () => {
+    const order = await request(http)
+      .post('/api/v1/transportation/transport-orders')
+      .set(auth())
+      .send({
+        customerId: ids.customer,
+        originLocationId: ids.origin,
+        destinationLocationId: ids.destination,
+      })
+      .expect(201);
+    await request(http)
+      .post(`/api/v1/transportation/transport-orders/${order.body.id}/confirm`)
+      .set(auth())
+      .expect(201);
+    const planned = await request(http)
+      .post(`/api/v1/transportation/transport-orders/${order.body.id}/plan`)
+      .set(auth())
+      .send({})
+      .expect(201);
+    const load = await request(http)
+      .post('/api/v1/transportation/loads')
+      .set(auth())
+      .send({})
+      .expect(201);
+    await request(http)
+      .post(`/api/v1/transportation/shipments/${planned.body.shipments[0].id}/assign-load`)
+      .set(auth())
+      .send({ loadId: load.body.id })
+      .expect(201);
+    await request(http)
+      .post('/api/v1/transportation/routes')
+      .set(auth())
+      .send({
+        loadId: load.body.id,
+        stops: [
+          {
+            sequence: 1, type: 'PICKUP', locationId: ids.origin,
+            plannedArrivalEarly: new Date(Date.now() - 90 * 60_000).toISOString(),
+            plannedArrivalLate: new Date(Date.now() - 60 * 60_000).toISOString(),
+          },
+          { sequence: 2, type: 'DELIVERY', locationId: ids.destination },
+        ],
+      })
+      .expect(201);
+    await request(http)
+      .post(`/api/v1/transportation/loads/${load.body.id}/assign`)
+      .set(auth())
+      .send({ carrierId: ids.carrier })
+      .expect(201);
+    await request(http)
+      .post(`/api/v1/transportation/loads/${load.body.id}/dispatch`)
+      .set(auth())
+      .expect(201);
+
+    const map = await request(http)
+      .get('/api/v1/transportation/loads/active-map')
+      .set(auth())
+      .expect(200);
+    const entry = map.body.find((l: { id: string }) => l.id === load.body.id);
+    expect(entry.isLate).toBe(true);
+  });
+
+  it('active-map requires auth', async () => {
+    await request(http).get('/api/v1/transportation/loads/active-map').expect(401);
+  });
 });

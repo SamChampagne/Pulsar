@@ -23,6 +23,7 @@ import { WebhooksService } from '../../../core/integrations/webhooks.service';
 import { LoadCostService } from './load-cost.service';
 import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
 import { shipmentWindowWarnings } from '../planning/window-warnings';
+import { isLate } from '../exceptions/delay-detection.service';
 
 const loadInclude = {
   carrier: { select: { id: true, code: true, name: true } },
@@ -94,6 +95,80 @@ export class LoadsService {
       this.prisma.load.count({ where }),
     ]);
     return paginated(items, total, page, pageSize);
+  }
+
+  /**
+   * Aggregated payload for the operational dashboard map. Markers only — the
+   * route geometry is deliberately NOT included (heavy, re-fetched every poll;
+   * it stays on the load detail). Lateness reuses the exception engine's pure
+   * isLate — no duplicated logic.
+   */
+  async activeMap(tenantId: string) {
+    const loads = await this.prisma.load.findMany({
+      where: { tenantId, status: { in: [LoadStatus.DISPATCHED, LoadStatus.IN_TRANSIT] } },
+      orderBy: { dispatchedAt: 'desc' },
+      include: {
+        carrier: { select: { name: true } },
+        route: {
+          select: {
+            stops: {
+              orderBy: { sequence: 'asc' },
+              select: {
+                sequence: true,
+                type: true,
+                status: true,
+                plannedArrivalEarly: true,
+                plannedArrivalLate: true,
+                actualArrivalAt: true,
+                location: { select: { name: true, city: true, latitude: true, longitude: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Latest POSITION_UPDATE per load — one query for the whole board.
+    const positions = await this.prisma.trackingEvent.findMany({
+      where: {
+        tenantId,
+        loadId: { in: loads.map((l) => l.id) },
+        type: TrackingEventType.POSITION_UPDATE,
+        latitude: { not: null },
+        longitude: { not: null },
+      },
+      orderBy: { occurredAt: 'desc' },
+      select: { loadId: true, latitude: true, longitude: true, occurredAt: true },
+    });
+    const lastByLoad = new Map<string, (typeof positions)[number]>();
+    for (const p of positions) {
+      if (p.loadId && !lastByLoad.has(p.loadId)) lastByLoad.set(p.loadId, p);
+    }
+
+    const now = new Date();
+    return loads.map((load) => {
+      const stops = load.route?.stops ?? [];
+      const pos = lastByLoad.get(load.id);
+      return {
+        id: load.id,
+        loadNumber: load.loadNumber,
+        status: load.status,
+        carrier: load.carrier?.name ?? null,
+        isLate: stops.some((s) => isLate(s, now).late),
+        lastPosition: pos
+          ? { latitude: pos.latitude!, longitude: pos.longitude!, occurredAt: pos.occurredAt }
+          : null,
+        stops: stops.map((s) => ({
+          sequence: s.sequence,
+          type: s.type,
+          status: s.status,
+          name: s.location.name,
+          city: s.location.city,
+          latitude: s.location.latitude,
+          longitude: s.location.longitude,
+        })),
+      };
+    });
   }
 
   async get(tenantId: string, id: string) {
