@@ -1,8 +1,11 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { api, ApiError } from '$lib/api/client';
-  import StatusBadge from '$lib/components/StatusBadge.svelte';
+  import PublicShell from '$lib/components/PublicShell.svelte';
+  import { Badge, Card } from '$lib/components/ui';
+  import { toneFor, labelFor } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
+  import { formatDate, formatDateTime } from '$lib/format';
 
   interface TrackingView {
     shipper: string;
@@ -22,7 +25,7 @@
 
   const fmtWindow = (early: string | null, late?: string | null) =>
     early
-      ? new Date(early).toLocaleString() + (late ? ' → ' + new Date(late).toLocaleString() : '')
+      ? formatDateTime(early) + (late ? ' → ' + formatDateTime(late) : '')
       : '—';
 
   const token = $derived(page.params.token);
@@ -31,7 +34,7 @@
   let error = $state('');
 
   function fmt(value: string | null): string {
-    return value ? new Date(value).toLocaleString() : '—';
+    return value ? formatDateTime(value) : '—';
   }
 
   $effect(() => {
@@ -42,59 +45,62 @@
   });
 </script>
 
-<div class="public-page">
-  <div class="card public-card">
-    {#if error}
-      <p class="error-text">{error}</p>
-    {:else if view}
-      <p class="muted" style="margin-top: 0;">Shipment tracking · {view.shipper}</p>
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <h1>{view.shipmentNumber}</h1>
-        <StatusBadge status={view.status} />
+<PublicShell maxWidth="max-w-2xl">
+  {#if error}
+    <p class="text-sm text-danger">{error}</p>
+  {:else if view}
+    <p class="mb-1 text-sm text-ink-muted">Shipment tracking · {view.shipper}</p>
+
+    <!-- Status hero -->
+    <div class="mb-2 flex flex-wrap items-center gap-3">
+      <h1 class="text-xl font-bold text-ink">{view.shipmentNumber}</h1>
+      <Badge tone={toneFor(view.status)}>{labelFor(view.status)}</Badge>
+    </div>
+
+    <!-- Origin → destination -->
+    <p class="mb-5 text-base font-medium text-ink">
+      {view.origin.city}{view.origin.state ? `, ${view.origin.state}` : ''}
+      <span class="mx-2 text-ink-muted">→</span>
+      {view.destination.city}{view.destination.state ? `, ${view.destination.state}` : ''}
+    </p>
+
+    <!-- Dates grid -->
+    <Card>
+      <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+        <div>
+          <dt class="text-xs font-semibold text-ink-muted uppercase tracking-wide">Planned pickup</dt>
+          <dd class="mt-0.5 text-ink">{fmtWindow(view.plannedPickupEarly, view.plannedPickupLate)}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold text-ink-muted uppercase tracking-wide">Actual pickup</dt>
+          <dd class="mt-0.5 text-ink">{fmt(view.actualPickupAt)}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold text-ink-muted uppercase tracking-wide">Planned delivery</dt>
+          <dd class="mt-0.5 text-ink">{fmtWindow(view.plannedDeliveryEarly, view.plannedDeliveryLate)}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold text-ink-muted uppercase tracking-wide">Actual delivery</dt>
+          <dd class="mt-0.5 text-ink">{fmt(view.actualDeliveryAt)}</dd>
+        </div>
+      </dl>
+    </Card>
+
+    <!-- POD block -->
+    {#if view.proofOfDelivery}
+      <div class="mt-4 rounded-card border border-ok-soft bg-ok-soft px-4 py-3 text-sm text-ok">
+        Delivered — signed by
+        <strong>{view.proofOfDelivery.signedByName ?? 'receiver'}</strong>
+        on {formatDateTime(view.proofOfDelivery.signedAt)}
       </div>
-      <p>
-        {view.origin.city}{view.origin.state ? `, ${view.origin.state}` : ''}
-        →
-        {view.destination.city}{view.destination.state ? `, ${view.destination.state}` : ''}
-      </p>
-
-      <table style="margin-bottom: 16px;">
-        <tbody>
-          <tr><td class="muted">Planned pickup</td><td>{fmtWindow(view.plannedPickupEarly, view.plannedPickupLate)}</td></tr>
-          <tr><td class="muted">Actual pickup</td><td>{fmt(view.actualPickupAt)}</td></tr>
-          <tr><td class="muted">Planned delivery</td><td>{fmtWindow(view.plannedDeliveryEarly, view.plannedDeliveryLate)}</td></tr>
-          <tr><td class="muted">Actual delivery</td><td>{fmt(view.actualDeliveryAt)}</td></tr>
-        </tbody>
-      </table>
-
-      {#if view.proofOfDelivery}
-        <p>
-          ✅ Delivered — signed by
-          <strong>{view.proofOfDelivery.signedByName ?? 'receiver'}</strong>
-          on {new Date(view.proofOfDelivery.signedAt).toLocaleString()}
-        </p>
-      {/if}
-
-      <h2>History</h2>
-      <TrackingTimeline events={view.events} />
-    {:else}
-      <p class="muted">Loading…</p>
     {/if}
-    <p class="muted" style="margin-bottom: 0; font-size: 11px;">Powered by Pulsar</p>
-  </div>
-</div>
 
-<style>
-  .public-page {
-    min-height: 100vh;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding: 32px 16px;
-  }
+    <!-- Timeline -->
+    <h2 class="mb-3 mt-6 text-sm font-semibold text-ink-muted uppercase tracking-wide">History</h2>
+    <TrackingTimeline events={view.events} />
 
-  .public-card {
-    width: 100%;
-    max-width: 560px;
-  }
-</style>
+    <p class="mt-6 text-center text-xs text-ink-faint">Powered by Pulsar</p>
+  {:else}
+    <p class="text-sm text-ink-muted">Loading…</p>
+  {/if}
+</PublicShell>

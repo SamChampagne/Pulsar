@@ -8,74 +8,43 @@
   }
 
   let { events }: { events: TimelineEvent[] } = $props();
+
+  function dotClass(type: string): string {
+    if (type === 'DELAYED' || type === 'EXCEPTION') return 'bg-danger';
+    if (type === 'DELIVERED') return 'bg-ok';
+    return 'bg-info';
+  }
 </script>
 
 {#if events.length === 0}
-  <p class="muted">No tracking events yet.</p>
+  <p class="text-sm text-ink-muted">No tracking events yet.</p>
 {:else}
-  <ul class="timeline">
+  <ul class="m-0 list-none p-0">
     {#each events as event (event.id)}
-      <li>
-        <span class="dot"></span>
+      <li class="relative pb-5 pl-6 last:pb-0">
+        <!-- vertical line connecting entries -->
+        {#if true}
+          <span
+            class="absolute left-[5px] top-3.5 bottom-0 w-px border-l-2 border-edge [li:last-child_&]:hidden"
+          ></span>
+        {/if}
+        <!-- colored dot -->
+        <span
+          class={`absolute left-0 top-1 h-3 w-3 rounded-full border-2 border-surface ${dotClass(event.type)}`}
+        ></span>
         <div>
-          <div class="event-head">
-            <strong>{event.type.replaceAll('_', ' ')}</strong>
-            <span class="muted">{new Date(event.occurredAt).toLocaleString()}</span>
+          <div class="flex items-baseline gap-2 text-xs">
+            <strong class="text-sm font-semibold text-ink">{event.type.replaceAll('_', ' ')}</strong>
+            <span class="text-ink-muted">{new Date(event.occurredAt).toLocaleString()}</span>
           </div>
           {#if event.message}
-            <div class="muted">{event.message}</div>
+            <div class="mt-0.5 text-sm text-ink-muted">{event.message}</div>
           {/if}
           {#if event.recordedBy}
-            <div class="muted small">by {event.recordedBy.firstName} {event.recordedBy.lastName}</div>
+            <div class="mt-0.5 text-xs text-ink-faint">by {event.recordedBy.firstName} {event.recordedBy.lastName}</div>
           {/if}
         </div>
       </li>
     {/each}
   </ul>
 {/if}
-
-<style>
-  .timeline {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  .timeline li {
-    position: relative;
-    padding: 0 0 18px 24px;
-  }
-
-  .timeline li:not(:last-child)::before {
-    content: '';
-    position: absolute;
-    left: 5px;
-    top: 14px;
-    bottom: 0;
-    width: 2px;
-    background: var(--color-border);
-  }
-
-  .dot {
-    position: absolute;
-    left: 0;
-    top: 4px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: var(--color-primary);
-    border: 2px solid #fff;
-    box-shadow: 0 0 0 1px var(--color-border);
-  }
-
-  .event-head {
-    display: flex;
-    gap: 10px;
-    align-items: baseline;
-    font-size: 13px;
-  }
-
-  .small {
-    font-size: 11px;
-  }
-</style>
