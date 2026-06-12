@@ -3,8 +3,12 @@
   import type { Paginated } from '@pulsar/shared';
   import { TransportMode } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import StatusBadge from '$lib/components/StatusBadge.svelte';
+  import {
+    Badge, Button, Card, Field, PageHeader, Select,
+    toneFor, labelFor,
+  } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
+  import LoadMap from '$lib/components/LoadMap.svelte';
   import { toast } from '$lib/stores/toast';
 
   interface ShipmentOnLoad {
@@ -592,170 +596,472 @@
       void loadResourceOptions();
     }
   });
+
+  // Derive map stops from route for LoadMap
+  const mapStops = $derived(
+    route?.stops.map((s) => ({ sequence: s.sequence, locationId: s.locationId, type: s.type })) ?? [],
+  );
 </script>
 
 {#if error}
-  <p class="error-text">{error}</p>
+  <p class="text-sm text-danger">{error}</p>
 {:else if detail}
-  <div class="page-header">
-    <div style="display: flex; align-items: center; gap: 12px;">
-      <a href="/loads" class="muted">← Loads</a>
-      <h1>{detail.loadNumber}</h1>
-      <StatusBadge status={detail.status} />
-      {#if detail.mode}
-        <span class="badge-mode">{detail.mode}</span>
+  <!-- Page header with title + status badge + action buttons -->
+  <PageHeader title={detail.loadNumber}>
+    {#snippet actions()}
+      <Badge tone={toneFor(detail!.status)}>{labelFor(detail!.status)}</Badge>
+      {#if detail!.mode}
+        <Badge tone="info">{detail!.mode}</Badge>
       {/if}
       {#if isDelayed}
-        <span class="badge-delayed">Delayed</span>
+        <Badge tone="danger">Delayed</Badge>
       {/if}
-    </div>
-    <div style="display: flex; gap: 8px;">
-      {#if detail.status === 'PLANNED'}
-        <button class="btn btn-secondary" onclick={autoTender}>Auto-tender (lane)</button>
-        <button class="btn btn-secondary" onclick={sendTender}>Tender to carrier</button>
-        <button class="btn" onclick={() => action('dispatch')}>Dispatch</button>
-        <button class="btn btn-danger" onclick={() => action('cancel')}>Cancel</button>
-      {:else if detail.status === 'TENDERED'}
+
+      {#if detail!.status === 'PLANNED'}
+        <Button variant="secondary" onclick={autoTender}>Auto-tender (lane)</Button>
+        <Button variant="secondary" onclick={sendTender}>Tender to carrier</Button>
+        <Button variant="primary" onclick={() => action('dispatch')}>Dispatch</Button>
+        <Button variant="danger" onclick={() => action('cancel')}>Cancel</Button>
+      {:else if detail!.status === 'TENDERED'}
         {#if latestTender?.status === 'ACCEPTED'}
-          <button class="btn" onclick={() => action('dispatch')}>Dispatch</button>
+          <Button variant="primary" onclick={() => action('dispatch')}>Dispatch</Button>
         {/if}
         {#if latestTender?.status === 'PENDING'}
-          <button class="btn btn-secondary" onclick={cancelTender}>Cancel tender</button>
+          <Button variant="secondary" onclick={cancelTender}>Cancel tender</Button>
         {/if}
-        <button class="btn btn-danger" onclick={() => action('cancel')}>Cancel load</button>
-      {:else if detail.status === 'DISPATCHED'}
-        <button class="btn" onclick={() => action('start-transit')}>Start transit</button>
-        <button class="btn btn-danger" onclick={() => action('cancel')}>Cancel</button>
-      {:else if detail.status === 'IN_TRANSIT'}
-        <button class="btn" onclick={() => action('complete')}>Complete (delivered)</button>
+        <Button variant="danger" onclick={() => action('cancel')}>Cancel load</Button>
+      {:else if detail!.status === 'DISPATCHED'}
+        <Button variant="primary" onclick={() => action('start-transit')}>Start transit</Button>
+        <Button variant="danger" onclick={() => action('cancel')}>Cancel</Button>
+      {:else if detail!.status === 'IN_TRANSIT'}
+        <Button variant="primary" onclick={() => action('complete')}>Complete (delivered)</Button>
       {/if}
-      {#if ['PLANNED', 'TENDERED', 'DISPATCHED', 'IN_TRANSIT'].includes(detail.status)}
-        <button class="btn btn-secondary" onclick={driverLink}>Driver link</button>
+      {#if ['PLANNED', 'TENDERED', 'DISPATCHED', 'IN_TRANSIT'].includes(detail!.status)}
+        <Button variant="secondary" onclick={driverLink}>Driver link</Button>
       {/if}
+    {/snippet}
+  </PageHeader>
+
+  <!-- Window warnings -->
+  {#if detail.windowWarnings && detail.windowWarnings.length > 0}
+    <div class="mb-4 flex flex-col gap-2">
+      {#each detail.windowWarnings as w (w.shipmentNumber + w.field + w.kind)}
+        <div class="rounded-card bg-warn-soft text-warn p-3 text-sm">
+          <strong>{w.shipmentNumber}</strong> —
+          {w.field === 'pickup' ? 'pickup' : 'delivery'} planifié
+          {w.kind === 'BEFORE_EARLY' ? 'avant' : 'après'} la fenêtre demandée
+          (demandé {new Date(w.requested).toLocaleDateString()}, planifié {new Date(w.planned).toLocaleDateString()})
+        </div>
+      {/each}
     </div>
-  </div>
+  {/if}
 
-  <div class="detail-grid">
-    <div class="column">
-      <div class="card">
-        <h2 style="margin-top: 0;">Resources</h2>
-        <div class="field">
-          <label for="carrier">Carrier</label>
-          <select id="carrier" bind:value={form.carrierId} disabled={!editable}>
-            <option value="">—</option>
-            {#each carriers as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
-          </select>
+  <!-- Main grid: 2 cols on large screens -->
+  <div class="grid gap-4 lg:grid-cols-3">
+    <!-- Left column: Route + Shipments + Documents + Accessorials -->
+    <div class="flex flex-col gap-4 lg:col-span-2">
+
+      <!-- Route card -->
+      <Card>
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="font-semibold text-ink">Route</h2>
+          {#if route && editable && !editingRoute}
+            <Button variant="secondary" onclick={startEditRoute}>Edit route</Button>
+          {/if}
         </div>
-        <div class="field">
-          <label for="driver">Driver</label>
-          <select id="driver" bind:value={form.driverId} disabled={!editable}>
-            <option value="">—</option>
-            {#each drivers as o (o.id)}<option value={o.id}>{o.firstName} {o.lastName}</option>{/each}
-          </select>
-        </div>
-        <div class="field">
-          <label for="vehicle">Vehicle</label>
-          <select id="vehicle" bind:value={form.vehicleId} disabled={!editable}>
-            <option value="">—</option>
-            {#each vehicles as o (o.id)}<option value={o.id}>{o.unitNumber}</option>{/each}
-          </select>
-        </div>
-        <div class="field">
-          <label for="trailer">Trailer</label>
-          <select id="trailer" bind:value={form.trailerId} disabled={!editable}>
-            <option value="">—</option>
-            {#each trailers as o (o.id)}<option value={o.id}>{o.unitNumber}</option>{/each}
-          </select>
-        </div>
-        <div class="field">
-          <label for="rate">Rate</label>
-          <select id="rate" bind:value={form.rateId} disabled={!editable}>
-            <option value="">—</option>
-            {#each rates as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
-          </select>
-        </div>
-        <div class="field">
-          <label for="load-mode">Mode</label>
-          <select id="load-mode" bind:value={form.mode} disabled={!editable}>
-            <option value="">— inherit —</option>
-            {#each Object.values(TransportMode) as m (m)}
-              <option value={m}>{m}</option>
+
+        {#if editingRoute}
+          <div class="mb-3 grid grid-cols-2 gap-3">
+            <Field label="Distance (km)">
+              <input
+                id="distance"
+                type="number"
+                min="0"
+                bind:value={editDistance}
+                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+              />
+            </Field>
+            <Field label="Duration (min)">
+              <input
+                id="duration"
+                type="number"
+                min="0"
+                bind:value={editDuration}
+                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+              />
+            </Field>
+          </div>
+          <div class="flex flex-col gap-2">
+            {#each editStops as stop, index (index)}
+              <div class="grid grid-cols-[90px_1fr_auto_80px] items-center gap-2 border-b border-edge py-2 text-sm">
+                <span class="text-ink-muted">#{index + 1} {stop.type}</span>
+                <span>{stop.label}</span>
+                <div class="flex flex-wrap items-center gap-1">
+                  <span class="text-xs text-ink-muted whitespace-nowrap">Arrival from</span>
+                  <input type="datetime-local" bind:value={stop.plannedArrivalEarly} class="rounded border border-edge bg-surface px-1.5 py-0.5 text-xs text-ink" />
+                  <span class="text-xs text-ink-muted">to</span>
+                  <input type="datetime-local" bind:value={stop.plannedArrivalLate} class="rounded border border-edge bg-surface px-1.5 py-0.5 text-xs text-ink" />
+                </div>
+                <span class="flex gap-1">
+                  <Button variant="secondary" onclick={() => moveStop(index, -1)}>↑</Button>
+                  <Button variant="secondary" onclick={() => moveStop(index, 1)}>↓</Button>
+                </span>
+              </div>
             {/each}
-          </select>
-        </div>
-        {#if editable}
-          <button class="btn" onclick={saveResources}>Save resources</button>
-        {/if}
-
-        {#if resourcesCapacityExcesses.length > 0}
-          <div class="capacity-alert">
-            <strong>Trailer capacity exceeded</strong>
-            <table class="breakdown-table" style="margin-top: 6px;">
+          </div>
+          <div class="mt-3 flex gap-2">
+            <Button variant="primary" onclick={saveRoute}>Save route</Button>
+            <Button variant="secondary" onclick={() => { editingRoute = false; }}>Cancel</Button>
+          </div>
+        {:else if route}
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
               <thead>
-                <tr>
-                  <th style="text-align: left; font-size: 12px;">Axis</th>
-                  <th style="text-align: right; font-size: 12px;">Capacity</th>
-                  <th style="text-align: right; font-size: 12px;">Requested</th>
-                  <th style="text-align: right; font-size: 12px;">Excess</th>
+                <tr class="border-b border-edge text-xs text-ink-muted uppercase tracking-wide">
+                  <th class="pb-2 text-left font-semibold">#</th>
+                  <th class="pb-2 text-left font-semibold">Type</th>
+                  <th class="pb-2 text-left font-semibold">Location</th>
+                  <th class="pb-2 text-left font-semibold">Arrival window</th>
+                  <th class="pb-2 text-left font-semibold">Status</th>
+                  <th class="pb-2"></th>
                 </tr>
               </thead>
               <tbody>
-                {#each resourcesCapacityExcesses as ex (ex.axis)}
-                  <tr>
-                    <td style="font-size: 12px;">{ex.axis}</td>
-                    <td style="text-align: right; font-size: 12px;">{ex.capacity}</td>
-                    <td style="text-align: right; font-size: 12px;">{ex.requested}</td>
-                    <td style="text-align: right; font-size: 12px; color: var(--color-danger, #dc3545);">+{ex.excess}</td>
+                {#each route.stops as stop (stop.id)}
+                  <tr class="border-b border-edge last:border-0">
+                    <td class="py-2 pr-2">{stop.sequence}</td>
+                    <td class="py-2 pr-2">{stop.type}</td>
+                    <td class="py-2 pr-2">{stop.location.name}, {stop.location.city}</td>
+                    <td class="py-2 pr-2 text-xs text-ink-muted">
+                      {#if stop.plannedArrivalEarly}
+                        {new Date(stop.plannedArrivalEarly).toLocaleString()}{stop.plannedArrivalLate ? ' → ' + new Date(stop.plannedArrivalLate).toLocaleString() : ''}
+                      {:else}
+                        —
+                      {/if}
+                    </td>
+                    <td class="py-2 pr-2">
+                      <Badge tone={toneFor(stop.status)}>{labelFor(stop.status)}</Badge>
+                    </td>
+                    <td class="py-2 text-right whitespace-nowrap">
+                      {#if executing && stop.status === 'PENDING'}
+                        <Button variant="primary" onclick={() => stopAction(stop.id, 'ARRIVED')}>Arrive</Button>
+                      {:else if executing && stop.status === 'ARRIVED'}
+                        <Button variant="primary" onclick={() => stopAction(stop.id, 'DEPARTED')}>Depart</Button>
+                      {/if}
+                    </td>
                   </tr>
                 {/each}
               </tbody>
             </table>
-            {#if editable}
-              <label style="display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; cursor: pointer;">
-                <input type="checkbox" bind:checked={resourcesForce} />
-                Force assignment (audited)
-              </label>
-              {#if resourcesForce}
-                <button class="btn btn-danger" style="margin-top: 6px;" onclick={saveResources}>
-                  Confirm force assign
-                </button>
+          </div>
+          <!-- Map below route table -->
+          {#if mapStops.length > 0}
+            <div class="mt-3">
+              <LoadMap stops={mapStops} {loadId} />
+            </div>
+          {/if}
+        {:else if editable && detail.shipments.length > 0}
+          <p class="text-sm text-ink-muted">No route yet.</p>
+          <div class="mt-2">
+            <Button variant="secondary" onclick={generateRoute}>Generate route from shipments</Button>
+          </div>
+        {:else}
+          <p class="text-sm text-ink-muted">No route. Add shipments first.</p>
+        {/if}
+      </Card>
+
+      <!-- Shipments card -->
+      <Card>
+        <h2 class="mb-3 font-semibold text-ink">Shipments</h2>
+        {#if detail.shipments.length === 0}
+          <p class="text-sm text-ink-muted">
+            Empty load — assign shipments from the <a href="/shipments" class="text-accent hover:underline">Shipments</a> page.
+          </p>
+        {:else}
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-edge text-xs text-ink-muted uppercase tracking-wide">
+                  <th class="pb-2 text-left font-semibold">Shipment #</th>
+                  <th class="pb-2 text-left font-semibold">Status</th>
+                  <th class="pb-2 text-left font-semibold">POD</th>
+                  <th class="pb-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each detail.shipments as shipment (shipment.id)}
+                  <tr class="border-b border-edge last:border-0">
+                    <td class="py-2 pr-2">
+                      <a href={`/transport-orders/${shipment.transportOrderId}`} class="font-semibold text-accent hover:underline">
+                        {shipment.shipmentNumber}
+                      </a>
+                    </td>
+                    <td class="py-2 pr-2">
+                      <Badge tone={toneFor(shipment.status)}>{labelFor(shipment.status)}</Badge>
+                    </td>
+                    <td class="py-2 pr-2">
+                      {#if shipment.proofOfDelivery}
+                        <Badge tone="ok">{shipment.proofOfDelivery.signedByName ?? 'Signed'}</Badge>
+                      {:else}
+                        <span class="text-ink-muted">—</span>
+                      {/if}
+                    </td>
+                    <td class="py-2 text-right">
+                      {#if !shipment.proofOfDelivery && (shipment.status === 'IN_TRANSIT' || shipment.status === 'DELIVERED')}
+                        <Button variant="secondary" onclick={() => { podShipment = shipment; }}>Capture POD</Button>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+
+        {#if podShipment}
+          <div class="mt-4 border-t border-edge pt-4">
+            <h3 class="mb-3 font-semibold text-ink">POD — {podShipment.shipmentNumber}</h3>
+            <div class="flex flex-col gap-3">
+              <Field label="Signed by">
+                <input
+                  id="signedBy"
+                  bind:value={podForm.signedByName}
+                  placeholder="Receiver name"
+                  class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+                />
+              </Field>
+              <Field label="Notes">
+                <textarea
+                  id="podNotes"
+                  rows="2"
+                  bind:value={podForm.notes}
+                  class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+                ></textarea>
+              </Field>
+              <div class="flex gap-2">
+                <Button variant="primary" onclick={capturePod}>Save POD</Button>
+                <Button variant="secondary" onclick={() => { podShipment = null; }}>Cancel</Button>
+              </div>
+            </div>
+          </div>
+        {/if}
+      </Card>
+
+      <!-- Documents card -->
+      <Card>
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="font-semibold text-ink">Documents</h2>
+          {#if canBol}
+            <Button variant="secondary" onclick={generateBol}>Generate BOL</Button>
+          {/if}
+        </div>
+        {#if documents.length === 0}
+          <p class="text-sm text-ink-muted">No documents yet.</p>
+        {:else}
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-edge text-xs text-ink-muted uppercase tracking-wide">
+                  <th class="pb-2 text-left font-semibold">File</th>
+                  <th class="pb-2 text-left font-semibold">Date</th>
+                  <th class="pb-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each documents as doc (doc.id)}
+                  <tr class="border-b border-edge last:border-0">
+                    <td class="py-2 pr-2">{doc.fileName}</td>
+                    <td class="py-2 pr-2 text-xs text-ink-muted">{new Date(doc.createdAt).toLocaleString()}</td>
+                    <td class="py-2 text-right">
+                      <a href={`/api/v1/documents/${doc.id}/download`} target="_blank" class="inline-flex items-center justify-center gap-1.5 rounded-md border border-edge bg-surface px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-surface-muted">Download</a>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      </Card>
+
+      <!-- Accessorials card -->
+      <Card>
+        <h2 class="mb-3 font-semibold text-ink">Accessorials</h2>
+        {#if accessorialCatalog.length === 0}
+          <p class="text-sm text-ink-muted">No accessorials configured.</p>
+        {:else}
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-edge text-xs text-ink-muted uppercase tracking-wide">
+                  <th class="pb-2"></th>
+                  <th class="pb-2 text-left font-semibold">Code</th>
+                  <th class="pb-2 text-left font-semibold">Name</th>
+                  <th class="pb-2 text-left font-semibold">Qty</th>
+                  <th class="pb-2 text-left font-semibold">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each accessorialCatalog as cat (cat.id)}
+                  <tr class="border-b border-edge last:border-0">
+                    <td class="py-2 pr-2">
+                      <input
+                        type="checkbox"
+                        checked={accessorialChecked[cat.id] ?? false}
+                        disabled={detail.status === 'COMPLETED' || detail.status === 'CANCELLED'}
+                        onchange={(e) => {
+                          accessorialChecked = {
+                            ...accessorialChecked,
+                            [cat.id]: (e.currentTarget as HTMLInputElement).checked,
+                          };
+                        }}
+                      />
+                    </td>
+                    <td class="py-2 pr-2 text-xs text-ink-muted">{cat.code}</td>
+                    <td class="py-2 pr-2">{cat.name}</td>
+                    <td class="py-2 pr-2">
+                      <input
+                        type="number"
+                        min="1"
+                        class="w-16 rounded-md border border-edge bg-surface px-2 py-1 text-sm text-ink"
+                        value={accessorialQty[cat.id] ?? 1}
+                        disabled={cat.unit === 'FLAT' ||
+                          !(accessorialChecked[cat.id] ?? false) ||
+                          detail.status === 'COMPLETED' ||
+                          detail.status === 'CANCELLED'}
+                        oninput={(e) => {
+                          const v = Number((e.currentTarget as HTMLInputElement).value);
+                          if (!isNaN(v) && v > 0) {
+                            accessorialQty = { ...accessorialQty, [cat.id]: v };
+                          }
+                        }}
+                      />
+                    </td>
+                    <td class="py-2 text-xs text-ink-muted">{cat.unit}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+          {#if detail.status !== 'COMPLETED' && detail.status !== 'CANCELLED'}
+            <div class="mt-3">
+              <Button variant="primary" onclick={saveAccessorials}>Save accessorials</Button>
+            </div>
+          {/if}
+        {/if}
+      </Card>
+
+      <!-- Tracking card -->
+      <Card>
+        <h2 class="mb-3 font-semibold text-ink">Tracking</h2>
+        <TrackingTimeline {events} />
+      </Card>
+    </div>
+
+    <!-- Right column: Summary + Tender + Resources -->
+    <div class="flex flex-col gap-4">
+
+      <!-- Summary card -->
+      <Card>
+        <h2 class="mb-3 font-semibold text-ink">Summary</h2>
+        <dl class="flex flex-col gap-2 text-sm">
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-ink-muted">Carrier</dt>
+            <dd class="font-medium">{detail.carrier?.name ?? '—'}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-ink-muted">Driver</dt>
+            <dd class="font-medium">{detail.driver ? `${detail.driver.firstName} ${detail.driver.lastName}` : '—'}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-ink-muted">Vehicle</dt>
+            <dd class="font-medium">{detail.vehicle?.unitNumber ?? '—'}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-ink-muted">Trailer</dt>
+            <dd class="font-medium">{detail.trailer?.unitNumber ?? '—'}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-ink-muted">Mode</dt>
+            <dd class="font-medium">{detail.mode ?? '—'}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-ink-muted">Rate</dt>
+            <dd class="font-medium">{detail.rate?.name ?? '—'}</dd>
+          </div>
+          {#if detail.estimatedCost !== null}
+            <div class="flex items-center justify-between gap-2">
+              <dt class="text-ink-muted">Estimated cost</dt>
+              <dd class="font-semibold">{Number(detail.estimatedCost).toLocaleString()} {detail.costCurrency}</dd>
+            </div>
+          {/if}
+        </dl>
+
+        {#if detail.estimatedCost !== null && editable}
+          <div class="mt-3">
+            <Button variant="secondary" onclick={openRateOptions}>Compare rates</Button>
+          </div>
+        {:else if !detail.estimatedCost && editable}
+          <div class="mt-3">
+            <Button variant="secondary" onclick={openRateOptions}>Compare rates</Button>
+          </div>
+        {/if}
+
+        {#if detail.costDetail}
+          {@const cd = detail.costDetail}
+          <div class="mt-4 rounded-card border border-edge bg-surface-muted p-3">
+            <div class="mb-2 flex flex-wrap items-center gap-2">
+              <span class="text-xs text-ink-muted">Cost snapshot — ref. {new Date(cd.referenceDate).toLocaleDateString()}</span>
+              {#if !cd.rate.validAtReference}
+                <Badge tone="warn">rate outside validity window</Badge>
               {/if}
+            </div>
+            <table class="w-full text-xs">
+              <tbody>
+                {#each cd.result.lines as line}
+                  <tr class="border-b border-edge last:border-0">
+                    <td class="py-1">{line.label}</td>
+                    <td class="py-1 text-right">{line.amount.toLocaleString()} {cd.rate.currency}</td>
+                  </tr>
+                {/each}
+                <tr>
+                  <td class="pt-2 font-semibold">Total</td>
+                  <td class="pt-2 text-right font-semibold">{cd.result.total.toLocaleString()} {cd.rate.currency}</td>
+                </tr>
+              </tbody>
+            </table>
+            {#if cd.result.appliedBreak}
+              {@const br = cd.result.appliedBreak}
+              <p class="mt-1 text-xs text-ink-muted">
+                Break: ≤ {br.upToKg} kg @ {br.amount} $/CWT
+                {#if br.asIfApplied}<Badge tone="warn">as-if</Badge>{/if}
+              </p>
+            {/if}
+            <p class="mt-1 text-xs text-ink-muted">
+              Fuel: {cd.rate.fuel.pct}% — {cd.rate.fuel.source}
+              {#if cd.rate.fuel.source === 'TABLE' && cd.rate.fuel.effectiveFrom}
+                (eff. {new Date(cd.rate.fuel.effectiveFrom).toLocaleDateString()})
+              {/if}
+            </p>
+            {#if cd.result.missingAccessorials.length > 0}
+              <p class="mt-1 text-xs text-danger">
+                Missing accessorials: {cd.result.missingAccessorials.join(', ')}
+              </p>
             {/if}
           </div>
         {/if}
 
-        {#if detail.estimatedCost !== null}
-          <p style="margin-bottom: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-            <span class="muted">Estimated cost:</span>
-            <strong>{Number(detail.estimatedCost).toLocaleString()} {detail.costCurrency}</strong>
-            {#if editable}
-              <button class="btn btn-secondary btn-sm" onclick={openRateOptions}>
-                Compare rates
-              </button>
-            {/if}
-          </p>
-        {:else if editable}
-          <p style="margin-bottom: 0;">
-            <button class="btn btn-secondary btn-sm" onclick={openRateOptions}>
-              Compare rates
-            </button>
-          </p>
-        {/if}
-
         {#if rateOptionsOpen}
-          <div class="rate-options-panel">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <strong>Rate options</strong>
-              <button class="btn btn-secondary btn-sm" onclick={() => (rateOptionsOpen = false)}>
-                Close
-              </button>
+          <div class="mt-4 rounded-card border border-edge bg-surface-muted p-3">
+            <div class="mb-2 flex items-center justify-between">
+              <strong class="text-sm">Rate options</strong>
+              <Button variant="ghost" onclick={() => { rateOptionsOpen = false; }}>Close</Button>
             </div>
             {#if rateOptionsLoading}
-              <p class="muted">Loading…</p>
+              <p class="text-sm text-ink-muted">Loading…</p>
             {:else if rateOptionsError}
-              <p class="error-text">{rateOptionsError}</p>
+              <p class="text-sm text-danger">{rateOptionsError}</p>
             {:else if rateOptions.length === 0}
-              <p class="muted">No rate options available.</p>
+              <p class="text-sm text-ink-muted">No rate options available.</p>
             {:else}
               {@const firstCompleteByCurrency = (() => {
                 const seen = new Set<string>();
@@ -768,564 +1074,169 @@
                 }
                 return result;
               })()}
-              <table class="rate-options-table">
-                <thead>
-                  <tr>
-                    <th>Rate</th>
-                    <th>Carrier</th>
-                    <th>Lane</th>
-                    <th>Total</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each rateOptions as opt (opt.rateId)}
-                    <tr
-                      class="rate-options-row"
-                      onclick={() =>
-                        (expandedRateId = expandedRateId === opt.rateId ? null : opt.rateId)}
-                    >
-                      <td>
-                        {opt.rateName}
+              <div class="flex flex-col gap-2">
+                {#each rateOptions as opt (opt.rateId)}
+                  <div
+                    class="cursor-pointer rounded-md border border-edge bg-surface p-2 hover:bg-surface-muted"
+                    role="button"
+                    tabindex="0"
+                    onclick={() => { expandedRateId = expandedRateId === opt.rateId ? null : opt.rateId; }}
+                    onkeydown={(e) => { if (e.key === 'Enter') expandedRateId = expandedRateId === opt.rateId ? null : opt.rateId; }}
+                  >
+                    <div class="flex items-center justify-between gap-2 text-sm">
+                      <div class="flex items-center gap-1 flex-wrap">
+                        <span class="font-medium">{opt.rateName}</span>
                         {#if firstCompleteByCurrency.has(opt.rateId)}
-                          <span class="badge badge-success" style="margin-left: 4px;">best</span>
+                          <Badge tone="ok">best</Badge>
                         {/if}
-                      </td>
-                      <td>{opt.carrier?.name ?? '—'}</td>
-                      <td class="muted" style="font-size: 12px;">
-                        {opt.laneSpecificity
-                          ? `${opt.laneSpecificity.originType}→${opt.laneSpecificity.destinationType} (${opt.laneSpecificity.total})`
-                          : 'catch-all'}
-                      </td>
-                      <td>
-                        <strong>{opt.breakdown.total.toLocaleString()} {opt.currency}</strong>
                         {#if opt.missingAccessorials.length > 0}
-                          <span class="badge badge-warn" style="margin-left: 4px;">
-                            missing: {opt.missingAccessorials.length}
-                          </span>
+                          <Badge tone="warn">missing: {opt.missingAccessorials.length}</Badge>
                         {/if}
-                      </td>
-                      <td style="text-align: right;" onclick={(e) => e.stopPropagation()}>
-                        <button class="btn btn-sm" onclick={() => assignRate(opt.rateId)}>
-                          Assign
-                        </button>
-                      </td>
-                    </tr>
+                      </div>
+                      <span class="font-semibold whitespace-nowrap">{opt.breakdown.total.toLocaleString()} {opt.currency}</span>
+                    </div>
+                    <div class="mt-0.5 text-xs text-ink-muted">
+                      {opt.carrier?.name ?? '—'} ·
+                      {opt.laneSpecificity
+                        ? `${opt.laneSpecificity.originType}→${opt.laneSpecificity.destinationType} (${opt.laneSpecificity.total})`
+                        : 'catch-all'}
+                    </div>
                     {#if expandedRateId === opt.rateId}
-                      <tr class="rate-breakdown-row">
-                        <td colspan="5">
-                          <table class="breakdown-table">
-                            <tbody>
-                              {#each opt.breakdown.lines as line}
-                                <tr>
-                                  <td class="muted" style="font-size: 12px;">{line.label}</td>
-                                  <td style="text-align: right; font-size: 12px;">
-                                    {line.amount.toLocaleString()} {opt.currency}
-                                  </td>
-                                </tr>
-                              {/each}
-                            </tbody>
-                          </table>
-                        </td>
-                      </tr>
+                      <table class="mt-2 w-full text-xs">
+                        <tbody>
+                          {#each opt.breakdown.lines as line}
+                            <tr>
+                              <td class="py-0.5 text-ink-muted">{line.label}</td>
+                              <td class="py-0.5 text-right">{line.amount.toLocaleString()} {opt.currency}</td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
                     {/if}
-                  {/each}
-                </tbody>
-              </table>
-            {/if}
-          </div>
-        {/if}
-
-        {#if detail.costDetail}
-          {@const cd = detail.costDetail}
-          <div class="cost-snapshot">
-            <div class="cost-snapshot-header">
-              <span class="muted" style="font-size: 12px;">
-                Cost snapshot — ref. {new Date(cd.referenceDate).toLocaleDateString()}
-              </span>
-              {#if !cd.rate.validAtReference}
-                <span class="badge badge-warn">rate outside validity window at reference date</span>
-              {/if}
-            </div>
-            <table class="breakdown-table">
-              <tbody>
-                {#each cd.result.lines as line}
-                  <tr>
-                    <td style="font-size: 13px;">{line.label}</td>
-                    <td style="text-align: right; font-size: 13px;">
-                      {line.amount.toLocaleString()} {cd.rate.currency}
-                    </td>
-                  </tr>
+                    <div class="mt-2" onclick={(e) => e.stopPropagation()} role="none">
+                      <Button variant="primary" onclick={() => assignRate(opt.rateId)}>Assign</Button>
+                    </div>
+                  </div>
                 {/each}
-                <tr>
-                  <td><strong>Total</strong></td>
-                  <td style="text-align: right;">
-                    <strong>{cd.result.total.toLocaleString()} {cd.rate.currency}</strong>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            {#if cd.result.appliedBreak}
-              {@const br = cd.result.appliedBreak}
-              <p style="font-size: 12px; margin: 4px 0;">
-                <span class="muted">Break applied:</span>
-                ≤ {br.upToKg} kg @ {br.amount} $/CWT
-                {#if br.asIfApplied}
-                  <span class="badge badge-warn">as-if</span>
-                {/if}
-              </p>
-            {/if}
-            <p style="font-size: 12px; margin: 4px 0;">
-              <span class="muted">Fuel:</span>
-              {cd.rate.fuel.pct}% — {cd.rate.fuel.source}
-              {#if cd.rate.fuel.source === 'TABLE' && cd.rate.fuel.effectiveFrom}
-                <span class="muted">(eff. {new Date(cd.rate.fuel.effectiveFrom).toLocaleDateString()})</span>
-              {/if}
-            </p>
-            {#if cd.result.missingAccessorials.length > 0}
-              <p class="error-text" style="font-size: 12px; margin: 4px 0;">
-                Missing accessorials: {cd.result.missingAccessorials.join(', ')}
-              </p>
+              </div>
             {/if}
           </div>
         {/if}
-      </div>
+      </Card>
 
+      <!-- Tender card (only when a tender exists) -->
       {#if latestTender}
-        <div class="card">
-          <h2 style="margin-top: 0;">Tender</h2>
-          <p style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <StatusBadge status={latestTender.status} />
+        <Card>
+          <h2 class="mb-3 font-semibold text-ink">Tender</h2>
+          <div class="flex flex-wrap items-center gap-2 text-sm">
+            <Badge tone={toneFor(latestTender.status)}>{labelFor(latestTender.status)}</Badge>
             <span>{latestTender.carrier.name}</span>
-            <span class="muted">
-              expires {new Date(latestTender.expiresAt).toLocaleString()}
-            </span>
-          </p>
+            <span class="text-ink-muted">expires {new Date(latestTender.expiresAt).toLocaleString()}</span>
+          </div>
           {#if latestTender.declineReason}
-            <p class="error-text">Declined: {latestTender.declineReason}</p>
+            <p class="mt-2 text-sm text-danger">Declined: {latestTender.declineReason}</p>
           {/if}
           {#if latestTender.status === 'PENDING'}
-            <button
-              class="btn btn-secondary btn-sm"
-              onclick={() =>
-                copyToClipboard(`${location.origin}/tender/${latestTender.token}`, 'Tender link')}
-            >
-              Copy carrier link
-            </button>
+            <div class="mt-3">
+              <Button
+                variant="secondary"
+                onclick={() => copyToClipboard(`${location.origin}/tender/${latestTender!.token}`, 'Tender link')}
+              >
+                Copy carrier link
+              </Button>
+            </div>
           {/if}
-        </div>
+        </Card>
       {/if}
 
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <h2 style="margin-top: 0;">Route</h2>
-          {#if route && editable && !editingRoute}
-            <button class="btn btn-secondary btn-sm" onclick={startEditRoute}>Edit route</button>
-          {/if}
+      <!-- Resources assignment card -->
+      <Card>
+        <h2 class="mb-3 font-semibold text-ink">Resources</h2>
+        <div class="flex flex-col gap-3">
+          <Field label="Carrier">
+            <Select bind:value={form.carrierId} disabled={!editable}>
+              <option value="">—</option>
+              {#each carriers as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
+            </Select>
+          </Field>
+          <Field label="Driver">
+            <Select bind:value={form.driverId} disabled={!editable}>
+              <option value="">—</option>
+              {#each drivers as o (o.id)}<option value={o.id}>{o.firstName} {o.lastName}</option>{/each}
+            </Select>
+          </Field>
+          <Field label="Vehicle">
+            <Select bind:value={form.vehicleId} disabled={!editable}>
+              <option value="">—</option>
+              {#each vehicles as o (o.id)}<option value={o.id}>{o.unitNumber}</option>{/each}
+            </Select>
+          </Field>
+          <Field label="Trailer">
+            <Select bind:value={form.trailerId} disabled={!editable}>
+              <option value="">—</option>
+              {#each trailers as o (o.id)}<option value={o.id}>{o.unitNumber}</option>{/each}
+            </Select>
+          </Field>
+          <Field label="Rate">
+            <Select bind:value={form.rateId} disabled={!editable}>
+              <option value="">—</option>
+              {#each rates as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
+            </Select>
+          </Field>
+          <Field label="Mode">
+            <Select bind:value={form.mode} disabled={!editable}>
+              <option value="">— inherit —</option>
+              {#each Object.values(TransportMode) as m (m)}
+                <option value={m}>{m}</option>
+              {/each}
+            </Select>
+          </Field>
         </div>
-        {#if editingRoute}
-          <div class="route-meta">
-            <div class="field">
-              <label for="distance">Distance (km)</label>
-              <input id="distance" type="number" min="0" bind:value={editDistance} />
-            </div>
-            <div class="field">
-              <label for="duration">Duration (min)</label>
-              <input id="duration" type="number" min="0" bind:value={editDuration} />
-            </div>
-          </div>
-          {#each editStops as stop, index (index)}
-            <div class="edit-stop">
-              <span class="muted">#{index + 1} {stop.type}</span>
-              <span>{stop.label}</span>
-              <div class="arrival-window">
-                <span class="arrival-label">Arrival from</span>
-                <input type="datetime-local" bind:value={stop.plannedArrivalEarly} />
-                <span class="arrival-label">to</span>
-                <input type="datetime-local" bind:value={stop.plannedArrivalLate} />
-              </div>
-              <span class="row-actions">
-                <button class="btn btn-secondary btn-sm" type="button" onclick={() => moveStop(index, -1)}>↑</button>
-                <button class="btn btn-secondary btn-sm" type="button" onclick={() => moveStop(index, 1)}>↓</button>
-              </span>
-            </div>
-          {/each}
-          <div style="display: flex; gap: 8px; margin-top: 10px;">
-            <button class="btn" onclick={saveRoute}>Save route</button>
-            <button class="btn btn-secondary" onclick={() => (editingRoute = false)}>Cancel</button>
-          </div>
-        {:else if route}
-          <table>
-            <thead>
-              <tr><th>#</th><th>Type</th><th>Location</th><th>Arrival window</th><th>Status</th><th></th></tr>
-            </thead>
-            <tbody>
-              {#each route.stops as stop (stop.id)}
-                <tr>
-                  <td>{stop.sequence}</td>
-                  <td>{stop.type}</td>
-                  <td>{stop.location.name}, {stop.location.city}</td>
-                  <td class="muted" style="font-size: 12px;">
-                    {#if stop.plannedArrivalEarly}
-                      {new Date(stop.plannedArrivalEarly).toLocaleString()}{stop.plannedArrivalLate ? ' → ' + new Date(stop.plannedArrivalLate).toLocaleString() : ''}
-                    {:else}
-                      —
-                    {/if}
-                  </td>
-                  <td><StatusBadge status={stop.status} /></td>
-                  <td style="white-space: nowrap; text-align: right;">
-                    {#if executing && stop.status === 'PENDING'}
-                      <button class="btn btn-sm" onclick={() => stopAction(stop.id, 'ARRIVED')}>
-                        Arrive
-                      </button>
-                    {:else if executing && stop.status === 'ARRIVED'}
-                      <button class="btn btn-sm" onclick={() => stopAction(stop.id, 'DEPARTED')}>
-                        Depart
-                      </button>
-                    {/if}
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {:else if editable && detail.shipments.length > 0}
-          <p class="muted">No route yet.</p>
-          <button class="btn btn-secondary" onclick={generateRoute}>
-            Generate route from shipments
-          </button>
-        {:else}
-          <p class="muted">No route. Add shipments first.</p>
-        {/if}
-      </div>
-
-      <div class="card">
-        <h2 style="margin-top: 0;">Accessorials</h2>
-        {#if accessorialCatalog.length === 0}
-          <p class="muted">No accessorials configured.</p>
-        {:else}
-          <table>
-            <thead>
-              <tr><th></th><th>Code</th><th>Name</th><th>Qty</th><th>Unit</th></tr>
-            </thead>
-            <tbody>
-              {#each accessorialCatalog as cat (cat.id)}
-                <tr>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={accessorialChecked[cat.id] ?? false}
-                      disabled={detail.status === 'COMPLETED' || detail.status === 'CANCELLED'}
-                      onchange={(e) => {
-                        accessorialChecked = {
-                          ...accessorialChecked,
-                          [cat.id]: (e.currentTarget as HTMLInputElement).checked,
-                        };
-                      }}
-                    />
-                  </td>
-                  <td class="muted" style="font-size: 12px;">{cat.code}</td>
-                  <td>{cat.name}</td>
-                  <td>
-                    <input
-                      type="number"
-                      min="1"
-                      style="width: 60px;"
-                      value={accessorialQty[cat.id] ?? 1}
-                      disabled={cat.unit === 'FLAT' ||
-                        !(accessorialChecked[cat.id] ?? false) ||
-                        detail.status === 'COMPLETED' ||
-                        detail.status === 'CANCELLED'}
-                      oninput={(e) => {
-                        const v = Number((e.currentTarget as HTMLInputElement).value);
-                        if (!isNaN(v) && v > 0) {
-                          accessorialQty = { ...accessorialQty, [cat.id]: v };
-                        }
-                      }}
-                    />
-                  </td>
-                  <td class="muted" style="font-size: 12px;">{cat.unit}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-          {#if detail.status !== 'COMPLETED' && detail.status !== 'CANCELLED'}
-            <button class="btn" style="margin-top: 8px;" onclick={saveAccessorials}>
-              Save accessorials
-            </button>
-          {/if}
-        {/if}
-      </div>
-    </div>
-
-    <div class="column">
-      <div class="card">
-        <h2 style="margin-top: 0;">Shipments</h2>
-        {#if detail.shipments.length === 0}
-          <p class="muted">
-            Empty load — assign shipments from the <a href="/shipments">Shipments</a> page.
-          </p>
-        {:else}
-          <table>
-            <thead>
-              <tr><th>Shipment #</th><th>Status</th><th>POD</th><th></th></tr>
-            </thead>
-            <tbody>
-              {#each detail.shipments as shipment (shipment.id)}
-                <tr>
-                  <td>
-                    <a href={`/transport-orders/${shipment.transportOrderId}`}>
-                      <strong>{shipment.shipmentNumber}</strong>
-                    </a>
-                  </td>
-                  <td><StatusBadge status={shipment.status} /></td>
-                  <td>
-                    {#if shipment.proofOfDelivery}
-                      <span class="badge badge-success">
-                        {shipment.proofOfDelivery.signedByName ?? 'Signed'}
-                      </span>
-                    {:else}
-                      <span class="muted">—</span>
-                    {/if}
-                  </td>
-                  <td style="text-align: right;">
-                    {#if !shipment.proofOfDelivery && (shipment.status === 'IN_TRANSIT' || shipment.status === 'DELIVERED')}
-                      <button class="btn btn-sm" onclick={() => (podShipment = shipment)}>
-                        Capture POD
-                      </button>
-                    {/if}
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-
-        {#if podShipment}
-          <div class="pod-form">
-            <h2>POD — {podShipment.shipmentNumber}</h2>
-            <div class="field">
-              <label for="signedBy">Signed by</label>
-              <input id="signedBy" bind:value={podForm.signedByName} placeholder="Receiver name" />
-            </div>
-            <div class="field">
-              <label for="podNotes">Notes</label>
-              <textarea id="podNotes" rows="2" bind:value={podForm.notes}></textarea>
-            </div>
-            <div style="display: flex; gap: 8px;">
-              <button class="btn" onclick={capturePod}>Save POD</button>
-              <button class="btn btn-secondary" onclick={() => (podShipment = null)}>Cancel</button>
-            </div>
+        {#if editable}
+          <div class="mt-3">
+            <Button variant="primary" onclick={saveResources}>Save resources</Button>
           </div>
         {/if}
-      </div>
 
-      <div class="card">
-        <h2 style="margin-top: 0;">Tracking</h2>
-        <TrackingTimeline {events} />
-      </div>
-
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <h2 style="margin-top: 0;">Documents</h2>
-          {#if canBol}
-            <button class="btn btn-secondary btn-sm" onclick={generateBol}>Generate BOL</button>
-          {/if}
-        </div>
-        {#if documents.length === 0}
-          <p class="muted">No documents yet.</p>
-        {:else}
-          <table>
-            <thead>
-              <tr><th>File</th><th>Date</th><th></th></tr>
-            </thead>
-            <tbody>
-              {#each documents as doc (doc.id)}
-                <tr>
-                  <td>{doc.fileName}</td>
-                  <td class="muted" style="font-size: 12px;">{new Date(doc.createdAt).toLocaleString()}</td>
-                  <td style="text-align: right;">
-                    <a href={`/api/v1/documents/${doc.id}/download`} target="_blank" class="btn btn-secondary btn-sm">Download</a>
-                  </td>
+        {#if resourcesCapacityExcesses.length > 0}
+          <div class="mt-3 rounded-card border border-warn bg-warn-soft p-3">
+            <p class="mb-2 text-sm font-semibold text-warn">Trailer capacity exceeded</p>
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="text-ink-muted">
+                  <th class="pb-1 text-left">Axis</th>
+                  <th class="pb-1 text-right">Capacity</th>
+                  <th class="pb-1 text-right">Requested</th>
+                  <th class="pb-1 text-right">Excess</th>
                 </tr>
-              {/each}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {#each resourcesCapacityExcesses as ex (ex.axis)}
+                  <tr>
+                    <td class="py-0.5">{ex.axis}</td>
+                    <td class="py-0.5 text-right">{ex.capacity}</td>
+                    <td class="py-0.5 text-right">{ex.requested}</td>
+                    <td class="py-0.5 text-right text-danger">+{ex.excess}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+            {#if editable}
+              <label class="mt-2 flex cursor-pointer items-center gap-2 text-sm text-ink">
+                <input type="checkbox" bind:checked={resourcesForce} />
+                Force assignment (audited)
+              </label>
+              {#if resourcesForce}
+                <div class="mt-2">
+                  <Button variant="danger" onclick={saveResources}>Confirm force assign</Button>
+                </div>
+              {/if}
+            {/if}
+          </div>
         {/if}
-      </div>
+      </Card>
     </div>
   </div>
-
-  {#if detail.windowWarnings && detail.windowWarnings.length > 0}
-    <div class="card" style="margin-top: 16px; border-left: 3px solid var(--color-warning, #f59e0b);">
-      <h2 style="margin-top: 0;">
-        ⚠ Avertissements de fenêtre
-        <span class="badge-warning">{detail.windowWarnings.length}</span>
-      </h2>
-      <ul style="margin: 0; padding-left: 20px;">
-        {#each detail.windowWarnings as w (w.shipmentNumber + w.field + w.kind)}
-          <li style="margin-bottom: 6px;">
-            {w.shipmentNumber} — {w.field === 'pickup' ? 'pickup' : 'delivery'} planifié {w.kind === 'BEFORE_EARLY' ? 'avant' : 'après'} la fenêtre demandée
-            (demandé {new Date(w.requested).toLocaleDateString()}, planifié {new Date(w.planned).toLocaleDateString()})
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/if}
 {:else}
-  <p class="muted">Loading…</p>
+  <p class="text-sm text-ink-muted">Loading…</p>
 {/if}
-
-<style>
-  .detail-grid {
-    display: grid;
-    grid-template-columns: 1fr 1.2fr;
-    gap: 16px;
-    align-items: start;
-  }
-
-  .column {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .pod-form {
-    border-top: 1px solid var(--color-border);
-    margin-top: 14px;
-    padding-top: 6px;
-  }
-
-  .route-meta {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0 16px;
-  }
-
-  .edit-stop {
-    display: grid;
-    grid-template-columns: 90px 1fr auto 80px;
-    gap: 8px;
-    align-items: center;
-    padding: 6px 0;
-    border-bottom: 1px solid var(--color-border);
-    font-size: 13px;
-  }
-
-  .arrival-window {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-wrap: wrap;
-  }
-
-  .arrival-label {
-    font-size: 11px;
-    color: var(--color-text-muted);
-    white-space: nowrap;
-  }
-
-  .capacity-alert {
-    margin-top: 10px;
-    padding: 10px 12px;
-    background: #fff3cd;
-    border: 1px solid #ffc107;
-    border-radius: 6px;
-  }
-
-  .badge-warning {
-    display: inline-block;
-    background: var(--color-warning, #f59e0b);
-    color: #fff;
-    border-radius: 10px;
-    padding: 1px 8px;
-    font-size: 12px;
-    font-weight: 600;
-    margin-left: 8px;
-  }
-
-  .row-actions {
-    display: flex;
-    gap: 4px;
-  }
-
-  .rate-options-panel {
-    margin-top: 12px;
-    padding: 12px;
-    background: var(--color-surface, #f8f9fa);
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-  }
-
-  .rate-options-table {
-    width: 100%;
-    font-size: 13px;
-  }
-
-  .rate-options-row {
-    cursor: pointer;
-  }
-
-  .rate-options-row:hover td {
-    background: var(--color-hover, rgba(0, 0, 0, 0.03));
-  }
-
-  .rate-breakdown-row td {
-    padding: 4px 8px 8px;
-    background: var(--color-surface, #f8f9fa);
-  }
-
-  .breakdown-table {
-    width: 100%;
-    font-size: 12px;
-    border-collapse: collapse;
-  }
-
-  .breakdown-table td {
-    padding: 2px 4px;
-  }
-
-  .cost-snapshot {
-    margin-top: 12px;
-    padding: 10px;
-    background: var(--color-surface, #f8f9fa);
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-  }
-
-  .cost-snapshot-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-bottom: 6px;
-  }
-
-  .badge-warn {
-    background: #fff3cd;
-    color: #856404;
-    border: 1px solid #ffc107;
-    padding: 1px 6px;
-    border-radius: 4px;
-    font-size: 11px;
-  }
-
-  .badge-mode {
-    background: #e0e7ff;
-    color: #3730a3;
-    border: 1px solid #c7d2fe;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
-  }
-
-  .badge-delayed {
-    background: #fee2e2;
-    color: #b91c1c;
-    border: 1px solid #fca5a5;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
-  }
-</style>
