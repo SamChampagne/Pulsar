@@ -228,6 +228,14 @@
         <div class="text-sm text-ink">{sel.customerReference}</div>
       </div>
     {/if}
+  {#snippet footer()}
+    {#if sel.status === 'DRAFT'}
+      <Button variant="primary" onclick={async () => { await action(sel.id, 'confirm'); selected = null; }}>Confirm</Button>
+      <Button variant="danger" onclick={async () => { await action(sel.id, 'cancel'); selected = null; }}>Cancel</Button>
+    {:else if sel.status === 'CONFIRMED'}
+      <Button variant="primary" onclick={async () => { await action(sel.id, 'plan'); selected = null; }}>Plan</Button>
+    {/if}
+  {/snippet}
   </Panel>
 {/if}
 
