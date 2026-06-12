@@ -7,6 +7,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { ApiKeysModule } from './core/api-keys/api-keys.module';
 import { EmailModule } from './core/email/email.module';
+import { RoutingModule } from './core/routing/routing.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { ModulesGuard } from './common/guards/modules.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -39,6 +40,7 @@ import { BillingModule } from './modules/billing/billing.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 20 }]),
     PrismaModule,
     EmailModule,
+    RoutingModule,
     ApiKeysModule,
     // Core platform modules
     AuthModule,

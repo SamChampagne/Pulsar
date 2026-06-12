@@ -54,6 +54,13 @@ export class LoadsController {
     return this.loads.list(user.tenantId, query);
   }
 
+  /** Operational dashboard map — markers only, no geometry (spec §C). */
+  @Get('active-map')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_READ)
+  activeMap(@CurrentUser() user: AuthUser) {
+    return this.loads.activeMap(user.tenantId);
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_READ)
   get(@CurrentUser() user: AuthUser, @Param('id') id: string) {

@@ -887,6 +887,12 @@ model LaneCarrierPreference {
   @@map("lane_carrier_preferences")
 }
 
+enum DistanceSource {
+  MANUAL
+  OSRM
+  HAVERSINE
+}
+
 // Ordered stop sequence for a load.
 model Route {
   id                   String   @id @default(cuid())
@@ -894,6 +900,10 @@ model Route {
   loadId               String   @unique
   totalDistanceKm      Float?
   estimatedDurationMin Int?
+  // Provenance of totalDistanceKm — MANUAL is never overwritten by recomputes.
+  distanceSource       DistanceSource?
+  // OSRM route geometry (GeoJSON LineString, [lng, lat] order). Display only.
+  geometry             Json?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -1137,6 +1147,18 @@ model TrackingEvent {
   @@index([tenantId, loadId, occurredAt])
   @@index([tenantId, shipmentId, occurredAt])
   @@map("tracking_events")
+}
+
+// Global geocode cache — NOT tenant-scoped: address → coords is not tenant data.
+model GeocodeCache {
+  id         String   @id @default(cuid())
+  addressKey String   @unique
+  latitude   Float
+  longitude  Float
+  provider   String
+  createdAt  DateTime @default(now())
+
+  @@map("geocode_cache")
 }
 
 // ============================================================================

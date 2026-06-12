@@ -72,6 +72,15 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     re-déclencher `checkCapacity` sur ce load (niveau warning) ; et toute écriture de
     `Shipment.loadId` doit maintenir `shipment_load_legs` dans la même transaction.
 
+## Hard rules (continued, phase 10)
+
+19. Tout appel OSRM/Nominatim passe par `RoutingService` (core/routing) — best-effort,
+    timeout 3 s, jamais bloquant. `Route.distanceSource = MANUAL` n'est JAMAIS écrasé
+    par un recalcul ; `geometry` est purement display (jamais d'usage billing).
+20. Le payload public de suivi n'expose qu'UNE position (la dernière, load non livré)
+    et les coordonnées origine/destination du shipment — jamais d'historique ni les
+    autres stops d'une tournée. `active-map` n'embarque pas de géométrie.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

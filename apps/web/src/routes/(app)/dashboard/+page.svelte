@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
   import { api } from '$lib/api/client';
-  import { PageHeader, Card, Skeleton } from '$lib/components/ui';
+  import { PageHeader, Card, Skeleton, EmptyState } from '$lib/components/ui';
+  import OpsMap from '$lib/components/OpsMap.svelte';
 
   let stats = $state<{ label: string; value: number | string; href: string }[]>([]);
   let error = $state('');
@@ -28,8 +29,43 @@
     }
   }
 
+  interface MapLoad {
+    id: string;
+    loadNumber: string;
+    status: string;
+    carrier: string | null;
+    isLate: boolean;
+    lastPosition: { latitude: number; longitude: number; occurredAt: string } | null;
+    stops: {
+      sequence: number; type: string; status: string; name: string; city: string;
+      latitude: number | null; longitude: number | null;
+    }[];
+  }
+
+  let mapLoads = $state<MapLoad[]>([]);
+  let mapLoaded = $state(false);
+
+  async function loadMap() {
+    try {
+      mapLoads = await api<MapLoad[]>('/transportation/loads/active-map');
+    } catch {
+      // map is an enhancement — stats above already surface API errors
+    } finally {
+      mapLoaded = true;
+    }
+  }
+
   $effect(() => {
     void loadStats();
+  });
+
+  $effect(() => {
+    void loadMap();
+    // 45s poll, visible tab only (spec §C)
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void loadMap();
+    }, 45_000);
+    return () => clearInterval(timer);
   });
 </script>
 
@@ -56,6 +92,26 @@
   {/each}
 </div>
 {/if}
+
+<div class="mt-4">
+  <Card>
+    <div class="mb-2 flex items-center justify-between">
+      <h2 class="text-sm font-bold text-ink">Live operations</h2>
+      {#if mapLoads.some((l) => l.isLate)}
+        <span class="text-xs font-semibold text-danger">
+          {mapLoads.filter((l) => l.isLate).length} late
+        </span>
+      {/if}
+    </div>
+    {#if !mapLoaded}
+      <Skeleton rows={4} />
+    {:else if mapLoads.length === 0}
+      <EmptyState message="No active loads — dispatched and in-transit loads appear here." />
+    {:else}
+      <OpsMap loads={mapLoads} />
+    {/if}
+  </Card>
+</div>
 
 <div class="mt-4">
   <Card>

@@ -145,3 +145,10 @@ export enum TransportMode {
   LTL = 'LTL',
   PARCEL = 'PARCEL',
 }
+
+/** Provenance of Route.totalDistanceKm — MANUAL is never overwritten. Mirrored in schema.prisma. */
+export enum DistanceSource {
+  MANUAL = 'MANUAL',
+  OSRM = 'OSRM',
+  HAVERSINE = 'HAVERSINE',
+}

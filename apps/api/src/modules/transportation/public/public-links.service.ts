@@ -1,7 +1,19 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { ShipmentStatus, StopStatus } from '@pulsar/shared';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  LoadStatus,
+  MODULE_KEYS,
+  ShipmentStatus,
+  StopStatus,
+  TrackingEventType,
+} from '@pulsar/shared';
 import { DocumentsService } from '../../../core/documents/documents.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
 import { RoutesService } from '../routes/routes.service';
 import { TrackingService } from '../tracking/tracking.service';
 
@@ -19,6 +31,7 @@ export class PublicLinksService {
     private readonly routes: RoutesService,
     private readonly tracking: TrackingService,
     private readonly documents: DocumentsService,
+    private readonly modulesCache: TenantModulesCacheService,
   ) {}
 
   // --- Customer tracking -----------------------------------------------------
@@ -28,8 +41,8 @@ export class PublicLinksService {
       where: { trackingToken: token },
       include: {
         tenant: { select: { name: true } },
-        originLocation: { select: { city: true, state: true } },
-        destinationLocation: { select: { city: true, state: true } },
+        originLocation: { select: { city: true, state: true, latitude: true, longitude: true } },
+        destinationLocation: { select: { city: true, state: true, latitude: true, longitude: true } },
         proofOfDelivery: { select: { signedByName: true, signedAt: true } },
         trackingEvents: {
           orderBy: { occurredAt: 'desc' },
@@ -39,6 +52,29 @@ export class PublicLinksService {
       },
     });
     if (!shipment) throw new NotFoundException('Unknown tracking link');
+
+    // Last position of the carrying load, only while the shipment is not delivered.
+    // Single point, no history, no other stops — a multi-customer load never leaks
+    // its itinerary (rule 10 + spec §B).
+    const delivered =
+      shipment.status === ShipmentStatus.DELIVERED || shipment.status === ShipmentStatus.CLOSED;
+    let lastPosition: { latitude: number; longitude: number; occurredAt: Date } | null = null;
+    if (!delivered && shipment.loadId) {
+      const pos = await this.prisma.trackingEvent.findFirst({
+        where: {
+          tenantId: shipment.tenantId,
+          loadId: shipment.loadId,
+          type: TrackingEventType.POSITION_UPDATE,
+          latitude: { not: null },
+          longitude: { not: null },
+        },
+        orderBy: { occurredAt: 'desc' },
+        select: { latitude: true, longitude: true, occurredAt: true },
+      });
+      if (pos) {
+        lastPosition = { latitude: pos.latitude!, longitude: pos.longitude!, occurredAt: pos.occurredAt };
+      }
+    }
 
     return {
       shipper: shipment.tenant.name,
@@ -54,6 +90,7 @@ export class PublicLinksService {
       actualDeliveryAt: shipment.actualDeliveryAt,
       proofOfDelivery: shipment.proofOfDelivery,
       events: shipment.trackingEvents,
+      lastPosition,
     };
   }
 
@@ -155,5 +192,47 @@ export class PublicLinksService {
       mimeType: file.mimetype,
       body: file.buffer,
     });
+  }
+
+  /** Driver position ping. Bounded DTO upstream, deduped 60s here. */
+  async driverRecordPosition(token: string, latitude: number, longitude: number) {
+    const load = await this.loadByDriverToken(token);
+    // Public routes bypass ModulesGuard — re-check activation (CLAUDE.md rule 15).
+    const enabled = await this.modulesCache.getEnabledKeys(load.tenantId);
+    if (!enabled.has(MODULE_KEYS.TRANSPORTATION)) {
+      throw new ForbiddenException('Transportation is not enabled for this shipper');
+    }
+    if (load.status !== LoadStatus.DISPATCHED && load.status !== LoadStatus.IN_TRANSIT) {
+      throw new BadRequestException(
+        'Positions can only be recorded on DISPATCHED or IN_TRANSIT loads',
+      );
+    }
+    const last = await this.prisma.trackingEvent.findFirst({
+      where: { tenantId: load.tenantId, loadId: load.id, type: TrackingEventType.POSITION_UPDATE },
+      orderBy: { occurredAt: 'desc' },
+      select: { occurredAt: true },
+    });
+    if (last && Date.now() - last.occurredAt.getTime() < 60_000) {
+      return { recorded: false }; // at most one stored position per minute per load
+    }
+    // Minute-bucket dedupKey closes the findFirst→create race (concurrent pings).
+    const dedupKey = `POS:${load.id}:${Math.floor(Date.now() / 60_000)}`;
+    try {
+      await this.prisma.trackingEvent.create({
+        data: {
+          tenantId: load.tenantId,
+          type: TrackingEventType.POSITION_UPDATE,
+          loadId: load.id,
+          latitude,
+          longitude,
+          dedupKey,
+        },
+      });
+    } catch (err: unknown) {
+      // P2002 = unique violation — a concurrent ping won the bucket.
+      if ((err as { code?: string }).code === 'P2002') return { recorded: false };
+      throw err;
+    }
+    return { recorded: true };
   }
 }

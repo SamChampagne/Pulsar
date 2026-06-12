@@ -1,6 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { LoadStatus, StopStatus, TrackingEventType, validateWindowPair } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
+import {
+  DistanceSource,
+  LoadStatus,
+  StopStatus,
+  TrackingEventType,
+  validateWindowPair,
+} from '@pulsar/shared';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
+import { pathDistanceKm, type LatLng } from '../../../core/routing/haversine';
+import { RoutingService } from '../../../core/routing/routing.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { LoadCostService } from '../loads/load-cost.service';
@@ -20,6 +29,7 @@ export class RoutesService {
     private readonly prisma: PrismaService,
     private readonly ownership: OwnershipService,
     private readonly cost: LoadCostService,
+    private readonly routing: RoutingService,
   ) {}
 
   list(tenantId: string, _query: ListQueryDto) {
@@ -67,14 +77,59 @@ export class RoutesService {
       }
     }
 
+    // --- Distance/duration/geometry resolution (phase 10) ---------------------
+    // Manual distance always wins (billing input) but geometry is still computed
+    // when coordinates exist, so the detail map stays true.
+    const ordered = dto.stops.slice().sort((a, b) => a.sequence - b.sequence);
+    const locations = await this.prisma.location.findMany({
+      where: { id: { in: [...new Set(ordered.map((s) => s.locationId))] }, tenantId },
+      select: { id: true, latitude: true, longitude: true },
+    });
+    const coordsById = new Map(locations.map((l) => [l.id, l]));
+    const points: LatLng[] = [];
+    let allGeocoded = ordered.length >= 2;
+    for (const s of ordered) {
+      const loc = coordsById.get(s.locationId);
+      if (loc?.latitude == null || loc?.longitude == null) {
+        allGeocoded = false;
+        break;
+      }
+      points.push({ lat: loc.latitude, lng: loc.longitude });
+    }
+
+    let totalDistanceKm = dto.totalDistanceKm ?? null;
+    let estimatedDurationMin = dto.estimatedDurationMin ?? null;
+    let distanceSource: DistanceSource | null =
+      dto.totalDistanceKm != null ? DistanceSource.MANUAL : null;
+    let geometry: unknown = null;
+
+    if (allGeocoded) {
+      const osrm = await this.routing.route(points);
+      if (osrm) {
+        geometry = osrm.geometry;
+        if (distanceSource !== DistanceSource.MANUAL) {
+          totalDistanceKm = osrm.distanceKm;
+          estimatedDurationMin = estimatedDurationMin ?? osrm.durationMin;
+          distanceSource = DistanceSource.OSRM;
+        }
+      } else if (distanceSource !== DistanceSource.MANUAL) {
+        // As-the-crow-flies fallback, ~20-30% under the road figure: flagged so
+        // the UI shows an "estimate" badge (spec §A). Recomputed when OSRM is back.
+        totalDistanceKm = pathDistanceKm(points);
+        distanceSource = DistanceSource.HAVERSINE;
+      }
+    }
+
     // Rebuild from scratch — the route is fully owned by its load.
     await this.prisma.route.deleteMany({ where: { loadId: dto.loadId, tenantId } });
     const route = await this.prisma.route.create({
       data: {
         tenantId,
         loadId: dto.loadId,
-        totalDistanceKm: dto.totalDistanceKm,
-        estimatedDurationMin: dto.estimatedDurationMin,
+        totalDistanceKm: totalDistanceKm ?? undefined,
+        estimatedDurationMin: estimatedDurationMin ?? undefined,
+        distanceSource: distanceSource ?? undefined,
+        geometry: (geometry ?? undefined) as Prisma.InputJsonValue | undefined,
         stops: {
           create: dto.stops.map((s) => ({
             tenantId,

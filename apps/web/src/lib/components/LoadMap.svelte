@@ -4,7 +4,7 @@
   import 'leaflet/dist/leaflet.css';
 
   interface StopIn { sequence: number; locationId: string; type: string }
-  let { stops = [] as StopIn[], loadId } = $props();
+  let { stops = [] as StopIn[], loadId, geometry = null as unknown } = $props();
 
   let el: HTMLDivElement;
   let hasPoints = $state(false);
@@ -50,7 +50,17 @@
           .addTo(map!)
           .bindTooltip(`${i + 1}. ${p.loc!.name} (${p.s.type})`);
       });
-      L.polyline(latlngs, { color: '#1d4ed8', dashArray: '6 6' }).addTo(map);
+      if (geometry) {
+        // OSRM GeoJSON is [lng, lat]; L.geoJSON handles the order natively.
+        // NEVER feed raw GeoJSON coords to L.polyline (expects [lat, lng]) —
+        // the route would draw in the ocean (spec §C).
+        L.geoJSON(geometry as GeoJSON.GeoJsonObject, {
+          style: { color: '#1d4ed8', weight: 3, opacity: 0.8 },
+        }).addTo(map);
+      } else {
+        // Fallback: straight dashed lines between stops.
+        L.polyline(latlngs, { color: '#1d4ed8', dashArray: '6 6' }).addTo(map);
+      }
 
       try {
         const events = await api<TrackingEvent[]>('/transportation/tracking/events', { query: { loadId } });
