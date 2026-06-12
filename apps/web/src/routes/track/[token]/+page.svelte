@@ -5,14 +5,16 @@
   import { Badge, Card } from '$lib/components/ui';
   import { toneFor, labelFor } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
+  import TrackMap from '$lib/components/TrackMap.svelte';
   import { formatDate, formatDateTime } from '$lib/format';
 
   interface TrackingView {
     shipper: string;
     shipmentNumber: string;
     status: string;
-    origin: { city: string; state: string | null };
-    destination: { city: string; state: string | null };
+    origin: { city: string; state: string | null; latitude: number | null; longitude: number | null };
+    destination: { city: string; state: string | null; latitude: number | null; longitude: number | null };
+    lastPosition: { latitude: number; longitude: number; occurredAt: string } | null;
     plannedPickupEarly: string | null;
     plannedPickupLate: string | null;
     plannedDeliveryEarly: string | null;
@@ -63,6 +65,10 @@
       <span class="mx-2 text-ink-muted">→</span>
       {view.destination.city}{view.destination.state ? `, ${view.destination.state}` : ''}
     </p>
+
+    <div class="mb-5">
+      <TrackMap origin={view.origin} destination={view.destination} lastPosition={view.lastPosition} />
+    </div>
 
     <!-- Dates grid -->
     <Card>
