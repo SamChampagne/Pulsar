@@ -112,6 +112,44 @@
     ) ?? [],
   );
 
+  // --- Position sharing (phase 10) ---------------------------------------
+  // Immediate ping on load + on tab-visible + every 2 min while the page is
+  // open and the load active. Screen locked / page closed = no pings (assumed).
+  let sharing = $state(true);
+  let lastSentAt = $state<number | null>(null);
+
+  const activeLoad = $derived(view?.status === 'DISPATCHED' || view?.status === 'IN_TRANSIT');
+
+  function sendPosition() {
+    if (!sharing || !activeLoad || !('geolocation' in navigator)) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        void api(`/public/driver/${token}/position`, {
+          method: 'POST',
+          body: { latitude: pos.coords.latitude, longitude: pos.coords.longitude },
+        })
+          .then(() => (lastSentAt = Date.now()))
+          .catch(() => {}); // best-effort: a failed ping never disturbs the driver
+      },
+      () => {}, // permission denied / unavailable: stay silent
+      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 10_000 },
+    );
+  }
+
+  $effect(() => {
+    if (!view || !activeLoad) return;
+    sendPosition(); // fresh point on every page open (spec §B)
+    const timer = setInterval(sendPosition, 120_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') sendPosition();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  });
+
   $effect(() => {
     if (token) void load();
   });
@@ -138,6 +176,24 @@
         Download BOL (if generated)
       </a>
     </div>
+
+    {#if activeLoad}
+      <div class="flex items-center justify-between rounded-card border border-edge bg-surface px-3 py-2 text-xs text-ink-muted">
+        <span>
+          {sharing ? 'Position sharing active' : 'Position sharing paused'}
+          {#if sharing && lastSentAt}
+            · last sent {new Date(lastSentAt).toLocaleTimeString()}
+          {/if}
+        </span>
+        <button
+          type="button"
+          class="font-semibold text-accent hover:underline"
+          onclick={() => (sharing = !sharing)}
+        >
+          {sharing ? 'Turn off' : 'Turn on'}
+        </button>
+      </div>
+    {/if}
 
     {#if notice}
       <p class="rounded-md bg-danger-soft px-4 py-3 text-sm text-danger">{notice}</p>
