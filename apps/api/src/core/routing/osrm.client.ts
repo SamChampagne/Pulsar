@@ -13,10 +13,17 @@ const TIMEOUT_MS = 3000;
 /** Thin OSRM client. Any failure returns null — callers never block on routing. */
 export class OsrmClient {
   private readonly logger = new Logger(OsrmClient.name);
+  private readonly host: string;
 
-  constructor(private readonly host: string) {}
+  constructor(host: string) {
+    this.host = host.replace(/\/$/, '');
+  }
 
   async route(points: LatLng[]): Promise<OsrmRouteResult | null> {
+    if (points.length < 2) {
+      this.logger.warn('OsrmClient.route called with < 2 points');
+      return null;
+    }
     const coords = points.map((p) => `${p.lng},${p.lat}`).join(';');
     const url = `${this.host}/route/v1/driving/${coords}?overview=simplified&geometries=geojson`;
     try {
@@ -27,7 +34,11 @@ export class OsrmClient {
         routes?: { distance: number; duration: number; geometry: unknown }[];
       };
       const route = data.code === 'Ok' ? data.routes?.[0] : undefined;
-      if (!route) throw new Error(`OSRM code=${data.code ?? 'unknown'}`);
+      if (!route) {
+        throw new Error(
+          data.code === 'Ok' ? 'OSRM Ok but no routes returned' : `OSRM code=${data.code ?? 'unknown'}`,
+        );
+      }
       return {
         distanceKm: Math.round((route.distance / 1000) * 10) / 10,
         durationMin: Math.round(route.duration / 60),

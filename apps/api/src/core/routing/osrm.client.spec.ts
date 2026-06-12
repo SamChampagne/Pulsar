@@ -6,8 +6,9 @@ const QC = { lat: 46.8131, lng: -71.2075 };
 describe('OsrmClient', () => {
   const realFetch = global.fetch;
   afterEach(() => {
+    // Restore by direct assignment — jest.restoreAllMocks() is a no-op here because
+    // we replace global.fetch directly rather than via jest.spyOn.
     global.fetch = realFetch;
-    jest.restoreAllMocks();
   });
 
   it('parses distance (m→km), duration (s→min) and geometry; coords are lng,lat ordered', async () => {
@@ -44,5 +45,29 @@ describe('OsrmClient', () => {
   it('returns null on network failure/timeout', async () => {
     global.fetch = jest.fn().mockRejectedValue(new Error('aborted')) as unknown as typeof fetch;
     expect(await new OsrmClient('http://osrm.local').route([MTL, QC])).toBeNull();
+  });
+
+  it('returns null when OSRM replies Ok with no routes', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ code: 'Ok', routes: [] }),
+    }) as unknown as typeof fetch;
+    expect(await new OsrmClient('http://osrm.local').route([MTL, QC])).toBeNull();
+  });
+
+  it('returns null without fetching when fewer than 2 points', async () => {
+    global.fetch = jest.fn() as unknown as typeof fetch;
+    expect(await new OsrmClient('http://osrm.local').route([MTL])).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('normalizes a trailing slash on the host', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ code: 'Ok', routes: [{ distance: 1000, duration: 60, geometry: null }] }),
+    }) as unknown as typeof fetch;
+    await new OsrmClient('http://osrm.local/').route([MTL, QC]);
+    const url = (global.fetch as jest.Mock).mock.calls[0][0] as string;
+    expect(url.startsWith('http://osrm.local/route/v1/')).toBe(true);
   });
 });
