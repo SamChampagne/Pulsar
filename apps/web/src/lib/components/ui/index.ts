@@ -14,3 +14,4 @@ export { default as Table } from './Table.svelte';
 export { default as Tabs } from './Tabs.svelte';
 export { default as Textarea } from './Textarea.svelte';
 export { toneFor, labelFor, type Tone } from './status';
+export { default as CommandPalette } from './CommandPalette.svelte';
