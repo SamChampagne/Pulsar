@@ -12,6 +12,7 @@ import { OwnershipService } from '../../prisma/ownership.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { ReconcileInvoiceDto, ResolveDisputeDto } from './dto/reconcile.dto';
+import { csvSafe } from '../../common/csv';
 
 const invoiceInclude = {
   carrier: { select: { id: true, code: true, name: true } },
@@ -112,15 +113,16 @@ export class InvoicesService {
   }
 
   async approve(tenantId: string, userId: string, id: string) {
-    const invoice = await this.get(tenantId, id);
-    if (invoice.status !== InvoiceStatus.DRAFT) {
+    // Initial get for 404 and response shape; the write is conditional on status
+    // to close the TOCTOU window between the read and the update.
+    await this.get(tenantId, id);
+    const { count } = await this.prisma.invoice.updateMany({
+      where: { id, tenantId, status: InvoiceStatus.DRAFT },
+      data: { status: InvoiceStatus.APPROVED, approvedAt: new Date() },
+    });
+    if (count === 0) {
       throw new BadRequestException('Only DRAFT invoices can be approved');
     }
-    const approved = await this.prisma.invoice.update({
-      where: { id },
-      data: { status: InvoiceStatus.APPROVED, approvedAt: new Date() },
-      include: invoiceInclude,
-    });
     await this.audit.log({
       tenantId,
       userId,
@@ -130,7 +132,7 @@ export class InvoicesService {
       before: { status: InvoiceStatus.DRAFT },
       after: { status: InvoiceStatus.APPROVED },
     });
-    return approved;
+    return this.get(tenantId, id);
   }
 
   /** Tenant tolerances from the billing module settings (defaults: 2 % / 25). */
@@ -189,15 +191,17 @@ export class InvoicesService {
       throw new BadRequestException(`Cannot move invoice from ${invoice.status} to ${next}`);
     }
 
-    await this.prisma.$transaction([
+    // Line updates are keyed by line id (no status condition) — acceptable because
+    // the header updateMany below is the authoritative gate for concurrent-state detection.
+    const txResults = await this.prisma.$transaction([
       ...computed.map((c) =>
         this.prisma.invoiceLine.update({
           where: { id: c.id },
           data: { invoicedAmount: c.invoiced, variance: c.variance },
         }),
       ),
-      this.prisma.invoice.update({
-        where: { id },
+      this.prisma.invoice.updateMany({
+        where: { id, tenantId, status: { in: [InvoiceStatus.DRAFT, InvoiceStatus.DISPUTED] } },
         data: {
           carrierInvoiceNumber: dto.carrierInvoiceNumber,
           invoicedTotal: outcome.invoicedTotal,
@@ -209,6 +213,12 @@ export class InvoicesService {
         },
       }),
     ]);
+    // Last element is the header updateMany result; count === 0 means the invoice
+    // status changed concurrently between our initial read and the transaction write.
+    const headerResult = txResults[txResults.length - 1] as { count: number };
+    if (headerResult.count === 0) {
+      throw new BadRequestException('Invoice state changed concurrently — retry');
+    }
     await this.audit.log({
       tenantId,
       userId,
@@ -229,15 +239,14 @@ export class InvoicesService {
   /** Human resolution of a dispute. ACCEPT_INVOICED pays the carrier's figure;
    *  KEEP_EXPECTED pays ours (the carrier issues a credit note out of band). */
   async resolveDispute(tenantId: string, userId: string, id: string, dto: ResolveDisputeDto) {
+    // Initial get for 404 + invoicedTotal check; write is conditional on DISPUTED status
+    // to close the TOCTOU window between the read and the update.
     const invoice = await this.get(tenantId, id);
-    if (invoice.status !== InvoiceStatus.DISPUTED) {
-      throw new BadRequestException('Only DISPUTED invoices can be resolved');
-    }
     if (dto.resolution === 'ACCEPT_INVOICED' && invoice.invoicedTotal === null) {
       throw new BadRequestException('No invoiced total recorded on this invoice');
     }
-    const resolved = await this.prisma.invoice.update({
-      where: { id },
+    const { count } = await this.prisma.invoice.updateMany({
+      where: { id, tenantId, status: InvoiceStatus.DISPUTED },
       data: {
         status: InvoiceStatus.APPROVED,
         approvedAt: new Date(),
@@ -252,8 +261,10 @@ export class InvoicesService {
           ? { totalAmount: invoice.invoicedTotal! }
           : {}),
       },
-      include: invoiceInclude,
     });
+    if (count === 0) {
+      throw new BadRequestException('Only DISPUTED invoices can be resolved');
+    }
     await this.audit.log({
       tenantId,
       userId,
@@ -267,29 +278,31 @@ export class InvoicesService {
         reasonCode: dto.reasonCode,
       },
     });
-    return resolved;
+    return this.get(tenantId, id);
   }
 
   async markPaid(tenantId: string, userId: string, id: string, paidAt?: string) {
-    const invoice = await this.get(tenantId, id);
-    if (!canTransitionInvoice(invoice.status as InvoiceStatus, InvoiceStatus.PAID)) {
+    // Initial get for 404; the write is conditional on APPROVED status to close
+    // the TOCTOU window between the read and the update.
+    await this.get(tenantId, id);
+    const resolvedPaidAt = paidAt ? new Date(paidAt) : new Date();
+    const { count } = await this.prisma.invoice.updateMany({
+      where: { id, tenantId, status: InvoiceStatus.APPROVED },
+      data: { status: InvoiceStatus.PAID, paidAt: resolvedPaidAt },
+    });
+    if (count === 0) {
       throw new BadRequestException('Only APPROVED invoices can be marked paid');
     }
-    const paid = await this.prisma.invoice.update({
-      where: { id },
-      data: { status: InvoiceStatus.PAID, paidAt: paidAt ? new Date(paidAt) : new Date() },
-      include: invoiceInclude,
-    });
     await this.audit.log({
       tenantId,
       userId,
       action: AuditAction.STATUS_CHANGE,
       entityType: 'invoice',
       entityId: id,
-      before: { status: invoice.status },
-      after: { status: InvoiceStatus.PAID, paidAt: paid.paidAt },
+      before: { status: InvoiceStatus.APPROVED },
+      after: { status: InvoiceStatus.PAID, paidAt: resolvedPaidAt },
     });
-    return paid;
+    return this.get(tenantId, id);
   }
 
   /** Filtered list as CSV (expected/invoiced/variance per invoice).
@@ -320,25 +333,29 @@ export class InvoicesService {
       'paidAt',
       'createdAt',
     ];
-    const rows = invoices.map((inv) =>
-      [
-        inv.invoiceNumber,
-        inv.carrier.name,
-        inv.status,
-        inv.currency,
-        inv.totalAmount,
-        inv.invoicedTotal,
-        inv.varianceTotal,
-        inv.varianceGross,
-        inv.carrierInvoiceNumber,
-        inv.disputeReasonCode,
-        inv.approvedAt?.toISOString(),
-        inv.paidAt?.toISOString(),
-        inv.createdAt.toISOString(),
-      ]
-        .map(escape)
-        .join(','),
-    );
+    const rows = invoices.map((inv) => {
+      // Free-text columns: apply formula-injection guard before CSV-escaping.
+      // Numeric columns (totalAmount, invoicedTotal, varianceTotal, varianceGross)
+      // are intentionally NOT guarded — a legitimate -12.50 variance must stay numeric.
+      const carrierName = escape(csvSafe(inv.carrier.name));
+      const carrierInvNum =
+        inv.carrierInvoiceNumber != null ? escape(csvSafe(inv.carrierInvoiceNumber)) : '';
+      return [
+        escape(inv.invoiceNumber),
+        carrierName,
+        escape(inv.status),
+        escape(inv.currency),
+        escape(inv.totalAmount),
+        escape(inv.invoicedTotal),
+        escape(inv.varianceTotal),
+        escape(inv.varianceGross),
+        carrierInvNum,
+        escape(inv.disputeReasonCode),
+        escape(inv.approvedAt?.toISOString()),
+        escape(inv.paidAt?.toISOString()),
+        escape(inv.createdAt.toISOString()),
+      ].join(',');
+    });
     return [header.join(','), ...rows].join('\n');
   }
 }

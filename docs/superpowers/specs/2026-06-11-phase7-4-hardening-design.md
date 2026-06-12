@@ -63,6 +63,11 @@ tenants. Test unitaire sur le mismatch (rejet).
   buy-side (approve/pay/reconcile) par des `updateMany({ where: { id, tenantId,
   status: <attendu> } })` + vérification du `count` (la 7.3 applique déjà ce pattern
   côté sell-side ; on aligne le buy-side). Comportement identique, fenêtre fermée.
+- **Génération sell-side transactionnelle** (report de la revue finale 7.3) :
+  `CustomerInvoicesService.createDrafts` enveloppe la boucle par devise dans une
+  `$transaction` et mappe la violation `P2002` (course entre deux générations
+  concurrentes sur `transportOrderId @unique`) vers un 409 explicite — plus de
+  écriture partielle ni de 500.
 
 ## Tests & livraison
 

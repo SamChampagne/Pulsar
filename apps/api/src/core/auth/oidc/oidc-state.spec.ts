@@ -7,11 +7,17 @@ const crypto = new CryptoService({
 } as unknown as ConfigService);
 
 describe('oidc state', () => {
-  it('round-trips verifier and nonce', () => {
-    const state = packOidcState(crypto, { verifier: 'v', nonce: 'n', issuedAt: Date.now() });
+  it('round-trips verifier, nonce, and tenantSlug', () => {
+    const state = packOidcState(crypto, {
+      verifier: 'v',
+      nonce: 'n',
+      issuedAt: Date.now(),
+      tenantSlug: 'acme',
+    });
     const unpacked = unpackOidcState(crypto, state);
     expect(unpacked.verifier).toBe('v');
     expect(unpacked.nonce).toBe('n');
+    expect(unpacked.tenantSlug).toBe('acme');
   });
 
   it('rejects an expired state (10 min)', () => {
@@ -19,6 +25,7 @@ describe('oidc state', () => {
       verifier: 'v',
       nonce: 'n',
       issuedAt: Date.now() - 11 * 60_000,
+      tenantSlug: 'acme',
     });
     expect(() => unpackOidcState(crypto, state)).toThrow(/expired/i);
   });

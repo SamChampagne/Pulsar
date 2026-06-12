@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   AuditAction,
   CustomerInvoiceStatus,
@@ -126,7 +126,12 @@ export class CustomerInvoicesService {
     };
   }
 
-  /** Generates DRAFT statements — one per currency encountered (spec currency rule). */
+  /** Generates DRAFT statements — one per currency encountered (spec currency rule).
+   *  All invoices for the customer are created in a single interactive transaction so
+   *  a concurrent generation cannot partially succeed (P2002 unique violation on the
+   *  customerInvoiceLine.transportOrderId → 409 Conflict).
+   *  Sequence numbers are generated BEFORE the transaction to keep the tx pure Prisma
+   *  (sequences use raw SQL on the shared client, not the tx client). */
   async createDrafts(tenantId: string, userId: string, customerId: string) {
     const { rated, unratable } = await this.rateBillableOrders(tenantId, customerId);
     if (rated.length === 0) {
@@ -136,37 +141,71 @@ export class CustomerInvoicesService {
       });
     }
 
-    const invoices = [];
-    for (const [currency, group] of groupByCurrency(rated)) {
-      const total = group.reduce((acc, r) => acc + r.amount, 0);
-      const invoice = await this.prisma.customerInvoice.create({
-        data: {
-          tenantId,
-          invoiceNumber: await this.sequences.nextNumber(tenantId, 'customer-invoice'),
-          customerId,
-          currency,
-          totalAmount: Math.round(total * 100) / 100,
-          lines: {
-            create: group.map((r) => ({
-              transportOrderId: r.orderId,
-              description: `Order ${r.orderNumber}`,
-              amount: r.amount,
-              priceDetail: r.snapshot,
-            })),
-          },
-        },
-        include: statementInclude,
+    // Pre-generate one invoice number per currency group BEFORE the transaction
+    // (sequences.nextNumber uses raw SQL on the shared prisma client).
+    const currencyGroups = [...groupByCurrency(rated).entries()];
+    const numbersPerCurrency = new Map<string, string>();
+    for (const [currency] of currencyGroups) {
+      numbersPerCurrency.set(currency, await this.sequences.nextNumber(tenantId, 'customer-invoice'));
+    }
+
+    let invoices: Awaited<ReturnType<typeof this.get>>[];
+    try {
+      invoices = await this.prisma.$transaction(async (tx) => {
+        const created = [];
+        for (const [currency, group] of currencyGroups) {
+          const total = group.reduce((acc, r) => acc + r.amount, 0);
+          const invoice = await tx.customerInvoice.create({
+            data: {
+              tenantId,
+              invoiceNumber: numbersPerCurrency.get(currency)!,
+              customerId,
+              currency,
+              totalAmount: Math.round(total * 100) / 100,
+              lines: {
+                create: group.map((r) => ({
+                  transportOrderId: r.orderId,
+                  description: `Order ${r.orderNumber}`,
+                  amount: r.amount,
+                  priceDetail: r.snapshot,
+                })),
+              },
+            },
+            include: statementInclude,
+          });
+          created.push(invoice);
+        }
+        return created;
       });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'A concurrent generation already billed one of these orders — retry',
+        );
+      }
+      throw err;
+    }
+
+    // Audit calls are best-effort and not part of atomicity — emit after the transaction.
+    for (const invoice of invoices) {
       await this.audit.log({
         tenantId,
         userId,
         action: AuditAction.CREATE,
         entityType: 'customer-invoice',
         entityId: invoice.id,
-        after: { invoiceNumber: invoice.invoiceNumber, customerId, currency, lines: group.length },
+        after: {
+          invoiceNumber: invoice.invoiceNumber,
+          customerId,
+          currency: invoice.currency,
+          lines: invoice.lines.length,
+        },
       });
-      invoices.push(invoice);
     }
+
     return { invoices, unratable };
   }
 

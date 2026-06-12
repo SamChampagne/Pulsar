@@ -5,6 +5,8 @@ export interface OidcFlowState {
   verifier: string;
   nonce: string;
   issuedAt: number;
+  /** Tenant slug bound at pack time — callback verifies slug matches to prevent cross-tenant replay */
+  tenantSlug: string;
 }
 
 const MAX_AGE_MS = 10 * 60_000;

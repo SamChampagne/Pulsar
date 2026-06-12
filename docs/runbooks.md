@@ -45,6 +45,43 @@ sont identiques.
 Premier passage (chiffrement initial des lignes encore en clair) : même commande
 sans `ENCRYPTION_KEY_OLD`.
 
+## Perte de MFA plateforme (compte bloqué hors application)
+
+Cas d'usage : un administrateur plateforme a perdu son authenticator TOTP et n'a plus aucun
+code de récupération valide — il est impossible de compléter la deuxième étape du login.
+
+> **Important** : les codes de récupération ne sont **jamais récupérables** après l'enrôlement.
+> Il n'existe aucun moyen applicatif de les afficher à nouveau. Ce runbook est la seule
+> sortie de secours.
+
+**Action** : un opérateur ayant accès direct à la base de données remet le compte à zéro.
+
+```sql
+-- Remplacer par l'email du compte concerné.
+UPDATE platform_users
+SET
+  "totpSecret"    = NULL,
+  "mfaEnabledAt"  = NULL,
+  "recoveryCodes" = '{}'
+WHERE email = 'admin@example.com';
+```
+
+Après cette mise à jour, le prochain `POST /platform/auth/login` pour ce compte :
+- si `PLATFORM_MFA_ENFORCED=true` : déclenche le flux d'enrôlement forcé (l'utilisateur
+  reçoit un `enrollToken` + `otpauthUrl` et doit re-scanner le QR code dans son
+  application TOTP) ;
+- sinon : retourne directement un `accessToken` (pas de MFA) — l'utilisateur peut alors
+  appeler `POST /platform/auth/mfa/enroll-start` pour re-enrôler de manière optionnelle.
+
+**Précautions** :
+- Effectuer cette opération dans une fenêtre de maintenance courte, en présence de
+  l'administrateur concerné, pour éviter une fenêtre sans MFA trop longue.
+- Tracer l'opération dans un journal d'accès DB externe (l'`audit_logs` applicatif ne
+  couvre pas les actions directes en base).
+- Si le compte a pu être compromis (raison du blocage = perte de téléphone suspecte),
+  changer également le `passwordHash` via un reset applicatif ou une mise à jour directe
+  avant de remettre la MFA à zéro.
+
 ## Backup / restore PostgreSQL
 
 Sauvegarde quotidienne minimale :

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { ApiKeysModule } from './core/api-keys/api-keys.module';
@@ -32,6 +33,10 @@ import { BillingModule } from './modules/billing/billing.module';
       envFilePath: ['.env', '../../.env'],
     }),
     ScheduleModule.forRoot(),
+    // ThrottlerModule is registered here (app root) so its storage and config
+    // providers are available application-wide via DI. The ThrottlerGuard is NOT
+    // added as APP_GUARD — it is applied selectively on PlatformAuthController only.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 20 }]),
     PrismaModule,
     EmailModule,
     ApiKeysModule,

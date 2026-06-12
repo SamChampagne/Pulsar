@@ -2,17 +2,21 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule, type JwtModuleOptions } from '@nestjs/jwt';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { CryptoModule } from '../crypto/crypto.module';
 import { EmailModule } from '../email/email.module';
 import { PlatformAuthController } from './platform-auth.controller';
 import { PlatformAuthService } from './platform-auth.service';
 import { PlatformJwtStrategy } from './platform-jwt.strategy';
 import { PlatformGuard } from './platform.guard';
+import { PlatformMfaController } from './platform-mfa.controller';
+import { PlatformMfaService } from './platform-mfa.service';
 import { PlatformTenantsController } from './platform-tenants.controller';
 import { PlatformTenantsService } from './platform-tenants.service';
 
 @Module({
   imports: [
     AuditLogsModule,
+    CryptoModule,
     EmailModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -22,7 +26,13 @@ import { PlatformTenantsService } from './platform-tenants.service';
       }),
     }),
   ],
-  controllers: [PlatformAuthController, PlatformTenantsController],
-  providers: [PlatformAuthService, PlatformJwtStrategy, PlatformGuard, PlatformTenantsService],
+  controllers: [PlatformAuthController, PlatformMfaController, PlatformTenantsController],
+  providers: [
+    PlatformAuthService,
+    PlatformJwtStrategy,
+    PlatformGuard,
+    PlatformMfaService,
+    PlatformTenantsService,
+  ],
 })
 export class PlatformModule {}

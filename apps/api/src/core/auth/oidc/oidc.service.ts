@@ -38,6 +38,9 @@ export interface OidcClaims {
 
 @Injectable()
 export class OidcService {
+  private readonly issuerCache = new Map<string, { issuer: Issuer; fetchedAt: number }>();
+  private static readonly ISSUER_TTL_MS = 60 * 60_000;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
@@ -105,8 +108,18 @@ export class OidcService {
     return { tenant, config };
   }
 
-  private async clientFor(config: OidcConfig, slug: string) {
-    const issuer = await Issuer.discover(config.issuer);
+  private async discoverIssuer(url: string, forceRefresh = false): Promise<Issuer> {
+    const cached = this.issuerCache.get(url);
+    if (!forceRefresh && cached && Date.now() - cached.fetchedAt < OidcService.ISSUER_TTL_MS) {
+      return cached.issuer;
+    }
+    const issuer = await Issuer.discover(url);
+    this.issuerCache.set(url, { issuer, fetchedAt: Date.now() });
+    return issuer;
+  }
+
+  private async clientFor(config: OidcConfig, slug: string, forceRefresh = false) {
+    const issuer = await this.discoverIssuer(config.issuer, forceRefresh);
     const apiUrl = this.config.get('API_URL', 'http://localhost:3000');
     return new issuer.Client({
       client_id: config.clientId,
@@ -127,21 +140,33 @@ export class OidcService {
       code_challenge: generators.codeChallenge(verifier),
       code_challenge_method: 'S256',
       nonce,
-      state: packOidcState(this.crypto, { verifier, nonce, issuedAt: Date.now() }),
+      state: packOidcState(this.crypto, { verifier, nonce, issuedAt: Date.now(), tenantSlug: slug }),
     });
   }
 
   /** Step 2: IdP callback — exchange the code, resolve the user, mint a one-shot exchange code. */
   async callback(slug: string, params: Record<string, string>): Promise<string> {
     const { tenant, config } = await this.tenantWithOidc(slug);
-    const client = await this.clientFor(config, slug);
     const state = unpackOidcState(this.crypto, params.state ?? '');
+    if (state.tenantSlug !== slug) {
+      throw new UnauthorizedException('OIDC state does not belong to this organization');
+    }
     const apiUrl = this.config.get('API_URL', 'http://localhost:3000');
-    const tokenSet = await client.callback(
-      `${apiUrl}/api/v1/auth/oidc/${slug}/callback`,
-      params,
-      { state: params.state, nonce: state.nonce, code_verifier: state.verifier },
-    );
+    const redirectUri = `${apiUrl}/api/v1/auth/oidc/${slug}/callback`;
+    const callbackChecks = { state: params.state, nonce: state.nonce, code_verifier: state.verifier };
+
+    let tokenSet;
+    try {
+      const client = await this.clientFor(config, slug);
+      tokenSet = await client.callback(redirectUri, params, callbackChecks);
+    } catch (err) {
+      // openid-client OP errors carry an OAuth `error` code (invalid_grant, invalid_client…):
+      // those are real auth failures — retrying with a fresh discovery cannot fix them.
+      // Only transport/discovery-level failures (no error code) warrant the one retry.
+      if ((err as { error?: string }).error) throw err;
+      const freshClient = await this.clientFor(config, slug, true);
+      tokenSet = await freshClient.callback(redirectUri, params, callbackChecks);
+    }
     const claims = tokenSet.claims() as OidcClaims;
     if (!claims.email) throw new UnauthorizedException('IdP did not provide an email claim');
 

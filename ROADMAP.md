@@ -103,7 +103,7 @@ The increment that turns Pulsar from an internal tool into a collaborative platf
   rotation script, operational runbooks (key rotation, backup/restore).
 - ✅ Fleet module discovery doc (scope, model sketch, open questions — no code).
 
-## Phase 7 — TMS brain (rating engine v2 + lanes) 🚧
+## Phase 7 — TMS brain (rating engine v2 + lanes) ✅
 
 - ✅ **7.1 — Rating engine v2 + Lane entity**: Lane as a first-class entity (geo hierarchy
   LOCATION < CITY < STATE < COUNTRY, NFD-normalized keys, deterministic specificity ordering);
@@ -125,10 +125,19 @@ The increment that turns Pulsar from an internal tool into a collaborative platf
   or customer catch-all, latest `actualDeliveryAt` as reference date, cheapest wins);
   `groupByCurrency` — one statement per currency; draft escape (delete frees orders);
   `transportOrderId @unique` prevents double-billing; send gated on customer email + email delivery;
-  4 new permissions (`billing.customer-invoices.*`); CINV sequence; 7 e2e tests; 13th migration.
+  4 new permissions (`billing.customer-invoices.*`); CINV sequence; 8 e2e tests; 13th migration.
   **Note: Taxes (GST/QST/VAT) are the FIRST post-7.3 addition if customers invoice for real.**
-- 7.4 — Deferred phase-6 hardening: `@PlatformController()` composite decorator, platform
-  login throttling, OIDC state slug, `Issuer.discover` cache, platform MFA (TOTP).
+- ✅ **7.4 — Deferred phase-6 hardening**: `@PlatformController()` composite decorator
+  (`applyDecorators(Public(), UseGuards(PlatformGuard))` — eliminates silent open routes);
+  `ThrottlerModule` on `PlatformAuthController` (20 req/min/IP); OIDC encrypted state carries
+  `tenantSlug`, verified at callback (replay defense); `Issuer.discover` cache (1 h TTL +
+  refresh-once retry on exchange failure); **platform MFA** — `PlatformMfaService` with otplib
+  TOTP (±1 window), `totpSecret enc:v1` + `mfaEnabledAt` + `recoveryCodes` bcrypt single-use on
+  `PlatformUser`, step tokens (`mfa-enroll` 10 min / `mfa-pending` 5 min) rejected by
+  `PlatformJwtStrategy`, login with 3 branches incl. `PLATFORM_MFA_ENFORCED`, opt-in
+  `enroll-start` authenticated endpoint; `csvSafe()` on free-text export columns; conditional
+  `updateMany` transitions on buy-side invoices; transactional `createDrafts` with `P2002 → 409`;
+  6 e2e tests; 14th migration. **Phase 7 complete.**
 
 ## Later / exploratory
 
