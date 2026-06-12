@@ -128,6 +128,8 @@
     id: string;
     totalDistanceKm: number | null;
     estimatedDurationMin: number | null;
+    distanceSource: 'MANUAL' | 'OSRM' | 'HAVERSINE' | null;
+    geometry: unknown;
     stops: {
       id: string;
       sequence: number;
@@ -724,6 +726,21 @@
             <Button variant="secondary" onclick={() => { editingRoute = false; }}>Cancel</Button>
           </div>
         {:else if route}
+          {#if route.totalDistanceKm != null || route.estimatedDurationMin != null}
+            <div class="mb-2 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
+              {#if route.totalDistanceKm != null}
+                <span>{route.totalDistanceKm} km</span>
+              {/if}
+              {#if route.estimatedDurationMin != null}
+                <span>{route.estimatedDurationMin} min</span>
+              {/if}
+              {#if route.distanceSource === 'HAVERSINE'}
+                <Badge tone="warn">estimate — straight-line</Badge>
+              {:else if route.distanceSource === 'OSRM'}
+                <Badge tone="neutral">OSRM</Badge>
+              {/if}
+            </div>
+          {/if}
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead>
@@ -767,7 +784,7 @@
           <!-- Map below route table -->
           {#if mapStops.length > 0}
             <div class="mt-3">
-              <LoadMap stops={mapStops} {loadId} />
+              <LoadMap stops={mapStops} {loadId} geometry={route?.geometry ?? null} />
             </div>
           {/if}
         {:else if editable && detail.shipments.length > 0}
