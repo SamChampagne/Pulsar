@@ -121,22 +121,13 @@
 
 <Modal bind:open={showForm} title="New carrier">
   {#snippet children()}
-    <form id="carrier-form" onsubmit={create}>
+    <form onsubmit={create}>
       <div class="grid grid-cols-2 gap-x-4 gap-y-3">
         <Field label="Code">
-          <input
-            bind:value={form.code}
-            required
-            placeholder="CARR-002"
-            class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-          />
+          <Input bind:value={form.code} required placeholder="CARR-002" />
         </Field>
         <Field label="Name">
-          <input
-            bind:value={form.name}
-            required
-            class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-          />
+          <Input bind:value={form.name} required />
         </Field>
         <Field label="SCAC">
           <Input bind:value={form.scacCode} />

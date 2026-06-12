@@ -3,6 +3,7 @@
   import { TransportMode } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import { formatMoney, formatDate } from '$lib/format';
   import {
     PageHeader,
     Button,
@@ -13,6 +14,8 @@
     Skeleton,
     Modal,
     Field,
+    Input,
+    Select,
     toneFor,
   } from '$lib/components/ui';
 
@@ -72,8 +75,6 @@
   let status = $state('DRAFT');
   let breaks = $state<{ upToKg: number; amount: number }[]>([]);
   let prices = $state<{ accessorialId: string; amount: number }[]>([]);
-
-  const inputCls = 'w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none';
 
   function statusTone(s: string) {
     if (s === 'ACTIVE') return 'ok';
@@ -253,10 +254,10 @@
           {/if}
         </td>
         <td>{rate.carrier?.name ?? '—'}</td>
-        <td class="tabular-nums">{parseFloat(rate.baseAmount).toFixed(2)} {rate.currency}</td>
+        <td class="tabular-nums">{formatMoney(rate.baseAmount, rate.currency)}</td>
         <td class="text-xs text-ink-muted">
           {#if rate.validFrom || rate.validTo}
-            {rate.validFrom ? rate.validFrom.slice(0, 10) : '…'} → {rate.validTo ? rate.validTo.slice(0, 10) : '…'}
+            {formatDate(rate.validFrom)} → {formatDate(rate.validTo)}
           {:else}
             —
           {/if}
@@ -278,103 +279,105 @@
 <!-- ─── Rate form Modal ───────────────────────────────────────────────────────── -->
 <Modal bind:open={showForm} title={editingId ? 'Edit rate' : 'New rate'}>
   {#snippet children()}
-    <form id="rate-form" onsubmit={save}>
+    <form onsubmit={save}>
       <div class="grid grid-cols-3 gap-x-4">
         <div class="col-span-3">
           <Field label="Name">
-            <input bind:value={name} required placeholder="Base rate – East" class={inputCls} />
+            <Input bind:value={name} required placeholder="Base rate – East" />
           </Field>
         </div>
 
         <Field label="Type">
-          <select bind:value={rateType} required class={inputCls}>
+          <Select bind:value={rateType} required>
             <option value="FLAT">FLAT</option>
             <option value="PER_KM">PER_KM</option>
             <option value="PER_HUNDREDWEIGHT">PER_HUNDREDWEIGHT</option>
             <option value="PER_PALLET">PER_PALLET</option>
             <option value="SPOT">SPOT</option>
-          </select>
+          </Select>
         </Field>
 
         <Field label="Base amount">
-          <input type="number" step="0.01" min="0" bind:value={baseAmount} required class={inputCls} />
+          <Input type="number" step="0.01" min="0" bind:value={baseAmount} required />
         </Field>
 
         <Field label="Currency">
-          <input bind:value={currency} placeholder="CAD" maxlength="3" class={inputCls} />
+          <Input bind:value={currency} placeholder="CAD" maxlength={3} />
         </Field>
 
         <Field label="Min charge">
-          <input
-            type="number" step="0.01" min="0"
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
             value={minCharge ?? ''}
             oninput={(e) => {
-              const v = (e.target as HTMLInputElement).value;
+              const v = e.currentTarget.value;
               minCharge = v === '' ? null : parseFloat(v);
             }}
             placeholder="optional"
-            class={inputCls}
           />
         </Field>
 
         <Field label="Fuel surcharge %">
-          <input
-            type="number" step="0.01" min="0"
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
             value={fuelSurchargePct ?? ''}
             oninput={(e) => {
-              const v = (e.target as HTMLInputElement).value;
+              const v = e.currentTarget.value;
               fuelSurchargePct = v === '' ? null : parseFloat(v);
             }}
             placeholder="optional"
-            class={inputCls}
           />
         </Field>
 
         <Field label="Mode">
-          <select bind:value={rateMode} class={inputCls}>
+          <Select bind:value={rateMode}>
             <option value="">— all modes —</option>
             {#each Object.values(TransportMode) as m (m)}
               <option value={m}>{m}</option>
             {/each}
-          </select>
+          </Select>
         </Field>
 
         <Field label="Carrier">
-          <select bind:value={carrierId} class={inputCls}>
+          <Select bind:value={carrierId}>
             <option value="">— none —</option>
             {#each carriers as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
-          </select>
+          </Select>
         </Field>
 
         <Field label="Lane">
-          <select bind:value={laneId} class={inputCls}>
+          <Select bind:value={laneId}>
             <option value="">— catch-all —</option>
             {#each lanes as l (l.id)}<option value={l.id}>{laneLabel(l)}</option>{/each}
-          </select>
+          </Select>
         </Field>
 
         <Field label="Fuel table">
-          <select bind:value={fuelTableId} class={inputCls}>
+          <Select bind:value={fuelTableId}>
             <option value="">— none —</option>
             {#each fuelTables as ft (ft.id)}<option value={ft.id}>{ft.name}</option>{/each}
-          </select>
+          </Select>
         </Field>
 
         <Field label="Valid from">
-          <input type="date" bind:value={validFrom} class={inputCls} />
+          <Input type="date" bind:value={validFrom} />
         </Field>
 
         <Field label="Valid to">
-          <input type="date" bind:value={validTo} class={inputCls} />
+          <Input type="date" bind:value={validTo} />
         </Field>
 
         {#if editingId}
           <Field label="Status">
-            <select bind:value={status} class={inputCls}>
+            <Select bind:value={status}>
               <option value="DRAFT">DRAFT</option>
               <option value="ACTIVE">ACTIVE</option>
               <option value="EXPIRED">EXPIRED</option>
-            </select>
+            </Select>
           </Field>
         {/if}
       </div>
@@ -392,10 +395,10 @@
               {#each breaks as brk, i (i)}
                 <div class="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
                   <Field label="Up to (kg)">
-                    <input type="number" step="0.001" min="0.001" bind:value={brk.upToKg} required class={inputCls} />
+                    <Input type="number" step="0.001" min="0.001" bind:value={brk.upToKg} required />
                   </Field>
                   <Field label="Amount">
-                    <input type="number" step="0.01" min="0" bind:value={brk.amount} required class={inputCls} />
+                    <Input type="number" step="0.01" min="0" bind:value={brk.amount} required />
                   </Field>
                   <Button variant="danger" onclick={() => removeBreak(i)}>Remove</Button>
                 </div>
@@ -417,15 +420,15 @@
             {#each prices as price, i (i)}
               <div class="grid grid-cols-[1fr_auto_auto] gap-3 items-end">
                 <Field label="Accessorial">
-                  <select bind:value={price.accessorialId} required class={inputCls}>
+                  <Select bind:value={price.accessorialId} required>
                     <option value="" disabled>Select…</option>
                     {#each accessorials as a (a.id)}
                       <option value={a.id}>{a.code} – {a.name} ({a.unit})</option>
                     {/each}
-                  </select>
+                  </Select>
                 </Field>
                 <Field label="Amount">
-                  <input type="number" step="0.01" min="0" bind:value={price.amount} required class={inputCls} />
+                  <Input type="number" step="0.01" min="0" bind:value={price.amount} required />
                 </Field>
                 <Button variant="danger" onclick={() => removePrice(i)}>Remove</Button>
               </div>
@@ -433,14 +436,11 @@
           </div>
         {/if}
       </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <Button variant="secondary" onclick={reset}>Cancel</Button>
+        <Button type="submit">{editingId ? 'Update' : 'Create'}</Button>
+      </div>
     </form>
-  {/snippet}
-  {#snippet footer()}
-    <Button variant="secondary" onclick={reset}>Cancel</Button>
-    <button
-      type="submit"
-      form="rate-form"
-      class="inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors bg-accent text-white hover:bg-accent-hover"
-    >{editingId ? 'Update' : 'Create'}</button>
   {/snippet}
 </Modal>

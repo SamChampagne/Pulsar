@@ -3,16 +3,19 @@
   import { api, ApiError } from '$lib/api/client';
   import { getAccessToken } from '$lib/stores/auth';
   import { toast } from '$lib/stores/toast';
+  import { formatDate } from '$lib/format';
   import {
     PageHeader,
     Button,
     FilterBar,
     Select,
+    Input,
     Table,
     Badge,
     EmptyState,
     Card,
     Skeleton,
+    Tabs,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -65,6 +68,7 @@
   let statusFilter = $state('');
   let expanded = $state('');
   let error = $state('');
+  // Carrier tab loads eagerly; customer tab lazy-loads on first switch — hence the different defaults.
   let loadingCarrier = $state(true);
 
   // Reconcile form state (per expanded invoice)
@@ -426,389 +430,381 @@
 
 <PageHeader title="Invoices &amp; statements" />
 
-<!-- Tab navigation -->
-<div class="mb-4 flex gap-1 border-b border-edge">
-  <button
-    class={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${activeTab === 'carrier' ? 'border-accent text-accent' : 'border-transparent text-ink-muted hover:text-ink'}`}
-    onclick={() => (activeTab = 'carrier')}
-  >Carrier invoices</button>
-  <button
-    class={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${activeTab === 'customer' ? 'border-accent text-accent' : 'border-transparent text-ink-muted hover:text-ink'}`}
-    onclick={() => (activeTab = 'customer')}
-  >Customer statements</button>
-</div>
+<Tabs
+  tabs={[{ id: 'carrier', label: 'Carrier invoices' }, { id: 'customer', label: 'Customer statements' }]}
+  bind:active={activeTab}
+>
+  {#snippet children()}
+    <!-- ══════════════════════════════════════════════════════════════ CARRIER TAB -->
+    {#if activeTab === 'carrier'}
+      <FilterBar>
+        <div class="w-36">
+          <Select bind:value={statusFilter}>
+            <option value="">All statuses</option>
+            <option value="DRAFT">Draft</option>
+            <option value="DISPUTED">Disputed</option>
+            <option value="APPROVED">Approved</option>
+            <option value="PAID">Paid</option>
+          </Select>
+        </div>
+        <Button variant="secondary" onclick={exportCsv}>Export CSV</Button>
+        <select
+          bind:value={selectedCarrierId}
+          class="rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none w-56"
+        >
+          <option value="" disabled>Draft for carrier…</option>
+          {#each carriers as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
+        </select>
+        <Button disabled={!selectedCarrierId} onclick={draft}>Generate draft</Button>
+      </FilterBar>
 
-<!-- ══════════════════════════════════════════════════════════════ CARRIER TAB -->
-{#if activeTab === 'carrier'}
-  <FilterBar>
-    <div class="w-36">
-      <Select bind:value={statusFilter}>
-        <option value="">All statuses</option>
-        <option value="DRAFT">Draft</option>
-        <option value="DISPUTED">Disputed</option>
-        <option value="APPROVED">Approved</option>
-        <option value="PAID">Paid</option>
-      </Select>
-    </div>
-    <Button variant="secondary" onclick={exportCsv}>Export CSV</Button>
-    <select
-      bind:value={selectedCarrierId}
-      class="rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none w-56"
-    >
-      <option value="" disabled>Draft for carrier…</option>
-      {#each carriers as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
-    </select>
-    <Button disabled={!selectedCarrierId} onclick={draft}>Generate draft</Button>
-  </FilterBar>
+      <p class="mb-4 text-sm text-ink-muted">
+        A draft bundles the carrier's completed, not-yet-invoiced loads at their estimated cost
+        (the expected amount). Reconcile it against the carrier's actual invoice: within tolerance
+        it is approved automatically; over tolerance it goes to dispute.
+      </p>
 
-  <p class="mb-4 text-sm text-ink-muted">
-    A draft bundles the carrier's completed, not-yet-invoiced loads at their estimated cost
-    (the expected amount). Reconcile it against the carrier's actual invoice: within tolerance
-    it is approved automatically; over tolerance it goes to dispute.
-  </p>
+      {#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
-  {#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
-
-  {#if loadingCarrier}
-    <Card padded={false}><Skeleton rows={6} /></Card>
-  {:else}
-  <Table>
-    {#snippet head()}
-      <th>Invoice #</th><th>Carrier</th><th>Expected</th><th>Invoiced</th>
-      <th>Variance (net / gross)</th><th>Status</th><th></th>
-    {/snippet}
-    {#snippet body()}
-      {#each invoices as invoice (invoice.id)}
-        <tr>
-          <td>
-            <button
-              class="font-semibold text-accent hover:underline bg-transparent border-none p-0 cursor-pointer text-sm"
-              onclick={() => expand(invoice)}
-            >{invoice.invoiceNumber}</button>
-          </td>
-          <td>{invoice.carrier.name}</td>
-          <td>{Number(invoice.totalAmount).toLocaleString()} {invoice.currency}</td>
-          <td>
-            {invoice.invoicedTotal !== null
-              ? `${Number(invoice.invoicedTotal).toLocaleString()} ${invoice.currency}`
-              : '—'}
-          </td>
-          <td>
-            {invoice.varianceGross !== null
-              ? `${Number(invoice.varianceTotal).toLocaleString()} / ${Number(invoice.varianceGross).toLocaleString()}`
-              : '—'}
-          </td>
-          <td><Badge tone={toneFor(invoice.status)}>{labelFor(invoice.status)}</Badge></td>
-          <td class="text-right whitespace-nowrap">
-            {#if invoice.status === 'DRAFT'}
-              <Button variant="secondary" onclick={() => approve(invoice)}>Approve as-is</Button>
-            {:else if invoice.status === 'APPROVED'}
-              <Button variant="secondary" onclick={() => markPaid(invoice)}>Mark paid</Button>
-            {/if}
-          </td>
-        </tr>
-        {#if expanded === invoice.id}
-          <tr>
-            <td colspan="7" class="bg-base p-0">
-              <div class="p-4 space-y-3">
-                <table class="w-full text-sm">
-                  <tbody>
-                    {#each invoice.lines as line (line.id)}
-                      <tr class="border-b border-edge last:border-0">
-                        <td class="py-1.5 pr-4">{line.description}</td>
-                        <td class="py-1.5 text-right pr-4 text-ink-muted">
-                          {Number(line.amount).toLocaleString()} {invoice.currency}
-                        </td>
-                        <td class="py-1.5 text-right w-40">
-                          {#if invoice.status === 'DRAFT' || invoice.status === 'DISPUTED'}
-                            <input
-                              type="number"
-                              step="0.01"
-                              bind:value={invoicedAmounts[line.id]}
-                              class="w-28 rounded border border-edge bg-surface px-2 py-0.5 text-right text-sm text-ink focus:border-accent focus:outline-none"
-                            />
-                          {:else if line.invoicedAmount !== null}
-                            {Number(line.invoicedAmount).toLocaleString()}
-                            {#if line.variance !== null && Number(line.variance) !== 0}
-                              <span class="text-danger text-xs ml-1">
-                                ({Number(line.variance) > 0 ? '+' : ''}{line.variance})
-                              </span>
-                            {/if}
-                          {:else}
-                            —
-                          {/if}
-                        </td>
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
-
-                {#if invoice.status === 'DRAFT' || invoice.status === 'DISPUTED'}
-                  <div class="flex gap-2 items-center flex-wrap">
-                    <input
-                      placeholder="Carrier invoice #"
-                      bind:value={carrierInvoiceNumber}
-                      class="w-48 rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-                    />
-                    <Button
-                      variant="primary"
-                      disabled={!carrierInvoiceNumber}
-                      onclick={() => reconcile(invoice)}
-                    >
-                      {invoice.status === 'DISPUTED' ? 'Re-reconcile (corrected invoice)' : 'Reconcile'}
-                    </Button>
-                  </div>
-                {/if}
-
-                {#if invoice.status === 'DISPUTED'}
-                  <div class="flex gap-2 items-center flex-wrap">
-                    <div class="w-44">
-                      <Select bind:value={resolution}>
-                        <option value="ACCEPT_INVOICED">Pay invoiced amount</option>
-                        <option value="KEEP_EXPECTED">Pay expected amount</option>
-                      </Select>
-                    </div>
-                    <div class="w-48">
-                      <Select bind:value={reasonCode}>
-                        {#each REASON_CODES as code (code)}<option value={code}>{code}</option>{/each}
-                      </Select>
-                    </div>
-                    <input
-                      placeholder="Note (optional)"
-                      bind:value={disputeNote}
-                      class="flex-1 min-w-40 rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-                    />
-                    <Button variant="danger" onclick={() => resolve(invoice)}>Resolve dispute</Button>
-                  </div>
-                {/if}
-
-                {#if invoice.disputeReasonCode}
-                  <p class="text-sm text-ink-muted">
-                    Dispute: {invoice.disputeReasonCode}{invoice.disputeNote ? ` — ${invoice.disputeNote}` : ''}
-                  </p>
-                {/if}
-              </div>
-            </td>
-          </tr>
-        {/if}
+      {#if loadingCarrier}
+        <Card padded={false}><Skeleton rows={6} /></Card>
       {:else}
-        <tr><td colspan="7"><EmptyState message="No invoices yet." /></td></tr>
-      {/each}
-    {/snippet}
-  </Table>
-  {/if}
-
-<!-- ══════════════════════════════════════════════════════════ CUSTOMER TAB -->
-{:else}
-  <!-- Billable preview panel -->
-  <Card>
-    <h2 class="text-sm font-bold text-ink mb-3">Generate billing statements</h2>
-    <div class="flex gap-2 items-center flex-wrap">
-      <select
-        bind:value={selectedCustomerId}
-        class="rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none w-64"
-      >
-        <option value="" disabled>Select a customer…</option>
-        {#each customerOptions as c (c.id)}<option value={c.id}>{c.code} — {c.name}</option>{/each}
-      </select>
-      <Button
-        variant="secondary"
-        disabled={!selectedCustomerId || previewLoading}
-        onclick={previewBillable}
-      >
-        {previewLoading ? 'Loading…' : 'Preview billable'}
-      </Button>
-      {#if previewDone && previewRatable.length > 0}
-        <Button onclick={generateStatements}>
-          Generate statements ({previewRatable.length} order{previewRatable.length !== 1 ? 's' : ''})
-        </Button>
-      {/if}
-    </div>
-
-    {#if previewDone}
-      <div class="mt-4 flex gap-4 flex-wrap items-start">
-        {#if previewRatable.length > 0}
-          <div class="flex-1 min-w-60">
-            <p class="text-xs text-ink-muted mb-2">Ratable ({previewRatable.length})</p>
-            <Table>
-              {#snippet head()}<th>Order #</th><th class="text-right">Amount</th>{/snippet}
-              {#snippet body()}
-                {#each previewRatable as row (row.orderId)}
-                  <tr>
-                    <td>{row.orderNumber}</td>
-                    <td class="text-right">{Number(row.amount).toLocaleString()} {row.currency}</td>
-                  </tr>
-                {/each}
-              {/snippet}
-            </Table>
-          </div>
-        {:else}
-          <p class="text-sm text-ink-muted mt-4">No ratable orders found for this customer.</p>
-        {/if}
-
-        {#if previewUnratable.length > 0}
-          <div class="flex-1 min-w-60">
-            <p class="text-xs text-ink-muted mb-2">Not ratable ({previewUnratable.length})</p>
-            <Table>
-              {#snippet head()}<th>Order #</th><th>Reason</th>{/snippet}
-              {#snippet body()}
-                {#each previewUnratable as row (row.orderId)}
-                  <tr>
-                    <td>{row.orderNumber}</td>
-                    <td><Badge tone="warn">{row.reason}</Badge></td>
-                  </tr>
-                {/each}
-              {/snippet}
-            </Table>
-          </div>
-        {/if}
-      </div>
-    {/if}
-  </Card>
-
-  <!-- Statements list -->
-  <FilterBar>
-    <span class="text-sm text-ink-muted">Customer billing statements</span>
-    <div class="ml-auto w-36">
-      <Select bind:value={statementsStatusFilter}>
-        <option value="">All statuses</option>
-        <option value="DRAFT">Draft</option>
-        <option value="APPROVED">Approved</option>
-        <option value="SENT">Sent</option>
-        <option value="PAID">Paid</option>
-      </Select>
-    </div>
-  </FilterBar>
-
-  {#if stmtError}<p class="mb-3 text-sm text-danger">{stmtError}</p>{/if}
-
-  {#if loadingCustomer}
-    <Card padded={false}><Skeleton rows={6} /></Card>
-  {:else}
-  <Table>
-    {#snippet head()}
-      <th>Statement #</th><th>Customer</th><th>Status</th><th>Currency</th>
-      <th class="text-right">Total</th><th>Created</th><th></th>
-    {/snippet}
-    {#snippet body()}
-      {#each customerStatements as stmt (stmt.id)}
-        <tr>
-          <td>
-            <button
-              class="font-semibold text-accent hover:underline bg-transparent border-none p-0 cursor-pointer text-sm"
-              onclick={() => expandStmt(stmt)}
-            >{stmt.invoiceNumber}</button>
-          </td>
-          <td>{stmt.customer.name}</td>
-          <td><Badge tone={toneFor(stmt.status)}>{labelFor(stmt.status)}</Badge></td>
-          <td>{stmt.currency}</td>
-          <td class="text-right">{Number(stmt.totalAmount).toLocaleString()} {stmt.currency}</td>
-          <td>{new Date(stmt.createdAt).toLocaleDateString()}</td>
-          <td class="text-right whitespace-nowrap">
-            {#if stmt.status === 'DRAFT'}
-              <Button variant="primary" onclick={() => approveStatement(stmt)}>Approve</Button>
-              <Button variant="danger" onclick={() => deleteStatement(stmt)}>Delete draft</Button>
-            {:else if stmt.status === 'APPROVED'}
-              <Button variant="primary" onclick={() => sendStatement(stmt)}>Send</Button>
-            {:else if stmt.status === 'SENT'}
-              <Button variant="secondary" onclick={() => payStatement(stmt)}>Mark paid</Button>
-            {/if}
-          </td>
-        </tr>
-
-        {#if stmtExpanded === stmt.id}
-          <tr>
-            <td colspan="7" class="bg-base p-0">
-              <div class="p-4 space-y-3">
-                <p class="text-xs text-ink-muted">
-                  Lines — {stmt.lines.length} order{stmt.lines.length !== 1 ? 's' : ''}
-                  {#if stmt.customer.email}
-                    · customer email: {stmt.customer.email}
-                  {/if}
-                </p>
-                <Table>
-                  {#snippet head()}
-                    <th>Order #</th><th>Description</th><th class="text-right">Amount</th><th></th>
-                  {/snippet}
-                  {#snippet body()}
-                    {#each stmt.lines as line (line.id)}
-                      <tr>
-                        <td>{line.transportOrder?.orderNumber ?? '—'}</td>
-                        <td>{line.description}</td>
-                        <td class="text-right">{Number(line.amount).toLocaleString()} {stmt.currency}</td>
-                        <td class="text-right">
-                          {#if line.priceDetail}
-                            <button
-                              class="text-xs text-accent hover:underline bg-transparent border-none p-0 cursor-pointer"
-                              onclick={() => togglePriceDetail(line.id)}
-                            >
-                              {priceDetailExpanded[line.id] ? '▲ hide detail' : '▼ price detail'}
-                            </button>
-                          {/if}
-                        </td>
-                      </tr>
-                      {#if line.priceDetail && priceDetailExpanded[line.id]}
-                        {@const pd = line.priceDetail}
-                        <tr>
-                          <td colspan="4" class="p-3">
-                            <div class="rounded-md border border-edge bg-surface p-3 space-y-2">
-                              <div class="flex items-center gap-2 flex-wrap">
-                                <span class="text-xs text-ink-muted">
-                                  Price snapshot — ref. {new Date(pd.referenceDate).toLocaleDateString()}
-                                </span>
-                                <span class="text-xs text-ink-muted">
-                                  {pd.rate.name} · {pd.rate.rateType}
-                                </span>
-                              </div>
-                              <table class="w-full text-xs">
-                                <tbody>
-                                  {#each pd.result.lines as pline}
-                                    <tr>
-                                      <td class="py-0.5">{pline.label}</td>
-                                      <td class="py-0.5 text-right">{pline.amount.toLocaleString()} {stmt.currency}</td>
-                                    </tr>
-                                  {/each}
-                                  <tr class="border-t border-edge font-semibold">
-                                    <td class="py-0.5">Total</td>
-                                    <td class="py-0.5 text-right">{pd.result.total.toLocaleString()} {stmt.currency}</td>
-                                  </tr>
-                                </tbody>
-                              </table>
-                              {#if pd.result.appliedBreak}
-                                {@const br = pd.result.appliedBreak}
-                                <p class="text-xs text-ink-muted">
-                                  Break applied: ≤ {br.upToKg} kg @ {br.amount} $/CWT
-                                  {#if br.asIfApplied}
-                                    <Badge tone="warn">as-if</Badge>
-                                  {/if}
-                                </p>
-                              {/if}
-                              <p class="text-xs text-ink-muted">
-                                Fuel: {pd.rate.fuel.pct}% — {pd.rate.fuel.source}
-                                {#if pd.rate.fuel.source === 'TABLE' && pd.rate.fuel.effectiveFrom}
-                                  (eff. {new Date(pd.rate.fuel.effectiveFrom).toLocaleDateString()})
+      <Table>
+        {#snippet head()}
+          <th>Invoice #</th><th>Carrier</th><th>Expected</th><th>Invoiced</th>
+          <th>Variance (net / gross)</th><th>Status</th><th></th>
+        {/snippet}
+        {#snippet body()}
+          {#each invoices as invoice (invoice.id)}
+            <tr>
+              <td>
+                <button
+                  class="font-semibold text-accent hover:underline bg-transparent border-none p-0 cursor-pointer text-sm"
+                  onclick={() => expand(invoice)}
+                >{invoice.invoiceNumber}</button>
+              </td>
+              <td>{invoice.carrier.name}</td>
+              <td>{Number(invoice.totalAmount).toLocaleString()} {invoice.currency}</td>
+              <td>
+                {invoice.invoicedTotal !== null
+                  ? `${Number(invoice.invoicedTotal).toLocaleString()} ${invoice.currency}`
+                  : '—'}
+              </td>
+              <td>
+                {invoice.varianceGross !== null
+                  ? `${Number(invoice.varianceTotal).toLocaleString()} / ${Number(invoice.varianceGross).toLocaleString()}`
+                  : '—'}
+              </td>
+              <td><Badge tone={toneFor(invoice.status)}>{labelFor(invoice.status)}</Badge></td>
+              <td class="text-right whitespace-nowrap">
+                {#if invoice.status === 'DRAFT'}
+                  <Button variant="secondary" onclick={() => approve(invoice)}>Approve as-is</Button>
+                {:else if invoice.status === 'APPROVED'}
+                  <Button variant="secondary" onclick={() => markPaid(invoice)}>Mark paid</Button>
+                {/if}
+              </td>
+            </tr>
+            {#if expanded === invoice.id}
+              <tr>
+                <td colspan="7" class="bg-base p-0">
+                  <div class="p-4 space-y-3">
+                    <table class="w-full text-sm">
+                      <tbody>
+                        {#each invoice.lines as line (line.id)}
+                          <tr class="border-b border-edge last:border-0">
+                            <td class="py-1.5 pr-4">{line.description}</td>
+                            <td class="py-1.5 text-right pr-4 text-ink-muted">
+                              {Number(line.amount).toLocaleString()} {invoice.currency}
+                            </td>
+                            <td class="py-1.5 text-right w-40">
+                              {#if invoice.status === 'DRAFT' || invoice.status === 'DISPUTED'}
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  bind:value={invoicedAmounts[line.id]}
+                                  class="w-28 rounded border border-edge bg-surface px-2 py-0.5 text-right text-sm text-ink focus:border-accent focus:outline-none"
+                                />
+                              {:else if line.invoicedAmount !== null}
+                                {Number(line.invoicedAmount).toLocaleString()}
+                                {#if line.variance !== null && Number(line.variance) !== 0}
+                                  <span class="text-danger text-xs ml-1">
+                                    ({Number(line.variance) > 0 ? '+' : ''}{line.variance})
+                                  </span>
                                 {/if}
-                              </p>
-                              {#if pd.result.missingAccessorials.length > 0}
-                                <p class="text-xs text-danger">
-                                  Missing accessorials: {pd.result.missingAccessorials.join(', ')}
-                                </p>
+                              {:else}
+                                —
                               {/if}
-                            </div>
-                          </td>
-                        </tr>
-                      {/if}
+                            </td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+
+                    {#if invoice.status === 'DRAFT' || invoice.status === 'DISPUTED'}
+                      <div class="flex gap-2 items-center flex-wrap">
+                        <Input
+                          placeholder="Carrier invoice #"
+                          bind:value={carrierInvoiceNumber}
+                        />
+                        <Button
+                          variant="primary"
+                          disabled={!carrierInvoiceNumber}
+                          onclick={() => reconcile(invoice)}
+                        >
+                          {invoice.status === 'DISPUTED' ? 'Re-reconcile (corrected invoice)' : 'Reconcile'}
+                        </Button>
+                      </div>
+                    {/if}
+
+                    {#if invoice.status === 'DISPUTED'}
+                      <div class="flex gap-2 items-center flex-wrap">
+                        <div class="w-44">
+                          <Select bind:value={resolution}>
+                            <option value="ACCEPT_INVOICED">Pay invoiced amount</option>
+                            <option value="KEEP_EXPECTED">Pay expected amount</option>
+                          </Select>
+                        </div>
+                        <div class="w-48">
+                          <Select bind:value={reasonCode}>
+                            {#each REASON_CODES as code (code)}<option value={code}>{code}</option>{/each}
+                          </Select>
+                        </div>
+                        <div class="flex-1 min-w-40">
+                          <Input placeholder="Note (optional)" bind:value={disputeNote} />
+                        </div>
+                        <Button variant="danger" onclick={() => resolve(invoice)}>Resolve dispute</Button>
+                      </div>
+                    {/if}
+
+                    {#if invoice.disputeReasonCode}
+                      <p class="text-sm text-ink-muted">
+                        Dispute: {invoice.disputeReasonCode}{invoice.disputeNote ? ` — ${invoice.disputeNote}` : ''}
+                      </p>
+                    {/if}
+                  </div>
+                </td>
+              </tr>
+            {/if}
+          {:else}
+            <tr><td colspan="7"><EmptyState message="No invoices yet." /></td></tr>
+          {/each}
+        {/snippet}
+      </Table>
+      {/if}
+
+    <!-- ══════════════════════════════════════════════════════════ CUSTOMER TAB -->
+    {:else}
+      <!-- Billable preview panel -->
+      <Card>
+        <h2 class="text-sm font-bold text-ink mb-3">Generate billing statements</h2>
+        <div class="flex gap-2 items-center flex-wrap">
+          <select
+            bind:value={selectedCustomerId}
+            class="rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none w-64"
+          >
+            <option value="" disabled>Select a customer…</option>
+            {#each customerOptions as c (c.id)}<option value={c.id}>{c.code} — {c.name}</option>{/each}
+          </select>
+          <Button
+            variant="secondary"
+            disabled={!selectedCustomerId || previewLoading}
+            onclick={previewBillable}
+          >
+            {previewLoading ? 'Loading…' : 'Preview billable'}
+          </Button>
+          {#if previewDone && previewRatable.length > 0}
+            <Button onclick={generateStatements}>
+              Generate statements ({previewRatable.length} order{previewRatable.length !== 1 ? 's' : ''})
+            </Button>
+          {/if}
+        </div>
+
+        {#if previewDone}
+          <div class="mt-4 flex gap-4 flex-wrap items-start">
+            {#if previewRatable.length > 0}
+              <div class="flex-1 min-w-60">
+                <p class="text-xs text-ink-muted mb-2">Ratable ({previewRatable.length})</p>
+                <Table>
+                  {#snippet head()}<th>Order #</th><th class="text-right">Amount</th>{/snippet}
+                  {#snippet body()}
+                    {#each previewRatable as row (row.orderId)}
+                      <tr>
+                        <td>{row.orderNumber}</td>
+                        <td class="text-right">{Number(row.amount).toLocaleString()} {row.currency}</td>
+                      </tr>
                     {/each}
                   {/snippet}
                 </Table>
               </div>
-            </td>
-          </tr>
+            {:else}
+              <p class="text-sm text-ink-muted mt-4">No ratable orders found for this customer.</p>
+            {/if}
+
+            {#if previewUnratable.length > 0}
+              <div class="flex-1 min-w-60">
+                <p class="text-xs text-ink-muted mb-2">Not ratable ({previewUnratable.length})</p>
+                <Table>
+                  {#snippet head()}<th>Order #</th><th>Reason</th>{/snippet}
+                  {#snippet body()}
+                    {#each previewUnratable as row (row.orderId)}
+                      <tr>
+                        <td>{row.orderNumber}</td>
+                        <td><Badge tone="warn">{row.reason}</Badge></td>
+                      </tr>
+                    {/each}
+                  {/snippet}
+                </Table>
+              </div>
+            {/if}
+          </div>
         {/if}
+      </Card>
+
+      <!-- Statements list -->
+      <FilterBar>
+        <span class="text-sm text-ink-muted">Customer billing statements</span>
+        <div class="ml-auto w-36">
+          <Select bind:value={statementsStatusFilter}>
+            <option value="">All statuses</option>
+            <option value="DRAFT">Draft</option>
+            <option value="APPROVED">Approved</option>
+            <option value="SENT">Sent</option>
+            <option value="PAID">Paid</option>
+          </Select>
+        </div>
+      </FilterBar>
+
+      {#if stmtError}<p class="mb-3 text-sm text-danger">{stmtError}</p>{/if}
+
+      {#if loadingCustomer}
+        <Card padded={false}><Skeleton rows={6} /></Card>
       {:else}
-        <tr><td colspan="7"><EmptyState message="No customer statements yet." /></td></tr>
-      {/each}
-    {/snippet}
-  </Table>
-  {/if}
-{/if}
+      <Table>
+        {#snippet head()}
+          <th>Statement #</th><th>Customer</th><th>Status</th><th>Currency</th>
+          <th class="text-right">Total</th><th>Created</th><th></th>
+        {/snippet}
+        {#snippet body()}
+          {#each customerStatements as stmt (stmt.id)}
+            <tr>
+              <td>
+                <button
+                  class="font-semibold text-accent hover:underline bg-transparent border-none p-0 cursor-pointer text-sm"
+                  onclick={() => expandStmt(stmt)}
+                >{stmt.invoiceNumber}</button>
+              </td>
+              <td>{stmt.customer.name}</td>
+              <td><Badge tone={toneFor(stmt.status)}>{labelFor(stmt.status)}</Badge></td>
+              <td>{stmt.currency}</td>
+              <td class="text-right">{Number(stmt.totalAmount).toLocaleString()} {stmt.currency}</td>
+              <td>{formatDate(stmt.createdAt)}</td>
+              <td class="text-right whitespace-nowrap">
+                {#if stmt.status === 'DRAFT'}
+                  <Button variant="primary" onclick={() => approveStatement(stmt)}>Approve</Button>
+                  <Button variant="danger" onclick={() => deleteStatement(stmt)}>Delete draft</Button>
+                {:else if stmt.status === 'APPROVED'}
+                  <Button variant="primary" onclick={() => sendStatement(stmt)}>Send</Button>
+                {:else if stmt.status === 'SENT'}
+                  <Button variant="secondary" onclick={() => payStatement(stmt)}>Mark paid</Button>
+                {/if}
+              </td>
+            </tr>
+
+            {#if stmtExpanded === stmt.id}
+              <tr>
+                <td colspan="7" class="bg-base p-0">
+                  <div class="p-4 space-y-3">
+                    <p class="text-xs text-ink-muted">
+                      Lines — {stmt.lines.length} order{stmt.lines.length !== 1 ? 's' : ''}
+                      {#if stmt.customer.email}
+                        · customer email: {stmt.customer.email}
+                      {/if}
+                    </p>
+                    <Table>
+                      {#snippet head()}
+                        <th>Order #</th><th>Description</th><th class="text-right">Amount</th><th></th>
+                      {/snippet}
+                      {#snippet body()}
+                        {#each stmt.lines as line (line.id)}
+                          <tr>
+                            <td>{line.transportOrder?.orderNumber ?? '—'}</td>
+                            <td>{line.description}</td>
+                            <td class="text-right">{Number(line.amount).toLocaleString()} {stmt.currency}</td>
+                            <td class="text-right">
+                              {#if line.priceDetail}
+                                <button
+                                  class="text-xs text-accent hover:underline bg-transparent border-none p-0 cursor-pointer"
+                                  onclick={() => togglePriceDetail(line.id)}
+                                >
+                                  {priceDetailExpanded[line.id] ? '▲ hide detail' : '▼ price detail'}
+                                </button>
+                              {/if}
+                            </td>
+                          </tr>
+                          {#if line.priceDetail && priceDetailExpanded[line.id]}
+                            {@const pd = line.priceDetail}
+                            <tr>
+                              <td colspan="4" class="p-3">
+                                <div class="rounded-md border border-edge bg-surface p-3 space-y-2">
+                                  <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="text-xs text-ink-muted">
+                                      Price snapshot — ref. {formatDate(pd.referenceDate)}
+                                    </span>
+                                    <span class="text-xs text-ink-muted">
+                                      {pd.rate.name} · {pd.rate.rateType}
+                                    </span>
+                                  </div>
+                                  <table class="w-full text-xs">
+                                    <tbody>
+                                      {#each pd.result.lines as pline}
+                                        <tr>
+                                          <td class="py-0.5">{pline.label}</td>
+                                          <td class="py-0.5 text-right">{pline.amount.toLocaleString()} {stmt.currency}</td>
+                                        </tr>
+                                      {/each}
+                                      <tr class="border-t border-edge font-semibold">
+                                        <td class="py-0.5">Total</td>
+                                        <td class="py-0.5 text-right">{pd.result.total.toLocaleString()} {stmt.currency}</td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                  {#if pd.result.appliedBreak}
+                                    {@const br = pd.result.appliedBreak}
+                                    <p class="text-xs text-ink-muted">
+                                      Break applied: ≤ {br.upToKg} kg @ {br.amount} $/CWT
+                                      {#if br.asIfApplied}
+                                        <Badge tone="warn">as-if</Badge>
+                                      {/if}
+                                    </p>
+                                  {/if}
+                                  <p class="text-xs text-ink-muted">
+                                    Fuel: {pd.rate.fuel.pct}% — {pd.rate.fuel.source}
+                                    {#if pd.rate.fuel.source === 'TABLE' && pd.rate.fuel.effectiveFrom}
+                                      (eff. {formatDate(pd.rate.fuel.effectiveFrom)})
+                                    {/if}
+                                  </p>
+                                  {#if pd.result.missingAccessorials.length > 0}
+                                    <p class="text-xs text-danger">
+                                      Missing accessorials: {pd.result.missingAccessorials.join(', ')}
+                                    </p>
+                                  {/if}
+                                </div>
+                              </td>
+                            </tr>
+                          {/if}
+                        {/each}
+                      {/snippet}
+                    </Table>
+                  </div>
+                </td>
+              </tr>
+            {/if}
+          {:else}
+            <tr><td colspan="7"><EmptyState message="No customer statements yet." /></td></tr>
+          {/each}
+        {/snippet}
+      </Table>
+      {/if}
+    {/if}
+  {/snippet}
+</Tabs>

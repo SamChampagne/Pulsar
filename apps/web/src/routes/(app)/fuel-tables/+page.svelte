@@ -2,6 +2,7 @@
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import { formatDate } from '$lib/format';
   import {
     PageHeader,
     Button,
@@ -11,6 +12,7 @@
     Skeleton,
     Modal,
     Field,
+    Input,
   } from '$lib/components/ui';
 
   interface FuelEntry {
@@ -40,8 +42,6 @@
   let editingId = $state<string | null>(null);
   let tableName = $state('');
   let entries = $state<EntryRow[]>([]);
-
-  const inputCls = 'w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none';
 
   async function load() {
     try {
@@ -161,7 +161,7 @@
         <td><span class="font-semibold text-ink">{ft.name}</span></td>
         <td class="tabular-nums">{ft.entries.length}</td>
         <td class="text-sm text-ink-muted">
-          {latest ? latest.effectiveFrom.slice(0, 10) : '—'}
+          {formatDate(latest?.effectiveFrom)}
         </td>
         <td class="tabular-nums">
           {latest ? `${latest.pct}%` : '—'}
@@ -183,9 +183,9 @@
 <!-- ─── Fuel table form Modal ─────────────────────────────────────────────────── -->
 <Modal bind:open={showForm} title={editingId ? 'Edit fuel table' : 'New fuel table'}>
   {#snippet children()}
-    <form id="ft-form" onsubmit={save}>
+    <form onsubmit={save}>
       <Field label="Name">
-        <input bind:value={tableName} required placeholder="Summer 2025" class={inputCls} />
+        <Input bind:value={tableName} required placeholder="Summer 2025" />
       </Field>
 
       <div class="mt-4">
@@ -203,22 +203,10 @@
             {#each entries as entry, i (i)}
               <div class="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
                 <Field label="Effective from">
-                  <input
-                    type="date"
-                    bind:value={entry.date}
-                    required
-                    class={inputCls}
-                  />
+                  <Input type="date" bind:value={entry.date} required />
                 </Field>
                 <Field label="Surcharge %">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    bind:value={entry.pct}
-                    required
-                    class={inputCls}
-                  />
+                  <Input type="number" step="0.01" min="0" bind:value={entry.pct} required />
                 </Field>
                 <Button variant="danger" onclick={() => removeEntry(i)}>Remove</Button>
               </div>
@@ -226,15 +214,13 @@
           </div>
         {/if}
       </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <Button variant="secondary" onclick={reset}>Cancel</Button>
+        <Button type="submit" disabled={editingId !== null && entries.length === 0}>
+          {editingId ? 'Update' : 'Create'}
+        </Button>
+      </div>
     </form>
-  {/snippet}
-  {#snippet footer()}
-    <Button variant="secondary" onclick={reset}>Cancel</Button>
-    <button
-      type="submit"
-      form="ft-form"
-      disabled={editingId !== null && entries.length === 0}
-      class="inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors bg-accent text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-    >{editingId ? 'Update' : 'Create'}</button>
   {/snippet}
 </Modal>

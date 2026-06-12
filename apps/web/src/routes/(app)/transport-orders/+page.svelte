@@ -253,43 +253,31 @@
     <form onsubmit={createOrder}>
       <div class="grid grid-cols-2 gap-x-4 gap-y-3">
         <Field label="Customer">
-          <select
-            bind:value={form.customerId}
-            required
-            class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-          >
+          <Select bind:value={form.customerId} required>
             <option value="" disabled>Select…</option>
             {#each customers as c (c.id)}
               <option value={c.id}>{c.name}</option>
             {/each}
-          </select>
+          </Select>
         </Field>
         <Field label="Customer reference">
           <Input bind:value={form.customerReference} placeholder="PO-12345" />
         </Field>
         <Field label="Origin">
-          <select
-            bind:value={form.originLocationId}
-            required
-            class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-          >
+          <Select bind:value={form.originLocationId} required>
             <option value="" disabled>Select…</option>
             {#each locations as l (l.id)}
               <option value={l.id}>{l.name}</option>
             {/each}
-          </select>
+          </Select>
         </Field>
         <Field label="Destination">
-          <select
-            bind:value={form.destinationLocationId}
-            required
-            class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-          >
+          <Select bind:value={form.destinationLocationId} required>
             <option value="" disabled>Select…</option>
             {#each locations as l (l.id)}
               <option value={l.id}>{l.name}</option>
             {/each}
-          </select>
+          </Select>
         </Field>
         <Field label="Pickup from">
           <Input type="date" bind:value={form.requestedPickupEarly} />
@@ -304,20 +292,10 @@
           <Input type="date" bind:value={form.requestedDeliveryLate} />
         </Field>
         <Field label="Weight (kg)">
-          <input
-            type="number"
-            min="0"
-            bind:value={form.totalWeightKg}
-            class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-          />
+          <Input type="number" min="0" bind:value={form.totalWeightKg} />
         </Field>
         <Field label="Pallets">
-          <input
-            type="number"
-            min="0"
-            bind:value={form.palletCount}
-            class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-          />
+          <Input type="number" min="0" bind:value={form.palletCount} />
         </Field>
         <div class="col-span-2">
           <Field label="Mode">

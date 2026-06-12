@@ -12,6 +12,8 @@
     Skeleton,
     Modal,
     Field,
+    Input,
+    Select,
   } from '$lib/components/ui';
 
   type EndpointType = 'LOCATION' | 'CITY' | 'STATE' | 'COUNTRY';
@@ -316,13 +318,9 @@
 <!-- ─── Create lane Modal ─────────────────────────────────────────────────────── -->
 <Modal bind:open={showForm} title="New lane">
   {#snippet children()}
-    <form id="lane-form" onsubmit={create}>
+    <form onsubmit={create}>
       <Field label="Name (optional)">
-        <input
-          bind:value={formName}
-          placeholder="e.g. Montreal → Toronto"
-          class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-        />
+        <Input bind:value={formName} placeholder="e.g. Montreal → Toronto" />
       </Field>
 
       <div class="mt-4 grid grid-cols-2 gap-4">
@@ -330,56 +328,43 @@
         <fieldset class="rounded-md border border-edge p-3">
           <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Origin</legend>
           <Field label="Level">
-            <select
-              bind:value={originType}
-              class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-            >
+            <Select bind:value={originType}>
               <option value="LOCATION">LOCATION</option>
               <option value="CITY">CITY</option>
               <option value="STATE">STATE</option>
               <option value="COUNTRY">COUNTRY</option>
-            </select>
+            </Select>
           </Field>
 
           {#if originType === 'LOCATION'}
             <Field label="Location">
-              <select
-                bind:value={originLocationId}
-                required
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-              >
+              <Select bind:value={originLocationId} required>
                 <option value="" disabled>Select…</option>
                 {#each locations as l (l.id)}
                   <option value={l.id}>{l.name} ({l.city})</option>
                 {/each}
-              </select>
+              </Select>
             </Field>
           {:else if originType === 'CITY'}
             <Field label="City">
-              <input id="origin-city" bind:value={originCity} required placeholder="Montreal"
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none" />
+              <Input bind:value={originCity} required placeholder="Montreal" />
             </Field>
             <Field label="State / Province">
-              <input bind:value={originState} required placeholder="QC"
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none" />
+              <Input bind:value={originState} required placeholder="QC" />
             </Field>
             <Field label="Country">
-              <input bind:value={originCountry} required placeholder="CA"
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none" />
+              <Input bind:value={originCountry} required placeholder="CA" />
             </Field>
           {:else if originType === 'STATE'}
             <Field label="State / Province">
-              <input bind:value={originState} required placeholder="QC"
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none" />
+              <Input bind:value={originState} required placeholder="QC" />
             </Field>
             <Field label="Country">
-              <input bind:value={originCountry} required placeholder="CA"
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none" />
+              <Input bind:value={originCountry} required placeholder="CA" />
             </Field>
           {:else if originType === 'COUNTRY'}
             <Field label="Country">
-              <input bind:value={originCountry} required placeholder="CA"
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none" />
+              <Input bind:value={originCountry} required placeholder="CA" />
             </Field>
           {/if}
         </fieldset>
@@ -388,69 +373,53 @@
         <fieldset class="rounded-md border border-edge p-3">
           <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Destination</legend>
           <Field label="Level">
-            <select
-              bind:value={destinationType}
-              class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-            >
+            <Select bind:value={destinationType}>
               <option value="LOCATION">LOCATION</option>
               <option value="CITY">CITY</option>
               <option value="STATE">STATE</option>
               <option value="COUNTRY">COUNTRY</option>
-            </select>
+            </Select>
           </Field>
 
           {#if destinationType === 'LOCATION'}
             <Field label="Location">
-              <select
-                bind:value={destinationLocationId}
-                required
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-              >
+              <Select bind:value={destinationLocationId} required>
                 <option value="" disabled>Select…</option>
                 {#each locations as l (l.id)}
                   <option value={l.id}>{l.name} ({l.city})</option>
                 {/each}
-              </select>
+              </Select>
             </Field>
           {:else if destinationType === 'CITY'}
             <Field label="City">
-              <input bind:value={destinationCity} required placeholder="Toronto"
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none" />
+              <Input bind:value={destinationCity} required placeholder="Toronto" />
             </Field>
             <Field label="State / Province">
-              <input bind:value={destinationState} required placeholder="ON"
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none" />
+              <Input bind:value={destinationState} required placeholder="ON" />
             </Field>
             <Field label="Country">
-              <input bind:value={destinationCountry} required placeholder="CA"
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none" />
+              <Input bind:value={destinationCountry} required placeholder="CA" />
             </Field>
           {:else if destinationType === 'STATE'}
             <Field label="State / Province">
-              <input bind:value={destinationState} required placeholder="ON"
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none" />
+              <Input bind:value={destinationState} required placeholder="ON" />
             </Field>
             <Field label="Country">
-              <input bind:value={destinationCountry} required placeholder="CA"
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none" />
+              <Input bind:value={destinationCountry} required placeholder="CA" />
             </Field>
           {:else if destinationType === 'COUNTRY'}
             <Field label="Country">
-              <input bind:value={destinationCountry} required placeholder="CA"
-                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none" />
+              <Input bind:value={destinationCountry} required placeholder="CA" />
             </Field>
           {/if}
         </fieldset>
       </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <Button variant="secondary" onclick={resetForm}>Cancel</Button>
+        <Button type="submit">Create lane</Button>
+      </div>
     </form>
-  {/snippet}
-  {#snippet footer()}
-    <Button variant="secondary" onclick={resetForm}>Cancel</Button>
-    <button
-      type="submit"
-      form="lane-form"
-      class="inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors bg-accent text-white hover:bg-accent-hover"
-    >Create lane</button>
   {/snippet}
 </Modal>
 
@@ -460,15 +429,14 @@
     <div class="mb-3">
       <Field label="Add carrier">
         <div class="flex gap-2">
-          <select
-            bind:value={carrierToAdd}
-            class="flex-1 rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-          >
-            <option value="" disabled>Select carrier…</option>
-            {#each carriers.filter((c) => !editingCarrierIds.includes(c.id)) as c (c.id)}
-              <option value={c.id}>{c.name}</option>
-            {/each}
-          </select>
+          <div class="flex-1">
+            <Select bind:value={carrierToAdd}>
+              <option value="" disabled>Select carrier…</option>
+              {#each carriers.filter((c) => !editingCarrierIds.includes(c.id)) as c (c.id)}
+                <option value={c.id}>{c.name}</option>
+              {/each}
+            </Select>
+          </div>
           <Button variant="secondary" onclick={addCarrier}>Add</Button>
         </div>
       </Field>
@@ -490,9 +458,10 @@
     {:else}
       <p class="text-sm text-ink-faint">No carriers in list — save to clear preferences.</p>
     {/if}
-  {/snippet}
-  {#snippet footer()}
-    <Button variant="secondary" onclick={cancelEditCarriers}>Cancel</Button>
-    <Button onclick={saveCarriers}>Save preferences</Button>
+
+    <div class="flex justify-end gap-2 pt-2">
+      <Button variant="secondary" onclick={cancelEditCarriers}>Cancel</Button>
+      <Button onclick={saveCarriers}>Save preferences</Button>
+    </div>
   {/snippet}
 </Modal>

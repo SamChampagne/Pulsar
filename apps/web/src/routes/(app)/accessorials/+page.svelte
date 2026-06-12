@@ -12,6 +12,8 @@
     Skeleton,
     Modal,
     Field,
+    Input,
+    Select,
   } from '$lib/components/ui';
 
   interface Accessorial {
@@ -32,8 +34,6 @@
   let code = $state('');
   let name = $state('');
   let unit = $state<'FLAT' | 'PER_HOUR' | 'PER_UNIT'>('FLAT');
-
-  const inputCls = 'w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none';
 
   async function load() {
     try {
@@ -141,36 +141,32 @@
 <!-- ─── Accessorial form Modal ────────────────────────────────────────────────── -->
 <Modal bind:open={showForm} title={editingId ? 'Edit accessorial' : 'New accessorial'}>
   {#snippet children()}
-    <form id="acc-form" onsubmit={save}>
+    <form onsubmit={save}>
       <div class="grid grid-cols-3 gap-x-4">
         <Field label="Code">
-          <input
+          <Input
             bind:value={code}
             required
             placeholder="FUEL_SUR"
-            oninput={(e) => { code = (e.target as HTMLInputElement).value.toUpperCase(); }}
-            class={inputCls}
+            oninput={(e) => { code = e.currentTarget.value.toUpperCase(); }}
           />
         </Field>
         <Field label="Name">
-          <input bind:value={name} required placeholder="Fuel surcharge" class={inputCls} />
+          <Input bind:value={name} required placeholder="Fuel surcharge" />
         </Field>
         <Field label="Unit">
-          <select bind:value={unit} required class={inputCls}>
+          <Select bind:value={unit} required>
             <option value="FLAT">FLAT</option>
             <option value="PER_HOUR">PER_HOUR</option>
             <option value="PER_UNIT">PER_UNIT</option>
-          </select>
+          </Select>
         </Field>
       </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <Button variant="secondary" onclick={reset}>Cancel</Button>
+        <Button type="submit">{editingId ? 'Update' : 'Create'}</Button>
+      </div>
     </form>
-  {/snippet}
-  {#snippet footer()}
-    <Button variant="secondary" onclick={reset}>Cancel</Button>
-    <button
-      type="submit"
-      form="acc-form"
-      class="inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors bg-accent text-white hover:bg-accent-hover"
-    >{editingId ? 'Update' : 'Create'}</button>
   {/snippet}
 </Modal>
