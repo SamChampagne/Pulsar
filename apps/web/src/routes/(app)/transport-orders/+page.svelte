@@ -14,9 +14,12 @@
     EmptyState,
     Panel,
     Modal,
+    Card,
+    Skeleton,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
+  import { toast } from '$lib/stores/toast';
 
   interface OrderRow {
     id: string;
@@ -44,6 +47,7 @@
   let error = $state('');
   let selected = $state<OrderRow | null>(null);
   let showForm = $state(false);
+  let loading = $state(true);
 
   // Create form state
   let customers = $state<Option[]>([]);
@@ -82,6 +86,8 @@
       total = result.total;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load orders';
+    } finally {
+      loading = false;
     }
   }
 
@@ -131,12 +137,11 @@
   }
 
   async function action(id: string, name: 'confirm' | 'plan' | 'cancel') {
-    error = '';
     try {
       await api(`/transportation/transport-orders/${id}/${name}`, { method: 'POST' });
       await load();
     } catch (e) {
-      error = e instanceof ApiError ? e.message : `Failed to ${name} order`;
+      toast.error(e instanceof ApiError ? e.message : `Failed to ${name} order`);
     }
   }
 
@@ -164,6 +169,9 @@
   </div>
 </FilterBar>
 
+{#if loading}
+  <Card padded={false}><Skeleton rows={6} /></Card>
+{:else}
 <Table>
   {#snippet head()}
     <th>Order #</th><th>Customer</th><th>Origin → Destination</th>
@@ -194,6 +202,7 @@
     {/each}
   {/snippet}
 </Table>
+{/if}
 
 {#if selected}
   {@const sel = selected}

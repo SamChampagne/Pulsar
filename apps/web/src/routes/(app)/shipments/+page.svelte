@@ -11,6 +11,8 @@
     Badge,
     EmptyState,
     Panel,
+    Card,
+    Skeleton,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -56,6 +58,7 @@
   let statusFilter = $state('');
   let error = $state('');
   let selected = $state<ShipmentRow | null>(null);
+  let loading = $state(true);
 
   // "Assign to load" picker state
   let assigning = $state<ShipmentRow | null>(null);
@@ -74,6 +77,8 @@
       total = result.total;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load shipments';
+    } finally {
+      loading = false;
     }
   }
 
@@ -201,6 +206,9 @@
   </div>
 </FilterBar>
 
+{#if loading}
+  <Card padded={false}><Skeleton rows={6} /></Card>
+{:else}
 <Table>
   {#snippet head()}
     <th>Shipment #</th><th>Order #</th><th>Origin → Destination</th>
@@ -232,6 +240,7 @@
     {/each}
   {/snippet}
 </Table>
+{/if}
 
 {#if selected}
   {@const sel = selected}

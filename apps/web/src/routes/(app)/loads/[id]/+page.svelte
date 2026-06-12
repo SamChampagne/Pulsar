@@ -996,11 +996,7 @@
           {/if}
         </dl>
 
-        {#if detail.estimatedCost !== null && editable}
-          <div class="mt-3">
-            <Button variant="secondary" onclick={openRateOptions}>Compare rates</Button>
-          </div>
-        {:else if !detail.estimatedCost && editable}
+        {#if editable}
           <div class="mt-3">
             <Button variant="secondary" onclick={openRateOptions}>Compare rates</Button>
           </div>

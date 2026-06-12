@@ -14,14 +14,19 @@
 
   onMount(() => {
     let map: import('leaflet').Map | null = null;
+    let destroyed = false;
 
-    (async () => {
+    void (async () => {
       const L = await import('leaflet');
+      if (destroyed) return;
+
       const locs = await Promise.all(
         [...new Set(stops.map((s) => s.locationId))].map((id) =>
           api<Loc>(`/transportation/locations/${id}`).catch(() => null),
         ),
       );
+      if (destroyed) return;
+
       const byId = new Map(locs.filter(Boolean).map((l) => [l!.id, l!]));
       const points = stops
         .slice()
@@ -49,6 +54,7 @@
 
       try {
         const events = await api<TrackingEvent[]>('/transportation/tracking/events', { query: { loadId } });
+        if (destroyed) return;
         const pos = events.find((e) => e.latitude != null && e.longitude != null);
         if (pos) {
           L.circleMarker([pos.latitude!, pos.longitude!], { radius: 7, color: '#15803d', fillColor: '#15803d', fillOpacity: 0.9 })
@@ -57,10 +63,15 @@
         }
       } catch { /* tracking optional */ }
 
-      map.fitBounds(L.latLngBounds(latlngs).pad(0.2));
+      if (latlngs.length === 1) {
+        map.setView(latlngs[0], 12);
+      } else {
+        map.fitBounds(L.latLngBounds(latlngs).pad(0.2));
+      }
     })();
 
     return () => {
+      destroyed = true;
       map?.remove();
     };
   });

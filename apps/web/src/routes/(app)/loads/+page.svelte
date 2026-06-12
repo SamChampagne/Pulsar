@@ -12,6 +12,8 @@
     Badge,
     EmptyState,
     Panel,
+    Card,
+    Skeleton,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -32,6 +34,7 @@
   let statusFilter = $state('');
   let error = $state('');
   let selected = $state<LoadRow | null>(null);
+  let loading = $state(true);
 
   async function load() {
     try {
@@ -42,6 +45,8 @@
       total = result.total;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load loads';
+    } finally {
+      loading = false;
     }
   }
 
@@ -80,6 +85,9 @@
   </div>
 </FilterBar>
 
+{#if loading}
+  <Card padded={false}><Skeleton rows={6} /></Card>
+{:else}
 <Table>
   {#snippet head()}
     <th>Load #</th><th>Carrier</th><th>Driver</th><th>Shipments</th>
@@ -105,6 +113,7 @@
     {/each}
   {/snippet}
 </Table>
+{/if}
 
 {#if selected}
   {@const sel = selected}
