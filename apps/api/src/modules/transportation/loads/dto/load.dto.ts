@@ -1,4 +1,5 @@
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { TransportMode } from '@pulsar/shared';
+import { IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateLoadDto {
@@ -32,6 +33,11 @@ export class AssignLoadResourcesDto {
   @IsOptional()
   @IsBoolean()
   force?: boolean;
+
+  /** Override the load's transport mode (applies to OPEN/PLANNED loads). */
+  @IsOptional()
+  @IsEnum(TransportMode)
+  mode?: TransportMode;
 }
 
 export class LoadAccessorialItemDto {

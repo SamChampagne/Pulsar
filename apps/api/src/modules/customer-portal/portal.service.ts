@@ -20,6 +20,7 @@ export interface PortalOrderInput {
   totalWeightKg?: number;
   palletCount?: number;
   notes?: string;
+  mode?: string;
 }
 
 /**
@@ -85,6 +86,7 @@ export class PortalService {
         totalWeightKg: input.totalWeightKg,
         palletCount: input.palletCount,
         notes: input.notes,
+        ...(input.mode ? { mode: input.mode as any } : {}),
         // No createdById: the author is the customer via the portal, not a tenant user.
       },
     });

@@ -1,8 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
-import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
-import { IsDateString, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { MODULE_KEYS, PERMISSIONS, TransportMode } from '@pulsar/shared';
+import { IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { RequireModule } from '../../common/decorators/require-module.decorator';
@@ -49,6 +49,10 @@ class PortalOrderDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsEnum(TransportMode)
+  mode?: TransportMode;
 }
 
 /** Link management — gated on the customer-portal module being enabled for the tenant. */

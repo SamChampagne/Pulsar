@@ -1,9 +1,11 @@
 import { PartialType } from '@nestjs/swagger';
+import { TransportMode } from '@pulsar/shared';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
   IsDateString,
+  IsEnum,
   IsInt,
   IsNumber,
   IsOptional,
@@ -60,6 +62,10 @@ export class CreateTransportOrderDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsEnum(TransportMode)
+  mode?: TransportMode;
 }
 
 export class UpdateTransportOrderDto extends PartialType(CreateTransportOrderDto) {}

@@ -1,5 +1,5 @@
 import { PartialType } from '@nestjs/swagger';
-import { RateStatus, RateType } from '@pulsar/shared';
+import { RateStatus, RateType, TransportMode } from '@pulsar/shared';
 import { Type } from 'class-transformer';
 import { IsArray, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 
@@ -83,6 +83,11 @@ export class CreateRateDto {
   @IsOptional()
   @IsDateString()
   validTo?: string;
+
+  /** When set, this rate applies only to loads/orders of the given mode. Null = all modes. */
+  @IsOptional()
+  @IsEnum(TransportMode)
+  mode?: TransportMode;
 }
 
 export class UpdateRateDto extends PartialType(CreateRateDto) {

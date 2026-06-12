@@ -127,7 +127,24 @@ export class ShipmentsService {
         }
       }
     }
-    const [updated] = await this.prisma.$transaction([
+    // --- Mode inheritance ---
+    const orderMode = (
+      await this.prisma.transportOrder.findFirst({
+        where: { id: shipment.transportOrderId, tenantId },
+        select: { mode: true },
+      })
+    )?.mode;
+    const siblingsCount = await this.prisma.shipment.count({ where: { loadId: dto.loadId, tenantId } });
+    let modeWarning: { loadMode: string; orderMode: string } | undefined;
+
+    // Build the transaction. Always: shipment update + junction upsert. Conditionally: load mode update.
+    const modeUpdateNeeded = siblingsCount === 0 && orderMode && orderMode !== load.mode;
+    if (siblingsCount > 0 && orderMode && orderMode !== load.mode) {
+      // Mixed-mode consolidation: non-blocking warning returned to the caller.
+      modeWarning = { loadMode: load.mode, orderMode };
+    }
+
+    const txOps: Prisma.PrismaPromise<unknown>[] = [
       this.prisma.shipment.update({
         where: { id },
         data: { loadId: dto.loadId, status: ShipmentStatus.PLANNED },
@@ -139,9 +156,19 @@ export class ShipmentsService {
         update: { loadId: dto.loadId },
         create: { tenantId, shipmentId: id, loadId: dto.loadId, sequence: 1 },
       }),
-    ]);
+    ];
+
+    if (modeUpdateNeeded) {
+      // First shipment on this load: inherit the order's transport mode.
+      txOps.push(this.prisma.load.update({ where: { id: dto.loadId }, data: { mode: orderMode } }));
+    }
+
+    const [updated] = (await this.prisma.$transaction(txOps)) as [
+      Awaited<ReturnType<typeof this.prisma.shipment.update>>,
+      ...unknown[],
+    ];
     await this.cost.recompute(tenantId, dto.loadId);
-    return updated;
+    return { ...updated, ...(modeWarning ? { modeWarning } : {}) };
   }
 
   /** Cancels an unassigned PENDING shipment (post-planning cleanup). */

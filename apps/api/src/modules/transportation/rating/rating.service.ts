@@ -52,6 +52,7 @@ type RateDetail = Prisma.RateGetPayload<{ include: typeof rateDetailInclude }>;
 
 interface LoadForRating {
   id: string;
+  mode: string;
   route: { totalDistanceKm: number | null } | null;
   shipments: { weightKg: number | null; palletCount: number | null; plannedPickupEarly: Date | null }[];
   accessorials: { quantity: number; accessorial: { code: string; unit: string } }[];
@@ -140,6 +141,7 @@ export class RatingService {
       where: { id: loadId, tenantId },
       select: {
         id: true,
+        mode: true,
         status: true,
         rateId: true,
         route: { select: { totalDistanceKm: true } },
@@ -232,6 +234,7 @@ export class RatingService {
       where: { id: orderId, tenantId },
       select: {
         customerId: true,
+        mode: true,
         totalWeightKg: true,
         totalVolumeM3: true,
         palletCount: true,
@@ -262,6 +265,7 @@ export class RatingService {
           },
           { OR: [{ validFrom: null }, { validFrom: { lte: date } }] },
           { OR: [{ validTo: null }, { validTo: { gte: date } }] },
+          { OR: [{ mode: null }, { mode: order.mode as any }] },
         ],
       },
       include: rateDetailInclude,
@@ -271,6 +275,7 @@ export class RatingService {
     // accessorials sell-side in v1 (spec §2). volumeM3 is not a cost metric.
     const orderAsLoad: LoadForRating = {
       id: orderId,
+      mode: order.mode,
       route: null,
       shipments: [
         {
@@ -350,6 +355,7 @@ export class RatingService {
           laneFilter,
           { OR: [{ validFrom: null }, { validFrom: { lte: date } }] },
           { OR: [{ validTo: null }, { validTo: { gte: date } }] },
+          { OR: [{ mode: null }, { mode: load.mode as any }] },
         ],
       },
       include: rateDetailInclude,
