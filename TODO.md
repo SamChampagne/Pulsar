@@ -292,6 +292,25 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
   new dedup key), but this code path is not exercisable over HTTP until continuous planning
   is shipped (audit §19.5). Noted for the future; not a phase-8 gap.
 
+## Phase 10 — OSRM + carte opérationnelle
+
+### Dette notée aux revues phase 10 (à ne pas « réparer » en silence)
+
+- [ ] `routes.createForLoad` : le check OPEN/PLANNED puis l'appel OSRM (≤3 s) puis
+      deleteMany+create hors transaction élargissent la fenêtre TOCTOU préexistante —
+      envelopper deleteMany+create dans une transaction avec re-check de statut quand
+      on s'y attaque.
+- [ ] `loads/active-map` : la requête « dernière position par load » est non bornée
+      (toutes les POSITION_UPDATE des loads actifs triées puis dédupliquées en JS).
+      Passer à `DISTINCT ON` (queryRaw) ou borner par fenêtre temporelle, et/ou prévoir
+      une purge/rétention des POSITION_UPDATE avant que les pings s'accumulent sur des
+      semaines.
+- [ ] Règle 15 incohérente sur les anciens handlers publics : seul `driver/:token/position`
+      re-vérifie l'activation du module ; `getTracking`, `getDriverView`, `driverUpdateStop`,
+      `driverCreatePod` ne le font pas (préexistant, à harmoniser).
+- [ ] Throttle Nominatim 1 req/s in-process : valable mono-instance seulement (à revoir
+      avec le passage Redis du cache modules).
+
 ## Phase 3 — Platform & integrations
 
 - [ ] OIDC SSO per tenant (keep `core/auth` issuance API stable)
