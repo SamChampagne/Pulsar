@@ -39,9 +39,12 @@ Contraintes d'appel :
 
 - **Timeout court (3 s)** sur chaque appel HTTP ; échec → `null` + log warn,
   **jamais bloquant** pour le flux appelant.
-- **Nominatim** : throttle **1 req/s** (file séquentielle in-process) et
-  **User-Agent custom** identifiant l'application (conformité usage léger).
-- OSRM appelé en `GET /route/v1/driving/{lng,lat;…}?overview=full&geometries=geojson`.
+- **Nominatim** : throttle **1 req/s** (file séquentielle in-process — valable tant
+  que l'API est mono-instance ; à revoir avec le passage à Redis du cache modules
+  le jour où ça scale, surtout sur le Nominatim public) et **User-Agent custom**
+  identifiant l'application (conformité usage léger).
+- OSRM appelé en `GET /route/v1/driving/{lng,lat;…}?overview=simplified&geometries=geojson`
+  (géométrie simplifiée : visuellement quasi identique, beaucoup plus légère à stocker).
 
 ### Cache géocodage persisté
 
@@ -55,13 +58,18 @@ d'appeler Nominatim ; un échec de géocodage n'est **pas** mis en cache.
 Dans `RoutesService.createForLoad` :
 
 - Si `dto.totalDistanceKm` est **fourni** → valeur manuelle, `distanceSource = MANUAL`,
-  jamais écrasée par un recalcul ultérieur.
+  jamais écrasée par un recalcul ultérieur. **La géométrie est quand même calculée**
+  si les coordonnées sont là (OSRM appelé pour `geometry` seul) : la distance
+  manuelle reste l'invariant billing, mais la carte détail reste vraie.
 - Sinon, si toutes les stops ont des coordonnées → appel OSRM :
   `totalDistanceKm` + `estimatedDurationMin` + `geometry` remplis,
   `distanceSource = OSRM`.
 - Si OSRM indisponible (driver `none`, timeout, erreur) mais coordonnées présentes →
   **fallback haversine** (somme des segments à vol d'oiseau, durée laissée nulle),
   `distanceSource = HAVERSINE`. Un build ultérieur avec OSRM disponible recalcule.
+  ⚠ Le vol d'oiseau sous-estime la route réelle (-20 à -30 %) : l'UI **doit**
+  afficher `distanceSource` (badge « estimation » sur HAVERSINE) pour que le
+  dispatch corrige à la main — un facteur correctif est un choix produit différé.
 - Sans coordonnées complètes → distance nulle, comportement actuel inchangé.
 
 `LoadCostService.recompute()` reste appelé après le build (chemin existant — règle 11) ;
@@ -92,6 +100,8 @@ Aucun backfill réseau : les routes existantes restent `distanceSource = null`
 
 - token driver résolu comme les routes publiques existantes ; **re-check
   d'activation du module** dans le service (règle 15) ;
+- **bornes validées au DTO** (`latitude ∈ [-90, 90]`, `longitude ∈ [-180, 180]`) —
+  c'est de l'input anonyme, on rejette les (9999, 9999) à la porte ;
 - accepté seulement si le load est `DISPATCHED` ou `IN_TRANSIT` ;
 - crée un `TrackingEvent` `POSITION_UPDATE` (lat/lng, `recordedById` absent) ;
 - **dédoublonnage serveur** : ignoré (204) si la dernière position du load date de
@@ -100,9 +110,11 @@ Aucun backfill réseau : les routes existantes restent `distanceSource = null`
 ### Page chauffeur (web)
 
 Après le prompt de consentement géoloc du navigateur : envoi d'une position toutes
-les ~2 min tant que la page est visible et le load actif, indicateur discret
-« partage de position actif » avec bouton pour couper. Page fermée = plus de pings
-(assumé, pas d'app native en phase 10).
+les ~2 min tant que la page est visible et le load actif, **plus un envoi immédiat
+au chargement de la page et à chaque `visibilitychange` → visible** (chaque
+consultation du chauffeur donne un point frais). Indicateur discret « partage de
+position actif » avec bouton pour couper. Page fermée ou écran verrouillé = plus
+de pings : couverture trouée assumée, pas d'app native en phase 10.
 
 ### Payload public de suivi (décision levée)
 
@@ -132,9 +144,12 @@ loads `DISPATCHED`/`IN_TRANSIT` du tenant avec :
 - `loadNumber`, `status`, transporteur ;
 - stops ordonnés (séquence, type, statut, ville, lat/lng) ;
 - dernière position (`POSITION_UPDATE` le plus récent) ;
-- `geometry` de la route si disponible ;
 - `isLate: boolean` — calculé avec **la même fonction pure `isLate`** que le moteur
   d'exceptions de la phase 8 (aucune logique de retard dupliquée).
+
+**Pas de `geometry` dans ce payload** : OpsMap n'affiche que des marqueurs, et des
+géométries de centaines de km re-téléchargées toutes les 45 s pour tous les loads
+actifs seraient du poids mort. La géométrie reste réservée au détail (`LoadMap`).
 
 ### Composant `OpsMap.svelte`
 
@@ -151,6 +166,15 @@ Généralisation du germe `LoadMap` (phase 9), affiché en tête du dashboard :
 
 `LoadMap` trace la **géométrie OSRM réelle** (`Route.geometry`) quand elle existe,
 au lieu de la ligne droite pointillée actuelle (qui reste le fallback).
+
+⚠ Ordre des coordonnées : le GeoJSON OSRM est en `[lng, lat]`, Leaflet attend du
+`[lat, lng]`. Le tracé passe par **`L.geoJSON`** (qui gère l'ordre nativement) —
+jamais de coords GeoJSON brutes dans `L.polyline`, sinon la route se dessine dans
+l'océan. La suite e2e OSRM réelle vérifie les **bornes de la géométrie** d'un
+trajet connu pour attraper toute inversion.
+
+L'éditeur de route et le détail affichent la provenance de la distance
+(`distanceSource`) : badge « estimation » sur HAVERSINE (cf. section A).
 
 ## D. Dégradation, erreurs, tests
 
@@ -173,12 +197,14 @@ alourdir `pnpm db:up`). La préparation de l'extrait OSM (Québec, Geofabrik :
 - **Unit** : clients OSRM/Nominatim mockés (parsing réponse, timeout → null),
   haversine, normalisation de clé du cache géocodage.
 - **e2e (driver `none`)** : endpoint position (création d'événement, dédoublonnage
-  60 s, 404 token inconnu, 4xx module désactivé, 4xx load non actif) ; payload
+  60 s, 404 token inconnu, 4xx module désactivé, 4xx load non actif, **400 sur
+  bornes lat/lng invalides**) ; payload
   public avec `lastPosition` (et son absence après livraison) ; `active-map`
   (isolation tenant, permission, flag `isLate`) ; build de route sans coordonnées
   = comportement inchangé.
 - **e2e optionnelle OSRM réel** : suite skippée si `OSRM_HOST` absent — vérifie
-  distance/durée/géométrie sur un trajet connu.
+  distance/durée/géométrie sur un trajet connu, **bornes lat/lng de la géométrie
+  incluses** (détecte une inversion `[lng, lat]`/`[lat, lng]`).
 
 ## Récap des décisions de cadrage
 
