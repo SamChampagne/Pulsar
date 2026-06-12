@@ -187,6 +187,30 @@ describe('Phase 10 — positions, public coords, active-map, haversine (e2e)', (
       .expect(404);
   });
 
+  it('driver position: 403 when the transportation module is disabled', async () => {
+    // Public routes bypass ModulesGuard — the service re-checks activation
+    // (rule 15). setEnabled() invalidates TenantModulesCacheService immediately,
+    // so the toggle takes effect without waiting for the 30 s TTL.
+    await request(http)
+      .patch('/api/v1/modules/transportation')
+      .set(auth())
+      .send({ enabled: false })
+      .expect(200);
+    try {
+      await request(http)
+        .post(`/api/v1/public/driver/${ids.driverToken}/position`)
+        .send({ latitude: 45.62, longitude: -73.22 })
+        .expect(403);
+    } finally {
+      // ALWAYS re-enable — the rest of this suite and the other suites need it.
+      await request(http)
+        .patch('/api/v1/modules/transportation')
+        .set(auth())
+        .send({ enabled: true })
+        .expect(200);
+    }
+  });
+
   it('public tracking exposes origin/destination coords and lastPosition while undelivered', async () => {
     const view = await request(http)
       .get(`/api/v1/public/tracking/${ids.trackingToken}`)
@@ -392,5 +416,122 @@ describe('Phase 10 — positions, public coords, active-map, haversine (e2e)', (
 
   it('active-map requires auth', async () => {
     await request(http).get('/api/v1/transportation/loads/active-map').expect(401);
+  });
+
+  it('active-map: 403 without transportation.planning.read', async () => {
+    // Role with zero permissions + directly-activated user (password ⇒ ACTIVE).
+    const lower = suffix.toLowerCase();
+    const role = await request(http)
+      .post('/api/v1/roles')
+      .set(auth())
+      .send({ key: `${lower}-noperm`, name: 'P10 No Permissions', permissionKeys: [] })
+      .expect(201);
+    await request(http)
+      .post('/api/v1/users')
+      .set(auth())
+      .send({
+        email: `${lower}-noperm@example.test`,
+        password: 'NoPerm$123',
+        firstName: 'No',
+        lastName: 'Perm',
+        roleIds: [role.body.id],
+      })
+      .expect(201);
+    const login = await request(http)
+      .post('/api/v1/auth/login')
+      .send({ email: `${lower}-noperm@example.test`, password: 'NoPerm$123', tenant: 'acme' })
+      .expect(200);
+
+    await request(http)
+      .get('/api/v1/transportation/loads/active-map')
+      .set({ Authorization: `Bearer ${login.body.accessToken}` })
+      .expect(403);
+  });
+
+  it('active-map: tenant isolation — a second tenant never sees acme loads', async () => {
+    // Second tenant through the platform plane (phase 6 precedent — no MFA in e2e env).
+    const lower = suffix.toLowerCase();
+    const platformLogin = await request(http)
+      .post('/api/v1/platform/auth/login')
+      .send({ email: 'platform@pulsar.dev', password: 'admin123' })
+      .expect(200);
+    const created = await request(http)
+      .post('/api/v1/platform/tenants')
+      .set({ Authorization: `Bearer ${platformLogin.body.accessToken}` })
+      .send({
+        slug: `${lower}-iso`,
+        name: 'P10 Isolation Corp',
+        modules: ['transportation'],
+        admin: { email: `${lower}-iso@example.test`, firstName: 'Iso', lastName: 'Admin' },
+      })
+      .expect(201);
+    const inviteToken = (created.body.inviteUrl as string).split('/reset-password/')[1];
+    await request(http)
+      .post('/api/v1/auth/reset-password')
+      .send({ token: inviteToken, password: 'Iso$Pass123' })
+      .expect(200);
+    const login = await request(http)
+      .post('/api/v1/auth/login')
+      .send({ email: `${lower}-iso@example.test`, password: 'Iso$Pass123', tenant: `${lower}-iso` })
+      .expect(200);
+
+    const map = await request(http)
+      .get('/api/v1/transportation/loads/active-map')
+      .set({ Authorization: `Bearer ${login.body.accessToken}` })
+      .expect(200);
+    expect(map.body).toEqual([]); // brand-new tenant: nothing, certainly not acme's loads
+  });
+
+  // LAST on purpose: delivering ids.loadId flips it out of DISPATCHED/IN_TRANSIT,
+  // which the position/active-map tests above rely on.
+  it('public tracking: lastPosition is null after delivery, coords remain', async () => {
+    // DISPATCHED → IN_TRANSIT (authed), stops + POD via the public driver page
+    // (collaboration precedent), then load complete (authed) flips shipments DELIVERED.
+    await request(http)
+      .post(`/api/v1/transportation/loads/${ids.loadId}/start-transit`)
+      .set(auth())
+      .expect(201);
+
+    const driverView = await request(http)
+      .get(`/api/v1/public/driver/${ids.driverToken}`)
+      .expect(200);
+    const [pickup, delivery] = driverView.body.stops;
+    await request(http)
+      .post(`/api/v1/public/driver/${ids.driverToken}/stops/${pickup.id}/status`)
+      .send({ status: 'ARRIVED' })
+      .expect(200);
+    await request(http)
+      .post(`/api/v1/public/driver/${ids.driverToken}/stops/${pickup.id}/status`)
+      .send({ status: 'DEPARTED' })
+      .expect(200);
+    await request(http)
+      .post(`/api/v1/public/driver/${ids.driverToken}/stops/${delivery.id}/status`)
+      .send({ status: 'ARRIVED' })
+      .expect(200);
+    await request(http)
+      .post(`/api/v1/public/driver/${ids.driverToken}/pod`)
+      .send({ shipmentId: ids.shipmentId, signedByName: 'P10 Receiver' })
+      .expect(201);
+    await request(http)
+      .post(`/api/v1/transportation/loads/${ids.loadId}/complete`)
+      .set(auth())
+      .expect(201);
+
+    const view = await request(http)
+      .get(`/api/v1/public/tracking/${ids.trackingToken}`)
+      .expect(200);
+    expect(view.body.status).toBe('DELIVERED');
+    // The position history still exists, but a delivered shipment exposes none of it.
+    expect(view.body.lastPosition).toBeNull();
+    // Origin/destination coordinates remain for the static map.
+    expect(view.body.origin.latitude).toBeCloseTo(45.5019, 3);
+    expect(view.body.destination.latitude).toBeCloseTo(46.8131, 3);
+
+    // And the load left the active map.
+    const map = await request(http)
+      .get('/api/v1/transportation/loads/active-map')
+      .set(auth())
+      .expect(200);
+    expect(map.body.find((l: { id: string }) => l.id === ids.loadId)).toBeUndefined();
   });
 });
