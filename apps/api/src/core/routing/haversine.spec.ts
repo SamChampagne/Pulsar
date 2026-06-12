@@ -24,4 +24,16 @@ describe('haversine', () => {
     expect(pathDistanceKm([])).toBe(0);
     expect(pathDistanceKm([MTL])).toBe(0);
   });
+
+  it('antipodal points are ~half the Earth circumference', () => {
+    expect(haversineKm({ lat: 0, lng: 0 }, { lat: 0, lng: 180 })).toBeCloseTo(20015, 0);
+  });
+
+  it('handles southern-hemisphere (negative latitude) coordinates', () => {
+    const sydney = { lat: -33.8688, lng: 151.2093 };
+    const melbourne = { lat: -37.8136, lng: 144.9631 };
+    const d = haversineKm(sydney, melbourne);
+    expect(d).toBeGreaterThan(680);
+    expect(d).toBeLessThan(730);
+  });
 });
