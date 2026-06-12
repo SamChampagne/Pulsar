@@ -139,6 +139,44 @@ The increment that turns Pulsar from an internal tool into a collaborative platf
   `updateMany` transitions on buy-side invoices; transactional `createDrafts` with `P2002 → 409`;
   6 e2e tests; 14th migration. **Phase 7 complete.**
 
+## Phase 8 — Audit MVP line closed (BOL, modes, exceptions) ✅
+
+The audit's MVP line is now closed. The three blockers identified in §18 are all resolved.
+
+- ✅ **8.1 — Bill of Lading (BOL)**: pure `buildBolData` builder (shipper = first PICKUP stop,
+  consignee = last DELIVERY stop, fallback to shipment locations); `renderBol` (pdfkit, LETTER
+  format, 3 signature blocks, exceptions/damages lines, conditions footer); `BolService.generate`
+  (DISPATCHED/IN_TRANSIT/COMPLETED only, BOL- sequence, `entityType = 'bill-of-lading'`, audited);
+  `POST /loads/:id/bol` (generate or regenerate — each call produces a new document);
+  `GET /loads/:id/documents`; public `GET /public/driver/:token/bol` (token-resolved, 404 when no
+  BOL, internal document id never exposed in the public payload).
+- ✅ **8.2 — Transport Mode (FTL/LTL/PARCEL)**: `TransportMode` enum in `packages/shared`,
+  mirrored in Prisma; `mode` field on `TransportOrder`, `Load`, and `Rate` (null on Rate = all
+  modes); rating engine filters both sides; first-assign mode inheritance; non-blocking
+  `modeWarning` when load and order mode differ; `suggestMode` hint (≤30 kg PARCEL / ≤4000 kg
+  LTL / above FTL) — thresholds are constants, not parameterized (assumed gap vs audit §4).
+- ✅ **8.3 — Delay detection engine**: `isLate` pure function (deadline = `plannedArrivalLate ??
+  plannedArrivalEarly`); `DelayDetectionService` cron every 5 minutes + clock-injectable `tick()`
+  for testing; dedup on `(stopId, deadline)` — a replanned deadline re-alerts; `DELAYED`
+  `TrackingEvent` + tenant-wide `Notification` (userId nullable, read-by-one = read-for-all v1)
+  per late stop; bell UI.
+- ✅ **15th Prisma migration** (`20260611200000_phase8_mode_notifications_bol`).
+- **Known limitation**: post-dispatch route rebuild is API-restricted to OPEN/PLANNED loads
+  today; the replanned-window re-alert dedup path is correctly designed but not exercisable
+  over HTTP until continuous planning lands (audit §19.5).
+
+## Next: two paths forward
+
+With the audit MVP line closed, the next session faces a strategic choice:
+
+**(a) Client pilot** — stabilization, sell-side taxes (GST/QST/VAT on `CustomerInvoice`),
+S3 smoke test in a real environment, operational hardening.
+
+**(b) Audit §19 differentiators** — **freight audit autonome §19.4** (incoming carrier
+invoice entity, import/match against estimated cost, tolerance, dispute) and/or **operational
+AI agent §19.2** (idempotency keys, approval queue for proposed actions) — both rated
+"achievable with targeted refactoring" in the audit.
+
 ## Later / exploratory
 
 - Planning optimization (load building suggestions, carrier selection rules).

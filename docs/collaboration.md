@@ -165,3 +165,17 @@ tracking come later.
 `GET /transportation/analytics/carriers` (permission `transportation.analytics.read`):
 completed/active loads, tender acceptance rate (accepted/responded), on-time delivery %
 (actual ≤ planned), estimated spend. Computed on read — pre-aggregation can wait for real volume.
+
+## Driver BOL (public, phase 8)
+
+`GET /api/v1/public/driver/:token/bol` — streams the latest Bill of Lading PDF for the load
+identified by `Load.driverToken`. The driver token is the only credential; the internal load id
+and document id are **never** exposed in the public payload (they are resolved server-side).
+
+Responses:
+- `200 application/pdf` — binary stream, `Content-Disposition: attachment; filename=<BOL-number>.pdf`.
+- `404` — token unknown, or no BOL has been generated for this load yet.
+
+This endpoint is `@Public()` (skips `JwtAuthGuard`, `ModulesGuard`, `PermissionsGuard`). It
+re-validates the token on every call (same revocation semantics as other driver endpoints).
+Generating the BOL first requires `POST /loads/:id/bol` (authenticated, DISPATCHED+ only).
