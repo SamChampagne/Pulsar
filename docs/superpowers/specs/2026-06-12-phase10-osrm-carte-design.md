@@ -104,8 +104,8 @@ Aucun backfill réseau : les routes existantes restent `distanceSource = null`
   c'est de l'input anonyme, on rejette les (9999, 9999) à la porte ;
 - accepté seulement si le load est `DISPATCHED` ou `IN_TRANSIT` ;
 - crée un `TrackingEvent` `POSITION_UPDATE` (lat/lng, `recordedById` absent) ;
-- **dédoublonnage serveur** : ignoré (204) si la dernière position du load date de
-  moins de 60 s ; throttling IP (throttler Nest existant).
+- **dédoublonnage serveur** : ignoré (200 `{ recorded: false }`) si la dernière
+  position du load date de moins de 60 s ; throttling IP (throttler Nest existant).
 
 ### Page chauffeur (web)
 
@@ -138,7 +138,7 @@ dernière position), masquée gracieusement si aucune coordonnée.
 ### Endpoint agrégé
 
 `GET /api/v1/transportation/loads/active-map` — permission existante
-`transportation.loads.read`, **aucune nouvelle clé de permission**. Retourne les
+`transportation.planning.read`, **aucune nouvelle clé de permission**. Retourne les
 loads `DISPATCHED`/`IN_TRANSIT` du tenant avec :
 
 - `loadNumber`, `status`, transporteur ;
