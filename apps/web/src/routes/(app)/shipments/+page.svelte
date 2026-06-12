@@ -1,7 +1,19 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import StatusBadge from '$lib/components/StatusBadge.svelte';
+  import {
+    PageHeader,
+    Button,
+    FilterBar,
+    Select,
+    Field,
+    Table,
+    Badge,
+    EmptyState,
+    Panel,
+    toneFor,
+    labelFor,
+  } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
 
   interface ShipmentRow {
@@ -16,6 +28,9 @@
     originLocation: { name: string; city: string };
     destinationLocation: { name: string; city: string };
     load: { id: string; loadNumber: string; status: string } | null;
+    totalWeightKg?: number | null;
+    totalVolumeM3?: number | null;
+    palletCount?: number | null;
   }
 
   const fmtWindow = (early: string | null, late?: string | null) =>
@@ -40,6 +55,7 @@
   let total = $state(0);
   let statusFilter = $state('');
   let error = $state('');
+  let selected = $state<ShipmentRow | null>(null);
 
   // "Assign to load" picker state
   let assigning = $state<ShipmentRow | null>(null);
@@ -156,145 +172,174 @@
     }
   }
 
+  function fmtDims(row: ShipmentRow): string {
+    const parts: string[] = [];
+    if (row.totalWeightKg != null) parts.push(`${row.totalWeightKg.toLocaleString()} kg`);
+    if (row.totalVolumeM3 != null) parts.push(`${row.totalVolumeM3} m³`);
+    if (row.palletCount != null) parts.push(`${row.palletCount} pal`);
+    return parts.length > 0 ? parts.join(' · ') : '—';
+  }
+
   $effect(() => {
     statusFilter;
     void load();
   });
 </script>
 
-<div class="page-header">
-  <h1>Shipments <span class="muted">({total})</span></h1>
-  <select bind:value={statusFilter} style="width: 180px;">
-    <option value="">All statuses</option>
-    {#each ['PENDING', 'PLANNED', 'DISPATCHED', 'IN_TRANSIT', 'DELIVERED', 'CLOSED', 'CANCELLED'] as s (s)}
-      <option value={s}>{s.replaceAll('_', ' ')}</option>
-    {/each}
-  </select>
-</div>
+<PageHeader title="Shipments" count={total} />
 
-{#if error}
-  <p class="error-text">{error}</p>
-{/if}
+{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
-{#if assigning}
-  <div class="card" style="margin-bottom: 20px;">
-    <h2 style="margin-top: 0;">Assign {assigning.shipmentNumber} to a load</h2>
-    <div class="field" style="max-width: 360px;">
-      <label for="load">Load</label>
-      <select id="load" bind:value={selectedLoadId} onchange={() => { assignCapacityExcesses = []; assignForce = false; }}>
-        <option value="">+ Create a new load</option>
-        {#each openLoads as l (l.id)}
-          <option value={l.id}>{l.loadNumber} ({l.status})</option>
-        {/each}
-      </select>
-    </div>
-
-    {#if assignCapacityExcesses.length > 0}
-      <div class="capacity-alert">
-        <strong>Trailer capacity exceeded</strong>
-        <table style="width: 100%; margin-top: 6px; border-collapse: collapse; font-size: 12px;">
-          <thead>
-            <tr>
-              <th style="text-align: left;">Axis</th>
-              <th style="text-align: right;">Capacity</th>
-              <th style="text-align: right;">Requested</th>
-              <th style="text-align: right;">Excess</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each assignCapacityExcesses as ex (ex.axis)}
-              <tr>
-                <td>{ex.axis}</td>
-                <td style="text-align: right;">{ex.capacity}</td>
-                <td style="text-align: right;">{ex.requested}</td>
-                <td style="text-align: right; color: var(--color-danger, #dc3545);">+{ex.excess}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-        <label style="display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; cursor: pointer;">
-          <input type="checkbox" bind:checked={assignForce} />
-          Force assignment (audited)
-        </label>
-      </div>
-    {/if}
-
-    <div style="display: flex; gap: 8px; margin-top: 10px;">
-      {#if assignCapacityExcesses.length > 0 && assignForce}
-        <button class="btn btn-danger" onclick={() => assign(true)}>Confirm force assign</button>
-      {:else}
-        <button class="btn" onclick={() => assign()}>Assign</button>
-      {/if}
-      <button class="btn btn-secondary" onclick={() => (assigning = null)}>Cancel</button>
-    </div>
-  </div>
-{/if}
-
-<div class="card" style="padding: 0;">
-  <table>
-    <thead>
-      <tr>
-        <th>Shipment #</th>
-        <th>Order</th>
-        <th>Origin</th>
-        <th>Destination</th>
-        <th>Pickup</th>
-        <th>Delivery</th>
-        <th>Status</th>
-        <th>Load</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each shipments as shipment (shipment.id)}
-        <tr>
-          <td><strong>{shipment.shipmentNumber}</strong></td>
-          <td>
-            <a href={`/transport-orders/${shipment.transportOrder.id}`}>
-              {shipment.transportOrder.orderNumber}
-            </a>
-          </td>
-          <td>{shipment.originLocation.city}</td>
-          <td>{shipment.destinationLocation.city}</td>
-          <td>{fmtWindow(shipment.plannedPickupEarly, shipment.plannedPickupLate)}</td>
-          <td>{fmtWindow(shipment.plannedDeliveryEarly, shipment.plannedDeliveryLate)}</td>
-          <td><StatusBadge status={shipment.status} /></td>
-          <td>
-            {#if shipment.load}
-              <a href={`/loads/${shipment.load.id}`}>{shipment.load.loadNumber}</a>
-            {:else}
-              <span class="muted">—</span>
-            {/if}
-          </td>
-          <td style="text-align: right; white-space: nowrap;">
-            {#if shipment.status === 'PENDING'}
-              <button class="btn btn-sm" onclick={() => openAssign(shipment)}>Assign to load</button>
-              <button class="btn btn-danger btn-sm" onclick={() => cancelShipment(shipment)}>
-                Cancel
-              </button>
-            {:else if shipment.status === 'PLANNED'}
-              <button class="btn btn-secondary btn-sm" onclick={() => removeFromLoad(shipment)}>
-                Remove from load
-              </button>
-            {/if}
-            <button class="btn btn-secondary btn-sm" onclick={() => shareTracking(shipment)}>
-              Share tracking
-            </button>
-          </td>
-        </tr>
-      {:else}
-        <tr><td colspan="9" class="muted">No shipments. Plan a confirmed transport order to create one.</td></tr>
+<FilterBar>
+  <div class="w-44">
+    <Select bind:value={statusFilter}>
+      <option value="">All statuses</option>
+      {#each ['PENDING', 'PLANNED', 'DISPATCHED', 'IN_TRANSIT', 'DELIVERED', 'CLOSED', 'CANCELLED'] as s (s)}
+        <option value={s}>{s.replaceAll('_', ' ')}</option>
       {/each}
-    </tbody>
-  </table>
-</div>
+    </Select>
+  </div>
+</FilterBar>
 
-<style>
-  .capacity-alert {
-    margin-top: 10px;
-    padding: 10px 12px;
-    background: #fff3cd;
-    border: 1px solid #ffc107;
-    border-radius: 6px;
-  }
-</style>
+<Table>
+  {#snippet head()}
+    <th>Shipment #</th><th>Order #</th><th>Origin → Destination</th>
+    <th>Weight / Vol / Pal</th><th>Load</th><th>Status</th>
+  {/snippet}
+  {#snippet body()}
+    {#each shipments as row (row.id)}
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <tr class="cursor-pointer" onclick={() => (selected = row)}>
+        <td class="font-semibold">{row.shipmentNumber}</td>
+        <td>
+          <a href={`/transport-orders/${row.transportOrder.id}`} class="font-semibold text-accent hover:underline"
+             onclick={(e) => e.stopPropagation()}>{row.transportOrder.orderNumber}</a>
+        </td>
+        <td>{row.originLocation.city} → {row.destinationLocation.city}</td>
+        <td class="text-sm text-ink-muted">{fmtDims(row)}</td>
+        <td>
+          {#if row.load}
+            <a href={`/loads/${row.load.id}`} class="font-semibold text-accent hover:underline"
+               onclick={(e) => e.stopPropagation()}>{row.load.loadNumber}</a>
+          {:else}
+            —
+          {/if}
+        </td>
+        <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
+      </tr>
+    {:else}
+      <tr><td colspan="6"><EmptyState message="No shipments. Plan a confirmed transport order to create one." /></td></tr>
+    {/each}
+  {/snippet}
+</Table>
+
+{#if selected}
+  {@const sel = selected}
+  <Panel open={true} title={sel.shipmentNumber} onclose={() => { selected = null; assigning = null; }}>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Status</div>
+      <div class="text-sm text-ink"><Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge></div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Order</div>
+      <div class="text-sm text-ink">
+        <a href={`/transport-orders/${sel.transportOrder.id}`} class="text-accent hover:underline">{sel.transportOrder.orderNumber}</a>
+      </div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Origin → Destination</div>
+      <div class="text-sm text-ink">{sel.originLocation.name}, {sel.originLocation.city} → {sel.destinationLocation.name}, {sel.destinationLocation.city}</div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Pickup window</div>
+      <div class="text-sm text-ink">{fmtWindow(sel.plannedPickupEarly, sel.plannedPickupLate)}</div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Delivery window</div>
+      <div class="text-sm text-ink">{fmtWindow(sel.plannedDeliveryEarly, sel.plannedDeliveryLate)}</div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Weight / Vol / Pal</div>
+      <div class="text-sm text-ink">{fmtDims(sel)}</div>
+    </div>
+    <div class="mb-3">
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Load</div>
+      <div class="text-sm text-ink">
+        {#if sel.load}
+          <a href={`/loads/${sel.load.id}`} class="text-accent hover:underline">{sel.load.loadNumber}</a>
+        {:else}
+          —
+        {/if}
+      </div>
+    </div>
+
+    <!-- Assign / unassign controls in the panel -->
+    <div class="mt-4 border-t border-edge pt-4">
+      {#if sel.status === 'PENDING'}
+        {#if !assigning || assigning.id !== sel.id}
+          <Button variant="primary" onclick={() => openAssign(sel)}>Assign to load</Button>
+          <div class="mt-2">
+            <Button variant="danger" onclick={() => cancelShipment(sel)}>Cancel shipment</Button>
+          </div>
+        {:else}
+          <Field label="Load">
+            <select
+              bind:value={selectedLoadId}
+              onchange={() => { assignCapacityExcesses = []; assignForce = false; }}
+              class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+            >
+              <option value="">+ Create a new load</option>
+              {#each openLoads as l (l.id)}
+                <option value={l.id}>{l.loadNumber} ({l.status})</option>
+              {/each}
+            </select>
+          </Field>
+
+          {#if assignCapacityExcesses.length > 0}
+            <div class="mt-3 rounded-card border border-warn bg-warn-soft p-3">
+              <p class="mb-2 text-sm font-semibold text-warn">Trailer capacity exceeded</p>
+              <table class="w-full text-xs">
+                <thead>
+                  <tr class="text-ink-muted">
+                    <th class="pb-1 text-left">Axis</th>
+                    <th class="pb-1 text-right">Capacity</th>
+                    <th class="pb-1 text-right">Requested</th>
+                    <th class="pb-1 text-right">Excess</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each assignCapacityExcesses as ex (ex.axis)}
+                    <tr>
+                      <td class="py-0.5">{ex.axis}</td>
+                      <td class="py-0.5 text-right">{ex.capacity}</td>
+                      <td class="py-0.5 text-right">{ex.requested}</td>
+                      <td class="py-0.5 text-right text-danger">+{ex.excess}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+              <label class="mt-2 flex cursor-pointer items-center gap-2 text-sm text-ink">
+                <input type="checkbox" bind:checked={assignForce} />
+                Force assignment (audited)
+              </label>
+            </div>
+          {/if}
+
+          <div class="mt-3 flex gap-2">
+            {#if assignCapacityExcesses.length > 0 && assignForce}
+              <Button variant="danger" onclick={() => assign(true)}>Confirm force assign</Button>
+            {:else}
+              <Button variant="primary" onclick={() => assign()}>Assign</Button>
+            {/if}
+            <Button variant="secondary" onclick={() => { assigning = null; }}>Cancel</Button>
+          </div>
+        {/if}
+      {:else if sel.status === 'PLANNED'}
+        <Button variant="secondary" onclick={() => removeFromLoad(sel)}>Remove from load</Button>
+      {/if}
+      <div class="mt-2">
+        <Button variant="secondary" onclick={() => shareTracking(sel)}>Share tracking</Button>
+      </div>
+    </div>
+  </Panel>
+{/if}
