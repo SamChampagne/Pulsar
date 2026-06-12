@@ -4,6 +4,21 @@
   import { api, ApiError } from '$lib/api/client';
   import { auth } from '$lib/stores/auth';
   import { toast } from '$lib/stores/toast';
+  import {
+    PageHeader,
+    Button,
+    FilterBar,
+    Field,
+    Input,
+    Table,
+    Badge,
+    EmptyState,
+    Card,
+    Skeleton,
+    Modal,
+    toneFor,
+    labelFor,
+  } from '$lib/components/ui';
 
   interface CustomerRow {
     id: string;
@@ -19,6 +34,7 @@
   let search = $state('');
   let error = $state('');
   let showForm = $state(false);
+  let loading = $state(true);
   let form = $state({ code: '', name: '', contactName: '', email: '' });
 
   const hasPortal = $derived(
@@ -47,6 +63,8 @@
       total = result.total;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load customers';
+    } finally {
+      loading = false;
     }
   }
 
@@ -76,96 +94,94 @@
   });
 </script>
 
-<div class="page-header">
-  <h1>Customers <span class="muted">({total})</span></h1>
-  <button class="btn" onclick={() => (showForm = !showForm)}>New customer</button>
-</div>
+<PageHeader title="Customers" count={total}>
+  {#snippet actions()}
+    <Button onclick={() => { showForm = true; }}>New customer</Button>
+  {/snippet}
+</PageHeader>
 
-{#if error}
-  <p class="error-text">{error}</p>
-{/if}
+{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
-{#if showForm}
-  <form class="card" style="margin-bottom: 20px;" onsubmit={create}>
-    <h2 style="margin-top: 0;">New customer</h2>
-    <div class="form-grid">
-      <div class="field">
-        <label for="code">Code</label>
-        <input id="code" bind:value={form.code} required placeholder="CUST-002" />
-      </div>
-      <div class="field">
-        <label for="name">Name</label>
-        <input id="name" bind:value={form.name} required />
-      </div>
-      <div class="field">
-        <label for="contact">Contact</label>
-        <input id="contact" bind:value={form.contactName} />
-      </div>
-      <div class="field">
-        <label for="email">Email</label>
-        <input id="email" type="email" bind:value={form.email} />
-      </div>
-    </div>
-    <div style="display: flex; gap: 8px;">
-      <button class="btn" type="submit">Create</button>
-      <button class="btn btn-secondary" type="button" onclick={() => (showForm = false)}>
-        Cancel
-      </button>
-    </div>
-  </form>
-{/if}
-
-<div class="card" style="padding: 0;">
-  <div style="padding: 14px 12px;">
+<FilterBar>
+  <div class="w-72">
     <input
       placeholder="Search name or code…"
       bind:value={search}
-      onkeydown={(e) => e.key === 'Enter' && load()}
-      style="max-width: 320px;"
+      onkeydown={(e) => { if (e.key === 'Enter') void load(); }}
+      class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
     />
   </div>
-  <table>
-    <thead>
-      <tr>
-        <th>Code</th>
-        <th>Name</th>
-        <th>Contact</th>
-        <th>Email</th>
-        <th>Active</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each customers as customer (customer.id)}
-        <tr>
-          <td><strong>{customer.code}</strong></td>
-          <td>{customer.name}</td>
-          <td>{customer.contactName ?? '—'}</td>
-          <td>{customer.email ?? '—'}</td>
-          <td>
-            <span class="badge {customer.isActive ? 'badge-success' : 'badge-danger'}">
-              {customer.isActive ? 'YES' : 'NO'}
-            </span>
-          </td>
-          <td style="text-align: right;">
-            {#if hasPortal}
-              <button class="btn btn-secondary btn-sm" onclick={() => portalLink(customer)}>
-                Portal link
-              </button>
-            {/if}
-          </td>
-        </tr>
-      {:else}
-        <tr><td colspan="6" class="muted">No customers yet.</td></tr>
-      {/each}
-    </tbody>
-  </table>
-</div>
+</FilterBar>
 
-<style>
-  .form-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 20px;
-  }
-</style>
+{#if loading}
+  <Card padded={false}><Skeleton rows={6} /></Card>
+{:else}
+<Table>
+  {#snippet head()}
+    <th>Code</th><th>Name</th><th>Contact</th><th>Email</th><th>Active</th>
+    {#if hasPortal}<th></th>{/if}
+  {/snippet}
+  {#snippet body()}
+    {#each customers as customer (customer.id)}
+      <tr>
+        <td class="font-semibold">{customer.code}</td>
+        <td>{customer.name}</td>
+        <td>{customer.contactName ?? '—'}</td>
+        <td>{customer.email ?? '—'}</td>
+        <td>
+          <Badge tone={customer.isActive ? 'ok' : 'danger'}>
+            {customer.isActive ? 'Active' : 'Inactive'}
+          </Badge>
+        </td>
+        {#if hasPortal}
+          <td class="text-right">
+            <Button variant="secondary" onclick={() => portalLink(customer)}>
+              Portal link
+            </Button>
+          </td>
+        {/if}
+      </tr>
+    {:else}
+      <tr>
+        <td colspan={hasPortal ? 6 : 5}>
+          <EmptyState message="No customers yet." />
+        </td>
+      </tr>
+    {/each}
+  {/snippet}
+</Table>
+{/if}
+
+<Modal bind:open={showForm} title="New customer">
+  {#snippet children()}
+    <form id="customer-form" onsubmit={create}>
+      <div class="grid grid-cols-2 gap-x-4 gap-y-3">
+        <Field label="Code">
+          <input
+            bind:value={form.code}
+            required
+            placeholder="CUST-002"
+            class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+          />
+        </Field>
+        <Field label="Name">
+          <input
+            bind:value={form.name}
+            required
+            class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+          />
+        </Field>
+        <Field label="Contact">
+          <Input bind:value={form.contactName} />
+        </Field>
+        <Field label="Email">
+          <Input type="email" bind:value={form.email} />
+        </Field>
+      </div>
+      <div class="mt-4 flex justify-end gap-2 border-t border-edge pt-3">
+        <Button variant="secondary" onclick={() => { showForm = false; }}>Cancel</Button>
+        <Button variant="primary" type="submit">Create</Button>
+      </div>
+    </form>
+  {/snippet}
+</Modal>
