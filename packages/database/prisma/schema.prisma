@@ -309,7 +309,8 @@ enum NotificationLevel {
 model Notification {
   id        String            @id @default(cuid())
   tenantId  String
-  userId    String
+  // null = tenant-wide notification (e.g. delay alerts); read-by-one = read-for-all (v1)
+  userId    String?
   level     NotificationLevel @default(INFO)
   title     String
   body      String
@@ -318,7 +319,7 @@ model Notification {
   createdAt DateTime          @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, userId, readAt])
   @@map("notifications")
@@ -634,6 +635,7 @@ model TransportOrder {
   customerId            String
   customerReference     String?
   status                TransportOrderStatus @default(DRAFT)
+  mode                  TransportMode        @default(FTL)
   originLocationId      String
   destinationLocationId String
   requestedPickupEarly   DateTime?
@@ -724,10 +726,11 @@ enum LoadStatus {
 
 // Physical consolidation assigned to a carrier/vehicle (SAP TM "freight order").
 model Load {
-  id            String     @id @default(cuid())
+  id            String        @id @default(cuid())
   tenantId      String
   loadNumber    String
-  status        LoadStatus @default(OPEN)
+  status        LoadStatus    @default(OPEN)
+  mode          TransportMode @default(FTL)
   carrierId     String?
   driverId      String?
   vehicleId     String?
@@ -958,23 +961,25 @@ enum RateStatus {
 
 // Simple rate offering (buy-side carrier rate or sell-side customer rate).
 model Rate {
-  id               String     @id @default(cuid())
+  id               String         @id @default(cuid())
   tenantId         String
   name             String
   carrierId        String?
   customerId       String?
   laneId           String?
   fuelTableId      String?
-  rateType         RateType   @default(FLAT)
-  currency         String     @default("CAD")
-  baseAmount       Decimal    @db.Decimal(12, 2)
+  rateType         RateType       @default(FLAT)
+  // null = applies to all modes
+  mode             TransportMode?
+  currency         String         @default("CAD")
+  baseAmount       Decimal        @db.Decimal(12, 2)
   fuelSurchargePct Float?
-  minCharge        Decimal?   @db.Decimal(12, 2)
+  minCharge        Decimal?       @db.Decimal(12, 2)
   validFrom        DateTime?
   validTo          DateTime?
-  status           RateStatus @default(DRAFT)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  status           RateStatus     @default(DRAFT)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   tenant            Tenant                 @relation(fields: [tenantId], references: [id])
   carrier           Carrier?               @relation(fields: [carrierId], references: [id])
@@ -1010,6 +1015,13 @@ enum AccessorialUnit {
   FLAT
   PER_HOUR
   PER_UNIT
+}
+
+// Shipping mode (mirror of @pulsar/shared). Default FTL.
+enum TransportMode {
+  FTL
+  LTL
+  PARCEL
 }
 
 // Tenant accessorial catalog (tailgate, wait time, residential…).
