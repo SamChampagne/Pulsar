@@ -2,8 +2,20 @@
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { getAccessToken } from '$lib/stores/auth';
-  import StatusBadge from '$lib/components/StatusBadge.svelte';
   import { toast } from '$lib/stores/toast';
+  import {
+    PageHeader,
+    Button,
+    FilterBar,
+    Select,
+    Table,
+    Badge,
+    EmptyState,
+    Card,
+    Skeleton,
+    toneFor,
+    labelFor,
+  } from '$lib/components/ui';
 
   // ── Shared tab state ────────────────────────────────────────────────────────
   let activeTab = $state<'carrier' | 'customer'>('carrier');
@@ -53,6 +65,7 @@
   let statusFilter = $state('');
   let expanded = $state('');
   let error = $state('');
+  let loadingCarrier = $state(true);
 
   // Reconcile form state (per expanded invoice)
   let carrierInvoiceNumber = $state('');
@@ -74,6 +87,8 @@
       carriers = result.items;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load invoices';
+    } finally {
+      loadingCarrier = false;
     }
   }
 
@@ -254,6 +269,7 @@
   let selectedCustomerId = $state('');
   let statementsStatusFilter = $state('');
   let stmtError = $state('');
+  let loadingCustomer = $state(false);
 
   // Billable preview state
   let previewLoading = $state(false);
@@ -267,6 +283,7 @@
   let priceDetailExpanded = $state<Record<string, boolean>>({});
 
   async function loadCustomerData() {
+    loadingCustomer = true;
     try {
       const [stmts, customers] = await Promise.all([
         api<StatementRow[]>('/billing/customer-invoices', {
@@ -282,6 +299,8 @@
       customerOptions = customers.items;
     } catch (e) {
       stmtError = e instanceof ApiError ? e.message : 'Failed to load customer statements';
+    } finally {
+      loadingCustomer = false;
     }
   }
 
@@ -405,113 +424,115 @@
   });
 </script>
 
-<div class="page-header">
-  <h1>Invoices &amp; statements</h1>
-</div>
+<PageHeader title="Invoices &amp; statements" />
 
 <!-- Tab navigation -->
-<div class="tab-nav">
-  <button class="tab-btn" class:active={activeTab === 'carrier'} onclick={() => (activeTab = 'carrier')}>
-    Carrier invoices
-  </button>
-  <button class="tab-btn" class:active={activeTab === 'customer'} onclick={() => (activeTab = 'customer')}>
-    Customer statements
-  </button>
+<div class="mb-4 flex gap-1 border-b border-edge">
+  <button
+    class={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${activeTab === 'carrier' ? 'border-accent text-accent' : 'border-transparent text-ink-muted hover:text-ink'}`}
+    onclick={() => (activeTab = 'carrier')}
+  >Carrier invoices</button>
+  <button
+    class={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${activeTab === 'customer' ? 'border-accent text-accent' : 'border-transparent text-ink-muted hover:text-ink'}`}
+    onclick={() => (activeTab = 'customer')}
+  >Customer statements</button>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════ CARRIER TAB -->
 {#if activeTab === 'carrier'}
-  <div class="tab-toolbar">
-    <select bind:value={statusFilter} style="width: 140px;">
-      <option value="">All statuses</option>
-      <option value="DRAFT">Draft</option>
-      <option value="DISPUTED">Disputed</option>
-      <option value="APPROVED">Approved</option>
-      <option value="PAID">Paid</option>
-    </select>
-    <button class="btn btn-sm" onclick={exportCsv}>Export CSV</button>
-    <select bind:value={selectedCarrierId} style="width: 220px;">
+  <FilterBar>
+    <div class="w-36">
+      <Select bind:value={statusFilter}>
+        <option value="">All statuses</option>
+        <option value="DRAFT">Draft</option>
+        <option value="DISPUTED">Disputed</option>
+        <option value="APPROVED">Approved</option>
+        <option value="PAID">Paid</option>
+      </Select>
+    </div>
+    <Button variant="secondary" onclick={exportCsv}>Export CSV</Button>
+    <select
+      bind:value={selectedCarrierId}
+      class="rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none w-56"
+    >
       <option value="" disabled>Draft for carrier…</option>
       {#each carriers as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
     </select>
-    <button class="btn" disabled={!selectedCarrierId} onclick={draft}>Generate draft</button>
-  </div>
+    <Button disabled={!selectedCarrierId} onclick={draft}>Generate draft</Button>
+  </FilterBar>
 
-  <p class="muted">
+  <p class="mb-4 text-sm text-ink-muted">
     A draft bundles the carrier's completed, not-yet-invoiced loads at their estimated cost
     (the expected amount). Reconcile it against the carrier's actual invoice: within tolerance
     it is approved automatically; over tolerance it goes to dispute.
   </p>
 
-  {#if error}
-    <p class="error-text">{error}</p>
-  {/if}
+  {#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
-  <div class="card" style="padding: 0;">
-    <table>
-      <thead>
+  {#if loadingCarrier}
+    <Card padded={false}><Skeleton rows={6} /></Card>
+  {:else}
+  <Table>
+    {#snippet head()}
+      <th>Invoice #</th><th>Carrier</th><th>Expected</th><th>Invoiced</th>
+      <th>Variance (net / gross)</th><th>Status</th><th></th>
+    {/snippet}
+    {#snippet body()}
+      {#each invoices as invoice (invoice.id)}
         <tr>
-          <th>Invoice #</th>
-          <th>Carrier</th>
-          <th>Expected</th>
-          <th>Invoiced</th>
-          <th>Variance (net / gross)</th>
-          <th>Status</th>
-          <th></th>
+          <td>
+            <button
+              class="font-semibold text-accent hover:underline bg-transparent border-none p-0 cursor-pointer text-sm"
+              onclick={() => expand(invoice)}
+            >{invoice.invoiceNumber}</button>
+          </td>
+          <td>{invoice.carrier.name}</td>
+          <td>{Number(invoice.totalAmount).toLocaleString()} {invoice.currency}</td>
+          <td>
+            {invoice.invoicedTotal !== null
+              ? `${Number(invoice.invoicedTotal).toLocaleString()} ${invoice.currency}`
+              : '—'}
+          </td>
+          <td>
+            {invoice.varianceGross !== null
+              ? `${Number(invoice.varianceTotal).toLocaleString()} / ${Number(invoice.varianceGross).toLocaleString()}`
+              : '—'}
+          </td>
+          <td><Badge tone={toneFor(invoice.status)}>{labelFor(invoice.status)}</Badge></td>
+          <td class="text-right whitespace-nowrap">
+            {#if invoice.status === 'DRAFT'}
+              <Button variant="secondary" onclick={() => approve(invoice)}>Approve as-is</Button>
+            {:else if invoice.status === 'APPROVED'}
+              <Button variant="secondary" onclick={() => markPaid(invoice)}>Mark paid</Button>
+            {/if}
+          </td>
         </tr>
-      </thead>
-      <tbody>
-        {#each invoices as invoice (invoice.id)}
+        {#if expanded === invoice.id}
           <tr>
-            <td>
-              <button class="linklike" onclick={() => expand(invoice)}>
-                <strong>{invoice.invoiceNumber}</strong>
-              </button>
-            </td>
-            <td>{invoice.carrier.name}</td>
-            <td>{Number(invoice.totalAmount).toLocaleString()} {invoice.currency}</td>
-            <td>
-              {invoice.invoicedTotal !== null
-                ? `${Number(invoice.invoicedTotal).toLocaleString()} ${invoice.currency}`
-                : '—'}
-            </td>
-            <td>
-              {invoice.varianceGross !== null
-                ? `${Number(invoice.varianceTotal).toLocaleString()} / ${Number(invoice.varianceGross).toLocaleString()}`
-                : '—'}
-            </td>
-            <td><StatusBadge status={invoice.status} /></td>
-            <td style="text-align: right;">
-              {#if invoice.status === 'DRAFT'}
-                <button class="btn btn-sm" onclick={() => approve(invoice)}>Approve as-is</button>
-              {:else if invoice.status === 'APPROVED'}
-                <button class="btn btn-sm" onclick={() => markPaid(invoice)}>Mark paid</button>
-              {/if}
-            </td>
-          </tr>
-          {#if expanded === invoice.id}
-            <tr>
-              <td colspan="7" style="background: var(--color-bg);">
-                <table>
+            <td colspan="7" class="bg-base p-0">
+              <div class="p-4 space-y-3">
+                <table class="w-full text-sm">
                   <tbody>
                     {#each invoice.lines as line (line.id)}
-                      <tr>
-                        <td>{line.description}</td>
-                        <td style="text-align: right;">
+                      <tr class="border-b border-edge last:border-0">
+                        <td class="py-1.5 pr-4">{line.description}</td>
+                        <td class="py-1.5 text-right pr-4 text-ink-muted">
                           {Number(line.amount).toLocaleString()} {invoice.currency}
                         </td>
-                        <td style="text-align: right; width: 160px;">
+                        <td class="py-1.5 text-right w-40">
                           {#if invoice.status === 'DRAFT' || invoice.status === 'DISPUTED'}
                             <input
                               type="number"
                               step="0.01"
                               bind:value={invoicedAmounts[line.id]}
-                              style="width: 120px; text-align: right;"
+                              class="w-28 rounded border border-edge bg-surface px-2 py-0.5 text-right text-sm text-ink focus:border-accent focus:outline-none"
                             />
                           {:else if line.invoicedAmount !== null}
                             {Number(line.invoicedAmount).toLocaleString()}
                             {#if line.variance !== null && Number(line.variance) !== 0}
-                              <span class="error-text">({Number(line.variance) > 0 ? '+' : ''}{line.variance})</span>
+                              <span class="text-danger text-xs ml-1">
+                                ({Number(line.variance) > 0 ? '+' : ''}{line.variance})
+                              </span>
                             {/if}
                           {:else}
                             —
@@ -523,225 +544,202 @@
                 </table>
 
                 {#if invoice.status === 'DRAFT' || invoice.status === 'DISPUTED'}
-                  <div style="display: flex; gap: 8px; padding: 8px; align-items: center;">
+                  <div class="flex gap-2 items-center flex-wrap">
                     <input
                       placeholder="Carrier invoice #"
                       bind:value={carrierInvoiceNumber}
-                      style="width: 200px;"
+                      class="w-48 rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
                     />
-                    <button
-                      class="btn btn-sm"
+                    <Button
+                      variant="primary"
                       disabled={!carrierInvoiceNumber}
                       onclick={() => reconcile(invoice)}
                     >
                       {invoice.status === 'DISPUTED' ? 'Re-reconcile (corrected invoice)' : 'Reconcile'}
-                    </button>
+                    </Button>
                   </div>
                 {/if}
 
                 {#if invoice.status === 'DISPUTED'}
-                  <div style="display: flex; gap: 8px; padding: 8px; align-items: center;">
-                    <select bind:value={resolution} style="width: 180px;">
-                      <option value="ACCEPT_INVOICED">Pay invoiced amount</option>
-                      <option value="KEEP_EXPECTED">Pay expected amount</option>
-                    </select>
-                    <select bind:value={reasonCode} style="width: 200px;">
-                      {#each REASON_CODES as code (code)}<option value={code}>{code}</option>{/each}
-                    </select>
-                    <input placeholder="Note (optional)" bind:value={disputeNote} style="flex: 1;" />
-                    <button class="btn btn-sm" onclick={() => resolve(invoice)}>Resolve dispute</button>
+                  <div class="flex gap-2 items-center flex-wrap">
+                    <div class="w-44">
+                      <Select bind:value={resolution}>
+                        <option value="ACCEPT_INVOICED">Pay invoiced amount</option>
+                        <option value="KEEP_EXPECTED">Pay expected amount</option>
+                      </Select>
+                    </div>
+                    <div class="w-48">
+                      <Select bind:value={reasonCode}>
+                        {#each REASON_CODES as code (code)}<option value={code}>{code}</option>{/each}
+                      </Select>
+                    </div>
+                    <input
+                      placeholder="Note (optional)"
+                      bind:value={disputeNote}
+                      class="flex-1 min-w-40 rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+                    />
+                    <Button variant="danger" onclick={() => resolve(invoice)}>Resolve dispute</Button>
                   </div>
                 {/if}
 
                 {#if invoice.disputeReasonCode}
-                  <p class="muted" style="padding: 0 8px;">
+                  <p class="text-sm text-ink-muted">
                     Dispute: {invoice.disputeReasonCode}{invoice.disputeNote ? ` — ${invoice.disputeNote}` : ''}
                   </p>
                 {/if}
-              </td>
-            </tr>
-          {/if}
-        {:else}
-          <tr><td colspan="7" class="muted">No invoices yet.</td></tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+              </div>
+            </td>
+          </tr>
+        {/if}
+      {:else}
+        <tr><td colspan="7"><EmptyState message="No invoices yet." /></td></tr>
+      {/each}
+    {/snippet}
+  </Table>
+  {/if}
 
 <!-- ══════════════════════════════════════════════════════════ CUSTOMER TAB -->
 {:else}
   <!-- Billable preview panel -->
-  <div class="card" style="margin-bottom: 16px;">
-    <h2 style="margin-top: 0;">Generate billing statements</h2>
-    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-      <select bind:value={selectedCustomerId} style="width: 260px;">
+  <Card>
+    <h2 class="text-sm font-bold text-ink mb-3">Generate billing statements</h2>
+    <div class="flex gap-2 items-center flex-wrap">
+      <select
+        bind:value={selectedCustomerId}
+        class="rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none w-64"
+      >
         <option value="" disabled>Select a customer…</option>
         {#each customerOptions as c (c.id)}<option value={c.id}>{c.code} — {c.name}</option>{/each}
       </select>
-      <button
-        class="btn btn-secondary btn-sm"
+      <Button
+        variant="secondary"
         disabled={!selectedCustomerId || previewLoading}
         onclick={previewBillable}
       >
         {previewLoading ? 'Loading…' : 'Preview billable'}
-      </button>
+      </Button>
       {#if previewDone && previewRatable.length > 0}
-        <button class="btn btn-sm" onclick={generateStatements}>
+        <Button onclick={generateStatements}>
           Generate statements ({previewRatable.length} order{previewRatable.length !== 1 ? 's' : ''})
-        </button>
+        </Button>
       {/if}
     </div>
 
     {#if previewDone}
-      <div style="margin-top: 14px; display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start;">
+      <div class="mt-4 flex gap-4 flex-wrap items-start">
         {#if previewRatable.length > 0}
-          <div style="flex: 1; min-width: 240px;">
-            <p class="muted" style="font-size: 12px; margin: 0 0 6px;">
-              Ratable ({previewRatable.length})
-            </p>
-            <table>
-              <thead>
-                <tr>
-                  <th>Order #</th>
-                  <th style="text-align: right;">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div class="flex-1 min-w-60">
+            <p class="text-xs text-ink-muted mb-2">Ratable ({previewRatable.length})</p>
+            <Table>
+              {#snippet head()}<th>Order #</th><th class="text-right">Amount</th>{/snippet}
+              {#snippet body()}
                 {#each previewRatable as row (row.orderId)}
                   <tr>
                     <td>{row.orderNumber}</td>
-                    <td style="text-align: right;">
-                      {Number(row.amount).toLocaleString()} {row.currency}
-                    </td>
+                    <td class="text-right">{Number(row.amount).toLocaleString()} {row.currency}</td>
                   </tr>
                 {/each}
-              </tbody>
-            </table>
+              {/snippet}
+            </Table>
           </div>
         {:else}
-          <p class="muted" style="margin-top: 14px;">No ratable orders found for this customer.</p>
+          <p class="text-sm text-ink-muted mt-4">No ratable orders found for this customer.</p>
         {/if}
 
         {#if previewUnratable.length > 0}
-          <div style="flex: 1; min-width: 240px;">
-            <p class="muted" style="font-size: 12px; margin: 0 0 6px;">
-              Not ratable ({previewUnratable.length})
-            </p>
-            <table>
-              <thead>
-                <tr>
-                  <th>Order #</th>
-                  <th>Reason</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div class="flex-1 min-w-60">
+            <p class="text-xs text-ink-muted mb-2">Not ratable ({previewUnratable.length})</p>
+            <Table>
+              {#snippet head()}<th>Order #</th><th>Reason</th>{/snippet}
+              {#snippet body()}
                 {#each previewUnratable as row (row.orderId)}
                   <tr>
                     <td>{row.orderNumber}</td>
-                    <td>
-                      <span class="badge badge-warning" style="font-size: 11px;">{row.reason}</span>
-                    </td>
+                    <td><Badge tone="warn">{row.reason}</Badge></td>
                   </tr>
                 {/each}
-              </tbody>
-            </table>
+              {/snippet}
+            </Table>
           </div>
         {/if}
       </div>
     {/if}
-  </div>
+  </Card>
 
   <!-- Statements list -->
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-    <span class="muted" style="font-size: 13px;">Customer billing statements</span>
-    <select bind:value={statementsStatusFilter} style="width: 140px;">
-      <option value="">All statuses</option>
-      <option value="DRAFT">Draft</option>
-      <option value="APPROVED">Approved</option>
-      <option value="SENT">Sent</option>
-      <option value="PAID">Paid</option>
-    </select>
-  </div>
+  <FilterBar>
+    <span class="text-sm text-ink-muted">Customer billing statements</span>
+    <div class="ml-auto w-36">
+      <Select bind:value={statementsStatusFilter}>
+        <option value="">All statuses</option>
+        <option value="DRAFT">Draft</option>
+        <option value="APPROVED">Approved</option>
+        <option value="SENT">Sent</option>
+        <option value="PAID">Paid</option>
+      </Select>
+    </div>
+  </FilterBar>
 
-  {#if stmtError}
-    <p class="error-text">{stmtError}</p>
-  {/if}
+  {#if stmtError}<p class="mb-3 text-sm text-danger">{stmtError}</p>{/if}
 
-  <div class="card" style="padding: 0;">
-    <table>
-      <thead>
+  {#if loadingCustomer}
+    <Card padded={false}><Skeleton rows={6} /></Card>
+  {:else}
+  <Table>
+    {#snippet head()}
+      <th>Statement #</th><th>Customer</th><th>Status</th><th>Currency</th>
+      <th class="text-right">Total</th><th>Created</th><th></th>
+    {/snippet}
+    {#snippet body()}
+      {#each customerStatements as stmt (stmt.id)}
         <tr>
-          <th>Statement #</th>
-          <th>Customer</th>
-          <th>Status</th>
-          <th>Currency</th>
-          <th style="text-align: right;">Total</th>
-          <th>Created</th>
-          <th></th>
+          <td>
+            <button
+              class="font-semibold text-accent hover:underline bg-transparent border-none p-0 cursor-pointer text-sm"
+              onclick={() => expandStmt(stmt)}
+            >{stmt.invoiceNumber}</button>
+          </td>
+          <td>{stmt.customer.name}</td>
+          <td><Badge tone={toneFor(stmt.status)}>{labelFor(stmt.status)}</Badge></td>
+          <td>{stmt.currency}</td>
+          <td class="text-right">{Number(stmt.totalAmount).toLocaleString()} {stmt.currency}</td>
+          <td>{new Date(stmt.createdAt).toLocaleDateString()}</td>
+          <td class="text-right whitespace-nowrap">
+            {#if stmt.status === 'DRAFT'}
+              <Button variant="primary" onclick={() => approveStatement(stmt)}>Approve</Button>
+              <Button variant="danger" onclick={() => deleteStatement(stmt)}>Delete draft</Button>
+            {:else if stmt.status === 'APPROVED'}
+              <Button variant="primary" onclick={() => sendStatement(stmt)}>Send</Button>
+            {:else if stmt.status === 'SENT'}
+              <Button variant="secondary" onclick={() => payStatement(stmt)}>Mark paid</Button>
+            {/if}
+          </td>
         </tr>
-      </thead>
-      <tbody>
-        {#each customerStatements as stmt (stmt.id)}
-          <tr>
-            <td>
-              <button class="linklike" onclick={() => expandStmt(stmt)}>
-                <strong>{stmt.invoiceNumber}</strong>
-              </button>
-            </td>
-            <td>{stmt.customer.name}</td>
-            <td><StatusBadge status={stmt.status} /></td>
-            <td>{stmt.currency}</td>
-            <td style="text-align: right;">
-              {Number(stmt.totalAmount).toLocaleString()} {stmt.currency}
-            </td>
-            <td>{new Date(stmt.createdAt).toLocaleDateString()}</td>
-            <td style="text-align: right; white-space: nowrap;">
-              {#if stmt.status === 'DRAFT'}
-                <button class="btn btn-sm" style="margin-right: 4px;" onclick={() => approveStatement(stmt)}>
-                  Approve
-                </button>
-                <button class="btn btn-sm btn-danger" onclick={() => deleteStatement(stmt)}>
-                  Delete draft
-                </button>
-              {:else if stmt.status === 'APPROVED'}
-                <button class="btn btn-sm" onclick={() => sendStatement(stmt)}>Send</button>
-              {:else if stmt.status === 'SENT'}
-                <button class="btn btn-sm" onclick={() => payStatement(stmt)}>Mark paid</button>
-              {/if}
-            </td>
-          </tr>
 
-          {#if stmtExpanded === stmt.id}
-            <tr>
-              <td colspan="7" style="background: var(--color-bg); padding: 12px 16px;">
-                <p class="muted" style="font-size: 12px; margin: 0 0 8px;">
+        {#if stmtExpanded === stmt.id}
+          <tr>
+            <td colspan="7" class="bg-base p-0">
+              <div class="p-4 space-y-3">
+                <p class="text-xs text-ink-muted">
                   Lines — {stmt.lines.length} order{stmt.lines.length !== 1 ? 's' : ''}
                   {#if stmt.customer.email}
                     · customer email: {stmt.customer.email}
                   {/if}
                 </p>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Order #</th>
-                      <th>Description</th>
-                      <th style="text-align: right;">Amount</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table>
+                  {#snippet head()}
+                    <th>Order #</th><th>Description</th><th class="text-right">Amount</th><th></th>
+                  {/snippet}
+                  {#snippet body()}
                     {#each stmt.lines as line (line.id)}
                       <tr>
                         <td>{line.transportOrder?.orderNumber ?? '—'}</td>
                         <td>{line.description}</td>
-                        <td style="text-align: right;">
-                          {Number(line.amount).toLocaleString()} {stmt.currency}
-                        </td>
-                        <td style="text-align: right;">
+                        <td class="text-right">{Number(line.amount).toLocaleString()} {stmt.currency}</td>
+                        <td class="text-right">
                           {#if line.priceDetail}
                             <button
-                              class="linklike"
-                              style="font-size: 11px;"
+                              class="text-xs text-accent hover:underline bg-transparent border-none p-0 cursor-pointer"
                               onclick={() => togglePriceDetail(line.id)}
                             >
                               {priceDetailExpanded[line.id] ? '▲ hide detail' : '▼ price detail'}
@@ -752,53 +750,47 @@
                       {#if line.priceDetail && priceDetailExpanded[line.id]}
                         {@const pd = line.priceDetail}
                         <tr>
-                          <td colspan="4" style="padding: 0 12px 12px;">
-                            <div class="cost-snapshot">
-                              <div class="cost-snapshot-header">
-                                <span class="muted" style="font-size: 12px;">
+                          <td colspan="4" class="p-3">
+                            <div class="rounded-md border border-edge bg-surface p-3 space-y-2">
+                              <div class="flex items-center gap-2 flex-wrap">
+                                <span class="text-xs text-ink-muted">
                                   Price snapshot — ref. {new Date(pd.referenceDate).toLocaleDateString()}
                                 </span>
-                                <span class="muted" style="font-size: 12px;">
+                                <span class="text-xs text-ink-muted">
                                   {pd.rate.name} · {pd.rate.rateType}
                                 </span>
                               </div>
-                              <table class="breakdown-table">
+                              <table class="w-full text-xs">
                                 <tbody>
                                   {#each pd.result.lines as pline}
                                     <tr>
-                                      <td style="font-size: 13px;">{pline.label}</td>
-                                      <td style="text-align: right; font-size: 13px;">
-                                        {pline.amount.toLocaleString()} {stmt.currency}
-                                      </td>
+                                      <td class="py-0.5">{pline.label}</td>
+                                      <td class="py-0.5 text-right">{pline.amount.toLocaleString()} {stmt.currency}</td>
                                     </tr>
                                   {/each}
-                                  <tr>
-                                    <td><strong>Total</strong></td>
-                                    <td style="text-align: right;">
-                                      <strong>{pd.result.total.toLocaleString()} {stmt.currency}</strong>
-                                    </td>
+                                  <tr class="border-t border-edge font-semibold">
+                                    <td class="py-0.5">Total</td>
+                                    <td class="py-0.5 text-right">{pd.result.total.toLocaleString()} {stmt.currency}</td>
                                   </tr>
                                 </tbody>
                               </table>
                               {#if pd.result.appliedBreak}
                                 {@const br = pd.result.appliedBreak}
-                                <p style="font-size: 12px; margin: 4px 0;">
-                                  <span class="muted">Break applied:</span>
-                                  ≤ {br.upToKg} kg @ {br.amount} $/CWT
+                                <p class="text-xs text-ink-muted">
+                                  Break applied: ≤ {br.upToKg} kg @ {br.amount} $/CWT
                                   {#if br.asIfApplied}
-                                    <span class="badge badge-warn">as-if</span>
+                                    <Badge tone="warn">as-if</Badge>
                                   {/if}
                                 </p>
                               {/if}
-                              <p style="font-size: 12px; margin: 4px 0;">
-                                <span class="muted">Fuel:</span>
-                                {pd.rate.fuel.pct}% — {pd.rate.fuel.source}
+                              <p class="text-xs text-ink-muted">
+                                Fuel: {pd.rate.fuel.pct}% — {pd.rate.fuel.source}
                                 {#if pd.rate.fuel.source === 'TABLE' && pd.rate.fuel.effectiveFrom}
-                                  <span class="muted">(eff. {new Date(pd.rate.fuel.effectiveFrom).toLocaleDateString()})</span>
+                                  (eff. {new Date(pd.rate.fuel.effectiveFrom).toLocaleDateString()})
                                 {/if}
                               </p>
                               {#if pd.result.missingAccessorials.length > 0}
-                                <p class="error-text" style="font-size: 12px; margin: 4px 0;">
+                                <p class="text-xs text-danger">
                                   Missing accessorials: {pd.result.missingAccessorials.join(', ')}
                                 </p>
                               {/if}
@@ -807,101 +799,16 @@
                         </tr>
                       {/if}
                     {/each}
-                  </tbody>
-                </table>
-              </td>
-            </tr>
-          {/if}
-        {:else}
-          <tr><td colspan="7" class="muted">No customer statements yet.</td></tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+                  {/snippet}
+                </Table>
+              </div>
+            </td>
+          </tr>
+        {/if}
+      {:else}
+        <tr><td colspan="7"><EmptyState message="No customer statements yet." /></td></tr>
+      {/each}
+    {/snippet}
+  </Table>
+  {/if}
 {/if}
-
-<style>
-  /* Carrier tab */
-  .linklike {
-    background: none;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    color: var(--color-primary);
-    font-size: 13px;
-  }
-
-  /* Tab navigation */
-  .tab-nav {
-    display: flex;
-    gap: 0;
-    border-bottom: 2px solid var(--color-border);
-    margin-bottom: 20px;
-  }
-
-  .tab-btn {
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-    padding: 8px 18px;
-    font-size: 13px;
-    font-weight: 550;
-    color: var(--color-text-muted);
-    cursor: pointer;
-    transition: color 100ms, border-color 100ms;
-  }
-
-  .tab-btn:hover {
-    color: var(--color-text);
-  }
-
-  .tab-btn.active {
-    color: var(--color-primary);
-    border-bottom-color: var(--color-primary);
-  }
-
-  .tab-toolbar {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-wrap: wrap;
-    margin-bottom: 12px;
-  }
-
-  /* Price detail snapshot (mirrors loads/[id] .cost-snapshot) */
-  .cost-snapshot {
-    margin-top: 6px;
-    padding: 10px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-  }
-
-  .cost-snapshot-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-bottom: 6px;
-  }
-
-  .breakdown-table {
-    width: 100%;
-    font-size: 12px;
-    border-collapse: collapse;
-  }
-
-  .breakdown-table td {
-    padding: 2px 4px;
-  }
-
-  .badge-warn {
-    background: #fff3cd;
-    color: #856404;
-    border: 1px solid #ffc107;
-    padding: 1px 6px;
-    border-radius: 4px;
-    font-size: 11px;
-  }
-</style>
