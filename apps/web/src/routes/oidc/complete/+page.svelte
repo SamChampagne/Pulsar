@@ -3,6 +3,7 @@
   import { page } from '$app/state';
   import type { LoginResponse } from '@pulsar/shared';
   import { setAuth } from '$lib/stores/auth';
+  import PublicShell from '$lib/components/PublicShell.svelte';
 
   let error = $state('');
 
@@ -34,8 +35,10 @@
   });
 </script>
 
-{#if error}
-  <p class="error-text" style="margin: 64px auto; max-width: 360px;">{error}</p>
-{:else}
-  <p class="muted" style="margin: 64px auto; max-width: 360px;">Signing you in…</p>
-{/if}
+<PublicShell>
+  {#if error}
+    <p class="text-sm text-danger">{error}</p>
+  {:else}
+    <p class="text-sm text-ink-muted">Signing you in…</p>
+  {/if}
+</PublicShell>

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { api } from '$lib/api/client';
+  import PublicShell from '$lib/components/PublicShell.svelte';
+  import { Button, Field, Input } from '$lib/components/ui';
 
   let email = $state('');
   let tenant = $state('');
@@ -22,42 +24,24 @@
   }
 </script>
 
-<div class="public-page">
-  <form class="card public-card" onsubmit={submit}>
-    <h1 style="margin-bottom: 4px;">Reset your password</h1>
-    {#if sent}
-      <p class="muted">
-        If an account exists for <strong>{email}</strong>, a reset link is on its way. The link
-        expires in 1 hour.
-      </p>
-      <a href="/login">← Back to sign in</a>
-    {:else}
-      <p class="muted">Enter your email and we will send you a reset link.</p>
-      <div class="field">
-        <label for="email">Email</label>
-        <input id="email" type="email" bind:value={email} required autocomplete="email" />
-      </div>
-      <div class="field">
-        <label for="tenant">Tenant (optional)</label>
-        <input id="tenant" bind:value={tenant} placeholder="acme" />
-      </div>
-      <button class="btn" type="submit" disabled={loading} style="width: 100%; justify-content: center;">
+<PublicShell title="Reset your password" subtitle="Enter your email and we will send you a reset link.">
+  {#if sent}
+    <p class="mb-4 text-sm text-ink-muted">
+      If an account exists for <strong>{email}</strong>, a reset link is on its way. The link
+      expires in 1 hour.
+    </p>
+    <a href="/login" class="text-sm text-accent hover:underline">← Back to sign in</a>
+  {:else}
+    <form onsubmit={submit} class="flex flex-col gap-4">
+      <Field label="Email">
+        <Input type="email" bind:value={email} required name="email" />
+      </Field>
+      <Field label="Tenant (optional)">
+        <Input bind:value={tenant} placeholder="acme" name="tenant" />
+      </Field>
+      <Button type="submit" {loading} disabled={loading}>
         {loading ? 'Sending…' : 'Send reset link'}
-      </button>
-    {/if}
-  </form>
-</div>
-
-<style>
-  .public-page {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .public-card {
-    width: 380px;
-    padding: 32px;
-  }
-</style>
+      </Button>
+    </form>
+  {/if}
+</PublicShell>
