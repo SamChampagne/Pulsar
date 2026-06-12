@@ -1,7 +1,9 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { api, ApiError } from '$lib/api/client';
-  import StatusBadge from '$lib/components/StatusBadge.svelte';
+  import { Badge, Card } from '$lib/components/ui';
+  import { toneFor, labelFor } from '$lib/components/ui';
+  import { formatDateTime } from '$lib/format';
 
   interface DriverView {
     shipper: string;
@@ -101,7 +103,7 @@
 
   const fmtWindow = (early: string | null, late?: string | null) =>
     early
-      ? new Date(early).toLocaleString() + (late ? ' → ' + new Date(late).toLocaleString() : '')
+      ? formatDateTime(early) + (late ? ' → ' + formatDateTime(late) : '')
       : '—';
 
   const podCandidates = $derived(
@@ -115,139 +117,156 @@
   });
 </script>
 
-<div class="driver-page">
+<!-- Mobile-first: drivers open this on a phone. -->
+<div class="mx-auto flex max-w-md flex-col gap-3 p-4">
   {#if error}
-    <p class="error-text">{error}</p>
+    <p class="rounded-md bg-danger-soft px-4 py-3 text-sm text-danger">{error}</p>
   {:else if view}
-    <header>
-      <p class="muted" style="margin: 0;">{view.shipper} · {view.carrier ?? 'Internal fleet'}</p>
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <h1>{view.loadNumber}</h1>
-        <StatusBadge status={view.status} />
+    <!-- Header -->
+    <div>
+      <p class="text-sm text-ink-muted">{view.shipper} · {view.carrier ?? 'Internal fleet'}</p>
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-bold text-ink">{view.loadNumber}</h1>
+        <Badge tone={toneFor(view.status)}>{labelFor(view.status)}</Badge>
       </div>
-      {#if view.notes}<p class="muted">{view.notes}</p>{/if}
-      <p>
-        <a
-          href={`/api/v1/public/driver/${token}/bol`}
-          target="_blank"
-          class="btn btn-secondary"
-          style="display: inline-block;"
-        >
-          Download BOL (if generated)
-        </a>
-      </p>
-    </header>
+      {#if view.notes}<p class="text-sm text-ink-muted">{view.notes}</p>{/if}
+      <a
+        href={`/api/v1/public/driver/${token}/bol`}
+        target="_blank"
+        class="mt-2 inline-flex items-center gap-1.5 rounded-md border border-edge bg-surface px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface-muted"
+      >
+        Download BOL (if generated)
+      </a>
+    </div>
 
     {#if notice}
-      <p class="error-text">{notice}</p>
+      <p class="rounded-md bg-danger-soft px-4 py-3 text-sm text-danger">{notice}</p>
     {/if}
 
+    <!-- Stops -->
     {#each view.stops as stop (stop.id)}
-      <div class="card stop-card">
-        <div class="stop-head">
+      <Card>
+        <div class="mb-3 flex items-start justify-between gap-2">
           <div>
-            <strong>#{stop.sequence} — {stop.type}</strong>
-            <StatusBadge status={stop.status} />
-          </div>
-          <div class="muted">
-            {stop.location.name}<br />
-            {stop.location.addressLine1}, {stop.location.city}<br />
+            <p class="font-semibold text-ink">#{stop.sequence} — {stop.type}</p>
+            <p class="text-sm text-ink-muted">
+              {stop.location.name}<br />
+              {stop.location.addressLine1}, {stop.location.city}{stop.location.state ? `, ${stop.location.state}` : ''}
+            </p>
             {#if stop.plannedArrivalEarly}
-              Planned: {fmtWindow(stop.plannedArrivalEarly, stop.plannedArrivalLate)}
+              <p class="mt-1 text-xs text-ink-muted">Planned: {fmtWindow(stop.plannedArrivalEarly, stop.plannedArrivalLate)}</p>
             {/if}
           </div>
+          <Badge tone={toneFor(stop.status)}>{labelFor(stop.status)}</Badge>
         </div>
-        <div class="stop-actions">
-          {#if stop.status === 'PENDING'}
-            <button class="btn" disabled={busy} onclick={() => stopAction(stop.id, 'ARRIVED')}>
-              Arrived
-            </button>
-          {:else if stop.status === 'ARRIVED'}
-            <button class="btn" disabled={busy} onclick={() => stopAction(stop.id, 'DEPARTED')}>
-              Departed
-            </button>
-          {:else}
-            <span class="muted">
-              {stop.actualDepartureAt
-                ? `Departed ${new Date(stop.actualDepartureAt).toLocaleTimeString()}`
-                : stop.actualArrivalAt
-                  ? `Arrived ${new Date(stop.actualArrivalAt).toLocaleTimeString()}`
-                  : ''}
-            </span>
-          {/if}
-        </div>
-      </div>
+
+        <!-- Full-width tap targets using plain button for mobile -->
+        {#if stop.status === 'PENDING'}
+          <button
+            class="w-full rounded-md bg-accent px-3 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-accent-hover"
+            disabled={busy}
+            onclick={() => stopAction(stop.id, 'ARRIVED')}
+          >
+            Arrived
+          </button>
+        {:else if stop.status === 'ARRIVED'}
+          <button
+            class="w-full rounded-md bg-accent px-3 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-accent-hover"
+            disabled={busy}
+            onclick={() => stopAction(stop.id, 'DEPARTED')}
+          >
+            Departed
+          </button>
+        {:else}
+          <p class="text-sm text-ink-muted">
+            {stop.actualDepartureAt
+              ? `Departed ${formatDateTime(stop.actualDepartureAt)}`
+              : stop.actualArrivalAt
+                ? `Arrived ${formatDateTime(stop.actualArrivalAt)}`
+                : ''}
+          </p>
+        {/if}
+      </Card>
     {:else}
-      <p class="muted">No stops on this load yet.</p>
+      <p class="text-sm text-ink-muted">No stops on this load yet.</p>
     {/each}
 
+    <!-- POD form -->
     {#if podCandidates.length > 0}
-      <form class="card" onsubmit={submitPod}>
-        <h2 style="margin-top: 0;">Proof of delivery</h2>
-        <div class="field">
-          <label for="podShipment">Shipment</label>
-          <select id="podShipment" bind:value={podShipmentId} required>
-            <option value="" disabled>Select…</option>
-            {#each podCandidates as s (s.id)}
-              <option value={s.id}>{s.shipmentNumber}</option>
-            {/each}
-          </select>
-        </div>
-        <div class="field">
-          <label for="signedBy">Received by</label>
-          <input id="signedBy" bind:value={signedByName} placeholder="Receiver name" />
-        </div>
-        <div class="field">
-          <label for="podNotes">Notes</label>
-          <textarea id="podNotes" rows="2" bind:value={podNotes}></textarea>
-        </div>
-        <div class="field">
-          <label for="photo">Photo (optional)</label>
-          <input
-            id="photo"
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onchange={(e) => (photo = (e.currentTarget as HTMLInputElement).files?.[0] ?? null)}
-          />
-        </div>
-        <button class="btn" type="submit" disabled={busy} style="width: 100%; justify-content: center;">
-          Save POD
-        </button>
-      </form>
+      <Card>
+        <h2 class="mb-3 text-base font-semibold text-ink">Proof of delivery</h2>
+        <form onsubmit={submitPod} class="flex flex-col gap-3">
+          <div>
+            <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="podShipment">Shipment</label>
+            <select
+              id="podShipment"
+              bind:value={podShipmentId}
+              required
+              class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+            >
+              <option value="" disabled>Select…</option>
+              {#each podCandidates as s (s.id)}
+                <option value={s.id}>{s.shipmentNumber}</option>
+              {/each}
+            </select>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="signedBy">Received by</label>
+            <input
+              id="signedBy"
+              bind:value={signedByName}
+              placeholder="Receiver name"
+              class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+            />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="podNotes">Notes</label>
+            <textarea
+              id="podNotes"
+              rows={2}
+              bind:value={podNotes}
+              class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+            ></textarea>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="photo">Photo (optional)</label>
+            <input
+              id="photo"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              class="w-full text-sm text-ink"
+              onchange={(e) => (photo = (e.currentTarget as HTMLInputElement).files?.[0] ?? null)}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={busy}
+            class="w-full rounded-md bg-accent px-3 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-accent-hover"
+          >
+            Save POD
+          </button>
+        </form>
+      </Card>
     {/if}
+
+    <!-- Shipments list -->
+    {#if view.shipments.length > 0}
+      <Card>
+        <h2 class="mb-3 text-base font-semibold text-ink">Shipments</h2>
+        <ul class="flex flex-col gap-2">
+          {#each view.shipments as s (s.id)}
+            <li class="flex items-center justify-between text-sm">
+              <span class="text-ink">{s.shipmentNumber}</span>
+              <Badge tone={toneFor(s.status)}>{labelFor(s.status)}</Badge>
+            </li>
+          {/each}
+        </ul>
+      </Card>
+    {/if}
+
+    <p class="text-center text-xs text-ink-faint">Powered by Pulsar</p>
   {:else}
-    <p class="muted">Loading…</p>
+    <p class="text-sm text-ink-muted">Loading…</p>
   {/if}
-  <p class="muted" style="font-size: 11px; text-align: center;">Powered by Pulsar</p>
 </div>
-
-<style>
-  /* Mobile-first: drivers open this on a phone. */
-  .driver-page {
-    max-width: 480px;
-    margin: 0 auto;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .stop-card {
-    padding: 14px;
-  }
-
-  .stop-head {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    margin-bottom: 10px;
-  }
-
-  .stop-actions .btn {
-    width: 100%;
-    justify-content: center;
-    padding: 12px;
-    font-size: 15px;
-  }
-</style>
