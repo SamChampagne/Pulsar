@@ -159,8 +159,11 @@ export class OidcService {
     try {
       const client = await this.clientFor(config, slug);
       tokenSet = await client.callback(redirectUri, params, callbackChecks);
-    } catch {
-      // IdP may have rotated endpoints — retry once with a fresh discovery.
+    } catch (err) {
+      // openid-client OP errors carry an OAuth `error` code (invalid_grant, invalid_client…):
+      // those are real auth failures — retrying with a fresh discovery cannot fix them.
+      // Only transport/discovery-level failures (no error code) warrant the one retry.
+      if ((err as { error?: string }).error) throw err;
       const freshClient = await this.clientFor(config, slug, true);
       tokenSet = await freshClient.callback(redirectUri, params, callbackChecks);
     }

@@ -77,11 +77,7 @@ export class PlatformAuthService {
     const secret = this.crypto.decryptString(payload.secretEnc);
     const recoveryCodes = await this.mfa.activate(payload.sub, secret, code);
 
-    // Enrollment done — update lastLoginAt and issue the full access token.
-    await this.prisma.platformUser.update({
-      where: { id: payload.sub },
-      data: { lastLoginAt: new Date() },
-    });
+    // Enrollment done — issue the full access token (issueAccessToken writes lastLoginAt).
     const user = await this.prisma.platformUser.findUniqueOrThrow({
       where: { id: payload.sub },
     });

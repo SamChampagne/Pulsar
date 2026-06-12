@@ -59,11 +59,13 @@ export class PlatformMfaService {
     if (this.verifyTotp(this.crypto.decryptString(user.totpSecret), code)) return true;
     for (let i = 0; i < user.recoveryCodes.length; i++) {
       if (await compare(code, user.recoveryCodes[i])) {
-        await this.prisma.platformUser.update({
-          where: { id: user.id },
+        // Optimistic concurrency: consume only if the array is exactly as read —
+        // a concurrent consumer changes it and count drops to 0 (code already spent).
+        const { count } = await this.prisma.platformUser.updateMany({
+          where: { id: user.id, recoveryCodes: { equals: user.recoveryCodes } },
           data: { recoveryCodes: user.recoveryCodes.filter((_, j) => j !== i) },
         });
-        return true;
+        return count === 1;
       }
     }
     return false;
