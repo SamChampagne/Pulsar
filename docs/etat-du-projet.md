@@ -46,13 +46,23 @@ notifications).
 | Conventions REST | [api-conventions.md](./api-conventions.md) |
 | Démarrage local | [getting-started.md](./getting-started.md) |
 
-## Prochaine session — la ligne MVP de l'audit est fermée
+## Prochaine session — refonte UI (décision produit du 2026-06-11)
+
+**Chantier décidé : refonte complète de l'UI du SPA.** Verdict du test manuel de fin de
+phase 8 : l'interface actuelle est « de basse gamme » — fonctionnelle mais pas vendable.
+Périmètre à cadrer en brainstorming (design system, navigation, densité des tableaux,
+pages publiques incluses ou non), puis spec → plan → exécution comme les phases
+précédentes. Le skill `frontend-design` est l'outil indiqué pour ce chantier.
+Contrainte : ne PAS toucher aux contrats API (le chantier est purement front) ; les
+249 tests doivent rester verts.
+
+Après la refonte UI, les deux options stratégiques restent ouvertes (ci-dessous).
 
 La **phase 8 est complète**. Les trois trous sous la ligne MVP de l'[audit TMS](./audit-tms-2026-06-10.md)
 (tarification §5, BOL §9, exceptions §10) sont tous soldés (§5 et §11 par les phases 7.1/7.3,
 §9 et §10 par la phase 8). Il n'y a plus de blocage MVP.
 
-**Deux options, sans choix imposé :**
+**Deux options stratégiques (après la refonte UI), sans choix imposé :**
 
 **(a) Pilote client** — stabilisation opérationnelle avant de mettre Pulsar entre les mains d'un
 premier client réel :
