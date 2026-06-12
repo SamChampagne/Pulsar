@@ -1,5 +1,7 @@
 <script lang="ts">
   import { X, ExternalLink } from 'lucide-svelte';
+  import { pushOverlay, popOverlay, isTopOverlay } from '$lib/stores/overlay-stack';
+
   let {
     open = $bindable(false),
     title = '',
@@ -8,12 +10,26 @@
     children,
     footer = undefined,
   } = $props();
+
   function close() {
     open = false;
     onclose?.();
   }
+
+  let token = $state<symbol | null>(null);
+  $effect(() => {
+    if (open) {
+      const t = pushOverlay();
+      token = t;
+      return () => {
+        popOverlay(t);
+        token = null;
+      };
+    }
+  });
+
   function onkeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') close();
+    if (e.key === 'Escape' && token && isTopOverlay(token)) close();
   }
 </script>
 

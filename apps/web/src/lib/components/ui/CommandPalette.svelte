@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Search } from 'lucide-svelte';
+  import { pushOverlay, popOverlay, isTopOverlay } from '$lib/stores/overlay-stack';
 
   interface Command { label: string; hint?: string; run: () => void }
   let { open = $bindable(false), commands = [] as Command[] } = $props();
@@ -10,6 +11,22 @@
     commands.filter((c) => c.label.toLowerCase().includes(query.toLowerCase())),
   );
 
+  let token = $state<symbol | null>(null);
+  $effect(() => {
+    if (open) {
+      const t = pushOverlay();
+      token = t;
+      return () => {
+        popOverlay(t);
+        token = null;
+      };
+    }
+  });
+
+  function focusOnMount(node: HTMLInputElement) {
+    node.focus();
+  }
+
   function onkeydown(e: KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
@@ -18,7 +35,7 @@
       selected = 0;
     }
     if (!open) return;
-    if (e.key === 'Escape') open = false;
+    if (e.key === 'Escape' && token && isTopOverlay(token)) open = false;
     if (e.key === 'ArrowDown') { e.preventDefault(); selected = Math.min(selected + 1, filtered.length - 1); }
     if (e.key === 'ArrowUp') { e.preventDefault(); selected = Math.max(selected - 1, 0); }
     if (e.key === 'Enter' && filtered[selected]) { filtered[selected].run(); open = false; }
@@ -34,13 +51,12 @@
     <div class="w-full max-w-md overflow-hidden rounded-card bg-surface shadow-pop">
       <div class="flex items-center gap-2 border-b border-edge px-3">
         <Search class="size-4 text-ink-faint" />
-        <!-- svelte-ignore a11y_autofocus -->
         <input
           class="w-full bg-transparent py-3 text-sm outline-none placeholder:text-ink-faint"
           placeholder="Go to… (AI assistant lands here)"
           bind:value={query}
           oninput={() => (selected = 0)}
-          autofocus
+          use:focusOnMount
         />
         <kbd class="rounded border border-edge px-1.5 text-[10px] text-ink-faint">esc</kbd>
       </div>

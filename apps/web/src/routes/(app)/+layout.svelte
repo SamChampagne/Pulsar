@@ -146,6 +146,7 @@
           <button
             class="flex w-full items-center gap-1 rounded-md px-2 py-1.5 font-semibold text-slate-200 hover:bg-sidebar-hover"
             onclick={() => (openGroups[group.label] = !openGroups[group.label])}
+            aria-expanded={openGroups[group.label] ?? false}
           >
             {#if openGroups[group.label]}<ChevronDown class="size-3.5" />{:else}<ChevronRight class="size-3.5" />{/if}
             {group.label}
@@ -167,6 +168,7 @@
           class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-ink-faint hover:bg-sidebar-hover hover:text-white"
           onclick={() => (notifOpen = !notifOpen)}
           aria-label="Notifications"
+          aria-expanded={notifOpen}
         >
           <Bell class="size-4" />
           <span class="flex-1 text-left text-xs">Notifications</span>

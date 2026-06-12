@@ -19,5 +19,5 @@
   table :global(td) { padding: 0.625rem 0.75rem; border-bottom: 1px solid var(--color-edge-soft); }
   table :global(tbody tr:last-child td) { border-bottom: none; }
   table :global(tbody tr:hover) { background: var(--color-surface-muted); }
-  :global(.tbl-compact td) { padding: 0.25rem 0.75rem; }
+  :global(.tbl-compact > table > tbody > tr > td) { padding: 0.25rem 0.75rem; }
 </style>
