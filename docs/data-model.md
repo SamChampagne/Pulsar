@@ -306,3 +306,91 @@ The carrier scorecard's `onTimeDeliveryPct` uses
 `actualDeliveryAt`. This means pre-7.2 shipments (which have no `plannedDeliveryLate`) are
 measured against their single planned bound, preserving historical data without requiring a
 backfill of the new column.
+
+## Customer billing statements — sell-side (phase 7.3)
+
+### Model
+
+```
+CustomerInvoice (customer_invoices)
+  id, tenantId, invoiceNumber (CINV-000001), customerId
+  status CustomerInvoiceStatus, currency, totalAmount DECIMAL(12,2)
+  approvedAt?, sentAt?, paidAt?, createdAt, updatedAt
+  @@unique([tenantId, invoiceNumber])
+
+CustomerInvoiceLine (customer_invoice_lines)
+  id, customerInvoiceId, transportOrderId (@@unique — anti-double-billing)
+  description, amount DECIMAL(12,2), priceDetail JSONB (frozen snapshot)
+```
+
+**Foreign-key constraints**: `customerInvoiceId` is `onDelete: Cascade` — deleting an invoice
+also deletes its lines. `transportOrderId` is `onDelete: Restrict` — an order with a line
+cannot be deleted while it is being billed.
+
+**Sequence**: `SequencesService.nextNumber(tenantId, 'customer-invoice')` → `CINV-000001`,
+`CINV-000002`, …
+
+### Lifecycle
+
+```
+DRAFT ──approve──▶ APPROVED ──send──▶ SENT ──pay──▶ PAID
+  │
+  └──delete (escape)──▶ (gone — orders freed)
+```
+
+Status changes go through `canTransitionCustomerInvoice` (from `packages/shared`).
+All transitions use a conditional `updateMany WHERE status = <expected>` — race-safe (no
+read-then-write window). `DELETE /billing/customer-invoices/:id` is only allowed in DRAFT;
+APPROVED+ statements are immutable.
+
+**Wording note**: the UI and emails say **"billing statement"**, not "invoice", until taxes
+(GST/QST/VAT) are implemented. The enum and sequence are named `CustomerInvoice`/`CINV` in
+code because that is what they will become once tax support lands.
+
+### Two invariants
+
+**INVARIANT 1 — frozen line snapshot once APPROVED**: `priceDetail` on each
+`CustomerInvoiceLine` is written at draft creation time and never updated. It is a
+self-contained pricing record (same shape as `Load.costDetail`, `version: 1`): rate name,
+type, currency, base amount, fuel, inputs (weight, pallets), and the full `CostBreakdown`.
+Mutating the underlying `Rate` after the draft is created cannot alter any statement.
+
+**INVARIANT 2 — deletion of DRAFT is the only escape; it frees orders**: deleting a DRAFT
+statement removes the `CustomerInvoiceLine` rows (cascade), releasing the `transportOrderId`
+unique constraint. The orders reappear in the next `GET /billing/customer-invoices/billable`
+preview and can be re-included in a new draft. No other status allows deletion.
+
+### Currency rule
+
+`createDrafts` calls `groupByCurrency` to partition the rated orders by the currency of the
+winning rate. It creates **one DRAFT statement per currency**. A single call may therefore
+produce multiple invoices (e.g., one CAD and one USD statement) — the caller receives them
+all in the `invoices` array response. There is no currency conversion.
+
+### Rating rule
+
+`RatingService.rateOrder(tenantId, orderId)` prices each delivered order:
+
+- **Customer rates only**: only `Rate` rows with `customerId = order.customerId` and
+  `status = ACTIVE` are considered. Carrier rates are never used for sell-side billing.
+- **Lane match or customer catch-all**: rates with a `laneId` must have their lane's
+  `originKey`/`destinationKey` match the order's origin/destination `Location` via
+  `candidateEndpointKeys`. Rates with `laneId = null` are included for any order of
+  that customer.
+- **Reference date**: the latest `actualDeliveryAt` across the order's shipments (the real
+  delivery date); falls back to `new Date()` when none is set. Governs rate validity
+  (`validFrom`/`validTo`) and fuel-surcharge table entry selection.
+- **Cheapest wins**: all valid candidates are sorted with `compareRateOptions` (currency asc →
+  complete first → total asc → lane specificity desc → rateId asc); the first result is taken.
+- **No sell-side accessorials in v1**: orders are rated as a single pseudo-shipment with their
+  `totalWeightKg` and `palletCount`; the accessorials list is empty. Accessorials on the
+  underlying loads are not considered.
+
+### Send gating
+
+`POST /billing/customer-invoices/:id/send` (permission `billing.customer-invoices.send`):
+- Requires status `APPROVED`.
+- Requires `customer.email` to be non-null — a 400 is returned otherwise.
+- Calls `EmailService.send` with subject `Billing statement <CINV-number>`. A mail failure
+  also returns 400 and leaves the statement in APPROVED.
+- On success, transitions to SENT via the conditional `updateMany`.

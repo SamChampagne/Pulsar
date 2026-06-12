@@ -350,6 +350,24 @@ async function main() {
     });
   }
 
+  const customerRateName = 'Demo customer flat (city lane)';
+  const existingCustomerRate = await prisma.rate.findFirst({
+    where: { tenantId: tenant.id, name: customerRateName },
+  });
+  if (!existingCustomerRate) {
+    await prisma.rate.create({
+      data: {
+        tenantId: tenant.id,
+        name: customerRateName,
+        customerId: customer.id,
+        laneId: cityLane.id,
+        rateType: 'FLAT',
+        baseAmount: 1450,
+        status: 'ACTIVE',
+      },
+    });
+  }
+
   await prisma.transportOrder.upsert({
     where: { tenantId_orderNumber: { tenantId: tenant.id, orderNumber: 'TO-000001' } },
     update: {},

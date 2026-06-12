@@ -19,3 +19,12 @@ export enum DisputeReasonCode {
   DUPLICATE_BILLING = 'DUPLICATE_BILLING',
   OTHER = 'OTHER',
 }
+
+/** Customer billing statement lifecycle (sell-side). Mirrored in schema.prisma.
+ *  Wording note: emails/UI say "billing statement", not "invoice", until taxes exist. */
+export enum CustomerInvoiceStatus {
+  DRAFT = 'DRAFT',
+  APPROVED = 'APPROVED',
+  SENT = 'SENT',
+  PAID = 'PAID',
+}

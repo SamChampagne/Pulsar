@@ -48,6 +48,10 @@ export const PERMISSIONS = {
     INVOICES_READ: 'billing.invoices.read',
     INVOICES_MANAGE: 'billing.invoices.manage',
     INVOICES_PAY: 'billing.invoices.pay',
+    CUSTOMER_INVOICES_READ: 'billing.customer-invoices.read',
+    CUSTOMER_INVOICES_MANAGE: 'billing.customer-invoices.manage',
+    CUSTOMER_INVOICES_SEND: 'billing.customer-invoices.send',
+    CUSTOMER_INVOICES_PAY: 'billing.customer-invoices.pay',
   },
 } as const;
 
@@ -120,6 +124,10 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   billing(PERMISSIONS.BILLING.INVOICES_READ, 'View carrier invoices'),
   billing(PERMISSIONS.BILLING.INVOICES_MANAGE, 'Draft and approve carrier invoices'),
   billing(PERMISSIONS.BILLING.INVOICES_PAY, 'Mark carrier invoices as paid'),
+  billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_READ, 'View customer billing statements'),
+  billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_MANAGE, 'Draft, approve and delete customer billing statements'),
+  billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_SEND, 'Send customer billing statements'),
+  billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_PAY, 'Mark customer billing statements as paid'),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);

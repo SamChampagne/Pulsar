@@ -1,7 +1,7 @@
 # État du projet — point de reprise
 
 > 🇫🇷 Document de synthèse pour reprendre le travail (humain ou session Claude Code).
-> Mis à jour à la fin de la **phase 7.2**. Détail des tâches : [TODO.md](../TODO.md) ·
+> Mis à jour à la fin de la **phase 7.3**. Détail des tâches : [TODO.md](../TODO.md) ·
 > vision : [ROADMAP.md](../ROADMAP.md) · règles de dev : [CLAUDE.md](../CLAUDE.md) ·
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
@@ -20,6 +20,7 @@
 | 6 — Commercial readiness | ✅ | **Plan d'admin plateforme** (création/suspension de tenants, PlatformUser disjoint, garde-fous prod), **SSO OIDC par tenant** (PKCE, state chiffré, provisioning), **rapprochement de factures transporteur** (tolérance sur écart brut, litiges codifiés, PAID, export CSV — réorientation issue de l'audit TMS), **secrets chiffrés au repos** (enc:v1 + script de rotation idempotent + runbooks), doc de découverte Fleet |
 | 7.1 — Rating engine v2 + Lane | ✅ | **Lane entité première classe** (hiérarchie géo, clés normalisées NFD, spécificité déterministe), **tarifs v2** (tranches CWT as-if, accessorials, table carburant datée), **snapshot `costDetail` figé** (invariant COMPLETED + updateMany atomique), **rate shopping** (`GET /loads/:id/rate-options`), auto-tender par spécificité, CRUD accessorials + fuel-tables, 4 permissions, seed démo, 4 pages web (rates/lanes/accessorials/fuel-tables) + détail load enrichi, 11ᵉ migration |
 | 7.2 — Intégrité du plan | ✅ | **Fenêtres temporelles early/late** sur TransportOrder, Shipment et Stop (RENAME sans perte de données) ; validations dures 400 (`assertWindowCoherence`) + avertissements consultatifs `windowWarnings` sur GET order/load ; **capacité 3 axes** (`checkCapacity` poids/volume/palettes, axe inconnu ignoré, dépassement forcé = audit consolidé) ; `capacityPallets` Trailer ; **jonction `shipment_load_legs`** maintenue dans la même transaction + backfill ; on-time analytics `plannedDeliveryLate ?? plannedDeliveryEarly` ; 6 tests e2e ; 12ᵉ migration |
+| 7.3 — Billing sell-side | ✅ | **Relevés client** depuis les ordres livrés et ratés (`CustomerInvoiceStatus` DRAFT→APPROVED→SENT→PAID) ; `RatingService.rateOrder` (taux client uniquement, lane ou catch-all client, date de référence = dernier `actualDeliveryAt` sinon today, moins cher retenu) ; un relevé par devise (`groupByCurrency`) ; anti-double-billing (`transportOrderId @unique`) ; échappatoire DRAFT (suppression libère les ordres) ; envoi conditionné sur email client + succès email (libellé « Billing statement ») ; 4 permissions `billing.customer-invoices.*` ; séquence CINV ; 7 tests e2e ; 13ᵉ migration |
 
 **La boucle économique complète fonctionne** : le client commande depuis son portail →
 confirmation → planification (split possible) → tender automatique par lane avec courriel →
@@ -27,8 +28,8 @@ acceptation transporteur sans compte → dispatch → exécution mobile chauffeu
 POD avec photo → facture transporteur brouillon → approbation.
 
 **Chiffres** : 3 modules métier actifs (transportation, customer-portal, billing) + le plan
-d'administration plateforme ; 195 tests (63 vitest shared + 59 jest unitaires API + 73 E2E,
-tous verts et rejouables) ; 12 migrations ; ~67 endpoints ; 32 pages web dont 5 publiques à
+d'administration plateforme ; 207 tests (65 vitest shared + 62 jest unitaires API + 80 E2E,
+tous verts et rejouables) ; 13 migrations ; ~75 endpoints ; 32 pages web dont 5 publiques à
 jeton et 2 plateforme.
 
 ## Carte de la documentation
@@ -43,17 +44,16 @@ jeton et 2 plateforme.
 | Conventions REST | [api-conventions.md](./api-conventions.md) |
 | Démarrage local | [getting-started.md](./getting-started.md) |
 
-## Prochaine session : chantier 7.3 — Billing sell-side
+## Prochaine session : chantier 7.4 — Durcissements différés phase 6
 
-L'[audit TMS](./audit-tms-2026-06-10.md) est la boussole. Les chantiers 7.1 (rating engine v2
-+ entité Lane) et 7.2 (intégrité du plan) sont **livrés**. Ordre recommandé pour la suite :
+L'[audit TMS](./audit-tms-2026-06-10.md) est la boussole. Les chantiers 7.1, 7.2 et 7.3 sont
+**livrés**. Seul chantier restant en phase 7 :
 
-1. **Billing sell-side** (chantier 7.3) — la facturation client reportée de la phase 6,
-   désormais débloquée par le rating engine v2 (chantier 7.1) : rated loads → invoice drafts
-   sell-side, séquence INV-CLIENT, approbation, intégration avec le portail client.
-2. **Durcissements différés de la phase 6** (chantier 7.4, voir TODO.md) — MFA plateforme,
-   throttling login plateforme, décorateur composite `@PlatformController()`, cache
-   `Issuer.discover`, slug dans le state OIDC.
+1. **Durcissements différés de la phase 6** (chantier 7.4, voir TODO.md) — MFA plateforme
+   (TOTP + codes de récupération), throttling sur `POST /platform/auth/login`, décorateur
+   composite `@PlatformController()`, cache `Issuer.discover` par issuer, slug du tenant dans
+   le state OIDC chiffré, injection de formule tableur dans l'export CSV factures,
+   gardes de statut dans la transaction (`updateMany` conditionnel).
 
 ### Dette connue à garder en tête (ne pas « réparer » en silence)
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LoadStatus, ShipmentStatus, TransportOrderStatus } from '../../enums/transportation';
-import { InvoiceStatus } from '../../enums/billing';
+import { InvoiceStatus, CustomerInvoiceStatus } from '../../enums/billing';
 import { canTransitionLoad, LOAD_TRANSITIONS } from '../load.workflow';
 import { canTransitionShipment, SHIPMENT_TRANSITIONS } from '../shipment.workflow';
 import {
@@ -8,6 +8,7 @@ import {
   TRANSPORT_ORDER_TRANSITIONS,
 } from '../transport-order.workflow';
 import { canTransitionInvoice } from '../invoice.workflow';
+import { canTransitionCustomerInvoice } from '../customer-invoice.workflow';
 
 describe('TransportOrder workflow', () => {
   it('follows the happy path DRAFT → … → CLOSED', () => {
@@ -138,5 +139,20 @@ describe('invoice workflow', () => {
     expect(canTransitionInvoice(InvoiceStatus.PAID, InvoiceStatus.DRAFT)).toBe(false);
     expect(canTransitionInvoice(InvoiceStatus.APPROVED, InvoiceStatus.DISPUTED)).toBe(false);
     expect(canTransitionInvoice(InvoiceStatus.DISPUTED, InvoiceStatus.PAID)).toBe(false);
+  });
+});
+
+describe('customer invoice workflow', () => {
+  it('follows DRAFT → APPROVED → SENT → PAID strictly', () => {
+    expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.DRAFT, CustomerInvoiceStatus.APPROVED)).toBe(true);
+    expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.APPROVED, CustomerInvoiceStatus.SENT)).toBe(true);
+    expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.PAID)).toBe(true);
+  });
+
+  it('refuses skips and backward moves', () => {
+    expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.DRAFT, CustomerInvoiceStatus.SENT)).toBe(false);
+    expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.DRAFT, CustomerInvoiceStatus.PAID)).toBe(false);
+    expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.APPROVED, CustomerInvoiceStatus.DRAFT)).toBe(false);
+    expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.PAID, CustomerInvoiceStatus.SENT)).toBe(false);
   });
 });

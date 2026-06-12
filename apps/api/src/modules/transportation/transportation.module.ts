@@ -91,5 +91,6 @@ import { RatingService } from './rating/rating.service';
     AccessorialsService,
     FuelTablesService,
   ],
+  exports: [RatingService],
 })
 export class TransportationModule {}

@@ -120,8 +120,13 @@ The increment that turns Pulsar from an internal tool into a collaborative platf
   (single merged audit entry); `shipment_load_legs` junction with same-transaction invariant and
   backfill migration; on-time analytics uses `plannedDeliveryLate ?? plannedDeliveryEarly`; 6 new e2e
   tests; 12th migration.
-- 7.3 — Billing sell-side: customer invoicing (rated loads → sell-side drafts), unblocked
-  by the rating engine v2.
+- ✅ **7.3 — Billing sell-side**: customer billing statements from rated delivered orders
+  (DRAFT → APPROVED → SENT → PAID); `RatingService.rateOrder` (customer rates only, lane match
+  or customer catch-all, latest `actualDeliveryAt` as reference date, cheapest wins);
+  `groupByCurrency` — one statement per currency; draft escape (delete frees orders);
+  `transportOrderId @unique` prevents double-billing; send gated on customer email + email delivery;
+  4 new permissions (`billing.customer-invoices.*`); CINV sequence; 7 e2e tests; 13th migration.
+  **Note: Taxes (GST/QST/VAT) are the FIRST post-7.3 addition if customers invoice for real.**
 - 7.4 — Deferred phase-6 hardening: `@PlatformController()` composite decorator, platform
   login throttling, OIDC state slug, `Issuer.discover` cache, platform MFA (TOTP).
 
