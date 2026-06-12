@@ -63,11 +63,15 @@ export class LocationsService {
     });
     if (existing) throw new ConflictException(`Location code "${dto.code}" already exists`);
     await this.ownership.assertOwnedIfSet('customer', dto.customerId, tenantId);
-    // Manual coordinates always win; geocoding only fills the gap, best-effort.
-    let coords: { latitude: number; longitude: number } | undefined;
+    // Manual coordinates always win; geocoding only fills the MISSING field(s), best-effort.
+    let coords: { latitude?: number; longitude?: number } | undefined;
     if (dto.latitude == null || dto.longitude == null) {
       const geo = await this.geocodeAddress(dto);
-      if (geo) coords = { latitude: geo.lat, longitude: geo.lng };
+      if (geo) {
+        coords = {};
+        if (dto.latitude == null) coords.latitude = geo.lat;
+        if (dto.longitude == null) coords.longitude = geo.lng;
+      }
     }
     return this.prisma.location.create({ data: { tenantId, ...dto, ...coords } });
   }
@@ -77,11 +81,14 @@ export class LocationsService {
     await this.ownership.assertOwnedIfSet('customer', dto.customerId, tenantId);
     const { code: _code, ...data } = dto;
     const merged = { ...current, ...data };
-    // Geocode only when the record would otherwise end up without coordinates —
-    // existing (possibly manual) coordinates are never overwritten.
+    // Geocode only the field(s) that would otherwise stay empty — existing
+    // (possibly manual) coordinates are never overwritten.
     if (merged.latitude == null || merged.longitude == null) {
       const geo = await this.geocodeAddress(merged);
-      if (geo) Object.assign(data, { latitude: geo.lat, longitude: geo.lng });
+      if (geo) {
+        if (merged.latitude == null) Object.assign(data, { latitude: geo.lat });
+        if (merged.longitude == null) Object.assign(data, { longitude: geo.lng });
+      }
     }
     return this.prisma.location.update({ where: { id }, data });
   }
