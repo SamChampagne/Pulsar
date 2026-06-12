@@ -191,15 +191,24 @@ export class PublicLinksService {
     if (last && Date.now() - last.occurredAt.getTime() < 60_000) {
       return { recorded: false }; // at most one stored position per minute per load
     }
-    await this.prisma.trackingEvent.create({
-      data: {
-        tenantId: load.tenantId,
-        type: TrackingEventType.POSITION_UPDATE,
-        loadId: load.id,
-        latitude,
-        longitude,
-      },
-    });
+    // Minute-bucket dedupKey closes the findFirst→create race (concurrent pings).
+    const dedupKey = `POS:${load.id}:${Math.floor(Date.now() / 60_000)}`;
+    try {
+      await this.prisma.trackingEvent.create({
+        data: {
+          tenantId: load.tenantId,
+          type: TrackingEventType.POSITION_UPDATE,
+          loadId: load.id,
+          latitude,
+          longitude,
+          dedupKey,
+        },
+      });
+    } catch (err: unknown) {
+      // P2002 = unique violation — a concurrent ping won the bucket.
+      if ((err as { code?: string }).code === 'P2002') return { recorded: false };
+      throw err;
+    }
     return { recorded: true };
   }
 }

@@ -8,9 +8,11 @@ import {
   Post,
   Res,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { StopStatus } from '@pulsar/shared';
 import type { Response } from 'express';
@@ -120,6 +122,7 @@ export class PublicLinksController {
 
   /** Geolocation ping from the driver page. Deduped server-side (≥60s apart). */
   @Post('driver/:token/position')
+  @UseGuards(ThrottlerGuard) // anonymous input: 20 req/min/IP (app-wide ThrottlerModule config)
   @HttpCode(200)
   driverPosition(@Param('token') token: string, @Body() dto: DriverPositionDto) {
     return this.links.driverRecordPosition(token, dto.latitude, dto.longitude);
