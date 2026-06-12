@@ -61,31 +61,34 @@ export class DelayDetectionService {
       const { late, deadline } = isLate(stop, now);
       if (!late || !deadline) continue;
 
-      // Dedup on (stopId, deadline): a replanned-then-missed window re-alerts (spec).
-      const existing = await this.prisma.trackingEvent.findFirst({
-        where: {
-          stopId: stop.id,
-          type: TrackingEventType.DELAYED,
-          payload: { path: ['deadline'], equals: deadline.toISOString() },
-        },
-      });
-      if (existing) continue;
-
       const tenantId = stop.route.tenantId;
       const load = stop.route.load;
       const minutesLate = Math.round((now.getTime() - deadline.getTime()) / 60_000);
+      // Dedup on (stopId, deadline): a replanned-then-missed window re-alerts (spec).
+      // Race-proof: use a unique dedupKey instead of a pre-check + create (which races under cron overlap).
+      // Cheap fast-path: the findFirst below short-circuits before hitting the DB write path.
+      const dedupKey = `DELAYED:${stop.id}:${deadline.toISOString()}`;
+      const existing = await this.prisma.trackingEvent.findFirst({ where: { dedupKey } });
+      if (existing) continue;
 
-      await this.prisma.trackingEvent.create({
-        data: {
-          tenantId,
-          type: TrackingEventType.DELAYED,
-          loadId: load.id,
-          stopId: stop.id,
-          shipmentId: stop.shipmentId,
-          message: `Stop ${stop.location.name} is ${minutesLate} min late (planned by ${deadline.toISOString()})`,
-          payload: { stopId: stop.id, deadline: deadline.toISOString(), minutesLate },
-        },
-      });
+      try {
+        await this.prisma.trackingEvent.create({
+          data: {
+            tenantId,
+            type: TrackingEventType.DELAYED,
+            loadId: load.id,
+            stopId: stop.id,
+            shipmentId: stop.shipmentId,
+            message: `Stop ${stop.location.name} is ${minutesLate} min late (planned by ${deadline.toISOString()})`,
+            payload: { stopId: stop.id, deadline: deadline.toISOString(), minutesLate },
+            dedupKey,
+          },
+        });
+      } catch (err: unknown) {
+        // P2002 = unique constraint violation — a concurrent tick already created this event.
+        if ((err as { code?: string }).code === 'P2002') continue;
+        throw err;
+      }
 
       await this.notifications.notify({
         tenantId,

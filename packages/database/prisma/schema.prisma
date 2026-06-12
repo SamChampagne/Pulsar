@@ -1125,6 +1125,8 @@ model TrackingEvent {
   occurredAt   DateTime          @default(now())
   recordedById String?
   createdAt    DateTime          @default(now())
+  /// Race-proof dedup for synthetic events (e.g. 'DELAYED:<stopId>:<deadlineISO>'); null for ordinary events (Postgres allows multiple nulls).
+  dedupKey     String?           @unique
 
   tenant     Tenant    @relation(fields: [tenantId], references: [id])
   load       Load?     @relation(fields: [loadId], references: [id])

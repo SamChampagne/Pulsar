@@ -124,6 +124,10 @@ export class PublicLinksController {
     const { stream, fileName, mimeType } = await this.bol.driverBol(token);
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+    stream.on('error', () => {
+      if (!res.headersSent) res.status(500).end();
+      else res.destroy();
+    });
     stream.pipe(res);
   }
 }

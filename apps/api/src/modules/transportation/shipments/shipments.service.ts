@@ -138,8 +138,15 @@ export class ShipmentsService {
     let modeWarning: { loadMode: string; orderMode: string } | undefined;
 
     // Build the transaction. Always: shipment update + junction upsert. Conditionally: load mode update.
-    const modeUpdateNeeded = siblingsCount === 0 && orderMode && orderMode !== load.mode;
-    if (siblingsCount > 0 && orderMode && orderMode !== load.mode) {
+    // First-assign inheritance: only inherit when the load's mode is still the default (FTL),
+    // meaning the dispatcher has not intentionally set it. If mode was explicitly changed away from
+    // FTL, preserve it and surface a warning instead of silently overwriting it.
+    const modeUpdateNeeded =
+      siblingsCount === 0 && orderMode && orderMode !== load.mode && load.mode === 'FTL';
+    if (siblingsCount === 0 && orderMode && orderMode !== load.mode && load.mode !== 'FTL') {
+      // Empty load but mode was explicitly set to non-FTL — do not overwrite; warn instead.
+      modeWarning = { loadMode: load.mode, orderMode };
+    } else if (siblingsCount > 0 && orderMode && orderMode !== load.mode) {
       // Mixed-mode consolidation: non-blocking warning returned to the caller.
       modeWarning = { loadMode: load.mode, orderMode };
     }
@@ -167,6 +174,19 @@ export class ShipmentsService {
       Awaited<ReturnType<typeof this.prisma.shipment.update>>,
       ...unknown[],
     ];
+
+    if (modeUpdateNeeded && orderMode) {
+      // Audit the automatic mode inheritance so dispatchers can trace why the load mode changed.
+      await this.audit.log({
+        tenantId,
+        userId,
+        action: AuditAction.UPDATE,
+        entityType: 'load',
+        entityId: dto.loadId,
+        after: { modeInherited: orderMode, fromOrder: shipment.transportOrderId },
+      });
+    }
+
     await this.cost.recompute(tenantId, dto.loadId);
     return { ...updated, ...(modeWarning ? { modeWarning } : {}) };
   }

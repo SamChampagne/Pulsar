@@ -51,6 +51,9 @@ export class NotificationsService {
     });
     if (!notification) throw new NotFoundException('Notification not found');
     // Tenant-wide notifications: read-by-one = read-for-all (v1 — see phase 8 spec).
-    return this.prisma.notification.update({ where: { id }, data: { readAt: new Date() } });
+    // Use updateMany with tenantId to enforce tenant isolation on the write path.
+    await this.prisma.notification.updateMany({ where: { id, tenantId }, data: { readAt: new Date() } });
+    // Re-read and return the updated notification so the response shape is unchanged.
+    return this.prisma.notification.findFirst({ where: { id, tenantId } });
   }
 }
