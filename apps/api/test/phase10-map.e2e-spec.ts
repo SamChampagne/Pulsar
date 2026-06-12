@@ -187,6 +187,22 @@ describe('Phase 10 — positions, public coords, active-map, haversine (e2e)', (
       .expect(404);
   });
 
+  it('public tracking exposes origin/destination coords and lastPosition while undelivered', async () => {
+    const view = await request(http)
+      .get(`/api/v1/public/tracking/${ids.trackingToken}`)
+      .expect(200);
+
+    expect(view.body.origin.latitude).toBeCloseTo(45.5019, 3);
+    expect(view.body.origin.longitude).toBeCloseTo(-73.5674, 3);
+    expect(view.body.destination.latitude).toBeCloseTo(46.8131, 3);
+    // Position posted in the earlier dedup test:
+    expect(view.body.lastPosition).toMatchObject({ latitude: 45.6, longitude: -73.2 });
+    expect(view.body.lastPosition.occurredAt).toBeDefined();
+    // Rule 10: no tenant/internal leakage, no position history
+    expect(JSON.stringify(view.body)).not.toContain('tenantId');
+    expect(view.body.events.find((e: { latitude?: number }) => e.latitude != null)).toBeUndefined();
+  });
+
   it('driver position: 400 when the load is not DISPATCHED/IN_TRANSIT', async () => {
     const order = await request(http)
       .post('/api/v1/transportation/transport-orders')

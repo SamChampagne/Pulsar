@@ -41,8 +41,8 @@ export class PublicLinksService {
       where: { trackingToken: token },
       include: {
         tenant: { select: { name: true } },
-        originLocation: { select: { city: true, state: true } },
-        destinationLocation: { select: { city: true, state: true } },
+        originLocation: { select: { city: true, state: true, latitude: true, longitude: true } },
+        destinationLocation: { select: { city: true, state: true, latitude: true, longitude: true } },
         proofOfDelivery: { select: { signedByName: true, signedAt: true } },
         trackingEvents: {
           orderBy: { occurredAt: 'desc' },
@@ -52,6 +52,29 @@ export class PublicLinksService {
       },
     });
     if (!shipment) throw new NotFoundException('Unknown tracking link');
+
+    // Last position of the carrying load, only while the shipment is not delivered.
+    // Single point, no history, no other stops — a multi-customer load never leaks
+    // its itinerary (rule 10 + spec §B).
+    const delivered =
+      shipment.status === ShipmentStatus.DELIVERED || shipment.status === ShipmentStatus.CLOSED;
+    let lastPosition: { latitude: number; longitude: number; occurredAt: Date } | null = null;
+    if (!delivered && shipment.loadId) {
+      const pos = await this.prisma.trackingEvent.findFirst({
+        where: {
+          tenantId: shipment.tenantId,
+          loadId: shipment.loadId,
+          type: TrackingEventType.POSITION_UPDATE,
+          latitude: { not: null },
+          longitude: { not: null },
+        },
+        orderBy: { occurredAt: 'desc' },
+        select: { latitude: true, longitude: true, occurredAt: true },
+      });
+      if (pos) {
+        lastPosition = { latitude: pos.latitude!, longitude: pos.longitude!, occurredAt: pos.occurredAt };
+      }
+    }
 
     return {
       shipper: shipment.tenant.name,
@@ -67,6 +90,7 @@ export class PublicLinksService {
       actualDeliveryAt: shipment.actualDeliveryAt,
       proofOfDelivery: shipment.proofOfDelivery,
       events: shipment.trackingEvents,
+      lastPosition,
     };
   }
 
