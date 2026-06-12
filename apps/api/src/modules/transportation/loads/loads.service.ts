@@ -128,6 +128,8 @@ export class LoadsService {
       },
     });
 
+    if (loads.length === 0) return [];
+
     // Latest POSITION_UPDATE per load — one query for the whole board.
     const positions = await this.prisma.trackingEvent.findMany({
       where: {
