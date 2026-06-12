@@ -3,6 +3,18 @@
   import { TransportMode } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import {
+    PageHeader,
+    Button,
+    Card,
+    Table,
+    Badge,
+    EmptyState,
+    Skeleton,
+    Modal,
+    Field,
+    toneFor,
+  } from '$lib/components/ui';
 
   interface Option { id: string; name: string }
   interface LaneOption { id: string; name: string | null; originType: string; destinationType: string }
@@ -41,6 +53,7 @@
   let accessorials = $state<AccessorialOpt[]>([]);
   let error = $state('');
   let showForm = $state(false);
+  let loading = $state(true);
 
   // Form state
   let editingId = $state<string | null>(null);
@@ -59,6 +72,14 @@
   let status = $state('DRAFT');
   let breaks = $state<{ upToKg: number; amount: number }[]>([]);
   let prices = $state<{ accessorialId: string; amount: number }[]>([]);
+
+  const inputCls = 'w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none';
+
+  function statusTone(s: string) {
+    if (s === 'ACTIVE') return 'ok';
+    if (s === 'EXPIRED') return 'danger';
+    return 'neutral';
+  }
 
   function laneLabel(lane: LaneOption): string {
     return lane.name ?? `${lane.originType} → ${lane.destinationType}`;
@@ -81,6 +102,8 @@
       accessorials = accsRes.items;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load rates';
+    } finally {
+      loading = false;
     }
   }
 
@@ -190,296 +213,234 @@
   });
 </script>
 
-<div class="page-header">
-  <h1>Rates <span class="muted">({total})</span></h1>
-  <button class="btn" onclick={() => { reset(); showForm = !showForm; }}>New rate</button>
-</div>
+<PageHeader title="Rates" count={total}>
+  {#snippet actions()}
+    <Button onclick={() => { reset(); showForm = true; }}>New rate</Button>
+  {/snippet}
+</PageHeader>
 
-{#if error}
-  <p class="error-text">{error}</p>
-{/if}
+{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
-{#if showForm}
-  <form class="card" style="margin-bottom: 20px;" onsubmit={save}>
-    <h2 style="margin-top: 0;">{editingId ? 'Edit rate' : 'New rate'}</h2>
-
-    <div class="form-grid">
-      <div class="field">
-        <label for="rate-name">Name</label>
-        <input id="rate-name" bind:value={name} required placeholder="Base rate – East" />
-      </div>
-      <div class="field">
-        <label for="rate-type">Type</label>
-        <select id="rate-type" bind:value={rateType} required>
-          <option value="FLAT">FLAT</option>
-          <option value="PER_KM">PER_KM</option>
-          <option value="PER_HUNDREDWEIGHT">PER_HUNDREDWEIGHT</option>
-          <option value="PER_PALLET">PER_PALLET</option>
-          <option value="SPOT">SPOT</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="base-amount">Base amount</label>
-        <input id="base-amount" type="number" step="0.01" min="0" bind:value={baseAmount} required />
-      </div>
-      <div class="field">
-        <label for="currency">Currency</label>
-        <input id="currency" bind:value={currency} placeholder="CAD" maxlength="3" />
-      </div>
-      <div class="field">
-        <label for="min-charge">Min charge</label>
-        <input
-          id="min-charge"
-          type="number"
-          step="0.01"
-          min="0"
-          value={minCharge ?? ''}
-          oninput={(e) => {
-            const v = (e.target as HTMLInputElement).value;
-            minCharge = v === '' ? null : parseFloat(v);
-          }}
-          placeholder="optional"
-        />
-      </div>
-      <div class="field">
-        <label for="fuel-surcharge">Fuel surcharge %</label>
-        <input
-          id="fuel-surcharge"
-          type="number"
-          step="0.01"
-          min="0"
-          value={fuelSurchargePct ?? ''}
-          oninput={(e) => {
-            const v = (e.target as HTMLInputElement).value;
-            fuelSurchargePct = v === '' ? null : parseFloat(v);
-          }}
-          placeholder="optional"
-        />
-      </div>
-      <div class="field">
-        <label for="rate-mode">Mode</label>
-        <select id="rate-mode" bind:value={rateMode}>
-          <option value="">— all modes —</option>
-          {#each Object.values(TransportMode) as m (m)}
-            <option value={m}>{m}</option>
-          {/each}
-        </select>
-      </div>
-      <div class="field">
-        <label for="carrier-select">Carrier</label>
-        <select id="carrier-select" bind:value={carrierId}>
-          <option value="">— none —</option>
-          {#each carriers as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
-        </select>
-      </div>
-      <div class="field">
-        <label for="lane-select">Lane</label>
-        <select id="lane-select" bind:value={laneId}>
-          <option value="">— catch-all —</option>
-          {#each lanes as l (l.id)}<option value={l.id}>{laneLabel(l)}</option>{/each}
-        </select>
-      </div>
-      <div class="field">
-        <label for="fuel-table-select">Fuel table</label>
-        <select id="fuel-table-select" bind:value={fuelTableId}>
-          <option value="">— none —</option>
-          {#each fuelTables as ft (ft.id)}<option value={ft.id}>{ft.name}</option>{/each}
-        </select>
-      </div>
-      <div class="field">
-        <label for="valid-from">Valid from</label>
-        <input id="valid-from" type="date" bind:value={validFrom} />
-      </div>
-      <div class="field">
-        <label for="valid-to">Valid to</label>
-        <input id="valid-to" type="date" bind:value={validTo} />
-      </div>
-      {#if editingId}
-        <div class="field">
-          <label for="rate-status">Status</label>
-          <select id="rate-status" bind:value={status}>
-            <option value="DRAFT">DRAFT</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="EXPIRED">EXPIRED</option>
-          </select>
-        </div>
-      {/if}
-    </div>
-
-    {#if rateType === 'PER_HUNDREDWEIGHT'}
-      <div class="section-header">
-        <strong>Weight breaks</strong>
-        <button class="btn btn-secondary btn-sm" type="button" onclick={addBreak}>Add break</button>
-      </div>
-      {#if breaks.length === 0}
-        <p class="muted" style="font-size: 12px; margin: 4px 0 12px;">No breaks — flat base rate applies.</p>
-      {:else}
-        <div class="breaks-list">
-          {#each breaks as brk, i (i)}
-            <div class="break-row">
-              <div class="field" style="margin-bottom: 0;">
-                <label for="brk-kg-{i}">Up to (kg)</label>
-                <input id="brk-kg-{i}" type="number" step="0.001" min="0.001" bind:value={brk.upToKg} required />
-              </div>
-              <div class="field" style="margin-bottom: 0;">
-                <label for="brk-amt-{i}">Amount</label>
-                <input id="brk-amt-{i}" type="number" step="0.01" min="0" bind:value={brk.amount} required />
-              </div>
-              <button
-                class="btn btn-danger btn-sm"
-                type="button"
-                style="align-self: flex-end;"
-                onclick={() => removeBreak(i)}
-              >
-                Remove
-              </button>
-            </div>
-          {/each}
-        </div>
-      {/if}
-    {/if}
-
-    <div class="section-header" style="margin-top: 8px;">
-      <strong>Accessorial prices</strong>
-      <button class="btn btn-secondary btn-sm" type="button" onclick={addPrice}>Add accessorial</button>
-    </div>
-    {#if prices.length === 0}
-      <p class="muted" style="font-size: 12px; margin: 4px 0 12px;">No accessorial prices configured.</p>
-    {:else}
-      <div class="breaks-list">
-        {#each prices as price, i (i)}
-          <div class="break-row">
-            <div class="field" style="margin-bottom: 0;">
-              <label for="price-acc-{i}">Accessorial</label>
-              <select id="price-acc-{i}" bind:value={price.accessorialId} required>
-                <option value="" disabled>Select…</option>
-                {#each accessorials as a (a.id)}
-                  <option value={a.id}>{a.code} – {a.name} ({a.unit})</option>
-                {/each}
-              </select>
-            </div>
-            <div class="field" style="margin-bottom: 0;">
-              <label for="price-amt-{i}">Amount</label>
-              <input id="price-amt-{i}" type="number" step="0.01" min="0" bind:value={price.amount} required />
-            </div>
-            <button
-              class="btn btn-danger btn-sm"
-              type="button"
-              style="align-self: flex-end;"
-              onclick={() => removePrice(i)}
-            >
-              Remove
-            </button>
-          </div>
-        {/each}
-      </div>
-    {/if}
-
-    <div style="display: flex; gap: 8px; margin-top: 12px;">
-      <button class="btn" type="submit">{editingId ? 'Update' : 'Create'}</button>
-      <button class="btn btn-secondary" type="button" onclick={reset}>Cancel</button>
-    </div>
-  </form>
-{/if}
-
-<div class="card" style="padding: 0;">
-  <table>
-    <thead>
+{#if loading}
+  <Card padded={false}><Skeleton rows={6} /></Card>
+{:else}
+<Table>
+  {#snippet head()}
+    <th>Name</th><th>Type</th><th>Mode</th><th>Lane</th><th>Carrier</th><th>Base</th><th>Valid</th><th>Status</th><th></th>
+  {/snippet}
+  {#snippet body()}
+    {#each rates as rate (rate.id)}
       <tr>
-        <th>Name</th>
-        <th>Type</th>
-        <th>Mode</th>
-        <th>Lane</th>
-        <th>Carrier</th>
-        <th>Base</th>
-        <th>Status</th>
-        <th></th>
+        <td><span class="font-semibold text-ink">{rate.name}</span></td>
+        <td>
+          <span class="text-sm text-ink">{rate.rateType}</span>
+          {#if rate.breaks.length > 0}
+            <span class="ml-1 text-xs text-ink-muted">({rate.breaks.length} breaks)</span>
+          {/if}
+        </td>
+        <td>
+          {#if rate.mode}
+            <span class="rounded border border-edge px-1.5 text-xs text-neutral">{rate.mode}</span>
+          {:else}
+            <span class="text-ink-faint">all</span>
+          {/if}
+        </td>
+        <td>
+          {#if rate.lane}
+            {rate.lane.name ?? `${rate.lane.originType} → ${rate.lane.destinationType}`}
+          {:else}
+            <span class="text-ink-faint">catch-all</span>
+          {/if}
+        </td>
+        <td>{rate.carrier?.name ?? '—'}</td>
+        <td class="tabular-nums">{parseFloat(rate.baseAmount).toFixed(2)} {rate.currency}</td>
+        <td class="text-xs text-ink-muted">
+          {#if rate.validFrom || rate.validTo}
+            {rate.validFrom ? rate.validFrom.slice(0, 10) : '…'} → {rate.validTo ? rate.validTo.slice(0, 10) : '…'}
+          {:else}
+            —
+          {/if}
+        </td>
+        <td>
+          <Badge tone={statusTone(rate.status)}>{rate.status}</Badge>
+        </td>
+        <td class="text-right">
+          <Button variant="secondary" onclick={() => edit(rate)}>Edit</Button>
+        </td>
       </tr>
-    </thead>
-    <tbody>
-      {#each rates as rate (rate.id)}
-        <tr>
-          <td><strong>{rate.name}</strong></td>
-          <td>
-            {rate.rateType}
-            {#if rate.breaks.length > 0}
-              <span class="muted">({rate.breaks.length} breaks)</span>
-            {/if}
-          </td>
-          <td>
-            {#if rate.mode}
-              <span class="badge-mode">{rate.mode}</span>
-            {:else}
-              <span class="muted">all</span>
-            {/if}
-          </td>
-          <td>
-            {#if rate.lane}
-              {rate.lane.name ?? `${rate.lane.originType} → ${rate.lane.destinationType}`}
-            {:else}
-              <span class="muted">catch-all</span>
-            {/if}
-          </td>
-          <td>{rate.carrier?.name ?? '—'}</td>
-          <td>{parseFloat(rate.baseAmount).toFixed(2)} {rate.currency}</td>
-          <td>
-            <span
-              class="badge {rate.status === 'ACTIVE'
-                ? 'badge-success'
-                : rate.status === 'EXPIRED'
-                  ? 'badge-danger'
-                  : 'badge-muted'}"
-            >
-              {rate.status}
-            </span>
-          </td>
-          <td style="text-align: right;">
-            <button class="btn btn-secondary btn-sm" onclick={() => edit(rate)}>Edit</button>
-          </td>
-        </tr>
-      {:else}
-        <tr><td colspan="8" class="muted">No rates yet.</td></tr>
-      {/each}
-    </tbody>
-  </table>
-</div>
+    {:else}
+      <tr><td colspan="9"><EmptyState message="No rates yet." /></td></tr>
+    {/each}
+  {/snippet}
+</Table>
+{/if}
 
-<style>
-  .form-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0 20px;
-  }
+<!-- ─── Rate form Modal ───────────────────────────────────────────────────────── -->
+<Modal bind:open={showForm} title={editingId ? 'Edit rate' : 'New rate'}>
+  {#snippet children()}
+    <form id="rate-form" onsubmit={save}>
+      <div class="grid grid-cols-3 gap-x-4">
+        <div class="col-span-3">
+          <Field label="Name">
+            <input bind:value={name} required placeholder="Base rate – East" class={inputCls} />
+          </Field>
+        </div>
 
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-  }
+        <Field label="Type">
+          <select bind:value={rateType} required class={inputCls}>
+            <option value="FLAT">FLAT</option>
+            <option value="PER_KM">PER_KM</option>
+            <option value="PER_HUNDREDWEIGHT">PER_HUNDREDWEIGHT</option>
+            <option value="PER_PALLET">PER_PALLET</option>
+            <option value="SPOT">SPOT</option>
+          </select>
+        </Field>
 
-  .breaks-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 12px;
-    max-width: 640px;
-  }
+        <Field label="Base amount">
+          <input type="number" step="0.01" min="0" bind:value={baseAmount} required class={inputCls} />
+        </Field>
 
-  .break-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr auto;
-    gap: 12px;
-    align-items: flex-start;
-  }
+        <Field label="Currency">
+          <input bind:value={currency} placeholder="CAD" maxlength="3" class={inputCls} />
+        </Field>
 
-  .badge-mode {
-    background: #e0e7ff;
-    color: #3730a3;
-    border: 1px solid #c7d2fe;
-    padding: 1px 7px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
-  }
-</style>
+        <Field label="Min charge">
+          <input
+            type="number" step="0.01" min="0"
+            value={minCharge ?? ''}
+            oninput={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              minCharge = v === '' ? null : parseFloat(v);
+            }}
+            placeholder="optional"
+            class={inputCls}
+          />
+        </Field>
+
+        <Field label="Fuel surcharge %">
+          <input
+            type="number" step="0.01" min="0"
+            value={fuelSurchargePct ?? ''}
+            oninput={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              fuelSurchargePct = v === '' ? null : parseFloat(v);
+            }}
+            placeholder="optional"
+            class={inputCls}
+          />
+        </Field>
+
+        <Field label="Mode">
+          <select bind:value={rateMode} class={inputCls}>
+            <option value="">— all modes —</option>
+            {#each Object.values(TransportMode) as m (m)}
+              <option value={m}>{m}</option>
+            {/each}
+          </select>
+        </Field>
+
+        <Field label="Carrier">
+          <select bind:value={carrierId} class={inputCls}>
+            <option value="">— none —</option>
+            {#each carriers as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
+          </select>
+        </Field>
+
+        <Field label="Lane">
+          <select bind:value={laneId} class={inputCls}>
+            <option value="">— catch-all —</option>
+            {#each lanes as l (l.id)}<option value={l.id}>{laneLabel(l)}</option>{/each}
+          </select>
+        </Field>
+
+        <Field label="Fuel table">
+          <select bind:value={fuelTableId} class={inputCls}>
+            <option value="">— none —</option>
+            {#each fuelTables as ft (ft.id)}<option value={ft.id}>{ft.name}</option>{/each}
+          </select>
+        </Field>
+
+        <Field label="Valid from">
+          <input type="date" bind:value={validFrom} class={inputCls} />
+        </Field>
+
+        <Field label="Valid to">
+          <input type="date" bind:value={validTo} class={inputCls} />
+        </Field>
+
+        {#if editingId}
+          <Field label="Status">
+            <select bind:value={status} class={inputCls}>
+              <option value="DRAFT">DRAFT</option>
+              <option value="ACTIVE">ACTIVE</option>
+              <option value="EXPIRED">EXPIRED</option>
+            </select>
+          </Field>
+        {/if}
+      </div>
+
+      {#if rateType === 'PER_HUNDREDWEIGHT'}
+        <div class="mt-4">
+          <div class="mb-2 flex items-center justify-between">
+            <span class="text-sm font-semibold text-ink">Weight breaks</span>
+            <Button variant="secondary" onclick={addBreak}>Add break</Button>
+          </div>
+          {#if breaks.length === 0}
+            <p class="text-xs text-ink-muted mb-3">No breaks — flat base rate applies.</p>
+          {:else}
+            <div class="space-y-2 mb-3">
+              {#each breaks as brk, i (i)}
+                <div class="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
+                  <Field label="Up to (kg)">
+                    <input type="number" step="0.001" min="0.001" bind:value={brk.upToKg} required class={inputCls} />
+                  </Field>
+                  <Field label="Amount">
+                    <input type="number" step="0.01" min="0" bind:value={brk.amount} required class={inputCls} />
+                  </Field>
+                  <Button variant="danger" onclick={() => removeBreak(i)}>Remove</Button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
+
+      <div class="mt-4">
+        <div class="mb-2 flex items-center justify-between">
+          <span class="text-sm font-semibold text-ink">Accessorial prices</span>
+          <Button variant="secondary" onclick={addPrice}>Add accessorial</Button>
+        </div>
+        {#if prices.length === 0}
+          <p class="text-xs text-ink-muted mb-3">No accessorial prices configured.</p>
+        {:else}
+          <div class="space-y-2 mb-3">
+            {#each prices as price, i (i)}
+              <div class="grid grid-cols-[1fr_auto_auto] gap-3 items-end">
+                <Field label="Accessorial">
+                  <select bind:value={price.accessorialId} required class={inputCls}>
+                    <option value="" disabled>Select…</option>
+                    {#each accessorials as a (a.id)}
+                      <option value={a.id}>{a.code} – {a.name} ({a.unit})</option>
+                    {/each}
+                  </select>
+                </Field>
+                <Field label="Amount">
+                  <input type="number" step="0.01" min="0" bind:value={price.amount} required class={inputCls} />
+                </Field>
+                <Button variant="danger" onclick={() => removePrice(i)}>Remove</Button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </form>
+  {/snippet}
+  {#snippet footer()}
+    <Button variant="secondary" onclick={reset}>Cancel</Button>
+    <button
+      type="submit"
+      form="rate-form"
+      class="inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors bg-accent text-white hover:bg-accent-hover"
+    >{editingId ? 'Update' : 'Create'}</button>
+  {/snippet}
+</Modal>
