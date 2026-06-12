@@ -1,8 +1,20 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import StatusBadge from '$lib/components/StatusBadge.svelte';
   import { toast } from '$lib/stores/toast';
+  import { formatDateTime } from '$lib/format';
+  import {
+    PageHeader,
+    Button,
+    Field,
+    Input,
+    Table,
+    Badge,
+    EmptyState,
+    Card,
+    Skeleton,
+    Modal,
+  } from '$lib/components/ui';
 
   interface UserRow {
     id: string;
@@ -23,6 +35,7 @@
   let roles = $state<RoleOption[]>([]);
   let error = $state('');
   let showForm = $state(false);
+  let loading = $state(true);
   let inviteUrl = $state('');
   let form = $state({ email: '', firstName: '', lastName: '', roleIds: [] as string[] });
 
@@ -36,6 +49,8 @@
       roles = rolesResult;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load users';
+    } finally {
+      loading = false;
     }
   }
 
@@ -60,6 +75,7 @@
       inviteUrl = created.inviteUrl ?? '';
       toast.success(`Invitation sent to ${form.email}`);
       form = { email: '', firstName: '', lastName: '', roleIds: [] };
+      showForm = false;
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Failed to invite');
@@ -86,123 +102,114 @@
   });
 </script>
 
-<div class="page-header">
-  <h1>Users</h1>
-  <button class="btn" onclick={() => (showForm = !showForm)}>Invite user</button>
-</div>
+<PageHeader title="Users" count={users.length}>
+  {#snippet actions()}
+    <Button onclick={() => { showForm = true; inviteUrl = ''; }}>Invite user</Button>
+  {/snippet}
+</PageHeader>
 
-{#if error}
-  <p class="error-text">{error}</p>
+<p class="mb-4 text-sm text-ink-muted">
+  Invite team members and assign roles. Invited users receive an email link valid for 72 h.
+</p>
+
+{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+
+{#if inviteUrl}
+  <div class="mb-4 flex items-center gap-3 rounded-card border border-edge bg-surface p-3">
+    <code class="flex-1 truncate text-xs text-ink-muted">{inviteUrl}</code>
+    <Button variant="secondary" onclick={copyInvite}>Copy invitation link</Button>
+  </div>
 {/if}
 
-{#if showForm}
-  <form class="card" style="margin-bottom: 20px;" onsubmit={invite}>
-    <h2 style="margin-top: 0;">Invite a user</h2>
-    <p class="muted">
-      The user receives an email with a link to set their password (valid 72 h). The link is also
-      shown here so you can forward it yourself.
-    </p>
-    <div class="form-grid">
-      <div class="field">
-        <label for="email">Email</label>
-        <input id="email" type="email" bind:value={form.email} required />
-      </div>
-      <div class="field">
-        <label for="firstName">First name</label>
-        <input id="firstName" bind:value={form.firstName} required />
-      </div>
-      <div class="field">
-        <label for="lastName">Last name</label>
-        <input id="lastName" bind:value={form.lastName} required />
-      </div>
-    </div>
-    <div class="field">
-      <span class="muted" style="font-size: 12px; font-weight: 550;">Roles</span>
-      <div class="roles-row">
-        {#each roles as role (role.id)}
-          <label class="role-check">
-            <input
-              type="checkbox"
-              checked={form.roleIds.includes(role.id)}
-              onchange={() => toggleRole(role.id)}
-            />
-            {role.name}
-          </label>
-        {/each}
-      </div>
-    </div>
-    <div style="display: flex; gap: 8px;">
-      <button class="btn" type="submit">Send invitation</button>
-      <button class="btn btn-secondary" type="button" onclick={() => (showForm = false)}>
-        Close
-      </button>
-    </div>
-    {#if inviteUrl}
-      <p style="margin-bottom: 0;">
-        <button class="btn btn-secondary btn-sm" type="button" onclick={copyInvite}>
-          Copy invitation link
-        </button>
-      </p>
-    {/if}
-  </form>
-{/if}
-
-<div class="card" style="padding: 0;">
-  <table>
-    <thead>
-      <tr>
-        <th>Email</th>
-        <th>Name</th>
-        <th>Roles</th>
-        <th>Status</th>
-        <th>Last login</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
+{#if loading}
+  <Card padded={false}><Skeleton rows={6} /></Card>
+{:else}
+  <Table>
+    {#snippet head()}
+      <th>Email</th>
+      <th>Name</th>
+      <th>Roles</th>
+      <th>Status</th>
+      <th>Last login</th>
+      <th></th>
+    {/snippet}
+    {#snippet body()}
       {#each users as user (user.id)}
         <tr>
-          <td><strong>{user.email}</strong></td>
+          <td class="font-semibold">{user.email}</td>
           <td>{user.firstName} {user.lastName}</td>
-          <td>{user.roles.map((r) => r.role.name).join(', ') || '—'}</td>
-          <td><StatusBadge status={user.status} /></td>
-          <td>{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : '—'}</td>
-          <td style="text-align: right;">
+          <td class="text-ink-muted">{user.roles.map((r) => r.role.name).join(', ') || '—'}</td>
+          <td>
+            {#if user.status === 'ACTIVE'}
+              <Badge tone="ok">Active</Badge>
+            {:else if user.status === 'INVITED'}
+              <Badge tone="warn">Invited</Badge>
+            {:else if user.status === 'DISABLED'}
+              <Badge tone="danger">Disabled</Badge>
+            {:else}
+              <Badge tone="neutral">{user.status}</Badge>
+            {/if}
+          </td>
+          <td class="text-ink-muted">{formatDateTime(user.lastLoginAt)}</td>
+          <td class="text-right">
             {#if user.status !== 'DISABLED'}
-              <button class="btn btn-danger btn-sm" onclick={() => deactivate(user)}>
-                Deactivate
-              </button>
+              <Button
+                variant="danger"
+                onclick={(e) => { e.stopPropagation(); void deactivate(user); }}
+              >Deactivate</Button>
             {/if}
           </td>
         </tr>
+      {:else}
+        <tr>
+          <td colspan={6}><EmptyState message="No users yet." /></td>
+        </tr>
       {/each}
-    </tbody>
-  </table>
-</div>
+    {/snippet}
+  </Table>
+{/if}
 
-<style>
-  .form-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0 16px;
-  }
-
-  .roles-row {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    margin-top: 6px;
-  }
-
-  .role-check {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    color: var(--color-text);
-  }
-
-  .role-check input {
-    width: auto;
-  }
-</style>
+<Modal bind:open={showForm} title="Invite a user">
+  {#snippet children()}
+    <form onsubmit={invite}>
+      <p class="mb-3 text-sm text-ink-muted">
+        The user receives an email with a link to set their password (valid 72 h). The link is also
+        shown here so you can forward it yourself.
+      </p>
+      <div class="grid grid-cols-2 gap-x-4 gap-y-3">
+        <div class="col-span-2">
+          <Field label="Email">
+            <Input type="email" bind:value={form.email} required />
+          </Field>
+        </div>
+        <Field label="First name">
+          <Input bind:value={form.firstName} required />
+        </Field>
+        <Field label="Last name">
+          <Input bind:value={form.lastName} required />
+        </Field>
+      </div>
+      {#if roles.length > 0}
+        <div class="mt-3">
+          <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Roles</span>
+          <div class="flex flex-wrap gap-3">
+            {#each roles as role (role.id)}
+              <label class="flex cursor-pointer items-center gap-1.5 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={form.roleIds.includes(role.id)}
+                  onchange={() => toggleRole(role.id)}
+                />
+                {role.name}
+              </label>
+            {/each}
+          </div>
+        </div>
+      {/if}
+      <div class="mt-4 flex justify-end gap-2 border-t border-edge pt-3">
+        <Button variant="secondary" onclick={() => { showForm = false; }}>Cancel</Button>
+        <Button variant="primary" type="submit">Send invitation</Button>
+      </div>
+    </form>
+  {/snippet}
+</Modal>
