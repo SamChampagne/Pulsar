@@ -1,6 +1,8 @@
+@layer legacy, theme, base, components, utilities;
+
 @import 'tailwindcss';
 @import '@fontsource-variable/inter';
-@import './lib/styles/legacy.css';
+@import './lib/styles/legacy.css' layer(legacy);
 
 @theme {
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;

@@ -4,7 +4,7 @@
     type = 'button' as 'button' | 'submit',
     disabled = false,
     loading = false,
-    onclick = undefined as (() => void | Promise<void>) | undefined,
+    onclick = undefined as ((e: MouseEvent) => void | Promise<void>) | undefined,
     children,
   } = $props();
   const variants = {

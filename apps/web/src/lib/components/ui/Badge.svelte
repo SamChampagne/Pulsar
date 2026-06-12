@@ -9,5 +9,5 @@
 </script>
 
 <span class={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${tones[tone]}`}>
-  <span class="text-[8px] leading-none">●</span>{@render children()}
+  <span class="text-[8px] leading-none" aria-hidden="true">●</span>{@render children()}
 </span>
