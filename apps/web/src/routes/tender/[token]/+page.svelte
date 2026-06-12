@@ -90,9 +90,6 @@
       For {tender.carrier} · expires {formatDateTime(tender.expiresAt)}
     </p>
 
-    {#if tender.load.notes}
-      <p class="mb-4 text-sm text-ink">{tender.load.notes}</p>
-    {/if}
     {#if tender.message}
       <p class="mb-4 text-sm text-ink">{tender.message}</p>
     {/if}

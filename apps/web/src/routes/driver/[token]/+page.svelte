@@ -250,21 +250,6 @@
       </Card>
     {/if}
 
-    <!-- Shipments list -->
-    {#if view.shipments.length > 0}
-      <Card>
-        <h2 class="mb-3 text-base font-semibold text-ink">Shipments</h2>
-        <ul class="flex flex-col gap-2">
-          {#each view.shipments as s (s.id)}
-            <li class="flex items-center justify-between text-sm">
-              <span class="text-ink">{s.shipmentNumber}</span>
-              <Badge tone={toneFor(s.status)}>{labelFor(s.status)}</Badge>
-            </li>
-          {/each}
-        </ul>
-      </Card>
-    {/if}
-
     <p class="text-center text-xs text-ink-faint">Powered by Pulsar</p>
   {:else}
     <p class="text-sm text-ink-muted">Loading…</p>

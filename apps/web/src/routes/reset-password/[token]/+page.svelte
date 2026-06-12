@@ -36,7 +36,7 @@
 <PublicShell title="Choose a password" subtitle="This activates your account or replaces your previous password.">
   <form onsubmit={submit} class="flex flex-col gap-4">
     <Field label="New password (min. 8 characters)">
-      <Input type="password" bind:value={password} required name="password" />
+      <Input type="password" bind:value={password} required name="password" minlength={8} />
     </Field>
     <Field label="Confirm password">
       <Input type="password" bind:value={confirm} required name="confirm" />

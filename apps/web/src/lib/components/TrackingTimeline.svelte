@@ -23,11 +23,9 @@
     {#each events as event (event.id)}
       <li class="relative pb-5 pl-6 last:pb-0">
         <!-- vertical line connecting entries -->
-        {#if true}
-          <span
-            class="absolute left-[5px] top-3.5 bottom-0 w-px border-l-2 border-edge [li:last-child_&]:hidden"
-          ></span>
-        {/if}
+        <span
+          class="absolute left-[5px] top-3.5 bottom-0 w-px border-l-2 border-edge [li:last-child_&]:hidden"
+        ></span>
         <!-- colored dot -->
         <span
           class={`absolute left-0 top-1 h-3 w-3 rounded-full border-2 border-surface ${dotClass(event.type)}`}
