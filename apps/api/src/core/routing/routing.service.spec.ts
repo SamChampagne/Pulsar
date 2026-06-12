@@ -7,7 +7,7 @@ function configWith(values: Record<string, string>): ConfigService {
   return {
     get: (key: string, def?: string) => values[key] ?? def,
     getOrThrow: (key: string) => {
-      if (!values[key]) throw new Error(`Missing ${key}`);
+      if (values[key] === undefined) throw new Error(`Missing ${key}`);
       return values[key];
     },
   } as unknown as ConfigService;
@@ -70,5 +70,12 @@ describe('RoutingService', () => {
 
     expect(await service.geocode('1 Main St')).toBeNull();
     expect(prisma.geocodeCache.upsert).not.toHaveBeenCalled();
+  });
+
+  it('geocode: blank address resolves null without touching the cache', async () => {
+    const prisma = prismaMock();
+    const service = new RoutingService(configWith({ GEOCODING_DRIVER: 'nominatim' }), prisma);
+    expect(await service.geocode('   ')).toBeNull();
+    expect(prisma.geocodeCache.findUnique).not.toHaveBeenCalled();
   });
 });

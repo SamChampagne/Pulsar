@@ -52,15 +52,20 @@ export class RoutingService {
   async geocode(address: string): Promise<LatLng | null> {
     if (!this.nominatim) return null;
     const addressKey = normalizeAddressKey(address);
+    if (!addressKey) return null; // blank address must not create/read a "" cache row
     const cached = await this.prisma.geocodeCache.findUnique({ where: { addressKey } });
     if (cached) return { lat: cached.latitude, lng: cached.longitude };
     const result = await this.nominatim.geocode(address);
     if (!result) return null; // failures are not cached — retried on the next edit
-    await this.prisma.geocodeCache.upsert({
-      where: { addressKey },
-      update: { latitude: result.lat, longitude: result.lng, provider: 'nominatim' },
-      create: { addressKey, latitude: result.lat, longitude: result.lng, provider: 'nominatim' },
-    });
+    try {
+      await this.prisma.geocodeCache.upsert({
+        where: { addressKey },
+        update: { latitude: result.lat, longitude: result.lng, provider: 'nominatim' },
+        create: { addressKey, latitude: result.lat, longitude: result.lng, provider: 'nominatim' },
+      });
+    } catch {
+      // Concurrent first-time geocode already cached the same address — result is still valid.
+    }
     return result;
   }
 }
