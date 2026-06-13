@@ -32,4 +32,9 @@ describe('renderCliConfig', () => {
     expect(yaml).toContain('openrouter'); // model.provider
     expect(yaml).toContain('anthropic/claude-opus-4.6'); // model.default
   });
+  it('escapes quotes and backslashes in interpolated values', () => {
+    const yaml = renderCliConfig({ tenantId: 't1', provider: 'openrouter', authMode: 'apiKey', defaultModel: 'we"ird\\model', baseUrl: null });
+    expect(yaml).toContain('\\"');   // escaped quote present
+    expect(yaml).not.toContain('"we"ird'); // no raw unescaped quote breaking the scalar
+  });
 });

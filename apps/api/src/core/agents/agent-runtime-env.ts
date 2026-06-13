@@ -57,14 +57,15 @@ export function buildRuntimeEnv(
  * `providerKey` (cli-config.yaml.example:13-33), not Pulsar's provider id.
  */
 export function renderCliConfig(config: RuntimeConfigInput): string {
+  const yamlStr = (v: string) => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
   const provider = getRuntimeProvider(config.provider);
   const providerKey = provider?.providerKey ?? config.provider;
-  const lines = ['model:', `  provider: "${providerKey}"`];
+  const lines = ['model:', `  provider: ${yamlStr(providerKey)}`];
   if (config.defaultModel) {
-    lines.push(`  default: "${config.defaultModel}"`);
+    lines.push(`  default: ${yamlStr(config.defaultModel)}`);
   }
   if (config.baseUrl) {
-    lines.push(`  base_url: "${config.baseUrl}"`);
+    lines.push(`  base_url: ${yamlStr(config.baseUrl)}`);
   }
   return lines.join('\n') + '\n';
 }
