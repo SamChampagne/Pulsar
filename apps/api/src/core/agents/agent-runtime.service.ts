@@ -9,6 +9,31 @@ import { RuntimeConfigService } from './runtime-config.service';
 import { buildRuntimeEnv, renderCliConfig } from './agent-runtime-env';
 import { isInstalled, repoRoot, venvPython } from './runtime-install';
 
+/**
+ * Races `promise` against a deadline. If the deadline fires first, `onTimeout`
+ * is called (use it to kill the child), then a ServiceUnavailableException is
+ * thrown with `message`.
+ */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  onTimeout: () => void,
+  message: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      onTimeout();
+      reject(new ServiceUnavailableException(message));
+    }, ms);
+  });
+  try {
+    return await Promise.race([promise, deadline]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 interface OpenSessionInput {
   tenantId: string;
   agent: { id: string; model: string | null; persona: string | null };
@@ -66,9 +91,20 @@ export class AgentRuntimeService {
     } catch {
       throw new ServiceUnavailableException('Agent runtime (Hermes) unavailable');
     }
-    const client = new HermesAcpClient(HermesAcpClient.stdioTransport(child));
-    await client.initialize();
-    return { child, client };
+    // Any failure after a successful spawn must kill the child to avoid zombie processes.
+    try {
+      const client = new HermesAcpClient(HermesAcpClient.stdioTransport(child));
+      await withTimeout(
+        client.initialize(),
+        10_000,
+        () => { child.kill(); },
+        'Agent runtime did not start in time',
+      );
+      return { child, client };
+    } catch (e) {
+      child.kill();
+      throw e;
+    }
   }
 
   /** Spawns a dedicated Hermes ACP process, opens a session scoped to this agent. Returns the hermes sessionId. */
