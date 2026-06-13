@@ -635,69 +635,76 @@ git commit -m "feat(api): HermesAcpClient ACP transport + fake ACP server for te
 
 Create `apps/api/src/core/agents/agent-runtime.service.ts`:
 
+**Topologie révisée au spike (Task 1) : UN process Hermes ACP PAR conversation** (l'enregistrement MCP d'Hermes est global au process → isolation tenant impossible en process partagé). On spawn `python -m acp_adapter` (stdio) à `openSession`, on garde une `Map<hermesSessionId → {client, child}>`, on tue le child à `closeSession`. **Pas de modèle au `session/new`** (on appelle `setModel` après si l'agent a un `model` préféré) ; **pas de persona natif** → on retourne le persona pour que le contrôleur l'injecte comme 1er tour (ou `AgentRuntime` l'injecte au 1er `sendTurn`). En-têtes MCP = **tableau** `[{name, value}]`.
+
 ```ts
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { HermesAcpClient, type AcpEvent } from './hermes-acp.client';
 import { AgentsService } from './agents.service';
 
 interface OpenSessionInput {
   agent: { id: string; model: string | null; persona: string | null };
-  pulsarMcpUrl: string; // e.g. process.env.PULSAR_MCP_URL ?? 'http://localhost:3000/api/v1/mcp'
+  pulsarMcpUrl: string; // process.env.PULSAR_MCP_URL ?? 'http://localhost:3000/api/v1/mcp'
 }
+
+interface Live { client: HermesAcpClient; child: ChildProcessWithoutNullStreams; persona: string | null; firstTurnDone: boolean; }
 
 @Injectable()
 export class AgentRuntimeService {
-  // ONE shared client per process (approach A). Lazily connected to the Hermes sidecar.
-  private client: HermesAcpClient | null = null;
+  // ONE Hermes process PER conversation (isolation — spike finding). Keyed by hermes sessionId.
+  private readonly live = new Map<string, Live>();
 
   constructor(private readonly agents: AgentsService) {}
 
-  private async ensureClient(): Promise<HermesAcpClient> {
-    if (this.client) return this.client;
+  /** Spawns a dedicated Hermes ACP process, opens a session scoped to this agent. */
+  async openSession(input: OpenSessionInput): Promise<string> {
+    let child: ChildProcessWithoutNullStreams;
     try {
-      // Spawn/connect the Hermes ACP sidecar per docs/agents-acp-notes.md (stdio command).
-      this.client = await this.connect();
-      await this.client.initialize();
-      return this.client;
-    } catch (err) {
-      this.client = null;
+      // Exact command from docs/agents-acp-notes.md (e.g. `python -m acp_adapter`).
+      child = spawn(process.env.HERMES_ACP_CMD ?? 'python', ['-m', 'acp_adapter'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch {
       throw new ServiceUnavailableException('Agent runtime (Hermes) unavailable');
+    }
+    try {
+      const client = new HermesAcpClient(HermesAcpClient.stdioTransport(child));
+      await client.initialize();
+      const token = this.agents.mintSessionToken(input.agent.id, 300);
+      const { sessionId } = await client.newSession({
+        cwd: process.cwd(),
+        mcpServers: [
+          { name: 'pulsar', url: input.pulsarMcpUrl, headers: [{ name: 'X-Agent-Key', value: token }] },
+        ],
+      });
+      if (input.agent.model) await client.setModel(sessionId, input.agent.model).catch(() => undefined);
+      this.live.set(sessionId, { client, child, persona: input.agent.persona, firstTurnDone: false });
+      return sessionId;
+    } catch (err) {
+      child.kill();
+      throw new ServiceUnavailableException('Agent runtime (Hermes) session failed');
     }
   }
 
-  /** Opens an ACP session configured for this agent. Returns the hermes sessionId. */
-  async openSession(input: OpenSessionInput): Promise<string> {
-    const client = await this.ensureClient();
-    const token = this.agents.mintSessionToken(input.agent.id, 300);
-    const { sessionId } = await client.newSession({
-      model: input.agent.model ?? undefined,
-      systemPrompt: input.agent.persona ?? undefined, // OR inject persona as first prompt per Task 1
-      mcpServers: [
-        { name: 'pulsar', url: input.pulsarMcpUrl, headers: { 'X-Agent-Key': token } },
-      ],
-    });
-    return sessionId;
-  }
-
-  /** Streams normalized events for one user turn. */
+  /** Streams normalized events for one user turn. Injects persona on the first turn. */
   async *sendTurn(sessionId: string, text: string): AsyncGenerator<AcpEvent> {
-    const client = await this.ensureClient();
-    yield* client.prompt(sessionId, text);
+    const l = this.live.get(sessionId);
+    if (!l) throw new ServiceUnavailableException('Conversation session not live');
+    const prompt = !l.firstTurnDone && l.persona ? `${l.persona}\n\n---\n\n${text}` : text;
+    l.firstTurnDone = true;
+    yield* l.client.prompt(sessionId, prompt);
   }
 
   async closeSession(sessionId: string): Promise<void> {
-    if (this.client) await this.client.closeSession(sessionId).catch(() => undefined);
-  }
-
-  private async connect(): Promise<HermesAcpClient> {
-    // Build the transport (spawn `hermes acp` over stdio per Task 1) and return a HermesAcpClient.
-    // Concrete spawn command comes from docs/agents-acp-notes.md.
-    throw new Error('connect() must spawn the Hermes ACP sidecar per docs/agents-acp-notes.md');
+    const l = this.live.get(sessionId);
+    if (!l) return;
+    this.live.delete(sessionId);
+    await l.client.closeSession(sessionId).catch(() => undefined);
+    l.child.kill();
   }
 }
 ```
 
-> NOTE implémenteur : remplacer le corps de `connect()` par le spawn réel (commande exacte du doc Task 1). Si Task 1 a conclu que le persona n'a pas de champ natif, injecter le persona comme **premier `sendTurn`** au lieu de `systemPrompt` (ajuster `openSession`). Best-effort : `ensureClient` lève `ServiceUnavailableException` si le sidecar est absent (l'API la traduit en 503).
+> NOTE implémenteur : `HermesAcpClient.stdioTransport(child)` (Task 7) adapte stdin/stdout du child en `{write, lines}`. Réconcilier la commande de spawn, le framing et les noms de méthodes avec `docs/agents-acp-notes.md`. Best-effort : tout échec de spawn/session → `ServiceUnavailableException` (l'API la traduit en 503), jamais de crash du cœur Pulsar. Limiter le nombre de process concurrents est un durcissement noté en TODO (hors 2a).
 
 - [ ] **Step 2: Typecheck**
 

@@ -61,22 +61,34 @@ gros pour une seule spec → on **séquence**, chaque sous-palier ayant son cycl
 **raisonnement** et le **routage multi-modèles**.
 
 - **Hermes tourne en sidecar** (profil docker `agents` opt-in, comme `osrm` en phase 10) et expose
-  son **serveur ACP** (`hermes-agent/acp_adapter/`). L'ACP supporte déjà le **modèle par session**
-  (`SetSessionModel…`) et les **serveurs MCP par session** (`McpServerSse`/`McpServerStdio` au
-  `session/new`) — vérifié dans le code vendoré.
-- **Pulsar → Hermes** : pour une conversation ⌘K, l'API Pulsar ouvre une **session ACP**, y passe le
-  modèle, le persona (amorce de contexte), et le **serveur MCP de Pulsar + un jeton d'agent**.
+  son **serveur ACP** (`hermes-agent/acp_adapter/`, lib `agent-client-protocol` 0.9.0, **stdio
+  JSON-RPC**). Vérifié au spike (`docs/agents-acp-notes.md`) : `session/new` prend `{cwd, mcpServers}`
+  (entrée SSE = `{name, url, headers:[{name,value}]}`) ; le **modèle** se règle via `session/setModel`
+  (id `provider:model` connu du sidecar), **pas** au `session/new` ; **pas de champ persona natif** →
+  persona injecté comme **1er tour `session/prompt`**.
+- **Pulsar → Hermes** : pour une conversation ⌘K, l'API Pulsar **spawn un process ACP dédié**
+  (voir topologie ci-dessous), ouvre une **session** avec le serveur MCP de Pulsar + un jeton
+  d'agent, règle le modèle, et injecte le persona en 1er tour.
 - **Hermes → Pulsar** : pour *agir*, Hermes appelle le `/mcp` de Pulsar **comme cet agent** → on
   retombe sur la gouvernance du palier 1 (lectures en direct, mutations → file, ou `autoApprove`).
 - **Pulsar = plan de contrôle** : la config d'un agent vit dans l'entité `Agent`, jamais dans un
   fichier ou un CLI Hermes. Le choix du modèle LLM devient un champ du formulaire d'agent.
 
-### Topologie retenue : un service Hermes partagé, configuré par session (approche A)
+### Topologie retenue : un process Hermes ACP par conversation (révisée au spike)
 
-Un seul process Hermes ; Pulsar ouvre une session ACP par conversation et y injecte modèle + persona
-+ MCP + jeton. Alternatives écartées pour 2a : un process Hermes **par agent** (approche B — plus
-lourd, utile surtout pour la mémoire persistante de 2c, migration possible plus tard) ; invocation
-**CLI par tour** (approche C — pas de streaming/session continue, mauvais pour ⌘K).
+**Décision révisée.** On visait au départ un service Hermes partagé (approche A). Le spike
+(`docs/agents-acp-notes.md`) a montré que l'enregistrement des serveurs MCP dans Hermes est
+**global au process** (`register_mcp_servers` mute un registre partagé + la surface d'outils de
+l'agent) : deux conversations concurrentes sur un même process pourraient **croiser leurs accès MCP**
+(donc leurs clés d'agent et leur portée de gouvernance) — violation de l'isolation tenant (règle 1).
+
+On retient donc **un process Hermes ACP par conversation** : Pulsar **spawn** `python -m acp_adapter`
+(stdio) à `openSession`, lui ouvre une session avec **uniquement** le serveur MCP de Pulsar + le jeton
+de cet agent, et **tue le process** à `closeSession`/fin de vie de la conversation. Le stdio JSON-RPC
+étant de toute façon 1:1 client↔process, cette topologie y colle naturellement. Coût : un process par
+conversation active (acceptable — ops déprioritaire). Alternative écartée : invocation **CLI par
+tour** (pas de streaming/session continue, mauvais pour ⌘K). Une mise en commun par tenant pourra
+être envisagée plus tard si l'isolation par registre MCP est confirmée keyée par session.
 
 ## Modèle de données (19ᵉ migration)
 
