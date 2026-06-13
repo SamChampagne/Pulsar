@@ -72,11 +72,12 @@ export class ProposedActionsService {
     return this.project(created);
   }
 
-  listPending(tenantId: string) {
-    return this.prisma.proposedAction.findMany({
+  async listPending(tenantId: string) {
+    const rows = await this.prisma.proposedAction.findMany({
       where: { tenantId, status: ProposalStatus.PENDING },
       orderBy: { proposedAt: 'asc' },
     });
+    return rows.map((r) => this.project(r));
   }
 
   /** Approve + execute. Re-checks status (race-safe) then runs the tool's real handler. */
