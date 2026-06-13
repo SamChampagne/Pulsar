@@ -28,6 +28,14 @@ Découplage :
   agent ; tout client MCP s'y branche. Comme le LLM vit côté agent, Pulsar ne choisit
   aucun moteur LLM à ce palier.
 
+**Statut d'Hermes (décidé 2026-06-13) : agent de référence, architecture agnostique.**
+Pulsar reste 100 % MCP standard et **ne dépend de Hermes en rien** — n'importe quel
+client MCP (Hermes, Claude Desktop, agent maison) se branche. Hermes est documenté comme
+l'agent de référence (un guide de connexion + un exemple de config seront fournis avec
+le palier 1, car c'est lui qui apporte les passerelles Teams/Slack gratuitement), mais
+Pulsar ne l'héberge pas, ne le package pas, et ne s'optimise pas pour lui en particulier.
+Zéro lock-in.
+
 ## Objectifs
 
 1. **Identité d'agent dédiée** par tenant (rôle, permissions, plafonds), distincte des
