@@ -1,0 +1,381 @@
+<script lang="ts">
+  import { page } from '$app/state';
+  import { goto } from '$app/navigation';
+  import { PERMISSION_CATALOG } from '@pulsar/shared';
+  import { api, ApiError } from '$lib/api/client';
+  import { toast } from '$lib/stores/toast';
+  import {
+    Badge,
+    Button,
+    Card,
+    Field,
+    Input,
+    PageHeader,
+    Textarea,
+  } from '$lib/components/ui';
+
+  type AutonomyLevel = 'PROPOSE' | 'ACT_LOW' | 'AUTONOMOUS';
+
+  interface AgentCaps {
+    maxAmountPerAction?: number;
+    maxActionsPerMinute?: number;
+  }
+
+  interface AgentDetail {
+    id: string;
+    name: string;
+    description: string | null;
+    role: string | null;
+    avatar: string | null;
+    model: string | null;
+    autonomyLevel: AutonomyLevel;
+    persona: string | null;
+    permissions: string[];
+    caps: AgentCaps;
+    status: string;
+    prefix: string;
+    createdAt: string;
+    lastUsedAt: string | null;
+  }
+
+  // Dispatch-relevant scopes (same set as RegisterAgentModal).
+  const DISPATCH_KEYS = [
+    'transportation.orders.read',
+    'transportation.planning.read',
+    'transportation.planning.manage',
+    'transportation.analytics.read',
+  ];
+  const dispatchScopes = DISPATCH_KEYS.map((key) => ({
+    key,
+    description: PERMISSION_CATALOG.find((p) => p.key === key)?.description ?? key,
+  }));
+
+  const AUTONOMY_OPTIONS: { value: AutonomyLevel; label: string; hint: string }[] = [
+    {
+      value: 'PROPOSE',
+      label: 'PROPOSE',
+      hint: 'Toute mutation validée par un humain avant exécution.',
+    },
+    {
+      value: 'ACT_LOW',
+      label: 'ACT_LOW',
+      hint: 'Mutations à faible risque auto-exécutées ; les mutations sensibles restent en file.',
+    },
+    {
+      value: 'AUTONOMOUS',
+      label: 'AUTONOMOUS',
+      hint: 'Tout auto-exécuté, toujours borné par les plafonds de capacité.',
+    },
+  ];
+
+  function autonomyTone(level: AutonomyLevel): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
+    if (level === 'AUTONOMOUS') return 'warn';
+    if (level === 'ACT_LOW') return 'info';
+    return 'neutral';
+  }
+
+  const agentId = $derived(page.params.id);
+
+  let agent = $state<AgentDetail | null>(null);
+  let notFound = $state(false);
+  let loadError = $state('');
+  let saving = $state(false);
+  let revoking = $state(false);
+
+  // Editable form fields — synced from agent on load.
+  let fName = $state('');
+  let fDescription = $state('');
+  let fRole = $state('');
+  let fAvatar = $state('');
+  let fModel = $state('');
+  let fPersona = $state('');
+  let fAutonomy = $state<AutonomyLevel>('PROPOSE');
+  let fPermissions = $state<string[]>([]);
+  let fMaxAmount = $state('');
+  let fMaxRate = $state('');
+
+  function syncForm(a: AgentDetail) {
+    fName = a.name;
+    fDescription = a.description ?? '';
+    fRole = a.role ?? '';
+    fAvatar = a.avatar ?? '';
+    fModel = a.model ?? '';
+    fPersona = a.persona ?? '';
+    fAutonomy = a.autonomyLevel;
+    fPermissions = [...a.permissions];
+    fMaxAmount = a.caps.maxAmountPerAction != null ? String(a.caps.maxAmountPerAction) : '';
+    fMaxRate = a.caps.maxActionsPerMinute != null ? String(a.caps.maxActionsPerMinute) : '';
+  }
+
+  async function load() {
+    loadError = '';
+    notFound = false;
+    try {
+      const data = await api<AgentDetail>(`/agents/${agentId}`);
+      agent = data;
+      syncForm(data);
+    } catch (e) {
+      if (e instanceof ApiError && e.statusCode === 404) {
+        notFound = true;
+      } else {
+        loadError = e instanceof ApiError ? e.message : 'Impossible de charger l\'agent';
+      }
+    }
+  }
+
+  function togglePermission(key: string) {
+    fPermissions = fPermissions.includes(key)
+      ? fPermissions.filter((p) => p !== key)
+      : [...fPermissions, key];
+  }
+
+  async function save(event: SubmitEvent) {
+    event.preventDefault();
+    saving = true;
+    try {
+      const caps: AgentCaps = {};
+      const amount = Number(fMaxAmount);
+      const rate = Number(fMaxRate);
+      if (fMaxAmount.trim() !== '' && amount > 0) caps.maxAmountPerAction = amount;
+      if (fMaxRate.trim() !== '' && rate > 0) caps.maxActionsPerMinute = rate;
+
+      await api(`/agents/${agentId}`, {
+        method: 'PATCH',
+        body: {
+          name: fName,
+          description: fDescription.trim() || null,
+          role: fRole.trim() || null,
+          avatar: fAvatar.trim() || null,
+          model: fModel.trim() || null,
+          persona: fPersona.trim() || null,
+          autonomyLevel: fAutonomy,
+          permissions: fPermissions,
+          caps,
+        },
+      });
+      toast.success('Agent mis à jour');
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Échec de la mise à jour');
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function revoke() {
+    if (!confirm(`Révoquer l'agent "${agent?.name}" ? Sa clé cessera de fonctionner immédiatement.`)) return;
+    revoking = true;
+    try {
+      await api(`/agents/${agentId}`, { method: 'DELETE' });
+      toast.success('Agent révoqué');
+      await goto('/agents');
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Échec de la révocation');
+      revoking = false;
+    }
+  }
+
+  $effect(() => {
+    void load();
+  });
+</script>
+
+{#if notFound}
+  <div class="py-16 text-center">
+    <p class="text-lg font-semibold text-ink">Agent introuvable</p>
+    <p class="mt-2 text-sm text-ink-muted">
+      L'identifiant <code class="rounded bg-surface-muted px-1 text-xs">{agentId}</code> ne correspond à aucun agent.
+    </p>
+    <div class="mt-4">
+      <Button variant="secondary" onclick={() => goto('/agents')}>Retour aux agents</Button>
+    </div>
+  </div>
+{:else if loadError && !agent}
+  <p class="mt-8 text-sm text-danger">{loadError}</p>
+{:else if !agent}
+  <div class="py-16 text-center text-sm text-ink-muted">Chargement…</div>
+{:else}
+  <!-- Page header: avatar + name + badges + revoke action -->
+  <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="flex size-12 shrink-0 items-center justify-center rounded-full bg-accent-soft text-2xl">
+        {agent.avatar ?? '🤖'}
+      </div>
+      <div>
+        <h1 class="text-xl font-bold text-ink">{agent.name}</h1>
+        {#if agent.role}
+          <p class="text-sm text-ink-muted">{agent.role}</p>
+        {/if}
+      </div>
+      <div class="flex gap-2">
+        {#if agent.status === 'REVOKED'}
+          <Badge tone="danger">Révoqué</Badge>
+        {:else}
+          <Badge tone="ok">Actif</Badge>
+        {/if}
+        <Badge tone={autonomyTone(agent.autonomyLevel)}>{agent.autonomyLevel}</Badge>
+      </div>
+    </div>
+    <Button
+      variant="danger"
+      onclick={revoke}
+      loading={revoking}
+      disabled={agent.status === 'REVOKED' || revoking}
+    >
+      Révoquer
+    </Button>
+  </div>
+
+  <!-- Profil & config -->
+  <div id="profil">
+    <h2 class="mb-4 text-base font-semibold text-ink">Profil &amp; configuration</h2>
+
+    <form onsubmit={save}>
+      <Card>
+        <div class="space-y-4">
+          <!-- Name + Avatar -->
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Nom">
+              <Input bind:value={fName} required placeholder="Dispatch copilot" />
+            </Field>
+            <Field label="Avatar (emoji)">
+              <Input bind:value={fAvatar} placeholder="🚛" />
+            </Field>
+          </div>
+
+          <!-- Role + Model -->
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Rôle">
+              <Input bind:value={fRole} placeholder="ex. Répartiteur" />
+            </Field>
+            <Field label="Modèle">
+              <Input bind:value={fModel} placeholder="ex. anthropic:claude-sonnet-4-6" />
+            </Field>
+          </div>
+
+          <!-- Description -->
+          <Field label="Description">
+            <Input bind:value={fDescription} placeholder="Ce que fait cet agent…" />
+          </Field>
+
+          <!-- Persona -->
+          <div>
+            <Field label="Persona">
+              <Textarea bind:value={fPersona} rows={4} placeholder="Personnalité et instructions système de cet employé…" />
+            </Field>
+            <p class="mt-1 text-xs text-ink-muted">
+              Personnalité + instructions système de l'employé. Définit le ton, le style de réponse et les règles métier internes.
+            </p>
+          </div>
+
+          <!-- Autonomy level -->
+          <div>
+            <span class="mb-2 block text-xs font-semibold tracking-wide text-ink-muted uppercase">
+              Niveau d'autonomie
+            </span>
+            <div class="space-y-2">
+              {#each AUTONOMY_OPTIONS as opt (opt.value)}
+                <label
+                  class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition
+                    {fAutonomy === opt.value
+                      ? 'border-accent bg-accent-soft/30'
+                      : 'border-edge hover:border-accent'}"
+                >
+                  <input
+                    type="radio"
+                    name="autonomy"
+                    value={opt.value}
+                    checked={fAutonomy === opt.value}
+                    onchange={() => { fAutonomy = opt.value; }}
+                    class="mt-0.5 shrink-0"
+                  />
+                  <div>
+                    <p class="text-sm font-semibold text-ink">{opt.label}</p>
+                    <p class="text-xs text-ink-muted">{opt.hint}</p>
+                  </div>
+                </label>
+              {/each}
+            </div>
+          </div>
+
+          <!-- Permissions -->
+          <div>
+            <span class="mb-2 block text-xs font-semibold tracking-wide text-ink-muted uppercase">
+              Permissions
+            </span>
+            <p class="mb-2 text-xs text-ink-muted">
+              Scopes accordés à l'agent. Seules les permissions listées seront disponibles dans les outils MCP.
+            </p>
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {#each dispatchScopes as scope (scope.key)}
+                <label
+                  class="flex cursor-pointer items-start gap-2 rounded border p-2.5 text-xs transition
+                    {fPermissions.includes(scope.key)
+                      ? 'border-accent bg-accent-soft/30'
+                      : 'border-edge hover:border-accent'}"
+                >
+                  <input
+                    type="checkbox"
+                    checked={fPermissions.includes(scope.key)}
+                    onchange={() => togglePermission(scope.key)}
+                    class="mt-0.5 shrink-0"
+                  />
+                  <div>
+                    <code class="font-mono text-ink">{scope.key}</code>
+                    <p class="mt-0.5 text-ink-muted">{scope.description}</p>
+                  </div>
+                </label>
+              {/each}
+            </div>
+          </div>
+
+          <!-- Caps -->
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Field label="Plafond $ par action">
+                <Input type="number" bind:value={fMaxAmount} placeholder="Optionnel" />
+              </Field>
+              <p class="mt-1 text-xs text-ink-muted">
+                Plafond $/action — l'agent ne peut pas dépenser plus que ce montant en une seule action.
+              </p>
+            </div>
+            <div>
+              <Field label="Actions max par minute">
+                <Input type="number" bind:value={fMaxRate} placeholder="Optionnel" />
+              </Field>
+              <p class="mt-1 text-xs text-ink-muted">
+                Débit max/min — limite le nombre d'appels MCP que l'agent peut déclencher par minute.
+              </p>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <div class="mt-4 flex justify-end gap-3">
+        <Button variant="primary" type="submit" loading={saving} disabled={saving}>
+          Enregistrer
+        </Button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Activity placeholder (T4) -->
+  <div id="activite" class="mt-10">
+    <h2 class="mb-2 text-base font-semibold text-ink">Activité</h2>
+    <Card>
+      <p class="py-6 text-center text-sm text-ink-muted">
+        (bientôt) — Historique des actions proposées et exécutées par cet agent.
+      </p>
+    </Card>
+  </div>
+
+  <!-- Chat placeholder (T4) -->
+  <div id="chat" class="mt-10 mb-12">
+    <h2 class="mb-2 text-base font-semibold text-ink">Chat</h2>
+    <Card>
+      <p class="py-6 text-center text-sm text-ink-muted">
+        (bientôt) — Interface de conversation directe avec cet agent.
+      </p>
+    </Card>
+  </div>
+{/if}
