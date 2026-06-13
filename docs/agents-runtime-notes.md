@@ -7,24 +7,65 @@ flagged in the last section.
 
 ## TL;DR — gating result
 
-**The install CANNOT succeed on this machine as-is.** `hermes-agent` pins
-`requires-python = ">=3.11,<3.14"` and the only interpreter present is **Python
-3.14.3**, so `pip install -e ./hermes-agent[acp]` is rejected at the metadata
-gate:
+**VERIFIED WORKING.** `pnpm agents:setup` provisions the runtime turnkey via
+`uv` and `import acp_adapter, acp` prints `ACP_OK` under the venv; `-m
+acp_adapter` starts the ACP adapter with no ImportError. See the Install section
+below for the exact flow and the verified ACP launch argv.
+
+The constraint that necessitates this: `hermes-agent` pins
+`requires-python = ">=3.11,<3.14"` (a deliberate cap — see
+`hermes-agent/pyproject.toml:13-20`: Rust-backed transitives such as
+`pydantic-core` have no cp314 wheel yet, so the project refuses 3.14 outright
+instead of attempting a maturin source build). This machine ships **only Python
+3.14.3**, which cannot host Hermes. So the setup does **not** rely on a
+system interpreter — it uses `uv` to fetch a standalone CPython 3.12.
+
+---
+
+## Install — turnkey via `uv` (verified)
+
+`pnpm agents:setup` (→ `scripts/setup-agents.mjs`) is fully turnkey: the user
+does **not** install Python by hand. It drives [`uv`](https://docs.astral.sh/uv/),
+which fetches a standalone CPython 3.12 (no system change, no admin), so Hermes'
+`<3.14` cap is satisfied even when only 3.14 is on the host PATH.
+
+Steps the script performs (idempotent — re-running skips venv creation, always
+re-installs):
+
+1. **Ensure `uv`.** Checks `uv --version`. If absent, bootstraps it
+   non-interactively via `python -m pip install --user uv` (Python 3.14 can RUN
+   uv even though it can't HOST Hermes), or `pipx install uv`. If uv still can't
+   be obtained, it falls back to a system 3.11/3.12 interpreter (classic
+   `python -m venv` + `pip`); failing that, it errors with install guidance.
+2. **Provision Python 3.12:** `uv python install 3.12` (downloads a standalone
+   CPython — verified: `cpython-3.12.13-windows-x86_64-none`).
+3. **Create the venv:** `uv venv hermes-agent/.venv --python 3.12`.
+4. **Install Hermes + acp extra:**
+   `uv pip install --python hermes-agent/.venv -e "./hermes-agent[acp]"`.
+   `--python <venv>` makes uv resolve against the venv's 3.12, satisfying the
+   `<3.14` cap. This pulls `agent-client-protocol==0.9.0` (the `acp` extra,
+   `pyproject.toml:183`).
+
+Verified on this machine (win32, host Python 3.14.3, uv 0.11.18):
 
 ```
-ERROR: Package 'hermes-agent' requires a different Python: 3.14.3 not in '<3.14,>=3.11'
+uv python install 3.12          → Installed Python 3.12.13
+uv venv hermes-agent/.venv …    → Using CPython 3.12.13
+uv pip install --python … [acp] → Installed 61 packages
+                                  (incl. hermes-agent==0.16.0,
+                                   agent-client-protocol==0.9.0,
+                                   pydantic-core==2.46.4)
+
+hermes-agent/.venv/Scripts/python.exe -c "import acp_adapter, acp; print('ACP_OK')"
+→ ACP_OK
+
+printf '' | hermes-agent/.venv/Scripts/python.exe -m acp_adapter
+→ [INFO] acp_adapter.entry: Starting hermes-agent ACP adapter
+  [INFO] acp_adapter.server: ACP client connected      # no ImportError; exit 0
 ```
 
-This is a deliberate cap (see `hermes-agent/pyproject.toml:14-20`): Rust-backed
-transitives such as `pydantic-core` have no cp314 wheels, so the project refuses
-3.14 outright instead of attempting a maturin source build. **A Python 3.12 (or
-3.11) interpreter must be installed**, then re-run `pnpm agents:setup`. The
-setup script (`scripts/setup-agents.mjs`) already prefers 3.12/3.11 over 3.14 if
-a compatible one is on PATH.
-
-`ACP_OK` was therefore NOT obtained on this machine; it remains to be confirmed
-on a 3.11/3.12 box.
+Venv python path: `hermes-agent/.venv/Scripts/python.exe` (win32) /
+`hermes-agent/.venv/bin/python` (POSIX).
 
 ---
 
@@ -183,11 +224,11 @@ JSON-RPC transport and logging goes to stderr (`acp_adapter/entry.py:2-4`).
 `hermes_bootstrap` is imported first for UTF-8 stdio on Windows
 (`acp_adapter/entry.py:15-26`).
 
-The Step-3 verification commands (to run once on a 3.11/3.12 machine):
+Verification commands (run and confirmed — see the Install section):
 
 ```sh
-hermes-agent/.venv/Scripts/python.exe -c "import acp_adapter, acp; print('ACP_OK')"
-echo "" | hermes-agent/.venv/Scripts/python.exe -m acp_adapter   # should wait/parse-error, NOT ImportError
+hermes-agent/.venv/Scripts/python.exe -c "import acp_adapter, acp; print('ACP_OK')"  # → ACP_OK
+printf '' | hermes-agent/.venv/Scripts/python.exe -m acp_adapter   # starts, no ImportError
 ```
 
 (`acp` is the `agent-client-protocol==0.9.0` package pulled by the `acp` extra —
@@ -195,20 +236,17 @@ echo "" | hermes-agent/.venv/Scripts/python.exe -m acp_adapter   # should wait/p
 
 ## 5. Open questions (need a live provider/login to verify)
 
-1. **`ACP_OK` not yet proven** — blocked by the Python 3.14 cap on this machine.
-   Must be confirmed on a 3.11/3.12 install before the HERMES_ENABLED smoke
-   test is meaningful.
-2. **ACP initialize handshake** — exact JSON-RPC `initialize`/`session/new`
+1. **ACP initialize handshake** — exact JSON-RPC `initialize`/`session/new`
    methods and the minimum a client must send before the agent will accept a
    prompt are not documented here (would require reading `acp_adapter/server.py`
    and/or a live session). Confirm what `AgentRuntimeService` must send first.
-3. **Does the adapter read `cli-config.yaml`/provider on startup, or only when
+2. **Does the adapter read `cli-config.yaml`/provider on startup, or only when
    a session begins?** i.e. will a missing/invalid provider key crash at spawn
    or only on first prompt? Needs a live run.
-4. **Codex (`hermes auth`) device-code stdout shape** — verified for the Nous
+3. **Codex (`hermes auth`) device-code stdout shape** — verified for the Nous
    `hermes login` flow (`auth.py:7549-7567`); the Codex path
    (`_codex_device_code_login`, referenced in `main.py:311`) likely mirrors it
    but the exact printed lines were not quoted here.
-5. **Copilot via `GITHUB_TOKEN` vs `gh auth`** — `main.py:737-742` shows a
+4. **Copilot via `GITHUB_TOKEN` vs `gh auth`** — `main.py:737-742` shows a
    `gh auth` fallback; which one the spawned non-interactive runtime should rely
    on needs a live check.
