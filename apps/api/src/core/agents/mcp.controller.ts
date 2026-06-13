@@ -41,8 +41,12 @@ export class McpController {
       void transport.close();
       void server.close();
     });
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch {
+      if (!res.headersSent) res.status(500).json({ error: 'MCP request failed' });
+    }
   }
 
   // Stateless mode uses POST only.
