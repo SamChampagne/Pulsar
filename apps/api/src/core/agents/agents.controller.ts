@@ -40,6 +40,18 @@ export class AgentsController {
     return this.agents.list(user.tenantId);
   }
 
+  @Get(':id/activity')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
+  activity(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.agents.activity(user.tenantId, id);
+  }
+
+  @Get(':id')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
+  getOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.agents.getOne(user.tenantId, id);
+  }
+
   @Post()
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateAgentDto) {

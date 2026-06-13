@@ -180,6 +180,58 @@ export class AgentsService {
     return agent;
   }
 
+  async getOne(tenantId: string, id: string) {
+    const agent = await this.prisma.agent.findFirst({ where: { id, tenantId }, select: agentSelect });
+    if (!agent) throw new NotFoundException('Agent not found');
+    return agent;
+  }
+
+  async activity(tenantId: string, id: string) {
+    await this.getOne(tenantId, id);
+    const [conversations, proposedActions] = await Promise.all([
+      this.prisma.agentConversation.findMany({
+        where: { tenantId, agentId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        select: {
+          id: true,
+          title: true,
+          createdAt: true,
+          _count: { select: { messages: true } },
+        },
+      }),
+      this.prisma.proposedAction.findMany({
+        where: { tenantId, agentId: id },
+        orderBy: { proposedAt: 'desc' },
+        take: 50,
+        select: {
+          id: true,
+          tool: true,
+          status: true,
+          riskTier: true,
+          proposedAt: true,
+          decidedAt: true,
+        },
+      }),
+    ]);
+    const stats = {
+      conversations: conversations.length,
+      pending: proposedActions.filter((p) => p.status === 'PENDING').length,
+      executed: proposedActions.filter((p) => p.status === 'EXECUTED').length,
+      rejected: proposedActions.filter((p) => p.status === 'REJECTED').length,
+    };
+    return {
+      conversations: conversations.map((c) => ({
+        id: c.id,
+        title: c.title,
+        createdAt: c.createdAt,
+        messageCount: c._count.messages,
+      })),
+      proposedActions,
+      stats,
+    };
+  }
+
   async revoke(tenantId: string, id: string) {
     const agent = await this.prisma.agent.findFirst({ where: { id, tenantId } });
     if (!agent) throw new NotFoundException('Agent not found');
