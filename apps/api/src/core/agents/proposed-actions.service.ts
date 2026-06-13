@@ -130,9 +130,19 @@ export class ProposedActionsService {
       });
       return this.project(done);
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const name = err instanceof Error ? err.name : 'Error';
       const failed = await this.prisma.proposedAction.update({
         where: { id },
-        data: { status: ProposalStatus.FAILED, resultJson: { error: String(err) } },
+        data: { status: ProposalStatus.FAILED, resultJson: { error: message, name } },
+      });
+      await this.audit.log({
+        tenantId,
+        userId: principal.user.id,
+        action: AuditAction.UPDATE,
+        entityType: 'proposed-action',
+        entityId: id,
+        after: { status: 'FAILED', tool: proposal.tool, approvedBy: approverId, error: message },
       });
       return this.project(failed);
     }
