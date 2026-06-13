@@ -9,6 +9,7 @@ import { ALL_PERMISSION_KEYS, AgentStatus } from '@pulsar/shared';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AgentCaps, AgentPrincipal } from './agent-principal';
+import { mintAgentSessionToken, verifyAgentSessionToken } from './agent-session-token';
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
@@ -27,7 +28,14 @@ const agentSelect = {
 
 @Injectable()
 export class AgentsService {
+  private readonly sessionSecret: string =
+    process.env.AGENT_SESSION_SECRET ?? process.env.JWT_SECRET ?? 'dev-agent-session-secret';
+
   constructor(private readonly prisma: PrismaService) {}
+
+  mintSessionToken(agentId: string, ttlSeconds = 300): string {
+    return mintAgentSessionToken(agentId, this.sessionSecret, ttlSeconds);
+  }
 
   /** One hidden DISABLED user PER agent — audit shows the specific agent, never loginable (rule 13). */
   private async createServiceUser(tenantId: string, name: string): Promise<string> {
@@ -94,7 +102,10 @@ export class AgentsService {
 
   /** Resolve a raw agent key into a full principal (service user + caps + scoped permissions). */
   async validateKey(rawKey: string): Promise<AgentPrincipal> {
-    const agent = await this.prisma.agent.findUnique({ where: { secretHash: sha256(rawKey) } });
+    const sessionAgentId = verifyAgentSessionToken(rawKey, this.sessionSecret);
+    const agent = sessionAgentId
+      ? await this.prisma.agent.findUnique({ where: { id: sessionAgentId } })
+      : await this.prisma.agent.findUnique({ where: { secretHash: sha256(rawKey) } });
     if (!agent || agent.status === AgentStatus.REVOKED) {
       throw new UnauthorizedException('Invalid agent key');
     }
