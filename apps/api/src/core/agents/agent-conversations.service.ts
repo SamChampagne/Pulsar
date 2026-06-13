@@ -13,12 +13,13 @@ export class AgentConversationsService {
     });
   }
 
-  async get(tenantId: string, id: string) {
+  async get(tenantId: string, userId: string, id: string) {
     const conv = await this.prisma.agentConversation.findFirst({
       where: { id, tenantId },
       include: { messages: { orderBy: { createdAt: 'asc' } } },
     });
     if (!conv) throw new NotFoundException('Conversation not found');
+    if (conv.userId !== userId) throw new ForbiddenException('Not your conversation');
     return conv;
   }
 

@@ -39,7 +39,7 @@ export class AgentConversationsController {
   @Get(':id')
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_CHAT)
   get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.conversations.get(user.tenantId, id);
+    return this.conversations.get(user.tenantId, user.id, id);
   }
 
   @Post()
