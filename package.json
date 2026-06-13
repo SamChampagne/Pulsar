@@ -24,7 +24,8 @@
     "db:deploy": "pnpm --filter @pulsar/database migrate:deploy",
     "db:push": "pnpm --filter @pulsar/database push",
     "db:seed": "pnpm --filter @pulsar/database seed",
-    "db:studio": "pnpm --filter @pulsar/database studio"
+    "db:studio": "pnpm --filter @pulsar/database studio",
+    "agents:setup": "node scripts/setup-agents.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

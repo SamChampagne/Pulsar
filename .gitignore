@@ -39,3 +39,7 @@ packages/database/generated/
 
 # OSRM extract data (phase 10, see docs/getting-started.md)
 osrm-data/
+
+# Vendored Hermes agent runtime (phase 11): venv + per-machine HERMES_HOME
+hermes-agent/.venv/
+hermes-agent/.hermes-home/
