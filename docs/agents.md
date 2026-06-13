@@ -123,3 +123,58 @@ REST equivalents: `GET /api/v1/agent-actions`, `POST /api/v1/agent-actions/:id/a
 - Tenant isolation and audit attribution come from the agent's hidden service user; the agent key
   is the credential and the tenant is derived from it, never from the request body.
 - See CLAUDE.md "Hard rules (continued, phase 11)" (rules 21–23) for the invariants.
+
+## Agents-employés (palier 2a)
+
+Palier 1 exposed Pulsar's operations as MCP tools for a *bring-your-own* agent. Palier 2a adds
+the missing half: a **brain that lives inside Pulsar's UI**. You register an **employee-agent**
+in **Settings → Agents** — a persona (name, avatar, description), a **role**, an **LLM model**,
+and an **autonomy level** — then talk to it from the **⌘K → "AI assistant"** panel. The
+conversation streams over [ACP](https://modelcontextprotocol.io) and the agent's tool calls flow
+straight into the palier-1 governance machinery.
+
+### Autonomy levels
+
+| Level | Behaviour |
+| --- | --- |
+| `PROPOSE` | every mutating tool call becomes a `ProposedAction` for a human to approve — nothing executes on its own. |
+| `ACT_LOW` | low-risk mutations auto-execute; SENSITIVE ones still queue for approval. |
+| `AUTONOMOUS` | mutating tool calls auto-execute without the human step. |
+
+Autonomy is a *convenience*, not a blank cheque: **the agent's caps still bound auto-approved
+actions**. The `maxAmountPerAction` cap is enforced on the auto-approve path too — an
+`AUTONOMOUS` agent that proposes an action above its amount cap is still rejected
+(`mcp-server.factory.ts`). Autonomy only decides *whether a human clicks approve*; it never lifts
+the caps.
+
+### Architecture (one paragraph)
+
+**Hermes is the brain; Pulsar is the home.** Hermes is a Python ACP process that the API
+**spawns per conversation** over stdio — one child process per conversation, deliberately, because
+Hermes' MCP tool registration is process-global, so a process-per-conversation is how we keep one
+tenant's tools from leaking into another's. Pulsar owns everything around it: the UI (⌘K panel and
+Settings), the agent's **identity**, the **tools** (the palier-1 MCP surface), and the
+**governance queue**. When Hermes wants to act, its tool calls hit `POST /api/v1/mcp` **as the
+agent** — authenticated with a short-lived **session token** (signed with `AGENT_SESSION_SECRET`,
+falling back to `JWT_SECRET`) — so they land in exactly the palier-1 path: scoped tool surface,
+caps, idempotent proposed-action queue, human approval.
+
+### Setup requirement
+
+Running employee-agents requires the **Hermes Python environment to be runnable on the same host
+as the API** — there is no network sidecar; the API literally `spawn`s a child process. Configure
+it with three env vars (see `.env.example`):
+
+- `HERMES_ACP_CMD` (default `python`)
+- `HERMES_ACP_ARGS` (default `-m acp_adapter`)
+- `HERMES_ACP_CWD` (default `./hermes-agent` — the vendored Hermes checkout)
+
+It is **opt-in and best-effort**: if Hermes isn't installed or can't start, the ⌘K assistant
+returns *unavailable* (HTTP 503) and **the rest of Pulsar is completely unaffected** — the runtime
+is isolated, a Hermes failure never crashes core Pulsar.
+
+### Still MCP-agnostic
+
+Nothing here couples Pulsar to Hermes. The agent talks to Pulsar over the same `/api/v1/mcp`
+endpoint any MCP client uses; **Hermes is the reference runtime**, swappable for any other ACP/MCP
+brain that can call back into Pulsar with a session token.

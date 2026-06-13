@@ -98,6 +98,13 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     repose alors sur les services métier sous-jacents (`@Audit`/`AuditLogsService.log`).
     Les plafonds (`evaluateAmountCap`/`evaluateRateCap`) et l'idempotence
     (`deriveIdempotencyKey`) vivent dans `@pulsar/shared` — ne pas les réimplémenter.
+24. (palier 2a) Les **agents-employés** tournent sur Hermes via ACP — **un processus enfant
+    par conversation** (isolation tenant : l'enregistrement MCP de Hermes est process-global) —
+    et sont configurés ENTIÈREMENT dans Pulsar (l'entité `Agent` : persona/rôle/modèle/autonomie).
+    Leurs appels d'outils passent TOUJOURS par la file de gouvernance palier 1 + les plafonds :
+    le chemin d'auto-approbation (autonomie `ACT_LOW`/`AUTONOMOUS`) applique LUI AUSSI le plafond
+    montant (`mcp-server.factory.ts`) — l'autonomie ne lève jamais les caps. Le runtime d'agent
+    est best-effort et isolé : Hermes indisponible ⇒ 503, jamais de crash du cœur de Pulsar.
 
 ## Adding a business module (the recipe)
 

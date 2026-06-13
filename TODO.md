@@ -371,3 +371,53 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
       check then `create`; the `(agentId, idempotencyKey)` unique index makes the second throw
       P2002 (uncaught → 500). No duplicate side effect (mutations don't run at enqueue). Catch
       P2002 and return the existing projection.
+
+## Phase 11 (palier 2a) — Employee-agents (Hermes brain in Pulsar)
+
+### Shared + DB
+- [x] `@pulsar/shared` `AgentAutonomy` enum (`PROPOSE`/`ACT_LOW`/`AUTONOMOUS`) + helper
+      (`packages/shared/src/agents/autonomy.ts`, vitest `autonomy.spec`)
+- [x] `core.agents.chat` permission catalog entry
+- [x] Prisma migration `20260613195333_phase11b_agents_employes` (19th migration): employee
+      fields on `Agent` (persona/role/model/autonomy/avatar) + agent-conversations/messages tables
+
+### API
+- [x] Agent session token (short-lived, signed with `AGENT_SESSION_SECRET` → `JWT_SECRET` →
+      dev default) so the Hermes runtime calls `/mcp` as the agent (`agent-session-token.spec`)
+- [x] `HermesAcpClient` — ACP transport (stdio, newline-framed) + fake ACP server for tests
+      (`hermes-acp.client.spec`)
+- [x] `AgentRuntimeService` — spawns `python -m acp_adapter` as a child process **per
+      conversation** (configurable via `HERMES_ACP_CMD`/`HERMES_ACP_ARGS`/`HERMES_ACP_CWD`)
+- [x] `AgentConversationsService` persistence + `AgentConversationsController`
+      (`GET/POST /agent-conversations`, `GET :id`, `POST :id/messages`, SSE turn endpoint)
+- [x] `AgentRuntime` + `AgentConversations` wired into `AgentsModule`
+- [x] Amount-cap-on-autoApprove fix: the auto-approve path now enforces `maxAmountPerAction`
+      (governance hole closed in `mcp-server.factory.ts`)
+- [x] E2E suite `phase11b-agents-employes.e2e-spec.ts`
+
+### Web
+- [x] Settings → Agents employee fields (persona/role/model/autonomy/avatar)
+- [x] ⌘K "AI assistant" panel — streaming conversation + proposed-action cards
+
+### Deferred (noted at reviews — do not silently fix)
+- [ ] Set `AGENT_SESSION_SECRET` (or `JWT_SECRET`) in non-dev — the dev fallback is silent and
+      insecure.
+- [ ] Rate cap is NOT enforced on the auto-approve path (only the amount cap is) — auto-approved
+      actions don't create proposals, so there's no trailing-minute count; needs a separate
+      execution counter.
+- [ ] `AgentRuntimeService`: no timeout on `initialize`/`newSession` (a hung Hermes leaks the
+      child process); child stderr is not consumed (could block on a full pipe); the `live` Map
+      can grow unbounded if `closeSession` is never called (no TTL/sweep).
+- [ ] `closeSession` during an active `prompt()` silently ends the stream without an error.
+- [ ] `GET /agent-conversations/:id` is tenant-scoped but NOT user-scoped (any tenant member can
+      read another member's conversation) — asymmetric with `list()`; and `get()` returns the raw
+      row including `tenantId`.
+- [ ] SSE turn endpoint: client disconnect does not abort the runtime turn; no SSE heartbeat
+      (proxy-timeout risk on long turns).
+- [ ] `tool_call`→`proposalId` correlation is not persisted on `AgentMessage` (only assistant
+      text is persisted) — needed for full audit linkage.
+- [ ] `start()` does a double agent lookup (`getOwned` then `conversations.start` re-fetches).
+- [ ] Rename `nowMs`→`nowSec` in agent-session-token for clarity (cosmetic).
+- [ ] ACP runtime smoke (`HERMES_ENABLED`): verify real byte framing (newline-delimited),
+      camelCase fields / snake_case methods, the `session/set_model` param key, and that
+      non-permission reverse-ACP calls don't break a turn.
