@@ -4,6 +4,7 @@
   import { PERMISSION_CATALOG } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import { formatDateTime } from '$lib/format';
   import {
     Badge,
     Button,
@@ -13,6 +14,7 @@
     PageHeader,
     Textarea,
   } from '$lib/components/ui';
+  import Conversation from '$lib/components/agents/Conversation.svelte';
 
   type AutonomyLevel = 'PROPOSE' | 'ACT_LOW' | 'AUTONOMOUS';
 
@@ -36,6 +38,40 @@
     prefix: string;
     createdAt: string;
     lastUsedAt: string | null;
+  }
+
+  interface ConversationSummary {
+    id: string;
+    title: string | null;
+    createdAt: string;
+    messageCount: number;
+  }
+
+  interface ProposedActionSummary {
+    id: string;
+    tool: string;
+    status: string;
+    riskTier: string;
+    proposedAt: string;
+    decidedAt: string | null;
+  }
+
+  interface ActivityStats {
+    conversations: number;
+    pending: number;
+    executed: number;
+    rejected: number;
+  }
+
+  interface AgentActivity {
+    conversations: ConversationSummary[];
+    proposedActions: ProposedActionSummary[];
+    stats: ActivityStats;
+  }
+
+  interface ConversationDetail {
+    id: string;
+    messages: { role: string; content: string; toolCalls?: { name: string; args?: unknown }[] }[];
   }
 
   // Dispatch-relevant scopes (same set as RegisterAgentModal).
@@ -74,13 +110,22 @@
     return 'neutral';
   }
 
-  const agentId = $derived(page.params.id);
+  const agentId = $derived(page.params.id as string);
 
   let agent = $state<AgentDetail | null>(null);
   let notFound = $state(false);
   let loadError = $state('');
   let saving = $state(false);
   let revoking = $state(false);
+
+  // Activity
+  let activity = $state<AgentActivity | null>(null);
+  let activityError = $state('');
+
+  // Chat: active conversation loaded from activity list
+  let chatConversationId = $state<string | null>(null);
+  let chatInitialMessages = $state<ConversationDetail['messages']>([]);
+  let loadingConversation = $state(false);
 
   // Editable form fields — synced from agent on load.
   let fName = $state('');
@@ -120,6 +165,33 @@
       } else {
         loadError = e instanceof ApiError ? e.message : 'Impossible de charger l\'agent';
       }
+    }
+  }
+
+  async function loadActivity(id: string) {
+    activityError = '';
+    try {
+      const data = await api<AgentActivity>(`/agents/${id}/activity`);
+      activity = data;
+    } catch (e) {
+      activityError = e instanceof ApiError ? e.message : 'Impossible de charger l\'activité';
+    }
+  }
+
+  async function openConversation(convId: string) {
+    loadingConversation = true;
+    try {
+      const data = await api<ConversationDetail>(`/agent-conversations/${convId}`);
+      chatConversationId = data.id;
+      chatInitialMessages = data.messages;
+      // Scroll to chat section
+      queueMicrotask(() => {
+        document.getElementById('chat')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Impossible de charger la conversation');
+    } finally {
+      loadingConversation = false;
     }
   }
 
@@ -177,7 +249,22 @@
 
   $effect(() => {
     void load();
+    void loadActivity(agentId);
   });
+
+  function actionStatusTone(status: string): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
+    if (status === 'EXECUTED') return 'ok';
+    if (status === 'PENDING') return 'warn';
+    if (status === 'REJECTED' || status === 'FAILED') return 'danger';
+    return 'neutral';
+  }
+
+  function riskTierTone(tier: string): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
+    if (tier === 'HIGH') return 'danger';
+    if (tier === 'MEDIUM') return 'warn';
+    if (tier === 'LOW') return 'ok';
+    return 'neutral';
+  }
 </script>
 
 {#if notFound}
@@ -359,23 +446,123 @@
     </form>
   </div>
 
-  <!-- Activity placeholder (T4) -->
+  <!-- Activité -->
   <div id="activite" class="mt-10">
-    <h2 class="mb-2 text-base font-semibold text-ink">Activité</h2>
-    <Card>
-      <p class="py-6 text-center text-sm text-ink-muted">
-        (bientôt) — Historique des actions proposées et exécutées par cet agent.
-      </p>
-    </Card>
+    <h2 class="mb-4 text-base font-semibold text-ink">Activité</h2>
+
+    {#if activityError}
+      <p class="mb-4 text-sm text-danger">{activityError}</p>
+    {/if}
+
+    {#if activity}
+      <!-- Stats row -->
+      <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {#each [
+          { label: 'Conversations', value: activity.stats.conversations },
+          { label: 'En attente', value: activity.stats.pending },
+          { label: 'Exécutées', value: activity.stats.executed },
+          { label: 'Rejetées', value: activity.stats.rejected },
+        ] as stat (stat.label)}
+          <div class="rounded-card border border-edge bg-surface p-4 text-center">
+            <p class="text-2xl font-bold text-ink">{stat.value}</p>
+            <p class="mt-0.5 text-xs text-ink-muted">{stat.label}</p>
+          </div>
+        {/each}
+      </div>
+
+      <!-- Conversations list -->
+      <Card>
+        <div class="mb-3 flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-ink">Conversations</h3>
+        </div>
+        {#if activity.conversations.length === 0}
+          <p class="py-4 text-center text-sm text-ink-faint">Aucune conversation pour l'instant.</p>
+        {:else}
+          <ul class="divide-y divide-edge">
+            {#each activity.conversations as convo (convo.id)}
+              <li>
+                <button
+                  class="flex w-full items-center justify-between gap-4 px-1 py-2.5 text-left transition hover:bg-surface-muted disabled:opacity-50"
+                  onclick={() => openConversation(convo.id)}
+                  disabled={loadingConversation}
+                >
+                  <span class="min-w-0">
+                    <span class="block truncate text-sm font-medium text-ink">
+                      {convo.title ?? 'Sans titre'}
+                    </span>
+                    <span class="text-xs text-ink-muted">
+                      {convo.messageCount} message{convo.messageCount !== 1 ? 's' : ''} · {formatDateTime(convo.createdAt)}
+                    </span>
+                  </span>
+                  <span class="shrink-0 text-xs text-accent">Ouvrir ↓</span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </Card>
+
+      <!-- Proposed actions list -->
+      <div class="mt-4">
+        <Card>
+          <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-ink">Actions proposées</h3>
+            <a href="/agent-actions" class="text-xs text-accent hover:underline">
+              Voir toutes →
+            </a>
+          </div>
+          {#if activity.proposedActions.length === 0}
+            <p class="py-4 text-center text-sm text-ink-faint">Aucune action proposée pour l'instant.</p>
+          {:else}
+            <ul class="divide-y divide-edge">
+              {#each activity.proposedActions as action (action.id)}
+                <li class="flex flex-wrap items-center gap-3 py-2.5 px-1">
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate text-sm font-medium text-ink">{action.tool}</span>
+                    <span class="text-xs text-ink-muted">{formatDateTime(action.proposedAt)}</span>
+                  </span>
+                  <div class="flex shrink-0 items-center gap-1.5">
+                    <Badge tone={riskTierTone(action.riskTier)}>{action.riskTier}</Badge>
+                    <Badge tone={actionStatusTone(action.status)}>{action.status}</Badge>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </Card>
+      </div>
+    {:else if !activityError}
+      <Card>
+        <p class="py-6 text-center text-sm text-ink-muted">Chargement de l'activité…</p>
+      </Card>
+    {/if}
   </div>
 
-  <!-- Chat placeholder (T4) -->
+  <!-- Chat -->
   <div id="chat" class="mt-10 mb-12">
-    <h2 class="mb-2 text-base font-semibold text-ink">Chat</h2>
-    <Card>
-      <p class="py-6 text-center text-sm text-ink-muted">
-        (bientôt) — Interface de conversation directe avec cet agent.
-      </p>
+    <h2 class="mb-4 text-base font-semibold text-ink">Chat</h2>
+    <Card padded={false}>
+      <div class="flex h-[520px] flex-col">
+        {#if chatConversationId !== null || chatInitialMessages.length > 0}
+          <!-- Loaded from activity list: show a reset button -->
+          <div class="flex items-center justify-between border-b border-edge px-4 py-2">
+            <span class="text-xs text-ink-muted">Conversation chargée depuis l'historique</span>
+            <button
+              class="text-xs text-accent hover:underline"
+              onclick={() => { chatConversationId = null; chatInitialMessages = []; }}
+            >
+              Nouvelle conversation
+            </button>
+          </div>
+        {/if}
+        {#key chatConversationId}
+          <Conversation
+            agentId={agentId}
+            initialConversationId={chatConversationId}
+            initialMessages={chatInitialMessages}
+          />
+        {/key}
+      </div>
     </Card>
   </div>
 {/if}
