@@ -6,6 +6,7 @@
   import { auth, clearAuth, getRefreshToken } from '$lib/stores/auth';
   import { ChevronDown, ChevronRight, Bell, LogOut, Search } from 'lucide-svelte';
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
+  import AssistantPanel from '$lib/components/agents/AssistantPanel.svelte';
 
   let { children } = $props();
 
@@ -28,6 +29,12 @@
     $auth?.user.permissions.includes(PERMISSIONS.CORE.AGENTS_ACTIONS_READ) ?? false,
   );
   let pendingActions = $state(0);
+
+  // ⌘K assistant: chat with an employee-agent, gated on the chat permission.
+  const canChatAgents = $derived(
+    $auth?.user.permissions.includes(PERMISSIONS.CORE.AGENTS_CHAT) ?? false,
+  );
+  let assistantOpen = $state(false);
 
   async function loadNotifications() {
     try {
@@ -131,6 +138,9 @@
 
   let paletteOpen = $state(false);
   const paletteCommands = $derived([
+    ...(canChatAgents
+      ? [{ label: 'AI assistant', hint: 'chat', run: () => (assistantOpen = true) }]
+      : []),
     { label: 'Dashboard', hint: 'page', run: () => goto('/dashboard') },
     ...groups.filter((g) => g.visible).flatMap((g) =>
       g.items.map((i) => ({ label: i.label, hint: g.label, run: () => goto(i.href) })),
@@ -250,4 +260,7 @@
     <main class="min-w-0 flex-1 p-6">{@render children()}</main>
   </div>
   <CommandPalette bind:open={paletteOpen} commands={paletteCommands} />
+  {#if canChatAgents}
+    <AssistantPanel bind:open={assistantOpen} />
+  {/if}
 {/if}
