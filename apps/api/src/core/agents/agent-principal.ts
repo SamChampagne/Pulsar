@@ -1,4 +1,4 @@
-import type { AuthUser, PermissionKey } from '@pulsar/shared';
+import type { AuthUser } from '@pulsar/shared';
 
 /** Caps stored on Agent.caps (all optional). */
 export interface AgentCaps {
@@ -18,5 +18,3 @@ export interface AgentPrincipal {
   caps: AgentCaps;
   user: AuthUser; // id = service user id, permissions = agent.permissions
 }
-
-export const isAgentPermission = (p: string): p is PermissionKey => typeof p === 'string';
