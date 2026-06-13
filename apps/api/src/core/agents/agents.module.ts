@@ -13,6 +13,9 @@ import { ProposedActionsController } from './proposed-actions.controller';
 import { ProposedActionsService } from './proposed-actions.service';
 import { McpController } from './mcp.controller';
 import { AGENT_TOOL_SERVICES, type ToolServices } from './tool-registry';
+import { AgentRuntimeService } from './agent-runtime.service';
+import { AgentConversationsService } from './agent-conversations.service';
+import { AgentConversationsController } from './agent-conversations.controller';
 
 /**
  * Agent governance + MCP exposure (phase 11).
@@ -28,10 +31,12 @@ import { AGENT_TOOL_SERVICES, type ToolServices } from './tool-registry';
  */
 @Module({
   imports: [TransportationModule, AuditLogsModule],
-  controllers: [AgentsController, ProposedActionsController, McpController],
+  controllers: [AgentsController, ProposedActionsController, McpController, AgentConversationsController],
   providers: [
     AgentsService,
     ProposedActionsService,
+    AgentRuntimeService,
+    AgentConversationsService,
     {
       provide: AGENT_TOOL_SERVICES,
       inject: [
