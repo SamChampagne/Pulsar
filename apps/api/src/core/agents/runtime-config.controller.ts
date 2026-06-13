@@ -2,19 +2,20 @@ import { BadRequestException, Body, Controller, Get, Post, Put, Res } from '@nes
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type { AuthUser } from '@pulsar/shared';
-import { PERMISSIONS, RUNTIME_PROVIDERS, getRuntimeProvider } from '@pulsar/shared';
-import { IsOptional, IsString } from 'class-validator';
+import { AuditAction, PERMISSIONS, RUNTIME_PROVIDERS, getRuntimeProvider } from '@pulsar/shared';
+import { IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { RuntimeConfigService } from './runtime-config.service';
 import { AgentRuntimeService } from './agent-runtime.service';
 import { isInstalled } from './runtime-install';
 
 class UpsertRuntimeDto {
-  @IsString() provider!: string;
-  @IsOptional() @IsString() apiKey?: string;
-  @IsOptional() @IsString() defaultModel?: string;
-  @IsOptional() @IsString() baseUrl?: string;
+  @IsString() @IsIn(RUNTIME_PROVIDERS.map((p) => p.id)) provider!: string;
+  @IsOptional() @IsString() @MaxLength(512) apiKey?: string;
+  @IsOptional() @IsString() @MaxLength(512) @Matches(/^[^\r\n]*$/) defaultModel?: string;
+  @IsOptional() @IsString() @MaxLength(512) @Matches(/^[^\r\n]*$/) baseUrl?: string;
 }
 
 @ApiTags('core/agent-runtime')
@@ -24,6 +25,7 @@ export class RuntimeConfigController {
   constructor(
     private readonly runtimeConfig: RuntimeConfigService,
     private readonly runtime: AgentRuntimeService,
+    private readonly audit: AuditLogsService,
   ) {}
 
   @Get('providers')
@@ -54,6 +56,13 @@ export class RuntimeConfigController {
       apiKey: dto.apiKey,
       defaultModel: dto.defaultModel ?? null,
       baseUrl: dto.baseUrl ?? null,
+    });
+    await this.audit.log({
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: AuditAction.UPDATE,
+      entityType: 'agent-runtime-config',
+      after: { provider: provider.id, authMode: provider.authMode, hasApiKey: !!dto.apiKey },
     });
     return this.runtimeConfig.project(config);
   }

@@ -34,10 +34,13 @@ const agentSelect = {
 
 @Injectable()
 export class AgentsService {
-  private readonly sessionSecret: string =
-    process.env.AGENT_SESSION_SECRET ?? process.env.JWT_SECRET ?? 'dev-agent-session-secret';
+  private readonly sessionSecret: string;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {
+    const secret = process.env.AGENT_SESSION_SECRET ?? process.env.JWT_SECRET;
+    if (!secret) throw new Error('AGENT_SESSION_SECRET or JWT_SECRET must be set');
+    this.sessionSecret = secret;
+  }
 
   mintSessionToken(agentId: string, ttlSeconds = 300): string {
     return mintAgentSessionToken(agentId, this.sessionSecret, ttlSeconds);

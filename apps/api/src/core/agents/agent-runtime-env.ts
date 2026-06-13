@@ -36,6 +36,7 @@ export function buildRuntimeEnv(
   decryptedKey: string | null,
   hermesHomeRoot: string,
 ): RuntimeEnv {
+  if (!/^[A-Za-z0-9_-]+$/.test(config.tenantId)) throw new Error('Invalid tenantId');
   const homeDir = path.join(hermesHomeRoot, config.tenantId);
   const env: Record<string, string> = { HERMES_HOME: homeDir };
 
@@ -57,7 +58,8 @@ export function buildRuntimeEnv(
  * `providerKey` (cli-config.yaml.example:13-33), not Pulsar's provider id.
  */
 export function renderCliConfig(config: RuntimeConfigInput): string {
-  const yamlStr = (v: string) => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  const yamlStr = (v: string) =>
+    `"${v.replace(/[\r\n]+/g, ' ').replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
   const provider = getRuntimeProvider(config.provider);
   const providerKey = provider?.providerKey ?? config.provider;
   const lines = ['model:', `  provider: ${yamlStr(providerKey)}`];

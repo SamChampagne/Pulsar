@@ -37,4 +37,14 @@ describe('renderCliConfig', () => {
     expect(yaml).toContain('\\"');   // escaped quote present
     expect(yaml).not.toContain('"we"ird'); // no raw unescaped quote breaking the scalar
   });
+  it('strips newlines to prevent YAML injection', () => {
+    const yaml = renderCliConfig({
+      tenantId: 't1',
+      provider: 'custom',
+      authMode: 'apiKey',
+      defaultModel: 'm',
+      baseUrl: 'http://x\nmodel:\n  default: "evil"',
+    });
+    expect(yaml).not.toMatch(/\n\s*default:\s*"evil"/);
+  });
 });
