@@ -120,11 +120,16 @@ export const TOOL_REGISTRY: ToolDef[] = [
   },
   {
     name: 'create_load',
-    description: 'Create a new load. PROPOSED — requires human approval.',
+    description:
+      'Create a new (empty) load. Only an optional free-text `notes` field is accepted at ' +
+      'creation time. Carrier, driver, vehicle, trailer, rate, and transport mode are assigned ' +
+      'via separate actions (assign_load_resources / tender_load). PROPOSED — requires human approval.',
     tier: RiskTier.MUTATING,
     permission: T.PLANNING_MANAGE,
     module: MODULE_KEYS.TRANSPORTATION,
-    inputSchema: z.object({ mode: z.string().optional(), carrierId: z.string().optional() }).passthrough(),
+    inputSchema: z.object({
+      notes: z.string().optional(),
+    }),
     run: (args, ctx) =>
       ctx.services.loads.create(ctx.principal.user.tenantId, ctx.principal.user.id, args),
   },
