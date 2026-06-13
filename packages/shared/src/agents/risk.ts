@@ -1,4 +1,7 @@
-import { createHash } from 'node:crypto';
+// NOTE: `node:crypto` is intentionally NOT imported at module scope. This file is
+// re-exported from the @pulsar/shared barrel, which the web SPA bundles from source;
+// a static `node:crypto` import would break the browser build. `deriveIdempotencyKey`
+// (the only consumer) is API-only, so we resolve the module lazily at call time.
 
 // Mirrored in packages/database schema.prisma (Task 3 of the phase 11 plan).
 /** How a tool call is governed — independent of the RBAC permission it requires. */
@@ -68,6 +71,9 @@ function sortedStringify(val: unknown): string {
 
 /** Stable hash of tool + canonicalized args — the default idempotency key. */
 export function deriveIdempotencyKey(tool: string, args: Record<string, unknown>): string {
+  // Lazy require keeps `node:crypto` out of the browser bundle's static import graph.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { createHash } = require('node:crypto') as typeof import('node:crypto');
   return createHash('sha256')
     .update(`${tool}:${sortedStringify(args)}`)
     .digest('hex')
