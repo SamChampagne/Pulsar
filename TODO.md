@@ -421,3 +421,46 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
 - [ ] ACP runtime smoke (`HERMES_ENABLED`): verify real byte framing (newline-delimited),
       camelCase fields / snake_case methods, the `session/set_model` param key, and that
       non-permission reverse-ACP calls don't break a turn.
+
+## Phase 11 (R1 — runtime managé)
+
+Goal: Hermes is **installable and configurable from Pulsar**, per tenant, without editing `.env`.
+
+### Install + shared
+- [x] `scripts/setup-agents.mjs` (`pnpm agents:setup`): installs Hermes into `hermes-agent/.venv`
+      via **uv** (auto-fetches a standalone CPython 3.12 — Hermes pins 3.11–3.13, so no manual
+      Python install; idempotent venv create + always re-run pip install)
+- [x] `@pulsar/shared` `RUNTIME_PROVIDERS` provider catalog (pure data, browser-safe — no Node
+      import; api-key vs login providers, `keyEnvVar`/`loginCommand`)
+
+### API
+- [x] `AgentRuntimeConfig` Prisma model + 20th migration `20260613211931_phase11r1_agent_runtime_config`
+- [x] `agent-runtime-env.ts` env builder (per-tenant `HERMES_HOME`, provider key env var or login)
+      + `runtime-config.service.ts` (encrypts the API key via `CryptoService`, never returns it)
+- [x] `runtime-config.controller.ts` — `/agent-runtime` REST (`GET providers`, `GET`/`PUT`,
+      `POST test`) + `POST connect` **SSE** login (streams device code + URL); gated `agents.manage`
+- [x] `openSession` injects the resolved runtime config (env + decrypted key) into the spawned child
+- [x] E2E `phase11r1-agent-runtime.e2e-spec.ts`
+
+### Web
+- [x] **Settings → Runtime agents** page (pick provider, paste key or "Connecter" login over SSE)
+
+### Deferred (noted at reviews — do not "fix" silently)
+- [ ] **Vendoring**: decide whether `hermes-agent/` ships in the repo (commit) or as a git
+      submodule, so a fresh clone has it — today it's local/untracked (`.gitignore` only covers
+      `.venv`/`.hermes-home`).
+- [ ] **`HERMES_ENABLED` real smoke test**: install via `pnpm agents:setup`, configure a real
+      provider (or a login like Codex — note the `--type oauth` flag may be needed in the
+      `openai-codex` `loginCommand` of `runtime-providers.ts`), confirm `/test` lists models and a
+      ⌘K conversation gets a real reply + a proposed action.
+- [ ] `testConnection` doesn't surface real model names (`HermesAcpClient` has no advertised-models
+      API) — wire it when the client exposes models.
+- [ ] `connectLogin` has no `req.on('close')` abort — the login child is killed only on generator
+      teardown; add explicit abort on SSE disconnect.
+- [ ] `UpsertRuntimeDto` lacks `@ApiProperty` decorators (Swagger docs).
+- [ ] Carry forward palier-2a deferred items not yet resolved (auto-approve rate cap,
+      `tool_call`→`proposalId` persistence on `AgentMessage`, `AgentRuntime` `live` Map TTL/stderr
+      consumption, SSE client-disconnect abort + heartbeat, etc. — see the palier-2a list above).
+- [ ] **R2 (next palier): the rich agent UI Sam asked for** — an agent profile page; an activity
+      view ("what they do": conversations + tool calls + proposed actions per agent); guided config
+      with inline help; a first-class chat surface beyond the ⌘K drawer.

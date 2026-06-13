@@ -178,3 +178,44 @@ is isolated, a Hermes failure never crashes core Pulsar.
 Nothing here couples Pulsar to Hermes. The agent talks to Pulsar over the same `/api/v1/mcp`
 endpoint any MCP client uses; **Hermes is the reference runtime**, swappable for any other ACP/MCP
 brain that can call back into Pulsar with a session token.
+
+### Installer + configurer le runtime (R1)
+
+Palier 2a décrivait *comment* le runtime se branche ; R1 le rend **installable et configurable
+sans toucher au `.env`**. Trois étapes :
+
+1. **Installer Hermes** — depuis la racine du repo :
+
+   ```bash
+   pnpm agents:setup
+   ```
+
+   Le script installe Hermes dans `hermes-agent/.venv` via **[uv](https://docs.astral.sh/uv/)**,
+   qui **récupère automatiquement un CPython 3.12 autonome** (Hermes exige 3.11–3.13). Aucune
+   installation manuelle de Python n'est nécessaire — même une machine qui ne porte que Python
+   3.14 (qui ne peut pas *héberger* Hermes) fonctionne, car uv provisionne son propre 3.12. Le
+   script est idempotent (saute la création du venv s'il existe, rejoue toujours le `pip install`).
+
+2. **Configurer un provider** — dans **Réglages → Runtime agents** (permission
+   `core.agents.manage`), choisir un provider du catalogue puis, selon son type :
+   - **clé API** (OpenRouter, Anthropic, OpenAI, Nous Portal API, Custom…) : coller la clé.
+     Elle est **chiffrée au repos** (`enc:v1` via `CryptoService`) et n'est jamais renvoyée par
+     l'API ;
+   - **login OAuth** (Nous Portal, OpenAI Codex…) : cliquer **« Connecter »**. Pulsar lance la
+     commande de login de Hermes et **streame en SSE** le *device code* + l'URL à ouvrir dans le
+     navigateur ; les jetons obtenus vivent dans le `HERMES_HOME` **par tenant** (pas dans Pulsar).
+
+   Le bouton **« Tester »** (`POST /agent-runtime/test`) vérifie que le runtime démarre et liste
+   les modèles disponibles.
+
+3. **Parler à un agent** — ouvrir la palette **⌘K → « AI assistant »** et discuter. La
+   conversation streame via ACP comme au palier 2a ; les appels d'outils retombent dans la file
+   de gouvernance palier 1.
+
+**Endpoints** (`/api/v1/agent-runtime`, gated `core.agents.manage`) : `GET providers` (catalogue),
+`GET` / `PUT` (config du tenant, jamais la clé en clair), `POST test`, `POST connect` (SSE login).
+
+Le runtime est **par tenant** et **best-effort** : si Hermes est absent ou ne démarre pas,
+l'assistant renvoie *indisponible* (HTTP **503**) et le reste de Pulsar n'est pas affecté. Le
+catalogue de providers vit dans `@pulsar/shared` (`runtime-providers.ts`, pure data, utilisable
+côté navigateur — aucun import Node).

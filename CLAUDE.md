@@ -105,6 +105,12 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     le chemin d'auto-approbation (autonomie `ACT_LOW`/`AUTONOMOUS`) applique LUI AUSSI le plafond
     montant (`mcp-server.factory.ts`) — l'autonomie ne lève jamais les caps. Le runtime d'agent
     est best-effort et isolé : Hermes indisponible ⇒ 503, jamais de crash du cœur de Pulsar.
+25. (R1 — runtime managé) Le runtime Hermes s'installe via `pnpm agents:setup` (venv Python
+    provisionné par **uv**, CPython 3.12 autonome) et se configure ENTIÈREMENT dans Pulsar,
+    **par tenant** (`AgentRuntimeConfig`) : soit une clé API **chiffrée via `CryptoService`**
+    (jamais renvoyée en clair), soit un login OAuth dont les jetons vivent dans le `HERMES_HOME`
+    par tenant — jamais dans la BD Pulsar. La liste des providers vient du catalogue
+    `RUNTIME_PROVIDERS` de `@pulsar/shared` (**pure data, browser-safe, aucun import Node**).
 
 ## Adding a business module (the recipe)
 
