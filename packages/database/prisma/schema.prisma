@@ -68,6 +68,8 @@ model Tenant {
   proofsOfDelivery  ProofOfDelivery[]
   shipmentLoadLegs  ShipmentLoadLeg[]
   customerInvoices  CustomerInvoice[]
+  agents            Agent[]
+  proposedActions   ProposedAction[]
 
   @@map("tenants")
 }
@@ -113,6 +115,7 @@ model User {
   createdTransportOrders TransportOrder[]
   recordedTrackingEvents TrackingEvent[]
   receivedPods           ProofOfDelivery[]
+  agentServiceFor        Agent[]           @relation("AgentServiceUser")
 
   @@unique([tenantId, email])
   @@unique([tenantId, oidcSubject])
@@ -1303,4 +1306,75 @@ model ProofOfDelivery {
 
   @@index([tenantId])
   @@map("proof_of_deliveries")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 11 — Agent governance (mirrored enums in packages/shared/src/agents/risk.ts)
+// ---------------------------------------------------------------------------
+
+enum AgentStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum RiskTier {
+  READ
+  LOW
+  MUTATING
+  SENSITIVE
+}
+
+enum ProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXECUTED
+  FAILED
+}
+
+model Agent {
+  id            String      @id @default(cuid())
+  tenantId      String
+  name          String
+  description   String?
+  permissions   String[]
+  caps          Json        @default("{}")
+  prefix        String
+  secretHash    String      @unique
+  serviceUserId String
+  status        AgentStatus @default(ACTIVE)
+  lastUsedAt    DateTime?
+  createdById   String?
+  createdAt     DateTime    @default(now())
+  revokedAt     DateTime?
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  serviceUser User             @relation("AgentServiceUser", fields: [serviceUserId], references: [id])
+  proposals   ProposedAction[]
+
+  @@index([tenantId])
+  @@map("agents")
+}
+
+model ProposedAction {
+  id             String         @id @default(cuid())
+  tenantId       String
+  agentId        String
+  triggeredByRef String?
+  tool           String
+  argsJson       Json
+  riskTier       RiskTier
+  status         ProposalStatus @default(PENDING)
+  idempotencyKey String
+  decidedById    String?
+  decidedAt      DateTime?
+  resultJson     Json?
+  proposedAt     DateTime       @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  agent  Agent  @relation(fields: [agentId], references: [id])
+
+  @@unique([agentId, idempotencyKey])
+  @@index([tenantId, status])
+  @@map("proposed_actions")
 }
