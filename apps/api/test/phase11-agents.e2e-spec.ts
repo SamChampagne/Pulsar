@@ -120,6 +120,7 @@ describe('Phase 11 — agent governance (e2e)', () => {
   });
 
   it('enqueues a mutating tool instead of executing it', async () => {
+    const loadsBefore = await prisma.load.count();
     const before = await prisma.proposedAction.count();
     const res = await mcp('tools/call', {
       name: 'create_load',
@@ -130,6 +131,7 @@ describe('Phase 11 — agent governance (e2e)', () => {
     expect(payload.queued).toBe(true);
     expect(payload.status).toBe('PENDING');
     expect(await prisma.proposedAction.count()).toBe(before + 1);
+    expect(await prisma.load.count()).toBe(loadsBefore); // mutation was queued, not executed
   });
 
   it('rejects a tender above the amount cap', async () => {
@@ -140,7 +142,7 @@ describe('Phase 11 — agent governance (e2e)', () => {
     const envelope = parseMcp(res);
     // MCP surfaces tool errors as isError content; assert the cap message surfaced.
     const text = JSON.stringify(envelope.result ?? envelope.error);
-    expect(text).toContain('cap');
+    expect(text).toContain('exceeds the agent cap of 1500');
   });
 
   it('approving a pending proposal executes it and audits the approver', async () => {
