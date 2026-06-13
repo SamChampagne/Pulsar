@@ -81,6 +81,24 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     et les coordonnées origine/destination du shipment — jamais d'historique ni les
     autres stops d'une tournée. `active-map` n'embarque pas de géométrie.
 
+## Hard rules (continued, phase 11)
+
+21. Les outils exposés à un agent passent TOUJOURS par le registre
+    (`core/agents/tool-registry.ts`) : un outil = {tier, permission, module, schéma zod,
+    handler}. Jamais exposer une opération en appelant un contrôleur directement ; le
+    handler réutilise les services métier existants via l'adaptateur `AGENT_TOOL_SERVICES`.
+22. Un outil `MUTATING`/`SENSITIVE` ne s'exécute JAMAIS dans le handler MCP : il est mis en
+    file comme `ProposedAction`. Seul `ProposedActionsService.approve` exécute le vrai appel,
+    après re-vérification du statut (claim atomique `updateMany PENDING→APPROVED`) et des
+    plafonds, attribué au service-user de l'agent et audité avec l'approbateur. READ/LOW
+    s'exécutent en direct.
+23. La portée d'un agent = ses `permissions` ∩ modules activés du tenant ∩
+    `caps.toolAllowlist` (filtré dans `buildAgentMcpServer`). `caps.autoApprove` est le SEUL
+    contournement de la file (exécution directe d'un outil mutating sans humain) ; l'audit
+    repose alors sur les services métier sous-jacents (`@Audit`/`AuditLogsService.log`).
+    Les plafonds (`evaluateAmountCap`/`evaluateRateCap`) et l'idempotence
+    (`deriveIdempotencyKey`) vivent dans `@pulsar/shared` — ne pas les réimplémenter.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
