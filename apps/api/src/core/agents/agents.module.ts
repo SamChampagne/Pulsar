@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { CryptoModule } from '../crypto/crypto.module';
 import { TransportationModule } from '../../modules/transportation/transportation.module';
 import { TransportOrdersService } from '../../modules/transportation/transport-orders/transport-orders.service';
 import { LoadsService } from '../../modules/transportation/loads/loads.service';
@@ -16,6 +17,8 @@ import { AGENT_TOOL_SERVICES, type ToolServices } from './tool-registry';
 import { AgentRuntimeService } from './agent-runtime.service';
 import { AgentConversationsService } from './agent-conversations.service';
 import { AgentConversationsController } from './agent-conversations.controller';
+import { RuntimeConfigService } from './runtime-config.service';
+import { RuntimeConfigController } from './runtime-config.controller';
 
 /**
  * Agent governance + MCP exposure (phase 11).
@@ -30,13 +33,20 @@ import { AgentConversationsController } from './agent-conversations.controller';
  * and importing TransportationModule globally would risk widening its surface.
  */
 @Module({
-  imports: [TransportationModule, AuditLogsModule],
-  controllers: [AgentsController, ProposedActionsController, McpController, AgentConversationsController],
+  imports: [TransportationModule, AuditLogsModule, CryptoModule],
+  controllers: [
+    AgentsController,
+    ProposedActionsController,
+    McpController,
+    AgentConversationsController,
+    RuntimeConfigController,
+  ],
   providers: [
     AgentsService,
     ProposedActionsService,
     AgentRuntimeService,
     AgentConversationsService,
+    RuntimeConfigService,
     {
       provide: AGENT_TOOL_SERVICES,
       inject: [

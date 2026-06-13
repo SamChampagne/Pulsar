@@ -47,6 +47,7 @@ export class AgentConversationsController {
   async start(@CurrentUser() user: AuthUser, @Body() dto: StartDto) {
     const agent = await this.agents.getOwned(user.tenantId, dto.agentId);
     const sessionId = await this.runtime.openSession({
+      tenantId: user.tenantId,
       agent: { id: agent.id, model: agent.model, persona: agent.persona },
       pulsarMcpUrl: PULSAR_MCP_URL,
     });
