@@ -148,7 +148,7 @@ export class AgentsService {
       const currentCaps = (existing.caps ?? {}) as AgentCaps;
       caps = this.applyAutonomy(
         input.autonomyLevel ?? (existing.autonomyLevel as AgentAutonomy | undefined),
-        input.caps ?? currentCaps,
+        { ...currentCaps, ...(input.caps ?? {}) },
       );
     }
     return this.prisma.agent.update({
@@ -173,7 +173,7 @@ export class AgentsService {
       where: { id, tenantId },
       select: { id: true, model: true, persona: true, status: true, name: true },
     });
-    if (!agent || agent.status === 'REVOKED') throw new NotFoundException('Agent not found');
+    if (!agent || agent.status === AgentStatus.REVOKED) throw new NotFoundException('Agent not found');
     return agent;
   }
 
