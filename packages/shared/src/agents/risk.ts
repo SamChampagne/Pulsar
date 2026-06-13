@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+// Mirrored in packages/database schema.prisma (Task 3 of the phase 11 plan).
 /** How a tool call is governed — independent of the RBAC permission it requires. */
 export enum RiskTier {
   READ = 'READ',
@@ -8,11 +9,13 @@ export enum RiskTier {
   SENSITIVE = 'SENSITIVE',
 }
 
+// Mirrored in packages/database schema.prisma (Task 3 of the phase 11 plan).
 export enum AgentStatus {
   ACTIVE = 'ACTIVE',
   REVOKED = 'REVOKED',
 }
 
+// Mirrored in packages/database schema.prisma (Task 3 of the phase 11 plan).
 export enum ProposalStatus {
   PENDING = 'PENDING',
   APPROVED = 'APPROVED',
@@ -32,7 +35,10 @@ export interface CapResult {
 }
 
 /** Monetary ceiling per action. Unknown amount or unset cap => pass. */
-export function evaluateAmountCap(amount: number | undefined, maxAmount: number | undefined): CapResult {
+export function evaluateAmountCap(
+  amount: number | undefined,
+  maxAmount: number | undefined,
+): CapResult {
   if (amount === undefined || maxAmount === undefined) return { ok: true };
   if (amount > maxAmount) {
     return { ok: false, reason: `Amount ${amount} exceeds the agent cap of ${maxAmount}.` };
@@ -49,8 +55,21 @@ export function evaluateRateCap(recentCount: number, maxPerMinute: number | unde
   return { ok: true };
 }
 
+function sortedStringify(val: unknown): string {
+  if (val === null || typeof val !== 'object' || Array.isArray(val)) {
+    return JSON.stringify(val);
+  }
+  const obj = val as Record<string, unknown>;
+  const sorted = Object.keys(obj)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${sortedStringify(obj[k])}`);
+  return `{${sorted.join(',')}}`;
+}
+
 /** Stable hash of tool + canonicalized args — the default idempotency key. */
 export function deriveIdempotencyKey(tool: string, args: Record<string, unknown>): string {
-  const canonical = JSON.stringify(args, Object.keys(args).sort());
-  return createHash('sha256').update(`${tool}:${canonical}`).digest('hex').slice(0, 32);
+  return createHash('sha256')
+    .update(`${tool}:${sortedStringify(args)}`)
+    .digest('hex')
+    .slice(0, 32);
 }

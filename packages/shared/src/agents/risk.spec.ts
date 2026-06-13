@@ -58,4 +58,9 @@ describe('deriveIdempotencyKey', () => {
     expect(a).not.toBe(b);
     expect(a).not.toBe(c);
   });
+  it('is stable regardless of nested key ordering', () => {
+    const a = deriveIdempotencyKey('t', { opts: { z: 1, a: 2 } });
+    const b = deriveIdempotencyKey('t', { opts: { a: 2, z: 1 } });
+    expect(a).toBe(b);
+  });
 });
