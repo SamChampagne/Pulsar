@@ -71,6 +71,7 @@ model Tenant {
   agents            Agent[]
   proposedActions   ProposedAction[]
   agentConversations AgentConversation[]
+  agentRuntimeConfig AgentRuntimeConfig?
 
   @@map("tenants")
 }
@@ -1421,4 +1422,23 @@ model ProposedAction {
   @@unique([agentId, idempotencyKey])
   @@index([tenantId, status])
   @@map("proposed_actions")
+}
+
+model AgentRuntimeConfig {
+  id           String    @id @default(cuid())
+  tenantId     String    @unique
+  provider     String
+  authMode     String
+  apiKeyEnc    String?
+  defaultModel String?
+  baseUrl      String?
+  connectedAt  DateTime?
+  lastTestAt   DateTime?
+  lastTestOk   Boolean?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("agent_runtime_configs")
 }
