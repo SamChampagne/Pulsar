@@ -461,6 +461,40 @@ Goal: Hermes is **installable and configurable from Pulsar**, per tenant, withou
 - [ ] Carry forward palier-2a deferred items not yet resolved (auto-approve rate cap,
       `tool_call`→`proposalId` persistence on `AgentMessage`, `AgentRuntime` `live` Map TTL/stderr
       consumption, SSE client-disconnect abort + heartbeat, etc. — see the palier-2a list above).
-- [ ] **R2 (next palier): the rich agent UI Sam asked for** — an agent profile page; an activity
+- [x] **R2 (next palier): the rich agent UI Sam asked for** — an agent profile page; an activity
       view ("what they do": conversations + tool calls + proposed actions per agent); guided config
-      with inline help; a first-class chat surface beyond the ⌘K drawer.
+      with inline help; a first-class chat surface beyond the ⌘K drawer. **(shipped in R2 below)**
+
+## Phase 11 (R2 — agents experience: first-class)
+
+Goal: agents are **first-class citizens** of the UI — a roster, a per-agent profile + guided
+config, an activity view, and a dedicated chat surface.
+
+### Shared
+- [x] `@pulsar/shared` `AGENT_ROLE_PRESETS` (pure data, browser-safe): dispatcher / billing-clerk /
+      analyst, each with persona + suggested permissions + suggested autonomy (`role-presets.ts`,
+      vitest `role-presets.spec`)
+
+### API
+- [x] `GET /agents/:id` projects the profile (`role`/`persona`/`autonomyLevel`/`permissions`) and
+      **never leaks `secretHash`/`serviceUserId`** (shared `agentSelect`)
+- [x] `GET /agents/:id/activity` → `{ conversations, proposedActions, stats }` scoped tenant+agent
+      (counters: conversations/pending/executed/rejected); gated `core.agents.read`
+- [x] E2E `phase11r2-agent-experience.e2e-spec.ts` (profile projection + no-leak, bogus-id 404,
+      empty-then-populated activity)
+
+### Web
+- [x] Top-level **Agents** nav (gated `core.agents.read`) → roster of employee cards
+- [x] Per-agent page `/agents/[id]` — **Profil & config guidée** (inline help + role presets),
+      **Activité** (conversations + proposed actions + counters), **Chat** (talk to this employee)
+
+### Deferred (noted at reviews — do not "fix" silently)
+- [ ] `tool_call` → `proposalId` linkage on the activity list (today the proposed-action list and
+      the conversation list are shown side by side, not threaded — needs `AgentMessage.proposalId`
+      persistence carried forward from palier 2a).
+- [ ] `riskTier` badge tone mapping for `MUTATING`/`SENSITIVE` on the agent activity list (minor
+      cosmetic — currently a neutral tone for all tiers).
+- [ ] **hermes-agent/ vendoring** (carried from R1): decide commit vs submodule so a fresh clone
+      has the runtime — today it's local/untracked.
+- [ ] **`HERMES_ENABLED` real smoke test** (carried from R1): install + configure a real provider,
+      confirm `/test` lists models and a chat turn yields a real reply + proposed action.

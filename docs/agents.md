@@ -219,3 +219,23 @@ Le runtime est **par tenant** et **best-effort** : si Hermes est absent ou ne d�
 l'assistant renvoie *indisponible* (HTTP **503**) et le reste de Pulsar n'est pas affecté. Le
 catalogue de providers vit dans `@pulsar/shared` (`runtime-providers.ts`, pure data, utilisable
 côté navigateur — aucun import Node).
+
+### Espace Agents (R2)
+
+R2 fait des agents des **citoyens de premier ordre** de l'UI : un onglet **Agents** au niveau
+supérieur de la navigation (gated `core.agents.read`) mène à un **roster de cartes « employés »**
+(une par agent : avatar, rôle, niveau d'autonomie, statut). Cliquer une carte ouvre la **page de
+l'agent** (`/agents/[id]`) à trois volets :
+
+- **Profil & config guidée** — édition de la persona, du rôle, du modèle, du niveau d'autonomie
+  et des permissions, avec de l'**aide inline** et des **presets de rôle** (`AGENT_ROLE_PRESETS`
+  de `@pulsar/shared` : répartiteur, commis à la facturation, analyste — chacun avec persona +
+  permissions + autonomie suggérées) pour démarrer en un clic.
+- **Activité** — les **conversations** récentes et les **actions proposées** de l'agent, plus des
+  **compteurs** (`conversations`, `pending`, `executed`, `rejected`).
+- **Chat** — parler directement à cet employé (même chemin ACP/gouvernance que la palette ⌘K).
+
+**Endpoints** : `GET /api/v1/agents/:id` projette le profil (`role`, `persona`, `autonomyLevel`,
+`permissions`) **sans jamais exposer** le `secretHash` ni le `serviceUserId` ; `GET
+/api/v1/agents/:id/activity` renvoie `{ conversations, proposedActions, stats }`, **scopé au
+tenant + à l'agent**. Les deux sont gated `core.agents.read`.

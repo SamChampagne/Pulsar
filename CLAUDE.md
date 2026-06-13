@@ -111,6 +111,11 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     (jamais renvoyée en clair), soit un login OAuth dont les jetons vivent dans le `HERMES_HOME`
     par tenant — jamais dans la BD Pulsar. La liste des providers vient du catalogue
     `RUNTIME_PROVIDERS` de `@pulsar/shared` (**pure data, browser-safe, aucun import Node**).
+26. (R2 — espace agents) L'UI des agents est de premier ordre : `/agents` (roster de cartes
+    employés) + `/agents/[id]` (profil & config guidée, activité, chat). `GET /agents/:id` et
+    `GET /agents/:id/activity` n'exposent JAMAIS `secretHash`/`serviceUserId` (projection via le
+    `agentSelect` partagé) ; les presets de rôle vivent dans `AGENT_ROLE_PRESETS` de
+    `@pulsar/shared` (pure data).
 
 ## Adding a business module (the recipe)
 
