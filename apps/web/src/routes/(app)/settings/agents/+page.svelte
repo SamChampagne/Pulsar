@@ -128,7 +128,8 @@
 <p class="mb-4 text-sm text-ink-muted">
   AI agents act through the MCP server with scoped permissions and optional caps. Mutating actions
   land in the actions inbox for review; reads run live. The agent key authenticates via the
-  <code class="rounded bg-surface-muted px-1 text-xs">X-Api-Key</code> header.
+  <code class="rounded bg-surface-muted px-1 text-xs">X-Agent-Key</code> header on
+  <code class="rounded bg-surface-muted px-1 text-xs">POST /api/v1/mcp</code>.
 </p>
 
 {#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}

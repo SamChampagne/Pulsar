@@ -362,4 +362,12 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
 - [ ] `create_load` tool only accepts `notes` (the real `CreateLoadDto`); carrier/mode/resource
       assignment needs separate tools before an agent can build a complete load end-to-end.
 - [ ] Rate-limit / throttle the public `POST /mcp` endpoint (currently agent-key gated but
-      unthrottled, unlike the public driver endpoints).
+      unthrottled, unlike the public driver endpoints — `ThrottlerGuard` 20/min/IP).
+- [ ] `ProposedActionsService.approve` does not re-check `agent.status === ACTIVE` nor module
+      activation before executing — a proposal enqueued before the agent was revoked / the module
+      disabled would still run on approval. Human approval is the gate, but re-checking would
+      align with rule 15 and the factory's own filtering.
+- [ ] `enqueue` idempotency TOCTOU: two concurrent identical calls both pass the `findUnique`
+      check then `create`; the `(agentId, idempotencyKey)` unique index makes the second throw
+      P2002 (uncaught → 500). No duplicate side effect (mutations don't run at enqueue). Catch
+      P2002 and return the existing projection.

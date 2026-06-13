@@ -116,6 +116,7 @@
     { label: 'Réglages', visible: true, items: [
       { href: '/settings/users', label: 'Users' },
       { href: '/settings/api-keys', label: 'API keys' },
+      { href: '/settings/agents', label: 'Agents' },
       { href: '/settings/modules', label: 'Modules' },
       { href: '/settings/sso', label: 'SSO' },
     ]},
