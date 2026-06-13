@@ -324,3 +324,50 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
 - [ ] Customer Portal module (new `apps/api/src/modules/customer-portal`, flips `available` in
       module catalog)
 - [ ] Billing foundations (rated loads → invoice drafts)
+
+## Phase 11 (palier 1) — Agent governance + MCP exposure
+
+### Shared + DB
+- [x] `@pulsar/shared` agent vocabulary: `RiskTier`/`AgentStatus`/`ProposalStatus` enums +
+      pure helpers `isExecutableLive`/`evaluateAmountCap`/`evaluateRateCap`/`deriveIdempotencyKey`
+      (vitest, browser-safe — `node:crypto` resolved lazily)
+- [x] `agents.*` permission catalog entries (`core.agents.read|manage|actions.read|actions.approve`)
+- [x] Prisma `Agent` + `ProposedAction` models (+ 3 enums), 18th migration
+
+### API
+- [x] `AgentsService` — register/list/revoke + one hidden DISABLED service-user per agent +
+      `validateKey` → `AgentPrincipal` (rule 13)
+- [x] `AgentsController` — JWT-auth CRUD (`agents.read`/`agents.manage`)
+- [x] Tool registry — 8 dispatch tools (tier/permission/module/zod/handler over real TMS services)
+- [x] `ProposedActionsService` — idempotent capped enqueue, race-safe approve (execute+audit)/reject
+- [x] MCP server factory — per-agent scoped tool surface (permission ∩ modules ∩ allowlist)
+- [x] `POST /api/v1/mcp` Streamable-HTTP stateless endpoint (agent-key auth, `@Public`) +
+      `agent-actions` inbox controller (`agents.actions.read`/`agents.actions.approve`)
+- [x] `AgentsModule` wired into `AppModule`; tool-services adapter bridges the registry to real services
+- [x] E2E governance flow (`phase11-agents.e2e-spec.ts`, 7 tests)
+
+### Web
+- [x] Settings → Agents page (register, scopes, caps, one-time key reveal)
+- [x] Agent-actions inbox + nav badge (gated on `core.agents.actions.read`; actions gated on approve)
+
+### Docs
+- [x] `docs/agents.md` Hermes/MCP connection guide; CLAUDE.md hard rules 21–23; status + TODO
+
+### Deferred (noted at reviews — do not "fix" silently)
+- [ ] `caps.autoApprove` bypasses the proposed-actions queue and its audit entity; audit then
+      relies on the underlying TMS services' own `@Audit`/`AuditLogsService.log`. If autoApprove
+      is used for SENSITIVE tools, add an explicit agent-action audit trail for it.
+- [ ] `agent-actions` badge fetches the full pending list just to count `.length` — add a
+      count-only endpoint when pending volumes grow.
+- [ ] `create_load` tool only accepts `notes` (the real `CreateLoadDto`); carrier/mode/resource
+      assignment needs separate tools before an agent can build a complete load end-to-end.
+- [ ] Rate-limit / throttle the public `POST /mcp` endpoint (currently agent-key gated but
+      unthrottled, unlike the public driver endpoints — `ThrottlerGuard` 20/min/IP).
+- [ ] `ProposedActionsService.approve` does not re-check `agent.status === ACTIVE` nor module
+      activation before executing — a proposal enqueued before the agent was revoked / the module
+      disabled would still run on approval. Human approval is the gate, but re-checking would
+      align with rule 15 and the factory's own filtering.
+- [ ] `enqueue` idempotency TOCTOU: two concurrent identical calls both pass the `findUnique`
+      check then `create`; the `(agentId, idempotencyKey)` unique index makes the second throw
+      P2002 (uncaught → 500). No duplicate side effect (mutations don't run at enqueue). Catch
+      P2002 and return the existing projection.

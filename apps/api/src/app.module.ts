@@ -6,6 +6,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { ApiKeysModule } from './core/api-keys/api-keys.module';
+import { AgentsModule } from './core/agents/agents.module';
 import { EmailModule } from './core/email/email.module';
 import { RoutingModule } from './core/routing/routing.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -42,6 +43,7 @@ import { BillingModule } from './modules/billing/billing.module';
     EmailModule,
     RoutingModule,
     ApiKeysModule,
+    AgentsModule,
     // Core platform modules
     AuthModule,
     TenantsModule,

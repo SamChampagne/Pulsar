@@ -96,6 +96,14 @@ import { BolService } from './bol/bol.service';
     BolService,
     DelayDetectionService,
   ],
-  exports: [RatingService],
+  exports: [
+    RatingService,
+    // Consumed by the AgentsModule tool-services adapter (core/agents).
+    TransportOrdersService,
+    LoadsService,
+    ShipmentsService,
+    TendersService,
+    AnalyticsService,
+  ],
 })
 export class TransportationModule {}

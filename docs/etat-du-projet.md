@@ -1,7 +1,7 @@
 # État du projet — point de reprise
 
 > 🇫🇷 Document de synthèse pour reprendre le travail (humain ou session Claude Code).
-> Mis à jour à la fin de la **phase 10**. Détail des tâches : [TODO.md](../TODO.md) ·
+> Mis à jour à la fin du **palier 1 de la phase 11**. Détail des tâches : [TODO.md](../TODO.md) ·
 > vision : [ROADMAP.md](../ROADMAP.md) · règles de dev : [CLAUDE.md](../CLAUDE.md) ·
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
@@ -25,6 +25,7 @@
 | 8 — Ligne MVP audit fermée (BOL, modes, exceptions) | ✅ | **BOL généré** : `buildBolData` pure (shipper = 1er stop PICKUP / fallback originLocation ; consignee = dernier DELIVERY / fallback destinationLocation), `renderBol` pdfkit (LETTER, 3 blocs signature + lignes exceptions + conditions), `BolService.generate` (DISPATCHED+, séquence BOL-, entityType `bill-of-lading`, audité), `POST /loads/:id/bol`, `GET /loads/:id/documents`, `GET /public/driver/:token/bol` (token-résolu, pas d'id interne dans le payload public, 404 si pas encore généré) ; **mode de transport** : enum `TransportMode` (FTL/LTL/PARCEL) sur `TransportOrder`, `Load`, `Rate` (null = tous modes), filtrage des deux côtés au rating, héritage premier-assign, `modeWarning` non bloquant, `suggestMode` hint (≤30 kg PARCEL / ≤4000 kg LTL / au-dessus FTL) — arbitrage à seuils non couvert (§4) ; **moteur d'exceptions** : `isLate` pure, cron 5 min + `tick(now)`, dedup `(stopId, deadline)`, événement `DELAYED` + `Notification` tenant (userId nullable, read-by-one = read-for-all v1), cloche UI ; 15ᵉ migration |
 | 9 — Refonte UI (console hybride) | ✅ | **Design system maison** (Tailwind 4, tokens CSS prêts dark-mode, 17 composants `$lib/components/ui` + barrel), **shell repliable** (sidebar sombre par groupes, palette ⌘K navigation+actions avec slot assistant IA réservé, cloche notifications, pile d'overlays Escape), **28 pages refondues** (pattern liste+Panel, densité commutable persistée, skeletons, Modals form-in-children, helpers format), **LoadMap Leaflet** (détail load interne : stops + dernière position, lecture seule), pages publiques re-skinnées **sans exposition supplémentaire** (notes tender et liste shipments chauffeur retirées au passage), plan plateforme distinct (badge danger). **Zéro changement API** (`git diff main -- apps/api packages` vide) ; 93 e2e + 89 unit verts. Carte publique différée (payload sans coordonnées). Retours du test manuel intégrés : pages détail résilientes aux échecs des appels auxiliaires, modal rates élargi, **UI MFA plateforme livrée** (TOTP, enrôlement forcé, recovery codes — vérifiée par login TOTP réel) |
 | 10 — OSRM + carte opérationnelle | ✅ | **Moteur carto** `RoutingService` core (drivers env `ROUTING_DRIVER`/`GEOCODING_DRIVER`, défaut `none`, timeout 3 s best-effort, jamais bloquant), distances/durées auto au build de route (`distanceSource MANUAL\|OSRM\|HAVERSINE`, manuel jamais écrasé — y compris demi-coordonnées, géométrie GeoJSON simplifiée stockée même en manuel), **fallback haversine** badgé « estimate » dans l'UI ; **géocodage Nominatim** (cache BD global `geocode_cache`, 1 req/s in-process, UA custom, échec jamais mis en cache) au create/update de location ; **positions chauffeur** (`POST /public/driver/:token/position` borné ±90/±180, re-check module, throttlé 20/min/IP, dédoublonné 60 s + dedupKey minute race-proof ; pings page chauffeur : immédiat + visibilitychange + 2 min, indicateur avec opt-out) ; **carte live dashboard** (`GET /loads/active-map` sans géométrie, `isLate` du moteur d'exceptions réutilisé, OpsMap polling 45 s onglet visible, retards rouges, fitBounds premier chargement seulement) ; **suivi public avec carte** (lastPosition + coords o/d, jamais d'historique ni les autres stops) ; géométrie OSRM réelle sur le détail load (`L.geoJSON`) ; docker profil `osrm` opt-in + doc d'amorçage ; e2e OSRM réel conditionnelle ; 17ᵉ migration ; 10 e2e phase 10 |
+| 11 (palier 1) — Gouvernance d'agents + MCP | ✅ | **Identité `Agent`** (cousine d'`ApiKey` : permissions + `caps` + un service-user caché DISABLED PAR agent pour l'attribution d'audit, jamais loginable ; clé `ak_` montrée une seule fois, hash sha256 stocké) ; **endpoint MCP Streamable-HTTP stateless** `POST /api/v1/mcp` (auth par clé d'agent via header `X-Agent-Key`, `@modelcontextprotocol/sdk` 1.29) qui n'expose que les outils autorisés = permissions ∩ modules du tenant ∩ `caps.toolAllowlist` ; **8 outils dispatch** dans un registre unique (tier/permission/module/zod/handler réutilisant les services TMS) — READ/LOW exécutés en direct, MUTATING/SENSITIVE mis en **file `ProposedAction`** (idempotente sur `(agentId, idempotencyKey)`, plafonds montant + débit/min vérifiés à l'enfilage) ; **inbox d'approbation humaine** (`GET /agent-actions`, `POST :id/approve\|reject`, permissions `core.agents.actions.*`) : l'approbation re-vérifie le statut (claim atomique) puis exécute le vrai appel attribué à l'agent et audité avec l'approbateur ; `caps.autoApprove` = seul contournement de la file ; **2 pages web** (réglages agents avec clé unique + scopes + plafonds ; inbox actions avec badge nav gated `core.agents.actions.read`) ; aucun LLM ne tourne dans Pulsar à ce palier (BYO-agent, MCP-agnostique, Hermes = client de référence) ; **guide de connexion [docs/agents.md](./agents.md)** ; 18ᵉ migration ; 7 e2e phase 11 |
 
 **La boucle économique complète fonctionne** : le client commande depuis son portail →
 confirmation → planification (split possible) → tender automatique par lane avec courriel →
@@ -33,10 +34,11 @@ POD avec photo → BOL PDF généré → détection automatique des retards → 
 brouillon → approbation → relevé client.
 
 **Chiffres** : 3 modules métier actifs (transportation, customer-portal, billing) + le plan
-d'administration plateforme ; 17 migrations ; ~80 endpoints (dont `loads/active-map` et
-`public/driver/:token/position`) ; 28 pages web sur le design system phase 9 (Tailwind 4,
-17 composants partagés) ; carte opérationnelle live sur le dashboard + cartes Leaflet sur
-le détail load et le suivi public (phase 10).
+d'administration plateforme ; 18 migrations ; ~85 endpoints (dont `loads/active-map`,
+`public/driver/:token/position` et `mcp` / `agents` / `agent-actions`) ; 30 pages web sur le
+design system phase 9 (Tailwind 4, 17 composants partagés) ; carte opérationnelle live sur le
+dashboard + cartes Leaflet sur le détail load et le suivi public (phase 10) ; couche
+gouvernance d'agents + endpoint MCP exposant 8 outils dispatch sous validation humaine (phase 11).
 
 ## Carte de la documentation
 
@@ -49,16 +51,22 @@ le détail load et le suivi public (phase 10).
 | Isolation tenant / système de modules | [multi-tenancy.md](./multi-tenancy.md) · [module-system.md](./module-system.md) |
 | Conventions REST | [api-conventions.md](./api-conventions.md) |
 | Démarrage local | [getting-started.md](./getting-started.md) |
+| Connexion d'un agent IA (MCP) / Hermes | [agents.md](./agents.md) |
 
-## Prochaine session — phase 11 : différenciateurs IA (décidé)
+## Prochaine session — phase 11 paliers 2+
 
-La **phase 10 (OSRM + carte opérationnelle) est livrée** sur la branche `phase-10` —
-**PR à créer + test manuel par Sam** : carte dashboard, page chauffeur géoloc sur
-téléphone, carte publique, badge « estimate » (les e2e ne couvrent pas le rendu visuel).
+Le **palier 1 de la phase 11 (gouvernance d'agents + exposition MCP) est livré** sur la
+branche `phase-11` — **PR à créer + test manuel par Sam** : enregistrer un agent dans
+Réglages → Agents, brancher un client MCP (voir [docs/agents.md](./agents.md)), vérifier que
+les lectures passent en direct et que les mutations atterrissent dans l'inbox Agent actions.
 
-**Prochain chantier décidé : phase 11 — différenciateurs IA** :
-- **§19.2 agent opérationnel** avec file « actions proposées » pour validation humaine —
-  la palette ⌘K de la phase 9 lui réserve déjà son slot dans l'UI ;
+Pulsar reste **MCP-agnostique** : n'importe quel client MCP (Claude Desktop, un script, Hermes)
+peut s'y connecter ; aucun LLM ne tourne dans Pulsar. Hermes est le client de référence, pas
+une dépendance.
+
+**Paliers suivants envisagés (différenciateurs IA, §19) :**
+- **§19.2** élargir le catalogue d'outils + références de conversation (`triggeredByRef`) +
+  télémétrie d'usage par agent ;
 - **§19.1 ingestion de grilles tarifaires** ;
 - **§19.4 extraction factures PDF**.
 
