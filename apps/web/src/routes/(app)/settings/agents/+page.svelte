@@ -8,6 +8,8 @@
     Button,
     Field,
     Input,
+    Select,
+    Textarea,
     Table,
     Badge,
     EmptyState,
@@ -15,6 +17,8 @@
     Skeleton,
     Modal,
   } from '$lib/components/ui';
+
+  type AutonomyLevel = 'PROPOSE' | 'ACT_LOW' | 'AUTONOMOUS';
 
   interface AgentRow {
     id: string;
@@ -26,6 +30,11 @@
     lastUsedAt: string | null;
     revokedAt: string | null;
     createdAt: string;
+    role?: string;
+    autonomyLevel?: AutonomyLevel;
+    avatar?: string;
+    model?: string;
+    persona?: string;
   }
 
   // Dispatch-relevant scopes the agent tools use (transportation read/manage + analytics).
@@ -40,6 +49,12 @@
     description: PERMISSION_CATALOG.find((p) => p.key === key)?.description ?? key,
   }));
 
+  const AUTONOMY_OPTIONS: { value: AutonomyLevel; label: string; hint: string }[] = [
+    { value: 'PROPOSE', label: 'PROPOSE', hint: 'Every mutation needs approval' },
+    { value: 'ACT_LOW', label: 'ACT_LOW', hint: 'Auto-runs low-risk mutations' },
+    { value: 'AUTONOMOUS', label: 'AUTONOMOUS', hint: 'Auto-runs all (still bounded by caps)' },
+  ];
+
   let agents = $state<AgentRow[]>([]);
   let error = $state('');
   let loading = $state(true);
@@ -49,6 +64,11 @@
   let permissions = $state<string[]>([]);
   let maxAmountPerAction = $state('');
   let maxActionsPerMinute = $state('');
+  let persona = $state('');
+  let role = $state('');
+  let model = $state('');
+  let autonomyLevel = $state<AutonomyLevel>('PROPOSE');
+  let avatar = $state('');
   let createdKey = $state('');
 
   async function load() {
@@ -83,6 +103,11 @@
           ...(description.trim() ? { description } : {}),
           permissions,
           caps,
+          ...(persona.trim() ? { persona } : {}),
+          ...(role.trim() ? { role } : {}),
+          ...(model.trim() ? { model } : {}),
+          autonomyLevel,
+          ...(avatar.trim() ? { avatar } : {}),
         },
       });
       createdKey = created.key;
@@ -91,6 +116,11 @@
       permissions = [];
       maxAmountPerAction = '';
       maxActionsPerMinute = '';
+      persona = '';
+      role = '';
+      model = '';
+      autonomyLevel = 'PROPOSE';
+      avatar = '';
       showForm = false;
       await load();
     } catch (e) {
@@ -162,7 +192,10 @@
     {#snippet body()}
       {#each agents as agent (agent.id)}
         <tr>
-          <td class="font-semibold">{agent.name}</td>
+          <td class="font-semibold">
+            {#if agent.avatar}<span class="mr-1">{agent.avatar}</span>{/if}{agent.name}
+            {#if agent.role}<span class="ml-1.5 text-xs text-ink-muted">({agent.role})</span>{/if}
+          </td>
           <td><code class="text-xs text-ink-muted">{agent.prefix}…</code></td>
           <td class="text-xs text-ink-muted">{agent.permissions.length} scope{agent.permissions.length === 1 ? '' : 's'}</td>
           <td class="text-ink-muted">{formatDateTime(agent.createdAt)}</td>
@@ -200,6 +233,33 @@
       <div class="mt-3">
         <Field label="Description">
           <Input bind:value={description} placeholder="Optional — what this agent does" />
+        </Field>
+      </div>
+      <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Role">
+          <Input bind:value={role} placeholder="e.g. Répartiteur" />
+        </Field>
+        <Field label="Avatar (emoji)">
+          <Input bind:value={avatar} placeholder="e.g. 🚛" />
+        </Field>
+      </div>
+      <div class="mt-3">
+        <Field label="Model">
+          <Input bind:value={model} placeholder="e.g. anthropic:claude-sonnet-4-6" />
+        </Field>
+      </div>
+      <div class="mt-3">
+        <Field label="Persona">
+          <Textarea bind:value={persona} rows={4} placeholder="Personality and instructions for this agent…" />
+        </Field>
+      </div>
+      <div class="mt-3">
+        <Field label="Autonomy level">
+          <Select bind:value={autonomyLevel}>
+            {#each AUTONOMY_OPTIONS as opt (opt.value)}
+              <option value={opt.value}>{opt.label} — {opt.hint}</option>
+            {/each}
+          </Select>
         </Field>
       </div>
       <div class="mt-3">
