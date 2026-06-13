@@ -28,6 +28,11 @@
   const canReadAgentActions = $derived(
     $auth?.user.permissions.includes(PERMISSIONS.CORE.AGENTS_ACTIONS_READ) ?? false,
   );
+
+  // Agents roster: gated on agents read permission.
+  const canReadAgents = $derived(
+    $auth?.user.permissions.includes(PERMISSIONS.CORE.AGENTS_READ) ?? false,
+  );
   let pendingActions = $state(0);
 
   // ⌘K assistant: chat with an employee-agent, gated on the chat permission.
@@ -181,6 +186,12 @@
             {#if pendingActions > 0}
               <span class="rounded-full bg-danger px-1.5 text-[10px] text-white">{pendingActions}</span>
             {/if}
+          </a>
+        {/if}
+        {#if canReadAgents}
+          <a href="/agents"
+             class={`block rounded-md px-2 py-1.5 ${isActive('/agents') ? 'bg-accent text-white' : 'text-ink-faint hover:bg-sidebar-hover hover:text-white'}`}>
+            Agents
           </a>
         {/if}
         {#each groups.filter((g) => g.visible) as group (group.label)}
