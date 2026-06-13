@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { MODULE_KEYS } from '@pulsar/shared';
+  import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
   import { api } from '$lib/api/client';
   import { auth, clearAuth, getRefreshToken } from '$lib/stores/auth';
   import { ChevronDown, ChevronRight, Bell, LogOut, Search } from 'lucide-svelte';
@@ -23,11 +23,27 @@
 
   const unreadCount = $derived(notifications.filter((n) => !n.readAt).length);
 
+  // Agent-actions inbox: count of pending proposals, gated on the read permission.
+  const canReadAgentActions = $derived(
+    $auth?.user.permissions.includes(PERMISSIONS.CORE.AGENTS_ACTIONS_READ) ?? false,
+  );
+  let pendingActions = $state(0);
+
   async function loadNotifications() {
     try {
       notifications = await api<Notification[]>('/notifications', { query: { unread: 'true' } });
     } catch {
       // silent — notifications are non-critical
+    }
+  }
+
+  async function loadPendingActions() {
+    if (!canReadAgentActions) return;
+    try {
+      const pending = await api<unknown[]>('/agent-actions');
+      pendingActions = pending.length;
+    } catch {
+      // silent — badge is non-critical
     }
   }
 
@@ -43,7 +59,11 @@
   $effect(() => {
     if ($auth) {
       void loadNotifications();
-      const interval = setInterval(() => void loadNotifications(), 60_000);
+      void loadPendingActions();
+      const interval = setInterval(() => {
+        void loadNotifications();
+        void loadPendingActions();
+      }, 60_000);
       return () => clearInterval(interval);
     }
   });
@@ -142,6 +162,15 @@
            class={`block rounded-md px-2 py-1.5 ${isActive('/dashboard') ? 'bg-accent text-white' : 'text-ink-faint hover:bg-sidebar-hover hover:text-white'}`}>
           Dashboard
         </a>
+        {#if canReadAgentActions}
+          <a href="/agent-actions"
+             class={`flex items-center gap-2 rounded-md px-2 py-1.5 ${isActive('/agent-actions') ? 'bg-accent text-white' : 'text-ink-faint hover:bg-sidebar-hover hover:text-white'}`}>
+            <span class="flex-1">Agent actions</span>
+            {#if pendingActions > 0}
+              <span class="rounded-full bg-danger px-1.5 text-[10px] text-white">{pendingActions}</span>
+            {/if}
+          </a>
+        {/if}
         {#each groups.filter((g) => g.visible) as group (group.label)}
           <button
             class="flex w-full items-center gap-1 rounded-md px-2 py-1.5 font-semibold text-slate-200 hover:bg-sidebar-hover"
