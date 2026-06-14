@@ -371,3 +371,130 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
       check then `create`; the `(agentId, idempotencyKey)` unique index makes the second throw
       P2002 (uncaught → 500). No duplicate side effect (mutations don't run at enqueue). Catch
       P2002 and return the existing projection.
+
+## Phase 11 (palier 2a) — Employee-agents (Hermes brain in Pulsar)
+
+### Shared + DB
+- [x] `@pulsar/shared` `AgentAutonomy` enum (`PROPOSE`/`ACT_LOW`/`AUTONOMOUS`) + helper
+      (`packages/shared/src/agents/autonomy.ts`, vitest `autonomy.spec`)
+- [x] `core.agents.chat` permission catalog entry
+- [x] Prisma migration `20260613195333_phase11b_agents_employes` (19th migration): employee
+      fields on `Agent` (persona/role/model/autonomy/avatar) + agent-conversations/messages tables
+
+### API
+- [x] Agent session token (short-lived, signed with `AGENT_SESSION_SECRET` → `JWT_SECRET` →
+      dev default) so the Hermes runtime calls `/mcp` as the agent (`agent-session-token.spec`)
+- [x] `HermesAcpClient` — ACP transport (stdio, newline-framed) + fake ACP server for tests
+      (`hermes-acp.client.spec`)
+- [x] `AgentRuntimeService` — spawns `python -m acp_adapter` as a child process **per
+      conversation** (configurable via `HERMES_ACP_CMD`/`HERMES_ACP_ARGS`/`HERMES_ACP_CWD`)
+- [x] `AgentConversationsService` persistence + `AgentConversationsController`
+      (`GET/POST /agent-conversations`, `GET :id`, `POST :id/messages`, SSE turn endpoint)
+- [x] `AgentRuntime` + `AgentConversations` wired into `AgentsModule`
+- [x] Amount-cap-on-autoApprove fix: the auto-approve path now enforces `maxAmountPerAction`
+      (governance hole closed in `mcp-server.factory.ts`)
+- [x] E2E suite `phase11b-agents-employes.e2e-spec.ts`
+
+### Web
+- [x] Settings → Agents employee fields (persona/role/model/autonomy/avatar)
+- [x] ⌘K "AI assistant" panel — streaming conversation + proposed-action cards
+
+### Deferred (noted at reviews — do not silently fix)
+- [ ] Set `AGENT_SESSION_SECRET` (or `JWT_SECRET`) in non-dev — the dev fallback is silent and
+      insecure.
+- [ ] Rate cap is NOT enforced on the auto-approve path (only the amount cap is) — auto-approved
+      actions don't create proposals, so there's no trailing-minute count; needs a separate
+      execution counter.
+- [ ] `AgentRuntimeService`: no timeout on `initialize`/`newSession` (a hung Hermes leaks the
+      child process); child stderr is not consumed (could block on a full pipe); the `live` Map
+      can grow unbounded if `closeSession` is never called (no TTL/sweep).
+- [ ] `closeSession` during an active `prompt()` silently ends the stream without an error.
+- [ ] `GET /agent-conversations/:id` is tenant-scoped but NOT user-scoped (any tenant member can
+      read another member's conversation) — asymmetric with `list()`; and `get()` returns the raw
+      row including `tenantId`.
+- [ ] SSE turn endpoint: client disconnect does not abort the runtime turn; no SSE heartbeat
+      (proxy-timeout risk on long turns).
+- [ ] `tool_call`→`proposalId` correlation is not persisted on `AgentMessage` (only assistant
+      text is persisted) — needed for full audit linkage.
+- [ ] `start()` does a double agent lookup (`getOwned` then `conversations.start` re-fetches).
+- [ ] Rename `nowMs`→`nowSec` in agent-session-token for clarity (cosmetic).
+- [ ] ACP runtime smoke (`HERMES_ENABLED`): verify real byte framing (newline-delimited),
+      camelCase fields / snake_case methods, the `session/set_model` param key, and that
+      non-permission reverse-ACP calls don't break a turn.
+
+## Phase 11 (R1 — runtime managé)
+
+Goal: Hermes is **installable and configurable from Pulsar**, per tenant, without editing `.env`.
+
+### Install + shared
+- [x] `scripts/setup-agents.mjs` (`pnpm agents:setup`): installs Hermes into `hermes-agent/.venv`
+      via **uv** (auto-fetches a standalone CPython 3.12 — Hermes pins 3.11–3.13, so no manual
+      Python install; idempotent venv create + always re-run pip install)
+- [x] `@pulsar/shared` `RUNTIME_PROVIDERS` provider catalog (pure data, browser-safe — no Node
+      import; api-key vs login providers, `keyEnvVar`/`loginCommand`)
+
+### API
+- [x] `AgentRuntimeConfig` Prisma model + 20th migration `20260613211931_phase11r1_agent_runtime_config`
+- [x] `agent-runtime-env.ts` env builder (per-tenant `HERMES_HOME`, provider key env var or login)
+      + `runtime-config.service.ts` (encrypts the API key via `CryptoService`, never returns it)
+- [x] `runtime-config.controller.ts` — `/agent-runtime` REST (`GET providers`, `GET`/`PUT`,
+      `POST test`) + `POST connect` **SSE** login (streams device code + URL); gated `agents.manage`
+- [x] `openSession` injects the resolved runtime config (env + decrypted key) into the spawned child
+- [x] E2E `phase11r1-agent-runtime.e2e-spec.ts`
+
+### Web
+- [x] **Settings → Runtime agents** page (pick provider, paste key or "Connecter" login over SSE)
+
+### Deferred (noted at reviews — do not "fix" silently)
+- [ ] **Vendoring**: decide whether `hermes-agent/` ships in the repo (commit) or as a git
+      submodule, so a fresh clone has it — today it's local/untracked (`.gitignore` only covers
+      `.venv`/`.hermes-home`).
+- [ ] **`HERMES_ENABLED` real smoke test**: install via `pnpm agents:setup`, configure a real
+      provider (or a login like Codex — note the `--type oauth` flag may be needed in the
+      `openai-codex` `loginCommand` of `runtime-providers.ts`), confirm `/test` lists models and a
+      ⌘K conversation gets a real reply + a proposed action.
+- [ ] `testConnection` doesn't surface real model names (`HermesAcpClient` has no advertised-models
+      API) — wire it when the client exposes models.
+- [ ] `connectLogin` has no `req.on('close')` abort — the login child is killed only on generator
+      teardown; add explicit abort on SSE disconnect.
+- [ ] `UpsertRuntimeDto` lacks `@ApiProperty` decorators (Swagger docs).
+- [ ] Carry forward palier-2a deferred items not yet resolved (auto-approve rate cap,
+      `tool_call`→`proposalId` persistence on `AgentMessage`, `AgentRuntime` `live` Map TTL/stderr
+      consumption, SSE client-disconnect abort + heartbeat, etc. — see the palier-2a list above).
+- [x] **R2 (next palier): the rich agent UI Sam asked for** — an agent profile page; an activity
+      view ("what they do": conversations + tool calls + proposed actions per agent); guided config
+      with inline help; a first-class chat surface beyond the ⌘K drawer. **(shipped in R2 below)**
+
+## Phase 11 (R2 — agents experience: first-class)
+
+Goal: agents are **first-class citizens** of the UI — a roster, a per-agent profile + guided
+config, an activity view, and a dedicated chat surface.
+
+### Shared
+- [x] `@pulsar/shared` `AGENT_ROLE_PRESETS` (pure data, browser-safe): dispatcher / billing-clerk /
+      analyst, each with persona + suggested permissions + suggested autonomy (`role-presets.ts`,
+      vitest `role-presets.spec`)
+
+### API
+- [x] `GET /agents/:id` projects the profile (`role`/`persona`/`autonomyLevel`/`permissions`) and
+      **never leaks `secretHash`/`serviceUserId`** (shared `agentSelect`)
+- [x] `GET /agents/:id/activity` → `{ conversations, proposedActions, stats }` scoped tenant+agent
+      (counters: conversations/pending/executed/rejected); gated `core.agents.read`
+- [x] E2E `phase11r2-agent-experience.e2e-spec.ts` (profile projection + no-leak, bogus-id 404,
+      empty-then-populated activity)
+
+### Web
+- [x] Top-level **Agents** nav (gated `core.agents.read`) → roster of employee cards
+- [x] Per-agent page `/agents/[id]` — **Profil & config guidée** (inline help + role presets),
+      **Activité** (conversations + proposed actions + counters), **Chat** (talk to this employee)
+
+### Deferred (noted at reviews — do not "fix" silently)
+- [ ] `tool_call` → `proposalId` linkage on the activity list (today the proposed-action list and
+      the conversation list are shown side by side, not threaded — needs `AgentMessage.proposalId`
+      persistence carried forward from palier 2a).
+- [ ] `riskTier` badge tone mapping for `MUTATING`/`SENSITIVE` on the agent activity list (minor
+      cosmetic — currently a neutral tone for all tiers).
+- [ ] **hermes-agent/ vendoring** (carried from R1): decide commit vs submodule so a fresh clone
+      has the runtime — today it's local/untracked.
+- [ ] **`HERMES_ENABLED` real smoke test** (carried from R1): install + configure a real provider,
+      confirm `/test` lists models and a chat turn yields a real reply + proposed action.

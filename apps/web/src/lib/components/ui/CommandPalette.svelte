@@ -53,7 +53,7 @@
         <Search class="size-4 text-ink-faint" />
         <input
           class="w-full bg-transparent py-3 text-sm outline-none placeholder:text-ink-faint"
-          placeholder="Go to… (AI assistant lands here)"
+          placeholder="Go to… or pick “AI assistant”"
           bind:value={query}
           oninput={() => (selected = 0)}
           use:focusOnMount

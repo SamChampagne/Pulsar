@@ -7,7 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "setup": "pnpm install && pnpm db:generate && pnpm --filter @pulsar/shared build && pnpm --filter @pulsar/database build",
+    "setup": "git submodule update --init --recursive && pnpm install && pnpm db:generate && pnpm --filter @pulsar/shared build && pnpm --filter @pulsar/database build",
     "dev": "concurrently -n api,web -c blue,green \"pnpm dev:api\" \"pnpm dev:web\"",
     "dev:api": "pnpm --filter @pulsar/api dev",
     "dev:web": "pnpm --filter @pulsar/web dev",
@@ -24,7 +24,8 @@
     "db:deploy": "pnpm --filter @pulsar/database migrate:deploy",
     "db:push": "pnpm --filter @pulsar/database push",
     "db:seed": "pnpm --filter @pulsar/database seed",
-    "db:studio": "pnpm --filter @pulsar/database studio"
+    "db:studio": "pnpm --filter @pulsar/database studio",
+    "agents:setup": "node scripts/setup-agents.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

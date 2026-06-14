@@ -9,12 +9,16 @@
 ## Setup
 
 ```bash
-git clone <repo> pulsar && cd pulsar
+# The Hermes agent runtime ships as a git submodule — clone with --recurse-submodules.
+git clone --recurse-submodules <repo> pulsar && cd pulsar
+# (After a plain clone, `pnpm setup` / `pnpm agents:setup` auto-inits it; or run
+#  `git submodule update --init --recursive` manually.)
 
 # 1. Environment — one .env at the repo root, read by every workspace
 cp .env.example .env
 
 # 2. Install deps, generate the Prisma client, build shared packages
+#    (also inits the hermes-agent submodule if missing)
 pnpm setup
 
 # 3. Database

@@ -98,6 +98,24 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     repose alors sur les services métier sous-jacents (`@Audit`/`AuditLogsService.log`).
     Les plafonds (`evaluateAmountCap`/`evaluateRateCap`) et l'idempotence
     (`deriveIdempotencyKey`) vivent dans `@pulsar/shared` — ne pas les réimplémenter.
+24. (palier 2a) Les **agents-employés** tournent sur Hermes via ACP — **un processus enfant
+    par conversation** (isolation tenant : l'enregistrement MCP de Hermes est process-global) —
+    et sont configurés ENTIÈREMENT dans Pulsar (l'entité `Agent` : persona/rôle/modèle/autonomie).
+    Leurs appels d'outils passent TOUJOURS par la file de gouvernance palier 1 + les plafonds :
+    le chemin d'auto-approbation (autonomie `ACT_LOW`/`AUTONOMOUS`) applique LUI AUSSI le plafond
+    montant (`mcp-server.factory.ts`) — l'autonomie ne lève jamais les caps. Le runtime d'agent
+    est best-effort et isolé : Hermes indisponible ⇒ 503, jamais de crash du cœur de Pulsar.
+25. (R1 — runtime managé) Le runtime Hermes s'installe via `pnpm agents:setup` (venv Python
+    provisionné par **uv**, CPython 3.12 autonome) et se configure ENTIÈREMENT dans Pulsar,
+    **par tenant** (`AgentRuntimeConfig`) : soit une clé API **chiffrée via `CryptoService`**
+    (jamais renvoyée en clair), soit un login OAuth dont les jetons vivent dans le `HERMES_HOME`
+    par tenant — jamais dans la BD Pulsar. La liste des providers vient du catalogue
+    `RUNTIME_PROVIDERS` de `@pulsar/shared` (**pure data, browser-safe, aucun import Node**).
+26. (R2 — espace agents) L'UI des agents est de premier ordre : `/agents` (roster de cartes
+    employés) + `/agents/[id]` (profil & config guidée, activité, chat). `GET /agents/:id` et
+    `GET /agents/:id/activity` n'exposent JAMAIS `secretHash`/`serviceUserId` (projection via le
+    `agentSelect` partagé) ; les presets de rôle vivent dans `AGENT_ROLE_PRESETS` de
+    `@pulsar/shared` (pure data).
 
 ## Adding a business module (the recipe)
 

@@ -26,6 +26,7 @@ export const PERMISSIONS = {
     AGENTS_MANAGE: 'core.agents.manage',
     AGENTS_ACTIONS_READ: 'core.agents.actions.read',
     AGENTS_ACTIONS_APPROVE: 'core.agents.actions.approve',
+    AGENTS_CHAT: 'core.agents.chat',
   },
   TRANSPORTATION: {
     MASTER_DATA_READ: 'transportation.master-data.read',
@@ -112,6 +113,7 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.AGENTS_MANAGE, 'Register, configure and revoke AI agents'),
   core(PERMISSIONS.CORE.AGENTS_ACTIONS_READ, 'View agent-proposed actions'),
   core(PERMISSIONS.CORE.AGENTS_ACTIONS_APPROVE, 'Approve or reject agent-proposed actions'),
+  core(PERMISSIONS.CORE.AGENTS_CHAT, 'Converse with AI agents (⌘K assistant)'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ, 'View customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_MANAGE, 'Manage customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.ORDERS_READ, 'View transport orders'),

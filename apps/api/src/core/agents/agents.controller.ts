@@ -1,8 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags, PartialType } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
-import { PERMISSIONS } from '@pulsar/shared';
-import { ArrayMinSize, IsArray, IsObject, IsOptional, IsString } from 'class-validator';
+import { AgentAutonomy, PERMISSIONS } from '@pulsar/shared';
+import { ArrayMinSize, IsArray, IsEnum, IsObject, IsOptional, IsString } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { AgentsService } from './agents.service';
@@ -18,7 +18,15 @@ class CreateAgentDto {
 
   @IsOptional() @IsObject()
   caps?: AgentCaps;
+
+  @IsOptional() @IsString() persona?: string;
+  @IsOptional() @IsString() role?: string;
+  @IsOptional() @IsString() model?: string;
+  @IsOptional() @IsEnum(AgentAutonomy) autonomyLevel?: AgentAutonomy;
+  @IsOptional() @IsString() avatar?: string;
 }
+
+class UpdateAgentDto extends PartialType(CreateAgentDto) {}
 
 @ApiTags('core/agents')
 @ApiBearerAuth()
@@ -32,10 +40,28 @@ export class AgentsController {
     return this.agents.list(user.tenantId);
   }
 
+  @Get(':id/activity')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
+  activity(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.agents.activity(user.tenantId, id);
+  }
+
+  @Get(':id')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
+  getOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.agents.getOne(user.tenantId, id);
+  }
+
   @Post()
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateAgentDto) {
     return this.agents.create(user.tenantId, user.id, dto);
+  }
+
+  @Patch(':id')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
+  update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateAgentDto) {
+    return this.agents.update(user.tenantId, id, dto);
   }
 
   @Delete(':id')

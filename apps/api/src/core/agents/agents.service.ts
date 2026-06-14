@@ -5,10 +5,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { AuthUser, PermissionKey } from '@pulsar/shared';
-import { ALL_PERMISSION_KEYS, AgentStatus } from '@pulsar/shared';
+import { ALL_PERMISSION_KEYS, AgentAutonomy, AgentStatus, autoApprovedTiers } from '@pulsar/shared';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AgentCaps, AgentPrincipal } from './agent-principal';
+import { mintAgentSessionToken, verifyAgentSessionToken } from './agent-session-token';
+import { TOOL_REGISTRY } from './tool-registry';
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
@@ -23,11 +25,26 @@ const agentSelect = {
   lastUsedAt: true,
   createdAt: true,
   revokedAt: true,
+  persona: true,
+  role: true,
+  model: true,
+  autonomyLevel: true,
+  avatar: true,
 } as const;
 
 @Injectable()
 export class AgentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly sessionSecret: string;
+
+  constructor(private readonly prisma: PrismaService) {
+    const secret = process.env.AGENT_SESSION_SECRET ?? process.env.JWT_SECRET;
+    if (!secret) throw new Error('AGENT_SESSION_SECRET or JWT_SECRET must be set');
+    this.sessionSecret = secret;
+  }
+
+  mintSessionToken(agentId: string, ttlSeconds = 300): string {
+    return mintAgentSessionToken(agentId, this.sessionSecret, ttlSeconds);
+  }
 
   /** One hidden DISABLED user PER agent — audit shows the specific agent, never loginable (rule 13). */
   private async createServiceUser(tenantId: string, name: string): Promise<string> {
@@ -53,16 +70,34 @@ export class AgentsService {
     });
   }
 
+  private applyAutonomy(level: AgentAutonomy | undefined, caps: AgentCaps): AgentCaps {
+    const tiers = autoApprovedTiers(level ?? AgentAutonomy.PROPOSE);
+    const byTier = TOOL_REGISTRY.filter((t) => tiers.includes(t.tier)).map((t) => t.name);
+    const explicit = caps.autoApprove ?? [];
+    return { ...caps, autoApprove: Array.from(new Set([...byTier, ...explicit])) };
+  }
+
   /** Returns the full key ONCE — only the hash is stored. */
   async create(
     tenantId: string,
     createdById: string,
-    input: { name: string; description?: string; permissions: string[]; caps?: AgentCaps },
+    input: {
+      name: string;
+      description?: string;
+      permissions: string[];
+      caps?: AgentCaps;
+      persona?: string;
+      role?: string;
+      model?: string;
+      autonomyLevel?: AgentAutonomy;
+      avatar?: string;
+    },
   ) {
     const valid = new Set<string>(ALL_PERMISSION_KEYS);
     for (const p of input.permissions) {
       if (!valid.has(p)) throw new BadRequestException(`Unknown permission "${p}"`);
     }
+    const caps = this.applyAutonomy(input.autonomyLevel, input.caps ?? {});
     const serviceUserId = await this.createServiceUser(tenantId, input.name);
     const rawKey = `ak_${randomBytes(24).toString('base64url')}`;
     const record = await this.prisma.agent.create({
@@ -71,15 +106,130 @@ export class AgentsService {
         name: input.name,
         description: input.description,
         permissions: input.permissions,
-        caps: (input.caps ?? {}) as object,
+        caps: caps as object,
         prefix: rawKey.slice(0, 11),
         secretHash: sha256(rawKey),
         serviceUserId,
         createdById,
+        persona: input.persona,
+        role: input.role,
+        model: input.model,
+        autonomyLevel: input.autonomyLevel ?? AgentAutonomy.PROPOSE,
+        avatar: input.avatar,
       },
       select: agentSelect,
     });
     return { ...record, key: rawKey };
+  }
+
+  async update(
+    tenantId: string,
+    id: string,
+    input: {
+      name?: string;
+      description?: string;
+      permissions?: string[];
+      caps?: AgentCaps;
+      persona?: string;
+      role?: string;
+      model?: string;
+      autonomyLevel?: AgentAutonomy;
+      avatar?: string;
+    },
+  ) {
+    const existing = await this.prisma.agent.findFirst({ where: { id, tenantId } });
+    if (!existing) throw new NotFoundException('Agent not found');
+    if (input.permissions) {
+      const valid = new Set<string>(ALL_PERMISSION_KEYS);
+      for (const p of input.permissions) {
+        if (!valid.has(p)) throw new BadRequestException(`Unknown permission "${p}"`);
+      }
+    }
+    const needsAutonomyRecalc = input.autonomyLevel !== undefined || input.caps !== undefined;
+    let caps: AgentCaps | undefined;
+    if (needsAutonomyRecalc) {
+      const currentCaps = (existing.caps ?? {}) as AgentCaps;
+      caps = this.applyAutonomy(
+        input.autonomyLevel ?? (existing.autonomyLevel as AgentAutonomy | undefined),
+        { ...currentCaps, ...(input.caps ?? {}) },
+      );
+    }
+    return this.prisma.agent.update({
+      where: { id },
+      data: {
+        ...(input.name !== undefined && { name: input.name }),
+        ...(input.description !== undefined && { description: input.description }),
+        ...(input.permissions !== undefined && { permissions: input.permissions }),
+        ...(caps !== undefined && { caps: caps as object }),
+        ...(input.persona !== undefined && { persona: input.persona }),
+        ...(input.role !== undefined && { role: input.role }),
+        ...(input.model !== undefined && { model: input.model }),
+        ...(input.autonomyLevel !== undefined && { autonomyLevel: input.autonomyLevel }),
+        ...(input.avatar !== undefined && { avatar: input.avatar }),
+      },
+      select: agentSelect,
+    });
+  }
+
+  async getOwned(tenantId: string, id: string) {
+    const agent = await this.prisma.agent.findFirst({
+      where: { id, tenantId },
+      select: { id: true, model: true, persona: true, status: true, name: true },
+    });
+    if (!agent || agent.status === AgentStatus.REVOKED) throw new NotFoundException('Agent not found');
+    return agent;
+  }
+
+  async getOne(tenantId: string, id: string) {
+    const agent = await this.prisma.agent.findFirst({ where: { id, tenantId }, select: agentSelect });
+    if (!agent) throw new NotFoundException('Agent not found');
+    return agent;
+  }
+
+  async activity(tenantId: string, id: string) {
+    await this.getOne(tenantId, id);
+    const [conversations, proposedActions] = await Promise.all([
+      this.prisma.agentConversation.findMany({
+        where: { tenantId, agentId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        select: {
+          id: true,
+          title: true,
+          createdAt: true,
+          _count: { select: { messages: true } },
+        },
+      }),
+      this.prisma.proposedAction.findMany({
+        where: { tenantId, agentId: id },
+        orderBy: { proposedAt: 'desc' },
+        take: 50,
+        select: {
+          id: true,
+          tool: true,
+          status: true,
+          riskTier: true,
+          proposedAt: true,
+          decidedAt: true,
+        },
+      }),
+    ]);
+    const stats = {
+      conversations: conversations.length,
+      pending: proposedActions.filter((p) => p.status === 'PENDING').length,
+      executed: proposedActions.filter((p) => p.status === 'EXECUTED').length,
+      rejected: proposedActions.filter((p) => p.status === 'REJECTED').length,
+    };
+    return {
+      conversations: conversations.map((c) => ({
+        id: c.id,
+        title: c.title,
+        createdAt: c.createdAt,
+        messageCount: c._count.messages,
+      })),
+      proposedActions,
+      stats,
+    };
   }
 
   async revoke(tenantId: string, id: string) {
@@ -94,7 +244,10 @@ export class AgentsService {
 
   /** Resolve a raw agent key into a full principal (service user + caps + scoped permissions). */
   async validateKey(rawKey: string): Promise<AgentPrincipal> {
-    const agent = await this.prisma.agent.findUnique({ where: { secretHash: sha256(rawKey) } });
+    const sessionAgentId = verifyAgentSessionToken(rawKey, this.sessionSecret);
+    const agent = sessionAgentId
+      ? await this.prisma.agent.findUnique({ where: { id: sessionAgentId } })
+      : await this.prisma.agent.findUnique({ where: { secretHash: sha256(rawKey) } });
     if (!agent || agent.status === AgentStatus.REVOKED) {
       throw new UnauthorizedException('Invalid agent key');
     }
