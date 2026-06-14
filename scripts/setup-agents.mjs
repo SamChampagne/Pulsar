@@ -38,6 +38,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const hermesDir = path.join(repoRoot, 'hermes-agent');
+const hermesManifest = path.join(hermesDir, 'pyproject.toml');
 const venvDir = path.join(hermesDir, '.venv');
 const isWin = process.platform === 'win32';
 
@@ -269,9 +270,39 @@ function installViaSystemPython(py) {
   return true;
 }
 
+/**
+ * `hermes-agent` ships as a git submodule. A fresh `git clone` (without
+ * --recurse-submodules) leaves the directory empty, so self-heal by running
+ * `git submodule update --init --recursive` before anything else. Best-effort:
+ * if we're not inside a git checkout (e.g. a tarball) or git is unavailable,
+ * log a clear message and continue — the existence check below decides if we
+ * can proceed.
+ */
+function ensureSubmodule() {
+  if (existsSync(hermesManifest)) return; // already populated
+  console.log(
+    '[setup-agents] hermes-agent/pyproject.toml missing — initializing git submodule ...',
+  );
+  const res = run('git', ['submodule', 'update', '--init', '--recursive'], { cwd: repoRoot });
+  if (res.error || res.status !== 0) {
+    console.warn(
+      '[setup-agents] `git submodule update --init --recursive` did not succeed ' +
+        `(${res.error ? res.error.message : `exit ${res.status}`}). ` +
+        'If this is a git checkout, run it manually; otherwise vendor hermes-agent/ yourself. ' +
+        'Continuing — will fail below if the runtime is still missing.',
+    );
+  }
+}
+
 function main() {
-  if (!existsSync(hermesDir)) {
-    fail(`vendored Hermes not found at ${hermesDir}. Did you init the submodule/copy?`);
+  ensureSubmodule();
+
+  if (!existsSync(hermesDir) || !existsSync(hermesManifest)) {
+    fail(
+      `vendored Hermes not found at ${hermesDir} (pyproject.toml missing). ` +
+        'Initialize the submodule: `git submodule update --init --recursive` ' +
+        '(or clone with `git clone --recurse-submodules`).',
+    );
   }
 
   console.log('[setup-agents] Turnkey Hermes runtime setup (uv-driven; Hermes needs >=3.11,<3.14).');

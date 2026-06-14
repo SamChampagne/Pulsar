@@ -190,7 +190,12 @@ sans toucher au `.env`**. Trois étapes :
    pnpm agents:setup
    ```
 
-   Le script installe Hermes dans `hermes-agent/.venv` via **[uv](https://docs.astral.sh/uv/)**,
+   Le runtime Hermes est un **sous-module git** (`hermes-agent/`, dépôt
+   `SamChampagne/hermes-agent`). `pnpm agents:setup` **initialise automatiquement le sous-module**
+   s'il est absent (`git submodule update --init --recursive`) — un clone simple suffit, ou clonez
+   directement avec `git clone --recurse-submodules`.
+
+   Le script installe ensuite Hermes dans `hermes-agent/.venv` via **[uv](https://docs.astral.sh/uv/)**,
    qui **récupère automatiquement un CPython 3.12 autonome** (Hermes exige 3.11–3.13). Aucune
    installation manuelle de Python n'est nécessaire — même une machine qui ne porte que Python
    3.14 (qui ne peut pas *héberger* Hermes) fonctionne, car uv provisionne son propre 3.12. Le
