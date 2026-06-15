@@ -38,6 +38,7 @@ interface OpenSessionInput {
   tenantId: string;
   agent: { id: string; model: string | null; persona: string | null };
   pulsarMcpUrl: string;
+  triggeredByRef?: string;
 }
 
 interface LiveSession {
@@ -111,7 +112,7 @@ export class AgentRuntimeService {
   async openSession(input: OpenSessionInput): Promise<string> {
     const { child, client } = await this.spawnRuntime(input.tenantId);
     try {
-      const token = this.agents.mintSessionToken(input.agent.id, 300);
+      const token = this.agents.mintSessionToken(input.agent.id, 300, input.triggeredByRef);
       const { sessionId } = await client.newSession({
         cwd: process.cwd(),
         mcpServers: [
