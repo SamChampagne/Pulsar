@@ -117,6 +117,20 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     `agentSelect` partagé) ; les presets de rôle vivent dans `AGENT_ROLE_PRESETS` de
     `@pulsar/shared` (pure data).
 
+## Hard rules (continued, phase 12)
+
+27. (phase 12 — Operating Workbench) Les `OperationalTask` ne changent de statut QUE via
+    `canTransitionOperationalTask` (`@pulsar/shared/workflows`). Une tâche produite par une
+    policy est idempotente sur `(tenantId, dedupKey)`. Les événements métier passent par
+    `DomainEventsService.emit` (best-effort, jamais bloquant) ; le worker `processPending` est
+    race-safe (claim conditionnel `PENDING→PROCESSED`) et les échecs sont terminaux (pas de retry).
+    Les policies événement→tâche vivent dans `@pulsar/shared/operating` (pures) ; l'assignation à
+    un agent (`caps.alwaysOn` + `caps.handlesCategories`) se résout côté API. Le
+    `WorkbenchAgentRunner` est best-effort et isolé (Hermes absent ⇒ skip, tâche revenue OPEN,
+    jamais de crash, `runCron` n'émet jamais d'exception) ; les actions de l'agent passent
+    TOUJOURS par la file `ProposedAction` avec `triggeredByRef = "task:<id>"` (porté par le jeton
+    de session) — l'autonomie n'exécute jamais hors caps.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
