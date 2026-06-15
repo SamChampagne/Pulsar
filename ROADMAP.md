@@ -210,7 +210,13 @@ ships *with* its agent.
 - **15-C — Playbooks** (à venir, slice séparée).
 
 **Act II — Flagship agents (depth, ROI)**
-- **16 — Freight Audit autonome** (§19.4): incoming carrier-invoice entity, matching, dispute agent.
+- ✅ **16 — Freight Audit autonome** (shipped): `IncomingCarrierInvoice` découplé + matching
+  déterministe (`FreightAuditService`) de chaque ligne contre `Load.estimatedCost` **figé**
+  (règle 16, jamais recalculé) via `evaluateReconciliation` + tolérances buy-side ; transitions
+  par `canTransitionFreightAudit` (`@pulsar/shared`) ; l'agent litige ouvre via la file de
+  gouvernance (`handleMutatingTool` → `ProposedAction`, `triggeredByRef = "task:<id>"`, tier
+  SENSITIVE, cap sur `varianceTotal`) ; KPI économies récupérées (`recoveredAmount` positif sur
+  résolution `KEEP_EXPECTED`) ; 24ᵉ migration ; règle 31.
 - **17 — Continuous planning** (§19.5 unlock): versioned plans/routes, mutable-after-confirm with
   diff, `PlanProposal`/`PlanCommit`.
 
