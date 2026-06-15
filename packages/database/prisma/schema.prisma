@@ -82,6 +82,10 @@ model Tenant {
   stockMovements  StockMovement[]
   receipts        Receipt[]
   pickOrders      PickOrder[]
+  yardSpots        YardSpot[]
+  yardVisits       YardVisit[]
+  yardMoves        YardMove[]
+  dockAppointments DockAppointment[]
 
   @@map("tenants")
 }
@@ -493,6 +497,9 @@ model Location {
   bins       Bin[]
   receipts   Receipt[]
   pickOrders PickOrder[]
+  yardSpots        YardSpot[]
+  yardVisits       YardVisit[]
+  dockAppointments DockAppointment[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -529,6 +536,8 @@ model Carrier {
   lanePreferences LaneCarrierPreference[]
   invoices Invoice[]
   incomingCarrierInvoices IncomingCarrierInvoice[]
+  yardVisits       YardVisit[]
+  dockAppointments DockAppointment[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -626,6 +635,7 @@ model Trailer {
   carrier           Carrier?           @relation(fields: [carrierId], references: [id])
   loads             Load[]
   maintenanceOrders MaintenanceOrder[]
+  yardVisits        YardVisit[]
 
   @@unique([tenantId, unitNumber])
   @@index([tenantId])
@@ -1920,4 +1930,135 @@ model PickLine {
 
   @@index([tenantId, pickOrderId])
   @@map("wms_pick_lines")
+}
+
+enum YardSpotType {
+  DOCK_DOOR
+  PARKING
+  STAGING
+}
+
+enum YardDirection {
+  INBOUND
+  OUTBOUND
+  OTHER
+}
+
+enum YardVisitStatus {
+  CHECKED_IN
+  ASSIGNED
+  DEPARTED
+  CANCELLED
+}
+
+enum DockAppointmentStatus {
+  SCHEDULED
+  ARRIVED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model YardSpot {
+  id         String       @id @default(cuid())
+  tenantId   String
+  locationId String
+  code       String
+  type       YardSpotType @default(PARKING)
+  isActive   Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  tenant       Tenant            @relation(fields: [tenantId], references: [id])
+  location     Location          @relation(fields: [locationId], references: [id])
+  visits       YardVisit[]
+  appointments DockAppointment[]
+  movesFrom    YardMove[]        @relation("YardMoveFrom")
+  movesTo      YardMove[]        @relation("YardMoveTo")
+
+  @@unique([tenantId, locationId, code])
+  @@index([tenantId, locationId])
+  @@map("yard_spots")
+}
+
+model YardVisit {
+  id            String          @id @default(cuid())
+  tenantId      String
+  visitNumber   String
+  locationId    String
+  trailerId     String?
+  trailerRef    String?
+  carrierId     String?
+  driverName    String?
+  direction     YardDirection   @default(OTHER)
+  status        YardVisitStatus @default(CHECKED_IN)
+  spotId        String?
+  appointmentId String?
+  checkInAt     DateTime        @default(now())
+  checkOutAt    DateTime?
+  notes         String?
+  createdById   String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  location    Location         @relation(fields: [locationId], references: [id])
+  trailer     Trailer?         @relation(fields: [trailerId], references: [id])
+  carrier     Carrier?         @relation(fields: [carrierId], references: [id])
+  spot        YardSpot?        @relation(fields: [spotId], references: [id])
+  appointment DockAppointment? @relation(fields: [appointmentId], references: [id])
+  moves       YardMove[]
+
+  @@unique([tenantId, visitNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, spotId])
+  @@map("yard_visits")
+}
+
+model YardMove {
+  id          String   @id @default(cuid())
+  tenantId    String
+  visitId     String
+  fromSpotId  String?
+  toSpotId    String?
+  movedAt     DateTime @default(now())
+  note        String?
+  createdById String?
+
+  tenant  Tenant    @relation(fields: [tenantId], references: [id])
+  visit   YardVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  fromSpot YardSpot? @relation("YardMoveFrom", fields: [fromSpotId], references: [id])
+  toSpot   YardSpot? @relation("YardMoveTo", fields: [toSpotId], references: [id])
+
+  @@index([tenantId, visitId])
+  @@map("yard_moves")
+}
+
+model DockAppointment {
+  id                String                @id @default(cuid())
+  tenantId          String
+  appointmentNumber String
+  locationId        String
+  spotId            String?
+  carrierId         String?
+  direction         YardDirection         @default(INBOUND)
+  windowStart       DateTime
+  windowEnd         DateTime
+  reference         String?
+  status            DockAppointmentStatus @default(SCHEDULED)
+  notes             String?
+  createdById       String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  tenant   Tenant      @relation(fields: [tenantId], references: [id])
+  location Location    @relation(fields: [locationId], references: [id])
+  spot     YardSpot?   @relation(fields: [spotId], references: [id])
+  carrier  Carrier?    @relation(fields: [carrierId], references: [id])
+  visits   YardVisit[]
+
+  @@unique([tenantId, appointmentNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, windowStart])
+  @@map("dock_appointments")
 }
