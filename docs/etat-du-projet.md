@@ -1,7 +1,7 @@
 # État du projet — point de reprise
 
 > 🇫🇷 Document de synthèse pour reprendre le travail (humain ou session Claude Code).
-> Mis à jour à la fin de la **phase 12**. Détail des tâches : [TODO.md](../TODO.md) ·
+> Mis à jour à la fin de la **phase 13**. Détail des tâches : [TODO.md](../TODO.md) ·
 > vision : [ROADMAP.md](../ROADMAP.md) · règles de dev : [CLAUDE.md](../CLAUDE.md) ·
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
@@ -30,6 +30,7 @@
 | 11 (R1) — Runtime Hermes managé par Pulsar | ✅ | **Installation et configuration sans toucher au `.env`** : `pnpm agents:setup` installe Hermes dans `hermes-agent/.venv` via **uv** (récupère automatiquement un CPython 3.12 autonome — Hermes exige 3.11–3.13, donc aucune install Python manuelle) ; **config par tenant** (`AgentRuntimeConfig`, 20ᵉ migration) éditable dans **Réglages → Runtime agents** : choix d'un provider du catalogue `RUNTIME_PROVIDERS` (`@pulsar/shared`, pure data browser-safe) puis soit une **clé API chiffrée via `CryptoService`** (jamais renvoyée en clair), soit un **login OAuth** (Codex/Nous) dont Pulsar streame en SSE le device code + URL et dont les jetons vivent dans le `HERMES_HOME` par tenant ; **builder d'env** (`agent-runtime-env.ts`) + `runtime-config.service` (crypto) + `runtime-config.controller` (REST + SSE), injection de la config dans `openSession` du `AgentRuntimeService` ; endpoints `/agent-runtime` (`GET providers`, `GET`/`PUT`, `POST test`, `POST connect` SSE — gated `core.agents.manage`) ; runtime best-effort par tenant (503 si Hermes absent) ; page web Réglages + e2e `phase11r1-agent-runtime` |
 | 11 (R2) — Espace Agents (citoyens de premier ordre) | ✅ | **Agents promus au niveau supérieur de la navigation** : onglet **Agents** → **roster de cartes « employés »** → page agent (`/agents/[id]`) à trois volets — **Profil & config guidée** (aide inline + presets de rôle `AGENT_ROLE_PRESETS` de `@pulsar/shared`), **Activité** (conversations + actions proposées + compteurs `conversations`/`pending`/`executed`/`rejected`) et **Chat** (parler à cet employé) ; `GET /agents/:id` projette le profil **sans `secretHash` ni `serviceUserId`** et `GET /agents/:id/activity` renvoie l'activité **scopée tenant + agent** (gated `core.agents.read`) ; presets = pure data testée (`role-presets.spec`) + e2e `phase11r2-agent-experience` |
 | 12 — Operating Workbench | ✅ | **Outbox `DomainEvent`** (best-effort, worker `processPending` race-safe claim `PENDING→PROCESSED`, échecs terminaux) ; **policies événement→tâche** dans `@pulsar/shared/operating` (pures, testées) : retards de stop et échecs tender émis comme events, mappés en `OperationalTask` idempotente sur `(tenantId, dedupKey)` ; **`OperationalTask` + inbox `/workbench`** (statuts via `canTransitionOperationalTask`, 2 permissions `core.operating.tasks.*`, tri priorité + statut) ; **`WorkbenchAgentRunner`** headless best-effort (agent `alwaysOn` + `handlesCategories` réveillé sur ses cas, Hermes absent ⇒ skip tâche revenue OPEN, `runCron` n'émet jamais d'exception) ; **4 outils workbench** au registre (list/get/claim/resolve tasks) + `triggeredByRef = "task:<id>"` dans le jeton de session agent ; 21ᵉ migration |
+| 13 — Main-d'œuvre 24/7 | ✅ | **`AgentWorkerService`** dispatcher unique (réveil sur event + cron filet de sécurité, file en mémoire, concurrence plafonnée global/tenant/agent) ; **`AgentRun`** ledger durable + `GET /agents/:id/runs` ; **heartbeat** (`lastSeenAt`/`lastRunAt`) ; **`PAUSED` kill switch à chaud réversible** (endpoints pause/resume/run-now/pause-all) tuant les sessions Hermes en vol via `AgentRuntimeService.killAgentSessions`, `REVOKED` permanent ; **retry borné** sur erreurs de connectivité runtime (`classifyRunError` de `@pulsar/shared`, Hermes absent ⇒ run `SKIPPED`, autre échec terminal → tâche en OPEN) ; **revert claim-guarded** (un run ne revert IN_PROGRESS→OPEN que s'il a réellement claim) ; règle 24 préservée (best-effort, jamais de crash) + actions via file `ProposedAction` `triggeredByRef = "task:<id>"` ; UI web « Activité 24/7 » ; 22ᵉ migration |
 
 **La boucle économique complète fonctionne** : le client commande depuis son portail →
 confirmation → planification (split possible) → tender automatique par lane avec courriel →
@@ -38,9 +39,10 @@ POD avec photo → BOL PDF généré → détection automatique des retards → 
 brouillon → approbation → relevé client.
 
 **Chiffres** : 3 modules métier actifs (transportation, customer-portal, billing) + le plan
-d'administration plateforme ; 21 migrations ; ~90 endpoints (dont `loads/active-map`,
+d'administration plateforme ; 22 migrations ; ~90 endpoints (dont `loads/active-map`,
 `public/driver/:token/position`, `mcp` / `agents` / `agent-actions` / `agent-conversations`,
-`agent-runtime` — install/config du runtime managé, et `operational-tasks` / `/workbench`) ;
+`agent-runtime` — install/config du runtime managé, `operational-tasks` / `/workbench`, et
+`agents/:id/runs` + pause/resume/run-now/pause-all — main-d'œuvre 24/7) ;
 31 pages web sur le design system phase 9 (Tailwind 4, 17 composants partagés) ; carte
 opérationnelle live sur le dashboard + cartes Leaflet sur le détail load et le suivi public
 (phase 10) ; couche gouvernance d'agents + endpoint MCP exposant 8 outils dispatch sous
@@ -51,7 +53,10 @@ l'auto-approbation (phase 11 palier 2a) ; **runtime Hermes installé via `pnpm a
 **agents promus citoyens de premier ordre** — roster, profil + config guidée (presets de rôle),
 activité et chat sur `/agents` (phase 11 R2) ; **Operating Workbench** — outbox DomainEvent,
 policies événement→tâche pures, inbox `/workbench`, WorkbenchAgentRunner headless best-effort,
-4 outils workbench + `triggeredByRef` (phase 12).
+4 outils workbench + `triggeredByRef` (phase 12) ; **main-d'œuvre 24/7** — `AgentWorkerService`
+dispatcher (event + cron, concurrence plafonnée), `AgentRun` ledger durable + heartbeat, `PAUSED`
+kill switch à chaud tuant les sessions Hermes en vol, retry borné sur connectivité, revert
+claim-guarded, UI « Activité 24/7 » (phase 13).
 
 ## Carte de la documentation
 
@@ -66,10 +71,10 @@ policies événement→tâche pures, inbox `/workbench`, WorkbenchAgentRunner he
 | Démarrage local | [getting-started.md](./getting-started.md) |
 | Connexion d'un agent IA (MCP) / Hermes | [agents.md](./agents.md) |
 
-## Prochaine session — Pulsar Agent OS (phases 13 → 22)
+## Prochaine session — Pulsar Agent OS (phases 14 → 22)
 
-La **phase 12 est livrée** (Operating Workbench) sur la branche `phase-12`.
-**Précondition avant la phase 13 : merger `phase-12` dans `main`** (PR à ouvrir).
+La **phase 13 est livrée** (Main-d'œuvre 24/7) sur la branche `phase-13`.
+**Précondition avant la phase 14 : merger `phase-13` dans `main`** (PR à ouvrir).
 
 La direction est verrouillée : voir la **roadmap stratégique adoptée le 2026-06-14**,
 [docs/superpowers/specs/2026-06-14-pulsar-agent-os-roadmap.md](./superpowers/specs/2026-06-14-pulsar-agent-os-roadmap.md).
@@ -77,15 +82,16 @@ North star = **OS logistique modulaire où des agents Hermes tournent 24/7 comme
 gouvernés**. Arc = agents d'abord (approfondir sur les 3 modules actuels), puis modules tressés
 — chaque nouveau module arrive avec son agent.
 
-- **Acte I (substrat 24/7)** : ~~12 Operating Workbench~~ ✅ · 13 Main-d'œuvre 24/7 · 14 Autonomie &
-  policies · 15 Control Tower agents.
+- **Acte I (substrat 24/7)** : ~~12 Operating Workbench~~ ✅ · ~~13 Main-d'œuvre 24/7~~ ✅ ·
+  14 Autonomie & policies · 15 Control Tower agents.
 - **Acte II (agents phares)** : 16 Freight Audit autonome (§19.4) · 17 Planification continue (§19.5).
 - **Acte III (modules tressés, ré-ordonnable)** : 18 Integrations · 19 Yard · 20 Fleet · 21 WMS ·
   22 Analytics/réseau de données.
 
-**Prochain pas concret** : merge `phase-12`, puis brainstorm → spec → plan de la **phase 13**
-(Main-d'œuvre 24/7 : agents toujours-on, heartbeat, historique d'exécution, kill switch). Pulsar
-reste **MCP-agnostique** ; Hermes est le runtime de référence.
+**Prochain pas concret** : merge `phase-13`, puis brainstorm → spec → plan de la **phase 14**
+(Autonomie & policy engine : policy-as-data auto-act vs propose, échelle d'autonomie, garde-fous
+rate limits / circuit breakers / anomalie — jamais au-dessus de la gouvernance). Pulsar reste
+**MCP-agnostique** ; Hermes est le runtime de référence.
 
 Benchmark Fleetbase (2026-06-12) : aucune IA chez eux — c'est l'axe de différenciation.
 

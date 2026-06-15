@@ -131,6 +131,21 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     TOUJOURS par la file `ProposedAction` avec `triggeredByRef = "task:<id>"` (porté par le jeton
     de session) — l'autonomie n'exécute jamais hors caps.
 
+## Hard rules (continued, phase 13)
+
+28. (phase 13 — Main-d'œuvre 24/7) Tout réveil d'un agent always-on passe par
+    `AgentWorkerService` (dispatcher unique, file en mémoire, concurrence plafonnée
+    global/tenant/agent) ; chaque réveil est enregistré comme `AgentRun` (durable). Un run ne
+    *revert* la tâche (IN_PROGRESS→OPEN) QUE s'il l'a réellement *claim* (sinon il finit SKIPPED
+    sans toucher l'état d'un autre run). `PAUSED` est le kill switch à chaud réversible (tue les
+    sessions Hermes en vol via `AgentRuntimeService.killAgentSessions`) ; `REVOKED` reste
+    permanent. Le retry ne s'applique qu'aux erreurs de connectivité runtime
+    (`ServiceUnavailableException`, classées par `classifyRunError` de `@pulsar/shared`) ; Hermes
+    absent ⇒ run `SKIPPED`, tout autre échec est terminal et renvoie la tâche en OPEN. Le
+    dispatcher est best-effort et isolé (règle 24 préservée : jamais de crash, `runCron`/
+    `enqueueTask` n'émettent jamais d'exception) ; les actions de l'agent passent TOUJOURS par la
+    file `ProposedAction` avec `triggeredByRef = "task:<id>"`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
