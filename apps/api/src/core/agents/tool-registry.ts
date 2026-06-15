@@ -47,7 +47,6 @@ export interface ToolServices {
     listForAgent(tenantId: string, agentId: string): Promise<unknown>;
     getForTenant(tenantId: string, id: string): Promise<unknown>;
     resolve(tenantId: string, id: string, userId: string, note?: string): Promise<unknown>;
-    addNote(tenantId: string, id: string, userId: string, note: string): Promise<unknown>;
   };
 }
 
@@ -196,7 +195,7 @@ export const TOOL_REGISTRY: ToolDef[] = [
   },
   {
     name: 'get_task',
-    description: 'Get a single operating task by id.',
+    description: 'Get a single operating task by id, including linked proposed actions.',
     tier: RiskTier.READ,
     permission: PERMISSIONS.CORE.OPERATING_TASKS_READ,
     inputSchema: z.object({ taskId: z.string().min(1) }),
@@ -208,7 +207,7 @@ export const TOOL_REGISTRY: ToolDef[] = [
   },
   {
     name: 'resolve_task',
-    description: 'Resolve an operating task, optionally with a note. PROPOSED — requires human approval.',
+    description: 'Resolve an operating task assigned to me, with an optional note. Runs immediately (low-risk self-management).',
     tier: RiskTier.LOW,
     permission: PERMISSIONS.CORE.OPERATING_TASKS_MANAGE,
     inputSchema: z.object({ taskId: z.string().min(1), note: z.string().optional() }),
@@ -218,20 +217,6 @@ export const TOOL_REGISTRY: ToolDef[] = [
         args.taskId as string,
         ctx.principal.user.id,
         args.note as string | undefined,
-      ),
-  },
-  {
-    name: 'add_task_note',
-    description: 'Add a note to an operating task. PROPOSED — requires human approval.',
-    tier: RiskTier.LOW,
-    permission: PERMISSIONS.CORE.OPERATING_TASKS_MANAGE,
-    inputSchema: z.object({ taskId: z.string().min(1), note: z.string().min(1) }),
-    run: (args, ctx) =>
-      ctx.services.operatingTasks.addNote(
-        ctx.principal.user.tenantId,
-        args.taskId as string,
-        ctx.principal.user.id,
-        args.note as string,
       ),
   },
 ];

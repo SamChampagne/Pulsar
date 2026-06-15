@@ -95,7 +95,6 @@ import { RuntimeConfigController } from './runtime-config.controller';
           listForAgent: (t, a) => operationalTasks.listForAgent(t, a),
           getForTenant: (t, id) => operationalTasks.getForTenant(t, id),
           resolve: (t, id, u, note) => operationalTasks.resolve(t, id, u, note),
-          addNote: (t, id, u, note) => operationalTasks.addNote(t, id, u, note),
         },
       }),
     },

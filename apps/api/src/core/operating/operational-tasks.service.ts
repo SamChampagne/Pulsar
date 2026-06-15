@@ -59,6 +59,7 @@ export class OperationalTasksService {
       where: { tenantId, triggeredByRef: `task:${id}` },
       orderBy: { proposedAt: 'desc' },
       take: 50,
+      select: { id: true, tool: true, riskTier: true, status: true, triggeredByRef: true, proposedAt: true, decidedAt: true },
     });
     return { ...task, proposedActions };
   }
@@ -142,20 +143,6 @@ export class OperationalTasksService {
 
   async start(tenantId: string, id: string, actorId: string) {
     return this.transition(tenantId, id, OperationalTaskStatus.IN_PROGRESS, {}, actorId);
-  }
-
-  async addNote(tenantId: string, id: string, userId: string, note: string) {
-    const task = await this.prisma.operationalTask.findFirst({ where: { id, tenantId } });
-    if (!task) throw new NotFoundException(`OperationalTask ${id} not found`);
-    await this.audit.log({
-      tenantId,
-      userId,
-      action: AuditAction.UPDATE,
-      entityType: 'OperationalTask',
-      entityId: id,
-      after: { note },
-    });
-    return { ok: true };
   }
 
   listForAgent(tenantId: string, agentId: string) {
