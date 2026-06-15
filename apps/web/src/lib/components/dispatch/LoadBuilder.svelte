@@ -41,6 +41,8 @@
     onConsolidate,
     onAddSelection,
     onRemoveShipment,
+    canAddSelection = true,
+    canRemoveShipment = true,
   }: {
     selectedLoad: LoadDetail | null;
     openLoads: LoadOption[];
@@ -51,6 +53,8 @@
     onConsolidate: () => void;
     onAddSelection: () => void;
     onRemoveShipment: (shipmentId: string) => void;
+    canAddSelection?: boolean;
+    canRemoveShipment?: boolean;
   } = $props();
 
   const shipments = $derived(selectedLoad?.shipments ?? []);
@@ -178,7 +182,7 @@
                   <button
                     type="button"
                     onclick={() => onRemoveShipment(s.id)}
-                    disabled={busy}
+                    disabled={busy || !canRemoveShipment}
                     aria-label={`Retirer ${s.shipmentNumber}`}
                     class="rounded px-1.5 text-ink-muted transition-colors hover:bg-surface-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -192,7 +196,7 @@
           <div class="mt-3">
             <Button
               variant="secondary"
-              disabled={!hasSelection || busy}
+              disabled={!hasSelection || busy || !canAddSelection}
               loading={busy}
               onclick={onAddSelection}
             >
