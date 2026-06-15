@@ -14,6 +14,7 @@ export class TaskAssignmentResolver {
     const agents = await this.prisma.agent.findMany({
       where: { tenantId, status: AgentStatus.ACTIVE },
       orderBy: { createdAt: 'asc' },
+      select: { id: true, caps: true },
     });
     for (const a of agents) {
       const caps = (a.caps ?? {}) as { alwaysOn?: boolean; handlesCategories?: string[] };

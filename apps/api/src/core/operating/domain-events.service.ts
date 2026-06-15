@@ -18,6 +18,9 @@ const SEVERITY_TO_LEVEL: Record<Severity, NotificationLevel> = {
   CRITICAL: NotificationLevel.CRITICAL,
 };
 
+/** Max domain events processed per cron tick. */
+const DOMAIN_EVENT_BATCH_SIZE = 100;
+
 @Injectable()
 export class DomainEventsService {
   private readonly logger = new Logger(DomainEventsService.name);
@@ -52,7 +55,7 @@ export class DomainEventsService {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async processCron(): Promise<void> {
-    await this.processPending(100);
+    await this.processPending(DOMAIN_EVENT_BATCH_SIZE);
   }
 
   /** Claim PENDING events, run policies, create tasks (idempotent), mark PROCESSED/FAILED. */
@@ -99,8 +102,10 @@ export class DomainEventsService {
         }
         handled++;
       } catch (err) {
+        // Failures are terminal — this is a best-effort outbox (no retry budget).
+        // Guard on PROCESSED (the claim set it) so we never walk back another worker's state.
         await this.prisma.domainEvent.updateMany({
-          where: { id: event.id },
+          where: { id: event.id, status: DomainEventStatus.PROCESSED },
           data: { status: DomainEventStatus.FAILED, lastError: err instanceof Error ? err.message : String(err) },
         });
       }

@@ -70,4 +70,21 @@ describe('DomainEventsService', () => {
     }).compile();
     await expect(moduleRef.get(DomainEventsService).emit('t', 'stop.delayed', null, {})).resolves.toBeUndefined();
   });
+
+  it('marks the event FAILED when task creation throws a non-P2002 error', async () => {
+    const prisma = makePrismaFake();
+    (prisma as any).operationalTask.create = async () => { throw new Error('boom'); };
+    const moduleRef = await Test.createTestingModule({
+      providers: [DomainEventsService, TaskAssignmentResolver, { provide: PrismaService, useValue: prisma }],
+    }).compile();
+    const svc = moduleRef.get(DomainEventsService);
+    await svc.emit('tenant1', 'stop.delayed', { type: 'stop', id: 's1' }, {
+      stopId: 's1', loadId: 'l1', deadline: '2026-06-14T12:00:00.000Z', minutesLate: 30,
+    });
+    const handled = await svc.processPending(50);
+    expect(handled).toBe(0);
+    expect((prisma as any)._events[0].status).toBe('FAILED');
+    expect((prisma as any)._events[0].lastError).toContain('boom');
+    expect((prisma as any)._tasks).toHaveLength(0);
+  });
 });
