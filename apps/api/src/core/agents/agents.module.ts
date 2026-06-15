@@ -11,6 +11,8 @@ import { ShipmentsService } from '../../modules/transportation/shipments/shipmen
 import { TendersService } from '../../modules/transportation/tenders/tenders.service';
 import { AnalyticsService } from '../../modules/transportation/analytics/analytics.service';
 import { OperationalTasksService } from '../operating/operational-tasks.service';
+import { BillingModule } from '../../modules/billing/billing.module';
+import { FreightAuditService } from '../../modules/billing/freight-audit/freight-audit.service';
 import { AgentsController } from './agents.controller';
 import { AgentsService } from './agents.service';
 import { ProposedActionsController } from './proposed-actions.controller';
@@ -42,6 +44,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
     CryptoModule,
     NotificationsModule,
     forwardRef(() => OperatingModule),
+    forwardRef(() => BillingModule),
   ],
   controllers: [
     AgentsController,
@@ -66,6 +69,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         TendersService,
         AnalyticsService,
         OperationalTasksService,
+        FreightAuditService,
       ],
       useFactory: (
         transportOrders: TransportOrdersService,
@@ -75,6 +79,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         tenders: TendersService,
         analytics: AnalyticsService,
         operationalTasks: OperationalTasksService,
+        freightAudit: FreightAuditService,
       ): ToolServices => ({
         transportOrders: {
           list: (tenantId, query) => transportOrders.list(tenantId, query as never),
@@ -102,6 +107,10 @@ import { RuntimeConfigController } from './runtime-config.controller';
           listForAgent: (t, a) => operationalTasks.listForAgent(t, a),
           getForTenant: (t, id) => operationalTasks.getForTenant(t, id),
           resolve: (t, id, u, note) => operationalTasks.resolve(t, id, u, note),
+        },
+        freightAudit: {
+          audit: (t, u, id) => freightAudit.audit(t, u, id),
+          dispute: (t, a, id, dto, agentId) => freightAudit.dispute(t, a, id, dto as never, agentId),
         },
       }),
     },
