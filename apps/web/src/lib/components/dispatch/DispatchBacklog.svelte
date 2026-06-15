@@ -51,9 +51,9 @@
           <div class="mt-1 text-ink-muted">{s.originLocation.city} → {s.destinationLocation.city}</div>
           <div class="mt-1.5 flex flex-wrap items-center gap-1">
             <Badge tone={isLate(s.plannedPickupEarly) ? 'danger' : 'neutral'}>{fmt(s.plannedPickupEarly)} → {fmt(s.plannedDeliveryEarly)}</Badge>
-            {#if s.weightKg}<Badge tone="neutral">{s.weightKg} kg</Badge>{/if}
-            {#if s.volumeM3}<Badge tone="neutral">{s.volumeM3} m³</Badge>{/if}
-            {#if s.palletCount}<Badge tone="neutral">{s.palletCount} pal</Badge>{/if}
+            {#if s.weightKg != null}<Badge tone="neutral">{s.weightKg} kg</Badge>{/if}
+            {#if s.volumeM3 != null}<Badge tone="neutral">{s.volumeM3} m³</Badge>{/if}
+            {#if s.palletCount != null}<Badge tone="neutral">{s.palletCount} pal</Badge>{/if}
           </div>
         </button>
       {/each}

@@ -27,12 +27,13 @@
     status: string;
   }
 
-  interface LoadDetail {
-    id: string;
-    loadNumber: string;
-    status: string;
-    shipments: BacklogShipment[];
-  }
+  type LoadDetail = {
+    id: string; loadNumber: string; status: string;
+    estimatedCost?: string | number | null; costCurrency?: string | null;
+    shipments?: Array<{ id: string; shipmentNumber: string; status: string; weightKg?: number | null; volumeM3?: number | null; palletCount?: number | null; [key: string]: unknown }>;
+    route?: { stops?: Array<{ id: string; sequence: number; type: string; [key: string]: unknown }> | null } | null;
+    [key: string]: unknown;
+  };
 
   let backlog = $state<BacklogShipment[]>([]);
   let backlogLoading = $state(true);
@@ -58,15 +59,16 @@
     }
   }
 
+  type LoadOption = OpenLoad;
+
   async function loadOpenLoads() {
     try {
-      const res = await api<Paginated<OpenLoad>>('/transportation/loads', {
-        query: { pageSize: 100 },
-      });
-      openLoads = res.items.filter((l) => l.status === 'OPEN' || l.status === 'PLANNED');
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Failed to load loads');
-    }
+      const [open, planned] = await Promise.all([
+        api<{ items: LoadOption[] }>('/transportation/loads', { query: { status: 'OPEN', pageSize: 100 } }),
+        api<{ items: LoadOption[] }>('/transportation/loads', { query: { status: 'PLANNED', pageSize: 100 } }),
+      ]);
+      openLoads = [...planned.items, ...open.items];
+    } catch { openLoads = []; }
   }
 
   async function selectLoad(id: string) {
@@ -119,7 +121,10 @@
       if (selectedLoadId) await selectLoad(selectedLoadId);
       toast.success('Shipments assigned to load');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Failed to assign');
+      toast.error(e instanceof ApiError ? e.message : 'Assignation (capacité ?)');
+      selectedIds = new Set();
+      await loadBacklog();
+      if (selectedLoadId) await selectLoad(selectedLoadId);
     } finally {
       busy = false;
     }
