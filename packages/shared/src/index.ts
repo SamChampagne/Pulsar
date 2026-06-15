@@ -31,3 +31,4 @@ export * from './agents/autonomy';
 export * from './agents/runtime-providers';
 export * from './agents/role-presets';
 export * from './fleet/maintenance.workflow';
+export * from './fleet/compliance';
