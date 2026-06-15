@@ -108,6 +108,18 @@
     messages: { role: string; content: string; toolCalls?: { name: string; args?: unknown }[] }[];
   }
 
+  type Kpis = {
+    actions: { total: number; executed: number; autoApproved: number; pending: number; rejected: number; failed: number };
+    approvalRate: number;
+    autoApprovalRate: number;
+    errorRate: number;
+    runs: { total: number; succeeded: number; failed: number; skipped: number; killed: number };
+    avgRunLatencyMs: number | null;
+    breakerTrips: number;
+    tasksResolved: number;
+  };
+  type TimelineItem = { at: string; kind: string; summary: string; ref?: string };
+
   // Dispatch-relevant scopes (same set as RegisterAgentModal).
   const DISPATCH_KEYS = [
     'transportation.orders.read',
@@ -163,6 +175,11 @@
 
   // Autonomie — trust score + circuit breaker
   let trust = $state<Trust | null>(null);
+
+  // KPI panel + activity timeline
+  let kpis = $state<Kpis | null>(null);
+  let timelineItems = $state<TimelineItem[]>([]);
+  const pct = (r: number) => `${Math.round(r * 100)}%`;
 
   // Chat: active conversation loaded from activity list
   let chatConversationId = $state<string | null>(null);
@@ -237,6 +254,22 @@
       trust = await api<Trust>(`/agents/${id}/trust`);
     } catch {
       trust = null;
+    }
+  }
+
+  async function loadKpis(id: string) {
+    try {
+      kpis = await api<Kpis>(`/agents/${id}/kpis`);
+    } catch {
+      kpis = null;
+    }
+  }
+
+  async function loadTimeline(id: string) {
+    try {
+      timelineItems = await api<TimelineItem[]>(`/agents/${id}/timeline`, { query: { limit: 50 } });
+    } catch {
+      timelineItems = [];
     }
   }
 
@@ -359,6 +392,8 @@
     void loadActivity(agentId);
     void loadRuns(agentId);
     void loadTrust(agentId);
+    void loadKpis(agentId);
+    void loadTimeline(agentId);
   });
 
   function actionStatusTone(status: string): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
@@ -638,6 +673,42 @@
         </Card>
       </div>
     {/if}
+  </div>
+
+  <!-- KPI (30 derniers jours) -->
+  {#if kpis}
+    <div id="kpi" class="mt-10">
+      <h2 class="mb-4 text-base font-semibold text-ink">KPI (30 derniers jours)</h2>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Card><p class="text-xs text-ink-muted">Actions</p><p class="text-xl font-semibold text-ink">{kpis.actions.total}</p></Card>
+        <Card><p class="text-xs text-ink-muted">Taux d'approbation</p><p class="text-xl font-semibold text-ink">{pct(kpis.approvalRate)}</p></Card>
+        <Card><p class="text-xs text-ink-muted">Auto-approbation</p><p class="text-xl font-semibold text-ink">{pct(kpis.autoApprovalRate)}</p></Card>
+        <Card><p class="text-xs text-ink-muted">Taux d'erreur</p><p class="text-xl font-semibold text-ink">{pct(kpis.errorRate)}</p></Card>
+        <Card><p class="text-xs text-ink-muted">Runs réussis</p><p class="text-xl font-semibold text-ink">{kpis.runs.succeeded}/{kpis.runs.total}</p></Card>
+        <Card><p class="text-xs text-ink-muted">Latence moy.</p><p class="text-xl font-semibold text-ink">{kpis.avgRunLatencyMs == null ? '—' : kpis.avgRunLatencyMs + ' ms'}</p></Card>
+        <Card><p class="text-xs text-ink-muted">Tâches résolues</p><p class="text-xl font-semibold text-ink">{kpis.tasksResolved}</p></Card>
+        <Card><p class="text-xs text-ink-muted">Trips breaker</p><p class="text-xl font-semibold text-ink">{kpis.breakerTrips}</p></Card>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Timeline -->
+  <div id="timeline" class="mt-10">
+    <h2 class="mb-4 text-base font-semibold text-ink">Timeline</h2>
+    <Card>
+      {#if timelineItems.length === 0}
+        <p class="py-4 text-center text-sm text-ink-faint">Aucune activité.</p>
+      {:else}
+        <ul class="divide-y divide-edge">
+          {#each timelineItems as t (t.kind + (t.ref ?? '') + t.at)}
+            <li class="flex items-center justify-between gap-3 px-1 py-2 text-sm">
+              <span class="min-w-0"><Badge tone="neutral">{t.kind}</Badge> <span class="text-ink">{t.summary}</span></span>
+              <span class="shrink-0 text-ink-faint">{formatDateTime(t.at)}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </Card>
   </div>
 
   <!-- Activité 24/7 -->
