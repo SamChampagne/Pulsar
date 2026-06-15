@@ -16,7 +16,7 @@
  * Scenario B — agent path (fake Hermes):
  *   1. Register an always-on agent that handles 'DELAY'.
  *   2. Emit a fresh stop.delayed → processPending → task auto-assigned to agent.
- *   3. WorkbenchAgentRunner.tick() marks the task IN_PROGRESS, opens a Hermes
+ *   3. AgentWorkerService.tick() marks the task IN_PROGRESS, opens a Hermes
  *      session (fake), sends a turn (fake performs a real governed /mcp
  *      tools/call with a PROPOSE-autonomy agent → enqueues a ProposedAction).
  *   4. ProposedAction has triggeredByRef = 'task:<taskId>'.
@@ -41,7 +41,7 @@ import { AgentsService } from '../src/core/agents/agents.service';
 import { AgentRuntimeService } from '../src/core/agents/agent-runtime.service';
 import { HermesAcpClient, type AcpEvent } from '../src/core/agents/hermes-acp.client';
 import { DomainEventsService } from '../src/core/operating/domain-events.service';
-import { WorkbenchAgentRunner } from '../src/core/operating/workbench-agent-runner.service';
+import { AgentWorkerService } from '../src/core/operating/agent-worker.service';
 import { FakeAcpServer } from './support/fake-acp-server';
 
 const ADMIN = { email: 'admin@pulsar.dev', password: 'admin123', tenant: 'acme' };
@@ -229,7 +229,7 @@ describe('Phase 12 — Operating Workbench (e2e)', () => {
   let http: ReturnType<INestApplication['getHttpServer']>;
   let prisma: PrismaService;
   let domainEvents: DomainEventsService;
-  let runner: WorkbenchAgentRunner;
+  let runner: AgentWorkerService;
   let fakeRuntime: FakeAgentRuntimeService;
   let token = '';
   let tenantId = '';
@@ -250,7 +250,7 @@ describe('Phase 12 — Operating Workbench (e2e)', () => {
       new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
     );
 
-    // Listen on a random port so WorkbenchAgentRunner.tick() gets a real URL.
+    // Listen on a random port so AgentWorkerService.tick() gets a real URL.
     await app.listen(0);
     http = app.getHttpServer();
 
@@ -260,7 +260,7 @@ describe('Phase 12 — Operating Workbench (e2e)', () => {
 
     prisma = app.get(PrismaService);
     domainEvents = app.get(DomainEventsService);
-    runner = app.get(WorkbenchAgentRunner);
+    runner = app.get(AgentWorkerService);
     fakeRuntime = app.get(AgentRuntimeService) as unknown as FakeAgentRuntimeService;
     fakeRuntime.http = http;
 
@@ -371,7 +371,7 @@ describe('Phase 12 — Operating Workbench (e2e)', () => {
   // Scenario B — agent path (fake Hermes)
   // =========================================================================
 
-  describe('Scenario B — always-on agent woken by WorkbenchAgentRunner', () => {
+  describe('Scenario B — always-on agent woken by AgentWorkerService', () => {
     const stopId = `stop-b-${suffix}`;
     const loadId = `load-b-${suffix}`;
     const deadline = '2026-06-15T08:00:00.000Z';
@@ -433,7 +433,7 @@ describe('Phase 12 — Operating Workbench (e2e)', () => {
       taskId = task!.id;
     });
 
-    it('B3: WorkbenchAgentRunner.tick() drives the task to IN_PROGRESS via fake Hermes', async () => {
+    it('B3: AgentWorkerService.tick() drives the task to IN_PROGRESS via fake Hermes', async () => {
       const driven = await runner.tick(mcpUrl, 10);
       expect(driven).toBeGreaterThanOrEqual(1);
 
