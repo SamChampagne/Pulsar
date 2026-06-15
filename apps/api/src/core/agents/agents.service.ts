@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { AuthUser, PermissionKey } from '@pulsar/shared';
-import { ALL_PERMISSION_KEYS, AgentAutonomy, AgentStatus, autoApprovedTiers } from '@pulsar/shared';
+import { ALL_PERMISSION_KEYS, AgentAutonomy, AgentStatus, autoApprovedTiers, computeTrustScore } from '@pulsar/shared';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { ListQueryDto } from '../../common/dto/list-query.dto';
@@ -16,7 +16,7 @@ import { AgentWorkerService } from '../operating/agent-worker.service';
 import { AgentRunsService } from '../operating/agent-runs.service';
 import type { AgentCaps, AgentPrincipal } from './agent-principal';
 import { mintAgentSessionToken, verifyAgentSessionTokenFull } from './agent-session-token';
-import { TOOL_REGISTRY } from './tool-registry';
+import { TOOL_BY_NAME, TOOL_REGISTRY } from './tool-registry';
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
@@ -38,6 +38,7 @@ const agentSelect = {
   model: true,
   autonomyLevel: true,
   avatar: true,
+  breakerTrippedAt: true,
 } as const;
 
 @Injectable()
@@ -85,6 +86,17 @@ export class AgentsService {
     });
   }
 
+  private validatePolicies(caps?: AgentCaps): void {
+    const rules = caps?.policies;
+    if (!rules) return;
+    const valid = new Set(['AUTO', 'PROPOSE', 'DENY']);
+    for (const r of rules) {
+      if (!valid.has(r.effect)) throw new BadRequestException(`Invalid policy effect "${r.effect}"`);
+      if (r.tool !== undefined && !TOOL_BY_NAME.has(r.tool)) throw new BadRequestException(`Unknown tool in policy "${r.tool}"`);
+      if (r.maxAmount !== undefined && r.maxAmount < 0) throw new BadRequestException('policy maxAmount must be >= 0');
+    }
+  }
+
   private applyAutonomy(level: AgentAutonomy | undefined, caps: AgentCaps): AgentCaps {
     const tiers = autoApprovedTiers(level ?? AgentAutonomy.PROPOSE);
     const byTier = TOOL_REGISTRY.filter((t) => tiers.includes(t.tier)).map((t) => t.name);
@@ -108,6 +120,7 @@ export class AgentsService {
       avatar?: string;
     },
   ) {
+    this.validatePolicies(input.caps);
     const valid = new Set<string>(ALL_PERMISSION_KEYS);
     for (const p of input.permissions) {
       if (!valid.has(p)) throw new BadRequestException(`Unknown permission "${p}"`);
@@ -152,6 +165,7 @@ export class AgentsService {
       avatar?: string;
     },
   ) {
+    this.validatePolicies(input.caps);
     const existing = await this.prisma.agent.findFirst({ where: { id, tenantId } });
     if (!existing) throw new NotFoundException('Agent not found');
     if (input.permissions) {
@@ -303,6 +317,32 @@ export class AgentsService {
     return this.runs.listForAgent(tenantId, id, q);
   }
 
+  /** Trust score from the agent's track record (proposals + runs). Computed on read. */
+  async trust(tenantId: string, id: string) {
+    const agent = await this.prisma.agent.findFirst({ where: { id, tenantId }, select: { id: true, autonomyLevel: true } });
+    if (!agent) throw new NotFoundException('Agent not found');
+    const [executed, rejected, failed, runsSucceeded, runsTotal] = await Promise.all([
+      this.prisma.proposedAction.count({ where: { tenantId, agentId: id, status: 'EXECUTED' } }),
+      this.prisma.proposedAction.count({ where: { tenantId, agentId: id, status: 'REJECTED' } }),
+      this.prisma.proposedAction.count({ where: { tenantId, agentId: id, status: 'FAILED' } }),
+      this.prisma.agentRun.count({ where: { tenantId, agentId: id, status: 'SUCCEEDED' } }),
+      this.prisma.agentRun.count({ where: { tenantId, agentId: id } }),
+    ]);
+    const result = computeTrustScore(
+      { executed, rejected, failed, runsSucceeded, runsTotal, breakerTrips: 0 },
+      agent.autonomyLevel as AgentAutonomy,
+    );
+    return { ...result, currentLevel: agent.autonomyLevel };
+  }
+
+  /** Human reset of a tripped circuit breaker. */
+  async resetBreaker(tenantId: string, id: string) {
+    const agent = await this.prisma.agent.findFirst({ where: { id, tenantId } });
+    if (!agent) throw new NotFoundException('Agent not found');
+    await this.prisma.agent.update({ where: { id }, data: { breakerTrippedAt: null } });
+    return { breakerReset: true };
+  }
+
   /** Resolve a raw agent key into a full principal (service user + caps + scoped permissions). */
   async validateKey(rawKey: string): Promise<AgentPrincipal> {
     const parsed = verifyAgentSessionTokenFull(rawKey, this.sessionSecret);
@@ -329,6 +369,7 @@ export class AgentsService {
       caps: (agent.caps ?? {}) as AgentCaps,
       user,
       triggeredByRef: parsed?.triggeredByRef,
+      autonomyLevel: agent.autonomyLevel as AgentPrincipal['autonomyLevel'],
     };
   }
 }

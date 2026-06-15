@@ -1375,7 +1375,8 @@ model Agent {
   avatar        String?
   lastUsedAt    DateTime?
   lastSeenAt    DateTime?
-  lastRunAt     DateTime?
+  lastRunAt        DateTime?
+  breakerTrippedAt DateTime?
   createdById   String?
   createdAt     DateTime    @default(now())
   revokedAt     DateTime?
@@ -1430,6 +1431,7 @@ model ProposedAction {
   argsJson       Json
   riskTier       RiskTier
   status         ProposalStatus @default(PENDING)
+  autoApproved   Boolean        @default(false)
   idempotencyKey String
   decidedById    String?
   decidedAt      DateTime?

@@ -435,9 +435,11 @@ describe('Phase 11b — agents-employés (conversation → governance) (e2e)', (
       .expect(201);
 
     const env = (rec as { mcpEnvelope?: any }).mcpEnvelope;
-    // The cap error must surface from the /mcp tool call (no execution).
+    // The cap error must surface from the /mcp tool call (no execution). Since phase 14 the
+    // hard amount cap is a DENY decided in evaluatePolicy, whose reason names the hard cap.
     const blob = JSON.stringify(env.result ?? env.error);
-    expect(blob).toContain('exceeds the agent cap of 1500');
+    expect(env.result?.isError).toBe(true);
+    expect(blob).toContain('exceeds the hard cap 1500');
     // Nothing executed (no spurious load created by the rejected tender path).
     expect(await prisma.load.count()).toBe(loadsBefore);
   });

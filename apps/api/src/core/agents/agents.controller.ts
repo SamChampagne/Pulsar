@@ -59,6 +59,12 @@ export class AgentsController {
     return this.agents.listRuns(user.tenantId, id, q);
   }
 
+  @Get(':id/trust')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
+  trust(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.agents.trust(user.tenantId, id);
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
   getOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
@@ -93,6 +99,12 @@ export class AgentsController {
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
   runNow(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.agents.runNow(user.tenantId, id);
+  }
+
+  @Post(':id/reset-breaker')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
+  resetBreaker(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.agents.resetBreaker(user.tenantId, id);
   }
 
   @Delete(':id')

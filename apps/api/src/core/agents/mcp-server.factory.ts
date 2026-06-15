@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { evaluateAmountCap, isExecutableLive } from '@pulsar/shared';
+import { isExecutableLive } from '@pulsar/shared';
 import type { AgentPrincipal } from './agent-principal';
 import type { ProposedActionsService } from './proposed-actions.service';
 import { TOOL_REGISTRY, type ToolServices } from './tool-registry';
@@ -32,43 +32,22 @@ export function buildAgentMcpServer(
           const result = await def.run(args, { principal, services });
           return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
         }
-        const auto = principal.caps.autoApprove?.includes(def.name);
-        if (auto) {
-          // Auto-approve skips ProposedActionsService.enqueue, so the amount cap
-          // MUST be enforced here too — otherwise an AUTONOMOUS agent could run a
-          // tool above its maxAmountPerAction unchecked (governance hole).
-          // NOTE (TODO): the RATE cap is NOT enforced on this path — auto-approved
-          // actions don't create proposals, so there's no trailing-minute count to
-          // evaluate. Closing that gap needs a separate execution-count source.
-          const amount = def.amountFrom?.(args);
-          const cap = evaluateAmountCap(amount, principal.caps.maxAmountPerAction);
-          if (!cap.ok) {
-            return {
-              content: [{ type: 'text' as const, text: cap.reason ?? 'Amount cap exceeded' }],
-              isError: true,
-            };
-          }
-          const result = await def.run(args, { principal, services });
+        const decision = await proposals.handleMutatingTool(principal, def, args, services);
+        if (decision.effect === 'DENY') {
+          return {
+            content: [{ type: 'text' as const, text: decision.reason ?? 'Denied by policy' }],
+            isError: true,
+          };
+        }
+        if (decision.effect === 'PROPOSE') {
           return {
             content: [
-              { type: 'text' as const, text: JSON.stringify({ autoApproved: true, result }) },
+              { type: 'text' as const, text: JSON.stringify({ queued: true, proposalId: decision.proposalId, status: 'PENDING' }) },
             ],
           };
         }
-        const proposal = await proposals.enqueue(principal, def.name, args, {
-          triggeredByRef: principal.triggeredByRef,
-        });
         return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                queued: true,
-                proposalId: proposal.id,
-                status: proposal.status,
-              }),
-            },
-          ],
+          content: [{ type: 'text' as const, text: JSON.stringify({ autoApproved: true, result: decision.result }) }],
         };
       },
     );

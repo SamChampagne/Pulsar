@@ -1,4 +1,4 @@
-import type { AuthUser } from '@pulsar/shared';
+import type { AgentAutonomy, AuthUser, PolicyRule } from '@pulsar/shared';
 
 /** Caps stored on Agent.caps (all optional). */
 export interface AgentCaps {
@@ -10,6 +10,8 @@ export interface AgentCaps {
   alwaysOn?: boolean;
   /** phase 12: operating-task categories this agent auto-handles (e.g. ['DELAY','TENDER_FAILURE']). */
   handlesCategories?: string[];
+  /** phase 14: declarative governance rules; when present, override the autonomy dial. */
+  policies?: PolicyRule[];
 }
 
 /**
@@ -23,4 +25,6 @@ export interface AgentPrincipal {
   user: AuthUser; // id = service user id, permissions = agent.permissions
   /** When the agent acts on behalf of a specific operating task (headless runner). */
   triggeredByRef?: string;
+  /** phase 14: the agent's coarse autonomy dial (drives effectivePolicies fallback). */
+  autonomyLevel: AgentAutonomy;
 }
