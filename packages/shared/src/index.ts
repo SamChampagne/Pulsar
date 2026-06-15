@@ -34,3 +34,4 @@ export * from './agents/operations';
 export * from './integrations/operations';
 export * from './fleet/maintenance.workflow';
 export * from './fleet/compliance';
+export * from './wms/wms.workflow';
