@@ -219,6 +219,17 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     `@pulsar/shared`) — JAMAIS un nouveau `ShipmentStatus`, JAMAIS de blocage du dispatch (règle 2
     préservée) ; toute la surface vit dans le module WMS (aucun contrôleur TMS modifié).
 
+## Hard rules (continued, module Yard)
+
+34. (module Yard — cour & quais) Le statut d'une `YardVisit`/`DockAppointment` ne change QUE via
+    `canTransitionYardVisit`/`canTransitionDockAppointment` (`@pulsar/shared/yard`, règle 2) avec claim
+    conditionnel `updateMany` (TOCTOU). Un spot occupé (visite active CHECKED_IN/ASSIGNED dessus) ne peut
+    recevoir une autre visite : refus 409 ; l'occupation est **dérivée** (count des visites actives sur le
+    spot), jamais dénormalisée. Tout changement de `spotId` d'une visite écrit un `YardMove` dans la **même**
+    transaction (`VisitsService.assignToSpot`/`checkOut`). N° via `SequencesService` (YV-/DA-, règle 8).
+    Spots et sites sont des `Location` du tenant. Tout endpoint Yard est `@RequireModule(MODULE_KEYS.YARD)` +
+    `yard.read|manage`, tenant-scopé (règle 1) ; FK (trailer/carrier/location/spot/appointment) vérifiées (règle 9).
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
