@@ -7,6 +7,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { EmailService } from '../../../core/email/email.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { LanesService } from '../lanes/lanes.service';
 
 export interface CreateTenderInput {
@@ -31,6 +32,7 @@ export class TendersService {
     private readonly webhooks: WebhooksService,
     private readonly email: EmailService,
     private readonly lanes: LanesService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
 
   private link(token: string): string {
@@ -346,6 +348,12 @@ export class TendersService {
     });
 
     if (!accept) {
+      await this.domainEvents.emit(
+        tender.tenantId,
+        'tender.declined',
+        { type: 'load', id: load.id },
+        { loadId: load.id, loadNumber: load.loadNumber, carrierId: tender.carrierId, tenderId: tender.id },
+      );
       await this.advanceChain(tender.id);
     }
 

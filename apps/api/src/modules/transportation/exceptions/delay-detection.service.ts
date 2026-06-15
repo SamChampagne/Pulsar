@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { LoadStatus, NotificationLevel, TrackingEventType } from '@pulsar/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { NotificationsService } from '../../../core/notifications/notifications.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
 
 /**
  * Pure function — no side effects, fully testable without NestJS or Prisma.
@@ -28,6 +29,7 @@ export class DelayDetectionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
@@ -97,6 +99,12 @@ export class DelayDetectionService {
         level: NotificationLevel.WARNING,
         payload: { loadId: load.id, stopId: stop.id, deadline: deadline.toISOString() },
       });
+      await this.domainEvents.emit(
+        tenantId,
+        'stop.delayed',
+        { type: 'stop', id: stop.id },
+        { stopId: stop.id, loadId: load.id, deadline: deadline.toISOString(), minutesLate },
+      );
 
       created++;
     }
