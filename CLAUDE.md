@@ -146,6 +146,22 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     `enqueueTask` n'émettent jamais d'exception) ; les actions de l'agent passent TOUJOURS par la
     file `ProposedAction` avec `triggeredByRef = "task:<id>"`.
 
+## Hard rules (continued, phase 14)
+
+29. (phase 14 — Autonomie & policies) Toute décision auto-act vs propose passe par
+    `evaluatePolicy` (`@pulsar/shared`, pur) au **point d'application unique**
+    (`ProposedActionsService.handleMutatingTool`, appelé par le handler MCP) ; les règles
+    effectives viennent de `caps.policies` ou du preset dérivé de `autonomyLevel`
+    (+ `caps.autoApprove` legacy). Une action auto-approuvée est TOUJOURS persistée comme
+    `ProposedAction EXECUTED autoApproved=true` (auditable + comptée pour le cap débit — le
+    chemin auto respecte désormais le débit). Le cap MONTANT dur (`maxAmountPerAction`) est
+    toujours appliqué dans `enqueue` sur TOUS les chemins (seule enforcement montant pour un
+    agent en PROPOSE) ; au-dessus → DENY, jamais levé par l'autonomie. Le circuit breaker
+    (`Agent.breakerTrippedAt`) rétrograde en PROPOSE de façon réversible et ne modifie JAMAIS
+    `autonomyLevel` ; la promotion d'autonomie est TOUJOURS confirmée par un humain (jamais
+    d'escalade automatique). Règles 23/24 préservées (le moteur de policy/caps vit dans
+    `@pulsar/shared`, pur).
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

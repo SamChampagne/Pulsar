@@ -193,8 +193,14 @@ ships *with* its agent.
   (+ endpoints pause/resume/run-now/pause-all) tuant les sessions Hermes en vol ; retry borné sur
   erreurs de connectivité (SKIPPED quand Hermes absent) ; revert de tâche claim-guarded ; 22ᵉ
   migration ; règle 28 ; UI web « Activité 24/7 ».
-- **14 — Autonomy & policy engine**: policy-as-data (auto-act vs propose), autonomy ladder,
-  guardrails (rate limits, circuit breakers, anomaly) — high autonomy, never above governance.
+- ✅ **14 — Autonomy & policy engine** (shipped): porte de policy unifiée (`evaluatePolicy`,
+  `@pulsar/shared` pur, **point de décision unique** dans `ProposedActionsService`) ; policy-as-data
+  (`caps.policies` + preset dérivé du dial `autonomyLevel`, rétro-compatible avec `caps.autoApprove`) ;
+  auto-exécution **persistée dans le registre des propositions** (`ProposedAction EXECUTED
+  autoApproved=true` — trou du cap débit fermé sur le chemin auto) ; circuit breaker réversible
+  (`Agent.breakerTrippedAt` rétrograde en PROPOSE, ne touche jamais `autonomyLevel`, jamais
+  d'escalade) ; score de confiance + promotion d'autonomie **confirmée par un humain** ; 23ᵉ
+  migration ; règle 29.
 - **15 — Agent Control Tower**: per-agent KPIs, manager dashboard, red-team harness
   (prompt-injection + cross-tenant), playbooks.
 
