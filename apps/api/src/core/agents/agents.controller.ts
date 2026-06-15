@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, PartialType } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { AgentAutonomy, PERMISSIONS } from '@pulsar/shared';
 import { ArrayMinSize, IsArray, IsEnum, IsObject, IsOptional, IsString } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { ListQueryDto } from '../../common/dto/list-query.dto';
 import { AgentsService } from './agents.service';
 import type { AgentCaps } from './agent-principal';
 
@@ -34,6 +35,12 @@ class UpdateAgentDto extends PartialType(CreateAgentDto) {}
 export class AgentsController {
   constructor(private readonly agents: AgentsService) {}
 
+  @Post('pause-all')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
+  pauseAll(@CurrentUser() user: AuthUser) {
+    return this.agents.pauseAll(user.tenantId);
+  }
+
   @Get()
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
   list(@CurrentUser() user: AuthUser) {
@@ -44,6 +51,12 @@ export class AgentsController {
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
   activity(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.agents.activity(user.tenantId, id);
+  }
+
+  @Get(':id/runs')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
+  runs(@CurrentUser() user: AuthUser, @Param('id') id: string, @Query() q: ListQueryDto) {
+    return this.agents.listRuns(user.tenantId, id, q);
   }
 
   @Get(':id')
@@ -62,6 +75,24 @@ export class AgentsController {
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateAgentDto) {
     return this.agents.update(user.tenantId, id, dto);
+  }
+
+  @Post(':id/pause')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
+  pause(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.agents.pause(user.tenantId, id);
+  }
+
+  @Post(':id/resume')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
+  resume(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.agents.resume(user.tenantId, id);
+  }
+
+  @Post(':id/run-now')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
+  runNow(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.agents.runNow(user.tenantId, id);
   }
 
   @Delete(':id')

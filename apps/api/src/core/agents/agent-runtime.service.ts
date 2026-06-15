@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  forwardRef,
+  Inject,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -61,6 +67,7 @@ export class AgentRuntimeService {
   private readonly live = new Map<string, LiveSession>();
 
   constructor(
+    @Inject(forwardRef(() => AgentsService))
     private readonly agents: AgentsService,
     private readonly runtimeConfig: RuntimeConfigService,
   ) {}
