@@ -97,9 +97,9 @@
     try {
       const [ov, veh, trl, drv] = await Promise.all([
         api<Overview>('/fleet/overview'),
-        api<Paginated<Asset>>('/transportation/vehicles', { query: { pageSize: 200 } }),
-        api<Paginated<Asset>>('/transportation/trailers', { query: { pageSize: 200 } }),
-        api<Paginated<Driver>>('/transportation/drivers', { query: { pageSize: 200 } }),
+        api<Paginated<Asset>>('/transportation/vehicles', { query: { pageSize: 100 } }),
+        api<Paginated<Asset>>('/transportation/trailers', { query: { pageSize: 100 } }),
+        api<Paginated<Driver>>('/transportation/drivers', { query: { pageSize: 100 } }),
       ]);
       overview = ov;
       vehicles = veh.items;
