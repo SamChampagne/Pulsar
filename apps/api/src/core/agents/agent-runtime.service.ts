@@ -42,6 +42,7 @@ interface OpenSessionInput {
 }
 
 interface LiveSession {
+  agentId: string;
   client: HermesAcpClient;
   child: ChildProcessWithoutNullStreams;
   persona: string | null;
@@ -122,7 +123,7 @@ export class AgentRuntimeService {
       if (input.agent.model) {
         await client.setModel(sessionId, input.agent.model).catch(() => undefined);
       }
-      this.live.set(sessionId, { client, child, persona: input.agent.persona, firstTurnDone: false });
+      this.live.set(sessionId, { agentId: input.agent.id, client, child, persona: input.agent.persona, firstTurnDone: false });
       return sessionId;
     } catch {
       child.kill();
@@ -145,6 +146,20 @@ export class AgentRuntimeService {
     this.live.delete(sessionId);
     await live.client.closeSession(sessionId).catch(() => undefined);
     live.child.kill();
+  }
+
+  /**
+   * Hot kill switch (phase 13): closes and kills every live Hermes session for an
+   * agent. Best-effort — never throws. Returns the number of sessions killed.
+   */
+  async killAgentSessions(agentId: string): Promise<number> {
+    const victims = [...this.live.entries()].filter(([, s]) => s.agentId === agentId);
+    for (const [sessionId, session] of victims) {
+      this.live.delete(sessionId);
+      await session.client.closeSession(sessionId).catch(() => undefined);
+      session.child.kill();
+    }
+    return victims.length;
   }
 
   /**
