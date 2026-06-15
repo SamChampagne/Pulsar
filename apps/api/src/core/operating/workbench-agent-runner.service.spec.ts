@@ -59,4 +59,39 @@ describe('WorkbenchAgentRunner.tick', () => {
     await expect(moduleRef.get(WorkbenchAgentRunner).tick('http://x/mcp', 10)).resolves.toBe(0);
     expect(task.status).toBe(OperationalTaskStatus.OPEN); // reverted
   });
+
+  it('does not reopen a task the agent resolved mid-turn (revert guarded to IN_PROGRESS)', async () => {
+    const task = { id: 't1', tenantId: 'ten1', status: OperationalTaskStatus.OPEN, assigneeAgentId: 'a1', title: 'late', category: 'DELAY', subjectType: 'stop', subjectId: 's1' };
+    const prisma = {
+      agent: { findMany: async () => [{ id: 'a1', tenantId: 'ten1', model: null, persona: null, serviceUserId: 'svc1', caps: { alwaysOn: true } }] },
+      operationalTask: {
+        findMany: async () => [task],
+        // Honor the status guard: only mutate when the where-clause matches the current status.
+        updateMany: async ({ where, data }: any) => {
+          if (where.status === undefined || task.status === where.status) {
+            Object.assign(task, data);
+            return { count: 1 };
+          }
+          return { count: 0 };
+        },
+      },
+    } as unknown as PrismaService;
+    const runtime = {
+      openSession: async () => 'sess1',
+      // Agent resolves the task mid-turn, then the turn throws.
+      sendTurn: async function* () {
+        yield { type: 'progress' as const };
+        task.status = OperationalTaskStatus.RESOLVED;
+        throw new Error('hermes died after resolving');
+      },
+      closeSession: async () => undefined,
+    } as unknown as AgentRuntimeService;
+    const tasksSvc = { start: async () => { task.status = OperationalTaskStatus.IN_PROGRESS; return task; } } as unknown as OperationalTasksService;
+    const moduleRef = await Test.createTestingModule({
+      providers: [WorkbenchAgentRunner, { provide: PrismaService, useValue: prisma },
+        { provide: AgentRuntimeService, useValue: runtime }, { provide: OperationalTasksService, useValue: tasksSvc }],
+    }).compile();
+    await expect(moduleRef.get(WorkbenchAgentRunner).tick('http://x/mcp', 10)).resolves.toBe(0);
+    expect(task.status).toBe(OperationalTaskStatus.RESOLVED); // not reverted
+  });
 });

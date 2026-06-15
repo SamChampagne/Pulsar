@@ -89,7 +89,10 @@ export class WorkbenchAgentRunner {
         } catch (err) {
           this.logger.warn(`agent ${agent.id} task ${task.id}: ${err instanceof Error ? err.message : String(err)}`);
           await this.prisma.operationalTask
-            .updateMany({ where: { id: task.id, tenantId: task.tenantId }, data: { status: OperationalTaskStatus.OPEN } })
+            .updateMany({
+              where: { id: task.id, tenantId: task.tenantId, status: OperationalTaskStatus.IN_PROGRESS },
+              data: { status: OperationalTaskStatus.OPEN },
+            })
             .catch(() => undefined);
         }
       }

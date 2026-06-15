@@ -70,7 +70,7 @@ export class DomainEventsService {
     for (const event of pending) {
       const claimed = await this.prisma.domainEvent.updateMany({
         where: { id: event.id, status: DomainEventStatus.PENDING },
-        data: { status: DomainEventStatus.PROCESSED, attempts: { increment: 1 } },
+        data: { status: DomainEventStatus.PROCESSED, attempts: { increment: 1 }, processedAt: new Date() },
       });
       if (claimed.count === 0) continue;
 
