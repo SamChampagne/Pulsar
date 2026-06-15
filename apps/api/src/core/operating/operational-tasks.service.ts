@@ -58,6 +58,7 @@ export class OperationalTasksService {
     const proposedActions = await this.prisma.proposedAction.findMany({
       where: { tenantId, triggeredByRef: `task:${id}` },
       orderBy: { proposedAt: 'desc' },
+      take: 50,
     });
     return { ...task, proposedActions };
   }
@@ -169,5 +170,7 @@ export class OperationalTasksService {
       },
       after: body,
     });
+
+    return this.prisma.operationalTask.findFirst({ where: { id, tenantId } });
   }
 }
