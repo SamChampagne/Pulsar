@@ -162,6 +162,15 @@
       localStorage.setItem('pulsar.nav.openGroups', JSON.stringify(openGroups));
     }
   });
+  // Always reveal the group that contains the active route (so a deep link is visible
+  // even if the user previously collapsed that group).
+  $effect(() => {
+    for (const g of groups) {
+      if (g.items.some((i) => isActive(i.href)) && !openGroups[g.label]) {
+        openGroups[g.label] = true;
+      }
+    }
+  });
 
   let paletteOpen = $state(false);
   const paletteCommands = $derived([

@@ -244,8 +244,8 @@ export class LoadsService {
     const load = await this.prisma.$transaction(async (tx) => {
       const created = await tx.load.create({ data: { tenantId, loadNumber } });
       for (const id of ids) {
-        await tx.shipment.update({
-          where: { id },
+        await tx.shipment.updateMany({
+          where: { id, tenantId },
           data: { loadId: created.id, status: ShipmentStatus.PLANNED },
         });
         // Junction mirrors the denormalized loadId in the SAME transaction (spec invariant).

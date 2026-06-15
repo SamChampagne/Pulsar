@@ -72,11 +72,14 @@
   }
 
   async function selectLoad(id: string) {
-    selectedLoadId = id;
     try {
-      selectedLoad = await api<LoadDetail>(`/transportation/loads/${id}`);
+      const detail = await api<LoadDetail>(`/transportation/loads/${id}`);
+      selectedLoad = detail;
+      selectedLoadId = id;
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Failed to load load');
+      toast.error(e instanceof ApiError ? e.message : 'Load');
+      selectedLoad = null;
+      selectedLoadId = null;
     }
   }
 
