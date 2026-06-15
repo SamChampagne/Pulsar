@@ -1,8 +1,13 @@
 import { Test } from '@nestjs/testing';
 import { DomainEventStatus, OperationalTaskStatus } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AgentWorkerService } from './agent-worker.service';
 import { DomainEventsService } from './domain-events.service';
 import { TaskAssignmentResolver } from './event-policies';
+
+// Phase 13: DomainEventsService wakes the always-on worker on task creation.
+// Unit tests stub it out — worker behaviour is covered by agent-worker.service.spec.ts.
+const workerStub = { enqueueTask: () => undefined } as unknown as AgentWorkerService;
 
 // Minimal in-memory prisma fake.
 function makePrismaFake() {
@@ -44,7 +49,12 @@ describe('DomainEventsService', () => {
   it('emit persists a PENDING event; processPending creates an UNASSIGNED task and marks PROCESSED', async () => {
     const prisma = makePrismaFake();
     const moduleRef = await Test.createTestingModule({
-      providers: [DomainEventsService, TaskAssignmentResolver, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        DomainEventsService,
+        TaskAssignmentResolver,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AgentWorkerService, useValue: workerStub },
+      ],
     }).compile();
     const svc = moduleRef.get(DomainEventsService);
 
@@ -66,7 +76,12 @@ describe('DomainEventsService', () => {
     const prisma = makePrismaFake();
     (prisma as any).domainEvent.create = async () => { throw new Error('db down'); };
     const moduleRef = await Test.createTestingModule({
-      providers: [DomainEventsService, TaskAssignmentResolver, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        DomainEventsService,
+        TaskAssignmentResolver,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AgentWorkerService, useValue: workerStub },
+      ],
     }).compile();
     await expect(moduleRef.get(DomainEventsService).emit('t', 'stop.delayed', null, {})).resolves.toBeUndefined();
   });
@@ -75,7 +90,12 @@ describe('DomainEventsService', () => {
     const prisma = makePrismaFake();
     (prisma as any).operationalTask.create = async () => { throw new Error('boom'); };
     const moduleRef = await Test.createTestingModule({
-      providers: [DomainEventsService, TaskAssignmentResolver, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        DomainEventsService,
+        TaskAssignmentResolver,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AgentWorkerService, useValue: workerStub },
+      ],
     }).compile();
     const svc = moduleRef.get(DomainEventsService);
     await svc.emit('tenant1', 'stop.delayed', { type: 'stop', id: 's1' }, {

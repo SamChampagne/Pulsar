@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -8,6 +10,10 @@ import type { AuthUser, PermissionKey } from '@pulsar/shared';
 import { ALL_PERMISSION_KEYS, AgentAutonomy, AgentStatus, autoApprovedTiers } from '@pulsar/shared';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { ListQueryDto } from '../../common/dto/list-query.dto';
+import { AgentRuntimeService } from './agent-runtime.service';
+import { AgentWorkerService } from '../operating/agent-worker.service';
+import { AgentRunsService } from '../operating/agent-runs.service';
 import type { AgentCaps, AgentPrincipal } from './agent-principal';
 import { mintAgentSessionToken, verifyAgentSessionTokenFull } from './agent-session-token';
 import { TOOL_REGISTRY } from './tool-registry';
@@ -23,6 +29,8 @@ const agentSelect = {
   prefix: true,
   status: true,
   lastUsedAt: true,
+  lastSeenAt: true,
+  lastRunAt: true,
   createdAt: true,
   revokedAt: true,
   persona: true,
@@ -36,7 +44,14 @@ const agentSelect = {
 export class AgentsService {
   private readonly sessionSecret: string;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => AgentRuntimeService))
+    private readonly runtime: AgentRuntimeService,
+    @Inject(forwardRef(() => AgentWorkerService))
+    private readonly worker: AgentWorkerService,
+    private readonly runs: AgentRunsService,
+  ) {
     const secret = process.env.AGENT_SESSION_SECRET ?? process.env.JWT_SECRET;
     if (!secret) throw new Error('AGENT_SESSION_SECRET or JWT_SECRET must be set');
     this.sessionSecret = secret;
@@ -176,7 +191,7 @@ export class AgentsService {
       where: { id, tenantId },
       select: { id: true, model: true, persona: true, status: true, name: true },
     });
-    if (!agent || agent.status === AgentStatus.REVOKED) throw new NotFoundException('Agent not found');
+    if (!agent || agent.status !== AgentStatus.ACTIVE) throw new NotFoundException('Agent not found');
     return agent;
   }
 
@@ -240,6 +255,52 @@ export class AgentsService {
       data: { status: AgentStatus.REVOKED, revokedAt: new Date() },
     });
     return { revoked: true };
+  }
+
+  /** Hot kill switch: PAUSE (reversible) + kill in-flight Hermes sessions. */
+  async pause(tenantId: string, id: string) {
+    const agent = await this.prisma.agent.findFirst({ where: { id, tenantId } });
+    if (!agent) throw new NotFoundException('Agent not found');
+    if (agent.status === AgentStatus.REVOKED) throw new BadRequestException('Agent is revoked');
+    await this.prisma.agent.update({ where: { id }, data: { status: AgentStatus.PAUSED } });
+    await this.runtime.killAgentSessions(id).catch(() => undefined);
+    return { status: AgentStatus.PAUSED };
+  }
+
+  async resume(tenantId: string, id: string) {
+    const agent = await this.prisma.agent.findFirst({ where: { id, tenantId } });
+    if (!agent) throw new NotFoundException('Agent not found');
+    if (agent.status === AgentStatus.REVOKED) throw new BadRequestException('Agent is revoked');
+    await this.prisma.agent.update({ where: { id }, data: { status: AgentStatus.ACTIVE } });
+    return { status: AgentStatus.ACTIVE };
+  }
+
+  /** Tenant-wide emergency stop: pause every non-revoked agent. Returns the count paused. */
+  async pauseAll(tenantId: string): Promise<number> {
+    const agents = await this.prisma.agent.findMany({
+      where: { tenantId, status: { not: AgentStatus.REVOKED } },
+      select: { id: true },
+    });
+    for (const a of agents) {
+      await this.prisma.agent.update({ where: { id: a.id }, data: { status: AgentStatus.PAUSED } });
+      await this.runtime.killAgentSessions(a.id).catch(() => undefined);
+    }
+    return agents.length;
+  }
+
+  /** Manual "Run now" — enqueue the agent's oldest OPEN task. */
+  async runNow(tenantId: string, id: string) {
+    const agent = await this.prisma.agent.findFirst({ where: { id, tenantId } });
+    if (!agent) throw new NotFoundException('Agent not found');
+    if (agent.status !== AgentStatus.ACTIVE) throw new BadRequestException('Agent is not active');
+    const enqueued = await this.worker.runNow(tenantId, id);
+    return { enqueued };
+  }
+
+  /** Paginated run history (projection — no secrets, rule 26). */
+  async listRuns(tenantId: string, id: string, q: ListQueryDto) {
+    await this.getOne(tenantId, id); // 404 if not in tenant
+    return this.runs.listForAgent(tenantId, id, q);
   }
 
   /** Resolve a raw agent key into a full principal (service user + caps + scoped permissions). */

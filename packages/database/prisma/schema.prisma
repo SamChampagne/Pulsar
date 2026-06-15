@@ -72,6 +72,7 @@ model Tenant {
   proposedActions   ProposedAction[]
   agentConversations AgentConversation[]
   agentRuntimeConfig AgentRuntimeConfig?
+  agentRuns         AgentRun[]
 
   @@map("tenants")
 }
@@ -1316,6 +1317,7 @@ model ProofOfDelivery {
 
 enum AgentStatus {
   ACTIVE
+  PAUSED
   REVOKED
 }
 
@@ -1340,6 +1342,21 @@ enum ProposalStatus {
   FAILED
 }
 
+enum AgentRunTrigger {
+  EVENT
+  CRON
+  MANUAL
+}
+
+enum AgentRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+  KILLED
+}
+
 model Agent {
   id            String      @id @default(cuid())
   tenantId      String
@@ -1357,6 +1374,8 @@ model Agent {
   autonomyLevel AgentAutonomy @default(PROPOSE)
   avatar        String?
   lastUsedAt    DateTime?
+  lastSeenAt    DateTime?
+  lastRunAt     DateTime?
   createdById   String?
   createdAt     DateTime    @default(now())
   revokedAt     DateTime?
@@ -1365,6 +1384,7 @@ model Agent {
   serviceUser   User                @relation("AgentServiceUser", fields: [serviceUserId], references: [id])
   proposals     ProposedAction[]
   conversations AgentConversation[]
+  runs          AgentRun[]
 
   @@index([tenantId])
   @@map("agents")
@@ -1441,6 +1461,31 @@ model AgentRuntimeConfig {
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
   @@map("agent_runtime_configs")
+}
+
+model AgentRun {
+  id                  String          @id @default(cuid())
+  tenantId            String
+  agentId             String
+  trigger             AgentRunTrigger
+  taskId              String?
+  triggeredByRef      String?
+  status              AgentRunStatus  @default(QUEUED)
+  attempt             Int             @default(1)
+  startedAt           DateTime?
+  finishedAt          DateTime?
+  error               String?
+  proposedActionCount Int             @default(0)
+  model               String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  agent  Agent  @relation(fields: [agentId], references: [id])
+
+  @@index([tenantId, agentId, createdAt])
+  @@index([tenantId, status])
+  @@map("agent_runs")
 }
 
 // ---------------------------------------------------------------------------

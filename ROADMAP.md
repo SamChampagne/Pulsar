@@ -187,8 +187,12 @@ ships *with* its agent.
   inbox `/workbench` ; `WorkbenchAgentRunner` headless best-effort (Hermes absent ⇒ skip, jamais
   de crash) ; 4 outils workbench + `triggeredByRef = "task:<id>"` ; retards + échecs tender émis
   comme events ; 21ᵉ migration ; 2 permissions `core.operating.tasks.*`.
-- **13 — 24/7 workforce**: always-on agent workers (event/cron triggered), heartbeat, run history,
-  concurrency, hot kill switch.
+- ✅ **13 — 24/7 workforce** (shipped): `AgentWorkerService` dispatcher (réveil sur event + cron
+  filet de sécurité, concurrence plafonnée global/tenant/agent) ; `AgentRun` ledger durable +
+  `GET /agents/:id/runs` ; heartbeat (`lastSeenAt`/`lastRunAt`) ; `PAUSED` kill switch à chaud
+  (+ endpoints pause/resume/run-now/pause-all) tuant les sessions Hermes en vol ; retry borné sur
+  erreurs de connectivité (SKIPPED quand Hermes absent) ; revert de tâche claim-guarded ; 22ᵉ
+  migration ; règle 28 ; UI web « Activité 24/7 ».
 - **14 — Autonomy & policy engine**: policy-as-data (auto-act vs propose), autonomy ladder,
   guardrails (rate limits, circuit breakers, anomaly) — high autonomy, never above governance.
 - **15 — Agent Control Tower**: per-agent KPIs, manager dashboard, red-team harness

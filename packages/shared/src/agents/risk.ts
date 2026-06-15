@@ -15,6 +15,7 @@ export enum RiskTier {
 // Mirrored in packages/database schema.prisma (Task 3 of the phase 11 plan).
 export enum AgentStatus {
   ACTIVE = 'ACTIVE',
+  PAUSED = 'PAUSED',
   REVOKED = 'REVOKED',
 }
 
