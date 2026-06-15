@@ -1,6 +1,7 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { CryptoModule } from '../crypto/crypto.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { OperatingModule } from '../operating/operating.module';
 import { TransportationModule } from '../../modules/transportation/transportation.module';
 import { TransportOrdersService } from '../../modules/transportation/transport-orders/transport-orders.service';
@@ -35,7 +36,13 @@ import { RuntimeConfigController } from './runtime-config.controller';
  * and importing TransportationModule globally would risk widening its surface.
  */
 @Module({
-  imports: [TransportationModule, AuditLogsModule, CryptoModule, forwardRef(() => OperatingModule)],
+  imports: [
+    TransportationModule,
+    AuditLogsModule,
+    CryptoModule,
+    NotificationsModule,
+    forwardRef(() => OperatingModule),
+  ],
   controllers: [
     AgentsController,
     ProposedActionsController,
