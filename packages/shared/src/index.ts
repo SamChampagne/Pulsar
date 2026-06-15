@@ -11,6 +11,7 @@ export * from './workflows/load.workflow';
 export * from './workflows/invoice.workflow';
 export * from './workflows/customer-invoice.workflow';
 export * from './workflows/operational-task.workflow';
+export * from './workflows/freight-audit.workflow';
 export * from './billing/reconciliation';
 export * from './cost/rate-cost';
 export * from './rating/lane-key';
