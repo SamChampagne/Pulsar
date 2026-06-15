@@ -5,8 +5,8 @@
     id: string;
     shipmentNumber: string;
     status: string;
-    totalWeightKg?: number | null;
-    totalVolumeM3?: number | null;
+    weightKg?: number | null;
+    volumeM3?: number | null;
     palletCount?: number | null;
   };
 
@@ -57,12 +57,12 @@
   const stops = $derived([...(selectedLoad?.route?.stops ?? [])].sort((a, b) => a.sequence - b.sequence));
 
   /** Sum a numeric axis across assigned shipments (fields may be absent on the load payload). */
-  function sumAxis(key: 'totalWeightKg' | 'totalVolumeM3' | 'palletCount'): number {
+  function sumAxis(key: 'weightKg' | 'volumeM3' | 'palletCount'): number {
     return shipments.reduce((acc, s) => acc + (s[key] ?? 0), 0);
   }
 
-  const usedWeight = $derived(sumAxis('totalWeightKg'));
-  const usedVolume = $derived(sumAxis('totalVolumeM3'));
+  const usedWeight = $derived(sumAxis('weightKg'));
+  const usedVolume = $derived(sumAxis('volumeM3'));
   const usedPallets = $derived(sumAxis('palletCount'));
 
   const fmtCost = $derived(

@@ -7,7 +7,7 @@
     transportOrder: { id: string; orderNumber: string };
     originLocation: { name: string; city: string };
     destinationLocation: { name: string; city: string };
-    totalWeightKg?: number | null; totalVolumeM3?: number | null; palletCount?: number | null;
+    weightKg?: number | null; volumeM3?: number | null; palletCount?: number | null;
   };
 
   let {
@@ -51,8 +51,8 @@
           <div class="mt-1 text-ink-muted">{s.originLocation.city} → {s.destinationLocation.city}</div>
           <div class="mt-1.5 flex flex-wrap items-center gap-1">
             <Badge tone={isLate(s.plannedPickupEarly) ? 'danger' : 'neutral'}>{fmt(s.plannedPickupEarly)} → {fmt(s.plannedDeliveryEarly)}</Badge>
-            {#if s.totalWeightKg}<Badge tone="neutral">{s.totalWeightKg} kg</Badge>{/if}
-            {#if s.totalVolumeM3}<Badge tone="neutral">{s.totalVolumeM3} m³</Badge>{/if}
+            {#if s.weightKg}<Badge tone="neutral">{s.weightKg} kg</Badge>{/if}
+            {#if s.volumeM3}<Badge tone="neutral">{s.volumeM3} m³</Badge>{/if}
             {#if s.palletCount}<Badge tone="neutral">{s.palletCount} pal</Badge>{/if}
           </div>
         </button>

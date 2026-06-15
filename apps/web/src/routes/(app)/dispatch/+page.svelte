@@ -16,8 +16,8 @@
     transportOrder: { id: string; orderNumber: string };
     originLocation: { name: string; city: string };
     destinationLocation: { name: string; city: string };
-    totalWeightKg?: number | null;
-    totalVolumeM3?: number | null;
+    weightKg?: number | null;
+    volumeM3?: number | null;
     palletCount?: number | null;
   }
 
