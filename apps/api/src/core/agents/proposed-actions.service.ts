@@ -28,14 +28,17 @@ export class ProposedActionsService {
   ) {}
 
   /**
-   * Enqueue a mutating/sensitive tool call. Idempotent on (agentId, key); caps re-checked here.
-   * Returns the (possibly pre-existing) proposal projection.
+   * Enqueue a mutating/sensitive tool call. Idempotent on (agentId, key); caps re-checked here
+   * for direct (base-PROPOSE) callers. When the gate already applied the caps via
+   * `evaluatePolicy` (the AUTO→PROPOSE demotion path), pass `capsAlreadyEvaluated` so the rate
+   * cap does NOT re-reject the very enqueue the demotion intends — a rate-demoted action must be
+   * queued for human review, not lost as an error.
    */
   async enqueue(
     principal: AgentPrincipal,
     tool: string,
     args: Record<string, unknown>,
-    opts: { idempotencyKey?: string; triggeredByRef?: string },
+    opts: { idempotencyKey?: string; triggeredByRef?: string; capsAlreadyEvaluated?: boolean },
   ) {
     const def = TOOL_BY_NAME.get(tool);
     if (!def) throw new BadRequestException(`Unknown tool "${tool}"`);
@@ -46,17 +49,25 @@ export class ProposedActionsService {
     });
     if (existing) return this.project(existing);
 
-    // Caps (amount + rate) before creating the proposal.
+    // The hard amount cap is ALWAYS enforced here: for a base-PROPOSE agent this is the only
+    // enforcement point (evaluatePolicy only checks amount on the AUTO branch). It is never
+    // weakened by the demotion path — an action whose amount exceeds the cap is refused, queued
+    // or not.
     const amount = def.amountFrom?.(args);
     const amountCap = evaluateAmountCap(amount, principal.caps.maxAmountPerAction);
     if (!amountCap.ok) throw new BadRequestException(amountCap.reason);
 
-    const since = new Date(Date.now() - 60_000);
-    const recent = await this.prisma.proposedAction.count({
-      where: { agentId: principal.agentId, proposedAt: { gte: since } },
-    });
-    const rateCap = evaluateRateCap(recent, principal.caps.maxActionsPerMinute);
-    if (!rateCap.ok) throw new BadRequestException(rateCap.reason);
+    // The rate cap is skipped ONLY on the demotion path: there the gate ALREADY demoted
+    // AUTO→PROPOSE *because of* the rate cap, so re-rejecting it here would lose the very action
+    // the demotion intends to queue for human review. Direct (base-PROPOSE) callers still get it.
+    if (!opts.capsAlreadyEvaluated) {
+      const since = new Date(Date.now() - 60_000);
+      const recent = await this.prisma.proposedAction.count({
+        where: { agentId: principal.agentId, proposedAt: { gte: since } },
+      });
+      const rateCap = evaluateRateCap(recent, principal.caps.maxActionsPerMinute);
+      if (!rateCap.ok) throw new BadRequestException(rateCap.reason);
+    }
 
     const created = await this.prisma.proposedAction.create({
       data: {
@@ -129,7 +140,13 @@ export class ProposedActionsService {
 
     if (decision.effect === 'DENY') return decision;
     if (decision.effect === 'PROPOSE') {
-      const proposal = await this.enqueue(principal, def.name, args, { triggeredByRef: principal.triggeredByRef });
+      // The gate already applied the caps (DENY above the hard cap; demote above the rule/rate
+      // cap). Enqueue without re-checking so a rate-demoted action is queued, not lost (rule 23:
+      // the caps live in @pulsar/shared and were evaluated exactly once, here).
+      const proposal = await this.enqueue(principal, def.name, args, {
+        triggeredByRef: principal.triggeredByRef,
+        capsAlreadyEvaluated: true,
+      });
       return { ...decision, proposalId: proposal.id };
     }
     // AUTO
