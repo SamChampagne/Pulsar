@@ -66,6 +66,10 @@ export const PERMISSIONS = {
     READ: 'fleet.read',
     MANAGE: 'fleet.manage',
   },
+  WMS: {
+    READ: 'wms.read',
+    MANAGE: 'wms.manage',
+  },
 } as const;
 
 export type PermissionKey =
@@ -73,7 +77,8 @@ export type PermissionKey =
   | (typeof PERMISSIONS.TRANSPORTATION)[keyof typeof PERMISSIONS.TRANSPORTATION]
   | (typeof PERMISSIONS.CUSTOMER_PORTAL)[keyof typeof PERMISSIONS.CUSTOMER_PORTAL]
   | (typeof PERMISSIONS.BILLING)[keyof typeof PERMISSIONS.BILLING]
-  | (typeof PERMISSIONS.FLEET)[keyof typeof PERMISSIONS.FLEET];
+  | (typeof PERMISSIONS.FLEET)[keyof typeof PERMISSIONS.FLEET]
+  | (typeof PERMISSIONS.WMS)[keyof typeof PERMISSIONS.WMS];
 
 export interface PermissionDescriptor {
   key: PermissionKey;
@@ -104,6 +109,11 @@ const billing = (key: PermissionKey, description: string): PermissionDescriptor 
 const fleet = (key: PermissionKey, description: string): PermissionDescriptor => ({
   key,
   module: MODULE_KEYS.FLEET,
+  description,
+});
+const wms = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.WMS,
   description,
 });
 
@@ -158,6 +168,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_PAY, 'Mark customer billing statements as paid'),
   fleet(PERMISSIONS.FLEET.READ, 'View fleet assets, maintenance and compliance'),
   fleet(PERMISSIONS.FLEET.MANAGE, 'Manage maintenance orders and compliance documents'),
+  wms(PERMISSIONS.WMS.READ, 'View warehouse inventory, receipts and pick orders'),
+  wms(PERMISSIONS.WMS.MANAGE, 'Manage warehouse items, bins, receipts and pick orders'),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);
