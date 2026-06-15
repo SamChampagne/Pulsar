@@ -128,7 +128,10 @@
       { href: '/customers', label: 'Customers' },
       { href: '/carriers', label: 'Carriers' },
     ]},
-    { label: 'Facturation', visible: hasBilling, items: [{ href: '/invoices', label: 'Invoices' }] },
+    { label: 'Facturation', visible: hasBilling, items: [
+      { href: '/invoices', label: 'Invoices' },
+      { href: '/billing/freight-audit', label: 'Freight Audit' },
+    ]},
     { label: 'Analytics', visible: hasTransportation, items: [{ href: '/analytics', label: 'Analytics' }] },
     { label: 'Réglages', visible: true, items: [
       { href: '/settings/users', label: 'Users' },
