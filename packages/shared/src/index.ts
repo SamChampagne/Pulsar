@@ -21,6 +21,7 @@ export * from './types/api';
 export * from './types/auth';
 export * from './agents/risk';
 export * from './agents/runs';
+export * from './agents/policy';
 export * from './agents/autonomy';
 export * from './agents/runtime-providers';
 export * from './agents/role-presets';
