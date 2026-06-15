@@ -19,9 +19,17 @@
 
   type AutonomyLevel = 'PROPOSE' | 'ACT_LOW' | 'AUTONOMOUS';
 
+  interface AgentPolicy {
+    tool?: string;
+    tierMax?: string;
+    maxAmount?: number;
+    effect: string;
+  }
+
   interface AgentCaps {
     maxAmountPerAction?: number;
     maxActionsPerMinute?: number;
+    policies?: AgentPolicy[];
   }
 
   interface AgentDetail {
@@ -41,6 +49,15 @@
     lastUsedAt: string | null;
     lastSeenAt?: string | null;
     lastRunAt?: string | null;
+    breakerTrippedAt?: string | null;
+  }
+
+  interface Trust {
+    score: number;
+    readyForNext: boolean;
+    nextLevel: string | null;
+    reasons: string[];
+    currentLevel: string;
   }
 
   interface AgentRun {
@@ -144,6 +161,9 @@
   let runsError = $state('');
   let busy = $state(false);
 
+  // Autonomie — trust score + circuit breaker
+  let trust = $state<Trust | null>(null);
+
   // Chat: active conversation loaded from activity list
   let chatConversationId = $state<string | null>(null);
   let chatInitialMessages = $state<ConversationDetail['messages']>([]);
@@ -209,6 +229,45 @@
       runs = data.items;
     } catch (e) {
       runsError = e instanceof ApiError ? e.message : 'Impossible de charger les exécutions';
+    }
+  }
+
+  async function loadTrust(id: string) {
+    try {
+      trust = await api<Trust>(`/agents/${id}/trust`);
+    } catch {
+      trust = null;
+    }
+  }
+
+  async function resetBreaker() {
+    busy = true;
+    try {
+      await api(`/agents/${agentId}/reset-breaker`, { method: 'POST' });
+      toast.success('Circuit breaker réarmé');
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Échec du réarmement');
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function promote() {
+    if (!trust?.nextLevel) return;
+    busy = true;
+    try {
+      await api(`/agents/${agentId}`, {
+        method: 'PATCH',
+        body: { autonomyLevel: trust.nextLevel },
+      });
+      toast.success('Niveau d\'autonomie promu');
+      await load();
+      await loadTrust(agentId);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Échec de la promotion');
+    } finally {
+      busy = false;
     }
   }
 
@@ -299,6 +358,7 @@
     void load();
     void loadActivity(agentId);
     void loadRuns(agentId);
+    void loadTrust(agentId);
   });
 
   function actionStatusTone(status: string): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
@@ -503,6 +563,81 @@
         </Button>
       </div>
     </form>
+  </div>
+
+  <!-- Autonomie -->
+  <div id="autonomie" class="mt-10">
+    <h2 class="mb-4 text-base font-semibold text-ink">Autonomie</h2>
+
+    <!-- Circuit breaker banner -->
+    {#if agent.breakerTrippedAt}
+      <Card>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <Badge tone="danger">Circuit breaker actif</Badge>
+            <span class="text-sm text-ink-muted">
+              L'agent est rétrogradé en PROPOSE — déclenché le {formatDateTime(agent.breakerTrippedAt)}.
+            </span>
+          </div>
+          <Button variant="secondary" onclick={resetBreaker} loading={busy} disabled={busy}>
+            Réarmer
+          </Button>
+        </div>
+      </Card>
+    {/if}
+
+    <!-- Trust banner -->
+    {#if trust}
+      <Card>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-semibold text-ink">Confiance : {trust.score}/100</span>
+              <Badge tone={autonomyTone(trust.currentLevel as AutonomyLevel)}>{trust.currentLevel}</Badge>
+            </div>
+            {#if trust.readyForNext}
+              <p class="mt-1 text-xs text-ink-muted">Prêt pour {trust.nextLevel}.</p>
+            {:else if trust.reasons.length > 0}
+              <ul class="mt-1 space-y-0.5 text-xs text-ink-muted">
+                {#each trust.reasons as reason (reason)}
+                  <li>· {reason}</li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+          {#if trust.readyForNext}
+            <Button variant="primary" onclick={promote} loading={busy} disabled={busy}>
+              Promouvoir
+            </Button>
+          {/if}
+        </div>
+      </Card>
+    {/if}
+
+    <!-- Policies summary (read-only) -->
+    {#if agent.caps?.policies?.length}
+      <div class="mt-4">
+        <Card>
+          <div class="mb-3">
+            <h3 class="text-sm font-semibold text-ink">Règles de politique</h3>
+            <p class="mt-0.5 text-xs text-ink-muted">
+              Lecture seule — ces règles s'éditent depuis la configuration de l'agent.
+            </p>
+          </div>
+          <ul class="divide-y divide-edge">
+            {#each agent.caps.policies as policy, i (i)}
+              <li class="flex flex-wrap items-center gap-2 px-1 py-2 text-xs">
+                <code class="font-mono text-ink">{policy.tool ?? 'tout outil'}</code>
+                <span class="text-ink-muted">· {policy.tierMax ?? '—'}</span>
+                <span class="text-ink-muted">· {policy.maxAmount ?? '—'}</span>
+                <span class="text-ink-muted">→</span>
+                <Badge tone={policy.effect === 'DENY' ? 'danger' : 'ok'}>{policy.effect}</Badge>
+              </li>
+            {/each}
+          </ul>
+        </Card>
+      </div>
+    {/if}
   </div>
 
   <!-- Activité 24/7 -->
