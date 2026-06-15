@@ -350,7 +350,7 @@ export class AgentsService {
       run({ status: 'SKIPPED' }),
       run({ status: 'KILLED' }),
       this.breakerTripCount(tenantId, agentId, since),
-      this.prisma.operationalTask.count({ where: { tenantId, assigneeAgentId: agentId, status: 'RESOLVED' } }),
+      this.prisma.operationalTask.count({ where: { tenantId, assigneeAgentId: agentId, status: 'RESOLVED', resolvedAt: { gte: since } } }),
       this.prisma.agentRun.findMany({
         where: { tenantId, agentId, createdAt: { gte: since }, startedAt: { not: null }, finishedAt: { not: null } },
         select: { startedAt: true, finishedAt: true },
