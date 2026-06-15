@@ -3,6 +3,7 @@ import { IsNumber, IsOptional, IsPositive, IsString, MinLength } from 'class-val
 
 export class CreatePickOrderDto {
   @IsString() @MinLength(1) locationId!: string;
+  @IsOptional() @IsString() shipmentId?: string;
   @IsOptional() @IsString() reference?: string;
   @IsOptional() @IsString() note?: string;
 }
@@ -16,4 +17,5 @@ export class AddPickLineDto {
 export class PickListQueryDto {
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() locationId?: string;
+  @IsOptional() @IsString() shipmentId?: string;
 }
