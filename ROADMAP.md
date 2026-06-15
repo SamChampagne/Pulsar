@@ -182,9 +182,11 @@ Arc = agents first (deepen on the 3 current modules), then modules woven in — 
 ships *with* its agent.
 
 **Act I — 24/7 operating substrate**
-- **12 — Operating Workbench** (vertical slice): `DomainEvent` → `EventPolicy` →
-  `OperationalTask`/`ExceptionCase` → unified inbox → `ProposedAction`; the dispatch/exceptions
-  agent works its queue end-to-end without ⌘K.
+- ✅ **12 — Operating Workbench** (shipped): `DomainEvent` outbox + policies événement→tâche
+  (`@pulsar/shared/operating`, pures) ; `OperationalTask` idempotente `(tenantId, dedupKey)` +
+  inbox `/workbench` ; `WorkbenchAgentRunner` headless best-effort (Hermes absent ⇒ skip, jamais
+  de crash) ; 4 outils workbench + `triggeredByRef = "task:<id>"` ; retards + échecs tender émis
+  comme events ; 21ᵉ migration ; 2 permissions `core.operating.tasks.*`.
 - **13 — 24/7 workforce**: always-on agent workers (event/cron triggered), heartbeat, run history,
   concurrency, hot kill switch.
 - **14 — Autonomy & policy engine**: policy-as-data (auto-act vs propose), autonomy ladder,

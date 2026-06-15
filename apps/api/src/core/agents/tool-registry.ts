@@ -43,6 +43,11 @@ export interface ToolServices {
     ): Promise<unknown>;
   };
   analytics: { carrierScorecards(tenantId: string): Promise<unknown> };
+  operatingTasks: {
+    listForAgent(tenantId: string, agentId: string): Promise<unknown>;
+    getForTenant(tenantId: string, id: string): Promise<unknown>;
+    resolve(tenantId: string, id: string, userId: string, note?: string): Promise<unknown>;
+  };
 }
 
 export interface ToolContext {
@@ -55,7 +60,8 @@ export interface ToolDef {
   description: string;
   tier: RiskTier;
   permission: PermissionKey;
-  module: ModuleKey;
+  /** When undefined, the tool is a core tool available regardless of enabled modules. */
+  module?: ModuleKey;
   inputSchema: z.ZodObject<z.ZodRawShape>;
   /** Executes the real operation. Live for READ/LOW; on approval for MUTATING/SENSITIVE. */
   run(args: Record<string, unknown>, ctx: ToolContext): Promise<unknown>;
@@ -173,6 +179,45 @@ export const TOOL_REGISTRY: ToolDef[] = [
         },
       ),
     amountFrom: (args) => (typeof args.amount === 'number' ? args.amount : undefined),
+  },
+  // ── Core workbench tools (no module requirement — always available) ──────────
+  {
+    name: 'list_my_tasks',
+    description: 'List open and in-progress operating tasks assigned to this agent.',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.CORE.OPERATING_TASKS_READ,
+    inputSchema: z.object({}),
+    run: (_args, ctx) =>
+      ctx.services.operatingTasks.listForAgent(
+        ctx.principal.user.tenantId,
+        ctx.principal.agentId,
+      ),
+  },
+  {
+    name: 'get_task',
+    description: 'Get a single operating task by id, including linked proposed actions.',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.CORE.OPERATING_TASKS_READ,
+    inputSchema: z.object({ taskId: z.string().min(1) }),
+    run: (args, ctx) =>
+      ctx.services.operatingTasks.getForTenant(
+        ctx.principal.user.tenantId,
+        args.taskId as string,
+      ),
+  },
+  {
+    name: 'resolve_task',
+    description: 'Resolve an operating task assigned to me, with an optional note. Runs immediately (low-risk self-management).',
+    tier: RiskTier.LOW,
+    permission: PERMISSIONS.CORE.OPERATING_TASKS_MANAGE,
+    inputSchema: z.object({ taskId: z.string().min(1), note: z.string().optional() }),
+    run: (args, ctx) =>
+      ctx.services.operatingTasks.resolve(
+        ctx.principal.user.tenantId,
+        args.taskId as string,
+        ctx.principal.user.id,
+        args.note as string | undefined,
+      ),
   },
 ];
 

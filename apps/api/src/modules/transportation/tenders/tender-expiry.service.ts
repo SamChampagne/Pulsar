@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { LoadStatus, TenderStatus } from '@pulsar/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { TendersService } from './tenders.service';
 
 /**
@@ -18,6 +19,7 @@ export class TenderExpiryService {
     private readonly prisma: PrismaService,
     private readonly tenders: TendersService,
     private readonly webhooks: WebhooksService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
@@ -46,6 +48,12 @@ export class TenderExpiryService {
         tenderId: tender.id,
         carrierId: tender.carrierId,
       });
+      await this.domainEvents.emit(
+        tender.tenantId,
+        'tender.expired',
+        { type: 'load', id: tender.loadId },
+        { loadId: tender.loadId, loadNumber: tender.load.loadNumber, carrierId: tender.carrierId, tenderId: tender.id },
+      );
       await this.tenders.advanceChain(tender.id);
     }
   }

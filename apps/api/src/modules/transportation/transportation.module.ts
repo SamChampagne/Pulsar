@@ -3,6 +3,7 @@ import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { DocumentsModule } from '../../core/documents/documents.module';
 import { IntegrationsModule } from '../../core/integrations/integrations.module';
 import { NotificationsModule } from '../../core/notifications/notifications.module';
+import { OperatingModule } from '../../core/operating/operating.module';
 import { DelayDetectionService } from './exceptions/delay-detection.service';
 import { CustomersController } from './customers/customers.controller';
 import { CustomersService } from './customers/customers.service';
@@ -50,7 +51,7 @@ import { BolService } from './bol/bol.service';
  * tenants without the module enabled get a 403 from ModulesGuard.
  */
 @Module({
-  imports: [AuditLogsModule, DocumentsModule, IntegrationsModule, NotificationsModule],
+  imports: [AuditLogsModule, DocumentsModule, IntegrationsModule, NotificationsModule, OperatingModule],
   controllers: [
     CustomersController,
     LocationsController,

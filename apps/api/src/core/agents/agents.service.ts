@@ -9,7 +9,7 @@ import { ALL_PERMISSION_KEYS, AgentAutonomy, AgentStatus, autoApprovedTiers } fr
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AgentCaps, AgentPrincipal } from './agent-principal';
-import { mintAgentSessionToken, verifyAgentSessionToken } from './agent-session-token';
+import { mintAgentSessionToken, verifyAgentSessionTokenFull } from './agent-session-token';
 import { TOOL_REGISTRY } from './tool-registry';
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -42,8 +42,8 @@ export class AgentsService {
     this.sessionSecret = secret;
   }
 
-  mintSessionToken(agentId: string, ttlSeconds = 300): string {
-    return mintAgentSessionToken(agentId, this.sessionSecret, ttlSeconds);
+  mintSessionToken(agentId: string, ttlSeconds = 300, triggeredByRef?: string): string {
+    return mintAgentSessionToken(agentId, this.sessionSecret, ttlSeconds, { triggeredByRef });
   }
 
   /** One hidden DISABLED user PER agent — audit shows the specific agent, never loginable (rule 13). */
@@ -244,9 +244,9 @@ export class AgentsService {
 
   /** Resolve a raw agent key into a full principal (service user + caps + scoped permissions). */
   async validateKey(rawKey: string): Promise<AgentPrincipal> {
-    const sessionAgentId = verifyAgentSessionToken(rawKey, this.sessionSecret);
-    const agent = sessionAgentId
-      ? await this.prisma.agent.findUnique({ where: { id: sessionAgentId } })
+    const parsed = verifyAgentSessionTokenFull(rawKey, this.sessionSecret);
+    const agent = parsed
+      ? await this.prisma.agent.findUnique({ where: { id: parsed.agentId } })
       : await this.prisma.agent.findUnique({ where: { secretHash: sha256(rawKey) } });
     if (!agent || agent.status === AgentStatus.REVOKED) {
       throw new UnauthorizedException('Invalid agent key');
@@ -262,6 +262,12 @@ export class AgentsService {
       lastName: agent.name,
       permissions: agent.permissions as PermissionKey[],
     };
-    return { agentId: agent.id, name: agent.name, caps: (agent.caps ?? {}) as AgentCaps, user };
+    return {
+      agentId: agent.id,
+      name: agent.name,
+      caps: (agent.caps ?? {}) as AgentCaps,
+      user,
+      triggeredByRef: parsed?.triggeredByRef,
+    };
   }
 }

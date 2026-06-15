@@ -1,7 +1,7 @@
 # État du projet — point de reprise
 
 > 🇫🇷 Document de synthèse pour reprendre le travail (humain ou session Claude Code).
-> Mis à jour à la fin du **palier 2a de la phase 11**. Détail des tâches : [TODO.md](../TODO.md) ·
+> Mis à jour à la fin de la **phase 12**. Détail des tâches : [TODO.md](../TODO.md) ·
 > vision : [ROADMAP.md](../ROADMAP.md) · règles de dev : [CLAUDE.md](../CLAUDE.md) ·
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
@@ -29,6 +29,7 @@
 | 11 (palier 2a) — Agents-employés (cerveau Hermes dans Pulsar) | ✅ | **Agent-employé** = persona/rôle/modèle LLM/**niveau d'autonomie** (`PROPOSE`/`ACT_LOW`/`AUTONOMOUS`, `@pulsar/shared`) ajoutés à l'entité `Agent` ; **assistant ⌘K** qui *streame* la conversation via **ACP** (`AgentRuntimeService` **spawn un processus Python Hermes par conversation** sur stdio — isolation tenant car l'enregistrement MCP de Hermes est process-global ; `HermesAcpClient` + faux serveur ACP pour les tests) ; **Hermes = cerveau, Pulsar = maison** (UI, identité, outils MCP, file de gouvernance) — les appels d'outils de l'agent tapent `POST /api/v1/mcp` **en tant qu'agent** via un **jeton de session** court (`AGENT_SESSION_SECRET`, fallback `JWT_SECRET`) → chemin palier 1 ; **conversations persistées** (`AgentConversationsService` + endpoints `GET/POST /agent-conversations`, `GET :id`, `POST :id/messages`, tour SSE) ; **gouvernance palier 1 réutilisée** + correction d'un trou : le **plafond montant est désormais appliqué sur le chemin d'auto-approbation** (`mcp-server.factory.ts`) — l'autonomie ne lève jamais les caps ; perm `core.agents.chat` ; runtime **opt-in & best-effort** (Hermes absent ⇒ 503, jamais de crash) ; **MCP-agnostique** (Hermes = runtime de référence) ; champs web (persona/rôle/modèle/autonomie/avatar) + panneau ⌘K ; 19ᵉ migration ; e2e `phase11b-agents-employes` |
 | 11 (R1) — Runtime Hermes managé par Pulsar | ✅ | **Installation et configuration sans toucher au `.env`** : `pnpm agents:setup` installe Hermes dans `hermes-agent/.venv` via **uv** (récupère automatiquement un CPython 3.12 autonome — Hermes exige 3.11–3.13, donc aucune install Python manuelle) ; **config par tenant** (`AgentRuntimeConfig`, 20ᵉ migration) éditable dans **Réglages → Runtime agents** : choix d'un provider du catalogue `RUNTIME_PROVIDERS` (`@pulsar/shared`, pure data browser-safe) puis soit une **clé API chiffrée via `CryptoService`** (jamais renvoyée en clair), soit un **login OAuth** (Codex/Nous) dont Pulsar streame en SSE le device code + URL et dont les jetons vivent dans le `HERMES_HOME` par tenant ; **builder d'env** (`agent-runtime-env.ts`) + `runtime-config.service` (crypto) + `runtime-config.controller` (REST + SSE), injection de la config dans `openSession` du `AgentRuntimeService` ; endpoints `/agent-runtime` (`GET providers`, `GET`/`PUT`, `POST test`, `POST connect` SSE — gated `core.agents.manage`) ; runtime best-effort par tenant (503 si Hermes absent) ; page web Réglages + e2e `phase11r1-agent-runtime` |
 | 11 (R2) — Espace Agents (citoyens de premier ordre) | ✅ | **Agents promus au niveau supérieur de la navigation** : onglet **Agents** → **roster de cartes « employés »** → page agent (`/agents/[id]`) à trois volets — **Profil & config guidée** (aide inline + presets de rôle `AGENT_ROLE_PRESETS` de `@pulsar/shared`), **Activité** (conversations + actions proposées + compteurs `conversations`/`pending`/`executed`/`rejected`) et **Chat** (parler à cet employé) ; `GET /agents/:id` projette le profil **sans `secretHash` ni `serviceUserId`** et `GET /agents/:id/activity` renvoie l'activité **scopée tenant + agent** (gated `core.agents.read`) ; presets = pure data testée (`role-presets.spec`) + e2e `phase11r2-agent-experience` |
+| 12 — Operating Workbench | ✅ | **Outbox `DomainEvent`** (best-effort, worker `processPending` race-safe claim `PENDING→PROCESSED`, échecs terminaux) ; **policies événement→tâche** dans `@pulsar/shared/operating` (pures, testées) : retards de stop et échecs tender émis comme events, mappés en `OperationalTask` idempotente sur `(tenantId, dedupKey)` ; **`OperationalTask` + inbox `/workbench`** (statuts via `canTransitionOperationalTask`, 2 permissions `core.operating.tasks.*`, tri priorité + statut) ; **`WorkbenchAgentRunner`** headless best-effort (agent `alwaysOn` + `handlesCategories` réveillé sur ses cas, Hermes absent ⇒ skip tâche revenue OPEN, `runCron` n'émet jamais d'exception) ; **4 outils workbench** au registre (list/get/claim/resolve tasks) + `triggeredByRef = "task:<id>"` dans le jeton de session agent ; 21ᵉ migration |
 
 **La boucle économique complète fonctionne** : le client commande depuis son portail →
 confirmation → planification (split possible) → tender automatique par lane avec courriel →
@@ -37,17 +38,20 @@ POD avec photo → BOL PDF généré → détection automatique des retards → 
 brouillon → approbation → relevé client.
 
 **Chiffres** : 3 modules métier actifs (transportation, customer-portal, billing) + le plan
-d'administration plateforme ; 20 migrations ; ~85 endpoints (dont `loads/active-map`,
-`public/driver/:token/position`, `mcp` / `agents` / `agent-actions` / `agent-conversations`
-et `agent-runtime` — install/config du runtime managé) ; 30 pages web sur le
-design system phase 9 (Tailwind 4, 17 composants partagés) ; carte opérationnelle live sur le
-dashboard + cartes Leaflet sur le détail load et le suivi public (phase 10) ; couche
-gouvernance d'agents + endpoint MCP exposant 8 outils dispatch sous validation humaine (phase 11
-palier 1) ; agents-employés (cerveau Hermes spawné par conversation, assistant ⌘K) sur la même
-file de gouvernance, plafond montant appliqué à l'auto-approbation (phase 11 palier 2a) ;
-**runtime Hermes installé via `pnpm agents:setup` (uv) et configuré par tenant dans Pulsar —
-clé chiffrée ou login OAuth** (phase 11 R1) ; **agents promus citoyens de premier ordre** —
-roster, profil + config guidée (presets de rôle), activité et chat sur `/agents` (phase 11 R2).
+d'administration plateforme ; 21 migrations ; ~90 endpoints (dont `loads/active-map`,
+`public/driver/:token/position`, `mcp` / `agents` / `agent-actions` / `agent-conversations`,
+`agent-runtime` — install/config du runtime managé, et `operational-tasks` / `/workbench`) ;
+31 pages web sur le design system phase 9 (Tailwind 4, 17 composants partagés) ; carte
+opérationnelle live sur le dashboard + cartes Leaflet sur le détail load et le suivi public
+(phase 10) ; couche gouvernance d'agents + endpoint MCP exposant 8 outils dispatch sous
+validation humaine (phase 11 palier 1) ; agents-employés (cerveau Hermes spawné par
+conversation, assistant ⌘K) sur la même file de gouvernance, plafond montant appliqué à
+l'auto-approbation (phase 11 palier 2a) ; **runtime Hermes installé via `pnpm agents:setup`
+(uv) et configuré par tenant dans Pulsar — clé chiffrée ou login OAuth** (phase 11 R1) ;
+**agents promus citoyens de premier ordre** — roster, profil + config guidée (presets de rôle),
+activité et chat sur `/agents` (phase 11 R2) ; **Operating Workbench** — outbox DomainEvent,
+policies événement→tâche pures, inbox `/workbench`, WorkbenchAgentRunner headless best-effort,
+4 outils workbench + `triggeredByRef` (phase 12).
 
 ## Carte de la documentation
 
@@ -62,10 +66,10 @@ roster, profil + config guidée (presets de rôle), activité et chat sur `/agen
 | Démarrage local | [getting-started.md](./getting-started.md) |
 | Connexion d'un agent IA (MCP) / Hermes | [agents.md](./agents.md) |
 
-## Prochaine session — Pulsar Agent OS (phases 12 → 22)
+## Prochaine session — Pulsar Agent OS (phases 13 → 22)
 
-La **phase 11 est livrée intégralement** (paliers 1, 2a, R1, R2) sur la branche `phase-11`.
-**Précondition avant la phase 12 : merger `phase-11` dans `main`** (PR à ouvrir).
+La **phase 12 est livrée** (Operating Workbench) sur la branche `phase-12`.
+**Précondition avant la phase 13 : merger `phase-12` dans `main`** (PR à ouvrir).
 
 La direction est verrouillée : voir la **roadmap stratégique adoptée le 2026-06-14**,
 [docs/superpowers/specs/2026-06-14-pulsar-agent-os-roadmap.md](./superpowers/specs/2026-06-14-pulsar-agent-os-roadmap.md).
@@ -73,15 +77,15 @@ North star = **OS logistique modulaire où des agents Hermes tournent 24/7 comme
 gouvernés**. Arc = agents d'abord (approfondir sur les 3 modules actuels), puis modules tressés
 — chaque nouveau module arrive avec son agent.
 
-- **Acte I (substrat 24/7)** : 12 Operating Workbench · 13 Main-d'œuvre 24/7 · 14 Autonomie &
+- **Acte I (substrat 24/7)** : ~~12 Operating Workbench~~ ✅ · 13 Main-d'œuvre 24/7 · 14 Autonomie &
   policies · 15 Control Tower agents.
 - **Acte II (agents phares)** : 16 Freight Audit autonome (§19.4) · 17 Planification continue (§19.5).
 - **Acte III (modules tressés, ré-ordonnable)** : 18 Integrations · 19 Yard · 20 Fleet · 21 WMS ·
   22 Analytics/réseau de données.
 
-**Prochain pas concret** : merge `phase-11`, puis brainstorm → spec → plan de la **phase 12**
-(Operating Workbench + agent répartition/exceptions de bout en bout). Pulsar reste
-**MCP-agnostique** ; Hermes est le runtime de référence.
+**Prochain pas concret** : merge `phase-12`, puis brainstorm → spec → plan de la **phase 13**
+(Main-d'œuvre 24/7 : agents toujours-on, heartbeat, historique d'exécution, kill switch). Pulsar
+reste **MCP-agnostique** ; Hermes est le runtime de référence.
 
 Benchmark Fleetbase (2026-06-12) : aucune IA chez eux — c'est l'axe de différenciation.
 

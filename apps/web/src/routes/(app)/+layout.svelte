@@ -24,6 +24,11 @@
 
   const unreadCount = $derived(notifications.filter((n) => !n.readAt).length);
 
+  // Operating workbench: gated on the read permission.
+  const canReadWorkbench = $derived(
+    $auth?.user.permissions.includes(PERMISSIONS.CORE.OPERATING_TASKS_READ) ?? false,
+  );
+
   // Agent-actions inbox: count of pending proposals, gated on the read permission.
   const canReadAgentActions = $derived(
     $auth?.user.permissions.includes(PERMISSIONS.CORE.AGENTS_ACTIONS_READ) ?? false,
@@ -186,6 +191,12 @@
             {#if pendingActions > 0}
               <span class="rounded-full bg-danger px-1.5 text-[10px] text-white">{pendingActions}</span>
             {/if}
+          </a>
+        {/if}
+        {#if canReadWorkbench}
+          <a href="/workbench"
+             class={`block rounded-md px-2 py-1.5 ${isActive('/workbench') ? 'bg-accent text-white' : 'text-ink-faint hover:bg-sidebar-hover hover:text-white'}`}>
+            Workbench
           </a>
         {/if}
         {#if canReadAgents}
