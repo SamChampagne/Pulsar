@@ -202,6 +202,74 @@ export class LoadsService {
     return load;
   }
 
+  /**
+   * Dispatch-workbench consolidation: create a fresh load from a set of currently
+   * unassigned, planifiable shipments in ONE transaction. Mirrors `assignToLoad`'s
+   * sequencing — shipment.loadId + status:PLANNED + ShipmentLoadLeg(seq 1) written
+   * together (rule 18) — but for N shipments onto a brand-new load. Validate ALL
+   * shipments up front so a validation failure never leaves a half-built load.
+   * Cost recompute (rule 11) runs once after the transaction commits, exactly like
+   * `assignToLoad`. A fresh load has no trailer → no capacity excess to surface.
+   */
+  async consolidate(tenantId: string, userId: string, shipmentIds: string[]) {
+    if (!shipmentIds || shipmentIds.length === 0) {
+      throw new BadRequestException('shipmentIds must not be empty');
+    }
+    const ids = [...new Set(shipmentIds)];
+
+    // --- Validate ALL up front (no partial load on failure) ---
+    const shipments = await this.prisma.shipment.findMany({
+      where: { id: { in: ids }, tenantId },
+      select: { id: true, status: true, loadId: true },
+    });
+    if (shipments.length !== ids.length) {
+      throw new BadRequestException('One or more shipments could not be found');
+    }
+    for (const s of shipments) {
+      if (s.loadId !== null) {
+        throw new BadRequestException(`Shipment ${s.id} is already assigned to a load`);
+      }
+      // Same gate as assignToLoad: only PENDING (unassigned, planifiable) shipments.
+      if (s.status !== ShipmentStatus.PENDING) {
+        throw new BadRequestException(`Shipment ${s.id} is not PENDING and cannot be consolidated`);
+      }
+    }
+
+    const loadNumber = await this.sequences.nextNumber(tenantId, 'load');
+
+    // --- Create the load + assign all shipments atomically (rule 18) ---
+    const load = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.load.create({ data: { tenantId, loadNumber } });
+      for (const id of ids) {
+        await tx.shipment.update({
+          where: { id },
+          data: { loadId: created.id, status: ShipmentStatus.PLANNED },
+        });
+        // Junction mirrors the denormalized loadId in the SAME transaction (spec invariant).
+        await tx.shipmentLoadLeg.upsert({
+          where: { shipmentId_sequence: { shipmentId: id, sequence: 1 } },
+          update: { loadId: created.id },
+          create: { tenantId, shipmentId: id, loadId: created.id, sequence: 1 },
+        });
+      }
+      return created;
+    });
+
+    // Cost recompute runs after the assignment writes commit — same as assignToLoad (rule 11).
+    await this.cost.recompute(tenantId, load.id);
+
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.CREATE,
+      entityType: 'load',
+      entityId: load.id,
+      after: { loadNumber: load.loadNumber, consolidatedShipments: ids.length },
+    });
+
+    return this.get(tenantId, load.id);
+  }
+
   /** Carrier selection: assigning resources moves an OPEN load to PLANNED. */
   async assignResources(tenantId: string, userId: string, id: string, dto: AssignLoadResourcesDto) {
     const load = await this.get(tenantId, id);
