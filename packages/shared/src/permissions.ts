@@ -62,13 +62,18 @@ export const PERMISSIONS = {
     CUSTOMER_INVOICES_SEND: 'billing.customer-invoices.send',
     CUSTOMER_INVOICES_PAY: 'billing.customer-invoices.pay',
   },
+  FLEET: {
+    READ: 'fleet.read',
+    MANAGE: 'fleet.manage',
+  },
 } as const;
 
 export type PermissionKey =
   | (typeof PERMISSIONS.CORE)[keyof typeof PERMISSIONS.CORE]
   | (typeof PERMISSIONS.TRANSPORTATION)[keyof typeof PERMISSIONS.TRANSPORTATION]
   | (typeof PERMISSIONS.CUSTOMER_PORTAL)[keyof typeof PERMISSIONS.CUSTOMER_PORTAL]
-  | (typeof PERMISSIONS.BILLING)[keyof typeof PERMISSIONS.BILLING];
+  | (typeof PERMISSIONS.BILLING)[keyof typeof PERMISSIONS.BILLING]
+  | (typeof PERMISSIONS.FLEET)[keyof typeof PERMISSIONS.FLEET];
 
 export interface PermissionDescriptor {
   key: PermissionKey;
@@ -94,6 +99,11 @@ const portal = (key: PermissionKey, description: string): PermissionDescriptor =
 const billing = (key: PermissionKey, description: string): PermissionDescriptor => ({
   key,
   module: MODULE_KEYS.BILLING,
+  description,
+});
+const fleet = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.FLEET,
   description,
 });
 
@@ -146,6 +156,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_MANAGE, 'Draft, approve and delete customer billing statements'),
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_SEND, 'Send customer billing statements'),
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_PAY, 'Mark customer billing statements as paid'),
+  fleet(PERMISSIONS.FLEET.READ, 'View fleet assets, maintenance and compliance'),
+  fleet(PERMISSIONS.FLEET.MANAGE, 'Manage maintenance orders and compliance documents'),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);

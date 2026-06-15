@@ -96,6 +96,9 @@
   const hasBilling = $derived(
     $auth?.tenant.enabledModules.includes(MODULE_KEYS.BILLING) ?? false,
   );
+  const hasFleet = $derived(
+    $auth?.tenant.enabledModules.includes(MODULE_KEYS.FLEET) ?? false,
+  );
 
   function isActive(href: string): boolean {
     return page.url.pathname.startsWith(href);
@@ -127,6 +130,9 @@
     { label: 'Partenaires', visible: hasTransportation, items: [
       { href: '/customers', label: 'Customers' },
       { href: '/carriers', label: 'Carriers' },
+    ]},
+    { label: 'Fleet', visible: hasFleet, items: [
+      { href: '/fleet', label: 'Fleet' },
     ]},
     { label: 'Facturation', visible: hasBilling, items: [
       { href: '/invoices', label: 'Invoices' },

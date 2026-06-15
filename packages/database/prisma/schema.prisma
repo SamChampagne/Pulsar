@@ -74,6 +74,8 @@ model Tenant {
   agentRuntimeConfig AgentRuntimeConfig?
   agentRuns         AgentRun[]
   incomingCarrierInvoices IncomingCarrierInvoice[]
+  maintenanceOrders       MaintenanceOrder[]
+  complianceDocuments     ComplianceDocument[]
 
   @@map("tenants")
 }
@@ -579,9 +581,10 @@ model Vehicle {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id])
-  carrier Carrier? @relation(fields: [carrierId], references: [id])
-  loads   Load[]
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  carrier           Carrier?           @relation(fields: [carrierId], references: [id])
+  loads             Load[]
+  maintenanceOrders MaintenanceOrder[]
 
   @@unique([tenantId, unitNumber])
   @@index([tenantId])
@@ -610,13 +613,46 @@ model Trailer {
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id])
-  carrier Carrier? @relation(fields: [carrierId], references: [id])
-  loads   Load[]
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  carrier           Carrier?           @relation(fields: [carrierId], references: [id])
+  loads             Load[]
+  maintenanceOrders MaintenanceOrder[]
 
   @@unique([tenantId, unitNumber])
   @@index([tenantId])
   @@map("trailers")
+}
+
+// ============================================================================
+// FLEET — maintenance & compliance (mirror of @pulsar/shared fleet enums)
+// ============================================================================
+
+enum MaintenanceType {
+  PREVENTIVE
+  REPAIR
+  INSPECTION
+}
+
+enum MaintenanceOrderStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ComplianceSubject {
+  VEHICLE
+  TRAILER
+  DRIVER
+}
+
+enum ComplianceDocType {
+  REGISTRATION
+  INSURANCE
+  INSPECTION
+  LICENSE
+  MEDICAL
+  OTHER
 }
 
 // ============================================================================
@@ -1625,4 +1661,59 @@ model OperationalTask {
   @@index([tenantId, status, assigneeType])
   @@index([tenantId, assigneeAgentId, status])
   @@map("operational_tasks")
+}
+
+// ---------------------------------------------------------------------------
+// Phase fleet — Maintenance Orders & Compliance Documents
+// ---------------------------------------------------------------------------
+
+model MaintenanceOrder {
+  id            String                 @id @default(cuid())
+  tenantId      String
+  vehicleId     String?
+  trailerId     String?
+  type          MaintenanceType        @default(REPAIR)
+  status        MaintenanceOrderStatus @default(OPEN)
+  description   String
+  odometerKm    Int?
+  costAmount    Decimal?               @db.Decimal(12, 2)
+  costCurrency  String                 @default("CAD")
+  vendor        String?
+  dueDate       DateTime?
+  dueOdometerKm Int?
+  openedAt      DateTime               @default(now())
+  completedAt   DateTime?
+  createdById   String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id])
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
+  trailer Trailer? @relation(fields: [trailerId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([tenantId, vehicleId])
+  @@map("maintenance_orders")
+}
+
+model ComplianceDocument {
+  id          String            @id @default(cuid())
+  tenantId    String
+  subjectType ComplianceSubject
+  subjectId   String
+  docType     ComplianceDocType
+  reference   String?
+  issuedAt    DateTime?
+  expiresAt   DateTime
+  documentId  String?
+  notes       String?
+  createdById String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, subjectType, subjectId])
+  @@index([tenantId, expiresAt])
+  @@map("compliance_documents")
 }
