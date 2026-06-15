@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsDate, IsEnum, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
 import { ComplianceDocType, ComplianceSubject } from '@pulsar/shared';
 
 export class CreateComplianceDocumentDto {
@@ -7,8 +7,8 @@ export class CreateComplianceDocumentDto {
   @IsString() @MinLength(1) subjectId!: string;
   @IsEnum(ComplianceDocType) docType!: ComplianceDocType;
   @IsOptional() @IsString() reference?: string;
-  @IsOptional() @Type(() => Date) issuedAt?: Date;
-  @Type(() => Date) expiresAt!: Date;
+  @IsOptional() @IsDate() @Type(() => Date) issuedAt?: Date;
+  @IsDate() @Type(() => Date) expiresAt!: Date;
   @IsOptional() @IsString() documentId?: string;
   @IsOptional() @IsString() notes?: string;
 }

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsDate, IsEnum, IsInt, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
 import { MaintenanceType } from '@pulsar/shared';
 
 export class CreateMaintenanceOrderDto {
@@ -9,7 +9,7 @@ export class CreateMaintenanceOrderDto {
   @IsString() @MinLength(1) description!: string;
   @IsOptional() @IsInt() odometerKm?: number;
   @IsOptional() @IsString() vendor?: string;
-  @IsOptional() @Type(() => Date) dueDate?: Date;
+  @IsOptional() @IsDate() @Type(() => Date) dueDate?: Date;
   @IsOptional() @IsInt() dueOdometerKm?: number;
 }
 
