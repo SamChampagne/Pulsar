@@ -12,6 +12,8 @@ import { PickingService } from './picking/picking.service';
 import { PickingController } from './picking/picking.controller';
 import { WmsOverviewService } from './overview/wms-overview.service';
 import { WmsOverviewController } from './overview/wms-overview.controller';
+import { FulfillmentService } from './fulfillment/fulfillment.service';
+import { FulfillmentController } from './fulfillment/fulfillment.controller';
 
 /**
  * Light WMS module (items + bins + inventory + receiving + picking + overview).
@@ -33,6 +35,7 @@ import { WmsOverviewController } from './overview/wms-overview.controller';
     ReceivingController,
     PickingController,
     WmsOverviewController,
+    FulfillmentController,
   ],
   providers: [
     ItemsService,
@@ -41,6 +44,7 @@ import { WmsOverviewController } from './overview/wms-overview.controller';
     ReceivingService,
     PickingService,
     WmsOverviewService,
+    FulfillmentService,
   ],
 })
 export class WmsModule {}
