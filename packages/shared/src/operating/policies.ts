@@ -5,6 +5,7 @@ export const DOMAIN_EVENT_TYPES = {
   STOP_DELAYED: 'stop.delayed',
   TENDER_DECLINED: 'tender.declined',
   TENDER_EXPIRED: 'tender.expired',
+  CARRIER_INVOICE_RECEIVED: 'carrier-invoice.received',
 } as const;
 
 export interface DomainEventInput {
@@ -58,6 +59,25 @@ const POLICIES: Policy[] = [
           dedupKey: `DELAY:${stopId}:${deadline}`,
           details: { ...e.payload },
           assignHint: 'AUTO',
+        },
+      ];
+    },
+  },
+  {
+    eventType: DOMAIN_EVENT_TYPES.CARRIER_INVOICE_RECEIVED,
+    produce: (e) => {
+      const invoiceId = str(e.payload.invoiceId);
+      return [
+        {
+          type: OperationalTaskType.EXCEPTION,
+          category: 'FREIGHT_AUDIT',
+          severity: 'WARNING' as const,
+          title: 'Carrier invoice received — audit required',
+          subjectType: 'incoming-carrier-invoice',
+          subjectId: invoiceId,
+          dedupKey: `FREIGHT_AUDIT:${invoiceId}`,
+          details: { ...e.payload },
+          assignHint: 'AUTO' as const,
         },
       ];
     },

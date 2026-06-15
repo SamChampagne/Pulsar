@@ -1,9 +1,12 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { EmailModule } from '../../core/email/email.module';
+import { OperatingModule } from '../../core/operating/operating.module';
 import { TransportationModule } from '../transportation/transportation.module';
 import { CustomerInvoicesController } from './customer-invoices.controller';
 import { CustomerInvoicesService } from './customer-invoices.service';
+import { FreightAuditController } from './freight-audit/freight-audit.controller';
+import { FreightAuditService } from './freight-audit/freight-audit.service';
 import { InvoicesController } from './invoices.controller';
 import { InvoicesService } from './invoices.service';
 
@@ -11,10 +14,12 @@ import { InvoicesService } from './invoices.service';
  * Billing — third business module, activable per tenant.
  * v1 scope: buy-side carrier settlement (estimated load costs → draft
  * invoices → approval). Customer invoicing (sell-side) added in phase 7.3.
+ * Phase 16: freight-audit (incoming carrier invoices) added.
  */
 @Module({
-  imports: [AuditLogsModule, EmailModule, TransportationModule],
-  controllers: [InvoicesController, CustomerInvoicesController],
-  providers: [InvoicesService, CustomerInvoicesService],
+  imports: [AuditLogsModule, EmailModule, TransportationModule, forwardRef(() => OperatingModule)],
+  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController],
+  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService],
+  exports: [FreightAuditService],
 })
 export class BillingModule {}

@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { LoadStatus, MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
-import { IsEnum, IsOptional } from 'class-validator';
+import { ArrayMinSize, IsArray, IsEnum, IsOptional } from 'class-validator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
@@ -28,6 +28,13 @@ class CreateTenderDto {
   @Min(1)
   @Max(720)
   expiresInHours?: number;
+}
+
+class ConsolidateDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  shipmentIds!: string[];
 }
 
 class LoadListQueryDto extends ListQueryDto {
@@ -71,6 +78,13 @@ export class LoadsController {
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateLoadDto) {
     return this.loads.create(user.tenantId, user.id, dto);
+  }
+
+  /** Atomically create a load from a set of unassigned shipments (dispatch workbench). */
+  @Post('consolidate')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
+  consolidate(@CurrentUser() user: AuthUser, @Body() dto: ConsolidateDto) {
+    return this.loads.consolidate(user.tenantId, user.id, dto.shipmentIds);
   }
 
   @Post(':id/assign')

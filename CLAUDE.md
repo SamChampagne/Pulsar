@@ -172,6 +172,18 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     `breakerTrips` du trust score) ; toute projection agent/KPI exclut `secretHash`/`serviceUserId`
     (règle 26) et reste scopée `tenantId` (règle 1).
 
+## Hard rules (continued, phase 16)
+
+31. (phase 16 — Freight Audit) L'audit de facture transporteur entrante (`IncomingCarrierInvoice`)
+    matche chaque ligne contre `Load.estimatedCost` **figé** (jamais recalculé — règle 16), via le
+    service déterministe `FreightAuditService` ; l'agent ne calcule jamais les variances, il propose.
+    Les transitions passent par `canTransitionFreightAudit` (`@pulsar/shared`, règle 2) ; le matching
+    réutilise `evaluateReconciliation` + les tolérances buy-side (jamais réimplémenté). L'ouverture de
+    litige par un agent passe TOUJOURS par le gate `handleMutatingTool` → `ProposedAction`
+    (`triggeredByRef = "task:<id>"`, tier SENSITIVE, cap montant sur `varianceTotal`) — règles 22/29.
+    `recoveredAmount` n'est positif que sur une résolution `KEEP_EXPECTED` ; il alimente le KPI
+    économies. Tenant isolation (règle 1) + module gating (`@RequireModule(BILLING)`) sur tout endpoint.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

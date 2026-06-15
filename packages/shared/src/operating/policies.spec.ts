@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { OperationalTaskType } from '../enums/operating';
-import { resolvePolicies, type DomainEventInput } from './policies';
+import { resolvePolicies, DOMAIN_EVENT_TYPES, type DomainEventInput } from './policies';
 
 const delayed: DomainEventInput = {
   type: 'stop.delayed',
@@ -46,5 +46,17 @@ describe('resolvePolicies', () => {
 
   it('returns [] for an event with no matching policy', () => {
     expect(resolvePolicies({ type: 'load.completed', payload: {} })).toEqual([]);
+  });
+});
+
+describe('FREIGHT_AUDIT policy', () => {
+  it('maps carrier-invoice.received to a FREIGHT_AUDIT task (AUTO)', () => {
+    const specs = resolvePolicies({ type: DOMAIN_EVENT_TYPES.CARRIER_INVOICE_RECEIVED, payload: { invoiceId: 'inv1', carrierId: 'c1' } });
+    expect(specs).toHaveLength(1);
+    expect(specs[0].category).toBe('FREIGHT_AUDIT');
+    expect(specs[0].subjectType).toBe('incoming-carrier-invoice');
+    expect(specs[0].subjectId).toBe('inv1');
+    expect(specs[0].dedupKey).toBe('FREIGHT_AUDIT:inv1');
+    expect(specs[0].assignHint).toBe('AUTO');
   });
 });

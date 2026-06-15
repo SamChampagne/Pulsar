@@ -73,6 +73,7 @@ model Tenant {
   agentConversations AgentConversation[]
   agentRuntimeConfig AgentRuntimeConfig?
   agentRuns         AgentRun[]
+  incomingCarrierInvoices IncomingCarrierInvoice[]
 
   @@map("tenants")
 }
@@ -516,6 +517,7 @@ model Carrier {
   tenders  Tender[]
   lanePreferences LaneCarrierPreference[]
   invoices Invoice[]
+  incomingCarrierInvoices IncomingCarrierInvoice[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -1186,6 +1188,15 @@ enum DisputeReasonCode {
   OTHER
 }
 
+enum FreightAuditStatus {
+  RECEIVED
+  MATCHED
+  FLAGGED
+  DISPUTED
+  RESOLVED
+  PAID
+}
+
 // Draft invoice grouping the estimated costs of a carrier's completed,
 // not-yet-invoiced loads. Reconciled against the carrier's actual invoice
 // (tolerance on gross variance), disputed when over, PAID tracked.
@@ -1289,6 +1300,55 @@ model CustomerInvoiceLine {
   transportOrder  TransportOrder  @relation(fields: [transportOrderId], references: [id], onDelete: Restrict)
 
   @@map("customer_invoice_lines")
+}
+
+model IncomingCarrierInvoice {
+  id                   String             @id @default(cuid())
+  tenantId             String
+  carrierId            String
+  carrierInvoiceNumber String
+  currency             String             @default("CAD")
+  chargedTotal         Decimal            @db.Decimal(12, 2)
+  receivedAt           DateTime           @default(now())
+  status               FreightAuditStatus @default(RECEIVED)
+  matchedTotal         Decimal?           @db.Decimal(12, 2)
+  varianceTotal        Decimal?           @db.Decimal(12, 2)
+  varianceGross        Decimal?           @db.Decimal(12, 2)
+  recoveredAmount      Decimal            @default(0) @db.Decimal(12, 2)
+  resolution           String?
+  disputeReasonCode    String?
+  disputeNote          String?
+  auditedAt            DateTime?
+  resolvedAt           DateTime?
+  paidAt               DateTime?
+  sourceRef            String             @default("manual")
+  disputedByAgentId    String?
+  createdById          String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  tenant  Tenant                @relation(fields: [tenantId], references: [id])
+  carrier Carrier               @relation(fields: [carrierId], references: [id])
+  lines   IncomingInvoiceLine[]
+
+  @@index([tenantId, status])
+  @@map("incoming_carrier_invoices")
+}
+
+model IncomingInvoiceLine {
+  id             String   @id @default(cuid())
+  invoiceId      String
+  lineRef        String
+  description    String?
+  chargedAmount  Decimal  @db.Decimal(12, 2)
+  matchedLoadId  String?
+  expectedAmount Decimal? @db.Decimal(12, 2)
+  variance       Decimal? @db.Decimal(12, 2)
+
+  invoice IncomingCarrierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("incoming_invoice_lines")
 }
 
 model ProofOfDelivery {

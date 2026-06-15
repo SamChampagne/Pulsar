@@ -210,7 +210,13 @@ ships *with* its agent.
 - **15-C — Playbooks** (à venir, slice séparée).
 
 **Act II — Flagship agents (depth, ROI)**
-- **16 — Freight Audit autonome** (§19.4): incoming carrier-invoice entity, matching, dispute agent.
+- ✅ **16 — Freight Audit autonome** (shipped): `IncomingCarrierInvoice` découplé + matching
+  déterministe (`FreightAuditService`) de chaque ligne contre `Load.estimatedCost` **figé**
+  (règle 16, jamais recalculé) via `evaluateReconciliation` + tolérances buy-side ; transitions
+  par `canTransitionFreightAudit` (`@pulsar/shared`) ; l'agent litige ouvre via la file de
+  gouvernance (`handleMutatingTool` → `ProposedAction`, `triggeredByRef = "task:<id>"`, tier
+  SENSITIVE, cap sur `varianceTotal`) ; KPI économies récupérées (`recoveredAmount` positif sur
+  résolution `KEEP_EXPECTED`) ; 24ᵉ migration ; règle 31.
 - **17 — Continuous planning** (§19.5 unlock): versioned plans/routes, mutable-after-confirm with
   diff, `PlanProposal`/`PlanCommit`.
 
@@ -220,3 +226,31 @@ ships *with* its agent.
 - **20 — Fleet** + maintenance/compliance agent.
 - **21 — Light WMS** + warehouse-prep agent.
 - **22 — Analytics / Control Tower + data network** (§19.6) + ops-analyst/savings agents.
+
+## Operational Workbenches — product-experience track
+
+A track parallel to the Agent OS phases above. **Product pivot (2026-06-15):** Pulsar's gap was
+no longer "more features" but **tool experience** — the app read like an admin SaaS
+(navbar → page → Card → Table → Form → Modal) instead of real operational workstations. This track
+delivers the dense, in-context, single-screen surfaces that make Pulsar feel like a deep
+operational tool, not a CRUD console. Agents are the *augmentation*, not the substance — they
+arrive as a panel inside these surfaces (workbench v2). Design:
+[docs/superpowers/specs/2026-06-15-dispatch-workbench-design.md](./docs/superpowers/specs/2026-06-15-dispatch-workbench-design.md).
+
+- ✅ **Dispatch Workbench v1** (shipped): `/dispatch`, a 3-panel planning workstation where the
+  operator never leaves the screen — **backlog** of unassigned shipments (left) → **load builder**
+  with live 3-axis capacity bars + stops timeline + frozen cost snapshot (`costDetail`, rule 16)
+  (center) → **side panel** route/stops map + rate options (by specificity) + carrier scorecard +
+  tender (right). Click-to-assign (no drag/drop in v1). Plus nav/shell polish (groups open by
+  default + persisted, prominent Dispatch entry, de-duped agent surfaces). Backend: minimal,
+  **no migration, no new permission** (reuses `transportation.planning.read|manage`) —
+  `GET /shipments?unassigned=true` filter + atomic `POST /loads/consolidate` (single transaction:
+  ownership rule 9, sequence rule 8, capacity-as-warning + `shipment_load_legs` rule 18, recompute
+  rule 11, audited rule 6); `dispatch-workbench` e2e.
+- **Load Control Room** (upcoming) — live load fleet view + exception triage.
+- **Agent Operations Center** (upcoming) — manager surface for the 24/7 workforce.
+- **Exception Desk** (upcoming) — operational task triage workstation.
+- **Rate Explorer** (upcoming) — interactive lane/rate analysis.
+- **Workflow Config Designer** (upcoming) — visual workflow/policy editor.
+- **Workbench v2 enhancements** (upcoming) — drag & drop (backlog → builder, stop reorder) and the
+  agent "propose" panel ("Hermes optimizes this run" → `ProposedAction`).

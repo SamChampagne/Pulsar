@@ -1,7 +1,7 @@
 # État du projet — point de reprise
 
 > 🇫🇷 Document de synthèse pour reprendre le travail (humain ou session Claude Code).
-> Mis à jour à la fin de la **phase 15-A**. Détail des tâches : [TODO.md](../TODO.md) ·
+> Mis à jour à la fin de la **phase 16** (début de l'Acte II). Détail des tâches : [TODO.md](../TODO.md) ·
 > vision : [ROADMAP.md](../ROADMAP.md) · règles de dev : [CLAUDE.md](../CLAUDE.md) ·
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
@@ -31,7 +31,10 @@
 | 11 (R2) — Espace Agents (citoyens de premier ordre) | ✅ | **Agents promus au niveau supérieur de la navigation** : onglet **Agents** → **roster de cartes « employés »** → page agent (`/agents/[id]`) à trois volets — **Profil & config guidée** (aide inline + presets de rôle `AGENT_ROLE_PRESETS` de `@pulsar/shared`), **Activité** (conversations + actions proposées + compteurs `conversations`/`pending`/`executed`/`rejected`) et **Chat** (parler à cet employé) ; `GET /agents/:id` projette le profil **sans `secretHash` ni `serviceUserId`** et `GET /agents/:id/activity` renvoie l'activité **scopée tenant + agent** (gated `core.agents.read`) ; presets = pure data testée (`role-presets.spec`) + e2e `phase11r2-agent-experience` |
 | 12 — Operating Workbench | ✅ | **Outbox `DomainEvent`** (best-effort, worker `processPending` race-safe claim `PENDING→PROCESSED`, échecs terminaux) ; **policies événement→tâche** dans `@pulsar/shared/operating` (pures, testées) : retards de stop et échecs tender émis comme events, mappés en `OperationalTask` idempotente sur `(tenantId, dedupKey)` ; **`OperationalTask` + inbox `/workbench`** (statuts via `canTransitionOperationalTask`, 2 permissions `core.operating.tasks.*`, tri priorité + statut) ; **`WorkbenchAgentRunner`** headless best-effort (agent `alwaysOn` + `handlesCategories` réveillé sur ses cas, Hermes absent ⇒ skip tâche revenue OPEN, `runCron` n'émet jamais d'exception) ; **4 outils workbench** au registre (list/get/claim/resolve tasks) + `triggeredByRef = "task:<id>"` dans le jeton de session agent ; 21ᵉ migration |
 | 13 — Main-d'œuvre 24/7 | ✅ | **`AgentWorkerService`** dispatcher unique (réveil sur event + cron filet de sécurité, file en mémoire, concurrence plafonnée global/tenant/agent) ; **`AgentRun`** ledger durable + `GET /agents/:id/runs` ; **heartbeat** (`lastSeenAt`/`lastRunAt`) ; **`PAUSED` kill switch à chaud réversible** (endpoints pause/resume/run-now/pause-all) tuant les sessions Hermes en vol via `AgentRuntimeService.killAgentSessions`, `REVOKED` permanent ; **retry borné** sur erreurs de connectivité runtime (`classifyRunError` de `@pulsar/shared`, Hermes absent ⇒ run `SKIPPED`, autre échec terminal → tâche en OPEN) ; **revert claim-guarded** (un run ne revert IN_PROGRESS→OPEN que s'il a réellement claim) ; règle 24 préservée (best-effort, jamais de crash) + actions via file `ProposedAction` `triggeredByRef = "task:<id>"` ; UI web « Activité 24/7 » ; 22ᵉ migration |
+| 15-A — Control Tower (observabilité) | ✅ | **KPI par agent** + dashboard manager du tenant + timeline d'activité/audit unifiée + compteur de trips de breaker alimentant le score de confiance, **calculés à la lecture** depuis `AgentRun`/`ProposedAction`/`OperationalTask`/`AuditLog` (`deriveAgentKpis`/`mergeTimeline` purs, aucun store de rollup, **aucune migration**) ; règle 30 |
+| 16 — Freight Audit autonome (Acte II) | ✅ | **`IncomingCarrierInvoice` découplé** + matching **déterministe** (`FreightAuditService`) de chaque ligne contre `Load.estimatedCost` **figé** (règle 16, jamais recalculé) via `evaluateReconciliation` + tolérances buy-side ; transitions par `canTransitionFreightAudit` (`@pulsar/shared`) ; **agent litige** ouvre via la file de gouvernance (`handleMutatingTool` → `ProposedAction`, `triggeredByRef = "task:<id>"`, tier SENSITIVE, cap sur `varianceTotal`) — l'agent ne calcule jamais, il propose ; **KPI économies récupérées** (`recoveredAmount` positif sur résolution `KEEP_EXPECTED`) ; `@RequireModule(BILLING)` ; 24ᵉ migration ; règle 31 |
 | 14 — Autonomie & policy engine | ✅ | **Porte de policy unifiée** : `evaluatePolicy` (`@pulsar/shared`, pur) au **point de décision unique** (`ProposedActionsService.handleMutatingTool`, appelé par le handler MCP) tranche auto-act vs propose ; **policy-as-data** — règles effectives depuis `caps.policies` ou le preset dérivé du dial `autonomyLevel` (`caps.autoApprove` legacy toujours honoré, rétro-compatible) ; **auto-exécution persistée dans le registre des propositions** (`ProposedAction EXECUTED autoApproved=true`, auditable + **compté pour le cap débit/min** — trou fermé : le chemin auto respecte désormais le débit) ; **cap MONTANT dur** (`maxAmountPerAction`) appliqué dans `enqueue` sur TOUS les chemins (seule enforcement montant pour un agent en PROPOSE, au-dessus → DENY, jamais levé par l'autonomie) ; **circuit breaker réversible** (`Agent.breakerTrippedAt` rétrograde en PROPOSE, ne modifie JAMAIS `autonomyLevel`, jamais d'escalade auto) ; **score de confiance** + **promotion d'autonomie confirmée par un humain** ; règles 23/24 préservées ; règle 29 ; 23ᵉ migration |
+| Dispatch Workbench v1 (pivot produit — postes de travail opérationnels) | ✅ | **Pivot produit** : le gap de Pulsar n'est plus « plus de features » mais la **tool experience** — l'app se présentait comme une admin SaaS (navbar→page→Card→Table→Form→Modal) au lieu de vrais postes de travail. Première surface profonde : **`/dispatch`, un poste de planification 3 panneaux** où l'opérateur ne quitte jamais l'écran — **backlog** de shipments non assignés (gauche) → **load builder** avec **barres de capacité 3 axes en direct** + timeline des stops + coût figé (`costDetail`, règle 16) au centre → **side panel** carte route/stops + rate options (spécificité) + carrier scorecard + tender (droite). Assignation au clic (pas de drag/drop en v1). **Polish nav/shell** : groupes ouverts par défaut (persistés en `localStorage`), entrée Dispatch proéminente, dé-doublonnage des surfaces agent (`/settings/agents` retiré de la nav). **Backend minimal, aucune migration, aucune nouvelle permission** (réutilise `transportation.planning.read\|manage`) : filtre **`GET /shipments?unassigned=true`** (`loadId: null` + statuts planifiables, tenant-scopé) + **`POST /loads/consolidate { shipmentIds }`** atomique (transaction unique : `assertOwned` règle 9, numéro `SequencesService` règle 8, assigne chaque shipment avec capacité niveau warning + `shipment_load_legs` règle 18, `recompute` règle 11, audité règle 6). e2e `dispatch-workbench` (filtre + atomicité/ownership). **Prochains postes** : Load Control Room, Agent Operations Center, Exception Desk, Rate Explorer, Workflow Config Designer ; **workbench v2** = drag/drop + panneau agent « propose » |
 
 **La boucle économique complète fonctionne** : le client commande depuis son portail →
 confirmation → planification (split possible) → tender automatique par lane avec courriel →
@@ -40,7 +43,7 @@ POD avec photo → BOL PDF généré → détection automatique des retards → 
 brouillon → approbation → relevé client.
 
 **Chiffres** : 3 modules métier actifs (transportation, customer-portal, billing) + le plan
-d'administration plateforme ; 23 migrations ; ~90 endpoints (dont `loads/active-map`,
+d'administration plateforme ; 24 migrations ; ~90 endpoints (dont `loads/active-map`,
 `public/driver/:token/position`, `mcp` / `agents` / `agent-actions` / `agent-conversations`,
 `agent-runtime` — install/config du runtime managé, `operational-tasks` / `/workbench`, et
 `agents/:id/runs` + pause/resume/run-now/pause-all — main-d'œuvre 24/7) ;
@@ -66,7 +69,19 @@ un humain (phase 14) ; **Control Tower — observabilité** — KPI par agent, d
 tenant, timeline d'activité/audit unifiée, compteur de trips de breaker alimentant le score de
 confiance, **calculés à la lecture** depuis `AgentRun`/`ProposedAction`/`OperationalTask`/`AuditLog`
 (`deriveAgentKpis`/`mergeTimeline` purs, aucun store de rollup, **aucune migration** — toujours 23)
-(phase 15-A).
+(phase 15-A) ; **Freight Audit autonome (Acte II)** — `IncomingCarrierInvoice` découplé, matching
+déterministe (`FreightAuditService`) contre `Load.estimatedCost` figé (règle 16) via
+`evaluateReconciliation`, transitions par `canTransitionFreightAudit`, agent litige via la file de
+gouvernance (`ProposedAction`, `triggeredByRef`, cap sur `varianceTotal`), KPI économies récupérées
+(`recoveredAmount` sur `KEEP_EXPECTED`), 24ᵉ migration (phase 16, règle 31) ; **pivot produit
+vers des postes de travail opérationnels** — premier livré : **Dispatch Workbench v1**, surface
+`/dispatch` 3 panneaux (backlog non assigné → load builder avec capacité 3 axes en direct + stops
++ coût → side panel carte + rate options + tender) ; polish nav/shell (groupes ouverts par défaut,
+entrée Dispatch, surfaces agent dé-doublonnées) ; 2 ajouts backend (`GET /shipments?unassigned=true`,
+`POST /loads/consolidate` atomique), **aucune migration, aucune nouvelle règle** (réutilise
+les invariants existants 6/8/9/11/16/18) ; postes suivants à venir (Load Control Room, Agent
+Operations Center, Exception Desk, Rate Explorer, Workflow Config Designer ; panneau agent +
+drag/drop = workbench v2).
 
 ## Carte de la documentation
 
@@ -83,8 +98,8 @@ confiance, **calculés à la lecture** depuis `AgentRun`/`ProposedAction`/`Opera
 
 ## Prochaine session — Pulsar Agent OS (phases 15 → 22)
 
-La **phase 15-A est livrée** (Control Tower — observabilité) sur la branche `phase-15`
-(suite des phases 12 → 14 livrées). PR à ouvrir vers `main`.
+La **phase 16 est livrée** (Freight Audit autonome — début de l'Acte II) sur la branche
+`phase-16` (suite des phases 12 → 15-A livrées). PR à ouvrir vers `main`.
 
 La direction est verrouillée : voir la **roadmap stratégique adoptée le 2026-06-14**,
 [docs/superpowers/specs/2026-06-14-pulsar-agent-os-roadmap.md](./superpowers/specs/2026-06-14-pulsar-agent-os-roadmap.md).
@@ -95,14 +110,16 @@ gouvernés**. Arc = agents d'abord (approfondir sur les 3 modules actuels), puis
 - **Acte I (substrat 24/7)** : ~~12 Operating Workbench~~ ✅ · ~~13 Main-d'œuvre 24/7~~ ✅ ·
   ~~14 Autonomie & policies~~ ✅ · ~~15-A Control Tower (observabilité)~~ ✅ ·
   15-B red-team (prompt-injection + cross-tenant) · 15-C playbooks.
-- **Acte II (agents phares)** : 16 Freight Audit autonome (§19.4) · 17 Planification continue (§19.5).
+- **Acte II (agents phares)** : ~~16 Freight Audit autonome (§19.4)~~ ✅ · 17 Planification continue (§19.5).
 - **Acte III (modules tressés, ré-ordonnable)** : 18 Integrations · 19 Yard · 20 Fleet · 21 WMS ·
   22 Analytics/réseau de données.
 
-**Prochain pas concret** (au choix de Sam) : soit terminer la phase 15 avec **15-B** (harnais
-red-team : prompt-injection + cross-tenant) puis **15-C** (playbooks) ; soit pivoter vers
-**l'Acte II** — **phase 16 Freight Audit autonome** (§19.4) ou **phase 17 planification continue**
-(§19.5). Pulsar reste **MCP-agnostique** ; Hermes est le runtime de référence.
+**Prochain pas concret** (au choix de Sam) : poursuivre l'Acte II avec **phase 17 — planification
+continue** (§19.5 : plans/routes versionnés, mutables-après-confirmation avec diff,
+`PlanProposal`/`PlanCommit`) ; ou pivoter vers les modules de l'**Acte III** (18 Integrations,
+19 Yard, 20 Fleet, 21 WMS, 22 Analytics) ; ou revenir finir la phase 15 (**15-B** red-team
+prompt-injection + cross-tenant, **15-C** playbooks). Pulsar reste **MCP-agnostique** ; Hermes
+est le runtime de référence.
 
 Benchmark Fleetbase (2026-06-12) : aucune IA chez eux — c'est l'axe de différenciation.
 
