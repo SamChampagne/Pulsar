@@ -4,6 +4,7 @@ export * from './enums/core';
 export * from './enums/transportation';
 export * from './enums/billing';
 export * from './enums/operating';
+export * from './operating/policies';
 export * from './workflows/transport-order.workflow';
 export * from './workflows/shipment.workflow';
 export * from './workflows/load.workflow';
