@@ -37,6 +37,9 @@ interface Policy {
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
+/** A delayed stop escalates to CRITICAL severity beyond this many minutes late. */
+const DELAY_CRITICAL_MINUTES = 60;
+
 const POLICIES: Policy[] = [
   {
     eventType: DOMAIN_EVENT_TYPES.STOP_DELAYED,
@@ -48,7 +51,7 @@ const POLICIES: Policy[] = [
         {
           type: OperationalTaskType.EXCEPTION,
           category: 'DELAY',
-          severity: minutesLate > 60 ? 'CRITICAL' : 'WARNING',
+          severity: minutesLate > DELAY_CRITICAL_MINUTES ? 'CRITICAL' : 'WARNING',
           title: `Stop ${minutesLate} min late`,
           subjectType: 'stop',
           subjectId: stopId,
@@ -65,7 +68,7 @@ const POLICIES: Policy[] = [
       produce: (e) => {
         const tenderId = str(e.payload.tenderId);
         const loadId = str(e.payload.loadId);
-        const reason = eventType === DOMAIN_EVENT_TYPES.TENDER_DECLINED ? 'declined' : 'expired';
+        const reason = e.type === DOMAIN_EVENT_TYPES.TENDER_EXPIRED ? 'expired' : 'declined';
         return [
           {
             type: OperationalTaskType.EXCEPTION,

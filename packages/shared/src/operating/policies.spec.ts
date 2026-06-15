@@ -33,6 +33,17 @@ describe('resolvePolicies', () => {
     expect(declined[0].dedupKey).toBe('TENDER_FAILURE:t1');
   });
 
+  it('marks tender.expired with reason "expired"', () => {
+    const expired = resolvePolicies({
+      type: 'tender.expired',
+      payload: { loadId: 'l1', loadNumber: 'LD-1', carrierId: 'c1', tenderId: 't9' },
+    });
+    expect(expired).toHaveLength(1);
+    expect(expired[0].category).toBe('TENDER_FAILURE');
+    expect(expired[0].dedupKey).toBe('TENDER_FAILURE:t9');
+    expect(expired[0].details.reason).toBe('expired');
+  });
+
   it('returns [] for an event with no matching policy', () => {
     expect(resolvePolicies({ type: 'load.completed', payload: {} })).toEqual([]);
   });
