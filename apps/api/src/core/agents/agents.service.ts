@@ -329,6 +329,7 @@ export class AgentsService {
       caps: (agent.caps ?? {}) as AgentCaps,
       user,
       triggeredByRef: parsed?.triggeredByRef,
+      autonomyLevel: agent.autonomyLevel as AgentPrincipal['autonomyLevel'],
     };
   }
 }

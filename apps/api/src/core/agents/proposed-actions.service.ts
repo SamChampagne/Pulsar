@@ -110,6 +110,7 @@ export class ProposedActionsService {
         lastName: agent.name,
         permissions: agent.permissions as AgentPrincipal['user']['permissions'],
       },
+      autonomyLevel: agent.autonomyLevel as AgentPrincipal['autonomyLevel'],
     };
 
     try {
