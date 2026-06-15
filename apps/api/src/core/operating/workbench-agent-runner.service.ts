@@ -3,8 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { AgentStatus, OperationalTaskStatus } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { AgentCaps } from '../agents/agent-principal';
 import { AgentRuntimeService } from '../agents/agent-runtime.service';
 import { OperationalTasksService } from './operational-tasks.service';
+
+/** Max operating tasks the headless runner drives per cron tick (bounded best-effort). */
+const MAX_TASKS_PER_CRON_TICK = 10;
 
 /**
  * Headless agent runner for always-on dispatch agents (phase 12, task 10).
@@ -33,8 +37,12 @@ export class WorkbenchAgentRunner {
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async runCron(): Promise<void> {
-    const base = this.config?.get<string>('APP_URL') ?? 'http://localhost:3000';
-    await this.tick(`${base}/api/v1/mcp`, 10);
+    try {
+      const base = this.config?.get<string>('APP_URL') ?? 'http://localhost:3000';
+      await this.tick(`${base}/api/v1/mcp`, MAX_TASKS_PER_CRON_TICK);
+    } catch (err) {
+      this.logger.error(`runCron failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
@@ -48,7 +56,7 @@ export class WorkbenchAgentRunner {
    */
   async tick(mcpUrl: string, max: number): Promise<number> {
     const agents = await this.prisma.agent.findMany({ where: { status: AgentStatus.ACTIVE } });
-    const alwaysOn = agents.filter((a) => ((a.caps ?? {}) as { alwaysOn?: boolean }).alwaysOn === true);
+    const alwaysOn = agents.filter((a) => ((a.caps ?? {}) as AgentCaps).alwaysOn === true);
     let driven = 0;
     let budget = max;
 

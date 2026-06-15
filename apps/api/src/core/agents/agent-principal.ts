@@ -6,6 +6,10 @@ export interface AgentCaps {
   maxActionsPerMinute?: number;
   toolAllowlist?: string[];
   autoApprove?: string[];
+  /** phase 12: this agent runs always-on (headless workbench runner wakes it on assigned tasks). */
+  alwaysOn?: boolean;
+  /** phase 12: operating-task categories this agent auto-handles (e.g. ['DELAY','TENDER_FAILURE']). */
+  handlesCategories?: string[];
 }
 
 /**

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AgentStatus } from '@pulsar/database';
 import type { TaskSpec } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { AgentCaps } from '../agents/agent-principal';
 
 /** Resolve which always-on agent (if any) should handle a category for a tenant. */
 @Injectable()
@@ -17,7 +18,7 @@ export class TaskAssignmentResolver {
       select: { id: true, caps: true },
     });
     for (const a of agents) {
-      const caps = (a.caps ?? {}) as { alwaysOn?: boolean; handlesCategories?: string[] };
+      const caps = (a.caps ?? {}) as AgentCaps;
       if (caps.alwaysOn && (caps.handlesCategories ?? []).includes(spec.category)) return a.id;
     }
     return null;

@@ -11,6 +11,6 @@ import { WorkbenchAgentRunner } from './workbench-agent-runner.service';
   imports: [AuditLogsModule, forwardRef(() => AgentsModule)],
   controllers: [OperationalTasksController],
   providers: [DomainEventsService, TaskAssignmentResolver, OperationalTasksService, WorkbenchAgentRunner],
-  exports: [DomainEventsService, OperationalTasksService, WorkbenchAgentRunner],
+  exports: [DomainEventsService, OperationalTasksService],
 })
 export class OperatingModule {}
