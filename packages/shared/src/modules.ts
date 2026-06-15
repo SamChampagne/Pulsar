@@ -53,7 +53,7 @@ export const MODULE_CATALOG: ModuleDescriptor[] = [
     name: 'Yard Management',
     description: 'Gate check-in/out, dock scheduling, yard moves.',
     isCore: false,
-    available: false,
+    available: true,
   },
   {
     key: MODULE_KEYS.WMS,

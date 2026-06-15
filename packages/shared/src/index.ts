@@ -36,3 +36,4 @@ export * from './integrations/connector-foundation';
 export * from './fleet/maintenance.workflow';
 export * from './fleet/compliance';
 export * from './wms/wms.workflow';
+export * from './yard/yard.workflow';

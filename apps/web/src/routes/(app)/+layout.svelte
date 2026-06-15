@@ -107,6 +107,9 @@
   const hasWms = $derived(
     $auth?.tenant.enabledModules.includes(MODULE_KEYS.WMS) ?? false,
   );
+  const hasYard = $derived(
+    $auth?.tenant.enabledModules.includes(MODULE_KEYS.YARD) ?? false,
+  );
 
   function isActive(href: string): boolean {
     return page.url.pathname.startsWith(href);
@@ -150,6 +153,12 @@
       { href: '/wms/picking', label: 'Prélèvement' },
       { href: '/wms/items', label: 'Articles' },
       { href: '/wms/bins', label: 'Emplacements' },
+    ]},
+    { label: 'Yard', visible: hasYard, items: [
+      { href: '/yard', label: 'Yard' },
+      { href: '/yard/gate', label: 'Gate' },
+      { href: '/yard/appointments', label: 'Rendez-vous' },
+      { href: '/yard/spots', label: 'Spots' },
     ]},
     { label: 'Facturation', visible: hasBilling, items: [
       { href: '/invoices', label: 'Invoices' },
