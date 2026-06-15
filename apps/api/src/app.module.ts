@@ -26,6 +26,7 @@ import { PlatformModule } from './core/platform/platform.module';
 import { TransportationModule } from './modules/transportation/transportation.module';
 import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { OperatingModule } from './core/operating/operating.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { BillingModule } from './modules/billing/billing.module';
     IntegrationsModule,
     ModuleRegistryModule,
     PlatformModule,
+    OperatingModule,
     // Business modules (activable per tenant — see ModulesGuard)
     TransportationModule,
     CustomerPortalModule,
