@@ -12,6 +12,7 @@ function makeService() {
         where.status === 'EXECUTED' ? 30 : where.status === 'REJECTED' ? 1 : where.status === 'FAILED' ? 0 : 0,
     },
     agentRun: { count: async ({ where }: any) => (where.status === 'SUCCEEDED' ? 30 : 30) },
+    auditLog: { count: async () => 0 },
   } as any;
   process.env.JWT_SECRET = 'test-secret';
   return new AgentsService(prisma, {} as any, {} as any, {} as any);

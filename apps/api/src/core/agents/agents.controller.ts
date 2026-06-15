@@ -65,6 +65,12 @@ export class AgentsController {
     return this.agents.trust(user.tenantId, id);
   }
 
+  @Get(':id/kpis')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
+  kpis(@CurrentUser() user: AuthUser, @Param('id') id: string, @Query('days') days?: string) {
+    return this.agents.kpis(user.tenantId, id, days ? Number(days) : 30);
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
   getOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
