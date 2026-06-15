@@ -42,7 +42,7 @@ export class ShipmentsService {
     return { revoked: true };
   }
 
-  async list(tenantId: string, query: ListQueryDto & { status?: ShipmentStatus }) {
+  async list(tenantId: string, query: ListQueryDto & { status?: ShipmentStatus; unassigned?: boolean }) {
     const { page, pageSize, skip, take } = paginationArgs(query);
     const where: Prisma.ShipmentWhereInput = {
       tenantId,
@@ -50,6 +50,7 @@ export class ShipmentsService {
       ...(query.search
         ? { shipmentNumber: { contains: query.search, mode: 'insensitive' } }
         : {}),
+      ...(query.unassigned ? { loadId: null } : {}),
     };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.shipment.findMany({

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/commo
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { MODULE_KEYS, PERMISSIONS, ShipmentStatus } from '@pulsar/shared';
+import { Transform } from 'class-transformer';
 import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
@@ -13,6 +14,11 @@ class ShipmentListQueryDto extends ListQueryDto {
   @IsOptional()
   @IsEnum(ShipmentStatus)
   status?: ShipmentStatus;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === true || value === 'true')
+  unassigned?: boolean;
 }
 
 class AssignLoadDto {
