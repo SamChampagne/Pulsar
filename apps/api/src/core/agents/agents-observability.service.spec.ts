@@ -41,3 +41,29 @@ describe('AgentsService.kpis', () => {
     expect(k.runs.succeeded).toBe(4);
   });
 });
+
+describe('AgentsService.controlTower', () => {
+  it('returns per-agent KPI summaries + tenant rollup', async () => {
+    process.env.JWT_SECRET = 'test-secret';
+    const base = makePrisma();
+    const prisma = {
+      ...base,
+      agent: {
+        ...base.agent,
+        findMany: async () => [
+          { id: 'a1', name: 'A', role: null, avatar: null, status: 'ACTIVE', autonomyLevel: AgentAutonomy.PROPOSE, breakerTrippedAt: null },
+          { id: 'a2', name: 'B', role: null, avatar: null, status: 'PAUSED', autonomyLevel: AgentAutonomy.ACT_LOW, breakerTrippedAt: new Date() },
+        ],
+      },
+    } as any;
+    const svc = new AgentsService(prisma, {} as any, {} as any, {} as any);
+    const out = await svc.controlTower('t1', 30);
+    expect(out.items).toHaveLength(2);
+    expect(out.items[0].kpis.actions.executed).toBe(6);
+    expect(out.rollup.agents).toBe(2);
+    expect(out.rollup.active).toBe(1);
+    expect(out.rollup.paused).toBe(1);
+    expect(out.rollup.totalActions).toBe(20); // 10 per agent (6+1+2+1)
+    expect(out.rollup.pendingApprovals).toBe(2);
+  });
+});

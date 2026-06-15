@@ -41,6 +41,12 @@ export class AgentsController {
     return this.agents.pauseAll(user.tenantId);
   }
 
+  @Get('control-tower')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
+  controlTower(@CurrentUser() user: AuthUser, @Query('days') days?: string) {
+    return this.agents.controlTower(user.tenantId, days ? Number(days) : 30);
+  }
+
   @Get()
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
   list(@CurrentUser() user: AuthUser) {

@@ -372,6 +372,39 @@ export class AgentsService {
     return deriveAgentKpis(await this.gatherKpiRaw(tenantId, id, since));
   }
 
+  /** Tenant-wide manager dashboard: per-agent KPI summaries + aggregate rollup (computed on read). */
+  async controlTower(tenantId: string, days = 30) {
+    const since = new Date(Date.now() - days * 86_400_000);
+    const agents = await this.prisma.agent.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, role: true, avatar: true, status: true, autonomyLevel: true, breakerTrippedAt: true },
+    });
+    const items = await Promise.all(
+      agents.map(async (a) => ({
+        id: a.id,
+        name: a.name,
+        role: a.role,
+        avatar: a.avatar,
+        status: a.status,
+        autonomyLevel: a.autonomyLevel,
+        breakerTrippedAt: a.breakerTrippedAt,
+        kpis: deriveAgentKpis(await this.gatherKpiRaw(tenantId, a.id, since)),
+      })),
+    );
+    const rollup = {
+      agents: items.length,
+      active: items.filter((i) => i.status === 'ACTIVE').length,
+      paused: items.filter((i) => i.status === 'PAUSED').length,
+      revoked: items.filter((i) => i.status === 'REVOKED').length,
+      totalActions: items.reduce((s, i) => s + i.kpis.actions.total, 0),
+      pendingApprovals: items.reduce((s, i) => s + i.kpis.actions.pending, 0),
+      totalBreakerTrips: items.reduce((s, i) => s + i.kpis.breakerTrips, 0),
+      totalTasksResolved: items.reduce((s, i) => s + i.kpis.tasksResolved, 0),
+    };
+    return { items, rollup };
+  }
+
   /** Trust score from the agent's track record (proposals + runs). Computed on read. */
   async trust(tenantId: string, id: string) {
     const agent = await this.prisma.agent.findFirst({ where: { id, tenantId }, select: { id: true, autonomyLevel: true } });
