@@ -25,6 +25,7 @@ import { ModuleRegistryModule } from './core/module-registry/module-registry.mod
 import { PlatformModule } from './core/platform/platform.module';
 import { TransportationModule } from './modules/transportation/transportation.module';
 import { FleetModule } from './modules/fleet/fleet.module';
+import { WmsModule } from './modules/wms/wms.module';
 import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { OperatingModule } from './core/operating/operating.module';
@@ -62,6 +63,7 @@ import { OperatingModule } from './core/operating/operating.module';
     // Business modules (activable per tenant — see ModulesGuard)
     TransportationModule,
     FleetModule,
+    WmsModule,
     CustomerPortalModule,
     BillingModule,
   ],

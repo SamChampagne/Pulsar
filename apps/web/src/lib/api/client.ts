@@ -83,5 +83,7 @@ export async function api<T>(path: string, options: ApiOptions = {}, isRetry = f
   }
 
   if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  // Some endpoints (e.g. void-returning POST actions) reply 200/201 with an empty body.
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }

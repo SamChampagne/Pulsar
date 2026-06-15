@@ -104,6 +104,9 @@
   const hasFleet = $derived(
     $auth?.tenant.enabledModules.includes(MODULE_KEYS.FLEET) ?? false,
   );
+  const hasWms = $derived(
+    $auth?.tenant.enabledModules.includes(MODULE_KEYS.WMS) ?? false,
+  );
 
   function isActive(href: string): boolean {
     return page.url.pathname.startsWith(href);
@@ -138,6 +141,14 @@
     ]},
     { label: 'Fleet', visible: hasFleet, items: [
       { href: '/fleet', label: 'Fleet' },
+    ]},
+    { label: 'Warehouse', visible: hasWms, items: [
+      { href: '/wms', label: 'Warehouse' },
+      { href: '/wms/inventory', label: 'Inventaire' },
+      { href: '/wms/receiving', label: 'Réception' },
+      { href: '/wms/picking', label: 'Prélèvement' },
+      { href: '/wms/items', label: 'Articles' },
+      { href: '/wms/bins', label: 'Emplacements' },
     ]},
     { label: 'Facturation', visible: hasBilling, items: [
       { href: '/invoices', label: 'Invoices' },
