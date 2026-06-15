@@ -17,4 +17,6 @@ export interface AgentPrincipal {
   name: string;
   caps: AgentCaps;
   user: AuthUser; // id = service user id, permissions = agent.permissions
+  /** When the agent acts on behalf of a specific operating task (headless runner). */
+  triggeredByRef?: string;
 }

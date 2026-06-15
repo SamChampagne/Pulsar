@@ -21,7 +21,7 @@ export function buildAgentMcpServer(
 
   for (const def of TOOL_REGISTRY) {
     if (!granted.has(def.permission)) continue;
-    if (!enabledModules.has(def.module)) continue;
+    if (def.module && !enabledModules.has(def.module)) continue;
     if (allowlist && !allowlist.includes(def.name)) continue;
 
     server.registerTool(
@@ -56,7 +56,7 @@ export function buildAgentMcpServer(
           };
         }
         const proposal = await proposals.enqueue(principal, def.name, args, {
-          triggeredByRef: undefined,
+          triggeredByRef: principal.triggeredByRef,
         });
         return {
           content: [

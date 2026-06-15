@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { CryptoModule } from '../crypto/crypto.module';
+import { OperatingModule } from '../operating/operating.module';
 import { TransportationModule } from '../../modules/transportation/transportation.module';
 import { TransportOrdersService } from '../../modules/transportation/transport-orders/transport-orders.service';
 import { LoadsService } from '../../modules/transportation/loads/loads.service';
@@ -8,6 +9,7 @@ import { RatingService } from '../../modules/transportation/rating/rating.servic
 import { ShipmentsService } from '../../modules/transportation/shipments/shipments.service';
 import { TendersService } from '../../modules/transportation/tenders/tenders.service';
 import { AnalyticsService } from '../../modules/transportation/analytics/analytics.service';
+import { OperationalTasksService } from '../operating/operational-tasks.service';
 import { AgentsController } from './agents.controller';
 import { AgentsService } from './agents.service';
 import { ProposedActionsController } from './proposed-actions.controller';
@@ -33,7 +35,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
  * and importing TransportationModule globally would risk widening its surface.
  */
 @Module({
-  imports: [TransportationModule, AuditLogsModule, CryptoModule],
+  imports: [TransportationModule, AuditLogsModule, CryptoModule, OperatingModule],
   controllers: [
     AgentsController,
     ProposedActionsController,
@@ -56,6 +58,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         ShipmentsService,
         TendersService,
         AnalyticsService,
+        OperationalTasksService,
       ],
       useFactory: (
         transportOrders: TransportOrdersService,
@@ -64,6 +67,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         shipments: ShipmentsService,
         tenders: TendersService,
         analytics: AnalyticsService,
+        operationalTasks: OperationalTasksService,
       ): ToolServices => ({
         transportOrders: {
           list: (tenantId, query) => transportOrders.list(tenantId, query as never),
@@ -86,6 +90,12 @@ import { RuntimeConfigController } from './runtime-config.controller';
         },
         analytics: {
           carrierScorecards: (tenantId) => analytics.carrierScorecards(tenantId),
+        },
+        operatingTasks: {
+          listForAgent: (t, a) => operationalTasks.listForAgent(t, a),
+          getForTenant: (t, id) => operationalTasks.getForTenant(t, id),
+          resolve: (t, id, u, note) => operationalTasks.resolve(t, id, u, note),
+          addNote: (t, id, u, note) => operationalTasks.addNote(t, id, u, note),
         },
       }),
     },

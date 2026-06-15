@@ -144,6 +144,36 @@ export class OperationalTasksService {
     return this.transition(tenantId, id, OperationalTaskStatus.IN_PROGRESS, {}, actorId);
   }
 
+  async addNote(tenantId: string, id: string, userId: string, note: string) {
+    const task = await this.prisma.operationalTask.findFirst({ where: { id, tenantId } });
+    if (!task) throw new NotFoundException(`OperationalTask ${id} not found`);
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'OperationalTask',
+      entityId: id,
+      after: { note },
+    });
+    return { ok: true };
+  }
+
+  listForAgent(tenantId: string, agentId: string) {
+    return this.prisma.operationalTask.findMany({
+      where: {
+        tenantId,
+        assigneeAgentId: agentId,
+        status: { in: [OperationalTaskStatus.OPEN, OperationalTaskStatus.IN_PROGRESS] },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    });
+  }
+
+  getForTenant(tenantId: string, id: string) {
+    return this.get(tenantId, id);
+  }
+
   async assign(tenantId: string, id: string, actorId: string, body: AssignBody) {
     const task = await this.prisma.operationalTask.findFirst({ where: { id, tenantId } });
     if (!task) throw new NotFoundException(`OperationalTask ${id} not found`);
