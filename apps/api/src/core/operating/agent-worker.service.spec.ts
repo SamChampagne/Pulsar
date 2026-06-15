@@ -1,11 +1,14 @@
 import { AgentRunStatus, AgentStatus, OperationalTaskStatus } from '@pulsar/shared';
 import { AgentWorkerService } from './agent-worker.service';
 
-function harness(overrides: Partial<{ openSession: () => Promise<string> }> = {}) {
+function harness(
+  overrides: Partial<{ openSession: () => Promise<string>; start: () => Promise<unknown> }> = {},
+) {
   const calls: string[] = [];
   const agent = { id: 'a1', tenantId: 't1', model: null, persona: null, serviceUserId: 'svc1', status: AgentStatus.ACTIVE, caps: { alwaysOn: true } };
   const task = { id: 'task1', tenantId: 't1', status: OperationalTaskStatus.OPEN, assigneeAgentId: 'a1', title: 'late', category: 'DELAY', subjectType: 'stop', subjectId: 's1' };
   const runs: any[] = [];
+  const revertCalls: any[] = [];
   const prisma = {
     agent: {
       findMany: async () => [agent],
@@ -16,6 +19,10 @@ function harness(overrides: Partial<{ openSession: () => Promise<string> }> = {}
     operationalTask: {
       findMany: async () => (task.status === OperationalTaskStatus.OPEN ? [task] : []),
       updateMany: async ({ where, data }: any) => {
+        // A revert is an updateMany guarded on status IN_PROGRESS -> OPEN.
+        if (where.status === OperationalTaskStatus.IN_PROGRESS && data.status === OperationalTaskStatus.OPEN) {
+          revertCalls.push({ where, data });
+        }
         if (where.status === undefined || task.status === where.status) { Object.assign(task, data); return { count: 1 }; }
         return { count: 0 };
       },
@@ -34,9 +41,11 @@ function harness(overrides: Partial<{ openSession: () => Promise<string> }> = {}
     closeSession: async () => { calls.push('close'); },
     killAgentSessions: async () => { calls.push('kill'); return 1; },
   } as any;
-  const tasks = { start: async () => { task.status = OperationalTaskStatus.IN_PROGRESS; return task; } } as any;
+  const tasks = {
+    start: overrides.start ?? (async () => { task.status = OperationalTaskStatus.IN_PROGRESS; return task; }),
+  } as any;
   const svc = new AgentWorkerService(prisma, runtime, tasks, ledger);
-  return { svc, calls, runs, task, agent };
+  return { svc, calls, runs, task, agent, revertCalls };
 }
 
 describe('AgentWorkerService', () => {
@@ -64,5 +73,27 @@ describe('AgentWorkerService', () => {
     await h.svc.tick('http://x/mcp', 10);
     expect(h.runs[0].status).toBe(AgentRunStatus.FAILED);
     expect(h.task.status).toBe(OperationalTaskStatus.OPEN);
+  });
+
+  it('does NOT revert a task it never claimed (tasks.start rejects) — finishes SKIPPED', async () => {
+    const { BadRequestException } = await import('@nestjs/common');
+    // Simulate the race: another run already claimed the task → it is IN_PROGRESS,
+    // and this run's tasks.start rejects (cannot transition IN_PROGRESS -> IN_PROGRESS).
+    const h = harness({
+      start: async () => {
+        h.task.status = OperationalTaskStatus.IN_PROGRESS; // the winner already flipped it
+        throw new BadRequestException('Cannot transition OperationalTask from IN_PROGRESS to IN_PROGRESS');
+      },
+    });
+
+    const driven = await h.svc.tick('http://x/mcp', 10);
+
+    // This run did not succeed.
+    expect(driven).toBe(0);
+    // It must finish SKIPPED (redundant trigger), never FAILED.
+    expect(h.runs[0].status).toBe(AgentRunStatus.SKIPPED);
+    // CRITICAL: it must NOT have reverted the task — the winning run's IN_PROGRESS stands.
+    expect(h.revertCalls).toHaveLength(0);
+    expect(h.task.status).toBe(OperationalTaskStatus.IN_PROGRESS);
   });
 });

@@ -219,6 +219,10 @@ export class AgentWorkerService {
   /** Returns true iff the run SUCCEEDED. Never throws. */
   private async executeRun(item: QueuedRun, backoffMs: number): Promise<boolean> {
     const { tenantId, agentId, taskId, runId } = item;
+    // Tracks whether THIS run successfully claimed the task (tasks.start resolved).
+    // Only a run that owns the task may revert it on failure — otherwise a redundant
+    // trigger that loses the claim race would clobber the winning run's IN_PROGRESS.
+    let claimed = false;
     try {
       const agent = (await this.prisma.agent.findFirst({
         where: { id: agentId, tenantId },
@@ -235,6 +239,7 @@ export class AgentWorkerService {
       await this.ledger.markRunning(runId);
       await this.prisma.agent.update({ where: { id: agentId }, data: { lastRunAt: new Date() } }).catch(() => undefined);
       await this.tasks.start(tenantId, taskId, agent.serviceUserId);
+      claimed = true;
 
       const sessionId = await this.runtime.openSession({
         tenantId,
@@ -257,15 +262,30 @@ export class AgentWorkerService {
       this.inFlightTasks.delete(taskId);
       return true;
     } catch (err) {
-      return this.handleFailure(item, err, backoffMs);
+      return this.handleFailure(item, err, backoffMs, claimed);
     }
   }
 
-  private async handleFailure(item: QueuedRun, err: unknown, backoffMs: number): Promise<boolean> {
+  private async handleFailure(
+    item: QueuedRun,
+    err: unknown,
+    backoffMs: number,
+    claimed: boolean,
+  ): Promise<boolean> {
     const { tenantId, agentId, taskId, runId } = item;
     const name = err instanceof Error ? err.constructor.name : 'Error';
     const message = err instanceof Error ? err.message : String(err);
     this.logger.warn(`agent ${agentId} task ${taskId}: ${message}`);
+
+    // Failed to even claim the task (tasks.start rejected) — typically because
+    // another worker already owns it (task no longer OPEN). This is a redundant
+    // trigger, not a real failure: finish SKIPPED and NEVER revert (reverting would
+    // clobber the IN_PROGRESS state the run that won the claim is relying on).
+    if (!claimed) {
+      await this.ledger.finish(runId, AgentRunStatus.SKIPPED, { error: message });
+      this.inFlightTasks.delete(taskId);
+      return false;
+    }
 
     // If the agent was paused/revoked mid-run, this is a kill, not a failure.
     const fresh = await this.prisma.agent.findFirst({ where: { id: agentId, tenantId }, select: { status: true } });
