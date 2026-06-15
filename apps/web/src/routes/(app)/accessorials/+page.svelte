@@ -10,7 +10,7 @@
     Badge,
     EmptyState,
     Skeleton,
-    Modal,
+    Panel,
     Field,
     Input,
     Select,
@@ -28,6 +28,7 @@
   let error = $state('');
   let showForm = $state(false);
   let loading = $state(true);
+  let saving = $state(false);
 
   // Form state
   let editingId = $state<string | null>(null);
@@ -43,7 +44,7 @@
       accessorials = result.items;
       total = result.total;
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load accessorials';
+      error = e instanceof ApiError ? e.message : 'Échec du chargement des accessoriaux';
     } finally {
       loading = false;
     }
@@ -58,115 +59,133 @@
     error = '';
   }
 
+  function openNew() {
+    reset();
+    showForm = true;
+  }
+
   function edit(acc: Accessorial) {
     editingId = acc.id;
     code = acc.code;
     name = acc.name;
     unit = acc.unit;
+    error = '';
     showForm = true;
   }
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
     error = '';
+    saving = true;
     try {
       const body = { code: code.toUpperCase(), name, unit };
       if (editingId) {
         await api(`/transportation/accessorials/${editingId}`, { method: 'PATCH', body });
-        toast.success('Accessorial updated');
+        toast.success('Accessoriel mis à jour');
       } else {
         await api('/transportation/accessorials', { method: 'POST', body });
-        toast.success('Accessorial created');
+        toast.success('Accessoriel créé');
       }
       reset();
       await load();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Failed to save accessorial';
+      const msg = e instanceof ApiError ? e.message : "Échec de l'enregistrement de l'accessoriel";
       error = msg;
       toast.error(msg);
+    } finally {
+      saving = false;
     }
   }
 
   async function remove(acc: Accessorial) {
     try {
       await api(`/transportation/accessorials/${acc.id}`, { method: 'DELETE' });
-      toast.success(`Accessorial ${acc.code} deleted`);
+      toast.success(`Accessoriel ${acc.code} supprimé`);
       await load();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Failed to delete accessorial';
+      const msg = e instanceof ApiError ? e.message : "Échec de la suppression de l'accessoriel";
       toast.error(msg);
     }
   }
+
+  const UNIT_LABELS: Record<string, string> = {
+    FLAT: 'Forfait',
+    PER_HOUR: 'Par heure',
+    PER_UNIT: 'Par unité',
+  };
 
   $effect(() => {
     void load();
   });
 </script>
 
-<PageHeader title="Accessorials" count={total}>
+<PageHeader title="Accessoriaux" count={total}>
   {#snippet actions()}
-    <Button onclick={() => { reset(); showForm = true; }}>New accessorial</Button>
+    <Button onclick={openNew}>Nouvel accessoriel</Button>
   {/snippet}
 </PageHeader>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+{#if error && !showForm}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
+{:else if accessorials.length === 0}
+  <Card>
+    <EmptyState message="Aucun accessoriel pour le moment.">
+      {#snippet children()}
+        <Button onclick={openNew}>Nouvel accessoriel</Button>
+      {/snippet}
+    </EmptyState>
+  </Card>
 {:else}
-<Table>
-  {#snippet head()}
-    <th>Code</th><th>Name</th><th>Unit</th><th></th>
-  {/snippet}
-  {#snippet body()}
-    {#each accessorials as acc (acc.id)}
-      <tr>
-        <td><span class="font-semibold text-ink">{acc.code}</span></td>
-        <td>{acc.name}</td>
-        <td><Badge tone="neutral">{acc.unit}</Badge></td>
-        <td class="text-right">
-          <div class="inline-flex gap-2">
-            <Button variant="secondary" onclick={() => edit(acc)}>Edit</Button>
-            <Button variant="danger" onclick={() => remove(acc)}>Delete</Button>
-          </div>
-        </td>
-      </tr>
-    {:else}
-      <tr><td colspan="4"><EmptyState message="No accessorials yet." /></td></tr>
-    {/each}
-  {/snippet}
-</Table>
+  <Table>
+    {#snippet head()}
+      <th>Code</th><th>Nom</th><th>Unité</th><th></th>
+    {/snippet}
+    {#snippet body()}
+      {#each accessorials as acc (acc.id)}
+        <tr class="cursor-pointer" onclick={() => edit(acc)}>
+          <td class="font-mono font-semibold text-ink">{acc.code}</td>
+          <td>{acc.name}</td>
+          <td><Badge tone="neutral">{UNIT_LABELS[acc.unit] ?? acc.unit}</Badge></td>
+          <td class="text-right" onclick={(e) => e.stopPropagation()}>
+            <div class="inline-flex gap-2">
+              <Button variant="secondary" onclick={() => edit(acc)}>Modifier</Button>
+              <Button variant="danger" onclick={() => remove(acc)}>Supprimer</Button>
+            </div>
+          </td>
+        </tr>
+      {/each}
+    {/snippet}
+  </Table>
 {/if}
 
-<!-- ─── Accessorial form Modal ────────────────────────────────────────────────── -->
-<Modal bind:open={showForm} title={editingId ? 'Edit accessorial' : 'New accessorial'}>
+<Panel bind:open={showForm} title={editingId ? 'Modifier accessoriel' : 'Nouvel accessoriel'}>
   {#snippet children()}
-    <form onsubmit={save}>
-      <div class="grid grid-cols-3 gap-4">
-        <Field label="Code">
-          <Input
-            bind:value={code}
-            required
-            placeholder="FUEL_SUR"
-            oninput={(e) => { code = e.currentTarget.value.toUpperCase(); }}
-          />
-        </Field>
-        <Field label="Name">
-          <Input bind:value={name} required placeholder="Fuel surcharge" />
-        </Field>
-        <Field label="Unit">
-          <Select bind:value={unit} required>
-            <option value="FLAT">FLAT</option>
-            <option value="PER_HOUR">PER_HOUR</option>
-            <option value="PER_UNIT">PER_UNIT</option>
-          </Select>
-        </Field>
-      </div>
-
-      <div class="flex justify-end gap-2 pt-2">
-        <Button variant="secondary" onclick={reset}>Cancel</Button>
-        <Button type="submit">{editingId ? 'Update' : 'Create'}</Button>
+    <form onsubmit={save} class="space-y-3">
+      {#if error}<p class="text-sm text-danger">{error}</p>{/if}
+      <Field label="Code">
+        <Input
+          bind:value={code}
+          required
+          placeholder="FUEL_SUR"
+          oninput={(e) => { code = e.currentTarget.value.toUpperCase(); }}
+        />
+      </Field>
+      <Field label="Nom">
+        <Input bind:value={name} required placeholder="Surcharge carburant" />
+      </Field>
+      <Field label="Unité">
+        <Select bind:value={unit} required>
+          <option value="FLAT">Forfait</option>
+          <option value="PER_HOUR">Par heure</option>
+          <option value="PER_UNIT">Par unité</option>
+        </Select>
+      </Field>
+      <div class="flex justify-end gap-2 border-t border-edge pt-3">
+        <Button variant="secondary" onclick={reset}>Annuler</Button>
+        <Button type="submit" loading={saving}>{editingId ? 'Mettre à jour' : 'Créer'}</Button>
       </div>
     </form>
   {/snippet}
-</Modal>
+</Panel>

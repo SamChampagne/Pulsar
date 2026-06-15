@@ -15,7 +15,7 @@
     EmptyState,
     Card,
     Skeleton,
-    Modal,
+    Panel,
   } from '$lib/components/ui';
 
   interface CustomerRow {
@@ -33,6 +33,7 @@
   let error = $state('');
   let showForm = $state(false);
   let loading = $state(true);
+  let saving = $state(false);
   let form = $state({ code: '', name: '', contactName: '', email: '' });
 
   const hasPortal = $derived(
@@ -46,9 +47,9 @@
         { method: 'POST' },
       );
       await navigator.clipboard.writeText(url);
-      toast.success(`Portal link for ${customer.name} copied`);
+      toast.success(`Lien portail de ${customer.name} copié`);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Failed to create portal link');
+      toast.error(e instanceof ApiError ? e.message : 'Échec de la création du lien portail');
     }
   }
 
@@ -60,15 +61,22 @@
       customers = result.items;
       total = result.total;
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load customers';
+      error = e instanceof ApiError ? e.message : 'Échec du chargement des clients';
     } finally {
       loading = false;
     }
   }
 
+  function openNew() {
+    form = { code: '', name: '', contactName: '', email: '' };
+    error = '';
+    showForm = true;
+  }
+
   async function create(event: SubmitEvent) {
     event.preventDefault();
     error = '';
+    saving = true;
     try {
       await api('/transportation/customers', {
         method: 'POST',
@@ -81,9 +89,14 @@
       });
       showForm = false;
       form = { code: '', name: '', contactName: '', email: '' };
+      toast.success('Client créé');
       await load();
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to create customer';
+      const msg = e instanceof ApiError ? e.message : 'Échec de la création du client';
+      error = msg;
+      toast.error(msg);
+    } finally {
+      saving = false;
     }
   }
 
@@ -92,18 +105,18 @@
   });
 </script>
 
-<PageHeader title="Customers" count={total}>
+<PageHeader title="Clients" count={total}>
   {#snippet actions()}
-    <Button onclick={() => { showForm = true; }}>New customer</Button>
+    <Button onclick={openNew}>Nouveau client</Button>
   {/snippet}
 </PageHeader>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+{#if error && !showForm}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
 <FilterBar>
   <div class="w-72">
     <input
-      placeholder="Search name or code…"
+      placeholder="Rechercher nom ou code…"
       bind:value={search}
       onkeydown={(e) => { if (e.key === 'Enter') void load(); }}
       class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
@@ -113,64 +126,65 @@
 
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
+{:else if customers.length === 0}
+  <Card>
+    <EmptyState message="Aucun client pour le moment.">
+      {#snippet children()}
+        <Button onclick={openNew}>Nouveau client</Button>
+      {/snippet}
+    </EmptyState>
+  </Card>
 {:else}
-<Table>
-  {#snippet head()}
-    <th>Code</th><th>Name</th><th>Contact</th><th>Email</th><th>Active</th>
-    {#if hasPortal}<th></th>{/if}
-  {/snippet}
-  {#snippet body()}
-    {#each customers as customer (customer.id)}
-      <tr>
-        <td class="font-semibold">{customer.code}</td>
-        <td>{customer.name}</td>
-        <td>{customer.contactName ?? '—'}</td>
-        <td>{customer.email ?? '—'}</td>
-        <td>
-          <Badge tone={customer.isActive ? 'ok' : 'danger'}>
-            {customer.isActive ? 'Active' : 'Inactive'}
-          </Badge>
-        </td>
-        {#if hasPortal}
-          <td class="text-right">
-            <Button variant="secondary" onclick={() => portalLink(customer)}>
-              Portal link
-            </Button>
+  <Table>
+    {#snippet head()}
+      <th>Code</th><th>Nom</th><th>Contact</th><th>Courriel</th><th>Actif</th>
+      {#if hasPortal}<th></th>{/if}
+    {/snippet}
+    {#snippet body()}
+      {#each customers as customer (customer.id)}
+        <tr>
+          <td class="font-mono font-semibold text-ink">{customer.code}</td>
+          <td>{customer.name}</td>
+          <td>{customer.contactName ?? '—'}</td>
+          <td class="text-ink-muted">{customer.email ?? '—'}</td>
+          <td>
+            <Badge tone={customer.isActive ? 'ok' : 'danger'}>
+              {customer.isActive ? 'Actif' : 'Inactif'}
+            </Badge>
           </td>
-        {/if}
-      </tr>
-    {:else}
-      <tr>
-        <td colspan={hasPortal ? 6 : 5}>
-          <EmptyState message="No customers yet." />
-        </td>
-      </tr>
-    {/each}
-  {/snippet}
-</Table>
+          {#if hasPortal}
+            <td class="text-right">
+              <Button variant="secondary" onclick={() => portalLink(customer)}>
+                Lien portail
+              </Button>
+            </td>
+          {/if}
+        </tr>
+      {/each}
+    {/snippet}
+  </Table>
 {/if}
 
-<Modal bind:open={showForm} title="New customer">
+<Panel bind:open={showForm} title="Nouveau client">
   {#snippet children()}
-    <form onsubmit={create}>
-      <div class="grid grid-cols-2 gap-x-4 gap-y-3">
-        <Field label="Code">
-          <Input bind:value={form.code} required placeholder="CUST-002" />
-        </Field>
-        <Field label="Name">
-          <Input bind:value={form.name} required />
-        </Field>
-        <Field label="Contact">
-          <Input bind:value={form.contactName} />
-        </Field>
-        <Field label="Email">
-          <Input type="email" bind:value={form.email} />
-        </Field>
-      </div>
-      <div class="mt-4 flex justify-end gap-2 border-t border-edge pt-3">
-        <Button variant="secondary" onclick={() => { showForm = false; }}>Cancel</Button>
-        <Button variant="primary" type="submit">Create</Button>
+    <form onsubmit={create} class="space-y-3">
+      {#if error}<p class="text-sm text-danger">{error}</p>{/if}
+      <Field label="Code">
+        <Input bind:value={form.code} required placeholder="CUST-002" />
+      </Field>
+      <Field label="Nom">
+        <Input bind:value={form.name} required />
+      </Field>
+      <Field label="Contact">
+        <Input bind:value={form.contactName} />
+      </Field>
+      <Field label="Courriel">
+        <Input type="email" bind:value={form.email} />
+      </Field>
+      <div class="flex justify-end gap-2 border-t border-edge pt-3">
+        <Button variant="secondary" onclick={() => { showForm = false; }}>Annuler</Button>
+        <Button variant="primary" type="submit" loading={saving}>Créer</Button>
       </div>
     </form>
   {/snippet}
-</Modal>
+</Panel>
