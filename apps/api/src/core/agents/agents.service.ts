@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { AuthUser, PermissionKey } from '@pulsar/shared';
-import { ALL_PERMISSION_KEYS, AgentAutonomy, AgentStatus, autoApprovedTiers, computeTrustScore } from '@pulsar/shared';
+import { ALL_PERMISSION_KEYS, AgentAutonomy, AgentStatus, autoApprovedTiers, computeTrustScore, deriveAgentKpis, mergeTimeline, type AgentKpiRaw, type TimelineEntry } from '@pulsar/shared';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { ListQueryDto } from '../../common/dto/list-query.dto';
@@ -317,6 +317,127 @@ export class AgentsService {
     return this.runs.listForAgent(tenantId, id, q);
   }
 
+  /** Count circuit-breaker trips for an agent from the audit trail (phase-14 maybeTripBreaker logs them). */
+  private breakerTripCount(tenantId: string, agentId: string, since?: Date) {
+    return this.prisma.auditLog.count({
+      where: {
+        tenantId,
+        entityType: 'agent',
+        entityId: agentId,
+        after: { path: ['breakerTripped'], equals: true },
+        ...(since ? { createdAt: { gte: since } } : {}),
+      },
+    });
+  }
+
+  /** Gather all raw KPI counts for an agent within a window. */
+  private async gatherKpiRaw(tenantId: string, agentId: string, since: Date): Promise<AgentKpiRaw> {
+    const pa = (extra: object) => this.prisma.proposedAction.count({ where: { tenantId, agentId, proposedAt: { gte: since }, ...extra } });
+    const run = (extra: object) => this.prisma.agentRun.count({ where: { tenantId, agentId, createdAt: { gte: since }, ...extra } });
+    const [
+      executed, autoApproved, pending, rejected, failed,
+      runsTotal, runsSucceeded, runsFailed, runsSkipped, runsKilled,
+      breakerTrips, tasksResolved, finishedRuns,
+    ] = await Promise.all([
+      pa({ status: 'EXECUTED' }),
+      pa({ status: 'EXECUTED', autoApproved: true }),
+      pa({ status: 'PENDING' }),
+      pa({ status: 'REJECTED' }),
+      pa({ status: 'FAILED' }),
+      run({}),
+      run({ status: 'SUCCEEDED' }),
+      run({ status: 'FAILED' }),
+      run({ status: 'SKIPPED' }),
+      run({ status: 'KILLED' }),
+      this.breakerTripCount(tenantId, agentId, since),
+      this.prisma.operationalTask.count({ where: { tenantId, assigneeAgentId: agentId, status: 'RESOLVED', resolvedAt: { gte: since } } }),
+      this.prisma.agentRun.findMany({
+        where: { tenantId, agentId, createdAt: { gte: since }, startedAt: { not: null }, finishedAt: { not: null } },
+        select: { startedAt: true, finishedAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      }),
+    ]);
+    const runLatenciesMs = finishedRuns
+      .filter((r) => r.startedAt && r.finishedAt)
+      .map((r) => r.finishedAt!.getTime() - r.startedAt!.getTime());
+    return { executed, autoApproved, pending, rejected, failed, runsTotal, runsSucceeded, runsFailed, runsSkipped, runsKilled, runLatenciesMs, breakerTrips, tasksResolved };
+  }
+
+  /** Per-agent KPI rollup (computed on read). */
+  async kpis(tenantId: string, id: string, days = 30) {
+    const agent = await this.prisma.agent.findFirst({ where: { id, tenantId }, select: { id: true } });
+    if (!agent) throw new NotFoundException('Agent not found');
+    const since = new Date(Date.now() - days * 86_400_000);
+    return deriveAgentKpis(await this.gatherKpiRaw(tenantId, id, since));
+  }
+
+  /** Tenant-wide manager dashboard: per-agent KPI summaries + aggregate rollup (computed on read). */
+  async controlTower(tenantId: string, days = 30) {
+    const since = new Date(Date.now() - days * 86_400_000);
+    const agents = await this.prisma.agent.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, role: true, avatar: true, status: true, autonomyLevel: true, breakerTrippedAt: true },
+    });
+    const items = await Promise.all(
+      agents.map(async (a) => ({
+        id: a.id,
+        name: a.name,
+        role: a.role,
+        avatar: a.avatar,
+        status: a.status,
+        autonomyLevel: a.autonomyLevel,
+        breakerTrippedAt: a.breakerTrippedAt,
+        kpis: deriveAgentKpis(await this.gatherKpiRaw(tenantId, a.id, since)),
+      })),
+    );
+    const rollup = {
+      agents: items.length,
+      active: items.filter((i) => i.status === 'ACTIVE').length,
+      paused: items.filter((i) => i.status === 'PAUSED').length,
+      revoked: items.filter((i) => i.status === 'REVOKED').length,
+      totalActions: items.reduce((s, i) => s + i.kpis.actions.total, 0),
+      pendingApprovals: items.reduce((s, i) => s + i.kpis.actions.pending, 0),
+      totalBreakerTrips: items.reduce((s, i) => s + i.kpis.breakerTrips, 0),
+      totalTasksResolved: items.reduce((s, i) => s + i.kpis.tasksResolved, 0),
+    };
+    return { items, rollup };
+  }
+
+  /** Unified per-agent activity/audit timeline (runs + actions + lifecycle audits), newest first. */
+  async timeline(tenantId: string, id: string, limit = 50) {
+    const agent = await this.prisma.agent.findFirst({ where: { id, tenantId }, select: { id: true } });
+    if (!agent) throw new NotFoundException('Agent not found');
+    const [runs, actions, audits] = await Promise.all([
+      this.prisma.agentRun.findMany({ where: { tenantId, agentId: id }, orderBy: { createdAt: 'desc' }, take: limit, select: { id: true, trigger: true, status: true, taskId: true, createdAt: true } }),
+      this.prisma.proposedAction.findMany({ where: { tenantId, agentId: id }, orderBy: { proposedAt: 'desc' }, take: limit, select: { id: true, tool: true, status: true, autoApproved: true, proposedAt: true } }),
+      this.prisma.auditLog.findMany({ where: { tenantId, entityType: 'agent', entityId: id }, orderBy: { createdAt: 'desc' }, take: limit, select: { id: true, action: true, after: true, createdAt: true } }),
+    ]);
+    const runEntries: TimelineEntry[] = runs.map((r) => ({
+      at: r.createdAt.toISOString(),
+      kind: 'run',
+      summary: `Run ${r.trigger} → ${r.status}${r.taskId ? ` (task ${r.taskId})` : ''}`,
+      ref: r.id,
+    }));
+    const actionEntries: TimelineEntry[] = actions.map((a) => ({
+      at: a.proposedAt.toISOString(),
+      kind: 'action',
+      summary: `${a.autoApproved ? 'Auto' : 'Proposé'} ${a.tool} → ${a.status}`,
+      ref: a.id,
+    }));
+    const auditEntries: TimelineEntry[] = audits.map((a) => {
+      const after = (a.after ?? {}) as { breakerTripped?: boolean };
+      return {
+        at: a.createdAt.toISOString(),
+        kind: 'lifecycle',
+        summary: after.breakerTripped ? 'Circuit breaker déclenché' : `Audit ${a.action}`,
+        ref: a.id,
+      };
+    });
+    return mergeTimeline([runEntries, actionEntries, auditEntries], limit);
+  }
+
   /** Trust score from the agent's track record (proposals + runs). Computed on read. */
   async trust(tenantId: string, id: string) {
     const agent = await this.prisma.agent.findFirst({ where: { id, tenantId }, select: { id: true, autonomyLevel: true } });
@@ -328,8 +449,9 @@ export class AgentsService {
       this.prisma.agentRun.count({ where: { tenantId, agentId: id, status: 'SUCCEEDED' } }),
       this.prisma.agentRun.count({ where: { tenantId, agentId: id } }),
     ]);
+    const breakerTrips = await this.breakerTripCount(tenantId, id);
     const result = computeTrustScore(
-      { executed, rejected, failed, runsSucceeded, runsTotal, breakerTrips: 0 },
+      { executed, rejected, failed, runsSucceeded, runsTotal, breakerTrips },
       agent.autonomyLevel as AgentAutonomy,
     );
     return { ...result, currentLevel: agent.autonomyLevel };

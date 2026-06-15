@@ -162,6 +162,16 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     d'escalade automatique). Règles 23/24 préservées (le moteur de policy/caps vit dans
     `@pulsar/shared`, pur).
 
+## Hard rules (continued, phase 15)
+
+30. (phase 15 — Control Tower observabilité) Les KPI, rollups et timeline du Control Tower sont
+    calculés **à la lecture** depuis `AgentRun`/`ProposedAction`/`OperationalTask`/`AuditLog`
+    (aucun store de rollup, aucune migration) ; les calculs de ratio/fusion vivent dans
+    `@pulsar/shared` (`deriveAgentKpis`, `mergeTimeline` — purs) ; le compteur de trips de breaker
+    vient des `AuditLog` `entityType='agent'` / `after.breakerTripped=true` (alimente aussi le
+    `breakerTrips` du trust score) ; toute projection agent/KPI exclut `secretHash`/`serviceUserId`
+    (règle 26) et reste scopée `tenantId` (règle 1).
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

@@ -41,6 +41,12 @@ export class AgentsController {
     return this.agents.pauseAll(user.tenantId);
   }
 
+  @Get('control-tower')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
+  controlTower(@CurrentUser() user: AuthUser, @Query('days') days?: string) {
+    return this.agents.controlTower(user.tenantId, days ? Number(days) : 30);
+  }
+
   @Get()
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
   list(@CurrentUser() user: AuthUser) {
@@ -63,6 +69,18 @@ export class AgentsController {
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
   trust(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.agents.trust(user.tenantId, id);
+  }
+
+  @Get(':id/kpis')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
+  kpis(@CurrentUser() user: AuthUser, @Param('id') id: string, @Query('days') days?: string) {
+    return this.agents.kpis(user.tenantId, id, days ? Number(days) : 30);
+  }
+
+  @Get(':id/timeline')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
+  timeline(@CurrentUser() user: AuthUser, @Param('id') id: string, @Query('limit') limit?: string) {
+    return this.agents.timeline(user.tenantId, id, limit ? Number(limit) : 50);
   }
 
   @Get(':id')

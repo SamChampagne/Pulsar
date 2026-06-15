@@ -1,7 +1,7 @@
 # État du projet — point de reprise
 
 > 🇫🇷 Document de synthèse pour reprendre le travail (humain ou session Claude Code).
-> Mis à jour à la fin de la **phase 14**. Détail des tâches : [TODO.md](../TODO.md) ·
+> Mis à jour à la fin de la **phase 15-A**. Détail des tâches : [TODO.md](../TODO.md) ·
 > vision : [ROADMAP.md](../ROADMAP.md) · règles de dev : [CLAUDE.md](../CLAUDE.md) ·
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
@@ -62,7 +62,11 @@ policy unifiée (`evaluatePolicy` pur, point de décision unique), policy-as-dat
 (`caps.policies` + preset du dial d'autonomie, rétro-compatible), auto-exécution persistée
 dans le registre des propositions (cap débit fermé sur le chemin auto), circuit breaker
 réversible (rétrograde en PROPOSE, jamais d'escalade) et promotion d'autonomie confirmée par
-un humain (phase 14).
+un humain (phase 14) ; **Control Tower — observabilité** — KPI par agent, dashboard manager du
+tenant, timeline d'activité/audit unifiée, compteur de trips de breaker alimentant le score de
+confiance, **calculés à la lecture** depuis `AgentRun`/`ProposedAction`/`OperationalTask`/`AuditLog`
+(`deriveAgentKpis`/`mergeTimeline` purs, aucun store de rollup, **aucune migration** — toujours 23)
+(phase 15-A).
 
 ## Carte de la documentation
 
@@ -79,8 +83,8 @@ un humain (phase 14).
 
 ## Prochaine session — Pulsar Agent OS (phases 15 → 22)
 
-La **phase 14 est livrée** (Autonomie & policy engine) sur la branche `phase-14`.
-**Précondition avant la phase 15 : merger `phase-14` dans `main`** (PR à ouvrir).
+La **phase 15-A est livrée** (Control Tower — observabilité) sur la branche `phase-15`
+(suite des phases 12 → 14 livrées). PR à ouvrir vers `main`.
 
 La direction est verrouillée : voir la **roadmap stratégique adoptée le 2026-06-14**,
 [docs/superpowers/specs/2026-06-14-pulsar-agent-os-roadmap.md](./superpowers/specs/2026-06-14-pulsar-agent-os-roadmap.md).
@@ -89,15 +93,16 @@ gouvernés**. Arc = agents d'abord (approfondir sur les 3 modules actuels), puis
 — chaque nouveau module arrive avec son agent.
 
 - **Acte I (substrat 24/7)** : ~~12 Operating Workbench~~ ✅ · ~~13 Main-d'œuvre 24/7~~ ✅ ·
-  ~~14 Autonomie & policies~~ ✅ · 15 Control Tower agents.
+  ~~14 Autonomie & policies~~ ✅ · ~~15-A Control Tower (observabilité)~~ ✅ ·
+  15-B red-team (prompt-injection + cross-tenant) · 15-C playbooks.
 - **Acte II (agents phares)** : 16 Freight Audit autonome (§19.4) · 17 Planification continue (§19.5).
 - **Acte III (modules tressés, ré-ordonnable)** : 18 Integrations · 19 Yard · 20 Fleet · 21 WMS ·
   22 Analytics/réseau de données.
 
-**Prochain pas concret** : merge `phase-14`, puis brainstorm → spec → plan de la **phase 15**
-(Agent Control Tower : KPIs par agent, tableau de bord manager, harnais red-team
-[prompt-injection + cross-tenant], playbooks). Pulsar reste **MCP-agnostique** ; Hermes est
-le runtime de référence.
+**Prochain pas concret** (au choix de Sam) : soit terminer la phase 15 avec **15-B** (harnais
+red-team : prompt-injection + cross-tenant) puis **15-C** (playbooks) ; soit pivoter vers
+**l'Acte II** — **phase 16 Freight Audit autonome** (§19.4) ou **phase 17 planification continue**
+(§19.5). Pulsar reste **MCP-agnostique** ; Hermes est le runtime de référence.
 
 Benchmark Fleetbase (2026-06-12) : aucune IA chez eux — c'est l'axe de différenciation.
 

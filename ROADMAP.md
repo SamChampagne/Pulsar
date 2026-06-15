@@ -201,8 +201,13 @@ ships *with* its agent.
   (`Agent.breakerTrippedAt` rétrograde en PROPOSE, ne touche jamais `autonomyLevel`, jamais
   d'escalade) ; score de confiance + promotion d'autonomie **confirmée par un humain** ; 23ᵉ
   migration ; règle 29.
-- **15 — Agent Control Tower**: per-agent KPIs, manager dashboard, red-team harness
-  (prompt-injection + cross-tenant), playbooks.
+- ✅ **15-A — Control Tower (observabilité)** (shipped): KPI par agent + dashboard manager du
+  tenant + timeline d'activité/audit unifiée + compteur de trips de breaker alimentant le score
+  de confiance — tout **calculé à la lecture** depuis `AgentRun`/`ProposedAction`/`OperationalTask`/
+  `AuditLog` (`deriveAgentKpis`/`mergeTimeline` purs dans `@pulsar/shared`, aucun store de rollup,
+  **aucune migration**) ; règle 30.
+- **15-B — Red-team harness** (à venir, slice séparée) : prompt-injection + cross-tenant.
+- **15-C — Playbooks** (à venir, slice séparée).
 
 **Act II — Flagship agents (depth, ROI)**
 - **16 — Freight Audit autonome** (§19.4): incoming carrier-invoice entity, matching, dispute agent.
