@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
+  import { toast } from '$lib/stores/toast';
   import {
     PageHeader,
     Button,
@@ -26,7 +27,7 @@
     try {
       modules = await api<ModuleRow[]>('/modules');
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load modules';
+      error = e instanceof ApiError ? e.message : 'Échec du chargement des modules';
     } finally {
       loading = false;
     }
@@ -39,9 +40,12 @@
         method: 'PATCH',
         body: { enabled: !module.enabled },
       });
+      toast.success(module.enabled ? `${module.name} désactivé` : `${module.name} activé`);
       await load();
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to toggle module';
+      const msg = e instanceof ApiError ? e.message : 'Échec de la modification du module';
+      error = msg;
+      toast.error(msg);
     }
   }
 
@@ -50,11 +54,11 @@
   });
 </script>
 
-<PageHeader title="Modules" />
+<PageHeader title="Modules" count={modules.length} />
 
 <p class="mb-4 text-sm text-ink-muted">
-  Modules can be enabled or disabled per tenant. Changes to the navigation take effect at next
-  sign-in.
+  Les modules s'activent ou se désactivent par tenant. Les changements de navigation prennent
+  effet à la prochaine connexion.
 </p>
 
 {#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
@@ -66,7 +70,9 @@
     {/each}
   </div>
 {:else if modules.length === 0}
-  <EmptyState message="No modules available." />
+  <Card>
+    <EmptyState message="Aucun module disponible." />
+  </Card>
 {:else}
   <div class="grid gap-3 sm:grid-cols-2">
     {#each modules as module (module.key)}
@@ -76,13 +82,13 @@
             <div class="mb-1 flex items-center gap-2">
               <span class="font-semibold text-ink">{module.name}</span>
               {#if module.isCore}
-                <Badge tone="neutral">Core</Badge>
+                <Badge tone="neutral">Cœur</Badge>
               {:else if module.enabled}
-                <Badge tone="ok">Enabled</Badge>
+                <Badge tone="ok">Activé</Badge>
               {:else if module.available}
-                <Badge tone="neutral">Disabled</Badge>
+                <Badge tone="neutral">Désactivé</Badge>
               {:else}
-                <Badge tone="warn">Planned</Badge>
+                <Badge tone="warn">Planifié</Badge>
               {/if}
             </div>
             <p class="text-sm text-ink-muted">{module.description}</p>
@@ -91,7 +97,7 @@
             <Button
               variant={module.enabled ? 'secondary' : 'primary'}
               onclick={() => void toggle(module)}
-            >{module.enabled ? 'Disable' : 'Enable'}</Button>
+            >{module.enabled ? 'Désactiver' : 'Activer'}</Button>
           {/if}
         </div>
       </Card>
