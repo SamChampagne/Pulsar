@@ -46,7 +46,7 @@ export const MODULE_CATALOG: ModuleDescriptor[] = [
     name: 'Fleet Management',
     description: 'Asset lifecycle, maintenance, compliance for owned fleets.',
     isCore: false,
-    available: false,
+    available: true,
   },
   {
     key: MODULE_KEYS.YARD,

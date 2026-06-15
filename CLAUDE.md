@@ -184,6 +184,22 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     `recoveredAmount` n'est positif que sur une résolution `KEEP_EXPECTED` ; il alimente le KPI
     économies. Tenant isolation (règle 1) + module gating (`@RequireModule(BILLING)`) sur tout endpoint.
 
+## Hard rules (continued, module Fleet)
+
+32. (module Fleet — maintenance & conformité) Le statut d'un asset de flotte
+    (`Vehicle`/`Trailer.status: AssetStatus`) ne change via le module Fleet QUE par le workflow de
+    maintenance : ouvrir un `MaintenanceOrder` ⇒ asset `MAINTENANCE`, COMPLETED/CANCELLED ⇒
+    `AVAILABLE`. Les transitions du WO passent par `canTransitionMaintenanceOrder` (`@pulsar/shared`,
+    règle 2) avec claim conditionnel `updateMany` (TOCTOU) ; le sync asset est gardé par
+    `canTransitionAsset` (best-effort, **jamais** sortir `RETIRED`, jamais throw) et audité (règle 6).
+    Un `MaintenanceOrder` cible exactement UN asset (`vehicleId` XOR `trailerId`, validé en service).
+    Le statut de conformité est **calculé** (`computeComplianceStatus`, pur `@pulsar/shared`), JAMAIS
+    persisté ; `ComplianceDocument.subjectId` est une FK souple polymorphe (VEHICLE/TRAILER/DRIVER) dont
+    l'ownership est vérifiée en service selon `subjectType` (règle 9). Le roster d'assets réutilise les
+    endpoints `transportation/{vehicles,trailers,drivers}` (pas de duplication CRUD). Tout endpoint
+    Fleet est `@RequireModule(MODULE_KEYS.FLEET)` + `fleet.read|manage`, tenant-scopé (règle 1) ;
+    fichiers via `DocumentsService` (règle 12).
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
