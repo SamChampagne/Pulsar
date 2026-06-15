@@ -229,6 +229,10 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     transaction (`VisitsService.assignToSpot`/`checkOut`). N° via `SequencesService` (YV-/DA-, règle 8).
     Spots et sites sont des `Location` du tenant. Tout endpoint Yard est `@RequireModule(MODULE_KEYS.YARD)` +
     `yard.read|manage`, tenant-scopé (règle 1) ; FK (trailer/carrier/location/spot/appointment) vérifiées (règle 9).
+    (Plan v2) `YardSpot.posX/posY` sont **display-only** (disposition du plan de cour) : jamais utilisés dans
+    l'occupation/affectation/transitions (dérivées + serveur). `PUT /yard/spots/layout` ne persiste que des
+    coordonnées d'affichage (tenant-scopé, `yard.manage`) ; le glisser-déposer du plan appelle les endpoints
+    existants `assign`/`move` (gardés).
 
 ## Adding a business module (the recipe)
 
