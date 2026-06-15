@@ -45,7 +45,7 @@ export class OperationalTasksService {
         where,
         skip,
         take,
-        orderBy: [{ severity: 'desc' }, { createdAt: 'asc' }],
+        orderBy: [{ severity: 'desc' }, { createdAt: 'desc' }],
       }),
       this.prisma.operationalTask.count({ where }),
     ]);
@@ -107,10 +107,12 @@ export class OperationalTasksService {
       before: { status: task.status },
       after: { status: to, ...extra },
     });
+
+    return this.prisma.operationalTask.findFirst({ where: { id, tenantId } });
   }
 
   async resolve(tenantId: string, id: string, userId: string, note?: string) {
-    await this.transition(
+    return this.transition(
       tenantId,
       id,
       OperationalTaskStatus.RESOLVED,
@@ -124,7 +126,7 @@ export class OperationalTasksService {
   }
 
   async dismiss(tenantId: string, id: string, userId: string, note?: string) {
-    await this.transition(
+    return this.transition(
       tenantId,
       id,
       OperationalTaskStatus.DISMISSED,
@@ -138,7 +140,7 @@ export class OperationalTasksService {
   }
 
   async start(tenantId: string, id: string, actorId: string) {
-    await this.transition(tenantId, id, OperationalTaskStatus.IN_PROGRESS, {}, actorId);
+    return this.transition(tenantId, id, OperationalTaskStatus.IN_PROGRESS, {}, actorId);
   }
 
   async assign(tenantId: string, id: string, actorId: string, body: AssignBody) {
@@ -149,8 +151,8 @@ export class OperationalTasksService {
       where: { id, tenantId },
       data: {
         assigneeType: body.assigneeType,
-        assigneeUserId: body.assigneeUserId ?? null,
-        assigneeAgentId: body.assigneeAgentId ?? null,
+        assigneeUserId: body.assigneeType === TaskAssigneeType.HUMAN ? body.assigneeUserId ?? null : null,
+        assigneeAgentId: body.assigneeType === TaskAssigneeType.AGENT ? body.assigneeAgentId ?? null : null,
       },
     });
 
