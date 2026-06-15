@@ -77,6 +77,12 @@ export class AgentsController {
     return this.agents.kpis(user.tenantId, id, days ? Number(days) : 30);
   }
 
+  @Get(':id/timeline')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
+  timeline(@CurrentUser() user: AuthUser, @Param('id') id: string, @Query('limit') limit?: string) {
+    return this.agents.timeline(user.tenantId, id, limit ? Number(limit) : 50);
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_READ)
   getOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {

@@ -67,3 +67,21 @@ describe('AgentsService.controlTower', () => {
     expect(out.rollup.pendingApprovals).toBe(2);
   });
 });
+
+describe('AgentsService.timeline', () => {
+  it('merges runs, actions and audit lifecycle entries, newest first', async () => {
+    process.env.JWT_SECRET = 'test-secret';
+    const base = makePrisma();
+    const prisma = {
+      ...base,
+      agent: { ...base.agent, findFirst: async () => ({ id: 'a1', name: 'A' }) },
+      agentRun: { ...base.agentRun, findMany: async () => [{ id: 'r1', trigger: 'EVENT', status: 'SUCCEEDED', taskId: 't1', createdAt: new Date('2026-06-12T00:00:00Z') }] },
+      proposedAction: { ...base.proposedAction, findMany: async () => [{ id: 'p1', tool: 'create_load', status: 'EXECUTED', autoApproved: true, proposedAt: new Date('2026-06-13T00:00:00Z') }] },
+      auditLog: { ...base.auditLog, findMany: async () => [{ id: 'au1', action: 'UPDATE', after: { breakerTripped: true }, createdAt: new Date('2026-06-11T00:00:00Z') }] },
+    } as any;
+    const svc = new AgentsService(prisma, {} as any, {} as any, {} as any);
+    const tl = await svc.timeline('t1', 'a1', 10);
+    expect(tl.map((e: any) => e.kind)).toEqual(['action', 'run', 'lifecycle']); // 06-13, 06-12, 06-11
+    expect(tl[0].ref).toBe('p1');
+  });
+});

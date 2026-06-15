@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { AuthUser, PermissionKey } from '@pulsar/shared';
-import { ALL_PERMISSION_KEYS, AgentAutonomy, AgentStatus, autoApprovedTiers, computeTrustScore, deriveAgentKpis, type AgentKpiRaw } from '@pulsar/shared';
+import { ALL_PERMISSION_KEYS, AgentAutonomy, AgentStatus, autoApprovedTiers, computeTrustScore, deriveAgentKpis, mergeTimeline, type AgentKpiRaw, type TimelineEntry } from '@pulsar/shared';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { ListQueryDto } from '../../common/dto/list-query.dto';
@@ -403,6 +403,39 @@ export class AgentsService {
       totalTasksResolved: items.reduce((s, i) => s + i.kpis.tasksResolved, 0),
     };
     return { items, rollup };
+  }
+
+  /** Unified per-agent activity/audit timeline (runs + actions + lifecycle audits), newest first. */
+  async timeline(tenantId: string, id: string, limit = 50) {
+    const agent = await this.prisma.agent.findFirst({ where: { id, tenantId }, select: { id: true } });
+    if (!agent) throw new NotFoundException('Agent not found');
+    const [runs, actions, audits] = await Promise.all([
+      this.prisma.agentRun.findMany({ where: { tenantId, agentId: id }, orderBy: { createdAt: 'desc' }, take: limit, select: { id: true, trigger: true, status: true, taskId: true, createdAt: true } }),
+      this.prisma.proposedAction.findMany({ where: { tenantId, agentId: id }, orderBy: { proposedAt: 'desc' }, take: limit, select: { id: true, tool: true, status: true, autoApproved: true, proposedAt: true } }),
+      this.prisma.auditLog.findMany({ where: { tenantId, entityType: 'agent', entityId: id }, orderBy: { createdAt: 'desc' }, take: limit, select: { id: true, action: true, after: true, createdAt: true } }),
+    ]);
+    const runEntries: TimelineEntry[] = runs.map((r) => ({
+      at: r.createdAt.toISOString(),
+      kind: 'run',
+      summary: `Run ${r.trigger} → ${r.status}${r.taskId ? ` (task ${r.taskId})` : ''}`,
+      ref: r.id,
+    }));
+    const actionEntries: TimelineEntry[] = actions.map((a) => ({
+      at: a.proposedAt.toISOString(),
+      kind: 'action',
+      summary: `${a.autoApproved ? 'Auto' : 'Proposé'} ${a.tool} → ${a.status}`,
+      ref: a.id,
+    }));
+    const auditEntries: TimelineEntry[] = audits.map((a) => {
+      const after = (a.after ?? {}) as { breakerTripped?: boolean };
+      return {
+        at: a.createdAt.toISOString(),
+        kind: 'lifecycle',
+        summary: after.breakerTripped ? 'Circuit breaker déclenché' : `Audit ${a.action}`,
+        ref: a.id,
+      };
+    });
+    return mergeTimeline([runEntries, actionEntries, auditEntries], limit);
   }
 
   /** Trust score from the agent's track record (proposals + runs). Computed on read. */
