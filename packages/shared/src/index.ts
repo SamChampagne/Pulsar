@@ -25,6 +25,7 @@ export * from './agents/policy';
 export * from './agents/circuit-breaker';
 export * from './agents/trust';
 export * from './agents/kpis';
+export * from './agents/timeline';
 export * from './agents/autonomy';
 export * from './agents/runtime-providers';
 export * from './agents/role-presets';
