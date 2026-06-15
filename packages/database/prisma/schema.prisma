@@ -760,6 +760,7 @@ model Shipment {
   trackingEvents      TrackingEvent[]
   proofOfDelivery     ProofOfDelivery?
   legs                ShipmentLoadLeg[]
+  pickOrders          PickOrder[]
 
   @@unique([tenantId, shipmentNumber])
   @@index([tenantId, status])
@@ -1885,6 +1886,7 @@ model PickOrder {
   tenantId    String
   number      String
   locationId  String
+  shipmentId  String?
   status      PickOrderStatus @default(OPEN)
   reference   String?
   note        String?
@@ -1895,10 +1897,12 @@ model PickOrder {
 
   tenant   Tenant     @relation(fields: [tenantId], references: [id])
   location Location   @relation(fields: [locationId], references: [id])
+  shipment Shipment?  @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
   lines    PickLine[]
 
   @@unique([tenantId, number])
   @@index([tenantId, status])
+  @@index([tenantId, shipmentId])
   @@map("wms_pick_orders")
 }
 
