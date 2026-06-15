@@ -165,21 +165,41 @@ The audit's MVP line is now closed. The three blockers identified in §18 are al
   today; the replanned-window re-alert dedup path is correctly designed but not exercisable
   over HTTP until continuous planning lands (audit §19.5).
 
-## Next: two paths forward
+## Phases 9–11 ✅ (shipped — see [docs/etat-du-projet.md](./docs/etat-du-projet.md))
 
-With the audit MVP line closed, the next session faces a strategic choice:
+- **9 — UI refonte** (design system maison, console hybride, 30 pages).
+- **10 — OSRM + carte opérationnelle** (routing best-effort, positions chauffeur, carte live).
+- **11 — Agents** (paliers 1/2a/R1/R2): gouvernance + MCP, agents-employés Hermes via ACP,
+  runtime managé par tenant, espace `/agents` premier ordre.
 
-**(a) Client pilot** — stabilization, sell-side taxes (GST/QST/VAT on `CustomerInvoice`),
-S3 smoke test in a real environment, operational hardening.
+## Phases 12 → 22 — Pulsar Agent OS
 
-**(b) Audit §19 differentiators** — **freight audit autonome §19.4** (incoming carrier
-invoice entity, import/match against estimated cost, tolerance, dispute) and/or **operational
-AI agent §19.2** (idempotency keys, approval queue for proposed actions) — both rated
-"achievable with targeted refactoring" in the audit.
+Adopted 2026-06-14. Full strategic breakdown:
+[docs/superpowers/specs/2026-06-14-pulsar-agent-os-roadmap.md](./docs/superpowers/specs/2026-06-14-pulsar-agent-os-roadmap.md).
 
-## Later / exploratory
+**North star:** modular logistics OS where governed Hermes agents run 24/7 as digital employees.
+Arc = agents first (deepen on the 3 current modules), then modules woven in — each new module
+ships *with* its agent.
 
-- Planning optimization (load building suggestions, carrier selection rules).
-- EDI (204/214/210) for NA market.
-- Analytics module (warehouse + dashboards).
-- Mobile driver app (stop completion, e-POD, photos).
+**Act I — 24/7 operating substrate**
+- **12 — Operating Workbench** (vertical slice): `DomainEvent` → `EventPolicy` →
+  `OperationalTask`/`ExceptionCase` → unified inbox → `ProposedAction`; the dispatch/exceptions
+  agent works its queue end-to-end without ⌘K.
+- **13 — 24/7 workforce**: always-on agent workers (event/cron triggered), heartbeat, run history,
+  concurrency, hot kill switch.
+- **14 — Autonomy & policy engine**: policy-as-data (auto-act vs propose), autonomy ladder,
+  guardrails (rate limits, circuit breakers, anomaly) — high autonomy, never above governance.
+- **15 — Agent Control Tower**: per-agent KPIs, manager dashboard, red-team harness
+  (prompt-injection + cross-tenant), playbooks.
+
+**Act II — Flagship agents (depth, ROI)**
+- **16 — Freight Audit autonome** (§19.4): incoming carrier-invoice entity, matching, dispute agent.
+- **17 — Continuous planning** (§19.5 unlock): versioned plans/routes, mutable-after-confirm with
+  diff, `PlanProposal`/`PlanCommit`.
+
+**Act III — Module expansion (woven, re-orderable)** — each module ships with its agent
+- **18 — Integrations/Connectivity** (canonical inbound message: email/PDF/EDI) + integration agents.
+- **19 — Yard / Dock scheduling** + Dock Scheduler agent (carries minimal configurability enabler).
+- **20 — Fleet** + maintenance/compliance agent.
+- **21 — Light WMS** + warehouse-prep agent.
+- **22 — Analytics / Control Tower + data network** (§19.6) + ops-analyst/savings agents.

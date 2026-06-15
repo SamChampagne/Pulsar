@@ -62,46 +62,28 @@ roster, profil + config guidée (presets de rôle), activité et chat sur `/agen
 | Démarrage local | [getting-started.md](./getting-started.md) |
 | Connexion d'un agent IA (MCP) / Hermes | [agents.md](./agents.md) |
 
-## Prochaine session — phase 11 paliers 2+
+## Prochaine session — Pulsar Agent OS (phases 12 → 22)
 
-Le **palier 1 de la phase 11 (gouvernance d'agents + exposition MCP) est livré** sur la
-branche `phase-11` — **PR à créer + test manuel par Sam** : enregistrer un agent dans
-Réglages → Agents, brancher un client MCP (voir [docs/agents.md](./agents.md)), vérifier que
-les lectures passent en direct et que les mutations atterrissent dans l'inbox Agent actions.
+La **phase 11 est livrée intégralement** (paliers 1, 2a, R1, R2) sur la branche `phase-11`.
+**Précondition avant la phase 12 : merger `phase-11` dans `main`** (PR à ouvrir).
 
-Pulsar reste **MCP-agnostique** : n'importe quel client MCP (Claude Desktop, un script, Hermes)
-peut s'y connecter ; aucun LLM ne tourne dans Pulsar. Hermes est le client de référence, pas
-une dépendance.
+La direction est verrouillée : voir la **roadmap stratégique adoptée le 2026-06-14**,
+[docs/superpowers/specs/2026-06-14-pulsar-agent-os-roadmap.md](./superpowers/specs/2026-06-14-pulsar-agent-os-roadmap.md).
+North star = **OS logistique modulaire où des agents Hermes tournent 24/7 comme employés
+gouvernés**. Arc = agents d'abord (approfondir sur les 3 modules actuels), puis modules tressés
+— chaque nouveau module arrive avec son agent.
 
-**Paliers suivants envisagés (différenciateurs IA, §19) :**
-- **§19.2** élargir le catalogue d'outils + références de conversation (`triggeredByRef`) +
-  télémétrie d'usage par agent ;
-- **§19.1 ingestion de grilles tarifaires** ;
-- **§19.4 extraction factures PDF**.
+- **Acte I (substrat 24/7)** : 12 Operating Workbench · 13 Main-d'œuvre 24/7 · 14 Autonomie &
+  policies · 15 Control Tower agents.
+- **Acte II (agents phares)** : 16 Freight Audit autonome (§19.4) · 17 Planification continue (§19.5).
+- **Acte III (modules tressés, ré-ordonnable)** : 18 Integrations · 19 Yard · 20 Fleet · 21 WMS ·
+  22 Analytics/réseau de données.
 
-Voir le benchmark Fleetbase (2026-06-12) : aucune IA chez eux, c'est l'axe de
-différenciation.
+**Prochain pas concret** : merge `phase-11`, puis brainstorm → spec → plan de la **phase 12**
+(Operating Workbench + agent répartition/exceptions de bout en bout). Pulsar reste
+**MCP-agnostique** ; Hermes est le runtime de référence.
 
-Les deux options stratégiques antérieures restent valides (ci-dessous).
-
-La **phase 8 est complète**. Les trois trous sous la ligne MVP de l'[audit TMS](./audit-tms-2026-06-10.md)
-(tarification §5, BOL §9, exceptions §10) sont tous soldés (§5 et §11 par les phases 7.1/7.3,
-§9 et §10 par la phase 8). Il n'y a plus de blocage MVP.
-
-**Deux options stratégiques (après la refonte UI), sans choix imposé :**
-
-**(a) Pilote client** — stabilisation opérationnelle avant de mettre Pulsar entre les mains d'un
-premier client réel :
-- Taxes sell-side (GST/QST/TVA) sur `CustomerInvoice` / `CustomerInvoiceLine`
-- Smoke test S3 en vrai bucket (le driver est restauré mais n'a jamais tourné en CI)
-- Durcissement opérationnel (erreurs standards machine-lisibles, throttling sur les endpoints
-  publics à fort trafic potentiel, alerte épuisement de liste tender)
-
-**(b) Différenciateurs de l'audit §19** — les deux paris jugés atteignables avec refactoring ciblé :
-- **Freight audit autonome (§19.4)** : entité « facture transporteur entrante », import/match
-  contre `Load.estimatedCost`, tolérance, dispute — ROI le plus démontrable (2-5 % des montants)
-- **Agent opérationnel (§19.2)** : clés d'idempotence explicites, file « actions proposées »
-  pour validation humaine — le substrat (API permissionnées, compte de service, audit) est déjà là
+Benchmark Fleetbase (2026-06-12) : aucune IA chez eux — c'est l'axe de différenciation.
 
 ### Dette connue à garder en tête (ne pas « réparer » en silence)
 
