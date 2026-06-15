@@ -212,6 +212,12 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     n° de documents via `SequencesService` (RC-/PK-, règle 8). L'entrepôt est une `Location` type `WAREHOUSE`
     (pas de nouvelle entité). Tout endpoint WMS est `@RequireModule(MODULE_KEYS.WMS)` + `wms.read|manage`,
     tenant-scopé (règle 1) ; FK vérifiées par `OwnershipService` (règle 9).
+    (v2 — tressage TMS) Un `PickOrder` peut référencer un `Shipment` (`shipmentId?`) ; son `locationId`
+    DOIT alors égaler `shipment.originLocationId` (Location `WAREHOUSE`), validé dans
+    `PickingService.create`. Le décrément reste à la complétion du pick (inchangé). L'état « préparé »
+    d'un shipment est **dérivé** de ses pick orders liés (`deriveShipmentPickStatus`, pur
+    `@pulsar/shared`) — JAMAIS un nouveau `ShipmentStatus`, JAMAIS de blocage du dispatch (règle 2
+    préservée) ; toute la surface vit dans le module WMS (aucun contrôleur TMS modifié).
 
 ## Adding a business module (the recipe)
 
