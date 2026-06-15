@@ -160,6 +160,7 @@
           { href: '/settings/modules', label: 'Modules' },
           { href: '/settings/sso', label: 'SSO' },
         ]},
+        { label: 'Préférences', links: [{ href: '/settings/appearance', label: 'Apparence' }] },
         ...(canReadIntegrations ? [{ label: 'Connecteurs', links: [{ href: '/integrations', label: 'Intégrations' }] }] : []),
       ],
     },

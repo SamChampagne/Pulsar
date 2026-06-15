@@ -2,51 +2,118 @@
 @import '@fontsource-variable/geist';
 @import '@fontsource-variable/geist-mono';
 
+/* ── Design tokens → resolved at runtime from the active [data-theme] ── */
 @theme {
   --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Mono', monospace;
 
-  /* ── Brand : identité chaude, orange-led (logistique / industrie) ── */
-  --color-sidebar: #221913;
-  --color-sidebar-hover: #33271b;
-  --color-sidebar-border: #3a2c1e;
-  --color-accent: #f1700f; /* orange vif (#F17105) */
-  --color-accent-hover: #d65f06;
-  --color-accent-soft: #fff1e3;
-  --color-highlight: #f7b733; /* ambre/jaune chaud (#FFC857/#F49F0A) pour soulignés, charts */
+  --color-sidebar: var(--t-sidebar);
+  --color-sidebar-hover: var(--t-sidebar-hover);
+  --color-sidebar-border: var(--t-sidebar-border);
+  --color-accent: var(--t-accent);
+  --color-accent-hover: var(--t-accent-hover);
+  --color-accent-soft: var(--t-accent-soft);
+  --color-highlight: var(--t-highlight);
 
-  /* ── Surfaces : off-whites crème, chauds ── */
-  --color-canvas: #faf6f0;
-  --color-surface: #ffffff;
-  --color-surface-muted: #f6efe5;
-  --color-edge: #ebe0d2;
-  --color-edge-soft: #f2eadf;
+  --color-canvas: var(--t-canvas);
+  --color-surface: var(--t-surface);
+  --color-surface-muted: var(--t-surface-muted);
+  --color-edge: var(--t-edge);
+  --color-edge-soft: var(--t-edge-soft);
 
-  /* ── Texte : near-black chaud ── */
-  --color-ink: #241c15;
-  --color-ink-muted: #6f6151;
-  --color-ink-faint: #a3917f;
+  --color-ink: var(--t-ink);
+  --color-ink-muted: var(--t-ink-muted);
+  --color-ink-faint: var(--t-ink-faint);
 
-  /* ── Statuts : lisibles contre le chaud (vert/bleu = contrepoints froids, rouge corail = danger) ── */
-  --color-ok: #1f7a43;
-  --color-ok-soft: #dcf3e3;
-  --color-warn: #b5730a;
-  --color-warn-soft: #ffedc4;
-  --color-danger: #d83a2a; /* corail-rouge (#FE5E41) */
-  --color-danger-soft: #ffe1da;
-  --color-info: #2f6f9e;
-  --color-info-soft: #dcecf7;
-  --color-neutral: #6f6151;
-  --color-neutral-soft: #f0e8de;
+  --color-ok: var(--t-ok);
+  --color-ok-soft: var(--t-ok-soft);
+  --color-warn: var(--t-warn);
+  --color-warn-soft: var(--t-warn-soft);
+  --color-danger: var(--t-danger);
+  --color-danger-soft: var(--t-danger-soft);
+  --color-info: var(--t-info);
+  --color-info-soft: var(--t-info-soft);
+  --color-neutral: var(--t-neutral);
+  --color-neutral-soft: var(--t-neutral-soft);
 
-  /* ── Rayons : conteneurs plus doux, éléments internes plus serrés ── */
   --radius-card: 0.75rem;
   --radius-inner: 0.4rem;
+  --shadow-sm: 0 1px 2px rgb(40 30 20 / 0.07), 0 1px 1px rgb(40 30 20 / 0.04);
+  --shadow-card: 0 1px 3px rgb(40 30 20 / 0.06), 0 10px 26px -14px rgb(40 30 20 / 0.16);
+  --shadow-pop: 0 16px 48px -10px rgb(40 30 20 / 0.24);
+}
 
-  /* ── Élévation : ombres teintées brun chaud (pas du noir pur) ── */
-  --shadow-sm: 0 1px 2px rgb(60 40 22 / 0.07), 0 1px 1px rgb(60 40 22 / 0.04);
-  --shadow-card: 0 1px 3px rgb(60 40 22 / 0.06), 0 10px 26px -14px rgb(60 40 22 / 0.16);
-  --shadow-pop: 0 16px 48px -10px rgb(60 40 22 / 0.24);
+/* ── Thème CHAUD (défaut) — identité orange/crème ── */
+:root,
+[data-theme='warm'] {
+  --t-sidebar: #221913;
+  --t-sidebar-hover: #33271b;
+  --t-sidebar-border: #3a2c1e;
+  --t-accent: #f1700f;
+  --t-accent-hover: #d65f06;
+  --t-accent-soft: #fff1e3;
+  --t-highlight: #f7b733;
+  --t-canvas: #faf6f0;
+  --t-surface: #ffffff;
+  --t-surface-muted: #f6efe5;
+  --t-edge: #ebe0d2;
+  --t-edge-soft: #f2eadf;
+  --t-ink: #241c15;
+  --t-ink-muted: #6f6151;
+  --t-ink-faint: #a3917f;
+  --t-ok: #1f7a43; --t-ok-soft: #dcf3e3;
+  --t-warn: #b5730a; --t-warn-soft: #ffedc4;
+  --t-danger: #d83a2a; --t-danger-soft: #ffe1da;
+  --t-info: #2f6f9e; --t-info-soft: #dcecf7;
+  --t-neutral: #6f6151; --t-neutral-soft: #f0e8de;
+}
+
+/* ── Thème ARDOISE — froid, bleu/slate (l'original) ── */
+[data-theme='cool'] {
+  --t-sidebar: #0f172a;
+  --t-sidebar-hover: #1e293b;
+  --t-sidebar-border: #1e293b;
+  --t-accent: #2150d4;
+  --t-accent-hover: #1b41ac;
+  --t-accent-soft: #eef3ff;
+  --t-highlight: #6aa3ff;
+  --t-canvas: #f1f5f9;
+  --t-surface: #ffffff;
+  --t-surface-muted: #f8fafc;
+  --t-edge: #e2e8f0;
+  --t-edge-soft: #eef2f7;
+  --t-ink: #0f172a;
+  --t-ink-muted: #5b6b82;
+  --t-ink-faint: #94a3b8;
+  --t-ok: #15803d; --t-ok-soft: #dcfce7;
+  --t-warn: #a16207; --t-warn-soft: #fef9c3;
+  --t-danger: #b91c1c; --t-danger-soft: #fee2e2;
+  --t-info: #1d4ed8; --t-info-soft: #dbeafe;
+  --t-neutral: #475569; --t-neutral-soft: #f1f5f9;
+}
+
+/* ── Thème NUIT — sombre chaud ── */
+[data-theme='dark'] {
+  --t-sidebar: #161210;
+  --t-sidebar-hover: #271f19;
+  --t-sidebar-border: #322820;
+  --t-accent: #f1700f;
+  --t-accent-hover: #ff8326;
+  --t-accent-soft: #3a2616;
+  --t-highlight: #f7b733;
+  --t-canvas: #17130f;
+  --t-surface: #211b16;
+  --t-surface-muted: #2a221c;
+  --t-edge: #382e25;
+  --t-edge-soft: #2e261f;
+  --t-ink: #f4ede4;
+  --t-ink-muted: #b6a896;
+  --t-ink-faint: #837363;
+  --t-ok: #4ade80; --t-ok-soft: #14331f;
+  --t-warn: #fbbf24; --t-warn-soft: #3a2c10;
+  --t-danger: #fb7363; --t-danger-soft: #3a1c17;
+  --t-info: #7cb3df; --t-info-soft: #16293a;
+  --t-neutral: #b6a896; --t-neutral-soft: #2a221c;
 }
 
 html {
@@ -55,26 +122,22 @@ html {
 
 body {
   font-family: var(--font-sans);
-  /* Chiffres tabulaires partout : un cockpit logistique, c'est des nombres alignés. */
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   color: var(--color-ink);
-  /* Canvas crème + grain à peine perceptible pour casser le plat. */
   background-color: var(--color-canvas);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
   background-attachment: fixed;
 }
 
-/* Titres : présence + tracking serré. */
 h1,
 h2,
 h3 {
   letter-spacing: -0.014em;
 }
 
-/* Utilitaire : surligné chaud sous les chiffres-clés / titres de section. */
 .accent-underline {
   text-decoration: underline;
   text-decoration-color: var(--color-highlight);
