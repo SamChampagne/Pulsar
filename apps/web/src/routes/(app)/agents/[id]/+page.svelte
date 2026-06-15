@@ -537,6 +537,7 @@
               <Button
                 variant="primary"
                 onclick={() => runAction('resume', 'Agent réactivé')}
+                loading={busy}
                 disabled={busy}
               >
                 Reprendre
@@ -545,6 +546,7 @@
               <Button
                 variant="secondary"
                 onclick={() => runAction('run-now', 'Exécution déclenchée')}
+                loading={busy}
                 disabled={busy}
               >
                 Exécuter maintenant
@@ -552,6 +554,7 @@
               <Button
                 variant="secondary"
                 onclick={() => runAction('pause', 'Agent mis en pause')}
+                loading={busy}
                 disabled={busy}
               >
                 Pause
