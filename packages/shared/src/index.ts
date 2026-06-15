@@ -30,5 +30,7 @@ export * from './agents/timeline';
 export * from './agents/autonomy';
 export * from './agents/runtime-providers';
 export * from './agents/role-presets';
+export * from './agents/operations';
+export * from './integrations/operations';
 export * from './fleet/maintenance.workflow';
 export * from './fleet/compliance';

@@ -38,6 +38,11 @@
   const canReadAgents = $derived(
     $auth?.user.permissions.includes(PERMISSIONS.CORE.AGENTS_READ) ?? false,
   );
+
+  // Integration operating layer: gated on integration read permission.
+  const canReadIntegrations = $derived(
+    $auth?.user.permissions.includes(PERMISSIONS.CORE.INTEGRATIONS_READ) ?? false,
+  );
   let pendingActions = $state(0);
 
   // ⌘K assistant: chat with an employee-agent, gated on the chat permission.
@@ -139,6 +144,7 @@
       { href: '/billing/freight-audit', label: 'Freight Audit' },
     ]},
     { label: 'Analytics', visible: hasTransportation, items: [{ href: '/analytics', label: 'Analytics' }] },
+    { label: 'Intégrations', visible: canReadIntegrations, items: [{ href: '/integrations', label: 'Integration layer' }] },
     { label: 'Réglages', visible: true, items: [
       { href: '/settings/users', label: 'Users' },
       { href: '/settings/api-keys', label: 'API keys' },

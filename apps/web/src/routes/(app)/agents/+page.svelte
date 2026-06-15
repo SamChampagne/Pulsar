@@ -1,6 +1,12 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
   import {
+    computeAgentAttention,
+    rankAgentForOperations,
+    summarizeAgentOperationMode,
+    type AgentOperationAttention,
+  } from '@pulsar/shared';
+  import {
     Badge,
     Button,
     Card,
@@ -17,6 +23,7 @@
     approvalRate: number;
     errorRate: number;
     breakerTrips: number;
+    tasksResolved?: number;
   };
   type DashAgent = {
     id: string;
@@ -39,6 +46,12 @@
     totalTasksResolved: number;
   };
 
+  type AgentView = DashAgent & {
+    attention: AgentOperationAttention;
+    mode: string;
+    rank: number;
+  };
+
   let items = $state<DashAgent[]>([]);
   let rollup = $state<Rollup | null>(null);
   let error = $state('');
@@ -47,8 +60,27 @@
 
   const pct = (r: number) => `${Math.round(r * 100)}%`;
 
+  const agentViews = $derived(
+    [...items]
+      .map((agent): AgentView => {
+        const attention = computeAgentAttention(agent);
+        return {
+          ...agent,
+          attention,
+          mode: summarizeAgentOperationMode(agent),
+          rank: rankAgentForOperations(attention) + agent.kpis.actions.pending * 10 + Math.round(agent.kpis.errorRate * 100),
+        };
+      })
+      .sort((a, b) => b.rank - a.rank || a.name.localeCompare(b.name)),
+  );
+
+  const attentionQueue = $derived(
+    agentViews.filter((agent) => agent.attention.severity !== 'ok').slice(0, 4),
+  );
+
   async function load() {
     loading = true;
+    error = '';
     try {
       const data = await api<{ items: DashAgent[]; rollup: Rollup }>('/agents/control-tower');
       items = data.items;
@@ -66,30 +98,66 @@
     return 'neutral';
   }
 
+  function attentionTone(severity: AgentOperationAttention['severity']): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
+    if (severity === 'critical') return 'danger';
+    if (severity === 'warning') return 'warn';
+    if (severity === 'info') return 'info';
+    return 'ok';
+  }
+
+  function statusTone(status: string): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
+    if (status === 'ACTIVE') return 'ok';
+    if (status === 'PAUSED') return 'warn';
+    if (status === 'REVOKED') return 'danger';
+    return 'neutral';
+  }
+
   $effect(() => {
     void load();
   });
 </script>
 
-<PageHeader title="Agents">
+<PageHeader title="Agent Operations Center">
   {#snippet actions()}
     <Button onclick={() => { showForm = true; }}>Engager un agent</Button>
   {/snippet}
 </PageHeader>
 
-<p class="mb-6 text-sm text-ink-muted">
-  Les agents IA agissent via le serveur MCP avec des permissions définies. Chaque agent est un
-  employé numérique — ses actions de mutation passent par la file d'approbation.
-</p>
+<section class="mb-6 overflow-hidden rounded-card border border-edge bg-ink text-white shadow-sm">
+  <div class="grid gap-6 p-5 lg:grid-cols-[1.2fr_0.8fr] lg:p-6">
+    <div>
+      <p class="text-xs font-semibold tracking-[0.22em] text-white/55 uppercase">Hermes workforce</p>
+      <h1 class="mt-2 max-w-3xl text-2xl font-bold tracking-tight sm:text-3xl">
+        Supervise les employés IA comme une équipe opérationnelle, pas comme des clés API.
+      </h1>
+      <p class="mt-3 max-w-2xl text-sm leading-6 text-white/68">
+        Cette console priorise les agents à regarder maintenant : breaker, pause, approbations,
+        erreurs et santé d'exécution. Les mutations restent gouvernées par la file Pulsar.
+      </p>
+    </div>
 
-{#if rollup}
-  <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-    <Card><p class="text-xs text-ink-muted">Agents actifs</p><p class="text-xl font-semibold text-ink">{rollup.active}/{rollup.agents}</p></Card>
-    <Card><p class="text-xs text-ink-muted">Actions (30 j)</p><p class="text-xl font-semibold text-ink">{rollup.totalActions}</p></Card>
-    <Card><p class="text-xs text-ink-muted">En attente d'approbation</p><p class="text-xl font-semibold text-ink">{rollup.pendingApprovals}</p></Card>
-    <Card><p class="text-xs text-ink-muted">Tâches résolues</p><p class="text-xl font-semibold text-ink">{rollup.totalTasksResolved}</p></Card>
+    {#if rollup}
+      <div class="grid grid-cols-2 gap-2 text-sm">
+        <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
+          <p class="text-xs text-white/55">Actifs</p>
+          <p class="mt-1 text-2xl font-semibold">{rollup.active}/{rollup.agents}</p>
+        </div>
+        <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
+          <p class="text-xs text-white/55">À approuver</p>
+          <p class="mt-1 text-2xl font-semibold">{rollup.pendingApprovals}</p>
+        </div>
+        <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
+          <p class="text-xs text-white/55">Actions 30 j</p>
+          <p class="mt-1 text-2xl font-semibold">{rollup.totalActions}</p>
+        </div>
+        <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
+          <p class="text-xs text-white/55">Tâches résolues</p>
+          <p class="mt-1 text-2xl font-semibold">{rollup.totalTasksResolved}</p>
+        </div>
+      </div>
+    {/if}
   </div>
-{/if}
+</section>
 
 {#if error}
   <p class="mb-4 text-sm text-danger">{error}</p>
@@ -98,51 +166,119 @@
 {#if loading}
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
     {#each { length: 6 } as _, i (i)}
-      <Card><Skeleton rows={3} /></Card>
+      <Card><Skeleton rows={4} /></Card>
     {/each}
   </div>
 {:else if items.length === 0}
   <EmptyState message="Aucun agent enregistré. Engagez votre premier agent IA." />
 {:else}
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-    {#each items as agent (agent.id)}
+  <div class="mb-6 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+    <Card>
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold text-ink">Attention maintenant</h2>
+          <p class="mt-0.5 text-xs text-ink-muted">Priorisé par risque opérationnel, pas par date de création.</p>
+        </div>
+        <Badge tone={attentionQueue.length ? 'warn' : 'ok'}>
+          {attentionQueue.length ? `${attentionQueue.length} à surveiller` : 'sain'}
+        </Badge>
+      </div>
+
+      {#if attentionQueue.length === 0}
+        <div class="rounded-xl border border-edge bg-surface-muted p-4 text-sm text-ink-muted">
+          Aucun agent ne demande une intervention immédiate. Continue de surveiller les KPI avant
+          d'augmenter l'autonomie.
+        </div>
+      {:else}
+        <ul class="divide-y divide-edge">
+          {#each attentionQueue as agent (agent.id)}
+            <li class="py-3 first:pt-0 last:pb-0">
+              <a href="/agents/{agent.id}" class="group flex items-start gap-3 rounded-lg p-1 hover:bg-surface-muted">
+                <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-lg">
+                  {agent.avatar ?? '🤖'}
+                </span>
+                <span class="min-w-0 flex-1">
+                  <span class="flex flex-wrap items-center gap-2">
+                    <span class="font-medium text-ink group-hover:text-accent">{agent.name}</span>
+                    <Badge tone={attentionTone(agent.attention.severity)}>{agent.attention.reason}</Badge>
+                  </span>
+                  <span class="mt-1 block text-xs leading-5 text-ink-muted">{agent.attention.nextStep}</span>
+                </span>
+              </a>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </Card>
+
+    <Card>
+      <h2 class="text-sm font-semibold text-ink">Mode de gouvernance</h2>
+      <p class="mt-0.5 text-xs text-ink-muted">
+        Rappel rapide : l'autonomie ne lève jamais les caps ni la file pour les actions sensibles.
+      </p>
+      <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div class="rounded-xl border border-edge p-3">
+          <p class="text-xs text-ink-muted">PROPOSE</p>
+          <p class="mt-1 text-sm font-semibold text-ink">Humain obligatoire</p>
+        </div>
+        <div class="rounded-xl border border-edge p-3">
+          <p class="text-xs text-ink-muted">ACT_LOW</p>
+          <p class="mt-1 text-sm font-semibold text-ink">Faible risque direct</p>
+        </div>
+        <div class="rounded-xl border border-edge p-3">
+          <p class="text-xs text-ink-muted">AUTONOMOUS</p>
+          <p class="mt-1 text-sm font-semibold text-ink">Borné par policy/caps</p>
+        </div>
+      </div>
+    </Card>
+  </div>
+
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    {#each agentViews as agent (agent.id)}
       <a
         href="/agents/{agent.id}"
-        class="block rounded-card border border-edge bg-surface p-4 shadow-sm transition hover:border-accent hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        class="group block rounded-card border border-edge bg-surface p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-accent hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
-        <div class="mb-3 flex items-start gap-3">
-          <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xl">
+        <div class="mb-4 flex items-start gap-3">
+          <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xl">
             {agent.avatar ?? '🤖'}
           </div>
           <div class="min-w-0 flex-1">
-            <p class="truncate font-semibold text-ink">{agent.name}</p>
-            {#if agent.role}
-              <p class="truncate text-xs text-ink-muted">{agent.role}</p>
-            {/if}
+            <p class="truncate font-semibold text-ink group-hover:text-accent">{agent.name}</p>
+            <p class="truncate text-xs text-ink-muted">{agent.role ?? 'Employé IA Pulsar'}</p>
           </div>
+          <Badge tone={attentionTone(agent.attention.severity)}>{agent.attention.severity}</Badge>
         </div>
 
-        <div class="flex flex-wrap gap-1.5">
-          {#if agent.status === 'REVOKED'}
-            <Badge tone="danger">Révoqué</Badge>
-          {:else if agent.status === 'PAUSED'}
-            <Badge tone="warn">En pause</Badge>
-          {:else if agent.status === 'ACTIVE'}
-            <Badge tone="ok">Actif</Badge>
-          {:else}
-            <Badge tone="neutral">{agent.status}</Badge>
-          {/if}
+        <div class="mb-3 flex flex-wrap gap-1.5">
+          <Badge tone={statusTone(agent.status)}>{agent.status}</Badge>
           {#if agent.autonomyLevel}
             <Badge tone={autonomyTone(agent.autonomyLevel)}>{agent.autonomyLevel}</Badge>
           {/if}
+          {#if agent.breakerTrippedAt}<Badge tone="danger">breaker</Badge>{/if}
         </div>
 
-        <div class="mt-2 flex flex-wrap gap-1.5 text-xs">
-          <Badge tone="neutral">{agent.kpis.actions.total} actions</Badge>
-          <Badge tone="ok">{pct(agent.kpis.approvalRate)} appr.</Badge>
-          {#if agent.kpis.errorRate > 0}<Badge tone="danger">{pct(agent.kpis.errorRate)} err.</Badge>{/if}
-          {#if agent.breakerTrippedAt}<Badge tone="warn">breaker</Badge>{/if}
+        <div class="rounded-xl border border-edge bg-surface-muted p-3">
+          <p class="text-xs font-medium text-ink">{agent.attention.reason}</p>
+          <p class="mt-1 text-xs leading-5 text-ink-muted">{agent.attention.nextStep}</p>
         </div>
+
+        <div class="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+          <div class="rounded-lg border border-edge p-2">
+            <p class="text-base font-semibold text-ink">{agent.kpis.actions.total}</p>
+            <p class="text-ink-muted">actions</p>
+          </div>
+          <div class="rounded-lg border border-edge p-2">
+            <p class="text-base font-semibold text-ink">{pct(agent.kpis.approvalRate)}</p>
+            <p class="text-ink-muted">approb.</p>
+          </div>
+          <div class="rounded-lg border border-edge p-2">
+            <p class="text-base font-semibold text-ink">{pct(agent.kpis.errorRate)}</p>
+            <p class="text-ink-muted">erreur</p>
+          </div>
+        </div>
+
+        <p class="mt-3 truncate text-xs text-ink-faint">{agent.mode}</p>
       </a>
     {/each}
   </div>
