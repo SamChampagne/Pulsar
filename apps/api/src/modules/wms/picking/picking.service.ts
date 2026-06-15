@@ -33,10 +33,14 @@ export class PickingService {
         tenantId,
         ...(q.status ? { status: q.status as PickOrderStatus } : {}),
         ...(q.locationId ? { locationId: q.locationId } : {}),
+        ...(q.shipmentId ? { shipmentId: q.shipmentId } : {}),
       },
       orderBy: { createdAt: 'desc' },
       take: 100,
-      include: { _count: { select: { lines: true } } },
+      include: {
+        _count: { select: { lines: true } },
+        shipment: { select: { id: true, shipmentNumber: true, status: true } },
+      },
     });
   }
 
@@ -50,6 +54,7 @@ export class PickingService {
             fromBin: { select: { code: true } },
           },
         },
+        shipment: { select: { id: true, shipmentNumber: true, status: true } },
       },
     });
     if (!order) throw new NotFoundException('Pick order not found');
@@ -64,12 +69,24 @@ export class PickingService {
     if (!loc) throw new NotFoundException('Location not found');
     if (loc.type !== 'WAREHOUSE') throw new BadRequestException('Pick order requires a WAREHOUSE location');
 
+    if (dto.shipmentId) {
+      const shipment = await this.prisma.shipment.findFirst({
+        where: { id: dto.shipmentId, tenantId },
+        select: { id: true, originLocationId: true },
+      });
+      if (!shipment) throw new NotFoundException('Shipment not found');
+      if (shipment.originLocationId !== dto.locationId) {
+        throw new BadRequestException('Pick order location must match the shipment origin warehouse');
+      }
+    }
+
     const number = await this.sequences.nextNumber(tenantId, 'pick-order');
     const order = await this.prisma.pickOrder.create({
       data: {
         tenantId,
         number,
         locationId: dto.locationId,
+        shipmentId: dto.shipmentId ?? null,
         reference: dto.reference ?? null,
         note: dto.note ?? null,
         status: PickOrderStatus.OPEN,

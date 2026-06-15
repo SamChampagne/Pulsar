@@ -146,6 +146,7 @@
       { href: '/wms', label: 'Warehouse' },
       { href: '/wms/inventory', label: 'Inventaire' },
       { href: '/wms/receiving', label: 'Réception' },
+      { href: '/wms/fulfillment', label: 'Préparation' },
       { href: '/wms/picking', label: 'Prélèvement' },
       { href: '/wms/items', label: 'Articles' },
       { href: '/wms/bins', label: 'Emplacements' },

@@ -49,3 +49,45 @@ describe('PickingService.complete', () => {
     await expect(h.svc.complete('t1', 'u1', 'p1')).rejects.toThrow();
   });
 });
+
+function createHarness(opts: { shipment?: any; location?: any } = {}) {
+  const created: any[] = [];
+  const prisma = {
+    location: { findFirst: async () => opts.location ?? { id: 'loc1', tenantId: 't1', type: 'WAREHOUSE' } },
+    shipment: { findFirst: async () => opts.shipment ?? null },
+    pickOrder: {
+      create: async ({ data }: any) => {
+        const row = { id: 'p1', ...data };
+        created.push(row);
+        return row;
+      },
+    },
+  } as any;
+  const inventory = {} as any;
+  const sequences = { nextNumber: async () => 'PK-0001' } as any;
+  const ownership = { assertOwnedIfSet: async () => undefined } as any;
+  const audit = { log: async () => undefined } as any;
+  return { svc: new PickingService(prisma, inventory, sequences, ownership, audit), created };
+}
+
+describe('PickingService.create with shipmentId', () => {
+  it('persists the link when locationId matches the shipment origin warehouse', async () => {
+    const h = createHarness({
+      location: { id: 'loc1', tenantId: 't1', type: 'WAREHOUSE' },
+      shipment: { id: 'sh1', tenantId: 't1', originLocationId: 'loc1' },
+    });
+    await h.svc.create('t1', 'u1', { locationId: 'loc1', shipmentId: 'sh1' } as any);
+    expect(h.created[0].shipmentId).toBe('sh1');
+  });
+  it('rejects when the pick location is not the shipment origin', async () => {
+    const h = createHarness({
+      location: { id: 'loc1', tenantId: 't1', type: 'WAREHOUSE' },
+      shipment: { id: 'sh1', tenantId: 't1', originLocationId: 'OTHER' },
+    });
+    await expect(h.svc.create('t1', 'u1', { locationId: 'loc1', shipmentId: 'sh1' } as any)).rejects.toThrow();
+  });
+  it('rejects when the shipment does not exist for the tenant', async () => {
+    const h = createHarness({ shipment: null });
+    await expect(h.svc.create('t1', 'u1', { locationId: 'loc1', shipmentId: 'missing' } as any)).rejects.toThrow();
+  });
+});

@@ -54,3 +54,15 @@ export function applyToBalance(current: number, delta: number, opts?: { allowNeg
   if (next < 0 && !opts?.allowNegative) return { ok: false, reason: 'NEGATIVE' };
   return { ok: true, next };
 }
+
+export type ShipmentPickStatus = 'NOT_PICKED' | 'PICKING' | 'PICKED';
+
+/**
+ * Derives a shipment's warehouse-preparation state from its linked pick orders.
+ * ≥1 COMPLETED -> PICKED; else ≥1 non-terminal (OPEN/PICKED) -> PICKING; else NOT_PICKED.
+ */
+export function deriveShipmentPickStatus(pickOrderStatuses: PickOrderStatus[]): ShipmentPickStatus {
+  if (pickOrderStatuses.some((s) => s === PickOrderStatus.COMPLETED)) return 'PICKED';
+  if (pickOrderStatuses.some((s) => s === PickOrderStatus.OPEN || s === PickOrderStatus.PICKED)) return 'PICKING';
+  return 'NOT_PICKED';
+}

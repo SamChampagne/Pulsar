@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { page } from '$app/state';
   import { api, ApiError } from '$lib/api/client';
   import {
     Badge,
@@ -17,6 +18,12 @@
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
 
+  interface ShipmentRef {
+    id: string;
+    shipmentNumber: string;
+    status: string;
+  }
+
   interface PickRow {
     id: string;
     number: string;
@@ -24,6 +31,7 @@
     locationId: string;
     reference?: string | null;
     createdAt: string;
+    shipment?: ShipmentRef | null;
     _count: { lines: number };
   }
 
@@ -120,12 +128,17 @@
     selected ? bins.filter((b) => b.locationId === selected!.locationId) : [],
   );
 
+  // Optional shipment pre-filter, driven by ?shipmentId=… (set from the fulfillment workbench).
+  const shipmentFilter = $derived(page.url.searchParams.get('shipmentId'));
+
   async function load() {
     loading = true;
     error = '';
     try {
       const [ords, itemsRes, binsRes, locsRes] = await Promise.all([
-        api<PickRow[]>('/wms/pick-orders'),
+        api<PickRow[]>('/wms/pick-orders', {
+          query: shipmentFilter ? { shipmentId: shipmentFilter } : undefined,
+        }),
         api<Paginated<Item>>('/wms/items', { query: { pageSize: 100 } }),
         api<Bin[]>('/wms/bins'),
         api<Paginated<LocationOption>>('/transportation/locations', { query: { pageSize: 100 } }),
@@ -143,6 +156,8 @@
   }
 
   $effect(() => {
+    // re-run when the shipment filter changes (deep-link from the fulfillment workbench)
+    void shipmentFilter;
     void load();
   });
 
@@ -287,8 +302,14 @@
   {/snippet}
 </PageHeader>
 
-<div class="mb-4">
+<div class="mb-4 flex items-center gap-3">
   <a href="/wms" class="text-sm text-accent hover:underline">← Warehouse</a>
+  {#if shipmentFilter}
+    <span class="text-sm text-ink-muted">
+      Filtré par shipment —
+      <a href="/wms/picking" class="text-accent hover:underline">tout afficher</a>
+    </span>
+  {/if}
 </div>
 
 {#if loading}
@@ -313,6 +334,9 @@
             >
               <Badge tone={statusTone(o.status)}>{o.status}</Badge>
               <span class="font-medium text-ink">{o.number}</span>
+              {#if o.shipment}
+                <span class="text-xs font-medium text-accent">↔ {o.shipment.shipmentNumber}</span>
+              {/if}
               <span class="text-ink-muted">{locName(o.locationId)}</span>
               <span class="ml-auto text-xs text-ink-faint">{o._count.lines} ligne(s)</span>
             </button>
@@ -331,6 +355,9 @@
         <div class="mb-3 flex flex-wrap items-center gap-2">
           <Badge tone={statusTone(selected.status)}>{selected.status}</Badge>
           <h2 class="font-semibold text-ink">{selected.number}</h2>
+          {#if selected.shipment}
+            <span class="text-sm font-medium text-accent">↔ {selected.shipment.shipmentNumber}</span>
+          {/if}
           <span class="text-sm text-ink-muted">{locName(selected.locationId)}</span>
         </div>
         {#if selected.reference}

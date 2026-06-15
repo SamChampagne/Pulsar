@@ -5,6 +5,7 @@ import {
   applyToBalance,
   canTransitionPickOrder,
   canTransitionReceipt,
+  deriveShipmentPickStatus,
 } from './wms.workflow';
 
 describe('canTransitionReceipt', () => {
@@ -45,5 +46,22 @@ describe('applyToBalance', () => {
   });
   it('allows negative only with override', () => {
     expect(applyToBalance(2, -5, { allowNegative: true })).toEqual({ ok: true, next: -3 });
+  });
+});
+
+describe('deriveShipmentPickStatus', () => {
+  it('NOT_PICKED when there are no pick orders', () => {
+    expect(deriveShipmentPickStatus([])).toBe('NOT_PICKED');
+  });
+  it('NOT_PICKED when all linked pick orders are cancelled', () => {
+    expect(deriveShipmentPickStatus([PickOrderStatus.CANCELLED, PickOrderStatus.CANCELLED])).toBe('NOT_PICKED');
+  });
+  it('PICKING when an open/picked order exists and none completed', () => {
+    expect(deriveShipmentPickStatus([PickOrderStatus.OPEN])).toBe('PICKING');
+    expect(deriveShipmentPickStatus([PickOrderStatus.PICKED, PickOrderStatus.CANCELLED])).toBe('PICKING');
+  });
+  it('PICKED when at least one linked order is completed', () => {
+    expect(deriveShipmentPickStatus([PickOrderStatus.COMPLETED])).toBe('PICKED');
+    expect(deriveShipmentPickStatus([PickOrderStatus.OPEN, PickOrderStatus.COMPLETED])).toBe('PICKED');
   });
 });
