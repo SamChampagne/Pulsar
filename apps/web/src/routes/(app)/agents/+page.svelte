@@ -100,9 +100,13 @@
 
         <div class="flex flex-wrap gap-1.5">
           {#if agent.revokedAt || agent.status === 'REVOKED'}
-            <Badge tone="danger">Revoked</Badge>
+            <Badge tone="danger">Révoqué</Badge>
+          {:else if agent.status === 'PAUSED'}
+            <Badge tone="warn">En pause</Badge>
+          {:else if agent.status === 'ACTIVE'}
+            <Badge tone="ok">Actif</Badge>
           {:else}
-            <Badge tone="ok">Active</Badge>
+            <Badge tone="neutral">{agent.status}</Badge>
           {/if}
           {#if agent.autonomyLevel}
             <Badge tone={autonomyTone(agent.autonomyLevel)}>{agent.autonomyLevel}</Badge>

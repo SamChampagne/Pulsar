@@ -2,6 +2,7 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { PERMISSION_CATALOG } from '@pulsar/shared';
+  import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import { formatDateTime } from '$lib/format';
@@ -38,6 +39,22 @@
     prefix: string;
     createdAt: string;
     lastUsedAt: string | null;
+    lastSeenAt?: string | null;
+    lastRunAt?: string | null;
+  }
+
+  interface AgentRun {
+    id: string;
+    agentId: string;
+    trigger: string;
+    taskId: string | null;
+    status: string;
+    attempt: number;
+    startedAt: string | null;
+    finishedAt: string | null;
+    error: string | null;
+    proposedActionCount: number;
+    createdAt: string;
   }
 
   interface ConversationSummary {
@@ -122,6 +139,11 @@
   let activity = $state<AgentActivity | null>(null);
   let activityError = $state('');
 
+  // Activité 24/7 — run history + controls
+  let runs = $state<AgentRun[]>([]);
+  let runsError = $state('');
+  let busy = $state(false);
+
   // Chat: active conversation loaded from activity list
   let chatConversationId = $state<string | null>(null);
   let chatInitialMessages = $state<ConversationDetail['messages']>([]);
@@ -175,6 +197,32 @@
       activity = data;
     } catch (e) {
       activityError = e instanceof ApiError ? e.message : 'Impossible de charger l\'activité';
+    }
+  }
+
+  async function loadRuns(id: string) {
+    runsError = '';
+    try {
+      const data = await api<Paginated<AgentRun>>(`/agents/${id}/runs`, {
+        query: { pageSize: 25 },
+      });
+      runs = data.items;
+    } catch (e) {
+      runsError = e instanceof ApiError ? e.message : 'Impossible de charger les exécutions';
+    }
+  }
+
+  async function runAction(verb: 'pause' | 'resume' | 'run-now', label: string) {
+    busy = true;
+    try {
+      await api(`/agents/${agentId}/${verb}`, { method: 'POST' });
+      toast.success(label);
+      await load();
+      await loadRuns(agentId);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Échec de l\'action');
+    } finally {
+      busy = false;
     }
   }
 
@@ -250,6 +298,7 @@
   $effect(() => {
     void load();
     void loadActivity(agentId);
+    void loadRuns(agentId);
   });
 
   function actionStatusTone(status: string): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
@@ -263,6 +312,14 @@
     if (tier === 'HIGH') return 'danger';
     if (tier === 'MEDIUM') return 'warn';
     if (tier === 'LOW') return 'ok';
+    return 'neutral';
+  }
+
+  function runStatusTone(status: string): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
+    if (status === 'SUCCEEDED' || status === 'COMPLETED') return 'ok';
+    if (status === 'RUNNING' || status === 'IN_PROGRESS') return 'info';
+    if (status === 'PENDING' || status === 'QUEUED') return 'warn';
+    if (status === 'FAILED' || status === 'ERROR') return 'danger';
     return 'neutral';
   }
 </script>
@@ -297,6 +354,8 @@
       <div class="flex gap-2">
         {#if agent.status === 'REVOKED'}
           <Badge tone="danger">Révoqué</Badge>
+        {:else if agent.status === 'PAUSED'}
+          <Badge tone="warn">En pause</Badge>
         {:else}
           <Badge tone="ok">Actif</Badge>
         {/if}
@@ -444,6 +503,94 @@
         </Button>
       </div>
     </form>
+  </div>
+
+  <!-- Activité 24/7 -->
+  <div id="activite-24-7" class="mt-10">
+    <h2 class="mb-4 text-base font-semibold text-ink">Activité 24/7</h2>
+
+    <Card>
+      <!-- Heartbeat + controls -->
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          {#if agent.status === 'PAUSED'}
+            <Badge tone="warn">En pause</Badge>
+          {:else if agent.status === 'REVOKED'}
+            <Badge tone="danger">Révoqué</Badge>
+          {:else}
+            <Badge tone="ok">Actif</Badge>
+          {/if}
+          <span class="text-xs text-ink-muted">
+            {#if agent.lastSeenAt}
+              Vu : {new Date(agent.lastSeenAt).toLocaleString()}
+            {:else if agent.lastRunAt}
+              Dernière exécution : {new Date(agent.lastRunAt).toLocaleString()}
+            {:else}
+              Jamais vu
+            {/if}
+          </span>
+        </div>
+
+        {#if agent.status !== 'REVOKED'}
+          <div class="flex shrink-0 gap-2">
+            {#if agent.status === 'PAUSED'}
+              <Button
+                variant="primary"
+                onclick={() => runAction('resume', 'Agent réactivé')}
+                disabled={busy}
+              >
+                Reprendre
+              </Button>
+            {:else}
+              <Button
+                variant="secondary"
+                onclick={() => runAction('run-now', 'Exécution déclenchée')}
+                disabled={busy}
+              >
+                Exécuter maintenant
+              </Button>
+              <Button
+                variant="secondary"
+                onclick={() => runAction('pause', 'Agent mis en pause')}
+                disabled={busy}
+              >
+                Pause
+              </Button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      {#if runsError}
+        <p class="mb-3 text-sm text-danger">{runsError}</p>
+      {/if}
+
+      <!-- Run history -->
+      {#if runs.length === 0}
+        <p class="py-4 text-center text-sm text-ink-faint">Aucune exécution pour l'instant.</p>
+      {:else}
+        <ul class="divide-y divide-edge">
+          {#each runs as run (run.id)}
+            <li class="flex flex-wrap items-center gap-3 px-1 py-2.5">
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-sm font-medium text-ink">
+                  {run.trigger} · {run.taskId ?? '—'}
+                </span>
+                <span class="text-xs text-ink-muted">
+                  Tentative {run.attempt} · {run.proposedActionCount} action{run.proposedActionCount !== 1 ? 's' : ''} · {formatDateTime(run.startedAt)}
+                </span>
+                {#if run.error}
+                  <span class="mt-0.5 block truncate text-xs text-ink-muted">{run.error}</span>
+                {/if}
+              </span>
+              <div class="shrink-0">
+                <Badge tone={runStatusTone(run.status)}>{run.status}</Badge>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </Card>
   </div>
 
   <!-- Activité -->
