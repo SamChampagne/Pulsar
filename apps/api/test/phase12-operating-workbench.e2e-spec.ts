@@ -193,6 +193,26 @@ class FakeAgentRuntimeService {
 // Helpers (same as phase11-agents.e2e-spec.ts / phase11b)
 // ---------------------------------------------------------------------------
 
+/**
+ * Poll `predicate` until it resolves truthy or the timeout elapses. Returns the
+ * last truthy value, or undefined on timeout. Used to make the eager
+ * event-driven agent dispatch deterministic without asserting on a transient
+ * race window (OPEN vs IN_PROGRESS).
+ */
+async function waitFor<T>(
+  predicate: () => Promise<T | undefined | null | false>,
+  timeoutMs = 5000,
+  intervalMs = 100,
+): Promise<T | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await predicate();
+    if (value) return value;
+    if (Date.now() >= deadline) return undefined;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
+
 function parseMcp(res: request.Response): { result?: unknown; error?: unknown } {
   if (res.body && (res.body.result !== undefined || res.body.error !== undefined)) {
     return res.body as { result?: unknown; error?: unknown };
@@ -271,7 +291,29 @@ describe('Phase 12 — Operating Workbench (e2e)', () => {
     tenantId = tenant.id;
   });
 
+  // Agents registered by scenario B (cleaned up in afterAll so reruns don't leave
+  // an always-on DELAY agent behind that would auto-assign scenario A's task and
+  // break the "human path / UNASSIGNED" assertions on the next run).
+  const registeredAgentIds: string[] = [];
+
   afterAll(async () => {
+    if (prisma && registeredAgentIds.length > 0) {
+      await prisma.proposedAction
+        .deleteMany({ where: { agentId: { in: registeredAgentIds } } })
+        .catch(() => undefined);
+      await prisma.agentRun
+        .deleteMany({ where: { agentId: { in: registeredAgentIds } } })
+        .catch(() => undefined);
+      await prisma.operationalTask
+        .updateMany({
+          where: { assigneeAgentId: { in: registeredAgentIds } },
+          data: { assigneeAgentId: null },
+        })
+        .catch(() => undefined);
+      await prisma.agent
+        .deleteMany({ where: { id: { in: registeredAgentIds } } })
+        .catch(() => undefined);
+    }
     await app.close();
   });
 
@@ -399,6 +441,7 @@ describe('Phase 12 — Operating Workbench (e2e)', () => {
 
       const body = res.body as { id: string; autonomyLevel: string };
       agentId = body.id;
+      registeredAgentIds.push(agentId);
       expect(agentId).toBeTruthy();
       expect(body.autonomyLevel).toBe('PROPOSE');
 
@@ -423,26 +466,38 @@ describe('Phase 12 — Operating Workbench (e2e)', () => {
 
       // The task must be auto-assigned to the always-on agent (assignHint AUTO,
       // agent has alwaysOn + handlesCategories: ['DELAY']).
+      // NOTE: phase 13 — processPending now EAGERLY wakes the worker
+      // (DomainEventsService → AgentWorkerService.enqueueTask, fire-and-forget),
+      // so by the time we read the task its status may already be IN_PROGRESS.
+      // Asserting a specific transient status here would be a race; we assert
+      // only the durable facts: created + auto-assigned to the agent.
       const task = await prisma.operationalTask.findFirst({
         where: { tenantId, subjectId: stopId, category: 'DELAY' },
       });
       expect(task).toBeDefined();
       expect(task!.assigneeType).toBe('AGENT');
       expect(task!.assigneeAgentId).toBe(agentId);
-      expect(task!.status).toBe('OPEN');
       taskId = task!.id;
     });
 
-    it('B3: AgentWorkerService.tick() drives the task to IN_PROGRESS via fake Hermes', async () => {
-      const driven = await runner.tick(mcpUrl, 10);
-      expect(driven).toBeGreaterThanOrEqual(1);
+    it('B3: the always-on agent is driven (task → IN_PROGRESS) via fake Hermes', async () => {
+      // The eager event path (B2's processPending) is the PRIMARY trigger in phase
+      // 13. We also fire one tick() to cover the cron safety-net path, but we do NOT
+      // assert tick's return count: the eager run may have already done all the work,
+      // leaving nothing for tick to drive. We assert the OUTCOME instead, polling
+      // until the agent has driven the task to IN_PROGRESS AND produced its proposal.
+      void runner.tick(mcpUrl, 10).catch(() => undefined);
 
-      // The task must now be IN_PROGRESS (tasks.start was called).
-      const task = await prisma.operationalTask.findFirst({
-        where: { id: taskId },
-      });
-      expect(task).toBeDefined();
-      expect(task!.status).toBe('IN_PROGRESS');
+      const outcome = await waitFor(async () => {
+        const task = await prisma.operationalTask.findFirst({ where: { id: taskId } });
+        const proposal = await prisma.proposedAction.findFirst({
+          where: { tenantId, agentId, tool: 'create_load', triggeredByRef: `task:${taskId}` },
+        });
+        return task?.status === 'IN_PROGRESS' && proposal ? { task, proposal } : undefined;
+      }, 5000);
+
+      expect(outcome).toBeDefined();
+      expect(outcome!.task.status).toBe('IN_PROGRESS');
     });
 
     it('B4: the fake agent turn enqueued a ProposedAction with triggeredByRef = task:<id>', async () => {
