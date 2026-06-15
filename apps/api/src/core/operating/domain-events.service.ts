@@ -10,6 +10,7 @@ import {
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AgentWorkerService } from './agent-worker.service';
 import { TaskAssignmentResolver } from './event-policies';
 
 const SEVERITY_TO_LEVEL: Record<Severity, NotificationLevel> = {
@@ -28,6 +29,7 @@ export class DomainEventsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly assignment: TaskAssignmentResolver,
+    private readonly worker: AgentWorkerService,
   ) {}
 
   /** Persist a domain event. Best-effort: a failure is logged, never thrown into the caller. */
@@ -79,7 +81,7 @@ export class DomainEventsService {
         for (const spec of specs) {
           const agentId = await this.assignment.resolveAgent(event.tenantId, spec);
           try {
-            await this.prisma.operationalTask.create({
+            const created = await this.prisma.operationalTask.create({
               data: {
                 tenantId: event.tenantId,
                 type: spec.type,
@@ -95,7 +97,12 @@ export class DomainEventsService {
                 dedupKey: spec.dedupKey,
                 sourceEventId: event.id,
               },
+              select: { id: true },
             });
+            // Phase 13: wake the always-on worker immediately (best-effort, never throws).
+            if (agentId) {
+              void this.worker.enqueueTask(event.tenantId, agentId, created.id);
+            }
           } catch (err) {
             if (!(err && typeof err === 'object' && (err as { code?: string }).code === 'P2002')) throw err;
           }
