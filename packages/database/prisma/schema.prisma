@@ -1442,3 +1442,80 @@ model AgentRuntimeConfig {
 
   @@map("agent_runtime_configs")
 }
+
+// ---------------------------------------------------------------------------
+// Phase 12 — Operating Workbench (mirrored enums in packages/shared/src/enums/operating.ts)
+// ---------------------------------------------------------------------------
+
+enum OperationalTaskType {
+  EXCEPTION
+}
+
+enum OperationalTaskStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  DISMISSED
+}
+
+enum TaskAssigneeType {
+  UNASSIGNED
+  HUMAN
+  AGENT
+}
+
+enum DomainEventStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+// Durable domain-event outbox: mirrors WebhookDelivery pattern for internal
+// event processing. Consumed by the workbench runner to generate operational tasks.
+model DomainEvent {
+  id          String            @id @default(cuid())
+  tenantId    String
+  type        String
+  subjectType String?
+  subjectId   String?
+  payload     Json
+  status      DomainEventStatus @default(PENDING)
+  attempts    Int               @default(0)
+  lastError   String?
+  processedAt DateTime?
+  createdAt   DateTime          @default(now())
+
+  @@index([status, createdAt])
+  @@index([tenantId, type, createdAt])
+  @@map("domain_events")
+}
+
+// Operational task surface — exceptions and alerts surfaced to human dispatchers
+// or agents. The (tenantId, dedupKey) unique constraint enforces idempotent creation.
+model OperationalTask {
+  id              String                @id @default(cuid())
+  tenantId        String
+  type            OperationalTaskType
+  category        String
+  status          OperationalTaskStatus @default(OPEN)
+  severity        NotificationLevel     @default(WARNING)
+  title           String
+  details         Json?
+  subjectType     String
+  subjectId       String
+  assigneeType    TaskAssigneeType      @default(UNASSIGNED)
+  assigneeUserId  String?
+  assigneeAgentId String?
+  dedupKey        String
+  sourceEventId   String?
+  resolvedById    String?
+  resolutionNote  String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  resolvedAt      DateTime?
+
+  @@unique([tenantId, dedupKey])
+  @@index([tenantId, status, assigneeType])
+  @@index([tenantId, assigneeAgentId, status])
+  @@map("operational_tasks")
+}
