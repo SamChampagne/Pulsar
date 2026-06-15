@@ -136,17 +136,30 @@
     { label: 'Réglages', visible: true, items: [
       { href: '/settings/users', label: 'Users' },
       { href: '/settings/api-keys', label: 'API keys' },
-      { href: '/settings/agents', label: 'Agents' },
       { href: '/settings/agent-runtime', label: 'Runtime agents' },
       { href: '/settings/modules', label: 'Modules' },
       { href: '/settings/sso', label: 'SSO' },
     ]},
   ]);
 
+  // Nav groups: open by default; persist the user's collapse choices.
   let openGroups = $state<Record<string, boolean>>({});
+  // Hydrate from localStorage once.
   $effect(() => {
+    if (typeof localStorage === 'undefined') return;
+    const saved = localStorage.getItem('pulsar.nav.openGroups');
+    if (saved) {
+      try { openGroups = JSON.parse(saved) as Record<string, boolean>; } catch { /* ignore */ }
+    }
+  });
+  // Any group not yet recorded defaults to OPEN; persist.
+  $effect(() => {
+    let changed = false;
     for (const g of groups) {
-      if (g.items.some((i) => isActive(i.href))) openGroups[g.label] = true;
+      if (openGroups[g.label] === undefined) { openGroups[g.label] = true; changed = true; }
+    }
+    if (changed && typeof localStorage !== 'undefined') {
+      localStorage.setItem('pulsar.nav.openGroups', JSON.stringify(openGroups));
     }
   });
 
@@ -161,6 +174,7 @@
     ),
     ...(hasTransportation
       ? [
+          { label: 'Dispatch', hint: 'page', run: () => goto('/dispatch') },
           { label: 'New transport order', hint: 'action', run: () => goto('/transport-orders') },
           { label: 'New load', hint: 'action', run: () => goto('/loads') },
         ]
@@ -187,6 +201,12 @@
            class={`block rounded-md px-2 py-1.5 ${isActive('/dashboard') ? 'bg-accent text-white' : 'text-ink-faint hover:bg-sidebar-hover hover:text-white'}`}>
           Dashboard
         </a>
+        {#if hasTransportation}
+          <a href="/dispatch"
+             class={`block rounded-md px-2 py-1.5 ${isActive('/dispatch') ? 'bg-accent text-white' : 'text-ink-faint hover:bg-sidebar-hover hover:text-white'}`}>
+            Dispatch
+          </a>
+        {/if}
         {#if canReadAgentActions}
           <a href="/agent-actions"
              class={`flex items-center gap-2 rounded-md px-2 py-1.5 ${isActive('/agent-actions') ? 'bg-accent text-white' : 'text-ink-faint hover:bg-sidebar-hover hover:text-white'}`}>
@@ -211,7 +231,7 @@
         {#each groups.filter((g) => g.visible) as group (group.label)}
           <button
             class="flex w-full items-center gap-1 rounded-md px-2 py-1.5 font-semibold text-slate-200 hover:bg-sidebar-hover"
-            onclick={() => (openGroups[group.label] = !openGroups[group.label])}
+            onclick={() => { openGroups[group.label] = !openGroups[group.label]; if (typeof localStorage !== 'undefined') localStorage.setItem('pulsar.nav.openGroups', JSON.stringify(openGroups)); }}
             aria-expanded={openGroups[group.label] ?? false}
           >
             {#if openGroups[group.label]}<ChevronDown class="size-3.5" />{:else}<ChevronRight class="size-3.5" />{/if}
