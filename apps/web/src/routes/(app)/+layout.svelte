@@ -73,7 +73,7 @@
   const domains = $derived<Domain[]>([
     {
       key: 'dashboard', label: 'Plateforme', icon: LayoutDashboard,
-      home: '/apps', prefixes: ['/apps', '/dashboard'], visible: true, sections: [],
+      home: '/apps', prefixes: ['/apps', '/framework', '/dashboard'], visible: true, sections: [],
     },
     {
       key: 'transport', label: 'Transport', icon: Truck, home: '/dispatch',
@@ -193,6 +193,7 @@
       ?? visibleDomains.find((d) => d.key === 'dashboard'),
   );
   const activeUniverse = $derived(MODULE_UNIVERSES[activeDomain?.key ?? 'dashboard'] ?? MODULE_UNIVERSES.dashboard);
+  const deskMode = $derived(String(page.url.pathname) === '/apps' || String(page.url.pathname) === '/framework');
 
   function linkActive(href: string): boolean {
     return page.url.pathname === href || page.url.pathname.startsWith(href + '/');
@@ -212,6 +213,7 @@
       d.sections.flatMap((s) => s.links.map((l) => ({ label: l.label, hint: d.label, run: () => goto(l.href) }))),
     ),
     { label: 'Pulsar Apps', hint: 'plateforme', run: () => goto('/apps') },
+    { label: 'Framework', hint: 'plateforme', run: () => goto('/framework') },
   ]);
 </script>
 
@@ -220,6 +222,37 @@
     class="flex min-h-screen"
     style={`--module-accent: ${activeUniverse.accent}; --module-soft: ${activeUniverse.soft}; --module-rgb: ${activeUniverse.rgb};`}
   >
+    {#if deskMode}
+      <div class="flex min-h-screen flex-1 flex-col bg-[#f8f8f7]">
+        <header class="sticky top-0 z-20 flex h-14 items-center border-b border-edge-soft bg-surface/96 px-4 shadow-[0_1px_0_rgba(15,23,42,0.04)] backdrop-blur">
+          <a href="/apps" class="flex size-8 items-center justify-center rounded-xl bg-[#6f7480] text-sm font-bold text-white shadow-sm" aria-label="Pulsar desk">⬢</a>
+          <button
+            class="mx-auto hidden h-9 w-full max-w-sm items-center justify-between rounded-lg bg-surface-muted px-3 text-sm text-ink-faint ring-1 ring-edge-soft transition hover:bg-surface sm:flex"
+            onclick={() => (paletteOpen = true)}
+            aria-label="Rechercher (Ctrl+K)"
+          >
+            <span class="inline-flex items-center gap-2"><Search class="size-4" /> Search</span>
+            <span class="text-xs">Ctrl+K</span>
+          </button>
+          <div class="flex items-center gap-2">
+            <button
+              class="relative flex size-8 items-center justify-center rounded-full text-ink-muted hover:bg-surface-muted hover:text-ink"
+              onclick={() => (notifOpen = !notifOpen)} aria-label="Notifications" aria-expanded={notifOpen}
+            >
+              <Bell class="size-4" />
+              {#if unreadCount > 0}<span class="absolute top-1 right-1 size-2 rounded-full bg-danger"></span>{/if}
+            </button>
+            <div class="flex size-8 items-center justify-center rounded-full bg-emerald-100 text-xs font-semibold text-emerald-700" title={$auth.user.email}>
+              {$auth.user.email.slice(0, 1).toUpperCase()}
+            </div>
+            <button class="flex size-8 items-center justify-center rounded-full text-ink-muted hover:bg-surface-muted hover:text-ink" onclick={logout} aria-label="Déconnexion" title="Déconnexion">
+              <LogOut class="size-4" />
+            </button>
+          </div>
+        </header>
+        <main class="min-w-0 flex-1 overflow-x-hidden">{@render children()}</main>
+      </div>
+    {:else}
     <!-- Rail 1 — domains -->
     <aside class="flex w-[4.75rem] flex-col items-center gap-1 bg-sidebar py-3">
       <a href="/apps" class="mb-2 text-lg font-bold text-white" aria-label="Pulsar">⬢</a>
@@ -321,6 +354,7 @@
       class="min-w-0 flex-1 overflow-x-hidden p-6"
       style={`background: radial-gradient(circle at top left, rgb(${activeUniverse.rgb} / 0.10), transparent 360px), var(--color-canvas);`}
     >{@render children()}</main>
+    {/if}
 
     {#if notifOpen}
       <div class="fixed bottom-4 left-[5.5rem] z-30 max-h-96 w-72 overflow-y-auto rounded-card border border-edge bg-surface p-2 shadow-pop">
