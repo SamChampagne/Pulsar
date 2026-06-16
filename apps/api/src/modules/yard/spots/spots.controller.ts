@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { AuditAction, MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
@@ -6,7 +6,7 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Audit } from '../../../common/decorators/audit.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
-import { CreateSpotDto, SpotListQueryDto, UpdateSpotDto } from './dto/spot.dto';
+import { CreateSpotDto, LayoutDto, SpotListQueryDto, UpdateSpotDto } from './dto/spot.dto';
 import { SpotsService } from './spots.service';
 
 @ApiTags('yard/spots')
@@ -20,6 +20,12 @@ export class SpotsController {
   @RequirePermissions(PERMISSIONS.YARD.READ)
   list(@CurrentUser() user: AuthUser, @Query() q: SpotListQueryDto) {
     return this.spots.list(user.tenantId, q);
+  }
+
+  @Put('layout')
+  @RequirePermissions(PERMISSIONS.YARD.MANAGE)
+  updateLayout(@CurrentUser() user: AuthUser, @Body() dto: LayoutDto) {
+    return this.spots.updateLayout(user.tenantId, user.id, dto.positions);
   }
 
   @Get(':id')

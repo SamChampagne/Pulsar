@@ -1965,6 +1965,8 @@ model YardSpot {
   locationId String
   code       String
   type       YardSpotType @default(PARKING)
+  posX       Int?
+  posY       Int?
   isActive   Boolean      @default(true)
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt

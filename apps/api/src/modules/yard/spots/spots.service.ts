@@ -72,4 +72,25 @@ export class SpotsService {
     }
     return this.get(tenantId, id);
   }
+
+  /**
+   * Bulk-save display-only plan coordinates (posX/posY). Tenant-scoped via
+   * updateMany (rule 1) — ids outside the tenant simply match nothing.
+   * posX/posY are display-only and never feed occupancy/assignment logic.
+   */
+  async updateLayout(
+    tenantId: string,
+    _userId: string,
+    positions: { id: string; posX: number; posY: number }[],
+  ) {
+    await this.prisma.$transaction(
+      positions.map((p) =>
+        this.prisma.yardSpot.updateMany({
+          where: { id: p.id, tenantId },
+          data: { posX: p.posX, posY: p.posY },
+        }),
+      ),
+    );
+    return { updated: positions.length };
+  }
 }

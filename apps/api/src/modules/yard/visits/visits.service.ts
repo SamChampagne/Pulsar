@@ -260,7 +260,16 @@ export class VisitsService {
   async get(tenantId: string, id: string) {
     const visit = await this.prisma.yardVisit.findFirst({
       where: { id, tenantId },
-      include: VISIT_INCLUDE,
+      include: {
+        ...VISIT_INCLUDE,
+        moves: {
+          orderBy: { movedAt: 'asc' },
+          include: {
+            fromSpot: { select: { code: true } },
+            toSpot: { select: { code: true } },
+          },
+        },
+      },
     });
     if (!visit) throw new NotFoundException('Visit not found');
     return visit;

@@ -1,10 +1,10 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
-  import { YardSpotType } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import { Badge, Button, Card, EmptyState, Modal, PageHeader, Select, Skeleton } from '$lib/components/ui';
-  import type { Tone } from '$lib/components/ui';
+  import { Button, Card, PageHeader, Select, Skeleton } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import YardPlan from '$lib/components/yard/YardPlan.svelte';
+  import YardContextDrawer from '$lib/components/yard/YardContextDrawer.svelte';
 
   interface LocationOption {
     id: string;
@@ -16,8 +16,9 @@
   interface OccupyingVisit {
     id: string;
     visitNumber: string;
-    trailerRef: string | null;
     direction: string;
+    trailerRef: string | null;
+    checkInAt: string | null;
     trailer: { unitNumber: string; plate: string | null } | null;
     carrier: { name: string } | null;
   }
@@ -26,7 +27,9 @@
     id: string;
     code: string;
     type: string;
-    locationId: string;
+    isActive: boolean;
+    posX: number | null;
+    posY: number | null;
     occupyingVisit: OccupyingVisit | null;
   }
 
@@ -44,86 +47,31 @@
     appointmentsToday: number;
   }
 
-  const SPOT_TYPE_ORDER: YardSpotType[] = [
-    YardSpotType.DOCK_DOOR,
-    YardSpotType.PARKING,
-    YardSpotType.STAGING,
-  ];
-
-  const SPOT_TYPE_LABEL: Record<string, string> = {
-    DOCK_DOOR: 'Portes de quai',
-    PARKING: 'Stationnement',
-    STAGING: 'Staging',
-  };
+  interface LayoutPos {
+    id: string;
+    posX: number;
+    posY: number;
+  }
 
   let locations = $state<LocationOption[]>([]);
-  let selectedLocationId = $state('');
-  let board = $state<Board | null>(null);
+  let locationId = $state('');
+  let board = $state<Board>({ spots: [], unassigned: [] });
   let overview = $state<Overview | null>(null);
+  let editing = $state(false);
+  let layoutDraft = $state<LayoutPos[]>([]);
+  let drawerVisitId = $state<string | null>(null);
   let loading = $state(true);
   let error = $state('');
-
-  // Spot picker modal (assign / move).
-  let pickerOpen = $state(false);
-  let pickerVisit = $state<OccupyingVisit | null>(null);
-  let pickerMode = $state<'assign' | 'move'>('assign');
-  let pickerExcludeSpotId = $state<string | null>(null);
-  let pickerSpotId = $state('');
-  let pickerSaving = $state(false);
-
-  function directionTone(direction: string): Tone {
-    switch (direction) {
-      case 'INBOUND':
-        return 'info';
-      case 'OUTBOUND':
-        return 'warn';
-      default:
-        return 'neutral';
-    }
-  }
-
-  function trailerLabel(v: OccupyingVisit): string {
-    if (v.trailer) return v.trailer.plate ? `${v.trailer.unitNumber} (${v.trailer.plate})` : v.trailer.unitNumber;
-    return v.trailerRef ?? '—';
-  }
-
-  // Free spots of the current site, optionally excluding one (the spot being moved from).
-  const freeSpots = $derived(
-    (board?.spots ?? []).filter(
-      (s) => !s.occupyingVisit && s.id !== pickerExcludeSpotId,
-    ),
-  );
-
-  const spotsByType = $derived(
-    SPOT_TYPE_ORDER.map((type) => ({
-      type,
-      label: SPOT_TYPE_LABEL[type] ?? type,
-      spots: (board?.spots ?? []).filter((s) => s.type === type),
-    })).filter((g) => g.spots.length > 0),
-  );
 
   async function loadLocations() {
     const res = await api<Paginated<LocationOption>>('/transportation/locations', {
       query: { pageSize: 100 },
     });
     locations = res.items;
-    if (!selectedLocationId) {
+    if (!locationId) {
       const dc = locations.find((l) => l.type === 'WAREHOUSE') ?? locations[0];
-      selectedLocationId = dc?.id ?? '';
+      locationId = dc?.id ?? '';
     }
-  }
-
-  async function loadBoard() {
-    if (!selectedLocationId) {
-      board = { spots: [], unassigned: [] };
-      return;
-    }
-    const [b, ov] = await Promise.all([
-      api<Board>('/yard/board', { query: { locationId: selectedLocationId } }),
-      api<Overview>('/yard/overview'),
-    ]);
-    board = b;
-    overview = ov;
   }
 
   async function load() {
@@ -131,7 +79,17 @@
     error = '';
     try {
       if (locations.length === 0) await loadLocations();
-      await loadBoard();
+      if (!locationId) {
+        board = { spots: [], unassigned: [] };
+        overview = null;
+        return;
+      }
+      const [ov, b] = await Promise.all([
+        api<Overview>('/yard/overview'),
+        api<Board>('/yard/board', { query: { locationId } }),
+      ]);
+      overview = ov;
+      board = b;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Échec du chargement de la cour';
       toast.error(error);
@@ -140,87 +98,115 @@
     }
   }
 
-  $effect(() => {
-    void load();
-  });
-
-  // Reload when the site changes.
   let lastLocationId = '';
   $effect(() => {
-    if (selectedLocationId && selectedLocationId !== lastLocationId) {
-      lastLocationId = selectedLocationId;
-      void reloadBoard();
+    if (locationId !== lastLocationId) {
+      lastLocationId = locationId;
+      // Leaving edit mode if the site changes mid-edit.
+      editing = false;
+      drawerVisitId = null;
+      void load();
     }
   });
 
-  async function reloadBoard() {
-    try {
-      await loadBoard();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Échec du rechargement de la cour');
+  // Initial load (covers the no-location-yet case).
+  let didInit = false;
+  $effect(() => {
+    if (!didInit) {
+      didInit = true;
+      void load();
     }
-  }
+  });
 
-  function openAssign(visit: OccupyingVisit) {
-    pickerMode = 'assign';
-    pickerVisit = visit;
-    pickerExcludeSpotId = null;
-    pickerSpotId = '';
-    pickerOpen = true;
-  }
+  // Spots merged with the working layout draft (edit mode).
+  const draftSpots = $derived(
+    board.spots.map((s) => {
+      const d = layoutDraft.find((p) => p.id === s.id);
+      return d ? { ...s, posX: d.posX, posY: d.posY } : { ...s, posX: null, posY: null };
+    }),
+  );
 
-  function openMove(spot: BoardSpot) {
-    if (!spot.occupyingVisit) return;
-    pickerMode = 'move';
-    pickerVisit = spot.occupyingVisit;
-    pickerExcludeSpotId = spot.id;
-    pickerSpotId = '';
-    pickerOpen = true;
-  }
+  const freeSpots = $derived(board.spots.filter((s) => !s.occupyingVisit && s.isActive));
 
-  async function submitPicker() {
-    if (!pickerVisit || !pickerSpotId) {
-      toast.error('Sélectionnez un spot libre');
-      return;
-    }
-    pickerSaving = true;
+  const allUnplaced = $derived(board.spots.length > 0 && board.spots.every((s) => s.posX == null));
+
+  async function assign(visitId: string, spotId: string) {
     try {
-      const verb = pickerMode === 'move' ? 'move' : 'assign';
-      await api(`/yard/visits/${pickerVisit.id}/${verb}`, {
-        method: 'POST',
-        body: { spotId: pickerSpotId },
-      });
-      toast.success(pickerMode === 'move' ? 'Visite déplacée' : 'Visite affectée');
-      pickerOpen = false;
-      await reloadBoard();
+      await api(`/yard/visits/${visitId}/assign`, { method: 'POST', body: { spotId } });
+      toast.success('Visite affectée');
+      await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Échec de l'affectation");
-    } finally {
-      pickerSaving = false;
     }
   }
 
-  async function checkOut(visit: OccupyingVisit) {
+  async function move(visitId: string, spotId: string) {
     try {
-      await api(`/yard/visits/${visit.id}/check-out`, { method: 'POST' });
-      toast.success('Check-out effectué');
-      await reloadBoard();
+      await api(`/yard/visits/${visitId}/move`, { method: 'POST', body: { spotId } });
+      toast.success('Visite déplacée');
+      await load();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Échec du check-out');
+      toast.error(e instanceof ApiError ? e.message : 'Échec du déplacement');
     }
+  }
+
+  function openSpot(spot: BoardSpot) {
+    drawerVisitId = spot.occupyingVisit?.id ?? null;
+  }
+
+  function enterEdit() {
+    // Seed the draft from current placed coords.
+    layoutDraft = board.spots
+      .filter((s) => s.posX != null && s.posY != null)
+      .map((s) => ({ id: s.id, posX: s.posX as number, posY: s.posY as number }));
+    drawerVisitId = null;
+    editing = true;
+  }
+
+  async function saveLayout() {
+    try {
+      await api('/yard/spots/layout', {
+        method: 'PUT',
+        body: {
+          positions: layoutDraft
+            .filter((p) => p.posX != null && p.posY != null)
+            .map((p) => ({ id: p.id, posX: p.posX, posY: p.posY })),
+        },
+      });
+      toast.success('Disposition enregistrée');
+      editing = false;
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Échec de l'enregistrement");
+    }
+  }
+
+  async function cancelEdit() {
+    editing = false;
+    await load();
   }
 </script>
 
-<PageHeader title="Yard" />
+<PageHeader title="Plan de cour" />
 
-<div class="mb-4 flex items-center gap-3">
+<div class="mb-4 flex flex-wrap items-center gap-3">
   <div class="max-w-xs flex-1">
-    <Select bind:value={selectedLocationId}>
+    <Select bind:value={locationId} disabled={editing}>
       <option value="">— Sélectionner un site —</option>
       {#each locations as l (l.id)}
         <option value={l.id}>{l.code} — {l.name}</option>
       {/each}
     </Select>
+  </div>
+  <div class="ml-auto flex gap-2">
+    {#if editing}
+      <Button variant="secondary" onclick={cancelEdit}>Annuler</Button>
+      <Button onclick={saveLayout}>Enregistrer la disposition</Button>
+    {:else}
+      <Button variant="secondary" onclick={enterEdit} disabled={!locationId || board.spots.length === 0}>
+        Éditer la disposition
+      </Button>
+    {/if}
   </div>
 </div>
 
@@ -230,8 +216,9 @@
   </div>
 {:else if error}
   <Card><p class="text-sm text-danger">{error}</p></Card>
+{:else if !locationId}
+  <Card><p class="text-sm text-ink-muted">Sélectionnez un site pour voir la cour.</p></Card>
 {:else}
-  <!-- KPI cards -->
   {#if overview}
     <div class="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <Card>
@@ -253,108 +240,46 @@
     </div>
   {/if}
 
-  <div class="grid gap-4 lg:grid-cols-[1fr_18rem]">
-    <!-- Spots grid -->
-    <div class="space-y-5">
-      {#if !selectedLocationId}
-        <Card><EmptyState message="Sélectionnez un site pour voir la cour." /></Card>
-      {:else if spotsByType.length === 0}
-        <Card><EmptyState message="Aucun spot pour ce site." /></Card>
-      {:else}
-        {#each spotsByType as group (group.type)}
-          <div>
-            <h2 class="mb-2 text-sm font-semibold text-ink">{group.label}</h2>
-            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {#each group.spots as spot (spot.id)}
-                <Card>
-                  <div class="mb-2 flex items-center gap-2">
-                    <span class="font-semibold text-ink">{spot.code}</span>
-                    <Badge tone="neutral">{spot.type}</Badge>
-                    <span class="ml-auto">
-                      {#if spot.occupyingVisit}
-                        <Badge tone="warn">Occupé</Badge>
-                      {:else}
-                        <Badge tone="ok">Libre</Badge>
-                      {/if}
-                    </span>
-                  </div>
-                  {#if spot.occupyingVisit}
-                    <div class="space-y-1 text-sm">
-                      <div class="font-medium text-ink">{spot.occupyingVisit.visitNumber}</div>
-                      <div class="text-ink-muted">{trailerLabel(spot.occupyingVisit)}</div>
-                      {#if spot.occupyingVisit.carrier}
-                        <div class="text-ink-muted">{spot.occupyingVisit.carrier.name}</div>
-                      {/if}
-                      <Badge tone={directionTone(spot.occupyingVisit.direction)}>
-                        {spot.occupyingVisit.direction}
-                      </Badge>
-                    </div>
-                    <div class="mt-3 flex gap-2">
-                      <Button variant="secondary" onclick={() => openMove(spot)}>Déplacer</Button>
-                      <Button variant="ghost" onclick={() => { if (spot.occupyingVisit) void checkOut(spot.occupyingVisit); }}>
-                        Check-out
-                      </Button>
-                    </div>
-                  {:else}
-                    <p class="text-sm text-ink-faint">Libre</p>
-                  {/if}
-                </Card>
-              {/each}
-            </div>
-          </div>
-        {/each}
-      {/if}
-    </div>
+  {#if board.spots.length === 0}
+    <Card><p class="text-sm text-ink-muted">Aucun spot pour ce site.</p></Card>
+  {:else}
+    {#if allUnplaced && !editing}
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-accent/50 bg-accent/5 px-4 py-3">
+        <p class="text-sm text-ink">Place tes spots sur le plan pour démarrer le plan de cour visuel.</p>
+        <Button onclick={enterEdit}>Éditer la disposition</Button>
+      </div>
+    {/if}
 
-    <!-- À placer -->
-    <div>
-      <h2 class="mb-2 text-sm font-semibold text-ink">À placer</h2>
-      <Card padded={false}>
-        {#if !board || board.unassigned.length === 0}
-          <EmptyState message="Aucune visite à placer." />
-        {:else}
-          <div class="divide-y divide-edge">
-            {#each board.unassigned as v (v.id)}
-              <div class="px-4 py-2.5 text-sm">
-                <div class="flex items-center gap-2">
-                  <span class="font-medium text-ink">{v.visitNumber}</span>
-                  <Badge tone={directionTone(v.direction)}>{v.direction}</Badge>
-                </div>
-                <div class="text-ink-muted">{trailerLabel(v)}</div>
-                {#if v.carrier}<div class="text-ink-muted">{v.carrier.name}</div>{/if}
-                <div class="mt-2">
-                  <Button onclick={() => openAssign(v)}>Affecter</Button>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </Card>
-    </div>
-  </div>
-{/if}
-
-<Modal bind:open={pickerOpen} title={pickerMode === 'move' ? 'Déplacer la visite' : 'Affecter un spot'}>
-  <div class="space-y-3">
-    {#if pickerVisit}
-      <p class="text-sm text-ink-muted">
-        Visite <span class="font-medium text-ink">{pickerVisit.visitNumber}</span>
+    {#if editing}
+      <p class="mb-3 text-xs text-ink-muted">
+        Glisse les spots sur la grille pour les positionner. Le « bac » liste les spots non placés.
       </p>
     {/if}
-    <Select bind:value={pickerSpotId}>
-      <option value="">— Choisir un spot libre —</option>
-      {#each freeSpots as s (s.id)}
-        <option value={s.id}>{s.code} ({s.type})</option>
-      {/each}
-    </Select>
-    {#if freeSpots.length === 0}
-      <p class="text-sm text-ink-faint">Aucun spot libre disponible.</p>
-    {/if}
-  </div>
-  {#snippet footer()}
-    <Button variant="secondary" onclick={() => { pickerOpen = false; }}>Annuler</Button>
-    <Button loading={pickerSaving} onclick={submitPicker} disabled={!pickerSpotId}>
-      {pickerMode === 'move' ? 'Déplacer' : 'Affecter'}
-    </Button>
-  {/snippet}
-</Modal>
+
+    <YardPlan
+      spots={editing ? draftSpots : board.spots}
+      unassigned={board.unassigned}
+      {editing}
+      onAssign={assign}
+      onMove={move}
+      onOpenSpot={openSpot}
+      onLayoutChange={(p) => (layoutDraft = p)}
+    />
+  {/if}
+{/if}
+
+{#if drawerVisitId}
+  <YardContextDrawer
+    visitId={drawerVisitId}
+    {freeSpots}
+    onClose={() => (drawerVisitId = null)}
+    onMoved={() => {
+      drawerVisitId = null;
+      void load();
+    }}
+    onCheckedOut={() => {
+      drawerVisitId = null;
+      void load();
+    }}
+  />
+{/if}
