@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
-  import { Badge, Card, EmptyState, PageHeader, Skeleton } from '$lib/components/ui';
+  import { Badge, Card, EmptyState, ErrorNotice, PageHeader, Skeleton } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
 
   interface NegativeBin {
@@ -50,14 +50,19 @@
   ];
 </script>
 
-<PageHeader title="Warehouse" />
+<PageHeader
+  title="Warehouse"
+  subtitle="Keep receiving, inventory accuracy, picking, and bin exceptions visible from one warehouse cockpit."
+/>
+
+<ErrorNotice message={error} onretry={load} />
 
 {#if loading}
   <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
     {#each Array(5) as _, i (i)}<Skeleton />{/each}
   </div>
 {:else if error}
-  <Card><p class="text-sm text-danger">{error}</p></Card>
+  <Card><EmptyState title="Warehouse data unavailable" message="The warehouse shell is still available. Retry the overview or use the navigation to inspect receiving, inventory, or picking directly." /></Card>
 {:else if overview}
   <!-- A. KPI cards -->
   <div class="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">

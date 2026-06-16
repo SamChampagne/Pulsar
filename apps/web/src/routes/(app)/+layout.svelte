@@ -264,7 +264,16 @@
             </div>
           {/each}
         </nav>
-        <div class="truncate border-t border-edge-soft px-4 py-2.5 text-xs text-ink-faint">{$auth.user.email}</div>
+        <div class="border-t border-edge-soft px-4 py-3">
+          <div class="mb-2 rounded-lg border border-edge-soft bg-surface-muted px-2.5 py-2">
+            <div class="text-[10px] font-semibold tracking-wider text-ink-faint uppercase">Tenant actif</div>
+            <div class="mt-0.5 truncate text-sm font-semibold text-ink">{$auth.tenant.name}</div>
+            <div class="mt-0.5 inline-flex max-w-full rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10px] font-semibold text-accent">
+              <span class="truncate">{$auth.tenant.slug}</span>
+            </div>
+          </div>
+          <div class="truncate text-xs text-ink-faint">{$auth.user.email}</div>
+        </div>
       </aside>
     {/if}
 

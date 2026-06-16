@@ -16,6 +16,7 @@
     Card,
     Skeleton,
     Tabs,
+    ErrorNotice,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -76,6 +77,9 @@
   let carrierPage = $state(1);
   const carrierTotalPages = $derived(Math.max(1, Math.ceil(invoices.length / PAGE_SIZE)));
   const pagedInvoices = $derived(invoices.slice((carrierPage - 1) * PAGE_SIZE, carrierPage * PAGE_SIZE));
+  const disputedCarrierCount = $derived(invoices.filter((invoice) => invoice.status === 'DISPUTED').length);
+  const approvedCarrierCount = $derived(invoices.filter((invoice) => invoice.status === 'APPROVED').length);
+  const draftCarrierCount = $derived(invoices.filter((invoice) => invoice.status === 'DRAFT').length);
 
   // Reconcile form state (per expanded invoice)
   let carrierInvoiceNumber = $state('');
@@ -443,7 +447,16 @@
   });
 </script>
 
-<PageHeader title="Invoices &amp; statements" />
+<PageHeader
+  title="Invoices &amp; statements"
+  subtitle="Reconcile carrier invoices, resolve variances, and generate customer billing statements from completed work."
+/>
+
+<div class="mb-5 grid gap-3 md:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{draftCarrierCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Draft carrier invoices</div><p class="mt-1 text-xs text-ink-faint">Generated from completed loads, waiting for invoice numbers.</p></Card>
+  <Card><div class="text-xl font-bold text-danger">{disputedCarrierCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Disputed</div><p class="mt-1 text-xs text-ink-faint">Variance decisions needed before payment.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{approvedCarrierCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Approved</div><p class="mt-1 text-xs text-ink-faint">Ready to mark paid or hand off to accounting.</p></Card>
+</div>
 
 <Tabs
   tabs={[{ id: 'carrier', label: 'Carrier invoices' }, { id: 'customer', label: 'Customer statements' }]}
@@ -479,7 +492,7 @@
         it is approved automatically; over tolerance it goes to dispute.
       </p>
 
-      {#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+      <ErrorNotice message={error} onretry={load} />
 
       {#if loadingCarrier}
         <Card padded={false}><Skeleton rows={6} /></Card>
@@ -601,7 +614,8 @@
               </tr>
             {/if}
           {:else}
-            <tr><td colspan="7"><EmptyState message="No invoices yet." /></td></tr>
+            <tr><td colspan="7"><EmptyState title="No carrier invoices yet" message="Generate a draft from completed loads, then reconcile it against the carrier invoice to catch variance before payment.">
+              {#snippet children()}<Button variant="secondary" href="/loads">Review completed loads</Button>{/snippet}</EmptyState></td></tr>
           {/each}
         {/snippet}
       </Table>
