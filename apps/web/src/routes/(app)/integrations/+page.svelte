@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
-  import { Badge, Card, EmptyState, PageHeader, Skeleton } from '$lib/components/ui';
+  import { Badge, Card, EmptyState, ErrorNotice, PageHeader, Skeleton } from '$lib/components/ui';
   import {
     buildIntegrationRoadmap,
     inferIntegrationKind,
@@ -83,7 +83,10 @@
   });
 </script>
 
-<PageHeader title="Integration Operating Layer" />
+<PageHeader
+  title="Integration Operating Layer"
+  subtitle="Monitor connector readiness, missing capabilities, and the safest order to connect external systems."
+/>
 
 <section class="mb-6 overflow-hidden rounded-card border border-edge bg-ink text-white shadow-sm">
   <div class="grid gap-6 p-5 lg:grid-cols-[1.1fr_0.9fr] lg:p-6">
@@ -119,7 +122,7 @@
   </div>
 </section>
 
-{#if error}<p class="mb-4 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={load} />
 
 {#if loading}
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -128,7 +131,9 @@
     {/each}
   </div>
 {:else if integrations.length === 0}
-  <EmptyState message="Aucune intégration configurée. Crée un premier connecteur ERP, EDI ou webhook." />
+  <EmptyState title="Aucune intégration configurée" message="Ajoutez un connecteur ERP, EDI, télématique ou comptabilité pour commencer à mesurer la couverture opérationnelle.">
+    {#snippet children()}<a href="/settings/api-keys" class="rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink hover:bg-surface-muted">Préparer les clés API</a>{/snippet}
+  </EmptyState>
 {:else}
   <div class="mb-6 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
     <Card>

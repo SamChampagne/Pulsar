@@ -5,7 +5,7 @@
   import { toast } from '$lib/stores/toast';
   import { Table as TableIcon, KanbanSquare, Map as MapIcon } from 'lucide-svelte';
   import {
-    PageHeader, Button, FilterBar, Select, Table, Badge, EmptyState, Panel, Card, Skeleton,
+    PageHeader, Button, FilterBar, Select, Table, Badge, EmptyState, Panel, Card, Skeleton, ErrorNotice,
     toneFor, labelFor,
   } from '$lib/components/ui';
   import OpsMap from '$lib/components/OpsMap.svelte';
@@ -99,6 +99,11 @@
     }
   }
 
+  const loadScope = $derived(view === 'kanban' ? kanbanRows : rows);
+  const openCount = $derived(loadScope.filter((l) => ['OPEN', 'PLANNED'].includes(l.status)).length);
+  const tenderedCount = $derived(loadScope.filter((l) => l.status === 'TENDERED').length);
+  const activeCount = $derived(loadScope.filter((l) => ['DISPATCHED', 'IN_TRANSIT'].includes(l.status)).length);
+
   // Reset to page 1 whenever the filter changes.
   $effect(() => { statusFilter; page = 1; });
 
@@ -116,13 +121,23 @@
   ];
 </script>
 
-<PageHeader title="Loads" count={total || kanbanTotal}>
+<PageHeader
+  title="Loads"
+  subtitle="Consolidate shipments, tender carriers, and track execution through delivery."
+  count={total || kanbanTotal}
+>
   {#snippet actions()}
     <Button onclick={createLoad}>Nouveau load</Button>
   {/snippet}
 </PageHeader>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={view === 'table' ? loadTable : view === 'kanban' ? loadKanban : loadMap} />
+
+<div class="mb-4 grid gap-3 md:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{openCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Open / planned</div><p class="mt-1 text-xs text-ink-faint">Needs carrier, capacity, or dispatch attention.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{tenderedCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Tendered</div><p class="mt-1 text-xs text-ink-faint">Waiting on carrier response or confirmation.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{activeCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Active</div><p class="mt-1 text-xs text-ink-faint">Dispatched or in transit on the live board.</p></Card>
+</div>
 
 <div class="mb-3 flex flex-wrap items-center gap-3">
   <!-- view switcher -->
@@ -171,7 +186,9 @@
             <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
           </tr>
         {:else}
-          <tr><td colspan="7"><EmptyState message="Aucun load." /></td></tr>
+          <tr><td colspan="7"><EmptyState title="Aucun load" message="Créez un load depuis des shipments prêts, puis tendez-le à un transporteur pour démarrer l’exécution.">
+            {#snippet children()}<Button variant="secondary" href="/shipments">Voir les shipments</Button><Button onclick={createLoad}>Créer un load</Button>{/snippet}
+          </EmptyState></td></tr>
         {/each}
       {/snippet}
     </Table>

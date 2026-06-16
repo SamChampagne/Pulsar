@@ -13,6 +13,7 @@
     Panel,
     Card,
     Skeleton,
+    ErrorNotice,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -251,6 +252,11 @@
     return parts.length > 0 ? parts.join(' · ') : '—';
   }
 
+  const shipmentScope = $derived(view === 'kanban' ? kanbanRows : shipments);
+  const unassignedCount = $derived(shipmentScope.filter((s) => !s.load).length);
+  const inMotionCount = $derived(shipmentScope.filter((s) => ['DISPATCHED', 'IN_TRANSIT'].includes(s.status)).length);
+  const deliveredCount = $derived(shipmentScope.filter((s) => ['DELIVERED', 'CLOSED'].includes(s.status)).length);
+
   // Reset to page 1 whenever the filter changes.
   $effect(() => { statusFilter; page = 1; });
 
@@ -268,9 +274,19 @@
   ];
 </script>
 
-<PageHeader title="Shipments" count={total || kanbanTotal} />
+<PageHeader
+  title="Shipments"
+  subtitle="Plan confirmed freight into loads, then monitor pickup, transit, and delivery readiness."
+  count={total || kanbanTotal}
+/>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={refresh} />
+
+<div class="mb-4 grid gap-3 md:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{unassignedCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Unassigned</div><p class="mt-1 text-xs text-ink-faint">Needs a load before dispatch can move.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{inMotionCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">In motion</div><p class="mt-1 text-xs text-ink-faint">Dispatched or currently in transit.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{deliveredCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Delivered / closed</div><p class="mt-1 text-xs text-ink-faint">Ready for proof, billing, or audit handoff.</p></Card>
+</div>
 
 <div class="mb-3 flex flex-wrap items-center gap-3">
   <!-- view switcher -->
@@ -328,7 +344,9 @@
             <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
           </tr>
         {:else}
-          <tr><td colspan="6"><EmptyState message="Aucun shipment. Planifiez une commande confirmée pour en créer un." /></td></tr>
+          <tr><td colspan="6"><EmptyState title="Aucun shipment à planifier" message="Planifiez une commande confirmée pour créer un shipment, puis assignez-le à un load depuis Dispatch.">
+            {#snippet children()}<Button href="/transport-orders">Voir les commandes</Button>{/snippet}
+          </EmptyState></td></tr>
         {/each}
       {/snippet}
     </Table>

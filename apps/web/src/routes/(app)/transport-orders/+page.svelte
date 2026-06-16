@@ -16,6 +16,7 @@
     Modal,
     Card,
     Skeleton,
+    ErrorNotice,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -98,6 +99,11 @@
     early
       ? new Date(early).toLocaleDateString() + (late ? ' → ' + new Date(late).toLocaleDateString() : '')
       : '—';
+
+  const orderScope = $derived(view === 'kanban' ? kanbanRows : orders);
+  const draftCount = $derived(orderScope.filter((o) => o.status === 'DRAFT').length);
+  const confirmedCount = $derived(orderScope.filter((o) => o.status === 'CONFIRMED').length);
+  const plannedCount = $derived(orderScope.filter((o) => ['PLANNED', 'IN_EXECUTION'].includes(o.status)).length);
 
   async function loadTable() {
     loadingTable = true;
@@ -204,13 +210,23 @@
   ];
 </script>
 
-<PageHeader title="Transport Orders" count={total || kanbanTotal}>
+<PageHeader
+  title="Transport Orders"
+  subtitle="Capture demand, confirm it, then plan orders into shipments and executable loads."
+  count={total || kanbanTotal}
+>
   {#snippet actions()}
     <Button onclick={openForm}>Nouvelle commande</Button>
   {/snippet}
 </PageHeader>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={refresh} />
+
+<div class="mb-4 grid gap-3 md:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{draftCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Draft</div><p class="mt-1 text-xs text-ink-faint">Customer demand still needs confirmation.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{confirmedCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Ready to plan</div><p class="mt-1 text-xs text-ink-faint">Next step: create shipments from confirmed orders.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{plannedCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">In flow</div><p class="mt-1 text-xs text-ink-faint">Already planned or moving through execution.</p></Card>
+</div>
 
 <div class="mb-3 flex flex-wrap items-center gap-3">
   <!-- view switcher -->
@@ -267,7 +283,9 @@
             <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
           </tr>
         {:else}
-          <tr><td colspan="6"><EmptyState message="Aucune commande de transport." /></td></tr>
+          <tr><td colspan="6"><EmptyState title="Aucune commande de transport" message="Créez une commande pour capturer la demande client, puis confirmez-la avant la planification.">
+            {#snippet children()}<Button onclick={openForm}>Créer la première commande</Button>{/snippet}
+          </EmptyState></td></tr>
         {/each}
       {/snippet}
     </Table>
