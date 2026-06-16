@@ -57,6 +57,8 @@
   let error = $state('');
   let loading = $state(true);
   let showForm = $state(false);
+  // Whether an LLM provider is connected — agents can't talk without one.
+  let modelReady = $state<boolean | null>(null);
 
   const pct = (r: number) => `${Math.round(r * 100)}%`;
 
@@ -86,9 +88,18 @@
       items = data.items;
       rollup = data.rollup;
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load agents';
+      error = e instanceof ApiError ? e.message : 'Échec du chargement des agents';
     } finally {
       loading = false;
+    }
+  }
+
+  async function checkModel() {
+    try {
+      const rt = await api<{ provider?: string | null }>('/agent-runtime');
+      modelReady = !!rt?.provider;
+    } catch {
+      modelReady = false;
     }
   }
 
@@ -114,14 +125,25 @@
 
   $effect(() => {
     void load();
+    void checkModel();
   });
 </script>
 
-<PageHeader title="Agent Operations Center">
+<PageHeader title="Agents">
   {#snippet actions()}
-    <Button onclick={() => { showForm = true; }}>Engager un agent</Button>
+    <Button onclick={() => { showForm = true; }}>Nouvel agent</Button>
   {/snippet}
 </PageHeader>
+
+{#if modelReady === false}
+  <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-card border border-warn/40 bg-warn-soft px-4 py-3">
+    <div class="text-sm text-ink">
+      <span class="font-semibold">Aucun modèle connecté.</span>
+      Tes agents ne peuvent pas réfléchir tant qu'un modèle LLM n'est pas branché.
+    </div>
+    <a href="/settings/agent-runtime" class="inline-flex shrink-0 items-center rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover">Connecter un modèle</a>
+  </div>
+{/if}
 
 <section class="mb-6 overflow-hidden rounded-card border border-edge bg-ink text-white shadow-sm">
   <div class="grid gap-6 p-5 lg:grid-cols-[1.2fr_0.8fr] lg:p-6">

@@ -147,7 +147,7 @@
         ...(canReadAgents ? [{ href: '/agents', label: 'Employés' }] : []),
         ...(canReadAgentActions ? [{ href: '/agent-actions', label: 'Actions à approuver', badge: pendingActions }] : []),
         ...(canReadWorkbench ? [{ href: '/workbench', label: 'Workbench' }] : []),
-        { href: '/settings/agent-runtime', label: 'Runtime' },
+        { href: '/settings/agent-runtime', label: 'Connexion du modèle' },
       ]}],
     },
     {

@@ -93,8 +93,12 @@ export class RuntimeConfigController {
           send('end', {});
         }
       }
-    } catch {
-      send('error', { message: 'Agent runtime login error' });
+    } catch (err) {
+      // Surface the real cause instead of a generic message — the login subprocess
+      // error (e.g. unsupported provider command, Hermes not installed) is what the
+      // operator needs to fix it.
+      const detail = err instanceof Error ? err.message : String(err);
+      send('error', { message: `Échec du login runtime : ${detail}` });
     } finally {
       res.end();
     }
