@@ -127,9 +127,13 @@
       ],
     },
     {
-      key: 'fleet', label: 'Assets', icon: Boxes, home: '/fleet',
-      prefixes: ['/fleet', '/assets'], visible: hasFleet,
-      sections: [{ links: [{ href: '/fleet', label: 'Assets & maintenance' }] }],
+      key: 'fleet', label: 'Assets', icon: Boxes, home: '/assets',
+      prefixes: ['/assets', '/fleet'], visible: hasFleet,
+      sections: [{ links: [
+        { href: '/assets', label: 'Assets home' },
+        { href: '/fleet', label: 'Fleet roster' },
+        { href: '/fleet#compliance', label: 'Maintenance & compliance' },
+      ] }],
     },
     {
       key: 'billing', label: 'Finance', icon: CircleDollarSign, home: '/finance',
