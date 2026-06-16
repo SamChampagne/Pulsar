@@ -7,11 +7,13 @@
     Card,
     EmptyState,
     Field,
+    FilterBar,
     Input,
-    Modal,
+    Panel,
     PageHeader,
     Select,
     Skeleton,
+    Table,
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
@@ -33,6 +35,11 @@
   }
 
   const KINDS = ['RECEIVING', 'STORAGE', 'SHIPPING'];
+  const KIND_LABELS: Record<string, string> = {
+    RECEIVING: 'Réception',
+    STORAGE: 'Stockage',
+    SHIPPING: 'Expédition',
+  };
 
   let bins = $state<Bin[]>([]);
   let warehouses = $state<LocationOption[]>([]);
@@ -40,7 +47,7 @@
   let error = $state('');
   let filterLocationId = $state('');
 
-  // Create / edit modal
+  // Create / edit panel
   let formOpen = $state(false);
   let editId = $state<string | null>(null);
   let formLocationId = $state('');
@@ -60,6 +67,10 @@
       default:
         return 'neutral';
     }
+  }
+
+  function kindLabel(kind: string): string {
+    return KIND_LABELS[kind] ?? kind;
   }
 
   async function loadWarehouses() {
@@ -138,15 +149,15 @@
   }
 </script>
 
-<PageHeader title="Emplacements">
+<PageHeader title="Emplacements" count={bins.length}>
   {#snippet actions()}
     <Button onclick={openCreate}>Nouvel emplacement</Button>
   {/snippet}
 </PageHeader>
 
-<div class="mb-4 flex items-center gap-3">
-  <a href="/wms" class="text-sm text-accent hover:underline">← Warehouse</a>
-  <div class="max-w-xs flex-1">
+<FilterBar>
+  <a href="/wms" class="text-sm text-accent hover:underline">← Entrepôt</a>
+  <div class="w-64">
     <Select bind:value={filterLocationId}>
       <option value="">Tous les entrepôts</option>
       {#each warehouses as w (w.id)}
@@ -154,61 +165,67 @@
       {/each}
     </Select>
   </div>
-</div>
+</FilterBar>
 
 {#if loading}
-  <div class="grid gap-3">
-    {#each Array(4) as _, i (i)}<Skeleton />{/each}
-  </div>
+  <Card padded={false}><Skeleton rows={6} /></Card>
 {:else if error}
   <Card><p class="text-sm text-danger">{error}</p></Card>
-{:else}
-  <Card padded={false}>
-    {#if bins.length === 0}
-      <EmptyState message="Aucun emplacement." />
-    {:else}
-      <div class="divide-y divide-edge">
-        {#each bins as b (b.id)}
-          <div class="flex items-center gap-3 px-4 py-2.5 text-sm">
-            <span class="font-medium text-ink">{b.code}</span>
-            <Badge tone={kindTone(b.kind)}>{b.kind}</Badge>
-            <span class="text-ink-muted">{b.location.code} — {b.location.name}</span>
-            <Badge tone={b.isActive ? 'ok' : 'neutral'}>{b.isActive ? 'Actif' : 'Inactif'}</Badge>
-            <span class="ml-auto"><Button variant="ghost" onclick={() => openEdit(b)}>Modifier</Button></span>
-          </div>
-        {/each}
-      </div>
-    {/if}
+{:else if bins.length === 0}
+  <Card>
+    <EmptyState message="Aucun emplacement pour le moment.">
+      {#snippet children()}
+        <Button onclick={openCreate}>Nouvel emplacement</Button>
+      {/snippet}
+    </EmptyState>
   </Card>
+{:else}
+  <Table>
+    {#snippet head()}
+      <th>Code</th><th>Type</th><th>Entrepôt</th><th>Statut</th>
+    {/snippet}
+    {#snippet body()}
+      {#each bins as b (b.id)}
+        <tr class="cursor-pointer" onclick={() => openEdit(b)}>
+          <td class="font-mono font-semibold text-ink">{b.code}</td>
+          <td><Badge tone={kindTone(b.kind)}>{kindLabel(b.kind)}</Badge></td>
+          <td class="text-ink-muted"><span class="font-mono">{b.location.code}</span> — {b.location.name}</td>
+          <td><Badge tone={b.isActive ? 'ok' : 'neutral'}>{b.isActive ? 'Actif' : 'Inactif'}</Badge></td>
+        </tr>
+      {/each}
+    {/snippet}
+  </Table>
 {/if}
 
-<Modal bind:open={formOpen} title={editId ? "Modifier l'emplacement" : 'Nouvel emplacement'}>
-  <div class="space-y-3">
-    <Field label="Entrepôt">
-      <Select bind:value={formLocationId}>
-        <option value="">— Sélectionner —</option>
-        {#each warehouses as w (w.id)}
-          <option value={w.id}>{w.code} — {w.name}</option>
-        {/each}
-      </Select>
-    </Field>
-    <Field label="Code">
-      <Input bind:value={formCode} placeholder="A-01-01" />
-    </Field>
-    <Field label="Type">
-      <Select bind:value={formKind}>
-        {#each KINDS as k (k)}<option value={k}>{k}</option>{/each}
-      </Select>
-    </Field>
-    <Field label="Actif">
-      <label class="flex items-center gap-2 text-sm text-ink">
-        <input type="checkbox" bind:checked={formActive} />
-        Emplacement actif
-      </label>
-    </Field>
-  </div>
-  {#snippet footer()}
-    <Button variant="secondary" onclick={() => { formOpen = false; }}>Annuler</Button>
-    <Button loading={saving} onclick={submit}>Enregistrer</Button>
+<Panel bind:open={formOpen} title={editId ? "Modifier l'emplacement" : 'Nouvel emplacement'}>
+  {#snippet children()}
+    <div class="space-y-3">
+      <Field label="Entrepôt">
+        <Select bind:value={formLocationId}>
+          <option value="">— Sélectionner —</option>
+          {#each warehouses as w (w.id)}
+            <option value={w.id}>{w.code} — {w.name}</option>
+          {/each}
+        </Select>
+      </Field>
+      <Field label="Code">
+        <Input bind:value={formCode} placeholder="A-01-01" />
+      </Field>
+      <Field label="Type">
+        <Select bind:value={formKind}>
+          {#each KINDS as k (k)}<option value={k}>{KIND_LABELS[k] ?? k}</option>{/each}
+        </Select>
+      </Field>
+      <Field label="Actif">
+        <label class="flex items-center gap-2 text-sm text-ink">
+          <input type="checkbox" bind:checked={formActive} />
+          Emplacement actif
+        </label>
+      </Field>
+      <div class="flex justify-end gap-2 border-t border-edge pt-3">
+        <Button variant="secondary" onclick={() => { formOpen = false; }}>Annuler</Button>
+        <Button variant="primary" loading={saving} onclick={submit}>Enregistrer</Button>
+      </div>
+    </div>
   {/snippet}
-</Modal>
+</Panel>

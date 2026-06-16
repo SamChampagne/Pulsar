@@ -7,10 +7,12 @@
     Card,
     EmptyState,
     Field,
+    FilterBar,
     Input,
-    Modal,
+    Panel,
     PageHeader,
     Skeleton,
+    Table,
   } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
 
@@ -24,11 +26,12 @@
   }
 
   let items = $state<Item[]>([]);
+  let total = $state(0);
   let loading = $state(true);
   let error = $state('');
   let search = $state('');
 
-  // Create / edit modal
+  // Create / edit panel
   let formOpen = $state(false);
   let editId = $state<string | null>(null);
   let formSku = $state('');
@@ -46,6 +49,7 @@
         query: { pageSize: 100, search: search.trim() || undefined },
       });
       items = res.items;
+      total = res.total;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Échec du chargement des articles';
       toast.error(error);
@@ -109,68 +113,80 @@
   }
 </script>
 
-<PageHeader title="Articles">
+<PageHeader title="Articles" count={total}>
   {#snippet actions()}
     <Button onclick={openCreate}>Nouvel article</Button>
   {/snippet}
 </PageHeader>
 
-<div class="mb-4 flex items-center gap-3">
-  <a href="/wms" class="text-sm text-accent hover:underline">← Warehouse</a>
-  <div class="max-w-sm flex-1">
-    <Input bind:value={search} placeholder="Rechercher par SKU ou nom…" />
+<FilterBar>
+  <a href="/wms" class="text-sm text-accent hover:underline">← Entrepôt</a>
+  <div class="w-72">
+    <input
+      placeholder="Rechercher par SKU ou nom…"
+      bind:value={search}
+      onkeydown={(e) => { if (e.key === 'Enter') void load(); }}
+      class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+    />
   </div>
-</div>
+</FilterBar>
 
 {#if loading}
-  <div class="grid gap-3">
-    {#each Array(4) as _, i (i)}<Skeleton />{/each}
-  </div>
+  <Card padded={false}><Skeleton rows={6} /></Card>
 {:else if error}
   <Card><p class="text-sm text-danger">{error}</p></Card>
-{:else}
-  <Card padded={false}>
-    {#if items.length === 0}
-      <EmptyState message="Aucun article." />
-    {:else}
-      <div class="divide-y divide-edge">
-        {#each items as it (it.id)}
-          <div class="flex items-center gap-3 px-4 py-2.5 text-sm">
-            <span class="font-medium text-ink">{it.sku}</span>
-            <span class="text-ink-muted">{it.name}</span>
-            <span class="text-ink-faint">{it.unit}</span>
-            <Badge tone={it.isActive ? 'ok' : 'neutral'}>{it.isActive ? 'Actif' : 'Inactif'}</Badge>
-            <span class="ml-auto"><Button variant="ghost" onclick={() => openEdit(it)}>Modifier</Button></span>
-          </div>
-        {/each}
-      </div>
-    {/if}
+{:else if items.length === 0}
+  <Card>
+    <EmptyState message="Aucun article pour le moment.">
+      {#snippet children()}
+        <Button onclick={openCreate}>Nouvel article</Button>
+      {/snippet}
+    </EmptyState>
   </Card>
+{:else}
+  <Table>
+    {#snippet head()}
+      <th>SKU</th><th>Nom</th><th>Unité</th><th>Code-barres</th><th>Statut</th>
+    {/snippet}
+    {#snippet body()}
+      {#each items as it (it.id)}
+        <tr class="cursor-pointer" onclick={() => openEdit(it)}>
+          <td class="font-mono font-semibold text-ink">{it.sku}</td>
+          <td>{it.name}</td>
+          <td class="text-ink-muted">{it.unit}</td>
+          <td class="font-mono text-ink-muted">{it.barcode ?? '—'}</td>
+          <td><Badge tone={it.isActive ? 'ok' : 'neutral'}>{it.isActive ? 'Actif' : 'Inactif'}</Badge></td>
+        </tr>
+      {/each}
+    {/snippet}
+  </Table>
 {/if}
 
-<Modal bind:open={formOpen} title={editId ? "Modifier l'article" : 'Nouvel article'}>
-  <div class="space-y-3">
-    <Field label="SKU">
-      <Input bind:value={formSku} placeholder="SKU-001" />
-    </Field>
-    <Field label="Nom">
-      <Input bind:value={formName} placeholder="Désignation" />
-    </Field>
-    <Field label="Unité">
-      <Input bind:value={formUnit} placeholder="EA" />
-    </Field>
-    <Field label="Code-barres">
-      <Input bind:value={formBarcode} placeholder="Optionnel" />
-    </Field>
-    <Field label="Actif">
-      <label class="flex items-center gap-2 text-sm text-ink">
-        <input type="checkbox" bind:checked={formActive} />
-        Article actif
-      </label>
-    </Field>
-  </div>
-  {#snippet footer()}
-    <Button variant="secondary" onclick={() => { formOpen = false; }}>Annuler</Button>
-    <Button loading={saving} onclick={submit}>Enregistrer</Button>
+<Panel bind:open={formOpen} title={editId ? "Modifier l'article" : 'Nouvel article'}>
+  {#snippet children()}
+    <div class="space-y-3">
+      <Field label="SKU">
+        <Input bind:value={formSku} placeholder="SKU-001" />
+      </Field>
+      <Field label="Nom">
+        <Input bind:value={formName} placeholder="Désignation" />
+      </Field>
+      <Field label="Unité">
+        <Input bind:value={formUnit} placeholder="EA" />
+      </Field>
+      <Field label="Code-barres">
+        <Input bind:value={formBarcode} placeholder="Optionnel" />
+      </Field>
+      <Field label="Actif">
+        <label class="flex items-center gap-2 text-sm text-ink">
+          <input type="checkbox" bind:checked={formActive} />
+          Article actif
+        </label>
+      </Field>
+      <div class="flex justify-end gap-2 border-t border-edge pt-3">
+        <Button variant="secondary" onclick={() => { formOpen = false; }}>Annuler</Button>
+        <Button variant="primary" loading={saving} onclick={submit}>Enregistrer</Button>
+      </div>
+    </div>
   {/snippet}
-</Modal>
+</Panel>

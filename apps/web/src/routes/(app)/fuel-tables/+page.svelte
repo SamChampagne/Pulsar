@@ -10,7 +10,7 @@
     Table,
     EmptyState,
     Skeleton,
-    Modal,
+    Panel,
     Field,
     Input,
   } from '$lib/components/ui';
@@ -37,6 +37,7 @@
   let error = $state('');
   let showForm = $state(false);
   let loading = $state(true);
+  let saving = $state(false);
 
   // Form state
   let editingId = $state<string | null>(null);
@@ -51,7 +52,7 @@
       fuelTables = result.items;
       total = result.total;
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load fuel tables';
+      error = e instanceof ApiError ? e.message : 'Échec du chargement des tables de carburant';
     } finally {
       loading = false;
     }
@@ -65,6 +66,11 @@
     error = '';
   }
 
+  function openNew() {
+    reset();
+    showForm = true;
+  }
+
   function edit(ft: FuelTable) {
     editingId = ft.id;
     tableName = ft.name;
@@ -72,6 +78,7 @@
       date: e.effectiveFrom.slice(0, 10),
       pct: e.pct,
     }));
+    error = '';
     showForm = true;
   }
 
@@ -88,12 +95,13 @@
     error = '';
 
     if (editingId && entries.length === 0) {
-      const msg = 'At least one entry is required when editing a fuel table.';
+      const msg = 'Au moins une entrée est requise lors de la modification d’une table de carburant.';
       error = msg;
       toast.error(msg);
       return;
     }
 
+    saving = true;
     try {
       const mappedEntries = entries.map((e) => ({
         effectiveFrom: new Date(e.date).toISOString(),
@@ -105,31 +113,33 @@
           method: 'PATCH',
           body: { name: tableName, entries: mappedEntries },
         });
-        toast.success('Fuel table updated');
+        toast.success('Table de carburant mise à jour');
       } else {
         const body: Record<string, unknown> = { name: tableName };
         if (entries.length > 0) {
           body.entries = mappedEntries;
         }
         await api('/transportation/fuel-tables', { method: 'POST', body });
-        toast.success('Fuel table created');
+        toast.success('Table de carburant créée');
       }
       reset();
       await load();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Failed to save fuel table';
+      const msg = e instanceof ApiError ? e.message : "Échec de l'enregistrement de la table de carburant";
       error = msg;
       toast.error(msg);
+    } finally {
+      saving = false;
     }
   }
 
   async function remove(ft: FuelTable) {
     try {
       await api(`/transportation/fuel-tables/${ft.id}`, { method: 'DELETE' });
-      toast.success(`Fuel table "${ft.name}" deleted`);
+      toast.success(`Table de carburant « ${ft.name} » supprimée`);
       await load();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Failed to delete fuel table';
+      const msg = e instanceof ApiError ? e.message : 'Échec de la suppression de la table de carburant';
       toast.error(msg);
     }
   }
@@ -139,88 +149,96 @@
   });
 </script>
 
-<PageHeader title="Fuel Tables" count={total}>
+<PageHeader title="Tables de carburant" count={total}>
   {#snippet actions()}
-    <Button onclick={() => { reset(); showForm = true; }}>New fuel table</Button>
+    <Button onclick={openNew}>Nouvelle table</Button>
   {/snippet}
 </PageHeader>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+{#if error && !showForm}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
+{:else if fuelTables.length === 0}
+  <Card>
+    <EmptyState message="Aucune table de carburant pour le moment.">
+      {#snippet children()}
+        <Button onclick={openNew}>Nouvelle table</Button>
+      {/snippet}
+    </EmptyState>
+  </Card>
 {:else}
-<Table>
-  {#snippet head()}
-    <th>Name</th><th>Entries</th><th>Latest effective</th><th>Latest surcharge</th><th></th>
-  {/snippet}
-  {#snippet body()}
-    {#each fuelTables as ft (ft.id)}
-      {@const latest = ft.entries.length > 0 ? ft.entries[ft.entries.length - 1] : null}
-      <tr>
-        <td><span class="font-semibold text-ink">{ft.name}</span></td>
-        <td class="tabular-nums">{ft.entries.length}</td>
-        <td class="text-sm text-ink-muted">
-          {formatDate(latest?.effectiveFrom)}
-        </td>
-        <td class="tabular-nums">
-          {latest ? `${latest.pct}%` : '—'}
-        </td>
-        <td class="text-right">
-          <div class="inline-flex gap-2">
-            <Button variant="secondary" onclick={() => edit(ft)}>Edit</Button>
-            <Button variant="danger" onclick={() => remove(ft)}>Delete</Button>
-          </div>
-        </td>
-      </tr>
-    {:else}
-      <tr><td colspan="5"><EmptyState message="No fuel tables yet." /></td></tr>
-    {/each}
-  {/snippet}
-</Table>
+  <Table>
+    {#snippet head()}
+      <th>Nom</th><th>Entrées</th><th>Dernière prise d’effet</th><th>Dernière surcharge</th><th></th>
+    {/snippet}
+    {#snippet body()}
+      {#each fuelTables as ft (ft.id)}
+        {@const latest = ft.entries.length > 0 ? ft.entries[ft.entries.length - 1] : null}
+        <tr class="cursor-pointer" onclick={() => edit(ft)}>
+          <td class="font-semibold text-ink">{ft.name}</td>
+          <td class="font-mono tabular-nums">{ft.entries.length}</td>
+          <td class="text-sm text-ink-muted">
+            {formatDate(latest?.effectiveFrom)}
+          </td>
+          <td class="font-mono tabular-nums">
+            {latest ? `${latest.pct}%` : '—'}
+          </td>
+          <td class="text-right" onclick={(e) => e.stopPropagation()}>
+            <div class="inline-flex gap-2">
+              <Button variant="secondary" onclick={() => edit(ft)}>Modifier</Button>
+              <Button variant="danger" onclick={() => remove(ft)}>Supprimer</Button>
+            </div>
+          </td>
+        </tr>
+      {/each}
+    {/snippet}
+  </Table>
 {/if}
 
-<!-- ─── Fuel table form Modal ─────────────────────────────────────────────────── -->
-<Modal bind:open={showForm} title={editingId ? 'Edit fuel table' : 'New fuel table'}>
+<Panel bind:open={showForm} title={editingId ? 'Modifier la table' : 'Nouvelle table de carburant'}>
   {#snippet children()}
-    <form onsubmit={save}>
-      <Field label="Name">
-        <Input bind:value={tableName} required placeholder="Summer 2025" />
+    <form onsubmit={save} class="space-y-4">
+      {#if error}<p class="text-sm text-danger">{error}</p>{/if}
+      <Field label="Nom">
+        <Input bind:value={tableName} required placeholder="Été 2025" />
       </Field>
 
-      <div class="mt-4">
+      <div>
         <div class="mb-2 flex items-center justify-between">
-          <span class="text-sm font-semibold text-ink">Entries</span>
-          <Button variant="secondary" onclick={addEntry}>Add entry</Button>
+          <span class="text-xs font-semibold tracking-wide text-ink-muted uppercase">Entrées</span>
+          <Button variant="secondary" onclick={addEntry}>Ajouter une entrée</Button>
         </div>
 
         {#if entries.length === 0}
           <p class="text-xs text-ink-muted">
-            {editingId ? 'At least one entry required.' : 'No entries — add entries below (optional for new tables).'}
+            {editingId
+              ? 'Au moins une entrée requise.'
+              : 'Aucune entrée — ajoutez-en ci-dessous (optionnel pour une nouvelle table).'}
           </p>
         {:else}
-          <div class="space-y-2">
+          <div class="space-y-3">
             {#each entries as entry, i (i)}
-              <div class="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
-                <Field label="Effective from">
+              <div class="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+                <Field label="Prise d’effet">
                   <Input type="date" bind:value={entry.date} required />
                 </Field>
                 <Field label="Surcharge %">
                   <Input type="number" step="0.01" min="0" bind:value={entry.pct} required />
                 </Field>
-                <Button variant="danger" onclick={() => removeEntry(i)}>Remove</Button>
+                <Button variant="danger" onclick={() => removeEntry(i)}>Retirer</Button>
               </div>
             {/each}
           </div>
         {/if}
       </div>
 
-      <div class="flex justify-end gap-2 pt-2">
-        <Button variant="secondary" onclick={reset}>Cancel</Button>
-        <Button type="submit" disabled={editingId !== null && entries.length === 0}>
-          {editingId ? 'Update' : 'Create'}
+      <div class="flex justify-end gap-2 border-t border-edge pt-3">
+        <Button variant="secondary" onclick={reset}>Annuler</Button>
+        <Button type="submit" loading={saving} disabled={editingId !== null && entries.length === 0}>
+          {editingId ? 'Mettre à jour' : 'Créer'}
         </Button>
       </div>
     </form>
   {/snippet}
-</Modal>
+</Panel>

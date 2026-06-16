@@ -7,16 +7,22 @@
     Button,
     Card,
     Table,
-    Badge,
     EmptyState,
     Skeleton,
-    Modal,
+    Panel,
     Field,
     Input,
     Select,
   } from '$lib/components/ui';
 
   type EndpointType = 'LOCATION' | 'CITY' | 'STATE' | 'COUNTRY';
+
+  const ENDPOINT_LABELS: Record<EndpointType, string> = {
+    LOCATION: 'Site',
+    CITY: 'Ville',
+    STATE: 'Province / État',
+    COUNTRY: 'Pays',
+  };
 
   interface LocationOption {
     id: string;
@@ -62,7 +68,7 @@
   let error = $state('');
   let loading = $state(true);
 
-  // ─── Create/Edit modal ───────────────────────────────────────────────────────
+  // ─── Create panel ──────────────────────────────────────────────────────────────
   let showForm = $state(false);
 
   let formName = $state('');
@@ -83,8 +89,8 @@
   let editingLaneId = $state<string | null>(null);
   let editingCarrierIds = $state<string[]>([]);
   let carrierToAdd = $state('');
-  let showCarrierModal = $state(false);
-  let carrierModalLane = $state<Lane | null>(null);
+  let showCarrierPanel = $state(false);
+  let carrierPanelLane = $state<Lane | null>(null);
 
   // ─── Helpers ──────────────────────────────────────────────────────────────────
   function endpointLabel(lane: Lane, side: 'origin' | 'destination'): string {
@@ -142,7 +148,7 @@
       locations = locsRes.items;
       carriers = carriersRes.items;
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load lanes';
+      error = e instanceof ApiError ? e.message : 'Échec du chargement des corridors';
     } finally {
       loading = false;
     }
@@ -167,11 +173,11 @@
       if (formName.trim()) body.name = formName.trim();
 
       await api('/transportation/lanes', { method: 'POST', body });
-      toast.success('Lane created');
+      toast.success('Corridor créé');
       resetForm();
       await load();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Failed to create lane';
+      const msg = e instanceof ApiError ? e.message : 'Échec de la création du corridor';
       toast.error(msg);
     }
   }
@@ -195,33 +201,34 @@
   async function deleteLane(id: string) {
     try {
       await api(`/transportation/lanes/${id}`, { method: 'DELETE' });
-      toast.success('Lane deleted');
+      toast.success('Corridor supprimé');
       if (editingLaneId === id) {
         editingLaneId = null;
         editingCarrierIds = [];
+        showCarrierPanel = false;
       }
       await load();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Failed to delete lane';
+      const msg = e instanceof ApiError ? e.message : 'Échec de la suppression du corridor';
       toast.error(msg);
     }
   }
 
   // ─── Carrier preferences editor ───────────────────────────────────────────────
   function startEditCarriers(lane: Lane) {
-    carrierModalLane = lane;
+    carrierPanelLane = lane;
     editingLaneId = lane.id;
     editingCarrierIds = lane.carrierPreferences.map((p) => p.carrier.id);
     carrierToAdd = '';
-    showCarrierModal = true;
+    showCarrierPanel = true;
   }
 
   function cancelEditCarriers() {
     editingLaneId = null;
     editingCarrierIds = [];
     carrierToAdd = '';
-    showCarrierModal = false;
-    carrierModalLane = null;
+    showCarrierPanel = false;
+    carrierPanelLane = null;
   }
 
   function addCarrier() {
@@ -246,11 +253,11 @@
         method: 'PUT',
         body: { carrierIds: editingCarrierIds },
       });
-      toast.success('Carrier preferences saved');
+      toast.success('Préférences transporteurs enregistrées');
       cancelEditCarriers();
       await load();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Failed to save carrier preferences';
+      const msg = e instanceof ApiError ? e.message : "Échec de l'enregistrement des préférences";
       toast.error(msg);
     }
   }
@@ -260,208 +267,208 @@
   });
 </script>
 
-<PageHeader title="Lanes" count={total}>
+<PageHeader title="Corridors" count={total}>
   {#snippet actions()}
-    <Button onclick={() => { resetForm(); showForm = true; }}>New lane</Button>
+    <Button onclick={() => { resetForm(); showForm = true; }}>Nouveau corridor</Button>
   {/snippet}
 </PageHeader>
 
-<p class="mb-4 text-sm text-ink-muted">
-  Auto-tendering uses the most specific matching lane that has a preference list (site beats city
-  beats state beats country). Carriers in the preference list are offered the load in rank order;
-  rank 1 is tried first.
+<p class="mb-4 max-w-3xl text-sm text-ink-muted">
+  L'auto-tendering retient le corridor le plus spécifique qui a une liste de préférences (site
+  l'emporte sur ville, qui l'emporte sur province, qui l'emporte sur pays). Les transporteurs de la
+  liste reçoivent le chargement par ordre de rang ; le rang 1 est tenté en premier.
 </p>
 
 {#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
+{:else if lanes.length === 0}
+  <Card>
+    <EmptyState message="Aucun corridor défini pour le moment.">
+      {#snippet children()}
+        <Button onclick={() => { resetForm(); showForm = true; }}>Nouveau corridor</Button>
+      {/snippet}
+    </EmptyState>
+  </Card>
 {:else}
-<Table>
-  {#snippet head()}
-    <th>Lane</th><th>Origin</th><th>Destination</th><th>Carrier preferences</th><th></th>
-  {/snippet}
-  {#snippet body()}
-    {#each lanes as lane (lane.id)}
-      <tr>
-        <td><span class="font-semibold text-ink">{lane.name ?? '—'}</span></td>
-        <td>
-          <span class="mr-1 rounded border border-edge px-1.5 text-[11px] text-neutral">{lane.originType}</span>
-          {endpointLabel(lane, 'origin')}
-        </td>
-        <td>
-          <span class="mr-1 rounded border border-edge px-1.5 text-[11px] text-neutral">{lane.destinationType}</span>
-          {endpointLabel(lane, 'destination')}
-        </td>
-        <td>
-          {#if lane.carrierPreferences.length > 0}
-            <span class="text-sm text-ink">{lane.carrierPreferences.map((p) => p.carrier.name).join(', ')}</span>
-            <span class="ml-1 text-xs text-ink-muted">({lane.carrierPreferences.length})</span>
-          {:else}
-            <span class="text-sm text-ink-faint">None</span>
-          {/if}
-        </td>
-        <td class="text-right">
-          <div class="inline-flex gap-2">
-            <Button variant="secondary" onclick={() => startEditCarriers(lane)}>Edit carriers</Button>
-            <Button variant="danger" onclick={() => deleteLane(lane.id)}>Delete</Button>
-          </div>
-        </td>
-      </tr>
-    {:else}
-      <tr><td colspan="5"><EmptyState message="No lanes defined yet." /></td></tr>
-    {/each}
-  {/snippet}
-</Table>
+  <Table>
+    {#snippet head()}
+      <th>Corridor</th><th>Origine</th><th>Destination</th><th>Préférences transporteurs</th><th></th>
+    {/snippet}
+    {#snippet body()}
+      {#each lanes as lane (lane.id)}
+        <tr class="cursor-pointer" onclick={() => startEditCarriers(lane)}>
+          <td><span class="font-semibold text-ink">{lane.name ?? '—'}</span></td>
+          <td>
+            <span class="mr-1 rounded border border-edge px-1.5 font-mono text-[11px] text-neutral">{ENDPOINT_LABELS[lane.originType]}</span>
+            {endpointLabel(lane, 'origin')}
+          </td>
+          <td>
+            <span class="mr-1 rounded border border-edge px-1.5 font-mono text-[11px] text-neutral">{ENDPOINT_LABELS[lane.destinationType]}</span>
+            {endpointLabel(lane, 'destination')}
+          </td>
+          <td>
+            {#if lane.carrierPreferences.length > 0}
+              <span class="text-sm text-ink">{lane.carrierPreferences.map((p) => p.carrier.name).join(', ')}</span>
+              <span class="ml-1 font-mono text-xs text-ink-muted">({lane.carrierPreferences.length})</span>
+            {:else}
+              <span class="text-sm text-ink-faint">Aucune</span>
+            {/if}
+          </td>
+          <td class="text-right">
+            <div class="inline-flex gap-2">
+              <Button variant="secondary" onclick={(e: MouseEvent) => { e.stopPropagation(); startEditCarriers(lane); }}>Transporteurs</Button>
+              <Button variant="danger" onclick={(e: MouseEvent) => { e.stopPropagation(); deleteLane(lane.id); }}>Supprimer</Button>
+            </div>
+          </td>
+        </tr>
+      {/each}
+    {/snippet}
+  </Table>
 {/if}
 
-<!-- ─── Create lane Modal ─────────────────────────────────────────────────────── -->
-<Modal bind:open={showForm} title="New lane">
+<!-- ─── Create lane Panel ───────────────────────────────────────────────────────── -->
+<Panel bind:open={showForm} title="Nouveau corridor">
   {#snippet children()}
-    <form onsubmit={create}>
-      <Field label="Name (optional)">
-        <Input bind:value={formName} placeholder="e.g. Montreal → Toronto" />
+    <form onsubmit={create} class="space-y-4">
+      <Field label="Nom (optionnel)">
+        <Input bind:value={formName} placeholder="ex. Montréal → Toronto" />
       </Field>
 
-      <div class="mt-4 grid grid-cols-2 gap-4">
-        <!-- Origin -->
-        <fieldset class="rounded-md border border-edge p-3">
-          <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Origin</legend>
-          <Field label="Level">
-            <Select bind:value={originType}>
-              <option value="LOCATION">LOCATION</option>
-              <option value="CITY">CITY</option>
-              <option value="STATE">STATE</option>
-              <option value="COUNTRY">COUNTRY</option>
+      <fieldset class="space-y-2 rounded-inner border border-edge p-3">
+        <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Origine</legend>
+        <Field label="Niveau">
+          <Select bind:value={originType}>
+            {#each Object.keys(ENDPOINT_LABELS) as t (t)}
+              <option value={t}>{ENDPOINT_LABELS[t as EndpointType]}</option>
+            {/each}
+          </Select>
+        </Field>
+
+        {#if originType === 'LOCATION'}
+          <Field label="Site">
+            <Select bind:value={originLocationId} required>
+              <option value="" disabled>Sélectionner…</option>
+              {#each locations as l (l.id)}
+                <option value={l.id}>{l.name} ({l.city})</option>
+              {/each}
             </Select>
           </Field>
+        {:else if originType === 'CITY'}
+          <Field label="Ville">
+            <Input bind:value={originCity} required placeholder="Montréal" />
+          </Field>
+          <Field label="Province / État">
+            <Input bind:value={originState} required placeholder="QC" />
+          </Field>
+          <Field label="Pays">
+            <Input bind:value={originCountry} required placeholder="CA" />
+          </Field>
+        {:else if originType === 'STATE'}
+          <Field label="Province / État">
+            <Input bind:value={originState} required placeholder="QC" />
+          </Field>
+          <Field label="Pays">
+            <Input bind:value={originCountry} required placeholder="CA" />
+          </Field>
+        {:else if originType === 'COUNTRY'}
+          <Field label="Pays">
+            <Input bind:value={originCountry} required placeholder="CA" />
+          </Field>
+        {/if}
+      </fieldset>
 
-          {#if originType === 'LOCATION'}
-            <Field label="Location">
-              <Select bind:value={originLocationId} required>
-                <option value="" disabled>Select…</option>
-                {#each locations as l (l.id)}
-                  <option value={l.id}>{l.name} ({l.city})</option>
-                {/each}
-              </Select>
-            </Field>
-          {:else if originType === 'CITY'}
-            <Field label="City">
-              <Input bind:value={originCity} required placeholder="Montreal" />
-            </Field>
-            <Field label="State / Province">
-              <Input bind:value={originState} required placeholder="QC" />
-            </Field>
-            <Field label="Country">
-              <Input bind:value={originCountry} required placeholder="CA" />
-            </Field>
-          {:else if originType === 'STATE'}
-            <Field label="State / Province">
-              <Input bind:value={originState} required placeholder="QC" />
-            </Field>
-            <Field label="Country">
-              <Input bind:value={originCountry} required placeholder="CA" />
-            </Field>
-          {:else if originType === 'COUNTRY'}
-            <Field label="Country">
-              <Input bind:value={originCountry} required placeholder="CA" />
-            </Field>
-          {/if}
-        </fieldset>
+      <fieldset class="space-y-2 rounded-inner border border-edge p-3">
+        <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Destination</legend>
+        <Field label="Niveau">
+          <Select bind:value={destinationType}>
+            {#each Object.keys(ENDPOINT_LABELS) as t (t)}
+              <option value={t}>{ENDPOINT_LABELS[t as EndpointType]}</option>
+            {/each}
+          </Select>
+        </Field>
 
-        <!-- Destination -->
-        <fieldset class="rounded-md border border-edge p-3">
-          <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Destination</legend>
-          <Field label="Level">
-            <Select bind:value={destinationType}>
-              <option value="LOCATION">LOCATION</option>
-              <option value="CITY">CITY</option>
-              <option value="STATE">STATE</option>
-              <option value="COUNTRY">COUNTRY</option>
+        {#if destinationType === 'LOCATION'}
+          <Field label="Site">
+            <Select bind:value={destinationLocationId} required>
+              <option value="" disabled>Sélectionner…</option>
+              {#each locations as l (l.id)}
+                <option value={l.id}>{l.name} ({l.city})</option>
+              {/each}
             </Select>
           </Field>
+        {:else if destinationType === 'CITY'}
+          <Field label="Ville">
+            <Input bind:value={destinationCity} required placeholder="Toronto" />
+          </Field>
+          <Field label="Province / État">
+            <Input bind:value={destinationState} required placeholder="ON" />
+          </Field>
+          <Field label="Pays">
+            <Input bind:value={destinationCountry} required placeholder="CA" />
+          </Field>
+        {:else if destinationType === 'STATE'}
+          <Field label="Province / État">
+            <Input bind:value={destinationState} required placeholder="ON" />
+          </Field>
+          <Field label="Pays">
+            <Input bind:value={destinationCountry} required placeholder="CA" />
+          </Field>
+        {:else if destinationType === 'COUNTRY'}
+          <Field label="Pays">
+            <Input bind:value={destinationCountry} required placeholder="CA" />
+          </Field>
+        {/if}
+      </fieldset>
 
-          {#if destinationType === 'LOCATION'}
-            <Field label="Location">
-              <Select bind:value={destinationLocationId} required>
-                <option value="" disabled>Select…</option>
-                {#each locations as l (l.id)}
-                  <option value={l.id}>{l.name} ({l.city})</option>
-                {/each}
-              </Select>
-            </Field>
-          {:else if destinationType === 'CITY'}
-            <Field label="City">
-              <Input bind:value={destinationCity} required placeholder="Toronto" />
-            </Field>
-            <Field label="State / Province">
-              <Input bind:value={destinationState} required placeholder="ON" />
-            </Field>
-            <Field label="Country">
-              <Input bind:value={destinationCountry} required placeholder="CA" />
-            </Field>
-          {:else if destinationType === 'STATE'}
-            <Field label="State / Province">
-              <Input bind:value={destinationState} required placeholder="ON" />
-            </Field>
-            <Field label="Country">
-              <Input bind:value={destinationCountry} required placeholder="CA" />
-            </Field>
-          {:else if destinationType === 'COUNTRY'}
-            <Field label="Country">
-              <Input bind:value={destinationCountry} required placeholder="CA" />
-            </Field>
-          {/if}
-        </fieldset>
-      </div>
-
-      <div class="flex justify-end gap-2 pt-2">
-        <Button variant="secondary" onclick={resetForm}>Cancel</Button>
-        <Button type="submit">Create lane</Button>
+      <div class="flex justify-end gap-2 border-t border-edge pt-3">
+        <Button variant="secondary" onclick={resetForm}>Annuler</Button>
+        <Button variant="primary" type="submit">Créer le corridor</Button>
       </div>
     </form>
   {/snippet}
-</Modal>
+</Panel>
 
-<!-- ─── Carrier preferences Modal ────────────────────────────────────────────── -->
-<Modal bind:open={showCarrierModal} title="Edit carrier preferences — {carrierModalLane?.name ?? '—'}">
+<!-- ─── Carrier preferences Panel ─────────────────────────────────────────────── -->
+<Panel bind:open={showCarrierPanel} title="Préférences — {carrierPanelLane?.name ?? '—'}" onclose={cancelEditCarriers}>
   {#snippet children()}
-    <div class="mb-3">
-      <Field label="Add carrier">
+    <div class="space-y-3">
+      <Field label="Ajouter un transporteur">
         <div class="flex gap-2">
           <div class="flex-1">
             <Select bind:value={carrierToAdd}>
-              <option value="" disabled>Select carrier…</option>
+              <option value="" disabled>Sélectionner un transporteur…</option>
               {#each carriers.filter((c) => !editingCarrierIds.includes(c.id)) as c (c.id)}
                 <option value={c.id}>{c.name}</option>
               {/each}
             </Select>
           </div>
-          <Button variant="secondary" onclick={addCarrier}>Add</Button>
+          <Button variant="secondary" onclick={addCarrier}>Ajouter</Button>
         </div>
       </Field>
-    </div>
 
-    {#if editingCarrierIds.length > 0}
-      <ol class="space-y-1">
-        {#each editingCarrierIds as id, index (id)}
-          <li class="flex items-center justify-between rounded-md border border-edge px-3 py-2 text-sm">
-            <span class="text-ink">{index + 1}. {carrierName(id)}</span>
-            <div class="flex gap-1">
-              <Button variant="secondary" onclick={() => move(index, -1)}>↑</Button>
-              <Button variant="secondary" onclick={() => move(index, 1)}>↓</Button>
-              <Button variant="danger" onclick={() => { editingCarrierIds = editingCarrierIds.filter((c) => c !== id); }}>✕</Button>
-            </div>
-          </li>
-        {/each}
-      </ol>
-    {:else}
-      <p class="text-sm text-ink-faint">No carriers in list — save to clear preferences.</p>
-    {/if}
+      {#if editingCarrierIds.length > 0}
+        <ol class="space-y-1">
+          {#each editingCarrierIds as id, index (id)}
+            <li class="flex items-center justify-between rounded-inner border border-edge px-3 py-2 text-sm">
+              <span class="text-ink"><span class="font-mono text-ink-muted">{index + 1}.</span> {carrierName(id)}</span>
+              <div class="flex gap-1">
+                <Button variant="secondary" onclick={() => move(index, -1)}>↑</Button>
+                <Button variant="secondary" onclick={() => move(index, 1)}>↓</Button>
+                <Button variant="danger" onclick={() => { editingCarrierIds = editingCarrierIds.filter((c) => c !== id); }}>✕</Button>
+              </div>
+            </li>
+          {/each}
+        </ol>
+      {:else}
+        <p class="text-sm text-ink-faint">Aucun transporteur dans la liste — enregistrer pour vider les préférences.</p>
+      {/if}
 
-    <div class="flex justify-end gap-2 pt-2">
-      <Button variant="secondary" onclick={cancelEditCarriers}>Cancel</Button>
-      <Button onclick={saveCarriers}>Save preferences</Button>
+      <div class="flex justify-end gap-2 border-t border-edge pt-3">
+        <Button variant="secondary" onclick={cancelEditCarriers}>Annuler</Button>
+        <Button variant="primary" onclick={saveCarriers}>Enregistrer</Button>
+      </div>
     </div>
   {/snippet}
-</Modal>
+</Panel>
