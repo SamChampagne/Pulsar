@@ -12,6 +12,7 @@
     Modal,
     Field,
     Input,
+    ErrorNotice,
     type Tone,
   } from '$lib/components/ui';
 
@@ -58,6 +59,10 @@
   let savings = $state<Savings | null>(null);
   let loading = $state(true);
   let error = $state('');
+
+  const flaggedCount = $derived(invoices.filter((i) => i.status === 'FLAGGED' || i.status === 'DISPUTED').length);
+  const receivedCount = $derived(invoices.filter((i) => i.status === 'RECEIVED').length);
+  const recoveredTotal = $derived(savings ? Number(savings.tenantTotal).toLocaleString() : '—');
 
   async function load() {
     loading = true;
@@ -148,27 +153,22 @@
   }
 </script>
 
-<PageHeader title="Freight Audit">
+<PageHeader
+  title="Freight Audit"
+  subtitle="Match carrier invoices against load cost snapshots, flag variances, and track recovered savings."
+>
   {#snippet actions()}
     <Button variant="primary" onclick={() => { modalOpen = true; }}>Saisir une facture</Button>
   {/snippet}
 </PageHeader>
 
-<Card>
-  <p class="text-xs font-semibold tracking-wide text-ink-muted uppercase">
-    Économies récupérées (30 j)
-  </p>
-  <p class="mt-1 text-2xl font-bold text-ink">
-    {savings ? `${Number(savings.tenantTotal).toLocaleString()} $` : '—'}
-  </p>
-</Card>
+<div class="mb-4 grid gap-3 sm:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{recoveredTotal} $</div><div class="text-xs uppercase tracking-wide text-ink-muted">Recovered 30d</div><p class="mt-1 text-xs text-ink-faint">Savings attributed to invoice variance resolution.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{flaggedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Needs review</div><p class="mt-1 text-xs text-ink-faint">Flagged or disputed invoices to inspect.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{receivedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">New intake</div><p class="mt-1 text-xs text-ink-faint">Received invoices awaiting matching.</p></Card>
+</div>
 
-<p class="my-4 text-sm text-ink-muted">
-  Les factures entrantes des transporteurs sont rapprochées ligne par ligne avec les coûts
-  attendus. Les écarts sont signalés (FLAGGED), peuvent être disputés, puis résolus et payés.
-</p>
-
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={load} />
 
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
@@ -193,7 +193,9 @@
           <td class="text-right">{money(invoice.varianceGross, invoice.currency)}</td>
         </tr>
       {:else}
-        <tr><td colspan="5"><EmptyState message="Aucune facture transporteur pour l'instant." /></td></tr>
+        <tr><td colspan="5"><EmptyState title="No carrier invoices yet" message="Enter a carrier invoice to compare charged lines against frozen load cost details and surface recoverable variances.">
+          {#snippet children()}<Button variant="secondary" href="/loads">Review loads</Button><Button onclick={() => { modalOpen = true; }}>Enter first invoice</Button>{/snippet}
+        </EmptyState></td></tr>
       {/each}
     {/snippet}
   </Table>

@@ -17,6 +17,7 @@
     Card,
     Skeleton,
     Textarea,
+    ErrorNotice,
     type Tone,
   } from '$lib/components/ui';
 
@@ -77,6 +78,10 @@
   let detailLoading = $state(false);
   let note = $state('');
   let actionBusy = $state(false);
+
+  const criticalCount = $derived(tasks.filter((t) => t.severity === 'CRITICAL').length);
+  const approvalCount = $derived(tasks.filter((t) => t.category === 'APPROVAL').length);
+  const agentAssignedCount = $derived(tasks.filter((t) => t.assigneeType === 'AGENT').length);
 
   // ──────────────────────────────────────────────────────────
   // Data loading
@@ -217,14 +222,19 @@
   });
 </script>
 
-<PageHeader title="Workbench" count={total} />
+<PageHeader
+  title="Operating workbench"
+  subtitle="Triage exceptions, approvals, reviews, and notifications raised by Pulsar policies or agents."
+  count={total}
+/>
 
-<p class="mb-4 text-sm text-ink-muted">
-  Exception tasks raised by the system or agents. Resolve or dismiss each task after triaging the
-  proposed actions.
-</p>
+<div class="mb-4 grid gap-3 sm:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{criticalCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Critical</div><p class="mt-1 text-xs text-ink-faint">Handle these before normal reviews.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{approvalCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Approvals</div><p class="mt-1 text-xs text-ink-faint">Tasks tied to explicit decisions or agent actions.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{agentAssignedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Agent-owned</div><p class="mt-1 text-xs text-ink-faint">Work delegated to employee agents.</p></Card>
+</div>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={load} />
 
 <FilterBar>
   <div class="w-40">
@@ -256,7 +266,9 @@
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
 {:else if tasks.length === 0}
-  <EmptyState message="No tasks match the current filters." />
+  <EmptyState title="No operating tasks match" message="Change the filters or wait for policies and agents to raise work that needs triage.">
+    {#snippet children()}<Button variant="secondary" href="/agent-actions">Review agent actions</Button><Button href="/dispatch">Open Dispatch</Button>{/snippet}
+  </EmptyState>
 {:else}
   <Table>
     {#snippet head()}

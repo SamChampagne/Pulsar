@@ -16,6 +16,7 @@
     Field,
     Input,
     Select,
+    ErrorNotice,
     toneFor,
   } from '$lib/components/ui';
 
@@ -75,6 +76,10 @@
   let status = $state('DRAFT');
   let breaks = $state<{ upToKg: number; amount: number }[]>([]);
   let prices = $state<{ accessorialId: string; amount: number }[]>([]);
+
+  const activeCount = $derived(rates.filter((r) => r.status === 'ACTIVE').length);
+  const draftCount = $derived(rates.filter((r) => r.status === 'DRAFT').length);
+  const laneScopedCount = $derived(rates.filter((r) => r.lane).length);
 
   function statusTone(s: string) {
     if (s === 'ACTIVE') return 'ok';
@@ -214,13 +219,23 @@
   });
 </script>
 
-<PageHeader title="Rates" count={total}>
+<PageHeader
+  title="Rates"
+  subtitle="Control contracted and spot pricing used by planning, cost snapshots, and freight audit comparisons."
+  count={total}
+>
   {#snippet actions()}
     <Button onclick={() => { reset(); showForm = true; }}>New rate</Button>
   {/snippet}
 </PageHeader>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={load} />
+
+<div class="mb-4 grid gap-3 sm:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{activeCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Active rates</div><p class="mt-1 text-xs text-ink-faint">Eligible for pricing and audit.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{draftCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Draft rates</div><p class="mt-1 text-xs text-ink-faint">Need review before operational use.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{laneScopedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Lane-scoped</div><p class="mt-1 text-xs text-ink-faint">Specific coverage beyond catch-all pricing.</p></Card>
+</div>
 
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
@@ -270,7 +285,9 @@
         </td>
       </tr>
     {:else}
-      <tr><td colspan="9"><EmptyState message="No rates yet." /></td></tr>
+      <tr><td colspan="9"><EmptyState title="No rates configured" message="Create a base rate so planning can estimate load cost and freight audit can compare invoices against expected charges.">
+        {#snippet children()}<Button variant="secondary" href="/lanes">Review lanes</Button><Button onclick={() => { reset(); showForm = true; }}>Create first rate</Button>{/snippet}
+      </EmptyState></td></tr>
     {/each}
   {/snippet}
 </Table>

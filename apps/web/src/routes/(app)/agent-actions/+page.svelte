@@ -12,6 +12,7 @@
     EmptyState,
     Card,
     Skeleton,
+    ErrorNotice,
     type Tone,
   } from '$lib/components/ui';
 
@@ -35,7 +36,12 @@
   let loading = $state(true);
   let busy = $state<Record<string, boolean>>({});
 
+  const sensitiveCount = $derived(pending.filter((p) => p.riskTier?.toUpperCase() === 'SENSITIVE').length);
+  const mutatingCount = $derived(pending.filter((p) => p.riskTier?.toUpperCase() === 'MUTATING').length);
+  const toolCount = $derived(new Set(pending.map((p) => p.tool)).size);
+
   async function load() {
+    loading = true;
     try {
       pending = await api<Proposal[]>('/agent-actions');
       error = '';
@@ -100,19 +106,25 @@
   });
 </script>
 
-<PageHeader title="Agent actions" />
+<PageHeader
+  title="Agent actions"
+  subtitle="Review mutating and sensitive AI tool calls before they execute against tenant data."
+/>
 
-<p class="mb-4 text-sm text-ink-muted">
-  Mutating and sensitive actions proposed by AI agents wait here for review. Approving executes the
-  queued tool server-side; rejecting discards it. Read-only tool calls run live and never appear here.
-</p>
+<div class="mb-4 grid gap-3 sm:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{pending.length}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Awaiting decision</div><p class="mt-1 text-xs text-ink-faint">Approve executes the queued tool; reject discards it.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{sensitiveCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Sensitive</div><p class="mt-1 text-xs text-ink-faint">Inspect first; {mutatingCount} more mutate data.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{toolCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Tools involved</div><p class="mt-1 text-xs text-ink-faint">Distinct automation surfaces requesting approval.</p></Card>
+</div>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={load} />
 
 {#if loading}
   <Card padded={false}><Skeleton rows={4} /></Card>
 {:else if pending.length === 0}
-  <EmptyState message="No pending actions. Agents have nothing waiting for approval." />
+  <EmptyState title="No agent actions waiting" message="Read-only and low-risk tool calls run directly. Mutating or sensitive proposals will appear here when a human decision is required.">
+    {#snippet children()}<Button variant="secondary" href="/agents">Open agents</Button><Button href="/workbench">Open workbench</Button>{/snippet}
+  </EmptyState>
 {:else}
   <Table>
     {#snippet head()}

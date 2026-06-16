@@ -14,6 +14,7 @@
     Field,
     Input,
     Select,
+    ErrorNotice,
   } from '$lib/components/ui';
 
   type EndpointType = 'LOCATION' | 'CITY' | 'STATE' | 'COUNTRY';
@@ -85,6 +86,10 @@
   let carrierToAdd = $state('');
   let showCarrierModal = $state(false);
   let carrierModalLane = $state<Lane | null>(null);
+
+  const locationLaneCount = $derived(lanes.filter((l) => l.originType === 'LOCATION' || l.destinationType === 'LOCATION').length);
+  const preferenceCount = $derived(lanes.filter((l) => l.carrierPreferences.length > 0).length);
+  const carriersRankedCount = $derived(lanes.reduce((sum, lane) => sum + lane.carrierPreferences.length, 0));
 
   // ─── Helpers ──────────────────────────────────────────────────────────────────
   function endpointLabel(lane: Lane, side: 'origin' | 'destination'): string {
@@ -260,19 +265,23 @@
   });
 </script>
 
-<PageHeader title="Lanes" count={total}>
+<PageHeader
+  title="Lanes"
+  subtitle="Define origin/destination coverage and ranked carrier preferences for auto-tendering."
+  count={total}
+>
   {#snippet actions()}
     <Button onclick={() => { resetForm(); showForm = true; }}>New lane</Button>
   {/snippet}
 </PageHeader>
 
-<p class="mb-4 text-sm text-ink-muted">
-  Auto-tendering uses the most specific matching lane that has a preference list (site beats city
-  beats state beats country). Carriers in the preference list are offered the load in rank order;
-  rank 1 is tried first.
-</p>
+<div class="mb-4 grid gap-3 sm:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{locationLaneCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Location-specific</div><p class="mt-1 text-xs text-ink-faint">Most precise rules win over city/state/country.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{preferenceCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Tender-ready lanes</div><p class="mt-1 text-xs text-ink-faint">Have ranked carriers for auto-tender.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{carriersRankedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Ranked carriers</div><p class="mt-1 text-xs text-ink-faint">Total carrier positions across lane lists.</p></Card>
+</div>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={load} />
 
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
@@ -309,7 +318,9 @@
         </td>
       </tr>
     {:else}
-      <tr><td colspan="5"><EmptyState message="No lanes defined yet." /></td></tr>
+      <tr><td colspan="5"><EmptyState title="No lanes defined yet" message="Create lane coverage before building specific rates or letting Pulsar auto-tender loads by route.">
+        {#snippet children()}<Button variant="secondary" href="/rates">Open rates</Button><Button onclick={() => { resetForm(); showForm = true; }}>Create first lane</Button>{/snippet}
+      </EmptyState></td></tr>
     {/each}
   {/snippet}
 </Table>

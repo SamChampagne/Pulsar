@@ -7,6 +7,8 @@
     EmptyState,
     Card,
     Skeleton,
+    Button,
+    ErrorNotice,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -28,6 +30,10 @@
   let error = $state('');
   let loading = $state(true);
 
+  const completedLoads = $derived(rows.reduce((sum, row) => sum + row.loadsCompleted, 0));
+  const activeLoads = $derived(rows.reduce((sum, row) => sum + row.loadsActive, 0));
+  const tenderedCarriers = $derived(rows.filter((row) => row.tendersSent > 0).length);
+
   function pct(value: number | null): string {
     return value === null ? '—' : `${value} %`;
   }
@@ -45,14 +51,18 @@
   });
 </script>
 
-<PageHeader title="Carrier scorecard" />
+<PageHeader
+  title="Carrier scorecard"
+  subtitle="Compare carrier acceptance, on-time execution, active load exposure, and estimated spend."
+/>
 
-<p class="mb-4 text-sm text-ink-muted">
-  On-time = delivered on or before the planned delivery date. Acceptance = accepted tenders over
-  responded tenders.
-</p>
+<div class="mb-4 grid gap-3 sm:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{completedLoads}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Completed loads</div><p class="mt-1 text-xs text-ink-faint">Delivered loads feeding scorecard quality.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{activeLoads}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Active exposure</div><p class="mt-1 text-xs text-ink-faint">Current loads still moving.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{tenderedCarriers}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Tendered carriers</div><p class="mt-1 text-xs text-ink-faint">Carriers with acceptance data.</p></Card>
+</div>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={() => location.reload()} />
 
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
@@ -82,7 +92,9 @@
         <td class="text-right">{row.totalEstimatedCost.toLocaleString()}</td>
       </tr>
     {:else}
-      <tr><td colspan="7"><EmptyState message="No carrier activity yet." /></td></tr>
+      <tr><td colspan="7"><EmptyState title="No carrier activity yet" message="Dispatch and complete loads to build acceptance, on-time, and spend history for the carrier scorecard.">
+        {#snippet children()}<Button variant="secondary" href="/dispatch">Open Dispatch</Button><Button href="/carriers">Review carriers</Button>{/snippet}
+      </EmptyState></td></tr>
     {/each}
   {/snippet}
 </Table>
