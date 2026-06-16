@@ -246,7 +246,10 @@
   });
 </script>
 
-<PageHeader title="Dispatch" />
+<PageHeader
+  title="Dispatch"
+  subtitle="Plan unassigned shipments, build loads, and move execution forward from one cockpit."
+/>
 
 <section class="mb-4 overflow-hidden rounded-card border border-edge bg-surface shadow-sm">
   <div class="border-b border-edge bg-[linear-gradient(135deg,#0f172a_0%,#172554_52%,#1e3a8a_100%)] p-4 text-white">
@@ -306,7 +309,7 @@
     {/each}
   </div>
   <p class="text-xs text-ink-muted">
-    Inspiré du mécanisme Fleetbase: mode map/board/table + détail latéral, mais branché sur les objets TMS Pulsar.
+    Switch modes based on the job: route context, status pipeline, or dense planning table.
   </p>
 </div>
 

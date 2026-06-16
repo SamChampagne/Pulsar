@@ -16,6 +16,7 @@
     Modal,
     Card,
     Skeleton,
+    ErrorNotice,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -76,6 +77,10 @@
     early
       ? new Date(early).toLocaleDateString() + (late ? ' → ' + new Date(late).toLocaleDateString() : '')
       : '—';
+
+  const draftCount = $derived(orders.filter((o) => o.status === 'DRAFT').length);
+  const confirmedCount = $derived(orders.filter((o) => o.status === 'CONFIRMED').length);
+  const plannedCount = $derived(orders.filter((o) => o.status === 'PLANNED').length);
 
   async function load() {
     try {
@@ -150,13 +155,23 @@
   });
 </script>
 
-<PageHeader title="Transport Orders" count={total}>
+<PageHeader
+  title="Transport Orders"
+  subtitle="Capture customer demand before it becomes shipments and dispatchable loads."
+  count={total}
+>
   {#snippet actions()}
     <Button onclick={openForm}>New order</Button>
   {/snippet}
 </PageHeader>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={load} />
+
+<div class="mb-4 grid gap-3 sm:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{draftCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Draft</div><p class="mt-1 text-xs text-ink-faint">Needs confirmation before planning.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{confirmedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Ready to plan</div><p class="mt-1 text-xs text-ink-faint">Can generate shipments for Dispatch.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{plannedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Planned</div><p class="mt-1 text-xs text-ink-faint">Demand already moved downstream.</p></Card>
+</div>
 
 <FilterBar>
   <div class="w-72">
@@ -198,7 +213,9 @@
         <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
       </tr>
     {:else}
-      <tr><td colspan="6"><EmptyState message="No transport orders yet." /></td></tr>
+      <tr><td colspan="6"><EmptyState title="No transport orders yet" message="Create a transport order to capture customer demand, then confirm and plan it into shipments.">
+        {#snippet children()}<Button onclick={openForm}>Create first order</Button>{/snippet}
+      </EmptyState></td></tr>
     {/each}
   {/snippet}
 </Table>

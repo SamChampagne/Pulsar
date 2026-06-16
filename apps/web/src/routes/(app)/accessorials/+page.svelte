@@ -14,6 +14,7 @@
     Field,
     Input,
     Select,
+    ErrorNotice,
   } from '$lib/components/ui';
 
   interface Accessorial {
@@ -34,6 +35,9 @@
   let code = $state('');
   let name = $state('');
   let unit = $state<'FLAT' | 'PER_HOUR' | 'PER_UNIT'>('FLAT');
+
+  const flatCount = $derived(accessorials.filter((a) => a.unit === 'FLAT').length);
+  const variableCount = $derived(accessorials.filter((a) => a.unit !== 'FLAT').length);
 
   async function load() {
     try {
@@ -103,13 +107,23 @@
   });
 </script>
 
-<PageHeader title="Accessorials" count={total}>
+<PageHeader
+  title="Accessorials"
+  subtitle="Define extra charges used by rating, billing, and freight audit automation."
+  count={total}
+>
   {#snippet actions()}
     <Button onclick={() => { reset(); showForm = true; }}>New accessorial</Button>
   {/snippet}
 </PageHeader>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={load} />
+
+<div class="mb-4 grid gap-3 sm:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{total}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Charge rules</div><p class="mt-1 text-xs text-ink-faint">Available to rating and audit flows.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{flatCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Flat charges</div><p class="mt-1 text-xs text-ink-faint">Fixed-cost accessorials.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{variableCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Variable charges</div><p class="mt-1 text-xs text-ink-faint">Hourly or unit-based extras.</p></Card>
+</div>
 
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
@@ -132,7 +146,9 @@
         </td>
       </tr>
     {:else}
-      <tr><td colspan="4"><EmptyState message="No accessorials yet." /></td></tr>
+      <tr><td colspan="4"><EmptyState title="No accessorial charges yet" message="Add standard extra charges before automating rating, billing, or freight audit checks.">
+        {#snippet children()}<Button onclick={() => { reset(); showForm = true; }}>Add first accessorial</Button>{/snippet}
+      </EmptyState></td></tr>
     {/each}
   {/snippet}
 </Table>

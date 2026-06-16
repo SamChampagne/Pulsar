@@ -13,6 +13,7 @@
     Card,
     Skeleton,
     Modal,
+    ErrorNotice,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -34,6 +35,10 @@
   let showForm = $state(false);
   let loading = $state(true);
   let form = $state({ code: '', name: '', scacCode: '', contactName: '', phone: '' });
+
+  const activeCount = $derived(carriers.filter((c) => c.status === 'ACTIVE').length);
+  const scacCount = $derived(carriers.filter((c) => c.scacCode).length);
+  const contactReadyCount = $derived(carriers.filter((c) => c.contactName || c.phone).length);
 
   async function load() {
     try {
@@ -76,13 +81,23 @@
   });
 </script>
 
-<PageHeader title="Carriers" count={total}>
+<PageHeader
+  title="Carriers"
+  subtitle="Maintain the partner network used to tender and execute loads."
+  count={total}
+>
   {#snippet actions()}
     <Button onclick={() => { showForm = true; }}>New carrier</Button>
   {/snippet}
 </PageHeader>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={load} />
+
+<div class="mb-4 grid gap-3 sm:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{activeCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Active carriers</div><p class="mt-1 text-xs text-ink-faint">Available for tendering.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{scacCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">SCAC mapped</div><p class="mt-1 text-xs text-ink-faint">Ready for structured carrier exchange.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{contactReadyCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Contact-ready</div><p class="mt-1 text-xs text-ink-faint">Have a dispatcher contact or phone.</p></Card>
+</div>
 
 <FilterBar>
   <div class="w-72">
@@ -113,7 +128,9 @@
         <td><Badge tone={toneFor(carrier.status)}>{labelFor(carrier.status)}</Badge></td>
       </tr>
     {:else}
-      <tr><td colspan="6"><EmptyState message="No carriers yet." /></td></tr>
+      <tr><td colspan="6"><EmptyState title="No carriers yet" message="Add carriers before tendering loads or comparing execution partners.">
+        {#snippet children()}<Button onclick={() => { showForm = true; }}>Add first carrier</Button>{/snippet}
+      </EmptyState></td></tr>
     {/each}
   {/snippet}
 </Table>

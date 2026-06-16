@@ -13,6 +13,7 @@
     Panel,
     Card,
     Skeleton,
+    ErrorNotice,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -185,15 +186,29 @@
     return parts.length > 0 ? parts.join(' · ') : '—';
   }
 
+  const unplannedCount = $derived(shipments.filter((s) => !s.load).length);
+  const assignedCount = $derived(shipments.filter((s) => s.load).length);
+  const movingCount = $derived(shipments.filter((s) => ['DISPATCHED', 'IN_TRANSIT'].includes(s.status)).length);
+
   $effect(() => {
     statusFilter;
     void load();
   });
 </script>
 
-<PageHeader title="Shipments" count={total} />
+<PageHeader
+  title="Shipments"
+  subtitle="Plan confirmed freight into loads and keep unplanned work visible."
+  count={total}
+/>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={load} />
+
+<div class="mb-4 grid gap-3 sm:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{unplannedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Unplanned</div><p class="mt-1 text-xs text-ink-faint">Ready to consolidate in Dispatch.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{assignedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Assigned</div><p class="mt-1 text-xs text-ink-faint">Already attached to a load.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{movingCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Moving</div><p class="mt-1 text-xs text-ink-faint">Dispatched or in transit.</p></Card>
+</div>
 
 <FilterBar>
   <div class="w-44">
@@ -236,7 +251,9 @@
         <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
       </tr>
     {:else}
-      <tr><td colspan="6"><EmptyState message="No shipments. Plan a confirmed transport order to create one." /></td></tr>
+      <tr><td colspan="6"><EmptyState title="No shipments ready to plan" message="Confirm and plan a transport order first, then send generated shipments into Dispatch for consolidation.">
+        {#snippet children()}<Button variant="secondary" href="/transport-orders">Open transport orders</Button><Button href="/dispatch">Open Dispatch</Button>{/snippet}
+      </EmptyState></td></tr>
     {/each}
   {/snippet}
 </Table>

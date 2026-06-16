@@ -14,6 +14,7 @@
     Panel,
     Card,
     Skeleton,
+    ErrorNotice,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -60,19 +61,33 @@
     }
   }
 
+  const openCount = $derived(loads.filter((l) => l.status === 'OPEN').length);
+  const plannedCount = $derived(loads.filter((l) => l.status === 'PLANNED').length);
+  const movingCount = $derived(loads.filter((l) => ['DISPATCHED', 'IN_TRANSIT'].includes(l.status)).length);
+
   $effect(() => {
     statusFilter;
     void load();
   });
 </script>
 
-<PageHeader title="Loads" count={total}>
+<PageHeader
+  title="Loads"
+  subtitle="Consolidate shipments, tender carriers, and track execution through delivery."
+  count={total}
+>
   {#snippet actions()}
     <Button onclick={createLoad}>New load</Button>
   {/snippet}
 </PageHeader>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={load} />
+
+<div class="mb-4 grid gap-3 sm:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{plannedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Planned</div><p class="mt-1 text-xs text-ink-faint">Built but not open for tender yet.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{openCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Open</div><p class="mt-1 text-xs text-ink-faint">Ready for carrier assignment/tender.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{movingCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Moving</div><p class="mt-1 text-xs text-ink-faint">Dispatched or in transit.</p></Card>
+</div>
 
 <FilterBar>
   <div class="w-44">
@@ -109,7 +124,9 @@
         <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
       </tr>
     {:else}
-      <tr><td colspan="7"><EmptyState message="No loads yet." /></td></tr>
+      <tr><td colspan="7"><EmptyState title="No loads yet" message="Build loads from shipments in Dispatch, then tender carriers and track execution.">
+        {#snippet children()}<Button variant="secondary" href="/dispatch">Build in Dispatch</Button><Button onclick={createLoad}>Create empty load</Button>{/snippet}
+      </EmptyState></td></tr>
     {/each}
   {/snippet}
 </Table>

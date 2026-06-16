@@ -16,6 +16,7 @@
     Card,
     Skeleton,
     Modal,
+    ErrorNotice,
   } from '$lib/components/ui';
 
   interface CustomerRow {
@@ -38,6 +39,8 @@
   const hasPortal = $derived(
     $auth?.tenant.enabledModules.includes(MODULE_KEYS.CUSTOMER_PORTAL) ?? false,
   );
+  const activeCount = $derived(customers.filter((c) => c.isActive).length);
+  const portalReadyCount = $derived(customers.filter((c) => c.email).length);
 
   async function portalLink(customer: CustomerRow) {
     try {
@@ -92,13 +95,23 @@
   });
 </script>
 
-<PageHeader title="Customers" count={total}>
+<PageHeader
+  title="Customers"
+  subtitle="Maintain shipper accounts, contacts, and portal links used by transport orders."
+  count={total}
+>
   {#snippet actions()}
     <Button onclick={() => { showForm = true; }}>New customer</Button>
   {/snippet}
 </PageHeader>
 
-{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
+<ErrorNotice message={error} onretry={load} />
+
+<div class="mb-4 grid gap-3 sm:grid-cols-3">
+  <Card><div class="text-xl font-bold text-ink">{activeCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Active customers</div><p class="mt-1 text-xs text-ink-faint">Available for new transport orders.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{portalReadyCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Portal-ready</div><p class="mt-1 text-xs text-ink-faint">Have email/contact context for sharing.</p></Card>
+  <Card><div class="text-xl font-bold text-ink">{hasPortal ? 'On' : 'Off'}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Customer portal</div><p class="mt-1 text-xs text-ink-faint">Controls whether portal links are available.</p></Card>
+</div>
 
 <FilterBar>
   <div class="w-72">
@@ -142,7 +155,9 @@
     {:else}
       <tr>
         <td colspan={hasPortal ? 6 : 5}>
-          <EmptyState message="No customers yet." />
+          <EmptyState title="No customers yet" message="Add a customer before creating transport orders or sharing customer portal links.">
+            {#snippet children()}<Button onclick={() => { showForm = true; }}>Add first customer</Button>{/snippet}
+          </EmptyState>
         </td>
       </tr>
     {/each}
