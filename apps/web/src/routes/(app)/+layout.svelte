@@ -11,6 +11,7 @@
   import type { ComponentType } from 'svelte';
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
   import AssistantPanel from '$lib/components/agents/AssistantPanel.svelte';
+  import { MODULE_UNIVERSES } from '$lib/modules/universe';
 
   let { children } = $props();
 
@@ -127,9 +128,12 @@
       ],
     },
     {
-      key: 'fleet', label: 'Assets', icon: Boxes, home: '/fleet',
-      prefixes: ['/fleet', '/assets'], visible: hasFleet,
-      sections: [{ links: [{ href: '/fleet', label: 'Assets & maintenance' }] }],
+      key: 'fleet', label: 'Assets', icon: Boxes, home: '/assets',
+      prefixes: ['/assets', '/fleet'], visible: hasFleet,
+      sections: [{ links: [
+        { href: '/assets', label: 'Assets home' },
+        { href: '/fleet', label: 'Fleet roster' },
+      ] }],
     },
     {
       key: 'billing', label: 'Finance', icon: CircleDollarSign, home: '/finance',
@@ -188,6 +192,7 @@
       .sort((a, b) => Math.max(...b.prefixes.map((p) => p.length)) - Math.max(...a.prefixes.map((p) => p.length)))[0]
       ?? visibleDomains.find((d) => d.key === 'dashboard'),
   );
+  const activeUniverse = $derived(MODULE_UNIVERSES[activeDomain?.key ?? 'dashboard'] ?? MODULE_UNIVERSES.dashboard);
 
   function linkActive(href: string): boolean {
     return page.url.pathname === href || page.url.pathname.startsWith(href + '/');
@@ -211,7 +216,10 @@
 </script>
 
 {#if $auth}
-  <div class="flex min-h-screen">
+  <div
+    class="flex min-h-screen"
+    style={`--module-accent: ${activeUniverse.accent}; --module-soft: ${activeUniverse.soft}; --module-rgb: ${activeUniverse.rgb};`}
+  >
     <!-- Rail 1 — domains -->
     <aside class="flex w-[4.75rem] flex-col items-center gap-1 bg-sidebar py-3">
       <a href="/apps" class="mb-2 text-lg font-bold text-white" aria-label="Pulsar">⬢</a>
@@ -228,7 +236,8 @@
           {@const active = activeDomain?.key === d.key}
           <a
             href={d.home}
-            class={`group flex w-full flex-col items-center gap-0.5 rounded-lg px-1 py-2 transition-colors ${active ? 'bg-accent text-white' : 'text-ink-faint hover:bg-sidebar-hover hover:text-white'}`}
+            class={`group flex w-full flex-col items-center gap-0.5 rounded-lg px-1 py-2 transition-colors ${active ? 'text-white shadow-sm' : 'text-ink-faint hover:bg-sidebar-hover hover:text-white'}`}
+            style={active ? `background: ${MODULE_UNIVERSES[d.key]?.accent ?? 'var(--color-accent)'}` : ''}
             aria-label={d.label} title={d.label}
           >
             <Icon class="size-5" />
@@ -253,8 +262,28 @@
     {#if activeDomain && activeDomain.sections.length > 0}
       <aside class="flex w-56 flex-col border-r border-edge bg-surface">
         <div class="border-b border-edge-soft px-4 py-3.5">
-          <div class="text-[11px] tracking-wide text-ink-faint uppercase">{$auth.tenant.name}</div>
-          <div class="text-sm font-bold text-ink">{activeDomain.label}</div>
+          <div class="flex items-center gap-2">
+            <span class="size-2.5 rounded-full" style={`background: ${activeUniverse.accent}`}></span>
+            <div class="text-[11px] tracking-wide text-ink-faint uppercase">{$auth.tenant.name}</div>
+          </div>
+          <div class="mt-1 text-sm font-bold text-ink">{activeUniverse.title}</div>
+          <p class="mt-2 text-xs leading-5 text-ink-muted">{activeUniverse.mission}</p>
+          <div class="mt-3 rounded-lg border border-edge-soft p-2.5" style={`background: ${activeUniverse.soft}`}>
+            <div class="text-[10px] font-semibold tracking-wider uppercase" style={`color: ${activeUniverse.accent}`}>
+              {activeUniverse.signal}
+            </div>
+            <div class="mt-1 text-xs font-semibold text-ink">Agent: {activeUniverse.agent}</div>
+          </div>
+          <div class="mt-3 flex flex-wrap gap-1">
+            {#each activeUniverse.objects as object (object)}
+              <span class="rounded-full border border-edge-soft bg-surface px-2 py-0.5 text-[10px] font-medium text-ink-muted">{object}</span>
+            {/each}
+          </div>
+          <div class="mt-2 flex flex-wrap gap-1">
+            {#each activeUniverse.workflows as flow (flow)}
+              <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={`background: ${activeUniverse.accent}`}>{flow}</span>
+            {/each}
+          </div>
         </div>
         <nav class="flex-1 space-y-3 overflow-y-auto px-2 py-3">
           {#each activeDomain.sections as section (section.label ?? section.links[0]?.href)}
@@ -265,7 +294,8 @@
               {#each section.links as l (l.href)}
                 <a
                   href={l.href}
-                  class={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${linkActive(l.href) ? 'bg-accent-soft font-semibold text-accent' : 'text-ink-muted hover:bg-surface-muted hover:text-ink'}`}
+                  class={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${linkActive(l.href) ? 'font-semibold' : 'text-ink-muted hover:bg-surface-muted hover:text-ink'}`}
+                  style={linkActive(l.href) ? `background: ${activeUniverse.soft}; color: ${activeUniverse.accent}` : ''}
                 >
                   <span class="flex-1">{l.label}</span>
                   {#if l.badge}<span class="rounded-full bg-danger px-1.5 text-[10px] font-semibold text-white">{l.badge}</span>{/if}
@@ -287,7 +317,10 @@
       </aside>
     {/if}
 
-    <main class="min-w-0 flex-1 overflow-x-hidden p-6">{@render children()}</main>
+    <main
+      class="min-w-0 flex-1 overflow-x-hidden p-6"
+      style={`background: radial-gradient(circle at top left, rgb(${activeUniverse.rgb} / 0.10), transparent 360px), var(--color-canvas);`}
+    >{@render children()}</main>
 
     {#if notifOpen}
       <div class="fixed bottom-4 left-[5.5rem] z-30 max-h-96 w-72 overflow-y-auto rounded-card border border-edge bg-surface p-2 shadow-pop">

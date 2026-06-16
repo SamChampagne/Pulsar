@@ -1,0 +1,133 @@
+export interface ModuleUniverse {
+  key: string;
+  title: string;
+  short: string;
+  mission: string;
+  accent: string;
+  soft: string;
+  rgb: string;
+  objects: string[];
+  workflows: string[];
+  agent: string;
+  signal: string;
+}
+
+export const MODULE_UNIVERSES: Record<string, ModuleUniverse> = {
+  dashboard: {
+    key: 'dashboard',
+    title: 'Pulsar Platform',
+    short: 'Core',
+    mission: 'Tenants, modules, permissions, audit, evidence and operating context shared by every business app.',
+    accent: '#f1700f',
+    soft: '#fff1e3',
+    rgb: '241 112 15',
+    objects: ['Tenants', 'Modules', 'Policies'],
+    workflows: ['Activate', 'Govern', 'Launch'],
+    agent: 'Platform operator',
+    signal: 'LSOS core',
+  },
+  transport: {
+    key: 'transport',
+    title: 'Transport / Operations',
+    short: 'Move',
+    mission: 'Plan, tender, dispatch, track and close freight movements across customers, carriers, lanes and rates.',
+    accent: '#2563eb',
+    soft: '#dbeafe',
+    rgb: '37 99 235',
+    objects: ['Orders', 'Shipments', 'Loads', 'Lanes'],
+    workflows: ['Plan', 'Tender', 'Dispatch', 'Track'],
+    agent: 'Dispatcher agent',
+    signal: 'Execution control',
+  },
+  wms: {
+    key: 'wms',
+    title: 'Warehouse / Inventory',
+    short: 'Stock',
+    mission: 'Own inventory truth: items, bins, receiving, picking and fulfillment connected to transport demand.',
+    accent: '#059669',
+    soft: '#d1fae5',
+    rgb: '5 150 105',
+    objects: ['Items', 'Bins', 'Receipts', 'Picks'],
+    workflows: ['Receive', 'Move', 'Pick', 'Fulfill'],
+    agent: 'Warehouse prep agent',
+    signal: 'Inventory flow',
+  },
+  yard: {
+    key: 'yard',
+    title: 'Yard / Dock',
+    short: 'Gate',
+    mission: 'Coordinate gates, dock appointments, trailer spots and dwell so the site runs like a physical control room.',
+    accent: '#7c3aed',
+    soft: '#ede9fe',
+    rgb: '124 58 237',
+    objects: ['Visits', 'Spots', 'Appointments', 'Trailers'],
+    workflows: ['Check-in', 'Spot', 'Dock', 'Release'],
+    agent: 'Dock scheduler agent',
+    signal: 'Yard state',
+  },
+  fleet: {
+    key: 'fleet',
+    title: 'Assets / Fleet',
+    short: 'Ready',
+    mission: 'Protect asset readiness: vehicles, trailers, drivers, compliance, maintenance and lifecycle cost.',
+    accent: '#0f766e',
+    soft: '#ccfbf1',
+    rgb: '15 118 110',
+    objects: ['Vehicles', 'Trailers', 'Drivers', 'Documents'],
+    workflows: ['Inspect', 'Maintain', 'Assign', 'Retire'],
+    agent: 'Maintenance compliance agent',
+    signal: 'Asset readiness',
+  },
+  billing: {
+    key: 'billing',
+    title: 'Finance / Ledger',
+    short: 'Cash',
+    mission: 'Turn operations into controlled money movement: receivables, payables, freight audit, margin and disputes.',
+    accent: '#b45309',
+    soft: '#fef3c7',
+    rgb: '180 83 9',
+    objects: ['AR', 'AP', 'Audit', 'Margins'],
+    workflows: ['Invoice', 'Match', 'Dispute', 'Collect'],
+    agent: 'Finance operator agent',
+    signal: 'Money movement',
+  },
+  agents: {
+    key: 'agents',
+    title: 'AI Workforce',
+    short: 'Workers',
+    mission: 'Govern Hermes employees with scoped tools, proposed actions, evidence, approvals and runtime controls.',
+    accent: '#9333ea',
+    soft: '#f3e8ff',
+    rgb: '147 51 234',
+    objects: ['Agents', 'Tasks', 'Actions', 'Evidence'],
+    workflows: ['Assign', 'Propose', 'Approve', 'Audit'],
+    agent: 'Manager agent',
+    signal: 'Governed autonomy',
+  },
+  connect: {
+    key: 'connect',
+    title: 'Connect / Developer Platform',
+    short: 'Integrate',
+    mission: 'Expose Pulsar as a platform: connectors, API keys, webhooks, MCP tools and event/request visibility.',
+    accent: '#0891b2',
+    soft: '#cffafe',
+    rgb: '8 145 178',
+    objects: ['Connectors', 'API keys', 'Webhooks', 'MCP tools'],
+    workflows: ['Authorize', 'Sync', 'Observe', 'Repair'],
+    agent: 'Integration operator agent',
+    signal: 'Connectivity',
+  },
+  settings: {
+    key: 'settings',
+    title: 'Settings',
+    short: 'Admin',
+    mission: 'Configure users, modules, SSO, API access and tenant preferences without hiding business apps here.',
+    accent: '#64748b',
+    soft: '#f1f5f9',
+    rgb: '100 116 139',
+    objects: ['Users', 'Roles', 'Modules', 'SSO'],
+    workflows: ['Invite', 'Secure', 'Enable', 'Tune'],
+    agent: 'Admin assistant',
+    signal: 'Tenant control',
+  },
+};

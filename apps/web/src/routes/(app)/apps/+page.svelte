@@ -2,6 +2,7 @@
   import { MODULE_KEYS, type ModuleKey } from '@pulsar/shared';
   import { auth } from '$lib/stores/auth';
   import { Badge, Card, PageHeader } from '$lib/components/ui';
+  import { MODULE_UNIVERSES } from '$lib/modules/universe';
 
   interface AppTile {
     key: string;
@@ -44,7 +45,7 @@
       key: 'assets',
       title: 'Assets / Fleet',
       subtitle: 'Vehicles, trailers, equipment, maintenance, compliance and lifecycle cost.',
-      href: '/fleet',
+      href: '/assets',
       moduleKey: MODULE_KEYS.FLEET,
       status: moduleEnabled(MODULE_KEYS.FLEET) ? 'enabled' : 'disabled',
       kpi: 'Readiness',
@@ -138,11 +139,12 @@
   {#each apps as app (app.key)}
     <a
       href={app.status === 'disabled' ? '/settings/modules' : app.href}
-      class="group block rounded-card border border-edge-soft bg-surface p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-accent hover:shadow-card"
+      class="group block rounded-card border border-edge-soft bg-surface p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-card"
+      style={`--tile-accent: ${MODULE_UNIVERSES[app.key === 'finance' ? 'billing' : app.key === 'warehouse' ? 'wms' : app.key === 'assets' ? 'fleet' : app.key]?.accent ?? 'var(--color-accent)'}; border-top: 3px solid var(--tile-accent);`}
     >
       <div class="flex items-start justify-between gap-3">
         <div>
-          <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">{app.kpi}</p>
+          <p class="text-xs font-semibold tracking-[0.2em] uppercase" style="color: var(--tile-accent)">{app.kpi}</p>
           <h2 class="mt-1 text-lg font-bold text-ink">{app.title}</h2>
         </div>
         {#if app.status === 'disabled'}
