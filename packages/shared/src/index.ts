@@ -32,5 +32,8 @@ export * from './agents/runtime-providers';
 export * from './agents/role-presets';
 export * from './agents/operations';
 export * from './integrations/operations';
+export * from './integrations/connector-foundation';
 export * from './fleet/maintenance.workflow';
 export * from './fleet/compliance';
+export * from './wms/wms.workflow';
+export * from './yard/yard.workflow';

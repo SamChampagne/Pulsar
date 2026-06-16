@@ -124,7 +124,7 @@ export class AgentRuntimeService {
       const { sessionId } = await client.newSession({
         cwd: process.cwd(),
         mcpServers: [
-          { name: 'pulsar', url: input.pulsarMcpUrl, headers: [{ name: 'X-Agent-Key', value: token }] },
+          { type: 'http', name: 'pulsar', url: input.pulsarMcpUrl, headers: [{ name: 'X-Agent-Key', value: token }] },
         ],
       });
       if (input.agent.model) {
@@ -132,9 +132,11 @@ export class AgentRuntimeService {
       }
       this.live.set(sessionId, { agentId: input.agent.id, client, child, persona: input.agent.persona, firstTurnDone: false });
       return sessionId;
-    } catch {
+    } catch (err) {
       child.kill();
-      throw new ServiceUnavailableException('Agent runtime (Hermes) session failed');
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error('[agent-runtime] openSession failed:', detail);
+      throw new ServiceUnavailableException(`Session Hermes échouée : ${detail}`);
     }
   }
 

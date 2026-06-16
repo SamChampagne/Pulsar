@@ -7,6 +7,7 @@
     Field,
     Input,
     Select,
+    Badge,
     Card,
     Skeleton,
   } from '$lib/components/ui';
@@ -33,6 +34,7 @@
   let roles = $state<RoleOption[]>([]);
   let error = $state('');
   let loading = $state(true);
+  let saving = $state(false);
 
   async function load() {
     try {
@@ -42,7 +44,7 @@
         api<RoleOption[]>('/roles'),
       ]);
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load SSO config';
+      error = e instanceof ApiError ? e.message : 'Échec du chargement de la configuration SSO';
     } finally {
       loading = false;
     }
@@ -50,11 +52,17 @@
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
+    error = '';
+    saving = true;
     try {
       config = await api<OidcConfigView>('/auth/oidc-config', { method: 'PUT', body: config });
-      toast.success('SSO configuration saved');
+      toast.success('Configuration SSO enregistrée');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Failed to save');
+      const msg = e instanceof ApiError ? e.message : "Échec de l'enregistrement";
+      error = msg;
+      toast.error(msg);
+    } finally {
+      saving = false;
     }
   }
 
@@ -63,11 +71,21 @@
   });
 </script>
 
-<PageHeader title="Single sign-on (OIDC)" />
+<PageHeader title="Authentification unique (OIDC)">
+  {#snippet actions()}
+    {#if !loading}
+      {#if config.enabled}
+        <Badge tone="ok">Activé</Badge>
+      {:else}
+        <Badge tone="neutral">Désactivé</Badge>
+      {/if}
+    {/if}
+  {/snippet}
+</PageHeader>
 
 <p class="mb-4 text-sm text-ink-muted">
-  Connect an OpenID Connect provider to let users sign in with your organisation's identity
-  system.
+  Connectez un fournisseur OpenID Connect pour permettre à vos utilisateurs de se connecter avec
+  le système d'identité de votre organisation.
 </p>
 
 {#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
@@ -75,37 +93,58 @@
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
 {:else}
-  <form onsubmit={save} class="max-w-lg">
+  <form onsubmit={save} class="max-w-2xl space-y-4">
     <Card>
-      <div class="space-y-3">
-        <label class="flex cursor-pointer items-center gap-2 text-sm text-ink">
-          <input type="checkbox" bind:checked={config.enabled} />
-          Enable SSO for this organisation
-        </label>
-        <Field label="Issuer URL">
+      <label class="flex cursor-pointer items-center gap-2 text-sm font-medium text-ink">
+        <input type="checkbox" bind:checked={config.enabled} />
+        Activer l'authentification unique pour cette organisation
+      </label>
+    </Card>
+
+    <Card>
+      <div class="space-y-4">
+        <div>
+          <h2 class="text-xs font-semibold tracking-wide text-ink-muted uppercase">Fournisseur</h2>
+          <p class="mt-0.5 text-xs text-ink-faint">Coordonnées de connexion à votre fournisseur OIDC.</p>
+        </div>
+        <Field label="URL de l'émetteur (issuer)">
           <Input bind:value={config.issuer} placeholder="https://login.example.com" />
         </Field>
-        <Field label="Client ID">
+        <Field label="Identifiant client (client ID)">
           <Input bind:value={config.clientId} />
         </Field>
-        <Field label="Client secret">
+        <Field label="Secret client (client secret)">
           <Input
             bind:value={config.clientSecret}
-            placeholder="*** (unchanged if left masked)"
+            placeholder="*** (inchangé si laissé masqué)"
           />
         </Field>
-        <Field label="Default role for provisioned users">
+      </div>
+    </Card>
+
+    <Card>
+      <div class="space-y-4">
+        <div>
+          <h2 class="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+            Provisionnement
+          </h2>
+          <p class="mt-0.5 text-xs text-ink-faint">
+            Rôle attribué automatiquement aux nouveaux utilisateurs provisionnés via SSO.
+          </p>
+        </div>
+        <Field label="Rôle par défaut des utilisateurs provisionnés">
           <Select bind:value={config.defaultRoleId}>
-            <option value="" disabled>Choose a role…</option>
+            <option value="" disabled>Choisir un rôle…</option>
             {#each roles as role (role.id)}
               <option value={role.id}>{role.name}</option>
             {/each}
           </Select>
         </Field>
       </div>
-      <div class="mt-4 flex justify-end border-t border-edge pt-3">
-        <Button type="submit">Save</Button>
-      </div>
     </Card>
+
+    <div class="flex justify-end">
+      <Button type="submit" loading={saving}>Enregistrer</Button>
+    </div>
   </form>
 {/if}

@@ -12,13 +12,12 @@
     Badge,
     EmptyState,
     Skeleton,
-    Modal,
+    Panel,
     Field,
     Input,
     Select,
-    ErrorNotice,
-    toneFor,
   } from '$lib/components/ui';
+  import type { Tone } from '$lib/components/ui';
 
   interface Option { id: string; name: string }
   interface LaneOption { id: string; name: string | null; originType: string; destinationType: string }
@@ -49,6 +48,12 @@
     accessorialPrices: RateAccessorialPrice[];
   }
 
+  const STATUS_LABELS: Record<string, string> = {
+    DRAFT: 'Brouillon',
+    ACTIVE: 'Actif',
+    EXPIRED: 'Expiré',
+  };
+
   let rates = $state<Rate[]>([]);
   let total = $state(0);
   let lanes = $state<LaneOption[]>([]);
@@ -77,14 +82,14 @@
   let breaks = $state<{ upToKg: number; amount: number }[]>([]);
   let prices = $state<{ accessorialId: string; amount: number }[]>([]);
 
-  const activeCount = $derived(rates.filter((r) => r.status === 'ACTIVE').length);
-  const draftCount = $derived(rates.filter((r) => r.status === 'DRAFT').length);
-  const laneScopedCount = $derived(rates.filter((r) => r.lane).length);
-
-  function statusTone(s: string) {
+  function statusTone(s: string): Tone {
     if (s === 'ACTIVE') return 'ok';
     if (s === 'EXPIRED') return 'danger';
     return 'neutral';
+  }
+
+  function statusLabel(s: string): string {
+    return STATUS_LABELS[s] ?? s;
   }
 
   function laneLabel(lane: LaneOption): string {
@@ -107,7 +112,7 @@
       fuelTables = fuelRes.items;
       accessorials = accsRes.items;
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load rates';
+      error = e instanceof ApiError ? e.message : 'Échec du chargement des tarifs';
     } finally {
       loading = false;
     }
@@ -153,6 +158,7 @@
     prices = rate.accessorialPrices
       .filter((p) => p.accessorial)
       .map((p) => ({ accessorialId: p.accessorial!.id, amount: p.amount }));
+    error = '';
     showForm = true;
   }
 
@@ -200,15 +206,15 @@
       if (editingId) {
         body.status = status;
         await api(`/transportation/rates/${editingId}`, { method: 'PATCH', body });
-        toast.success('Rate updated');
+        toast.success('Tarif mis à jour');
       } else {
         await api('/transportation/rates', { method: 'POST', body });
-        toast.success('Rate created');
+        toast.success('Tarif créé');
       }
       reset();
       await load();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Failed to save rate';
+      const msg = e instanceof ApiError ? e.message : "Échec de l'enregistrement du tarif";
       error = msg;
       toast.error(msg);
     }
@@ -219,110 +225,99 @@
   });
 </script>
 
-<PageHeader
-  title="Rates"
-  subtitle="Control contracted and spot pricing used by planning, cost snapshots, and freight audit comparisons."
-  count={total}
->
+<PageHeader title="Tarifs" count={total}>
   {#snippet actions()}
-    <Button onclick={() => { reset(); showForm = true; }}>New rate</Button>
+    <Button onclick={() => { reset(); showForm = true; }}>Nouveau tarif</Button>
   {/snippet}
 </PageHeader>
 
-<ErrorNotice message={error} onretry={load} />
-
-<div class="mb-4 grid gap-3 sm:grid-cols-3">
-  <Card><div class="text-xl font-bold text-ink">{activeCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Active rates</div><p class="mt-1 text-xs text-ink-faint">Eligible for pricing and audit.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{draftCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Draft rates</div><p class="mt-1 text-xs text-ink-faint">Need review before operational use.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{laneScopedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Lane-scoped</div><p class="mt-1 text-xs text-ink-faint">Specific coverage beyond catch-all pricing.</p></Card>
-</div>
+{#if error && !showForm}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
+{:else if rates.length === 0}
+  <Card>
+    <EmptyState message="Aucun tarif pour le moment.">
+      {#snippet children()}
+        <Button onclick={() => { reset(); showForm = true; }}>Nouveau tarif</Button>
+      {/snippet}
+    </EmptyState>
+  </Card>
 {:else}
-<Table>
-  {#snippet head()}
-    <th>Name</th><th>Type</th><th>Mode</th><th>Lane</th><th>Carrier</th><th>Base</th><th>Valid</th><th>Status</th><th></th>
-  {/snippet}
-  {#snippet body()}
-    {#each rates as rate (rate.id)}
-      <tr>
-        <td><span class="font-semibold text-ink">{rate.name}</span></td>
-        <td>
-          <span class="text-sm text-ink">{rate.rateType}</span>
-          {#if rate.breaks.length > 0}
-            <span class="ml-1 text-xs text-ink-muted">({rate.breaks.length} breaks)</span>
-          {/if}
-        </td>
-        <td>
-          {#if rate.mode}
-            <span class="rounded border border-edge px-1.5 text-xs text-neutral">{rate.mode}</span>
-          {:else}
-            <span class="text-ink-faint">all</span>
-          {/if}
-        </td>
-        <td>
-          {#if rate.lane}
-            {rate.lane.name ?? `${rate.lane.originType} → ${rate.lane.destinationType}`}
-          {:else}
-            <span class="text-ink-faint">catch-all</span>
-          {/if}
-        </td>
-        <td>{rate.carrier?.name ?? '—'}</td>
-        <td class="tabular-nums">{formatMoney(rate.baseAmount, rate.currency)}</td>
-        <td class="text-xs text-ink-muted">
-          {#if rate.validFrom || rate.validTo}
-            {formatDate(rate.validFrom)} → {formatDate(rate.validTo)}
-          {:else}
-            —
-          {/if}
-        </td>
-        <td>
-          <Badge tone={statusTone(rate.status)}>{rate.status}</Badge>
-        </td>
-        <td class="text-right">
-          <Button variant="secondary" onclick={() => edit(rate)}>Edit</Button>
-        </td>
-      </tr>
-    {:else}
-      <tr><td colspan="9"><EmptyState title="No rates configured" message="Create a base rate so planning can estimate load cost and freight audit can compare invoices against expected charges.">
-        {#snippet children()}<Button variant="secondary" href="/lanes">Review lanes</Button><Button onclick={() => { reset(); showForm = true; }}>Create first rate</Button>{/snippet}
-      </EmptyState></td></tr>
-    {/each}
-  {/snippet}
-</Table>
+  <Table>
+    {#snippet head()}
+      <th>Nom</th><th>Type</th><th>Mode</th><th>Corridor</th><th>Transporteur</th><th>Base</th><th>Validité</th><th>Statut</th>
+    {/snippet}
+    {#snippet body()}
+      {#each rates as rate (rate.id)}
+        <tr class="cursor-pointer" onclick={() => edit(rate)}>
+          <td><span class="font-semibold text-ink">{rate.name}</span></td>
+          <td>
+            <span class="font-mono text-xs text-ink">{rate.rateType}</span>
+            {#if rate.breaks.length > 0}
+              <span class="ml-1 text-xs text-ink-muted">({rate.breaks.length} paliers)</span>
+            {/if}
+          </td>
+          <td>
+            {#if rate.mode}
+              <span class="rounded border border-edge px-1.5 font-mono text-xs text-neutral">{rate.mode}</span>
+            {:else}
+              <span class="text-ink-faint">tous</span>
+            {/if}
+          </td>
+          <td>
+            {#if rate.lane}
+              {rate.lane.name ?? `${rate.lane.originType} → ${rate.lane.destinationType}`}
+            {:else}
+              <span class="text-ink-faint">générique</span>
+            {/if}
+          </td>
+          <td>{rate.carrier?.name ?? '—'}</td>
+          <td class="font-mono tabular-nums">{formatMoney(rate.baseAmount, rate.currency)}</td>
+          <td class="text-xs text-ink-muted">
+            {#if rate.validFrom || rate.validTo}
+              {formatDate(rate.validFrom)} → {formatDate(rate.validTo)}
+            {:else}
+              —
+            {/if}
+          </td>
+          <td>
+            <Badge tone={statusTone(rate.status)}>{statusLabel(rate.status)}</Badge>
+          </td>
+        </tr>
+      {/each}
+    {/snippet}
+  </Table>
 {/if}
 
-<!-- ─── Rate form Modal ───────────────────────────────────────────────────────── -->
-<Modal bind:open={showForm} title={editingId ? 'Edit rate' : 'New rate'} maxWidth="max-w-2xl">
+<!-- ─── Rate form Panel ──────────────────────────────────────────────────────────── -->
+<Panel bind:open={showForm} title={editingId ? 'Modifier le tarif' : 'Nouveau tarif'}>
   {#snippet children()}
-    <form onsubmit={save}>
-      <div class="grid grid-cols-3 gap-4">
-        <div class="col-span-3">
-          <Field label="Name">
-            <Input bind:value={name} required placeholder="Base rate – East" />
-          </Field>
-        </div>
+    <form onsubmit={save} class="space-y-3">
+      {#if error}<p class="text-sm text-danger">{error}</p>{/if}
 
-        <Field label="Type">
-          <Select bind:value={rateType} required>
-            <option value="FLAT">FLAT</option>
-            <option value="PER_KM">PER_KM</option>
-            <option value="PER_HUNDREDWEIGHT">PER_HUNDREDWEIGHT</option>
-            <option value="PER_PALLET">PER_PALLET</option>
-            <option value="SPOT">SPOT</option>
-          </Select>
-        </Field>
+      <Field label="Nom">
+        <Input bind:value={name} required placeholder="Tarif de base – Est" />
+      </Field>
 
-        <Field label="Base amount">
+      <Field label="Type">
+        <Select bind:value={rateType} required>
+          <option value="FLAT">FLAT</option>
+          <option value="PER_KM">PER_KM</option>
+          <option value="PER_HUNDREDWEIGHT">PER_HUNDREDWEIGHT</option>
+          <option value="PER_PALLET">PER_PALLET</option>
+          <option value="SPOT">SPOT</option>
+        </Select>
+      </Field>
+
+      <div class="grid grid-cols-2 gap-3">
+        <Field label="Montant de base">
           <Input type="number" step="0.01" min="0" bind:value={baseAmount} required />
         </Field>
-
-        <Field label="Currency">
+        <Field label="Devise">
           <Input bind:value={currency} placeholder="CAD" maxlength={3} />
         </Field>
-
-        <Field label="Min charge">
+        <Field label="Charge minimale">
           <Input
             type="number"
             step="0.01"
@@ -332,11 +327,10 @@
               const v = e.currentTarget.value;
               minCharge = v === '' ? null : parseFloat(v);
             }}
-            placeholder="optional"
+            placeholder="optionnel"
           />
         </Field>
-
-        <Field label="Fuel surcharge %">
+        <Field label="Surtaxe carburant %">
           <Input
             type="number"
             step="0.01"
@@ -346,78 +340,79 @@
               const v = e.currentTarget.value;
               fuelSurchargePct = v === '' ? null : parseFloat(v);
             }}
-            placeholder="optional"
+            placeholder="optionnel"
           />
         </Field>
-
-        <Field label="Mode">
-          <Select bind:value={rateMode}>
-            <option value="">— all modes —</option>
-            {#each Object.values(TransportMode) as m (m)}
-              <option value={m}>{m}</option>
-            {/each}
-          </Select>
-        </Field>
-
-        <Field label="Carrier">
-          <Select bind:value={carrierId}>
-            <option value="">— none —</option>
-            {#each carriers as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
-          </Select>
-        </Field>
-
-        <Field label="Lane">
-          <Select bind:value={laneId}>
-            <option value="">— catch-all —</option>
-            {#each lanes as l (l.id)}<option value={l.id}>{laneLabel(l)}</option>{/each}
-          </Select>
-        </Field>
-
-        <Field label="Fuel table">
-          <Select bind:value={fuelTableId}>
-            <option value="">— none —</option>
-            {#each fuelTables as ft (ft.id)}<option value={ft.id}>{ft.name}</option>{/each}
-          </Select>
-        </Field>
-
-        <Field label="Valid from">
-          <Input type="date" bind:value={validFrom} />
-        </Field>
-
-        <Field label="Valid to">
-          <Input type="date" bind:value={validTo} />
-        </Field>
-
-        {#if editingId}
-          <Field label="Status">
-            <Select bind:value={status}>
-              <option value="DRAFT">DRAFT</option>
-              <option value="ACTIVE">ACTIVE</option>
-              <option value="EXPIRED">EXPIRED</option>
-            </Select>
-          </Field>
-        {/if}
       </div>
 
+      <Field label="Mode">
+        <Select bind:value={rateMode}>
+          <option value="">— tous les modes —</option>
+          {#each Object.values(TransportMode) as m (m)}
+            <option value={m}>{m}</option>
+          {/each}
+        </Select>
+      </Field>
+
+      <Field label="Transporteur">
+        <Select bind:value={carrierId}>
+          <option value="">— aucun —</option>
+          {#each carriers as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
+        </Select>
+      </Field>
+
+      <Field label="Corridor">
+        <Select bind:value={laneId}>
+          <option value="">— générique —</option>
+          {#each lanes as l (l.id)}<option value={l.id}>{laneLabel(l)}</option>{/each}
+        </Select>
+      </Field>
+
+      <Field label="Table de carburant">
+        <Select bind:value={fuelTableId}>
+          <option value="">— aucune —</option>
+          {#each fuelTables as ft (ft.id)}<option value={ft.id}>{ft.name}</option>{/each}
+        </Select>
+      </Field>
+
+      <div class="grid grid-cols-2 gap-3">
+        <Field label="Valide à partir du">
+          <Input type="date" bind:value={validFrom} />
+        </Field>
+        <Field label="Valide jusqu'au">
+          <Input type="date" bind:value={validTo} />
+        </Field>
+      </div>
+
+      {#if editingId}
+        <Field label="Statut">
+          <Select bind:value={status}>
+            <option value="DRAFT">Brouillon</option>
+            <option value="ACTIVE">Actif</option>
+            <option value="EXPIRED">Expiré</option>
+          </Select>
+        </Field>
+      {/if}
+
       {#if rateType === 'PER_HUNDREDWEIGHT'}
-        <div class="mt-4">
+        <div class="border-t border-edge pt-3">
           <div class="mb-2 flex items-center justify-between">
-            <span class="text-sm font-semibold text-ink">Weight breaks</span>
-            <Button variant="secondary" onclick={addBreak}>Add break</Button>
+            <span class="text-sm font-semibold text-ink">Paliers de poids</span>
+            <Button variant="secondary" onclick={addBreak}>Ajouter un palier</Button>
           </div>
           {#if breaks.length === 0}
-            <p class="text-xs text-ink-muted mb-3">No breaks — flat base rate applies.</p>
+            <p class="mb-1 text-xs text-ink-muted">Aucun palier — le tarif de base s'applique.</p>
           {:else}
-            <div class="space-y-2 mb-3">
+            <div class="space-y-2">
               {#each breaks as brk, i (i)}
-                <div class="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
-                  <Field label="Up to (kg)">
+                <div class="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+                  <Field label="Jusqu'à (kg)">
                     <Input type="number" step="0.001" min="0.001" bind:value={brk.upToKg} required />
                   </Field>
-                  <Field label="Amount">
+                  <Field label="Montant">
                     <Input type="number" step="0.01" min="0" bind:value={brk.amount} required />
                   </Field>
-                  <Button variant="danger" onclick={() => removeBreak(i)}>Remove</Button>
+                  <Button variant="danger" onclick={() => removeBreak(i)}>✕</Button>
                 </div>
               {/each}
             </div>
@@ -425,39 +420,39 @@
         </div>
       {/if}
 
-      <div class="mt-4">
+      <div class="border-t border-edge pt-3">
         <div class="mb-2 flex items-center justify-between">
-          <span class="text-sm font-semibold text-ink">Accessorial prices</span>
-          <Button variant="secondary" onclick={addPrice}>Add accessorial</Button>
+          <span class="text-sm font-semibold text-ink">Prix des accessoriaux</span>
+          <Button variant="secondary" onclick={addPrice}>Ajouter</Button>
         </div>
         {#if prices.length === 0}
-          <p class="text-xs text-ink-muted mb-3">No accessorial prices configured.</p>
+          <p class="mb-1 text-xs text-ink-muted">Aucun prix d'accessorial configuré.</p>
         {:else}
-          <div class="space-y-2 mb-3">
+          <div class="space-y-2">
             {#each prices as price, i (i)}
-              <div class="grid grid-cols-[1fr_auto_auto] gap-3 items-end">
+              <div class="grid grid-cols-[1fr_auto_auto] items-end gap-2">
                 <Field label="Accessorial">
                   <Select bind:value={price.accessorialId} required>
-                    <option value="" disabled>Select…</option>
+                    <option value="" disabled>Sélectionner…</option>
                     {#each accessorials as a (a.id)}
                       <option value={a.id}>{a.code} – {a.name} ({a.unit})</option>
                     {/each}
                   </Select>
                 </Field>
-                <Field label="Amount">
+                <Field label="Montant">
                   <Input type="number" step="0.01" min="0" bind:value={price.amount} required />
                 </Field>
-                <Button variant="danger" onclick={() => removePrice(i)}>Remove</Button>
+                <Button variant="danger" onclick={() => removePrice(i)}>✕</Button>
               </div>
             {/each}
           </div>
         {/if}
       </div>
 
-      <div class="flex justify-end gap-2 pt-2">
-        <Button variant="secondary" onclick={reset}>Cancel</Button>
-        <Button type="submit">{editingId ? 'Update' : 'Create'}</Button>
+      <div class="flex justify-end gap-2 border-t border-edge pt-3">
+        <Button variant="secondary" onclick={reset}>Annuler</Button>
+        <Button variant="primary" type="submit">{editingId ? 'Mettre à jour' : 'Créer'}</Button>
       </div>
     </form>
   {/snippet}
-</Modal>
+</Panel>

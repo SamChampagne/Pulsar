@@ -18,7 +18,9 @@ Logiciels externes → Pulsar Integration Layer → Evidence / Policies / Agents
 - Un helper shared `packages/shared/src/integrations/operations.ts` pour classifier et prioriser les connecteurs.
 - Une page web `/integrations` qui transforme les intégrations existantes en vue opérationnelle.
 - Une roadmap de branchement en trois phases.
-- Aucun changement DB, aucune migration, aucun module Fleet.
+- Un helper shared `packages/shared/src/integrations/connector-foundation.ts` qui définit la fondation client-software connection: provider blueprints, capabilities, risques, agent gate et onboarding steps.
+- Spec complémentaire: `docs/superpowers/specs/2026-06-15-client-software-connection-flow.md`.
+- Aucun changement DB, aucune migration, aucun module Fleet/WMS.
 
 ## États opérationnels
 

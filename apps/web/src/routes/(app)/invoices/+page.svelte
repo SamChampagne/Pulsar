@@ -71,6 +71,12 @@
   // Carrier tab loads eagerly; customer tab lazy-loads on first switch — hence the different defaults.
   let loadingCarrier = $state(true);
 
+  // Client-side pagination for the carrier invoices table (endpoint returns a plain array).
+  const PAGE_SIZE = 25;
+  let carrierPage = $state(1);
+  const carrierTotalPages = $derived(Math.max(1, Math.ceil(invoices.length / PAGE_SIZE)));
+  const pagedInvoices = $derived(invoices.slice((carrierPage - 1) * PAGE_SIZE, carrierPage * PAGE_SIZE));
+
   // Reconcile form state (per expanded invoice)
   let carrierInvoiceNumber = $state('');
   let invoicedAmounts = $state<Record<string, string>>({});
@@ -205,6 +211,7 @@
 
   $effect(() => {
     void statusFilter;
+    carrierPage = 1;
     void load();
   });
 
@@ -274,6 +281,13 @@
   let statementsStatusFilter = $state('');
   let stmtError = $state('');
   let loadingCustomer = $state(false);
+
+  // Client-side pagination for the customer statements table.
+  let customerPage = $state(1);
+  const customerTotalPages = $derived(Math.max(1, Math.ceil(customerStatements.length / PAGE_SIZE)));
+  const pagedStatements = $derived(
+    customerStatements.slice((customerPage - 1) * PAGE_SIZE, customerPage * PAGE_SIZE),
+  );
 
   // Billable preview state
   let previewLoading = $state(false);
@@ -422,6 +436,7 @@
   // Reload customer statements when status filter changes (only if tab was loaded)
   $effect(() => {
     void statementsStatusFilter;
+    customerPage = 1;
     if (customerDataLoaded) {
       void loadCustomerData();
     }
@@ -475,7 +490,7 @@
           <th>Variance (net / gross)</th><th>Status</th><th></th>
         {/snippet}
         {#snippet body()}
-          {#each invoices as invoice (invoice.id)}
+          {#each pagedInvoices as invoice (invoice.id)}
             <tr>
               <td>
                 <button
@@ -590,6 +605,17 @@
           {/each}
         {/snippet}
       </Table>
+
+      {#if invoices.length > PAGE_SIZE}
+        <div class="mt-3 flex items-center justify-between text-sm text-ink-muted">
+          <span class="font-mono text-xs">{(carrierPage - 1) * PAGE_SIZE + 1}–{Math.min(carrierPage * PAGE_SIZE, invoices.length)} sur {invoices.length}</span>
+          <div class="flex items-center gap-2">
+            <Button variant="secondary" disabled={carrierPage <= 1} onclick={() => { carrierPage = Math.max(1, carrierPage - 1); }}>Précédent</Button>
+            <span class="font-mono text-xs">Page {carrierPage} / {carrierTotalPages}</span>
+            <Button variant="secondary" disabled={carrierPage >= carrierTotalPages} onclick={() => { carrierPage = Math.min(carrierTotalPages, carrierPage + 1); }}>Suivant</Button>
+          </div>
+        </div>
+      {/if}
       {/if}
 
     <!-- ══════════════════════════════════════════════════════════ CUSTOMER TAB -->
@@ -685,7 +711,7 @@
           <th class="text-right">Total</th><th>Created</th><th></th>
         {/snippet}
         {#snippet body()}
-          {#each customerStatements as stmt (stmt.id)}
+          {#each pagedStatements as stmt (stmt.id)}
             <tr>
               <td>
                 <button
@@ -804,6 +830,17 @@
           {/each}
         {/snippet}
       </Table>
+
+      {#if customerStatements.length > PAGE_SIZE}
+        <div class="mt-3 flex items-center justify-between text-sm text-ink-muted">
+          <span class="font-mono text-xs">{(customerPage - 1) * PAGE_SIZE + 1}–{Math.min(customerPage * PAGE_SIZE, customerStatements.length)} sur {customerStatements.length}</span>
+          <div class="flex items-center gap-2">
+            <Button variant="secondary" disabled={customerPage <= 1} onclick={() => { customerPage = Math.max(1, customerPage - 1); }}>Précédent</Button>
+            <span class="font-mono text-xs">Page {customerPage} / {customerTotalPages}</span>
+            <Button variant="secondary" disabled={customerPage >= customerTotalPages} onclick={() => { customerPage = Math.min(customerTotalPages, customerPage + 1); }}>Suivant</Button>
+          </div>
+        </div>
+      {/if}
       {/if}
     {/if}
   {/snippet}

@@ -3,21 +3,12 @@
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import { Table as TableIcon, KanbanSquare, Map as MapIcon } from 'lucide-svelte';
   import {
-    PageHeader,
-    Button,
-    FilterBar,
-    Select,
-    Table,
-    Badge,
-    EmptyState,
-    Panel,
-    Card,
-    Skeleton,
-    ErrorNotice,
-    toneFor,
-    labelFor,
+    PageHeader, Button, FilterBar, Select, Table, Badge, EmptyState, Panel, Card, Skeleton,
+    toneFor, labelFor,
   } from '$lib/components/ui';
+  import OpsMap from '$lib/components/OpsMap.svelte';
 
   interface LoadRow {
     id: string;
@@ -30,134 +21,232 @@
     shipments: { id: string }[];
   }
 
-  let loads = $state<LoadRow[]>([]);
-  let total = $state(0);
+  type View = 'table' | 'kanban' | 'map';
+  let view = $state<View>('table');
   let statusFilter = $state('');
   let error = $state('');
   let selected = $state<LoadRow | null>(null);
-  let loading = $state(true);
 
-  async function load() {
+  // — Table view (paginated) —
+  let rows = $state<LoadRow[]>([]);
+  let total = $state(0);
+  let page = $state(1);
+  const pageSize = 25;
+  const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
+  let loadingTable = $state(true);
+
+  async function loadTable() {
+    loadingTable = true;
     try {
-      const result = await api<Paginated<LoadRow>>('/transportation/loads', {
-        query: { pageSize: 50, status: statusFilter || undefined },
+      const r = await api<Paginated<LoadRow>>('/transportation/loads', {
+        query: { page, pageSize, status: statusFilter || undefined },
       });
-      loads = result.items;
-      total = result.total;
+      rows = r.items;
+      total = r.total;
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load loads';
+      error = e instanceof ApiError ? e.message : 'Échec du chargement';
     } finally {
-      loading = false;
+      loadingTable = false;
+    }
+  }
+
+  // — Kanban view (grouped by status) —
+  const KANBAN_COLS = ['OPEN', 'PLANNED', 'TENDERED', 'DISPATCHED', 'IN_TRANSIT', 'COMPLETED'];
+  let kanbanRows = $state<LoadRow[]>([]);
+  let kanbanTotal = $state(0);
+  let loadingKanban = $state(false);
+  const byStatus = $derived((s: string) => kanbanRows.filter((r) => r.status === s));
+
+  async function loadKanban() {
+    loadingKanban = true;
+    try {
+      const r = await api<Paginated<LoadRow>>('/transportation/loads', { query: { page: 1, pageSize: 100 } });
+      kanbanRows = r.items;
+      kanbanTotal = r.total;
+    } catch (e) {
+      error = e instanceof ApiError ? e.message : 'Échec du chargement';
+    } finally {
+      loadingKanban = false;
+    }
+  }
+
+  // — Map view (live tracking) —
+  interface MapLoad {
+    id: string; loadNumber: string; status: string; carrier: string | null; isLate: boolean;
+    lastPosition: { latitude: number; longitude: number; occurredAt: string } | null;
+    stops: { sequence: number; type: string; status: string; name: string; city: string; latitude: number | null; longitude: number | null }[];
+  }
+  let mapLoads = $state<MapLoad[]>([]);
+  let loadingMap = $state(false);
+  async function loadMap() {
+    loadingMap = true;
+    try {
+      mapLoads = await api<MapLoad[]>('/transportation/loads/active-map');
+    } catch (e) {
+      error = e instanceof ApiError ? e.message : 'Échec du chargement de la carte';
+    } finally {
+      loadingMap = false;
     }
   }
 
   async function createLoad() {
     try {
       const created = await api<LoadRow>('/transportation/loads', { method: 'POST', body: {} });
-      toast.success(`${created.loadNumber} created`);
+      toast.success(`${created.loadNumber} créé`);
       await goto(`/loads/${created.id}`);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Failed to create load');
+      toast.error(e instanceof ApiError ? e.message : 'Échec de la création');
     }
   }
 
-  const openCount = $derived(loads.filter((l) => l.status === 'OPEN').length);
-  const plannedCount = $derived(loads.filter((l) => l.status === 'PLANNED').length);
-  const movingCount = $derived(loads.filter((l) => ['DISPATCHED', 'IN_TRANSIT'].includes(l.status)).length);
+  // Reset to page 1 whenever the filter changes.
+  $effect(() => { statusFilter; page = 1; });
 
   $effect(() => {
-    statusFilter;
-    void load();
+    error = '';
+    if (view === 'table') void loadTable();
+    else if (view === 'kanban') void loadKanban();
+    else void loadMap();
   });
+
+  const views: { id: View; label: string; icon: typeof TableIcon }[] = [
+    { id: 'table', label: 'Tableau', icon: TableIcon },
+    { id: 'kanban', label: 'Kanban', icon: KanbanSquare },
+    { id: 'map', label: 'Carte', icon: MapIcon },
+  ];
 </script>
 
-<PageHeader
-  title="Loads"
-  subtitle="Consolidate shipments, tender carriers, and track execution through delivery."
-  count={total}
->
+<PageHeader title="Loads" count={total || kanbanTotal}>
   {#snippet actions()}
-    <Button onclick={createLoad}>New load</Button>
+    <Button onclick={createLoad}>Nouveau load</Button>
   {/snippet}
 </PageHeader>
 
-<ErrorNotice message={error} onretry={load} />
+{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
-<div class="mb-4 grid gap-3 sm:grid-cols-3">
-  <Card><div class="text-xl font-bold text-ink">{plannedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Planned</div><p class="mt-1 text-xs text-ink-faint">Built but not open for tender yet.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{openCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Open</div><p class="mt-1 text-xs text-ink-faint">Ready for carrier assignment/tender.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{movingCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Moving</div><p class="mt-1 text-xs text-ink-faint">Dispatched or in transit.</p></Card>
+<div class="mb-3 flex flex-wrap items-center gap-3">
+  <!-- view switcher -->
+  <div class="inline-flex rounded-md border border-edge-soft bg-surface p-0.5 shadow-sm">
+    {#each views as v (v.id)}
+      {@const Icon = v.icon}
+      <button
+        class={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium transition-colors ${view === v.id ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink'}`}
+        onclick={() => (view = v.id)}
+      >
+        <Icon class="size-3.5" /> {v.label}
+      </button>
+    {/each}
+  </div>
+  {#if view !== 'map'}
+    <div class="w-44">
+      <Select bind:value={statusFilter}>
+        <option value="">Tous les statuts</option>
+        {#each ['OPEN', 'PLANNED', 'TENDERED', 'DISPATCHED', 'IN_TRANSIT', 'COMPLETED', 'CANCELLED'] as s (s)}
+          <option value={s}>{labelFor(s)}</option>
+        {/each}
+      </Select>
+    </div>
+  {/if}
 </div>
 
-<FilterBar>
-  <div class="w-44">
-    <Select bind:value={statusFilter}>
-      <option value="">All statuses</option>
-      {#each ['OPEN', 'PLANNED', 'DISPATCHED', 'IN_TRANSIT', 'COMPLETED', 'CANCELLED'] as s (s)}
-        <option value={s}>{s.replaceAll('_', ' ')}</option>
-      {/each}
-    </Select>
-  </div>
-</FilterBar>
+{#if view === 'table'}
+  {#if loadingTable}
+    <Card padded={false}><div class="p-4"><Skeleton rows={6} /></div></Card>
+  {:else}
+    <Table>
+      {#snippet head()}
+        <th>Load #</th><th>Transporteur</th><th>Chauffeur</th><th>Shipments</th>
+        <th>Dispatché</th><th>Mode</th><th>Statut</th>
+      {/snippet}
+      {#snippet body()}
+        {#each rows as row (row.id)}
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <tr class="cursor-pointer" onclick={() => (selected = row)}>
+            <td><a href={`/loads/${row.id}`} class="font-mono font-semibold text-accent hover:underline" onclick={(e) => e.stopPropagation()}>{row.loadNumber}</a></td>
+            <td>{row.carrier?.name ?? '—'}</td>
+            <td>{row.driver ? `${row.driver.firstName} ${row.driver.lastName}` : '—'}</td>
+            <td class="font-mono">{row.shipments.length}</td>
+            <td>{row.dispatchedAt ? new Date(row.dispatchedAt).toLocaleString() : '—'}</td>
+            <td>{#if row.mode}<span class="rounded border border-edge px-1.5 text-xs text-neutral">{row.mode}</span>{:else}—{/if}</td>
+            <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
+          </tr>
+        {:else}
+          <tr><td colspan="7"><EmptyState message="Aucun load." /></td></tr>
+        {/each}
+      {/snippet}
+    </Table>
 
-{#if loading}
-  <Card padded={false}><Skeleton rows={6} /></Card>
+    {#if total > pageSize}
+      <div class="mt-3 flex items-center justify-between text-sm text-ink-muted">
+        <span class="font-mono text-xs">{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} sur {total}</span>
+        <div class="flex items-center gap-2">
+          <Button variant="secondary" disabled={page <= 1} onclick={() => { page = Math.max(1, page - 1); void loadTable(); }}>Précédent</Button>
+          <span class="font-mono text-xs">Page {page} / {totalPages}</span>
+          <Button variant="secondary" disabled={page >= totalPages} onclick={() => { page = Math.min(totalPages, page + 1); void loadTable(); }}>Suivant</Button>
+        </div>
+      </div>
+    {/if}
+  {/if}
+{:else if view === 'kanban'}
+  {#if loadingKanban}
+    <Card padded={false}><div class="p-4"><Skeleton rows={6} /></div></Card>
+  {:else}
+    <div class="flex gap-3 overflow-x-auto pb-2">
+      {#each KANBAN_COLS as col (col)}
+        {@const items = byStatus(col)}
+        <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+          <div class="flex items-center justify-between px-3 py-2">
+            <Badge tone={toneFor(col)}>{labelFor(col)}</Badge>
+            <span class="font-mono text-xs text-ink-muted">{items.length}</span>
+          </div>
+          <div class="flex max-h-[65vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
+            {#each items as row (row.id)}
+              <div role="button" tabindex="0" class="cursor-pointer rounded-inner border border-edge-soft bg-surface p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-card" onclick={() => (selected = row)} onkeydown={(e) => { if (e.key === 'Enter') selected = row; }}>
+                <div class="font-mono text-sm font-semibold text-accent">{row.loadNumber}</div>
+                <div class="mt-0.5 truncate text-xs text-ink-muted">{row.carrier?.name ?? 'Sans transporteur'}</div>
+                <div class="mt-1 flex items-center justify-between text-[11px] text-ink-faint">
+                  <span>{row.shipments.length} shipment{row.shipments.length > 1 ? 's' : ''}</span>
+                  {#if row.mode}<span class="rounded border border-edge px-1">{row.mode}</span>{/if}
+                </div>
+              </div>
+            {:else}
+              <p class="px-1 py-3 text-center text-xs text-ink-faint">—</p>
+            {/each}
+          </div>
+        </div>
+      {/each}
+    </div>
+    {#if kanbanTotal > 100}<p class="mt-2 text-xs text-ink-faint">Affiche les 100 loads les plus récents. Utilise le tableau pour la liste complète.</p>{/if}
+  {/if}
 {:else}
-<Table>
-  {#snippet head()}
-    <th>Load #</th><th>Carrier</th><th>Driver</th><th>Shipments</th>
-    <th>Dispatched</th><th>Mode</th><th>Status</th>
-  {/snippet}
-  {#snippet body()}
-    {#each loads as row (row.id)}
-      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-      <tr class="cursor-pointer" onclick={() => (selected = row)}>
-        <td>
-          <a href={`/loads/${row.id}`} class="font-semibold text-accent hover:underline"
-             onclick={(e) => e.stopPropagation()}>{row.loadNumber}</a>
-        </td>
-        <td>{row.carrier?.name ?? '—'}</td>
-        <td>{row.driver ? `${row.driver.firstName} ${row.driver.lastName}` : '—'}</td>
-        <td>{row.shipments.length}</td>
-        <td>{row.dispatchedAt ? new Date(row.dispatchedAt).toLocaleString() : '—'}</td>
-        <td>{#if row.mode}<span class="rounded border border-edge px-1.5 text-xs text-neutral">{row.mode}</span>{:else}—{/if}</td>
-        <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
-      </tr>
+  <!-- map view -->
+  <Card padded={false}>
+    <div class="flex items-center justify-between px-4 pt-3 pb-2">
+      <h2 class="text-sm font-bold text-ink">Suivi en direct</h2>
+      <span class="font-mono text-xs text-ink-muted">
+        {mapLoads.length} actifs{#if mapLoads.some((l) => l.isLate)} · <span class="text-danger">{mapLoads.filter((l) => l.isLate).length} en retard</span>{/if}
+      </span>
+    </div>
+    {#if loadingMap}
+      <div class="px-4 pb-4"><Skeleton rows={6} /></div>
+    {:else if mapLoads.length === 0}
+      <div class="px-4 pb-4"><EmptyState message="Aucun load actif à suivre — les loads dispatchés et en transit apparaissent ici." /></div>
     {:else}
-      <tr><td colspan="7"><EmptyState title="No loads yet" message="Build loads from shipments in Dispatch, then tender carriers and track execution.">
-        {#snippet children()}<Button variant="secondary" href="/dispatch">Build in Dispatch</Button><Button onclick={createLoad}>Create empty load</Button>{/snippet}
-      </EmptyState></td></tr>
-    {/each}
-  {/snippet}
-</Table>
+      <OpsMap loads={mapLoads} />
+    {/if}
+  </Card>
 {/if}
 
 {#if selected}
   {@const sel = selected}
   <Panel open={true} title={sel.loadNumber} href={`/loads/${sel.id}`} onclose={() => (selected = null)}>
-    <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Status</div>
-      <div class="text-sm text-ink"><Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge></div>
-    </div>
-    <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Carrier</div>
-      <div class="text-sm text-ink">{sel.carrier?.name ?? 'Unassigned'}</div>
-    </div>
-    <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Driver</div>
-      <div class="text-sm text-ink">{sel.driver ? `${sel.driver.firstName} ${sel.driver.lastName}` : 'Unassigned'}</div>
-    </div>
-    <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Shipments</div>
-      <div class="text-sm text-ink">{sel.shipments.length}</div>
-    </div>
-    <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Dispatched</div>
-      <div class="text-sm text-ink">{sel.dispatchedAt ? new Date(sel.dispatchedAt).toLocaleString() : '—'}</div>
-    </div>
-    <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Mode</div>
-      <div class="text-sm text-ink">{sel.mode ?? 'All modes'}</div>
+    <div class="space-y-3">
+      <div><div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Statut</div><Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge></div>
+      <div><div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Transporteur</div><div class="text-sm text-ink">{sel.carrier?.name ?? 'Non assigné'}</div></div>
+      <div><div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Chauffeur</div><div class="text-sm text-ink">{sel.driver ? `${sel.driver.firstName} ${sel.driver.lastName}` : 'Non assigné'}</div></div>
+      <div><div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Shipments</div><div class="font-mono text-sm text-ink">{sel.shipments.length}</div></div>
+      <div><div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Dispatché</div><div class="text-sm text-ink">{sel.dispatchedAt ? new Date(sel.dispatchedAt).toLocaleString() : '—'}</div></div>
+      <div><div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Mode</div><div class="text-sm text-ink">{sel.mode ?? 'Tous modes'}</div></div>
     </div>
   </Panel>
 {/if}

@@ -200,6 +200,40 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     Fleet est `@RequireModule(MODULE_KEYS.FLEET)` + `fleet.read|manage`, tenant-scopé (règle 1) ;
     fichiers via `DocumentsService` (règle 12).
 
+## Hard rules (continued, module WMS)
+
+33. (module WMS — inventaire & flux entrepôt) Dans le module WMS, tout changement de stock passe par un
+    `StockMovement` (registre append-only, source de vérité) ET met à jour le `InventoryLevel` correspondant
+    dans la MÊME transaction (`InventoryService.postMovement`) — jamais de mutation directe d'un solde. Toute
+    sortie (`PICK`, et la jambe sortante d'un `MOVE`) vérifie la disponibilité avant de poster ; un mouvement
+    qui rendrait un bin négatif est refusé (409), SAUF un `ADJUSTMENT` explicite — et même un ajustement ne
+    descend pas un bin sous 0. Les statuts `Receipt`/`PickOrder` ne changent que via `canTransitionReceipt`/
+    `canTransitionPickOrder` (`@pulsar/shared/wms`, règle 2) avec claim conditionnel `updateMany` (TOCTOU) ;
+    n° de documents via `SequencesService` (RC-/PK-, règle 8). L'entrepôt est une `Location` type `WAREHOUSE`
+    (pas de nouvelle entité). Tout endpoint WMS est `@RequireModule(MODULE_KEYS.WMS)` + `wms.read|manage`,
+    tenant-scopé (règle 1) ; FK vérifiées par `OwnershipService` (règle 9).
+    (v2 — tressage TMS) Un `PickOrder` peut référencer un `Shipment` (`shipmentId?`) ; son `locationId`
+    DOIT alors égaler `shipment.originLocationId` (Location `WAREHOUSE`), validé dans
+    `PickingService.create`. Le décrément reste à la complétion du pick (inchangé). L'état « préparé »
+    d'un shipment est **dérivé** de ses pick orders liés (`deriveShipmentPickStatus`, pur
+    `@pulsar/shared`) — JAMAIS un nouveau `ShipmentStatus`, JAMAIS de blocage du dispatch (règle 2
+    préservée) ; toute la surface vit dans le module WMS (aucun contrôleur TMS modifié).
+
+## Hard rules (continued, module Yard)
+
+34. (module Yard — cour & quais) Le statut d'une `YardVisit`/`DockAppointment` ne change QUE via
+    `canTransitionYardVisit`/`canTransitionDockAppointment` (`@pulsar/shared/yard`, règle 2) avec claim
+    conditionnel `updateMany` (TOCTOU). Un spot occupé (visite active CHECKED_IN/ASSIGNED dessus) ne peut
+    recevoir une autre visite : refus 409 ; l'occupation est **dérivée** (count des visites actives sur le
+    spot), jamais dénormalisée. Tout changement de `spotId` d'une visite écrit un `YardMove` dans la **même**
+    transaction (`VisitsService.assignToSpot`/`checkOut`). N° via `SequencesService` (YV-/DA-, règle 8).
+    Spots et sites sont des `Location` du tenant. Tout endpoint Yard est `@RequireModule(MODULE_KEYS.YARD)` +
+    `yard.read|manage`, tenant-scopé (règle 1) ; FK (trailer/carrier/location/spot/appointment) vérifiées (règle 9).
+    (Plan v2) `YardSpot.posX/posY` sont **display-only** (disposition du plan de cour) : jamais utilisés dans
+    l'occupation/affectation/transitions (dérivées + serveur). `PUT /yard/spots/layout` ne persiste que des
+    coordonnées d'affichage (tenant-scopé, `yard.manage`) ; le glisser-déposer du plan appelle les endpoints
+    existants `assign`/`move` (gardés).
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

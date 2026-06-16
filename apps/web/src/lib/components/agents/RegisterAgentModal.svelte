@@ -1,294 +1,190 @@
 <script lang="ts">
-  import { PERMISSION_CATALOG, AGENT_ROLE_PRESETS } from '@pulsar/shared';
+  import { AGENT_ROLE_PRESETS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
-  import {
-    Button,
-    Card,
-    Field,
-    Input,
-    Modal,
-    Select,
-    Textarea,
-  } from '$lib/components/ui';
+  import { Button, Field, Input, Modal, Textarea } from '$lib/components/ui';
 
   type AutonomyLevel = 'PROPOSE' | 'ACT_LOW' | 'AUTONOMOUS';
+  interface AgentCreated { id: string; key: string; name: string }
 
-  interface AgentCreated {
-    id: string;
-    key: string;
-    name: string;
-  }
+  let { open = $bindable(false), onCreated }: { open: boolean; onCreated?: (id?: string) => void } = $props();
 
-  // Dispatch-relevant scopes the agent tools use (transportation read/manage + analytics).
-  const DISPATCH_KEYS = [
-    'transportation.orders.read',
-    'transportation.planning.read',
-    'transportation.planning.manage',
-    'transportation.analytics.read',
-  ];
-  const dispatchScopes = DISPATCH_KEYS.map((key) => ({
-    key,
-    description: PERMISSION_CATALOG.find((p) => p.key === key)?.description ?? key,
-  }));
-
-  const AUTONOMY_OPTIONS: { value: AutonomyLevel; label: string; hint: string }[] = [
-    {
-      value: 'PROPOSE',
-      label: 'PROPOSE',
-      hint: 'Toute mutation validée par un humain avant exécution.',
-    },
-    {
-      value: 'ACT_LOW',
-      label: 'ACT_LOW',
-      hint: 'Mutations à faible risque auto-exécutées ; les mutations sensibles restent en file.',
-    },
-    {
-      value: 'AUTONOMOUS',
-      label: 'AUTONOMOUS',
-      hint: 'Tout auto-exécuté, toujours borné par les plafonds de capacité.',
-    },
+  // — Accès en langage clair → mappés vers les vraies permissions sous le capot —
+  const ACCESS_GROUPS = [
+    { id: 'read', label: 'Consulter les opérations', hint: 'Voir ordres, shipments, loads et tarifs', keys: ['transportation.orders.read', 'transportation.planning.read'] },
+    { id: 'plan', label: 'Planifier', hint: 'Créer/assigner des loads, tender (proposé → à approuver)', keys: ['transportation.planning.manage'] },
+    { id: 'analytics', label: 'Analytics & fiches transporteurs', hint: 'Voir la performance des transporteurs', keys: ['transportation.analytics.read'] },
   ];
 
-  // Preset select options — "none" sentinel + one per preset.
-  const PRESET_OPTIONS = [
-    { value: '', label: 'Aucun preset' },
-    ...AGENT_ROLE_PRESETS.map((p) => ({ value: p.id, label: p.label })),
+  const AUTONOMY = [
+    { value: 'PROPOSE' as const, label: 'Propose tout', hint: "L'agent propose, tu approuves chaque action. Le plus sûr." },
+    { value: 'ACT_LOW' as const, label: 'Agit (faible risque)', hint: 'Petites actions automatiques ; le sensible reste à approuver.' },
+    { value: 'AUTONOMOUS' as const, label: 'Autonome', hint: 'Agit seul, toujours borné par les plafonds.' },
   ];
 
-  let { open = $bindable(false), onCreated }: { open: boolean; onCreated?: () => void } = $props();
+  // Templates: presets + a blank "from scratch" card.
+  const TEMPLATES = [
+    ...AGENT_ROLE_PRESETS.map((p) => ({ id: p.id, label: p.label, persona: p.persona, autonomy: p.suggestedAutonomy as AutonomyLevel, keys: p.suggestedPermissions, emoji: p.id === 'dispatcher' ? '🚚' : p.id === 'billing-clerk' ? '🧾' : '📊' })),
+    { id: 'custom', label: 'Personnalisé', persona: '', autonomy: 'PROPOSE' as AutonomyLevel, keys: [] as string[], emoji: '🤖' },
+  ];
 
+  let step = $state<'template' | 'form'>('template');
   let name = $state('');
-  let description = $state('');
-  let permissions = $state<string[]>([]);
-  let maxAmountPerAction = $state('');
-  let maxActionsPerMinute = $state('');
+  let emoji = $state('🤖');
   let persona = $state('');
-  let role = $state('');
-  let model = $state('');
   let autonomyLevel = $state<AutonomyLevel>('PROPOSE');
-  let avatar = $state('');
+  let permissions = $state<string[]>([]);
+  let role = $state('');
+  // advanced
+  let showAdvanced = $state(false);
+  let model = $state('');
+  let maxAmountPerAction = $state('');
   let createdKey = $state('');
-  let selectedPresetId = $state('');
-  // Track the last preset we applied so we only fire once per selection.
-  let appliedPresetId = $state('');
+  let createdId = $state('');
+  let saving = $state(false);
 
-  $effect(() => {
-    if (selectedPresetId && selectedPresetId !== appliedPresetId) {
-      const preset = AGENT_ROLE_PRESETS.find((p) => p.id === selectedPresetId);
-      if (preset) {
-        persona = preset.persona;
-        autonomyLevel = preset.suggestedAutonomy as AutonomyLevel;
-        const merged = new Set([...permissions, ...preset.suggestedPermissions]);
-        permissions = [...merged];
-      }
-      appliedPresetId = selectedPresetId;
-    }
-  });
-
-  function resetForm() {
-    name = '';
-    description = '';
-    permissions = [];
-    maxAmountPerAction = '';
-    maxActionsPerMinute = '';
-    persona = '';
-    role = '';
-    model = '';
-    autonomyLevel = 'PROPOSE';
-    avatar = '';
-    selectedPresetId = '';
-    appliedPresetId = '';
+  function pickTemplate(t: (typeof TEMPLATES)[number]) {
+    role = t.label === 'Personnalisé' ? '' : t.label;
+    persona = t.persona;
+    autonomyLevel = t.autonomy;
+    permissions = [...t.keys];
+    emoji = t.emoji;
+    step = 'form';
   }
 
-  function togglePermission(key: string) {
-    permissions = permissions.includes(key)
-      ? permissions.filter((p) => p !== key)
-      : [...permissions, key];
+  function groupOn(g: (typeof ACCESS_GROUPS)[number]) {
+    return g.keys.every((k) => permissions.includes(k));
+  }
+  function toggleGroup(g: (typeof ACCESS_GROUPS)[number]) {
+    if (groupOn(g)) permissions = permissions.filter((k) => !g.keys.includes(k));
+    else permissions = [...new Set([...permissions, ...g.keys])];
+  }
+
+  function reset() {
+    step = 'template'; name = ''; emoji = '🤖'; persona = ''; autonomyLevel = 'PROPOSE';
+    permissions = []; role = ''; showAdvanced = false; model = ''; maxAmountPerAction = '';
   }
 
   async function create(event: SubmitEvent) {
     event.preventDefault();
+    saving = true;
     try {
-      const caps: { maxAmountPerAction?: number; maxActionsPerMinute?: number } = {};
+      const caps: { maxAmountPerAction?: number } = {};
       const amount = Number(maxAmountPerAction);
-      const rate = Number(maxActionsPerMinute);
       if (maxAmountPerAction.trim() !== '' && amount > 0) caps.maxAmountPerAction = amount;
-      if (maxActionsPerMinute.trim() !== '' && rate > 0) caps.maxActionsPerMinute = rate;
-
       const created = await api<AgentCreated>('/agents', {
         method: 'POST',
         body: {
-          name,
-          ...(description.trim() ? { description } : {}),
-          permissions,
-          caps,
+          name, permissions, caps, autonomyLevel,
           ...(persona.trim() ? { persona } : {}),
           ...(role.trim() ? { role } : {}),
           ...(model.trim() ? { model } : {}),
-          autonomyLevel,
-          ...(avatar.trim() ? { avatar } : {}),
+          ...(emoji.trim() ? { avatar: emoji } : {}),
         },
       });
       createdKey = created.key;
-      resetForm();
-      open = false;
-      onCreated?.();
+      createdId = created.id;
+      onCreated?.(created.id);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Failed to register agent');
+      toast.error(e instanceof ApiError ? e.message : 'Échec de la création');
+    } finally {
+      saving = false;
     }
   }
 
-  async function copyKey() {
-    await navigator.clipboard.writeText(createdKey);
-    toast.success('Agent key copied — store it now, it will not be shown again');
-  }
-
-  function dismiss() {
-    createdKey = '';
-  }
+  function done() { createdKey = ''; createdId = ''; reset(); open = false; }
 </script>
 
-<Modal bind:open title="Engager un agent">
+<Modal bind:open title={createdKey ? 'Agent créé' : 'Nouvel agent'}>
   {#snippet children()}
     {#if createdKey}
-      <Card>
-        <div class="flex flex-wrap items-center gap-3">
-          <div class="flex-1">
-            <p class="mb-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
-              Clé de l'agent — affichée une seule fois
-            </p>
-            <code class="break-all text-sm text-ink">{createdKey}</code>
-          </div>
-          <Button variant="secondary" onclick={copyKey}>Copier</Button>
+      <div class="text-center">
+        <div class="mx-auto mb-2 flex size-12 items-center justify-center rounded-full bg-ok-soft text-2xl">{emoji}</div>
+        <p class="text-sm text-ink">Ton agent est prêt. Connecte un modèle (Agents → Connexion du modèle) s'il ne l'est pas déjà, puis parle-lui.</p>
+        <div class="mt-4 flex justify-center gap-2">
+          <Button variant="secondary" onclick={done}>Fermer</Button>
+          <a href="/agents/{createdId}" class="inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover" onclick={done}>Ouvrir & parler</a>
         </div>
-        <p class="mt-2 text-xs text-ink-muted">
-          Conservez-la en lieu sûr. Elle ne sera plus affichée.
-        </p>
-      </Card>
-      <div class="mt-4 flex justify-end border-t border-edge pt-3">
-        <Button variant="secondary" onclick={dismiss}>Fermer</Button>
+        <details class="mt-4 text-left">
+          <summary class="cursor-pointer text-xs text-ink-faint">Clé API de l'agent (avancé — pour un client MCP externe)</summary>
+          <code class="mt-2 block break-all rounded bg-surface-muted p-2 text-xs text-ink">{createdKey}</code>
+          <p class="mt-1 text-xs text-ink-faint">Affichée une seule fois. Inutile pour parler à l'agent depuis Pulsar.</p>
+        </details>
+      </div>
+    {:else if step === 'template'}
+      <p class="mb-3 text-sm text-ink-muted">Choisis un modèle d'employé pour démarrer (tout reste modifiable ensuite).</p>
+      <div class="grid gap-2 sm:grid-cols-2">
+        {#each TEMPLATES as t (t.id)}
+          <button type="button" onclick={() => pickTemplate(t)} class="flex items-start gap-3 rounded-card border border-edge-soft p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-accent hover:shadow-card">
+            <span class="text-2xl">{t.emoji}</span>
+            <span>
+              <span class="block text-sm font-semibold text-ink">{t.label}</span>
+              <span class="mt-0.5 block text-xs text-ink-muted">{t.id === 'custom' ? 'Partir de zéro.' : t.persona.slice(0, 70) + '…'}</span>
+            </span>
+          </button>
+        {/each}
       </div>
     {:else}
-      <form onsubmit={create}>
-        <!-- Role preset -->
-        <div class="mb-4 rounded-lg border border-edge bg-surface-muted p-3">
-          <Field label="Preset de rôle">
-            <Select bind:value={selectedPresetId}>
-              {#each PRESET_OPTIONS as opt (opt.value)}
-                <option value={opt.value}>{opt.label}</option>
-              {/each}
-            </Select>
-          </Field>
-          <p class="mt-1 text-xs text-ink-muted">
-            Choisir un preset pré-remplit la persona, le niveau d'autonomie et les permissions suggérées. Tout reste modifiable.
-          </p>
+      <form onsubmit={create} class="space-y-4">
+        <div class="flex items-end gap-3">
+          <div class="w-16">
+            <Field label="Emoji"><Input bind:value={emoji} /></Field>
+          </div>
+          <div class="flex-1">
+            <Field label="Nom"><Input bind:value={name} required placeholder="ex. Répartiteur Acme" /></Field>
+          </div>
         </div>
 
-        <Field label="Nom">
-          <Input bind:value={name} required placeholder="Dispatch copilot" />
-        </Field>
-        <div class="mt-3">
-          <Field label="Description">
-            <Input bind:value={description} placeholder="Optionnel — ce que fait cet agent" />
-          </Field>
-        </div>
-        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Rôle">
-            <Input bind:value={role} placeholder="ex. Répartiteur" />
-          </Field>
-          <Field label="Avatar (emoji)">
-            <Input bind:value={avatar} placeholder="ex. 🚛" />
-          </Field>
-        </div>
-        <div class="mt-3">
-          <Field label="Modèle">
-            <Input bind:value={model} placeholder="ex. anthropic:claude-sonnet-4-6" />
-          </Field>
-        </div>
-
-        <!-- Persona -->
-        <div class="mt-3">
-          <Field label="Persona">
-            <Textarea bind:value={persona} rows={4} placeholder="Personnalité et instructions système de cet employé…" />
-          </Field>
-          <p class="mt-1 text-xs text-ink-muted">
-            Personnalité + instructions système de l'employé. Définit le ton, le style de réponse et les règles métier internes.
-          </p>
-        </div>
-
-        <!-- Autonomy level -->
-        <div class="mt-3">
-          <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase">
-            Niveau d'autonomie
-          </span>
+        <div>
+          <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Accès</span>
           <div class="space-y-1.5">
-            {#each AUTONOMY_OPTIONS as opt (opt.value)}
-              <label class="flex cursor-pointer items-start gap-2.5 rounded border border-edge p-2.5 transition hover:border-accent {autonomyLevel === opt.value ? 'border-accent bg-accent-soft/30' : ''}">
-                <input
-                  type="radio"
-                  name="modal-autonomy"
-                  value={opt.value}
-                  checked={autonomyLevel === opt.value}
-                  onchange={() => { autonomyLevel = opt.value; }}
-                  class="mt-0.5 shrink-0"
-                />
-                <div>
-                  <p class="text-xs font-semibold text-ink">{opt.label}</p>
-                  <p class="text-xs text-ink-muted">{opt.hint}</p>
-                </div>
+            {#each ACCESS_GROUPS as g (g.id)}
+              <label class="flex cursor-pointer items-start gap-2.5 rounded-md border p-2.5 transition {groupOn(g) ? 'border-accent bg-accent-soft/40' : 'border-edge-soft hover:border-accent'}">
+                <input type="checkbox" checked={groupOn(g)} onchange={() => toggleGroup(g)} class="mt-0.5 shrink-0" />
+                <span>
+                  <span class="block text-sm font-medium text-ink">{g.label}</span>
+                  <span class="block text-xs text-ink-muted">{g.hint}</span>
+                </span>
               </label>
             {/each}
           </div>
         </div>
 
-        <!-- Permissions -->
-        <div class="mt-3">
-          <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase">
-            Permissions
-          </span>
-          <p class="mb-2 text-xs text-ink-muted">
-            Scopes accordés à l'agent. Seules les permissions listées seront disponibles dans les outils MCP.
-          </p>
-          <div class="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            {#each dispatchScopes as scope (scope.key)}
-              <label class="flex cursor-pointer items-start gap-1.5 rounded border border-edge p-2 text-xs transition hover:border-accent">
-                <input
-                  type="checkbox"
-                  checked={permissions.includes(scope.key)}
-                  onchange={() => togglePermission(scope.key)}
-                  class="mt-0.5 shrink-0"
-                />
-                <div>
-                  <code class="font-mono text-ink">{scope.key}</code>
-                  <p class="mt-0.5 text-ink-muted">{scope.description}</p>
-                </div>
+        <div>
+          <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Autonomie</span>
+          <div class="space-y-1.5">
+            {#each AUTONOMY as a (a.value)}
+              <label class="flex cursor-pointer items-start gap-2.5 rounded-md border p-2.5 transition {autonomyLevel === a.value ? 'border-accent bg-accent-soft/40' : 'border-edge-soft hover:border-accent'}">
+                <input type="radio" name="autonomy" checked={autonomyLevel === a.value} onchange={() => (autonomyLevel = a.value)} class="mt-0.5 shrink-0" />
+                <span>
+                  <span class="block text-sm font-medium text-ink">{a.label}</span>
+                  <span class="block text-xs text-ink-muted">{a.hint}</span>
+                </span>
               </label>
             {/each}
           </div>
         </div>
 
-        <!-- Caps -->
-        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <Field label="Plafond $ par action">
-              <Input type="number" bind:value={maxAmountPerAction} placeholder="Optionnel" />
-            </Field>
-            <p class="mt-1 text-xs text-ink-muted">Plafond $/action.</p>
-          </div>
-          <div>
-            <Field label="Actions max par minute">
-              <Input type="number" bind:value={maxActionsPerMinute} placeholder="Optionnel" />
-            </Field>
-            <p class="mt-1 text-xs text-ink-muted">Débit max/min.</p>
-          </div>
+        <div>
+          <Field label="Personnalité (optionnel)">
+            <Textarea bind:value={persona} rows={3} placeholder="Ton, style, règles métier de cet employé…" />
+          </Field>
         </div>
 
-        <div class="mt-4 flex justify-end gap-2 border-t border-edge pt-3">
-          <Button variant="secondary" onclick={() => { open = false; }}>Annuler</Button>
-          <Button variant="primary" type="submit" disabled={permissions.length === 0}>
-            Engager l'agent
-          </Button>
+        <details bind:open={showAdvanced}>
+          <summary class="cursor-pointer text-xs font-semibold text-ink-muted">Options avancées</summary>
+          <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Modèle (optionnel)"><Input bind:value={model} placeholder="par défaut du tenant" /></Field>
+            <Field label="Plafond $ / action"><Input type="number" bind:value={maxAmountPerAction} placeholder="aucun" /></Field>
+          </div>
+        </details>
+
+        <div class="flex justify-between gap-2 border-t border-edge-soft pt-3">
+          <Button variant="ghost" onclick={() => { step = 'template'; }}>← Modèle</Button>
+          <div class="flex gap-2">
+            <Button variant="secondary" onclick={() => { open = false; reset(); }}>Annuler</Button>
+            <Button variant="primary" type="submit" loading={saving} disabled={!name.trim() || permissions.length === 0}>Créer l'agent</Button>
+          </div>
         </div>
       </form>
     {/if}

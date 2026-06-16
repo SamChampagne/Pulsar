@@ -14,21 +14,17 @@
     danger: 'bg-danger text-white hover:opacity-90',
     ghost: 'text-ink-muted hover:bg-surface-muted hover:text-ink',
   };
+  const classes = $derived(`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition duration-150 ease-out hover:-translate-y-px active:translate-y-0 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-surface disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${variants[variant]}`);
 </script>
 
-{#if href}
-  <a
-    {href}
-    class={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${disabled ? 'pointer-events-none opacity-50' : ''} ${variants[variant]}`}
-    {onclick}
-  >
-    {#if loading}<span class="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"></span>{/if}
+{#if href && !disabled && !loading}
+  <a {href} class={classes} onclick={onclick}>
     {@render children()}
   </a>
 {:else}
   <button
     {type}
-    class={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]}`}
+    class={classes}
     disabled={disabled || loading}
     {onclick}
   >

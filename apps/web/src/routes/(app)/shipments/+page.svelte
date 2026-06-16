@@ -1,10 +1,10 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { Table as TableIcon, KanbanSquare, Map as MapIcon } from 'lucide-svelte';
   import {
     PageHeader,
     Button,
-    FilterBar,
     Select,
     Field,
     Table,
@@ -13,10 +13,10 @@
     Panel,
     Card,
     Skeleton,
-    ErrorNotice,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
+  import OpsMap from '$lib/components/OpsMap.svelte';
   import { toast } from '$lib/stores/toast';
 
   interface ShipmentRow {
@@ -54,12 +54,43 @@
     excess: number;
   }
 
-  let shipments = $state<ShipmentRow[]>([]);
-  let total = $state(0);
+  type View = 'table' | 'kanban' | 'map';
+  let view = $state<View>('table');
   let statusFilter = $state('');
   let error = $state('');
   let selected = $state<ShipmentRow | null>(null);
-  let loading = $state(true);
+
+  // — Table view (paginated) —
+  let shipments = $state<ShipmentRow[]>([]);
+  let total = $state(0);
+  let page = $state(1);
+  const pageSize = 25;
+  const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
+  let loadingTable = $state(true);
+
+  // — Kanban view (grouped by status) —
+  const KANBAN_COLS = [
+    'PENDING',
+    'PLANNED',
+    'DISPATCHED',
+    'IN_TRANSIT',
+    'DELIVERED',
+    'CLOSED',
+    'CANCELLED',
+  ];
+  let kanbanRows = $state<ShipmentRow[]>([]);
+  let kanbanTotal = $state(0);
+  let loadingKanban = $state(false);
+  const byStatus = $derived((s: string) => kanbanRows.filter((r) => r.status === s));
+
+  // — Map view (live tracking, reuses the loads active-map payload) —
+  interface MapLoad {
+    id: string; loadNumber: string; status: string; carrier: string | null; isLate: boolean;
+    lastPosition: { latitude: number; longitude: number; occurredAt: string } | null;
+    stops: { sequence: number; type: string; status: string; name: string; city: string; latitude: number | null; longitude: number | null }[];
+  }
+  let mapLoads = $state<MapLoad[]>([]);
+  let loadingMap = $state(false);
 
   // "Assign to load" picker state
   let assigning = $state<ShipmentRow | null>(null);
@@ -69,18 +100,52 @@
   let assignForce = $state(false);
   let pendingLoadId = $state('');
 
-  async function load() {
+  async function loadTable() {
+    loadingTable = true;
     try {
       const result = await api<Paginated<ShipmentRow>>('/transportation/shipments', {
-        query: { pageSize: 50, status: statusFilter || undefined },
+        query: { page, pageSize, status: statusFilter || undefined },
       });
       shipments = result.items;
       total = result.total;
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load shipments';
+      error = e instanceof ApiError ? e.message : 'Échec du chargement des shipments';
     } finally {
-      loading = false;
+      loadingTable = false;
     }
+  }
+
+  async function loadKanban() {
+    loadingKanban = true;
+    try {
+      const result = await api<Paginated<ShipmentRow>>('/transportation/shipments', {
+        query: { page: 1, pageSize: 100 },
+      });
+      kanbanRows = result.items;
+      kanbanTotal = result.total;
+    } catch (e) {
+      error = e instanceof ApiError ? e.message : 'Échec du chargement des shipments';
+    } finally {
+      loadingKanban = false;
+    }
+  }
+
+  async function loadMap() {
+    loadingMap = true;
+    try {
+      mapLoads = await api<MapLoad[]>('/transportation/loads/active-map');
+    } catch (e) {
+      error = e instanceof ApiError ? e.message : 'Échec du chargement de la carte';
+    } finally {
+      loadingMap = false;
+    }
+  }
+
+  // Refresh whatever view is active (after a mutation).
+  async function refresh() {
+    if (view === 'table') await loadTable();
+    else if (view === 'kanban') await loadKanban();
+    else await loadMap();
   }
 
   async function openAssign(shipment: ShipmentRow) {
@@ -112,15 +177,15 @@
       );
       if (resp?.modeWarning) {
         const { loadMode, orderMode } = resp.modeWarning;
-        toast.error(`Mode mismatch: load ${loadMode} / order ${orderMode} — assigned anyway`);
+        toast.error(`Mode incompatible : load ${loadMode} / commande ${orderMode} — assigné quand même`);
       } else {
-        toast.success(`${assigning.shipmentNumber} assigned to load`);
+        toast.success(`${assigning.shipmentNumber} assigné au load`);
       }
       assigning = null;
       assignCapacityExcesses = [];
       assignForce = false;
       pendingLoadId = '';
-      await load();
+      await refresh();
     } catch (e) {
       if (e instanceof ApiError && e.statusCode === 400) {
         const body = e.body as { excesses?: CapacityExcess[] } | null;
@@ -142,7 +207,7 @@
           return;
         }
       }
-      toast.error(e instanceof ApiError ? e.message : 'Failed to assign');
+      toast.error(e instanceof ApiError ? e.message : "Échec de l'assignation");
     }
   }
 
@@ -152,29 +217,29 @@
         method: 'POST',
       });
       await navigator.clipboard.writeText(url);
-      toast.success(`Tracking link for ${shipment.shipmentNumber} copied`);
+      toast.success(`Lien de suivi pour ${shipment.shipmentNumber} copié`);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Failed to create tracking link');
+      toast.error(e instanceof ApiError ? e.message : 'Échec de la création du lien de suivi');
     }
   }
 
   async function cancelShipment(shipment: ShipmentRow) {
     try {
       await api(`/transportation/shipments/${shipment.id}/cancel`, { method: 'POST' });
-      toast.success(`${shipment.shipmentNumber} cancelled`);
-      await load();
+      toast.success(`${shipment.shipmentNumber} annulé`);
+      await refresh();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Failed to cancel shipment');
+      toast.error(e instanceof ApiError ? e.message : "Échec de l'annulation du shipment");
     }
   }
 
   async function removeFromLoad(shipment: ShipmentRow) {
     try {
       await api(`/transportation/shipments/${shipment.id}/remove-load`, { method: 'POST' });
-      toast.success(`${shipment.shipmentNumber} returned to planning pool`);
-      await load();
+      toast.success(`${shipment.shipmentNumber} renvoyé au pool de planification`);
+      await refresh();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Failed to remove from load');
+      toast.error(e instanceof ApiError ? e.message : 'Échec du retrait du load');
     }
   }
 
@@ -186,106 +251,176 @@
     return parts.length > 0 ? parts.join(' · ') : '—';
   }
 
-  const unplannedCount = $derived(shipments.filter((s) => !s.load).length);
-  const assignedCount = $derived(shipments.filter((s) => s.load).length);
-  const movingCount = $derived(shipments.filter((s) => ['DISPATCHED', 'IN_TRANSIT'].includes(s.status)).length);
+  // Reset to page 1 whenever the filter changes.
+  $effect(() => { statusFilter; page = 1; });
 
   $effect(() => {
-    statusFilter;
-    void load();
+    error = '';
+    if (view === 'table') void loadTable();
+    else if (view === 'kanban') void loadKanban();
+    else void loadMap();
   });
+
+  const views: { id: View; label: string; icon: typeof TableIcon }[] = [
+    { id: 'table', label: 'Tableau', icon: TableIcon },
+    { id: 'kanban', label: 'Kanban', icon: KanbanSquare },
+    { id: 'map', label: 'Carte', icon: MapIcon },
+  ];
 </script>
 
-<PageHeader
-  title="Shipments"
-  subtitle="Plan confirmed freight into loads and keep unplanned work visible."
-  count={total}
-/>
+<PageHeader title="Shipments" count={total || kanbanTotal} />
 
-<ErrorNotice message={error} onretry={load} />
+{#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 
-<div class="mb-4 grid gap-3 sm:grid-cols-3">
-  <Card><div class="text-xl font-bold text-ink">{unplannedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Unplanned</div><p class="mt-1 text-xs text-ink-faint">Ready to consolidate in Dispatch.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{assignedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Assigned</div><p class="mt-1 text-xs text-ink-faint">Already attached to a load.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{movingCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Moving</div><p class="mt-1 text-xs text-ink-faint">Dispatched or in transit.</p></Card>
+<div class="mb-3 flex flex-wrap items-center gap-3">
+  <!-- view switcher -->
+  <div class="inline-flex rounded-md border border-edge-soft bg-surface p-0.5 shadow-sm">
+    {#each views as v (v.id)}
+      {@const Icon = v.icon}
+      <button
+        class={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium transition-colors ${view === v.id ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink'}`}
+        onclick={() => (view = v.id)}
+      >
+        <Icon class="size-3.5" /> {v.label}
+      </button>
+    {/each}
+  </div>
+  {#if view === 'table'}
+    <div class="w-44">
+      <Select bind:value={statusFilter}>
+        <option value="">Tous les statuts</option>
+        {#each KANBAN_COLS as s (s)}
+          <option value={s}>{labelFor(s)}</option>
+        {/each}
+      </Select>
+    </div>
+  {/if}
 </div>
 
-<FilterBar>
-  <div class="w-44">
-    <Select bind:value={statusFilter}>
-      <option value="">All statuses</option>
-      {#each ['PENDING', 'PLANNED', 'DISPATCHED', 'IN_TRANSIT', 'DELIVERED', 'CLOSED', 'CANCELLED'] as s (s)}
-        <option value={s}>{s.replaceAll('_', ' ')}</option>
-      {/each}
-    </Select>
-  </div>
-</FilterBar>
+{#if view === 'table'}
+  {#if loadingTable}
+    <Card padded={false}><div class="p-4"><Skeleton rows={6} /></div></Card>
+  {:else}
+    <Table>
+      {#snippet head()}
+        <th>Shipment #</th><th>Commande #</th><th>Origine → Destination</th>
+        <th>Poids / Vol / Pal</th><th>Load</th><th>Statut</th>
+      {/snippet}
+      {#snippet body()}
+        {#each shipments as row (row.id)}
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <tr class="cursor-pointer" onclick={() => (selected = row)}>
+            <td class="font-semibold">{row.shipmentNumber}</td>
+            <td>
+              <a href={`/transport-orders/${row.transportOrder.id}`} class="font-semibold text-accent hover:underline"
+                 onclick={(e) => e.stopPropagation()}>{row.transportOrder.orderNumber}</a>
+            </td>
+            <td>{row.originLocation.city} → {row.destinationLocation.city}</td>
+            <td class="text-sm text-ink-muted">{fmtDims(row)}</td>
+            <td>
+              {#if row.load}
+                <a href={`/loads/${row.load.id}`} class="font-semibold text-accent hover:underline"
+                   onclick={(e) => e.stopPropagation()}>{row.load.loadNumber}</a>
+              {:else}
+                —
+              {/if}
+            </td>
+            <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
+          </tr>
+        {:else}
+          <tr><td colspan="6"><EmptyState message="Aucun shipment. Planifiez une commande confirmée pour en créer un." /></td></tr>
+        {/each}
+      {/snippet}
+    </Table>
 
-{#if loading}
-  <Card padded={false}><Skeleton rows={6} /></Card>
+    {#if total > pageSize}
+      <div class="mt-3 flex items-center justify-between text-sm text-ink-muted">
+        <span class="font-mono text-xs">{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} sur {total}</span>
+        <div class="flex items-center gap-2">
+          <Button variant="secondary" disabled={page <= 1} onclick={() => { page = Math.max(1, page - 1); void loadTable(); }}>Précédent</Button>
+          <span class="font-mono text-xs">Page {page} / {totalPages}</span>
+          <Button variant="secondary" disabled={page >= totalPages} onclick={() => { page = Math.min(totalPages, page + 1); void loadTable(); }}>Suivant</Button>
+        </div>
+      </div>
+    {/if}
+  {/if}
+{:else if view === 'kanban'}
+  {#if loadingKanban}
+    <Card padded={false}><div class="p-4"><Skeleton rows={6} /></div></Card>
+  {:else}
+    <div class="flex gap-3 overflow-x-auto pb-2">
+      {#each KANBAN_COLS as col (col)}
+        {@const items = byStatus(col)}
+        <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+          <div class="flex items-center justify-between px-3 py-2">
+            <Badge tone={toneFor(col)}>{labelFor(col)}</Badge>
+            <span class="font-mono text-xs text-ink-muted">{items.length}</span>
+          </div>
+          <div class="flex max-h-[65vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
+            {#each items as row (row.id)}
+              <div role="button" tabindex="0" class="cursor-pointer rounded-inner border border-edge-soft bg-surface p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-card" onclick={() => (selected = row)} onkeydown={(e) => { if (e.key === 'Enter') selected = row; }}>
+                <div class="font-semibold text-sm text-ink">{row.shipmentNumber}</div>
+                <div class="mt-0.5 truncate text-xs text-ink-muted">{row.originLocation.city} → {row.destinationLocation.city}</div>
+                <div class="mt-1 flex items-center justify-between text-[11px] text-ink-faint">
+                  <span>{fmtDims(row)}</span>
+                  {#if row.load}<span class="rounded border border-edge px-1 font-mono">{row.load.loadNumber}</span>{/if}
+                </div>
+              </div>
+            {:else}
+              <p class="px-1 py-3 text-center text-xs text-ink-faint">—</p>
+            {/each}
+          </div>
+        </div>
+      {/each}
+    </div>
+    {#if kanbanTotal > 100}<p class="mt-2 text-xs text-ink-faint">Affiche les 100 shipments les plus récents. Utilise le tableau pour la liste complète.</p>{/if}
+  {/if}
 {:else}
-<Table>
-  {#snippet head()}
-    <th>Shipment #</th><th>Order #</th><th>Origin → Destination</th>
-    <th>Weight / Vol / Pal</th><th>Load</th><th>Status</th>
-  {/snippet}
-  {#snippet body()}
-    {#each shipments as row (row.id)}
-      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-      <tr class="cursor-pointer" onclick={() => (selected = row)}>
-        <td class="font-semibold">{row.shipmentNumber}</td>
-        <td>
-          <a href={`/transport-orders/${row.transportOrder.id}`} class="font-semibold text-accent hover:underline"
-             onclick={(e) => e.stopPropagation()}>{row.transportOrder.orderNumber}</a>
-        </td>
-        <td>{row.originLocation.city} → {row.destinationLocation.city}</td>
-        <td class="text-sm text-ink-muted">{fmtDims(row)}</td>
-        <td>
-          {#if row.load}
-            <a href={`/loads/${row.load.id}`} class="font-semibold text-accent hover:underline"
-               onclick={(e) => e.stopPropagation()}>{row.load.loadNumber}</a>
-          {:else}
-            —
-          {/if}
-        </td>
-        <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
-      </tr>
+  <!-- map view (live tracking) -->
+  <Card padded={false}>
+    <div class="flex items-center justify-between px-4 pt-3 pb-2">
+      <h2 class="text-sm font-bold text-ink">Suivi en direct</h2>
+      <span class="font-mono text-xs text-ink-muted">
+        {mapLoads.length} actifs{#if mapLoads.some((l) => l.isLate)} · <span class="text-danger">{mapLoads.filter((l) => l.isLate).length} en retard</span>{/if}
+      </span>
+    </div>
+    {#if loadingMap}
+      <div class="px-4 pb-4"><Skeleton rows={6} /></div>
+    {:else if mapLoads.length === 0}
+      <div class="px-4 pb-4"><EmptyState message="Aucun shipment actif à suivre — les loads dispatchés et en transit apparaissent ici." /></div>
     {:else}
-      <tr><td colspan="6"><EmptyState title="No shipments ready to plan" message="Confirm and plan a transport order first, then send generated shipments into Dispatch for consolidation.">
-        {#snippet children()}<Button variant="secondary" href="/transport-orders">Open transport orders</Button><Button href="/dispatch">Open Dispatch</Button>{/snippet}
-      </EmptyState></td></tr>
-    {/each}
-  {/snippet}
-</Table>
+      <OpsMap loads={mapLoads} />
+    {/if}
+  </Card>
 {/if}
 
 {#if selected}
   {@const sel = selected}
   <Panel open={true} title={sel.shipmentNumber} onclose={() => { selected = null; assigning = null; }}>
     <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Status</div>
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Statut</div>
       <div class="text-sm text-ink"><Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge></div>
     </div>
     <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Order</div>
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Commande</div>
       <div class="text-sm text-ink">
         <a href={`/transport-orders/${sel.transportOrder.id}`} class="text-accent hover:underline">{sel.transportOrder.orderNumber}</a>
       </div>
     </div>
     <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Origin → Destination</div>
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Origine → Destination</div>
       <div class="text-sm text-ink">{sel.originLocation.name}, {sel.originLocation.city} → {sel.destinationLocation.name}, {sel.destinationLocation.city}</div>
     </div>
     <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Pickup window</div>
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Fenêtre d'enlèvement</div>
       <div class="text-sm text-ink">{fmtWindow(sel.plannedPickupEarly, sel.plannedPickupLate)}</div>
     </div>
     <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Delivery window</div>
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Fenêtre de livraison</div>
       <div class="text-sm text-ink">{fmtWindow(sel.plannedDeliveryEarly, sel.plannedDeliveryLate)}</div>
     </div>
     <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Weight / Vol / Pal</div>
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Poids / Vol / Pal</div>
       <div class="text-sm text-ink">{fmtDims(sel)}</div>
     </div>
     <div class="mb-3">
@@ -303,9 +438,9 @@
     <div class="mt-4 border-t border-edge pt-4">
       {#if sel.status === 'PENDING'}
         {#if !assigning || assigning.id !== sel.id}
-          <Button variant="primary" onclick={() => openAssign(sel)}>Assign to load</Button>
+          <Button variant="primary" onclick={() => openAssign(sel)}>Assigner à un load</Button>
           <div class="mt-2">
-            <Button variant="danger" onclick={() => cancelShipment(sel)}>Cancel shipment</Button>
+            <Button variant="danger" onclick={() => cancelShipment(sel)}>Annuler le shipment</Button>
           </div>
         {:else}
           <Field label="Load">
@@ -314,7 +449,7 @@
               onchange={() => { assignCapacityExcesses = []; assignForce = false; }}
               class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
             >
-              <option value="">+ Create a new load</option>
+              <option value="">+ Créer un nouveau load</option>
               {#each openLoads as l (l.id)}
                 <option value={l.id}>{l.loadNumber} ({l.status})</option>
               {/each}
@@ -323,14 +458,14 @@
 
           {#if assignCapacityExcesses.length > 0}
             <div class="mt-3 rounded-card border border-warn bg-warn-soft p-3">
-              <p class="mb-2 text-sm font-semibold text-warn">Trailer capacity exceeded</p>
+              <p class="mb-2 text-sm font-semibold text-warn">Capacité de la remorque dépassée</p>
               <table class="w-full text-xs">
                 <thead>
                   <tr class="text-ink-muted">
-                    <th class="pb-1 text-left">Axis</th>
-                    <th class="pb-1 text-right">Capacity</th>
-                    <th class="pb-1 text-right">Requested</th>
-                    <th class="pb-1 text-right">Excess</th>
+                    <th class="pb-1 text-left">Axe</th>
+                    <th class="pb-1 text-right">Capacité</th>
+                    <th class="pb-1 text-right">Demandé</th>
+                    <th class="pb-1 text-right">Excès</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -346,25 +481,25 @@
               </table>
               <label class="mt-2 flex cursor-pointer items-center gap-2 text-sm text-ink">
                 <input type="checkbox" bind:checked={assignForce} />
-                Force assignment (audited)
+                Forcer l'assignation (audité)
               </label>
             </div>
           {/if}
 
           <div class="mt-3 flex gap-2">
             {#if assignCapacityExcesses.length > 0 && assignForce}
-              <Button variant="danger" onclick={() => assign(true)}>Confirm force assign</Button>
+              <Button variant="danger" onclick={() => assign(true)}>Confirmer l'assignation forcée</Button>
             {:else}
-              <Button variant="primary" onclick={() => assign()}>Assign</Button>
+              <Button variant="primary" onclick={() => assign()}>Assigner</Button>
             {/if}
-            <Button variant="secondary" onclick={() => { assigning = null; }}>Cancel</Button>
+            <Button variant="secondary" onclick={() => { assigning = null; }}>Annuler</Button>
           </div>
         {/if}
       {:else if sel.status === 'PLANNED'}
-        <Button variant="secondary" onclick={() => removeFromLoad(sel)}>Remove from load</Button>
+        <Button variant="secondary" onclick={() => removeFromLoad(sel)}>Retirer du load</Button>
       {/if}
       <div class="mt-2">
-        <Button variant="secondary" onclick={() => shareTracking(sel)}>Share tracking</Button>
+        <Button variant="secondary" onclick={() => shareTracking(sel)}>Partager le suivi</Button>
       </div>
     </div>
   </Panel>
