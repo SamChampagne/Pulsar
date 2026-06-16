@@ -35,6 +35,9 @@ const METHODS = {
 // ---------------------------------------------------------------------------
 
 export interface AcpMcpServer {
+  // ACP uses a discriminated union for MCP servers: an HTTP server MUST carry
+  // type:"http" (acp.schema.HttpMcpServer) or session/new rejects with "Invalid params".
+  type: 'http';
   name: string;
   url: string;
   headers?: { name: string; value: string }[];
