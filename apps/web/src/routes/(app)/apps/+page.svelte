@@ -44,7 +44,7 @@
       key: 'assets',
       title: 'Assets / Fleet',
       subtitle: 'Vehicles, trailers, equipment, maintenance, compliance and lifecycle cost.',
-      href: '/fleet',
+      href: '/assets',
       moduleKey: MODULE_KEYS.FLEET,
       status: moduleEnabled(MODULE_KEYS.FLEET) ? 'enabled' : 'disabled',
       kpi: 'Readiness',
