@@ -1,8 +1,9 @@
 # Module system
 
-Pulsar is a platform core + business modules activable **per tenant**. This is the mechanism that
-lets one codebase serve customers who bought only the TMS, and later customers who add Fleet,
-Yard, WMS, Portal, Analytics or Billing.
+Pulsar is a platform core + business apps activable **per tenant**. This is the mechanism that
+lets one codebase serve customers who bought only Transport first, or customers who later add
+Finance/Ledger, Assets/Fleet, Yard/Dock, Warehouse/Inventory, Client Portal, Analytics/Control
+Tower, Connect/Integrations, and AI Workforce capabilities.
 
 ## The three layers
 
@@ -41,3 +42,18 @@ web shell → reseed.
   planned (phase 2) — keep the guard as the single enforcement point so the cache lands in one place.
 - Cross-module dependencies (e.g. Billing needs Transportation) are not modeled yet; add a
   `dependsOn` array to `ModuleDescriptor` when the need appears.
+
+## Product-language rule
+
+The module system is not only a feature flag mechanism. It is the product packaging layer that makes
+Pulsar feel like an LSOS platform. Prefer app language in the UI:
+
+- `transportation` → **Transport / Operations**
+- `billing` → **Finance / Ledger** user-facing language, even if the backend key remains `billing` short-term
+- `fleet` → **Assets / Fleet** user-facing language, even if the backend key remains `fleet` short-term
+- `wms` → **Warehouse / Inventory**
+- `yard` → **Yard / Dock**
+- integrations/settings surfaces → **Connect / Developer Platform** where appropriate
+
+A new app is not complete when it has one list page. It needs a module home with mission, KPIs,
+work queues, cross-module relationships, and the relevant AI employee/agent surface.

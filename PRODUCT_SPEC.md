@@ -4,22 +4,24 @@ _Status: living document. Version 0.1 — foundation phase._
 
 ## 1. Vision
 
-Pulsar is a **modular logistics operating platform** sold as B2B SaaS. Rather than a monolithic
+Pulsar is a **modular LSOS / business operating platform** sold as B2B SaaS. Rather than a monolithic
 TMS, Pulsar is a **platform core** (tenants, identity, RBAC, audit, documents, notifications,
-integrations, module registry) on which **business modules** are activated per customer:
+integrations, module registry, policies and governed AI employees) on which **deep business apps**
+are activated per customer. Transportation/logistics is the first flagship vertical module — not
+the boundary of the product:
 
 | Module                    | Status      | Scope                                                       |
 | ------------------------- | ----------- | ----------------------------------------------------------- |
 | Core                      | ✅ Built     | Tenancy, users, roles/permissions, audit, modules registry  |
-| **Transportation (TMS)**  | 🚧 Building | First commercial module — manufacturing TMS                 |
-| Fleet                     | Planned     | Asset lifecycle, maintenance, compliance                    |
-| Yard                      | Planned     | Gate check-in/out, dock scheduling, yard moves              |
-| Light WMS                 | Planned     | Receiving, putaway, picking                                 |
-| Customer Portal           | Planned     | Self-service order entry & visibility for shippers' clients |
-| Analytics                 | Planned     | KPIs, carrier scorecards, cost analysis                     |
-| Billing                   | Planned     | Freight billing, invoicing, carrier settlement              |
+| **Transport / Operations**| 🚧 Building | First flagship vertical app — TMS, dispatch, execution      |
+| **Assets / Fleet**        | 🚧 Building | Physical assets, fleet, equipment, maintenance, compliance  |
+| **Yard / Dock**           | 🚧 Building | Gate check-in/out, dock scheduling, yard moves              |
+| **Warehouse / Inventory** | 🚧 Building | Inventory, receiving, putaway, picking, fulfillment         |
+| Client Portal             | Planned     | Self-service requests, documents and visibility             |
+| Analytics / Control Tower | Planned     | Cross-module KPIs, scorecards, cost and agent analysis      |
+| **Finance / Ledger**      | 🚧 Building | Receivables, payables, invoices, payments, margin, audit    |
 
-Inspirations: **Fleetbase** (modular LSOS), **Oracle TM** (order release → shipment → rate
+Inspirations: **Fleetbase** (modular platform packaging: Fleet-Ops, Ledger, Pallet, Extensions — mechanisms only, no code copied), **Oracle TM** (order release → shipment → rate
 offering → itinerary → carrier selection), **SAP TM** (freight unit → freight order → planning →
 execution).
 
@@ -87,5 +89,23 @@ portal, invoicing, multi-leg routing, document storage backend.
 
 ## 6. Commercial model (assumption to validate)
 
-- Per-tenant subscription, priced by module + active users.
+- Per-tenant subscription, priced by app/module + active users.
 - Modules toggled per tenant via the module registry (already implemented).
+
+## 7. LSOS product packaging principle
+
+Pulsar must read as a platform of business apps, not as a TMS navbar with adjacent pages. Each large
+module should have its own home, mission, KPIs, work queues, permissions, integrations, and assigned
+AI employees. Cross-module links are a strength — for example Transport can emit invoices into
+Finance and assign vehicles from Assets — but no module should be framed as merely a submenu of
+Transport.
+
+Target packaging language:
+
+- **Transport / Operations** — TMS, dispatch, routing, tracking and proof of delivery.
+- **Finance / Ledger** — receivables, payables, invoice audit, margin, payment status and accounting integrations.
+- **Assets / Fleet** — vehicles, trailers, equipment, maintenance, compliance, assignments and lifecycle cost.
+- **Warehouse / Inventory** — items, bins, receiving, inventory movement, picking and fulfillment.
+- **Yard / Dock** — gate, dock appointments, yard spots, dwell and detention.
+- **Connect / Developer Platform** — API keys, webhooks, connectors, MCP tools and event logs.
+- **AI Workforce** — governed employee agents embedded in every app through tasks, evidence and ProposedActions.
