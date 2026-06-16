@@ -6,7 +6,7 @@
   import { auth, clearAuth, getRefreshToken } from '$lib/stores/auth';
   import {
     Bell, LogOut, Search, LayoutDashboard, Truck, Warehouse, Container,
-    Bus, Receipt, Bot, Settings,
+    Boxes, CircleDollarSign, Bot, Settings, Cable,
   } from 'lucide-svelte';
   import type { ComponentType } from 'svelte';
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
@@ -71,8 +71,8 @@
 
   const domains = $derived<Domain[]>([
     {
-      key: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard,
-      home: '/dashboard', prefixes: ['/dashboard'], visible: true, sections: [],
+      key: 'dashboard', label: 'Plateforme', icon: LayoutDashboard,
+      home: '/apps', prefixes: ['/apps', '/dashboard'], visible: true, sections: [],
     },
     {
       key: 'transport', label: 'Transport', icon: Truck, home: '/dispatch',
@@ -127,16 +127,17 @@
       ],
     },
     {
-      key: 'fleet', label: 'Flotte', icon: Bus, home: '/fleet',
-      prefixes: ['/fleet'], visible: hasFleet,
-      sections: [{ links: [{ href: '/fleet', label: 'Flotte & maintenance' }] }],
+      key: 'fleet', label: 'Assets', icon: Boxes, home: '/fleet',
+      prefixes: ['/fleet', '/assets'], visible: hasFleet,
+      sections: [{ links: [{ href: '/fleet', label: 'Assets & maintenance' }] }],
     },
     {
-      key: 'billing', label: 'Facturation', icon: Receipt, home: '/invoices',
-      prefixes: ['/invoices', '/billing'], visible: hasBilling,
+      key: 'billing', label: 'Finance', icon: CircleDollarSign, home: '/finance',
+      prefixes: ['/finance', '/invoices', '/billing'], visible: hasBilling,
       sections: [{ links: [
-        { href: '/invoices', label: 'Factures' },
-        { href: '/billing/freight-audit', label: 'Audit de fret' },
+        { href: '/finance', label: 'Finance home' },
+        { href: '/invoices', label: 'Receivables / Payables' },
+        { href: '/billing/freight-audit', label: 'Freight audit' },
       ]}],
     },
     {
@@ -151,8 +152,18 @@
       ]}],
     },
     {
+      key: 'connect', label: 'Connect', icon: Cable, home: '/connect',
+      prefixes: ['/connect', '/integrations'], visible: canReadIntegrations,
+      sections: [{ links: [
+        { href: '/connect', label: 'Connect home' },
+        { href: '/integrations', label: 'Connecteurs' },
+        { href: '/settings/api-keys', label: 'Clés API' },
+        { href: '/agents', label: 'MCP / agents' },
+      ]}],
+    },
+    {
       key: 'settings', label: 'Réglages', icon: Settings, home: '/settings/users',
-      prefixes: ['/settings', '/integrations'], visible: true,
+      prefixes: ['/settings'], visible: true,
       sections: [
         { label: 'Plateforme', links: [
           { href: '/settings/users', label: 'Utilisateurs' },
@@ -161,7 +172,6 @@
           { href: '/settings/sso', label: 'SSO' },
         ]},
         { label: 'Préférences', links: [{ href: '/settings/appearance', label: 'Apparence' }] },
-        ...(canReadIntegrations ? [{ label: 'Connecteurs', links: [{ href: '/integrations', label: 'Intégrations' }] }] : []),
       ],
     },
   ]);
@@ -196,7 +206,7 @@
     ...visibleDomains.flatMap((d) =>
       d.sections.flatMap((s) => s.links.map((l) => ({ label: l.label, hint: d.label, run: () => goto(l.href) }))),
     ),
-    { label: 'Tableau de bord', hint: 'page', run: () => goto('/dashboard') },
+    { label: 'Pulsar Apps', hint: 'plateforme', run: () => goto('/apps') },
   ]);
 </script>
 
@@ -204,7 +214,7 @@
   <div class="flex min-h-screen">
     <!-- Rail 1 — domains -->
     <aside class="flex w-[4.75rem] flex-col items-center gap-1 bg-sidebar py-3">
-      <a href="/dashboard" class="mb-2 text-lg font-bold text-white" aria-label="Pulsar">⬢</a>
+      <a href="/apps" class="mb-2 text-lg font-bold text-white" aria-label="Pulsar">⬢</a>
       <button
         class="mb-1 flex size-10 flex-col items-center justify-center rounded-lg text-ink-faint hover:bg-sidebar-hover hover:text-white"
         onclick={() => (paletteOpen = true)} aria-label="Rechercher (⌘K)" title="Rechercher  ⌘K"

@@ -12,6 +12,7 @@ describe('HermesAcpClient (ACP over injectable transport)', () => {
       cwd: '.',
       mcpServers: [
         {
+          type: 'http',
           name: 'pulsar',
           url: 'http://x/api/v1/mcp',
           headers: [{ name: 'X-Agent-Key', value: 'as_x' }],
@@ -26,6 +27,7 @@ describe('HermesAcpClient (ACP over injectable transport)', () => {
     expect(fake.lastNewSession?.cwd).toBe('.');
     expect(fake.lastNewSession?.mcpServers).toEqual([
       {
+        type: 'http',
         name: 'pulsar',
         url: 'http://x/api/v1/mcp',
         headers: [{ name: 'X-Agent-Key', value: 'as_x' }],

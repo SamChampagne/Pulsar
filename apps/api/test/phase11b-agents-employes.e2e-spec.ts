@@ -104,6 +104,7 @@ class FakeAgentRuntimeService {
       cwd: process.cwd(),
       mcpServers: [
         {
+          type: 'http',
           name: 'pulsar',
           url: input.pulsarMcpUrl,
           headers: [{ name: 'X-Agent-Key', value: token }],
