@@ -10,7 +10,6 @@ export { default as PageHeader } from './PageHeader.svelte';
 export { default as Select } from './Select.svelte';
 export { default as Skeleton } from './Skeleton.svelte';
 export { default as Modal } from './Modal.svelte';
-export { default as Panel } from './Panel.svelte';
 export { default as Table } from './Table.svelte';
 export { default as Tabs } from './Tabs.svelte';
 export { default as Textarea } from './Textarea.svelte';
