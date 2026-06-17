@@ -36,6 +36,29 @@
     required: boolean;
   };
 
+  type StudioCheck = {
+    key: string;
+    label: string;
+    status: 'ok' | 'warning' | 'blocked';
+    detail: string;
+  };
+
+  type ConnectionTestReport = {
+    status: 'ok' | 'warning' | 'blocked';
+    summary: string;
+    checkedAt: string;
+    checks: StudioCheck[];
+  };
+
+  type DryRunReport = {
+    status: 'ok' | 'warning' | 'blocked';
+    summary: string;
+    checkedAt: string;
+    rows: Array<IntegrationMapping & { status: 'mapped' | 'missing' | 'skipped'; value?: unknown }>;
+    output: Record<string, unknown>;
+    errors: string[];
+  };
+
   type StudioStep = 'catalog' | 'connection' | 'mapping' | 'activate';
 
   const templates: ConnectorTemplate[] = [
@@ -194,8 +217,11 @@
   let notice = $state('');
   let loading = $state(true);
   let saving = $state(false);
+  let testing = $state(false);
   let formOpen = $state(false);
   let form = $state<IntegrationForm>(blankForm('erp'));
+  let connectionReport = $state<ConnectionTestReport | null>(null);
+  let dryRunReport = $state<DryRunReport | null>(null);
 
   const canManage = $derived($auth?.user.permissions.includes(PERMISSIONS.CORE.INTEGRATIONS_MANAGE) ?? false);
   const selectedTemplate = $derived(templates.find((template) => template.kind === form.kind) ?? templates[0]);
@@ -303,6 +329,12 @@
     return 'neutral';
   }
 
+  function studioTone(status: 'ok' | 'warning' | 'blocked'): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
+    if (status === 'ok') return 'ok';
+    if (status === 'warning') return 'warn';
+    return 'danger';
+  }
+
   function slugify(value: string): string {
     return value
       .toLowerCase()
@@ -318,6 +350,8 @@
     formOpen = true;
     notice = '';
     error = '';
+    connectionReport = null;
+    dryRunReport = null;
   }
 
   function editIntegration(integration: IntegrationRecord) {
@@ -347,6 +381,8 @@
     formOpen = true;
     notice = '';
     error = '';
+    connectionReport = null;
+    dryRunReport = null;
   }
 
   function setKind(kind: IntegrationKind) {
@@ -442,11 +478,49 @@
       }
       formOpen = false;
       form = blankForm('erp');
+      connectionReport = null;
+      dryRunReport = null;
       await load();
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Could not save integration';
     } finally {
       saving = false;
+    }
+  }
+
+  async function testConnection() {
+    if (!canManage || !form.id) return;
+    testing = true;
+    error = '';
+    notice = '';
+    try {
+      connectionReport = await api<ConnectionTestReport>(`/integrations/${form.id}/test`, { method: 'POST', body: {} });
+      notice = connectionReport.summary;
+    } catch (e) {
+      error = e instanceof ApiError ? e.message : 'Could not test integration';
+    } finally {
+      testing = false;
+    }
+  }
+
+  async function runDryRun() {
+    if (!canManage || !form.id) return;
+    testing = true;
+    error = '';
+    notice = '';
+    try {
+      dryRunReport = await api<DryRunReport>(`/integrations/${form.id}/dry-run`, {
+        method: 'POST',
+        body: {
+          samplePayload: form.samplePayload,
+          mappings: form.mappings.filter((mapping) => mapping.source || mapping.target),
+        },
+      });
+      notice = dryRunReport.summary;
+    } catch (e) {
+      error = e instanceof ApiError ? e.message : 'Could not run mapping dry run';
+    } finally {
+      testing = false;
     }
   }
 
@@ -790,23 +864,77 @@
                   </div>
                 </div>
                 <div class="rounded-2xl border border-edge bg-surface p-4">
-                  <p class="text-xs font-bold text-ink">Dry run attendu</p>
-                  <ol class="mt-2 space-y-2 text-xs leading-5 text-ink-muted">
-                    <li>1. Tester credentials et endpoint.</li>
-                    <li>2. Lire un payload sample.</li>
-                    <li>3. Valider champs requis.</li>
-                    <li>4. Sauver en brouillon ou activer.</li>
-                  </ol>
+                  <div class="flex items-start justify-between gap-2">
+                    <div>
+                      <p class="text-xs font-bold text-ink">Test + dry run</p>
+                      <p class="mt-1 text-xs leading-5 text-ink-muted">Sauve le connecteur, puis valide endpoint et mapping.</p>
+                    </div>
+                    {#if connectionReport}<Badge tone={studioTone(connectionReport.status)}>{connectionReport.status}</Badge>{/if}
+                  </div>
+                  {#if connectionReport}
+                    <div class="mt-3 space-y-2">
+                      {#each connectionReport.checks as check (check.key)}
+                        <div class="rounded-lg border border-edge-soft px-2 py-2">
+                          <div class="flex items-center justify-between gap-2">
+                            <span class="text-xs font-semibold text-ink">{check.label}</span>
+                            <Badge tone={studioTone(check.status)}>{check.status}</Badge>
+                          </div>
+                          <p class="mt-1 text-[11px] leading-4 text-ink-muted">{check.detail}</p>
+                        </div>
+                      {/each}
+                    </div>
+                  {:else}
+                    <ol class="mt-2 space-y-2 text-xs leading-5 text-ink-muted">
+                      <li>1. Tester credentials et endpoint.</li>
+                      <li>2. Lire un payload sample.</li>
+                      <li>3. Valider champs requis.</li>
+                      <li>4. Activer quand le dry run passe.</li>
+                    </ol>
+                  {/if}
                 </div>
                 <div class="flex flex-col gap-2">
-                  <button type="button" class="rounded-md border border-edge bg-surface px-4 py-2 text-sm font-semibold text-ink-muted hover:bg-white" disabled>
-                    Tester connexion bientôt
+                  <button type="button" class="rounded-md border border-edge bg-surface px-4 py-2 text-sm font-semibold text-ink-muted hover:bg-white disabled:opacity-50" disabled={testing || saving || !canManage || !form.id} onclick={testConnection}>
+                    {testing ? 'Test…' : 'Tester connexion'}
+                  </button>
+                  <button type="button" class="rounded-md border border-edge bg-surface px-4 py-2 text-sm font-semibold text-ink-muted hover:bg-white disabled:opacity-50" disabled={testing || saving || !canManage || !form.id} onclick={runDryRun}>
+                    Dry run mapping
                   </button>
                   <button type="submit" disabled={saving || !canManage} class="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-accent-strong disabled:opacity-60">
                     {saving ? 'Sauvegarde…' : form.id ? 'Mettre à jour le studio' : 'Créer le connecteur'}
                   </button>
+                  {#if !form.id}<p class="text-[11px] leading-4 text-ink-faint">Crée d’abord le connecteur pour activer les tests API.</p>{/if}
                 </div>
-                <p class="text-[11px] leading-5 text-ink-faint">Les secrets restent côté API chiffrée/masquée. Le studio sauvegarde le catalogue, le mapping et le plan d’activation.</p>
+                <div class="rounded-2xl border border-edge bg-surface p-4 lg:col-span-3">
+                  <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p class="text-xs font-bold text-ink">Résultat dry run</p>
+                      <p class="mt-1 text-xs text-ink-muted">Preview de l’objet Pulsar généré à partir du payload sample.</p>
+                    </div>
+                    {#if dryRunReport}<Badge tone={studioTone(dryRunReport.status)}>{dryRunReport.status}</Badge>{/if}
+                  </div>
+                  {#if dryRunReport}
+                    <div class="mt-3 grid gap-3 lg:grid-cols-2">
+                      <div class="overflow-hidden rounded-xl border border-edge-soft">
+                        {#each dryRunReport.rows as row, index (index)}
+                          <div class="grid grid-cols-[1fr_1fr_82px] gap-2 border-t border-edge-soft px-3 py-2 text-xs first:border-t-0">
+                            <span class="truncate text-ink-muted">{row.source}</span>
+                            <span class="truncate font-semibold text-ink">{row.target}</span>
+                            <Badge tone={row.status === 'mapped' ? 'ok' : row.status === 'missing' ? 'warn' : 'neutral'}>{row.status}</Badge>
+                          </div>
+                        {/each}
+                      </div>
+                      <pre class="max-h-56 overflow-auto rounded-xl bg-ink p-3 text-[11px] leading-5 text-white/85">{JSON.stringify(dryRunReport.output, null, 2)}</pre>
+                    </div>
+                    {#if dryRunReport.errors.length}
+                      <div class="mt-3 rounded-xl border border-danger/20 bg-danger-soft px-3 py-2 text-xs text-danger">
+                        {dryRunReport.errors.join(' · ')}
+                      </div>
+                    {/if}
+                  {:else}
+                    <div class="mt-3 rounded-xl border border-dashed border-edge px-3 py-4 text-xs text-ink-faint">Aucun dry run exécuté pour cette édition.</div>
+                  {/if}
+                </div>
+                <p class="text-[11px] leading-5 text-ink-faint lg:col-span-3">Les secrets restent côté API chiffrée/masquée. Le studio sauvegarde le catalogue, le mapping et le plan d’activation.</p>
               </div>
             </aside>
           </div>

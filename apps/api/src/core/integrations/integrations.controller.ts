@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { PERMISSIONS } from '@pulsar/shared';
-import { IsIn, IsObject, IsOptional, IsString, Matches } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsObject, IsOptional, IsString, Matches } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { IntegrationsService } from './integrations.service';
@@ -38,6 +38,32 @@ class UpdateIntegrationDto {
   config?: Record<string, unknown>;
 }
 
+class DryRunMappingDto {
+  @IsString()
+  source!: string;
+
+  @IsString()
+  target!: string;
+
+  @IsOptional()
+  @IsString()
+  transform?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  required?: boolean;
+}
+
+class DryRunIntegrationDto {
+  @IsOptional()
+  @IsString()
+  samplePayload?: string;
+
+  @IsOptional()
+  @IsArray()
+  mappings?: DryRunMappingDto[];
+}
+
 @ApiTags('core/integrations')
 @ApiBearerAuth()
 @Controller('integrations')
@@ -60,6 +86,18 @@ export class IntegrationsController {
   @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateIntegrationDto) {
     return this.integrations.update(user.tenantId, id, dto);
+  }
+
+  @Post(':id/test')
+  @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
+  testConnection(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.integrations.testConnection(user.tenantId, id);
+  }
+
+  @Post(':id/dry-run')
+  @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
+  dryRun(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: DryRunIntegrationDto) {
+    return this.integrations.dryRun(user.tenantId, id, dto);
   }
 
   /** Recent webhook deliveries of an integration (outbox audit/debugging). */
