@@ -90,45 +90,39 @@
 
 <PageHeader
   title="Assets / Fleet"
-  subtitle="Le module qui protège la disponibilité physique: véhicules, remorques, chauffeurs, conformité, maintenance et readiness."
+  subtitle="Disponibilité physique, conformité, maintenance."
 />
 
 {#if error}<ErrorNotice message={error} onretry={load} />{/if}
 
-<section class="mb-5 overflow-hidden rounded-card border border-edge bg-ink text-white shadow-sm">
-  <div class="grid gap-5 p-5 lg:grid-cols-[1.12fr_0.88fr] lg:p-6">
+<section class="mb-5 rounded-card border border-edge bg-surface p-4 shadow-sm">
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
     <div>
-      <p class="text-xs font-semibold tracking-[0.24em] text-white/55 uppercase">{universe.signal}</p>
-      <h1 class="mt-2 max-w-3xl text-2xl font-bold tracking-tight sm:text-3xl">
-        Assets n’est pas une liste de trucks — c’est la couche readiness de l’entreprise.
-      </h1>
-      <p class="mt-3 max-w-2xl text-sm leading-6 text-white/68">
-        Le module garde la vérité sur ce qui peut être assigné, ce qui doit être inspecté, ce qui bloque une opération
-        et ce que l’agent maintenance doit préparer avant que Transport ou Yard en ait besoin.
-      </p>
-      <div class="mt-4 flex flex-wrap gap-2">
-        {#each universe.workflows as flow (flow)}
-          <span class="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold ring-1 ring-white/15">{flow}</span>
-        {/each}
-      </div>
+      <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">Asset readiness</p>
+      <h1 class="mt-1 text-xl font-bold tracking-tight text-ink">Fleet command</h1>
     </div>
-    <div class="grid grid-cols-2 gap-2 text-sm">
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Ready assets</p>
-        <p class="mt-1 text-2xl font-semibold">{loading ? '—' : readyAssets}</p>
-      </div>
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Maintenance</p>
-        <p class="mt-1 text-2xl font-semibold">{loading ? '—' : maintainedAssets}</p>
-      </div>
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Compliance risk</p>
-        <p class="mt-1 text-2xl font-semibold">{loading ? '—' : complianceAttention.length}</p>
-      </div>
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Drivers</p>
-        <p class="mt-1 text-2xl font-semibold">{loading ? '—' : internalDrivers.length}</p>
-      </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="/fleet" class="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-strong">Ajouter / gérer assets</a>
+      <a href="#attention" class="rounded-md border border-edge px-3 py-2 text-sm font-semibold text-ink-muted hover:bg-surface-muted">Blockers</a>
+      <a href="/agents" class="rounded-md border border-edge px-3 py-2 text-sm font-semibold text-ink-muted hover:bg-surface-muted">Agent</a>
+    </div>
+  </div>
+  <div class="mt-4 grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+    <div class="rounded-xl bg-surface-muted p-3">
+      <p class="text-xs text-ink-faint">Ready</p>
+      <p class="mt-1 text-2xl font-semibold text-ink">{loading ? '—' : readyAssets}</p>
+    </div>
+    <div class="rounded-xl bg-surface-muted p-3">
+      <p class="text-xs text-ink-faint">Maintenance</p>
+      <p class="mt-1 text-2xl font-semibold text-ink">{loading ? '—' : maintainedAssets}</p>
+    </div>
+    <div class="rounded-xl bg-surface-muted p-3">
+      <p class="text-xs text-ink-faint">Conformité</p>
+      <p class="mt-1 text-2xl font-semibold text-ink">{loading ? '—' : complianceAttention.length}</p>
+    </div>
+    <div class="rounded-xl bg-surface-muted p-3">
+      <p class="text-xs text-ink-faint">Drivers</p>
+      <p class="mt-1 text-2xl font-semibold text-ink">{loading ? '—' : internalDrivers.length}</p>
     </div>
   </div>
 </section>
@@ -144,7 +138,6 @@
         <Card>
           <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">Fleet objects</p>
           <h2 class="mt-1 text-lg font-bold text-ink">Physical roster</h2>
-          <p class="mt-2 text-sm leading-6 text-ink-muted">Véhicules, remorques et chauffeurs internes deviennent des objets de capacité, pas seulement du master data.</p>
           <div class="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
             <div class="rounded-inner bg-surface-muted p-2"><strong>{internalVehicles.length}</strong><span class="block text-xs text-ink-faint">Vehicles</span></div>
             <div class="rounded-inner bg-surface-muted p-2"><strong>{internalTrailers.length}</strong><span class="block text-xs text-ink-faint">Trailers</span></div>
@@ -156,7 +149,6 @@
         <Card>
           <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">Maintenance</p>
           <h2 class="mt-1 text-lg font-bold text-ink">Work orders & due</h2>
-          <p class="mt-2 text-sm leading-6 text-ink-muted">Les actifs passent dans un workflow: inspecter, réparer, remettre disponible, prouver la conformité.</p>
           <div class="mt-4 flex items-center justify-between rounded-inner bg-surface-muted p-3 text-sm">
             <span class="text-ink-muted">Open work orders</span><span class="font-semibold text-ink">{overview?.openWorkOrders ?? 0}</span>
           </div>
@@ -165,20 +157,22 @@
         <Card>
           <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">Assignment graph</p>
           <h2 class="mt-1 text-lg font-bold text-ink">Capacity links</h2>
-          <p class="mt-2 text-sm leading-6 text-ink-muted">Prochaine profondeur: relier assets ⇄ loads ⇄ yard spots ⇄ maintenance windows.</p>
-          <div class="mt-4 rounded-inner border border-edge-soft bg-surface-muted p-3 text-xs leading-5 text-ink-muted">
-            Transport reçoit seulement les actifs prêts; Yard sait quelles remorques peuvent être spotées; Finance voit le coût par actif.
+          <div class="mt-4 grid gap-2 text-xs">
+            <div class="rounded-inner bg-surface-muted p-2"><strong>Transport</strong><span class="ml-1 text-ink-muted">actifs prêts</span></div>
+            <div class="rounded-inner bg-surface-muted p-2"><strong>Yard</strong><span class="ml-1 text-ink-muted">remorques + spots</span></div>
+            <div class="rounded-inner bg-surface-muted p-2"><strong>Finance</strong><span class="ml-1 text-ink-muted">coût par actif</span></div>
           </div>
         </Card>
       </div>
 
-      <Card padded={false}>
+      <div id="attention">
+        <Card padded={false}>
         <div class="border-b border-edge-soft px-4 py-3">
           <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">Attention lane</p>
           <h2 class="mt-1 text-base font-bold text-ink">Compliance & maintenance blockers</h2>
         </div>
         {#if complianceAttention.length === 0 && (overview?.maintenanceDue.length ?? 0) === 0}
-          <EmptyState message="Aucun blocker assets dans les données actuelles. La home garde quand même le contexte module prêt pour des données plus riches." />
+          <EmptyState message="Aucun blocker assets." />
         {:else}
           <div class="divide-y divide-edge-soft">
             {#each complianceAttention as doc (doc.id)}
@@ -200,14 +194,12 @@
         {/if}
       </Card>
     </div>
+    </div>
 
     <div class="space-y-4">
       <Card>
         <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">Assigned employee</p>
         <h2 class="mt-1 text-lg font-bold text-ink">{universe.agent}</h2>
-        <p class="mt-3 text-sm leading-6 text-ink-muted">
-          Surveille les expirations, prépare les inspections, propose les immobilisations et empêche un dispatch d’utiliser un actif non prêt.
-        </p>
         <a href="/agents" class="mt-4 inline-flex text-sm font-semibold text-accent hover:underline">Voir les agents →</a>
       </Card>
 

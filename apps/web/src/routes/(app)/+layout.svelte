@@ -296,7 +296,6 @@
               <h1 class="truncate text-base font-bold text-ink">{activeUniverse.title}</h1>
               <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={`background: ${activeUniverse.accent}`}>{activeUniverse.signal}</span>
             </div>
-            <p class="mt-1 text-xs leading-5 text-ink-muted">{activeUniverse.mission}</p>
           </div>
         </div>
       </div>

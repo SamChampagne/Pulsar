@@ -73,42 +73,29 @@
 </script>
 
 <PageHeader
-  title="Finance / Ledger"
-  subtitle="Receivables, payables, audit de factures, marge et cash readiness — pas seulement une page de factures TMS."
+  title="Finance"
+  subtitle="AR/AP, litiges, audit, cash."
 />
 
 {#if error}<ErrorNotice message={error} />{/if}
 
-<section class="mb-5 overflow-hidden rounded-card border border-edge bg-ink text-white shadow-sm">
-  <div class="grid gap-5 p-5 lg:grid-cols-[1.1fr_0.9fr] lg:p-6">
+<section class="mb-5 rounded-card border border-edge bg-surface p-4 shadow-sm">
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
     <div>
-      <p class="text-xs font-semibold tracking-[0.24em] text-white/55 uppercase">Business money layer</p>
-      <h1 class="mt-2 max-w-3xl text-2xl font-bold tracking-tight sm:text-3xl">
-        Finance devient le module qui contrôle l’argent, pas seulement les loads facturés.
-      </h1>
-      <p class="mt-3 max-w-2xl text-sm leading-6 text-white/68">
-        Les workflows Transport alimentent Finance, mais le module doit aussi porter AR/AP, paiements,
-        marges, litiges, taxes et intégrations comptables. Cette première home regroupe les surfaces déjà livrées.
-      </p>
+      <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">Finance ops</p>
+      <h1 class="mt-1 text-xl font-bold text-ink">Cash control</h1>
     </div>
-    <div class="grid grid-cols-2 gap-2 text-sm">
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Receivables</p>
-        <p class="mt-1 text-2xl font-semibold">{loading ? '—' : receivableTotal}</p>
-      </div>
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Payables</p>
-        <p class="mt-1 text-2xl font-semibold">{loading ? '—' : payableTotal}</p>
-      </div>
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Disputes / risk</p>
-        <p class="mt-1 text-2xl font-semibold">{loading ? '—' : disputedCount}</p>
-      </div>
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Recovered 30j</p>
-        <p class="mt-1 text-2xl font-semibold">{loading ? '—' : Number(savings?.tenantTotal ?? 0).toLocaleString()}</p>
-      </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="/invoices" class="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-strong">Factures</a>
+      <a href="/billing/freight-audit" class="rounded-md border border-edge px-3 py-2 text-sm font-semibold text-ink-muted hover:bg-surface-muted">Audit</a>
+      <a href="/integrations" class="rounded-md border border-edge px-3 py-2 text-sm font-semibold text-ink-muted hover:bg-surface-muted">Compta sync</a>
     </div>
+  </div>
+  <div class="mt-4 grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+    <div class="rounded-xl bg-surface-muted p-3"><p class="text-xs text-ink-faint">AR</p><p class="mt-1 text-2xl font-semibold text-ink">{loading ? '—' : receivableTotal}</p></div>
+    <div class="rounded-xl bg-surface-muted p-3"><p class="text-xs text-ink-faint">AP</p><p class="mt-1 text-2xl font-semibold text-ink">{loading ? '—' : payableTotal}</p></div>
+    <div class="rounded-xl bg-surface-muted p-3"><p class="text-xs text-ink-faint">Litiges</p><p class="mt-1 text-2xl font-semibold text-ink">{loading ? '—' : disputedCount}</p></div>
+    <div class="rounded-xl bg-surface-muted p-3"><p class="text-xs text-ink-faint">Recovered 30j</p><p class="mt-1 text-2xl font-semibold text-ink">{loading ? '—' : Number(savings?.tenantTotal ?? 0).toLocaleString()}</p></div>
   </div>
 </section>
 
@@ -126,9 +113,6 @@
         </div>
         <Badge tone={draftReceivables ? 'warn' : 'ok'}>{draftReceivables} draft</Badge>
       </div>
-      <p class="mt-3 text-sm leading-6 text-ink-muted">
-        Relevés clients, statuts d’envoi/paiement et bientôt taxes, termes, aging et intégration comptable.
-      </p>
       <div class="mt-4 flex items-center justify-between rounded-inner bg-surface-muted p-3 text-sm">
         <span class="text-ink-muted">Payées</span><span class="font-semibold text-ink">{paidReceivables}</span>
       </div>
@@ -143,9 +127,6 @@
         </div>
         <Badge tone={carrierInvoices.some((i) => i.status === 'DISPUTED') ? 'danger' : 'neutral'}>{carrierInvoices.length}</Badge>
       </div>
-      <p class="mt-3 text-sm leading-6 text-ink-muted">
-        Factures fournisseurs/transporteurs, rapprochement, approbation, paiement et litiges contrôlés.
-      </p>
       <div class="mt-4 flex items-center justify-between rounded-inner bg-surface-muted p-3 text-sm">
         <span class="text-ink-muted">Total attendu</span><span class="font-semibold text-ink">{payableTotal}</span>
       </div>
@@ -160,9 +141,6 @@
         </div>
         <Badge tone={disputedCount ? 'danger' : 'ok'}>{disputedCount} flagged</Badge>
       </div>
-      <p class="mt-3 text-sm leading-6 text-ink-muted">
-        Le freight audit reste une spécialité Finance : anomalies, variance, disputes et économies récupérées.
-      </p>
       <div class="mt-4 flex items-center justify-between rounded-inner bg-surface-muted p-3 text-sm">
         <span class="text-ink-muted">Variance brute</span><span class="font-semibold text-ink">{auditRisk}</span>
       </div>
@@ -173,7 +151,7 @@
 
 <div class="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
   <Card>
-    <h2 class="text-base font-bold text-ink">Roadmap Finance / Ledger</h2>
+    <h2 class="text-base font-bold text-ink">Prochaines surfaces</h2>
     <div class="mt-4 grid gap-3 md:grid-cols-2">
       {#each [
         ['Receivables', 'Aging, taxes, payment terms, customer statements.'],
@@ -192,9 +170,6 @@
   <Card>
     <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">Assigned employee</p>
     <h2 class="mt-1 text-lg font-bold text-ink">Finance operator agent</h2>
-    <p class="mt-3 text-sm leading-6 text-ink-muted">
-      Surveille les factures entrantes, ouvre les litiges sous gouvernance, signale la marge anormale et prépare les actions à approuver.
-    </p>
     <a href="/agents" class="mt-4 inline-flex text-sm font-semibold text-accent hover:underline">Voir les agents →</a>
   </Card>
 </div>

@@ -162,9 +162,7 @@
     <div class="mb-10 text-center">
       <p class="text-xs font-semibold tracking-[0.26em] text-ink-faint uppercase">Pulsar Desk</p>
       <h1 class="mt-2 text-xl font-semibold tracking-tight text-ink">Choisis un univers</h1>
-      <p class="mx-auto mt-2 max-w-xl text-sm leading-6 text-ink-muted">
-        Le bureau garde les modules métier comme vraies apps. Le Framework reste un bloc de contexte au hover, pas une page sèche qui casse le flow.
-      </p>
+
     </div>
 
     <div class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6">
@@ -194,7 +192,7 @@
             <div class="mb-4 flex items-center justify-between gap-3">
               <div>
                 <h2 class="text-sm font-semibold text-ink">Framework</h2>
-                <p class="mt-1 text-xs leading-5 text-ink-muted">Core système: réglages, données, utilisateurs et automation. Comme un dossier d'apps, sans quitter le bureau.</p>
+                <p class="mt-1 text-xs leading-5 text-ink-muted">Réglages, données, utilisateurs, automation.</p>
               </div>
               <button type="button" class="rounded-full bg-surface-muted px-2 py-1 text-xs font-semibold text-ink-muted hover:text-ink" onclick={() => (frameworkOpen = false)}>Fermer</button>
             </div>
