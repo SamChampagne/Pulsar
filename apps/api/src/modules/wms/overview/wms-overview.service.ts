@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { computeReplenishment } from '@pulsar/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
 
 /**
@@ -33,12 +34,50 @@ export class WmsOverviewService {
         }),
       ]);
 
+    // Replenishment: items at/below reorder point (computed on read).
+    const [reorderItems, openCycleCounts] = await Promise.all([
+      this.prisma.wmsItem.findMany({
+        where: { tenantId, isActive: true, reorderPoint: { not: null } },
+        select: { id: true, sku: true, name: true, reorderPoint: true, reorderQty: true },
+      }),
+      this.prisma.cycleCount.count({ where: { tenantId, status: { in: ['OPEN', 'COUNTED'] } } }),
+    ]);
+    const onHandSums =
+      reorderItems.length > 0
+        ? await this.prisma.inventoryLevel.groupBy({
+            by: ['itemId'],
+            where: { tenantId, itemId: { in: reorderItems.map((i) => i.id) } },
+            _sum: { qtyOnHand: true },
+          })
+        : [];
+    const onHand = new Map<string, number>();
+    for (const s of onHandSums) onHand.set(s.itemId, Number(s._sum.qtyOnHand ?? 0));
+    const belowMin = reorderItems
+      .map((i) => {
+        const oh = onHand.get(i.id) ?? 0;
+        return {
+          id: i.id,
+          sku: i.sku,
+          name: i.name,
+          onHand: oh,
+          reorderPoint: i.reorderPoint,
+          ...computeReplenishment({
+            onHand: oh,
+            reorderPoint: i.reorderPoint,
+            reorderQty: i.reorderQty,
+          }),
+        };
+      })
+      .filter((i) => i.belowMin);
+
     return {
       distinctItems,
       openReceipts,
       openPickOrders,
       negativeBins: negativeLevels,
       totalOnHand: Number(levelsAgg._sum.qtyOnHand ?? 0),
+      belowMin,
+      openCycleCounts,
     };
   }
 }

@@ -83,6 +83,8 @@ model Tenant {
   stockMovements  StockMovement[]
   receipts        Receipt[]
   pickOrders      PickOrder[]
+  cycleCounts      CycleCount[]
+  cycleCountLines  CycleCountLine[]
   yardSpots        YardSpot[]
   yardVisits       YardVisit[]
   yardMoves        YardMove[]
@@ -1802,26 +1804,79 @@ enum PickOrderStatus {
 }
 
 model WmsItem {
-  id          String   @id @default(cuid())
-  tenantId    String
-  sku         String
-  name        String
-  unit        String   @default("EA")
-  barcode     String?
-  isActive    Boolean  @default(true)
-  createdById String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  tenantId     String
+  sku          String
+  name         String
+  unit         String   @default("EA")
+  barcode      String?
+  reorderPoint Int?
+  reorderQty   Int?
+  isActive     Boolean  @default(true)
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  tenant     Tenant           @relation(fields: [tenantId], references: [id])
-  levels     InventoryLevel[]
-  movements  StockMovement[]
-  receiptLines ReceiptLine[]
-  pickLines  PickLine[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  levels          InventoryLevel[]
+  movements       StockMovement[]
+  receiptLines    ReceiptLine[]
+  pickLines       PickLine[]
+  cycleCountLines CycleCountLine[]
 
   @@unique([tenantId, sku])
   @@index([tenantId])
   @@map("wms_items")
+}
+
+enum CycleCountStatus {
+  OPEN
+  COUNTED
+  RECONCILED
+  CANCELLED
+}
+
+/// Recurring inventory-accuracy loop: snapshot a bin's per-item system qty, record
+/// the physical count, then reconcile — variances post ADJUSTMENT movements via
+/// InventoryService (rule 33; never below 0).
+model CycleCount {
+  id           String           @id @default(cuid())
+  tenantId     String
+  number       String
+  binId        String
+  status       CycleCountStatus @default(OPEN)
+  note         String?
+  countedAt    DateTime?
+  reconciledAt DateTime?
+  createdById  String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id])
+  bin    Bin              @relation(fields: [binId], references: [id])
+  lines  CycleCountLine[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@index([tenantId, binId])
+  @@map("wms_cycle_counts")
+}
+
+model CycleCountLine {
+  id           String   @id @default(cuid())
+  tenantId     String
+  cycleCountId String
+  itemId       String
+  systemQty    Decimal  @db.Decimal(14, 3)
+  countedQty   Decimal? @db.Decimal(14, 3)
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  cycleCount CycleCount @relation(fields: [cycleCountId], references: [id], onDelete: Cascade)
+  item       WmsItem    @relation(fields: [itemId], references: [id])
+
+  @@index([tenantId, cycleCountId])
+  @@map("wms_cycle_count_lines")
 }
 
 model Bin {
@@ -1841,6 +1896,7 @@ model Bin {
   movementsTo   StockMovement[] @relation("MovementToBin")
   receiptLines ReceiptLine[]
   pickLines    PickLine[]
+  cycleCounts  CycleCount[]
 
   @@unique([tenantId, locationId, code])
   @@index([tenantId, locationId])

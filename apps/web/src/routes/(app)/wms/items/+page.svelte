@@ -22,7 +22,15 @@
     name: string;
     unit: string;
     barcode?: string | null;
+    reorderPoint?: number | null;
+    reorderQty?: number | null;
     isActive: boolean;
+    onHand?: number;
+    replenishment?: { status: 'OK' | 'LOW' | 'BELOW_MIN'; belowMin: boolean; suggestedQty: number };
+  }
+
+  function replTone(status?: string): 'ok' | 'warn' | 'danger' | 'neutral' {
+    return status === 'BELOW_MIN' ? 'danger' : status === 'LOW' ? 'warn' : 'ok';
   }
 
   let items = $state<Item[]>([]);
@@ -38,6 +46,8 @@
   let formName = $state('');
   let formUnit = $state('EA');
   let formBarcode = $state('');
+  let formReorderPoint = $state('');
+  let formReorderQty = $state('');
   let formActive = $state(true);
   let saving = $state(false);
 
@@ -68,6 +78,8 @@
     formName = '';
     formUnit = 'EA';
     formBarcode = '';
+    formReorderPoint = '';
+    formReorderQty = '';
     formActive = true;
     formOpen = true;
   }
@@ -78,6 +90,8 @@
     formName = it.name;
     formUnit = it.unit;
     formBarcode = it.barcode ?? '';
+    formReorderPoint = it.reorderPoint != null ? String(it.reorderPoint) : '';
+    formReorderQty = it.reorderQty != null ? String(it.reorderQty) : '';
     formActive = it.isActive;
     formOpen = true;
   }
@@ -94,6 +108,8 @@
         name: formName.trim(),
         unit: formUnit.trim() || 'EA',
         barcode: formBarcode.trim() || undefined,
+        reorderPoint: formReorderPoint !== '' ? Number(formReorderPoint) : undefined,
+        reorderQty: formReorderQty !== '' ? Number(formReorderQty) : undefined,
         isActive: formActive,
       };
       if (editId) {
@@ -125,7 +141,9 @@
     <input
       placeholder="Rechercher par SKU ou nom…"
       bind:value={search}
-      onkeydown={(e) => { if (e.key === 'Enter') void load(); }}
+      onkeydown={(e) => {
+        if (e.key === 'Enter') void load();
+      }}
       class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
     />
   </div>
@@ -146,7 +164,9 @@
 {:else}
   <Table>
     {#snippet head()}
-      <th>SKU</th><th>Nom</th><th>Unité</th><th>Code-barres</th><th>Statut</th>
+      <th>SKU</th><th>Nom</th><th>Unité</th><th class="text-right">Stock</th><th class="text-right"
+        >Min / cible</th
+      ><th>Réappro</th><th>Statut</th>
     {/snippet}
     {#snippet body()}
       {#each items as it (it.id)}
@@ -154,8 +174,29 @@
           <td class="font-mono font-semibold text-ink">{it.sku}</td>
           <td>{it.name}</td>
           <td class="text-ink-muted">{it.unit}</td>
-          <td class="font-mono text-ink-muted">{it.barcode ?? '—'}</td>
-          <td><Badge tone={it.isActive ? 'ok' : 'neutral'}>{it.isActive ? 'Actif' : 'Inactif'}</Badge></td>
+          <td class="text-right text-ink">{it.onHand ?? 0}</td>
+          <td class="text-right text-ink-muted">
+            {it.reorderPoint != null
+              ? `${it.reorderPoint}${it.reorderQty != null ? ` / ${it.reorderQty}` : ''}`
+              : '—'}
+          </td>
+          <td>
+            {#if it.reorderPoint != null}
+              <Badge tone={replTone(it.replenishment?.status)}>
+                {it.replenishment?.status === 'BELOW_MIN'
+                  ? `Réappro ~${it.replenishment?.suggestedQty}`
+                  : it.replenishment?.status === 'LOW'
+                    ? 'Bas'
+                    : 'OK'}
+              </Badge>
+            {:else}
+              <span class="text-xs text-ink-faint">—</span>
+            {/if}
+          </td>
+          <td
+            ><Badge tone={it.isActive ? 'ok' : 'neutral'}>{it.isActive ? 'Actif' : 'Inactif'}</Badge
+            ></td
+          >
         </tr>
       {/each}
     {/snippet}
@@ -177,6 +218,14 @@
       <Field label="Code-barres">
         <Input bind:value={formBarcode} placeholder="Optionnel" />
       </Field>
+      <div class="grid grid-cols-2 gap-3">
+        <Field label="Point de réappro (min)">
+          <Input bind:value={formReorderPoint} type="number" min="0" placeholder="ex. 10" />
+        </Field>
+        <Field label="Niveau cible">
+          <Input bind:value={formReorderQty} type="number" min="0" placeholder="ex. 50" />
+        </Field>
+      </div>
       <Field label="Actif">
         <label class="flex items-center gap-2 text-sm text-ink">
           <input type="checkbox" bind:checked={formActive} />
@@ -184,7 +233,12 @@
         </label>
       </Field>
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
-        <Button variant="secondary" onclick={() => { formOpen = false; }}>Annuler</Button>
+        <Button
+          variant="secondary"
+          onclick={() => {
+            formOpen = false;
+          }}>Annuler</Button
+        >
         <Button variant="primary" loading={saving} onclick={submit}>Enregistrer</Button>
       </div>
     </div>

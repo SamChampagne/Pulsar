@@ -10,6 +10,8 @@ export const DOMAIN_EVENT_TYPES = {
   FLEET_ASSET_MAINTENANCE: 'fleet.asset.maintenance',
   FLEET_MAINTENANCE_DUE: 'fleet.maintenance.due',
   WMS_PICK_COMPLETED: 'wms.pick.completed',
+  WMS_ITEM_BELOW_MIN: 'wms.item.below-min',
+  WMS_CYCLE_COUNT_VARIANCE: 'wms.cycle-count.variance',
   YARD_VISIT_CHECKED_IN: 'yard.visit.checked-in',
 } as const;
 
@@ -154,6 +156,51 @@ const POLICIES: Policy[] = [
           subjectType: 'shipment',
           subjectId: shipmentId,
           dedupKey: `FULFILLMENT_READY:${pickOrderId}`,
+          details: { ...e.payload },
+          assignHint: 'AUTO' as const,
+        },
+      ];
+    },
+  },
+  {
+    // WMS continuity: an item dropped at/below its reorder point — restock needed.
+    eventType: DOMAIN_EVENT_TYPES.WMS_ITEM_BELOW_MIN,
+    produce: (e) => {
+      const itemId = str(e.payload.itemId);
+      const sku = str(e.payload.sku);
+      const onHand = num(e.payload.onHand);
+      const suggestedQty = num(e.payload.suggestedQty);
+      return [
+        {
+          type: OperationalTaskType.EXCEPTION,
+          category: 'WMS_REPLENISH',
+          severity: 'WARNING' as const,
+          title: `Réappro — ${sku || itemId} (stock ${onHand}${suggestedQty ? `, commander ~${suggestedQty}` : ''})`,
+          subjectType: 'wms-item',
+          subjectId: itemId,
+          dedupKey: `WMS_REPLENISH:${itemId}`,
+          details: { ...e.payload },
+          assignHint: 'AUTO' as const,
+        },
+      ];
+    },
+  },
+  {
+    // WMS continuity: a reconciled cycle count found stock discrepancies.
+    eventType: DOMAIN_EVENT_TYPES.WMS_CYCLE_COUNT_VARIANCE,
+    produce: (e) => {
+      const cycleCountId = str(e.payload.cycleCountId);
+      const number = str(e.payload.number);
+      const variances = num(e.payload.variances);
+      return [
+        {
+          type: OperationalTaskType.EXCEPTION,
+          category: 'WMS_COUNT_VARIANCE',
+          severity: 'WARNING' as const,
+          title: `Écart d'inventaire — comptage ${number || cycleCountId} (${variances} ligne(s))`,
+          subjectType: 'wms-cycle-count',
+          subjectId: cycleCountId,
+          dedupKey: `WMS_COUNT_VARIANCE:${cycleCountId}`,
           details: { ...e.payload },
           assignHint: 'AUTO' as const,
         },

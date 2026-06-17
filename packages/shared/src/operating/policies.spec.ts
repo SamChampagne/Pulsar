@@ -124,6 +124,24 @@ describe('cross-module policies', () => {
     expect(overdue[0].severity).toBe('CRITICAL');
   });
 
+  it('maps wms.item.below-min to a WMS_REPLENISH task', () => {
+    const r = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.WMS_ITEM_BELOW_MIN,
+      payload: { itemId: 'it1', sku: 'SKU-1', onHand: 3, suggestedQty: 47 },
+    });
+    expect(r[0].category).toBe('WMS_REPLENISH');
+    expect(r[0].dedupKey).toBe('WMS_REPLENISH:it1');
+  });
+
+  it('maps wms.cycle-count.variance to a WMS_COUNT_VARIANCE task', () => {
+    const r = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.WMS_CYCLE_COUNT_VARIANCE,
+      payload: { cycleCountId: 'cc1', number: 'CC-1', variances: 2 },
+    });
+    expect(r[0].category).toBe('WMS_COUNT_VARIANCE');
+    expect(r[0].dedupKey).toBe('WMS_COUNT_VARIANCE:cc1');
+  });
+
   it('maps yard.visit.checked-in to a YARD_ARRIVAL task', () => {
     const specs = resolvePolicies({
       type: DOMAIN_EVENT_TYPES.YARD_VISIT_CHECKED_IN,

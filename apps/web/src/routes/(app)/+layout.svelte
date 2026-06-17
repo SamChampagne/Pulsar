@@ -207,6 +207,7 @@
             { href: '/wms/receiving', label: 'Réception' },
             { href: '/wms/fulfillment', label: 'Préparation' },
             { href: '/wms/picking', label: 'Prélèvement' },
+            { href: '/wms/cycle-counts', label: 'Comptages' },
           ],
         },
         {

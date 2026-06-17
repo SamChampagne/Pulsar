@@ -36,7 +36,11 @@ export function canTransitionReceipt(from: ReceiptStatus, to: ReceiptStatus): bo
 }
 
 const PICK_TRANSITIONS: Record<PickOrderStatus, PickOrderStatus[]> = {
-  [PickOrderStatus.OPEN]: [PickOrderStatus.PICKED, PickOrderStatus.COMPLETED, PickOrderStatus.CANCELLED],
+  [PickOrderStatus.OPEN]: [
+    PickOrderStatus.PICKED,
+    PickOrderStatus.COMPLETED,
+    PickOrderStatus.CANCELLED,
+  ],
   [PickOrderStatus.PICKED]: [PickOrderStatus.COMPLETED, PickOrderStatus.CANCELLED],
   [PickOrderStatus.COMPLETED]: [],
   [PickOrderStatus.CANCELLED]: [],
@@ -47,9 +51,32 @@ export function canTransitionPickOrder(from: PickOrderStatus, to: PickOrderStatu
   return PICK_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
+export enum CycleCountStatus {
+  OPEN = 'OPEN',
+  COUNTED = 'COUNTED',
+  RECONCILED = 'RECONCILED',
+  CANCELLED = 'CANCELLED',
+}
+
+const CYCLE_COUNT_TRANSITIONS: Record<CycleCountStatus, CycleCountStatus[]> = {
+  [CycleCountStatus.OPEN]: [CycleCountStatus.COUNTED, CycleCountStatus.CANCELLED],
+  [CycleCountStatus.COUNTED]: [CycleCountStatus.RECONCILED, CycleCountStatus.CANCELLED],
+  [CycleCountStatus.RECONCILED]: [],
+  [CycleCountStatus.CANCELLED]: [],
+};
+
+export function canTransitionCycleCount(from: CycleCountStatus, to: CycleCountStatus): boolean {
+  if (from === to) return true;
+  return CYCLE_COUNT_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
 export type BalanceResult = { ok: true; next: number } | { ok: false; reason: 'NEGATIVE' };
 
-export function applyToBalance(current: number, delta: number, opts?: { allowNegative?: boolean }): BalanceResult {
+export function applyToBalance(
+  current: number,
+  delta: number,
+  opts?: { allowNegative?: boolean },
+): BalanceResult {
   const next = current + delta;
   if (next < 0 && !opts?.allowNegative) return { ok: false, reason: 'NEGATIVE' };
   return { ok: true, next };
@@ -63,6 +90,7 @@ export type ShipmentPickStatus = 'NOT_PICKED' | 'PICKING' | 'PICKED';
  */
 export function deriveShipmentPickStatus(pickOrderStatuses: PickOrderStatus[]): ShipmentPickStatus {
   if (pickOrderStatuses.some((s) => s === PickOrderStatus.COMPLETED)) return 'PICKED';
-  if (pickOrderStatuses.some((s) => s === PickOrderStatus.OPEN || s === PickOrderStatus.PICKED)) return 'PICKING';
+  if (pickOrderStatuses.some((s) => s === PickOrderStatus.OPEN || s === PickOrderStatus.PICKED))
+    return 'PICKING';
   return 'NOT_PICKED';
 }

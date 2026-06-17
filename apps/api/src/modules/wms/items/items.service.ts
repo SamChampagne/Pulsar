@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@pulsar/database';
+import { computeReplenishment } from '@pulsar/shared';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
 import { OwnershipService } from '../../../prisma/ownership.service';
@@ -30,13 +31,51 @@ export class ItemsService {
       this.prisma.wmsItem.findMany({ where, skip, take, orderBy: { sku: 'asc' } }),
       this.prisma.wmsItem.count({ where }),
     ]);
-    return paginated(items, total, page, pageSize);
+    const onHand = await this.onHandMap(
+      tenantId,
+      items.map((i) => i.id),
+    );
+    const withRepl = items.map((i) => {
+      const oh = onHand.get(i.id) ?? 0;
+      return {
+        ...i,
+        onHand: oh,
+        replenishment: computeReplenishment({
+          onHand: oh,
+          reorderPoint: i.reorderPoint,
+          reorderQty: i.reorderQty,
+        }),
+      };
+    });
+    return paginated(withRepl, total, page, pageSize);
+  }
+
+  /** Sum on-hand per item across all bins (batched). */
+  private async onHandMap(tenantId: string, itemIds: string[]): Promise<Map<string, number>> {
+    const map = new Map<string, number>();
+    if (itemIds.length === 0) return map;
+    const rows = await this.prisma.inventoryLevel.groupBy({
+      by: ['itemId'],
+      where: { tenantId, itemId: { in: itemIds } },
+      _sum: { qtyOnHand: true },
+    });
+    for (const r of rows) map.set(r.itemId, Number(r._sum.qtyOnHand ?? 0));
+    return map;
   }
 
   async get(tenantId: string, id: string) {
     const item = await this.prisma.wmsItem.findFirst({ where: { id, tenantId } });
     if (!item) throw new NotFoundException('Item not found');
-    return item;
+    const onHand = (await this.onHandMap(tenantId, [id])).get(id) ?? 0;
+    return {
+      ...item,
+      onHand,
+      replenishment: computeReplenishment({
+        onHand,
+        reorderPoint: item.reorderPoint,
+        reorderQty: item.reorderQty,
+      }),
+    };
   }
 
   async create(tenantId: string, userId: string, dto: CreateItemDto) {
