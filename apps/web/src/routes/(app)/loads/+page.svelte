@@ -3,10 +3,9 @@
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
-  import { Table as TableIcon, KanbanSquare, Map as MapIcon } from 'lucide-svelte';
   import {
     PageHeader, Button, FilterBar, Select, Table, Badge, EmptyState, Panel, Card, Skeleton, ErrorNotice,
-    toneFor, labelFor,
+    toneFor, labelFor, ViewToggle, type ViewId,
   } from '$lib/components/ui';
   import OpsMap from '$lib/components/OpsMap.svelte';
 
@@ -21,8 +20,7 @@
     shipments: { id: string }[];
   }
 
-  type View = 'table' | 'kanban' | 'map';
-  let view = $state<View>('table');
+  let view = $state<ViewId>('table');
   let statusFilter = $state('');
   let error = $state('');
   let selected = $state<LoadRow | null>(null);
@@ -114,11 +112,7 @@
     else void loadMap();
   });
 
-  const views: { id: View; label: string; icon: typeof TableIcon }[] = [
-    { id: 'table', label: 'Tableau', icon: TableIcon },
-    { id: 'kanban', label: 'Kanban', icon: KanbanSquare },
-    { id: 'map', label: 'Carte', icon: MapIcon },
-  ];
+
 </script>
 
 <PageHeader
@@ -141,17 +135,7 @@
 
 <div class="mb-3 flex flex-wrap items-center gap-3">
   <!-- view switcher -->
-  <div class="inline-flex rounded-md border border-edge-soft bg-surface p-0.5 shadow-sm">
-    {#each views as v (v.id)}
-      {@const Icon = v.icon}
-      <button
-        class={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium transition-colors ${view === v.id ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink'}`}
-        onclick={() => (view = v.id)}
-      >
-        <Icon class="size-3.5" /> {v.label}
-      </button>
-    {/each}
-  </div>
+  <ViewToggle bind:view views={['table', 'kanban', 'map']} />
   {#if view !== 'map'}
     <div class="w-44">
       <Select bind:value={statusFilter}>
