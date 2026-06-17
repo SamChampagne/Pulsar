@@ -168,30 +168,43 @@
 
   function severityTone(severity: string): Tone {
     switch (severity?.toUpperCase()) {
-      case 'CRITICAL': return 'danger';
-      case 'WARNING':  return 'warn';
-      case 'INFO':     return 'info';
-      default:         return 'neutral';
+      case 'CRITICAL':
+        return 'danger';
+      case 'WARNING':
+        return 'warn';
+      case 'INFO':
+        return 'info';
+      default:
+        return 'neutral';
     }
   }
 
   function statusTone(status: string): Tone {
     switch (status?.toUpperCase()) {
-      case 'OPEN':        return 'warn';
-      case 'IN_PROGRESS': return 'info';
-      case 'RESOLVED':    return 'ok';
-      case 'DISMISSED':   return 'neutral';
-      default:            return 'neutral';
+      case 'OPEN':
+        return 'warn';
+      case 'IN_PROGRESS':
+        return 'info';
+      case 'RESOLVED':
+        return 'ok';
+      case 'DISMISSED':
+        return 'neutral';
+      default:
+        return 'neutral';
     }
   }
 
   function riskTierTone(tier: string): Tone {
     switch (tier?.toUpperCase()) {
       case 'READ':
-      case 'LOW':       return 'info';
-      case 'MUTATING':  return 'warn';
-      case 'SENSITIVE': return 'danger';
-      default:          return 'neutral';
+      case 'LOW':
+        return 'info';
+      case 'MUTATING':
+        return 'warn';
+      case 'SENSITIVE':
+        return 'danger';
+      default:
+        return 'neutral';
     }
   }
 
@@ -229,9 +242,23 @@
 />
 
 <div class="mb-4 grid gap-3 sm:grid-cols-3">
-  <Card><div class="text-xl font-bold text-ink">{criticalCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Critical</div><p class="mt-1 text-xs text-ink-faint">Handle these before normal reviews.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{approvalCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Approvals</div><p class="mt-1 text-xs text-ink-faint">Tasks tied to explicit decisions or agent actions.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{agentAssignedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Agent-owned</div><p class="mt-1 text-xs text-ink-faint">Work delegated to employee agents.</p></Card>
+  <Card
+    ><div class="text-xl font-bold text-ink">{criticalCount}</div>
+    <div class="text-xs uppercase tracking-wide text-ink-muted">Critical</div>
+    <p class="mt-1 text-xs text-ink-faint">Handle these before normal reviews.</p></Card
+  >
+  <Card
+    ><div class="text-xl font-bold text-ink">{approvalCount}</div>
+    <div class="text-xs uppercase tracking-wide text-ink-muted">Approvals</div>
+    <p class="mt-1 text-xs text-ink-faint">
+      Tasks tied to explicit decisions or agent actions.
+    </p></Card
+  >
+  <Card
+    ><div class="text-xl font-bold text-ink">{agentAssignedCount}</div>
+    <div class="text-xs uppercase tracking-wide text-ink-muted">Agent-owned</div>
+    <p class="mt-1 text-xs text-ink-faint">Work delegated to employee agents.</p></Card
+  >
 </div>
 
 <ErrorNotice message={error} onretry={load} />
@@ -248,8 +275,8 @@
   <div class="w-40">
     <Select bind:value={categoryFilter}>
       <option value="">All categories</option>
-      {#each ['EXCEPTION', 'APPROVAL', 'REVIEW', 'NOTIFICATION'] as c (c)}
-        <option value={c}>{c}</option>
+      {#each ['DELAY', 'TENDER_FAILURE', 'FREIGHT_AUDIT', 'FLEET_MAINTENANCE', 'FULFILLMENT_READY', 'YARD_ARRIVAL'] as c (c)}
+        <option value={c}>{c.replaceAll('_', ' ')}</option>
       {/each}
     </Select>
   </div>
@@ -266,8 +293,13 @@
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
 {:else if tasks.length === 0}
-  <EmptyState title="No operating tasks match" message="Change the filters or wait for policies and agents to raise work that needs triage.">
-    {#snippet children()}<Button variant="secondary" href="/agent-actions">Review agent actions</Button><Button href="/dispatch">Open Dispatch</Button>{/snippet}
+  <EmptyState
+    title="No operating tasks match"
+    message="Change the filters or wait for policies and agents to raise work that needs triage."
+  >
+    {#snippet children()}<Button variant="secondary" href="/agent-actions"
+        >Review agent actions</Button
+      ><Button href="/dispatch">Open Dispatch</Button>{/snippet}
   </EmptyState>
 {:else}
   <Table>
@@ -308,12 +340,18 @@
   <Panel
     open={true}
     title={sel.title}
-    onclose={() => { selected = null; }}
+    onclose={() => {
+      selected = null;
+    }}
   >
     {#snippet footer()}
       {#if canManage && (sel.status === 'OPEN' || sel.status === 'IN_PROGRESS')}
-        <Button variant="secondary" disabled={actionBusy} onclick={() => void dismiss()}>Dismiss</Button>
-        <Button variant="primary" disabled={actionBusy} onclick={() => void resolve()}>Resolve</Button>
+        <Button variant="secondary" disabled={actionBusy} onclick={() => void dismiss()}
+          >Dismiss</Button
+        >
+        <Button variant="primary" disabled={actionBusy} onclick={() => void resolve()}
+          >Resolve</Button
+        >
       {/if}
     {/snippet}
 

@@ -1,19 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import { MaintenanceOrderStatus } from '@pulsar/shared';
+import { MaintenanceOrderStatus, MaintenanceScheduleStatus } from '@pulsar/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ComplianceService } from '../compliance/compliance.service';
+import { MaintenanceSchedulesService } from '../schedules/maintenance-schedules.service';
 
 /**
  * Read-only dashboard rollup for the fleet module: open work orders, work
- * orders coming due within 7 days, and compliance docs expiring/expired within
- * the 30-day window. The compliance window is fetched ONCE then filtered twice
- * (DRY). Tenant-scoped (rule 1); status is computed on read (rule 32).
+ * orders coming due within 7 days, compliance docs expiring/expired within the
+ * 30-day window, and preventive-maintenance schedules that are due/overdue
+ * (computed on read). Tenant-scoped (rule 1); status is computed on read (rule 32).
  */
 @Injectable()
 export class FleetOverviewService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly compliance: ComplianceService,
+    private readonly schedules: MaintenanceSchedulesService,
   ) {}
 
   async overview(tenantId: string, now = Date.now()) {
@@ -37,6 +39,26 @@ export class FleetOverviewService {
     const complianceExpiring = expiringWindow.filter((d) => d.status === 'EXPIRING');
     const complianceExpired = expiringWindow.filter((d) => d.status === 'EXPIRED');
 
-    return { openWorkOrders, maintenanceDue, complianceExpiring, complianceExpired };
+    // Preventive maintenance: schedules due/overdue (computed on read).
+    const allSchedules = await this.schedules.list(tenantId, {});
+    const pmDue = allSchedules.filter(
+      (s) => s.isActive && s.due.status === MaintenanceScheduleStatus.DUE,
+    );
+    const pmOverdue = allSchedules.filter(
+      (s) => s.isActive && s.due.status === MaintenanceScheduleStatus.OVERDUE,
+    );
+    const pmDueSoon = allSchedules.filter(
+      (s) => s.isActive && s.due.status === MaintenanceScheduleStatus.DUE_SOON,
+    );
+
+    return {
+      openWorkOrders,
+      maintenanceDue,
+      complianceExpiring,
+      complianceExpired,
+      pmDue,
+      pmOverdue,
+      pmDueSoon,
+    };
   }
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { suggestConsolidations, DEFAULT_TRAILER_CAPACITY } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { Badge, Card, PageHeader, type Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
@@ -115,10 +116,18 @@
 
   async function loadOpenLoads() {
     const [open, planned, dispatched, inTransit] = await Promise.allSettled([
-      api<{ items: LoadOption[] }>('/transportation/loads', { query: { status: 'OPEN', pageSize: 100 } }),
-      api<{ items: LoadOption[] }>('/transportation/loads', { query: { status: 'PLANNED', pageSize: 100 } }),
-      api<{ items: LoadOption[] }>('/transportation/loads', { query: { status: 'DISPATCHED', pageSize: 50 } }),
-      api<{ items: LoadOption[] }>('/transportation/loads', { query: { status: 'IN_TRANSIT', pageSize: 50 } }),
+      api<{ items: LoadOption[] }>('/transportation/loads', {
+        query: { status: 'OPEN', pageSize: 100 },
+      }),
+      api<{ items: LoadOption[] }>('/transportation/loads', {
+        query: { status: 'PLANNED', pageSize: 100 },
+      }),
+      api<{ items: LoadOption[] }>('/transportation/loads', {
+        query: { status: 'DISPATCHED', pageSize: 50 },
+      }),
+      api<{ items: LoadOption[] }>('/transportation/loads', {
+        query: { status: 'IN_TRANSIT', pageSize: 50 },
+      }),
     ]);
 
     const items = (result: PromiseSettledResult<{ items: LoadOption[] }>) =>
@@ -147,13 +156,13 @@
     selectedIds = next;
   }
 
-  async function consolidate() {
-    if (selectedIds.size === 0) return;
+  async function createLoadFrom(ids: string[]) {
+    if (ids.length === 0) return;
     busy = true;
     try {
       const created = await api<OpenLoad>('/transportation/loads/consolidate', {
         method: 'POST',
-        body: { shipmentIds: [...selectedIds] },
+        body: { shipmentIds: ids },
       });
       selectedIds = new Set();
       await Promise.all([loadBacklog(), loadOpenLoads()]);
@@ -165,6 +174,36 @@
     } finally {
       busy = false;
     }
+  }
+
+  function consolidate() {
+    return createLoadFrom([...selectedIds]);
+  }
+
+  // --- Consolidation optimizer (pure, runs on the loaded backlog) -------------
+  let optimizerOpen = $state(false);
+  const suggestions = $derived(
+    suggestConsolidations(
+      backlog.map((s) => ({
+        id: s.id,
+        shipmentNumber: s.shipmentNumber,
+        originCity: s.originLocation?.city ?? '',
+        destinationCity: s.destinationLocation?.city ?? '',
+        weightKg: s.weightKg ?? 0,
+        volumeM3: s.volumeM3 ?? 0,
+        palletCount: s.palletCount ?? 0,
+      })),
+      DEFAULT_TRAILER_CAPACITY,
+    ),
+  );
+  const topSuggestions = $derived(suggestions.groups.slice(0, 5));
+
+  function selectGroup(ids: string[]) {
+    selectedIds = new Set(ids);
+    view = 'map';
+  }
+  function pct(n: number): number {
+    return Math.min(100, Math.round(n * 100));
   }
 
   async function addSelectionToLoad() {
@@ -252,14 +291,20 @@
 />
 
 <section class="mb-4 overflow-hidden rounded-card border border-edge bg-surface shadow-sm">
-  <div class="border-b border-edge bg-[linear-gradient(135deg,#0f172a_0%,#172554_52%,#1e3a8a_100%)] p-4 text-white">
+  <div
+    class="border-b border-edge bg-[linear-gradient(135deg,#0f172a_0%,#172554_52%,#1e3a8a_100%)] p-4 text-white"
+  >
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <p class="text-xs font-semibold tracking-[0.18em] text-blue-100 uppercase">Operations cockpit</p>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">Planifier, suivre et tender depuis la même surface.</h1>
+        <p class="text-xs font-semibold tracking-[0.18em] text-blue-100 uppercase">
+          Operations cockpit
+        </p>
+        <h1 class="mt-1 text-2xl font-bold tracking-tight">
+          Planifier, suivre et tender depuis la même surface.
+        </h1>
         <p class="mt-1 max-w-3xl text-sm text-blue-100">
-          Pulsar passe d'une page de gestion à un poste de dispatch: backlog, route, rates,
-          board d'états et actions agent-ready au même endroit.
+          Pulsar passe d'une page de gestion à un poste de dispatch: backlog, route, rates, board
+          d'états et actions agent-ready au même endroit.
         </p>
       </div>
       <div class="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-right backdrop-blur">
@@ -289,11 +334,92 @@
       <div class="text-xs font-medium text-ink-muted">Selected load</div>
       <div class="mt-1 flex flex-wrap items-center gap-2">
         <span class="text-lg font-bold text-ink">{selectedLoad?.loadNumber ?? '—'}</span>
-        {#if selectedLoad}<Badge tone={statusTone(selectedLoad.status)}>{selectedLoad.status}</Badge>{/if}
+        {#if selectedLoad}<Badge tone={statusTone(selectedLoad.status)}>{selectedLoad.status}</Badge
+          >{/if}
       </div>
     </div>
   </div>
 </section>
+
+{#if suggestions.groups.length > 0}
+  <section class="mb-3 overflow-hidden rounded-card border border-edge bg-surface shadow-sm">
+    <button
+      type="button"
+      onclick={() => (optimizerOpen = !optimizerOpen)}
+      class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-surface-muted"
+    >
+      <div class="flex items-center gap-2">
+        <span class="grid size-7 place-items-center rounded-lg bg-accent/10 text-accent">✦</span>
+        <div>
+          <div class="text-sm font-bold text-ink">Suggestions d'optimisation</div>
+          <div class="text-xs text-ink-muted">
+            {suggestions.groups.length} regroupement(s) proposé(s) — même voie, capacité 3 axes respectée
+          </div>
+        </div>
+      </div>
+      <span class="text-xs font-semibold text-accent">{optimizerOpen ? 'Masquer' : 'Voir'}</span>
+    </button>
+
+    {#if optimizerOpen}
+      <div class="grid gap-2 border-t border-edge p-3 md:grid-cols-2 xl:grid-cols-3">
+        {#each topSuggestions as g (g.shipmentIds.join(','))}
+          <div class="rounded-lg border border-edge bg-surface-muted p-3">
+            <div class="flex items-center justify-between gap-2">
+              <div class="min-w-0 text-sm font-semibold text-ink">
+                <span class="truncate">{g.originCity || '—'} → {g.destinationCity || '—'}</span>
+              </div>
+              <Badge
+                tone={g.utilization >= 0.85 ? 'ok' : g.utilization >= 0.5 ? 'info' : 'neutral'}
+              >
+                {pct(g.utilization)}% plein
+              </Badge>
+            </div>
+            <div class="mt-1 text-xs text-ink-muted">
+              {g.count} shipments · {g.shipmentNumbers.slice(0, 4).join(', ')}{g.count > 4
+                ? '…'
+                : ''}
+            </div>
+
+            <div class="mt-3 space-y-1.5">
+              {#each [['Poids', g.fill.weight], ['Volume', g.fill.volume], ['Palettes', g.fill.pallets]] as axis (axis[0])}
+                <div class="flex items-center gap-2">
+                  <span class="w-14 shrink-0 text-[11px] text-ink-faint">{axis[0]}</span>
+                  <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-edge">
+                    <div
+                      class={`h-full rounded-full ${Number(axis[1]) >= 0.95 ? 'bg-warn' : 'bg-accent'}`}
+                      style={`width: ${pct(Number(axis[1]))}%`}
+                    ></div>
+                  </div>
+                  <span class="w-9 shrink-0 text-right text-[11px] tabular-nums text-ink-muted"
+                    >{pct(Number(axis[1]))}%</span
+                  >
+                </div>
+              {/each}
+            </div>
+
+            <div class="mt-3 flex gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onclick={() => createLoadFrom(g.shipmentIds)}
+                class="flex-1 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-accent-strong disabled:opacity-50"
+              >
+                Créer le load
+              </button>
+              <button
+                type="button"
+                onclick={() => selectGroup(g.shipmentIds)}
+                class="rounded-md border border-edge bg-surface px-3 py-1.5 text-xs font-semibold text-ink-muted transition hover:bg-surface-muted hover:text-ink"
+              >
+                Sélectionner
+              </button>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </section>
+{/if}
 
 <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
   <div class="inline-flex rounded-lg border border-edge bg-surface p-1 shadow-sm">
@@ -304,7 +430,10 @@
         class={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${view === option.id ? 'bg-accent text-white shadow-sm' : 'text-ink-muted hover:bg-surface-muted hover:text-ink'}`}
       >
         {option.label}
-        <span class={`ml-1 hidden text-xs font-normal md:inline ${view === option.id ? 'text-blue-100' : 'text-ink-faint'}`}>{option.hint}</span>
+        <span
+          class={`ml-1 hidden text-xs font-normal md:inline ${view === option.id ? 'text-blue-100' : 'text-ink-faint'}`}
+          >{option.hint}</span
+        >
       </button>
     {/each}
   </div>
@@ -352,7 +481,9 @@
               >
                 <div class="flex items-center justify-between gap-2">
                   <span class="font-semibold text-ink">{shipment.shipmentNumber}</span>
-                  <Badge tone={isPast(shipment.plannedPickupEarly) ? 'danger' : 'neutral'}>{fmtDate(shipment.plannedPickupEarly)}</Badge>
+                  <Badge tone={isPast(shipment.plannedPickupEarly) ? 'danger' : 'neutral'}
+                    >{fmtDate(shipment.plannedPickupEarly)}</Badge
+                  >
                 </div>
                 <div class="mt-2 flex items-center gap-2 text-ink-muted">
                   <span class="h-2 w-2 rounded-full bg-ok"></span>
@@ -363,7 +494,9 @@
                 </div>
                 <div class="mt-2 flex flex-wrap gap-1">
                   <Badge tone="neutral">{shipment.transportOrder.orderNumber}</Badge>
-                  {#if shipment.palletCount != null}<Badge tone="neutral">{shipment.palletCount} pal</Badge>{/if}
+                  {#if shipment.palletCount != null}<Badge tone="neutral"
+                      >{shipment.palletCount} pal</Badge
+                    >{/if}
                 </div>
               </button>
             {/each}
@@ -391,14 +524,22 @@
                     <Badge tone={statusTone(load.status)}>{load.status}</Badge>
                   </div>
                   <div class="mt-2 flex items-center gap-2 text-ink-muted">
-                    <span class="grid h-5 w-5 place-items-center rounded-full bg-accent-soft text-[10px] font-bold text-accent">L</span>
+                    <span
+                      class="grid h-5 w-5 place-items-center rounded-full bg-accent-soft text-[10px] font-bold text-accent"
+                      >L</span
+                    >
                     <span class="h-px flex-1 border-t border-dashed border-ink-faint"></span>
-                    <span class="grid h-5 w-5 place-items-center rounded-full bg-ok-soft text-[10px] font-bold text-ok">✓</span>
+                    <span
+                      class="grid h-5 w-5 place-items-center rounded-full bg-ok-soft text-[10px] font-bold text-ok"
+                      >✓</span
+                    >
                   </div>
                   <p class="mt-2 text-ink-muted">Clique pour ouvrir route, rates et tender.</p>
                 </button>
               {:else}
-                <div class="rounded-md border border-dashed border-edge p-4 text-center text-xs text-ink-faint">
+                <div
+                  class="rounded-md border border-dashed border-edge p-4 text-center text-xs text-ink-faint"
+                >
                   Aucun load.
                 </div>
               {/each}
@@ -416,13 +557,24 @@
         {:else}
           <ol class="space-y-3">
             {#each ['Created', 'Planned', 'Tendered', 'Dispatched', 'In transit', 'Delivered'] as step, index (step)}
-              {@const activeIndex = Math.max(0, ['OPEN', 'PLANNED', 'TENDERED', 'DISPATCHED', 'IN_TRANSIT', 'DELIVERED'].indexOf(selectedLoad.status))}
+              {@const activeIndex = Math.max(
+                0,
+                ['OPEN', 'PLANNED', 'TENDERED', 'DISPATCHED', 'IN_TRANSIT', 'DELIVERED'].indexOf(
+                  selectedLoad.status,
+                ),
+              )}
               <li class="flex gap-3 text-sm">
-                <span class={`mt-0.5 h-3 w-3 rounded-full ${index <= activeIndex ? 'bg-accent' : 'bg-edge'}`}></span>
+                <span
+                  class={`mt-0.5 h-3 w-3 rounded-full ${index <= activeIndex ? 'bg-accent' : 'bg-edge'}`}
+                ></span>
                 <div>
                   <div class="font-medium text-ink">{step}</div>
                   <div class="text-xs text-ink-muted">
-                    {index === 0 ? selectedLoad.loadNumber : index <= activeIndex ? 'completed / current' : 'waiting'}
+                    {index === 0
+                      ? selectedLoad.loadNumber
+                      : index <= activeIndex
+                        ? 'completed / current'
+                        : 'waiting'}
                   </div>
                 </div>
               </li>
@@ -448,10 +600,13 @@
           </div>
           <div class="mt-3 space-y-2">
             {#each selectedStops.slice(0, 4) as stop (stop.id)}
-              <div class="flex items-center gap-2 rounded-md border border-edge px-2 py-1.5 text-xs">
+              <div
+                class="flex items-center gap-2 rounded-md border border-edge px-2 py-1.5 text-xs"
+              >
                 <Badge tone={stop.type === 'PICKUP' ? 'info' : 'ok'}>{stop.sequence}</Badge>
                 <span class="min-w-0 flex-1 truncate text-ink">
-                  {[stop.location?.name, stop.location?.city].filter(Boolean).join(', ') || stop.type}
+                  {[stop.location?.name, stop.location?.city].filter(Boolean).join(', ') ||
+                    stop.type}
                 </span>
                 <span class="text-ink-muted">{fmtTime(stop.plannedArrivalEarly)}</span>
               </div>
@@ -469,7 +624,8 @@
         <Card>
           <h2 class="mb-2 text-sm font-bold text-ink">Planning actions</h2>
           <p class="mb-3 text-sm text-ink-muted">
-            {selectedIds.size} shipment(s) sélectionné(s). Passe en mode Map pour consolider ou ajouter à un load.
+            {selectedIds.size} shipment(s) sélectionné(s). Passe en mode Map pour consolider ou ajouter
+            à un load.
           </p>
           <button
             type="button"

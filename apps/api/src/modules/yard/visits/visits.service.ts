@@ -2,16 +2,20 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   AuditAction,
   DockAppointmentStatus,
   YardVisitStatus,
+  computeDwell,
   canTransitionDockAppointment,
   canTransitionYardVisit,
 } from '@pulsar/shared';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
@@ -37,12 +41,57 @@ const ACTIVE_STATUSES = [YardVisitStatus.CHECKED_IN, YardVisitStatus.ASSIGNED];
  */
 @Injectable()
 export class VisitsService {
+  private readonly logger = new Logger(VisitsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequences: SequencesService,
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
+
+  /**
+   * Continuity cron: active visits past their free dwell window accrue detention →
+   * yard.visit.detention (idempotent per visit). Best-effort, never throws (rule 24).
+   */
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  async runDwellCheck(): Promise<void> {
+    try {
+      const now = new Date();
+      const active = await this.prisma.yardVisit.findMany({
+        where: { status: { in: ACTIVE_STATUSES }, checkOutAt: null },
+        take: 500,
+        include: { trailer: { select: { unitNumber: true } } },
+      });
+      for (const v of active) {
+        try {
+          const dwell = computeDwell({ checkInAt: v.checkInAt }, now);
+          if (dwell.status !== 'DETENTION') continue;
+          await this.domainEvents.emit(
+            v.tenantId,
+            'yard.visit.detention',
+            { type: 'yard-visit', id: v.id },
+            {
+              visitId: v.id,
+              visitNumber: v.visitNumber,
+              trailerLabel: v.trailer?.unitNumber ?? v.trailerRef ?? '',
+              dwellMinutes: dwell.minutes,
+              detentionMinutes: dwell.detentionMinutes,
+            },
+          );
+        } catch (err) {
+          this.logger.error(
+            `dwell-check failed for visit ${v.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.error(
+        `runDwellCheck failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   private async assertActiveVisit(tenantId: string, id: string) {
     const visit = await this.prisma.yardVisit.findFirst({
@@ -146,7 +195,10 @@ export class VisitsService {
         });
         if (
           appt &&
-          canTransitionDockAppointment(appt.status as DockAppointmentStatus, DockAppointmentStatus.ARRIVED)
+          canTransitionDockAppointment(
+            appt.status as DockAppointmentStatus,
+            DockAppointmentStatus.ARRIVED,
+          )
         ) {
           // ignore count race: a concurrent arrival is acceptable
           await tx.dockAppointment.updateMany({
@@ -177,6 +229,22 @@ export class VisitsService {
       entityId: created.id,
       after: { visitNumber: created.visitNumber, locationId: created.locationId },
     });
+
+    // Cross-module spine (best-effort): a gate check-in is operational context for dispatch.
+    await this.domainEvents.emit(
+      tenantId,
+      'yard.visit.checked-in',
+      { type: 'yard-visit', id: created.id },
+      {
+        visitId: created.id,
+        visitNumber: created.visitNumber,
+        locationId: created.locationId,
+        trailerLabel: created.trailerRef ?? null,
+        trailerId: created.trailerId,
+        carrierId: created.carrierId,
+        direction: created.direction,
+      },
+    );
     return this.get(tenantId, created.id);
   }
 

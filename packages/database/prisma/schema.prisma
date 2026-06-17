@@ -75,6 +75,7 @@ model Tenant {
   agentRuns         AgentRun[]
   incomingCarrierInvoices IncomingCarrierInvoice[]
   maintenanceOrders       MaintenanceOrder[]
+  maintenanceSchedules    MaintenanceSchedule[]
   complianceDocuments     ComplianceDocument[]
   wmsItems        WmsItem[]
   wmsBins         Bin[]
@@ -82,6 +83,8 @@ model Tenant {
   stockMovements  StockMovement[]
   receipts        Receipt[]
   pickOrders      PickOrder[]
+  cycleCounts      CycleCount[]
+  cycleCountLines  CycleCountLine[]
   yardSpots        YardSpot[]
   yardVisits       YardVisit[]
   yardMoves        YardMove[]
@@ -599,10 +602,11 @@ model Vehicle {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
-  tenant            Tenant             @relation(fields: [tenantId], references: [id])
-  carrier           Carrier?           @relation(fields: [carrierId], references: [id])
-  loads             Load[]
-  maintenanceOrders MaintenanceOrder[]
+  tenant               Tenant                @relation(fields: [tenantId], references: [id])
+  carrier              Carrier?              @relation(fields: [carrierId], references: [id])
+  loads                Load[]
+  maintenanceOrders    MaintenanceOrder[]
+  maintenanceSchedules MaintenanceSchedule[]
 
   @@unique([tenantId, unitNumber])
   @@index([tenantId])
@@ -631,11 +635,12 @@ model Trailer {
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
-  tenant            Tenant             @relation(fields: [tenantId], references: [id])
-  carrier           Carrier?           @relation(fields: [carrierId], references: [id])
-  loads             Load[]
-  maintenanceOrders MaintenanceOrder[]
-  yardVisits        YardVisit[]
+  tenant               Tenant                @relation(fields: [tenantId], references: [id])
+  carrier              Carrier?              @relation(fields: [carrierId], references: [id])
+  loads                Load[]
+  maintenanceOrders    MaintenanceOrder[]
+  maintenanceSchedules MaintenanceSchedule[]
+  yardVisits           YardVisit[]
 
   @@unique([tenantId, unitNumber])
   @@index([tenantId])
@@ -1701,19 +1706,53 @@ model MaintenanceOrder {
   vendor        String?
   dueDate       DateTime?
   dueOdometerKm Int?
+  scheduleId    String?
   openedAt      DateTime               @default(now())
   completedAt   DateTime?
   createdById   String?
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id])
-  vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
-  trailer Trailer? @relation(fields: [trailerId], references: [id])
+  tenant   Tenant               @relation(fields: [tenantId], references: [id])
+  vehicle  Vehicle?             @relation(fields: [vehicleId], references: [id])
+  trailer  Trailer?             @relation(fields: [trailerId], references: [id])
+  schedule MaintenanceSchedule? @relation(fields: [scheduleId], references: [id])
 
   @@index([tenantId, status])
   @@index([tenantId, vehicleId])
+  @@index([tenantId, scheduleId])
   @@map("maintenance_orders")
+}
+
+/// Preventive-maintenance plan: an interval (days and/or km) per asset. The cron
+/// computes due/overdue from the anchor; completing a linked work order advances
+/// the anchor so the cycle continues. Asset status is never derived from this.
+model MaintenanceSchedule {
+  id               String          @id @default(cuid())
+  tenantId         String
+  vehicleId        String?
+  trailerId        String?
+  name             String
+  type             MaintenanceType @default(PREVENTIVE)
+  intervalDays     Int?
+  intervalKm       Int?
+  anchorDate       DateTime        @default(now())
+  anchorOdometerKm Int?
+  leadDays         Int             @default(7)
+  isActive         Boolean         @default(true)
+  createdById      String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  tenant  Tenant             @relation(fields: [tenantId], references: [id])
+  vehicle Vehicle?           @relation(fields: [vehicleId], references: [id])
+  trailer Trailer?           @relation(fields: [trailerId], references: [id])
+  orders  MaintenanceOrder[]
+
+  @@index([tenantId, isActive])
+  @@index([tenantId, vehicleId])
+  @@index([tenantId, trailerId])
+  @@map("maintenance_schedules")
 }
 
 model ComplianceDocument {
@@ -1765,26 +1804,79 @@ enum PickOrderStatus {
 }
 
 model WmsItem {
-  id          String   @id @default(cuid())
-  tenantId    String
-  sku         String
-  name        String
-  unit        String   @default("EA")
-  barcode     String?
-  isActive    Boolean  @default(true)
-  createdById String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  tenantId     String
+  sku          String
+  name         String
+  unit         String   @default("EA")
+  barcode      String?
+  reorderPoint Int?
+  reorderQty   Int?
+  isActive     Boolean  @default(true)
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  tenant     Tenant           @relation(fields: [tenantId], references: [id])
-  levels     InventoryLevel[]
-  movements  StockMovement[]
-  receiptLines ReceiptLine[]
-  pickLines  PickLine[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  levels          InventoryLevel[]
+  movements       StockMovement[]
+  receiptLines    ReceiptLine[]
+  pickLines       PickLine[]
+  cycleCountLines CycleCountLine[]
 
   @@unique([tenantId, sku])
   @@index([tenantId])
   @@map("wms_items")
+}
+
+enum CycleCountStatus {
+  OPEN
+  COUNTED
+  RECONCILED
+  CANCELLED
+}
+
+/// Recurring inventory-accuracy loop: snapshot a bin's per-item system qty, record
+/// the physical count, then reconcile — variances post ADJUSTMENT movements via
+/// InventoryService (rule 33; never below 0).
+model CycleCount {
+  id           String           @id @default(cuid())
+  tenantId     String
+  number       String
+  binId        String
+  status       CycleCountStatus @default(OPEN)
+  note         String?
+  countedAt    DateTime?
+  reconciledAt DateTime?
+  createdById  String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id])
+  bin    Bin              @relation(fields: [binId], references: [id])
+  lines  CycleCountLine[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@index([tenantId, binId])
+  @@map("wms_cycle_counts")
+}
+
+model CycleCountLine {
+  id           String   @id @default(cuid())
+  tenantId     String
+  cycleCountId String
+  itemId       String
+  systemQty    Decimal  @db.Decimal(14, 3)
+  countedQty   Decimal? @db.Decimal(14, 3)
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  cycleCount CycleCount @relation(fields: [cycleCountId], references: [id], onDelete: Cascade)
+  item       WmsItem    @relation(fields: [itemId], references: [id])
+
+  @@index([tenantId, cycleCountId])
+  @@map("wms_cycle_count_lines")
 }
 
 model Bin {
@@ -1804,6 +1896,7 @@ model Bin {
   movementsTo   StockMovement[] @relation("MovementToBin")
   receiptLines ReceiptLine[]
   pickLines    PickLine[]
+  cycleCounts  CycleCount[]
 
   @@unique([tenantId, locationId, code])
   @@index([tenantId, locationId])

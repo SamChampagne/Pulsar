@@ -1,8 +1,19 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
-  import { YardDirection, YardSpotType } from '@pulsar/shared';
+  import { YardDirection, YardSpotType, computeAppointmentTiming } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Skeleton } from '$lib/components/ui';
+  import {
+    Badge,
+    Button,
+    Card,
+    EmptyState,
+    Field,
+    Input,
+    Modal,
+    PageHeader,
+    Select,
+    Skeleton,
+  } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
 
@@ -221,25 +232,58 @@
         </thead>
         <tbody class="divide-y divide-edge">
           {#each appointments as a (a.id)}
+            {@const timing = computeAppointmentTiming({
+              windowStart: a.windowStart,
+              windowEnd: a.windowEnd,
+              status: a.status,
+            })}
             <tr class="hover:bg-surface-muted">
               <td class="px-4 py-2.5 font-medium text-ink">
                 {a.appointmentNumber}
-                {#if a.reference}<span class="block text-xs text-ink-faint">{a.reference}</span>{/if}
+                {#if a.reference}<span class="block text-xs text-ink-faint">{a.reference}</span
+                  >{/if}
               </td>
-              <td class="px-4 py-2.5"><Badge tone={statusTone(a.status)}>{a.status}</Badge></td>
+              <td class="px-4 py-2.5">
+                <div class="flex items-center gap-2">
+                  <Badge tone={statusTone(a.status)}>{a.status}</Badge>
+                  {#if timing.status === 'LATE'}
+                    <Badge tone="danger">En retard +{timing.minutesLate}m</Badge>
+                  {:else if timing.status === 'DUE'}
+                    <Badge tone="warn">Fenêtre</Badge>
+                  {/if}
+                </div>
+              </td>
               <td class="px-4 py-2.5 text-ink-muted">{a.direction}</td>
-              <td class="px-4 py-2.5 text-ink-muted">{fmtDate(a.windowStart)} → {fmtDate(a.windowEnd)}</td>
+              <td class="px-4 py-2.5 text-ink-muted"
+                >{fmtDate(a.windowStart)} → {fmtDate(a.windowEnd)}</td
+              >
               <td class="px-4 py-2.5 text-ink-muted">{a.spot?.code ?? '—'}</td>
               <td class="px-4 py-2.5 text-ink-muted">{a.carrier?.name ?? '—'}</td>
               <td class="px-4 py-2.5 text-right">
                 <div class="flex justify-end gap-2">
                   {#if a.status === 'SCHEDULED'}
-                    <Button variant="secondary" onclick={() => action(a, 'arrive', 'Arrivée enregistrée')}>Arrivée</Button>
-                    <Button variant="ghost" onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}>Annuler</Button>
-                    <Button variant="ghost" onclick={() => action(a, 'no-show', 'No-show enregistré')}>No-show</Button>
+                    <Button
+                      variant="secondary"
+                      onclick={() => action(a, 'arrive', 'Arrivée enregistrée')}>Arrivée</Button
+                    >
+                    <Button
+                      variant="ghost"
+                      onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}>Annuler</Button
+                    >
+                    <Button
+                      variant="ghost"
+                      onclick={() => action(a, 'no-show', 'No-show enregistré')}>No-show</Button
+                    >
                   {:else if a.status === 'ARRIVED'}
-                    <Button variant="secondary" onclick={() => action(a, 'complete', 'Rendez-vous complété')}>Compléter</Button>
-                    <Button variant="ghost" onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}>Annuler</Button>
+                    <Button
+                      variant="secondary"
+                      onclick={() => action(a, 'complete', 'Rendez-vous complété')}
+                      >Compléter</Button
+                    >
+                    <Button
+                      variant="ghost"
+                      onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}>Annuler</Button
+                    >
                   {/if}
                 </div>
               </td>
@@ -293,7 +337,12 @@
     </Field>
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { createOpen = false; }}>Annuler</Button>
+    <Button
+      variant="secondary"
+      onclick={() => {
+        createOpen = false;
+      }}>Annuler</Button
+    >
     <Button loading={saving} onclick={submitCreate}>Créer</Button>
   {/snippet}
 </Modal>

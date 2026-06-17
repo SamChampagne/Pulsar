@@ -10,6 +10,7 @@ export type SequenceKey =
   | 'bol'
   | 'receipt'
   | 'pick-order'
+  | 'cycle-count'
   | 'dock-appointment'
   | 'yard-visit';
 
@@ -22,6 +23,7 @@ const PREFIXES: Record<SequenceKey, string> = {
   bol: 'BOL',
   receipt: 'RC',
   'pick-order': 'PK',
+  'cycle-count': 'CC',
   'dock-appointment': 'DA',
   'yard-visit': 'YV',
 };

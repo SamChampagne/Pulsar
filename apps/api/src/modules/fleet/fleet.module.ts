@@ -1,11 +1,14 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
+import { OperatingModule } from '../../core/operating/operating.module';
 import { MaintenanceController } from './maintenance/maintenance.controller';
 import { MaintenanceService } from './maintenance/maintenance.service';
 import { ComplianceController } from './compliance/compliance.controller';
 import { ComplianceService } from './compliance/compliance.service';
 import { FleetOverviewController } from './overview/fleet-overview.controller';
 import { FleetOverviewService } from './overview/fleet-overview.service';
+import { MaintenanceSchedulesController } from './schedules/maintenance-schedules.controller';
+import { MaintenanceSchedulesService } from './schedules/maintenance-schedules.service';
 
 /**
  * Fleet module (maintenance + compliance + overview).
@@ -17,9 +20,19 @@ import { FleetOverviewService } from './overview/fleet-overview.service';
  * TransportationModule).
  */
 @Module({
-  imports: [AuditLogsModule],
-  controllers: [MaintenanceController, ComplianceController, FleetOverviewController],
-  providers: [MaintenanceService, ComplianceService, FleetOverviewService],
+  imports: [AuditLogsModule, forwardRef(() => OperatingModule)],
+  controllers: [
+    MaintenanceController,
+    ComplianceController,
+    FleetOverviewController,
+    MaintenanceSchedulesController,
+  ],
+  providers: [
+    MaintenanceService,
+    ComplianceService,
+    FleetOverviewService,
+    MaintenanceSchedulesService,
+  ],
   exports: [MaintenanceService, ComplianceService],
 })
 export class FleetModule {}
