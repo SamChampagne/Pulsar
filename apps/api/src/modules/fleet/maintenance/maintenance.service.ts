@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import {
   CompleteMaintenanceOrderDto,
   CreateMaintenanceOrderDto,
@@ -28,6 +29,7 @@ export class MaintenanceService {
     private readonly prisma: PrismaService,
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
 
   list(tenantId: string, query: MaintenanceListQueryDto) {
@@ -72,7 +74,13 @@ export class MaintenanceService {
       },
     });
 
-    await this.setAssetStatus(tenantId, userId, dto.vehicleId ?? null, dto.trailerId ?? null, 'MAINTENANCE');
+    await this.setAssetStatus(
+      tenantId,
+      userId,
+      dto.vehicleId ?? null,
+      dto.trailerId ?? null,
+      'MAINTENANCE',
+    );
 
     await this.audit.log({
       tenantId,
@@ -82,6 +90,37 @@ export class MaintenanceService {
       entityId: wo.id,
       after: { type: wo.type, vehicleId: wo.vehicleId, trailerId: wo.trailerId, status: wo.status },
     });
+
+    // Cross-module spine (best-effort): tell the operating workbench an asset left the
+    // dispatchable pool. emit() never throws — a failure here must not break the WO.
+    const assetKind = dto.vehicleId ? 'vehicle' : 'trailer';
+    const assetId = (dto.vehicleId ?? dto.trailerId)!;
+    const unitNumber = dto.vehicleId
+      ? (
+          await this.prisma.vehicle.findFirst({
+            where: { id: dto.vehicleId, tenantId },
+            select: { unitNumber: true },
+          })
+        )?.unitNumber
+      : (
+          await this.prisma.trailer.findFirst({
+            where: { id: dto.trailerId, tenantId },
+            select: { unitNumber: true },
+          })
+        )?.unitNumber;
+    await this.domainEvents.emit(
+      tenantId,
+      'fleet.asset.maintenance',
+      { type: assetKind, id: assetId },
+      {
+        assetKind,
+        assetId,
+        unitNumber: unitNumber ?? null,
+        woId: wo.id,
+        woType: wo.type,
+        description: wo.description,
+      },
+    );
     return wo;
   }
 

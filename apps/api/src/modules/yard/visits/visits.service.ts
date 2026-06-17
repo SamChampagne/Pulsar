@@ -12,6 +12,7 @@ import {
   canTransitionYardVisit,
 } from '@pulsar/shared';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
@@ -42,6 +43,7 @@ export class VisitsService {
     private readonly sequences: SequencesService,
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
 
   private async assertActiveVisit(tenantId: string, id: string) {
@@ -146,7 +148,10 @@ export class VisitsService {
         });
         if (
           appt &&
-          canTransitionDockAppointment(appt.status as DockAppointmentStatus, DockAppointmentStatus.ARRIVED)
+          canTransitionDockAppointment(
+            appt.status as DockAppointmentStatus,
+            DockAppointmentStatus.ARRIVED,
+          )
         ) {
           // ignore count race: a concurrent arrival is acceptable
           await tx.dockAppointment.updateMany({
@@ -177,6 +182,22 @@ export class VisitsService {
       entityId: created.id,
       after: { visitNumber: created.visitNumber, locationId: created.locationId },
     });
+
+    // Cross-module spine (best-effort): a gate check-in is operational context for dispatch.
+    await this.domainEvents.emit(
+      tenantId,
+      'yard.visit.checked-in',
+      { type: 'yard-visit', id: created.id },
+      {
+        visitId: created.id,
+        visitNumber: created.visitNumber,
+        locationId: created.locationId,
+        trailerLabel: created.trailerRef ?? null,
+        trailerId: created.trailerId,
+        carrierId: created.carrierId,
+        direction: created.direction,
+      },
+    );
     return this.get(tenantId, created.id);
   }
 

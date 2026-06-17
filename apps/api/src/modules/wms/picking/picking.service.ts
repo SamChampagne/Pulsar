@@ -1,9 +1,20 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditAction, PickOrderStatus, StockMovementType, canTransitionPickOrder } from '@pulsar/shared';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  AuditAction,
+  PickOrderStatus,
+  StockMovementType,
+  canTransitionPickOrder,
+} from '@pulsar/shared';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { AddPickLineDto, CreatePickOrderDto, PickListQueryDto } from './dto/pick.dto';
 
@@ -25,6 +36,7 @@ export class PickingService {
     private readonly sequences: SequencesService,
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
 
   async list(tenantId: string, q: PickListQueryDto) {
@@ -67,7 +79,8 @@ export class PickingService {
       select: { id: true, type: true },
     });
     if (!loc) throw new NotFoundException('Location not found');
-    if (loc.type !== 'WAREHOUSE') throw new BadRequestException('Pick order requires a WAREHOUSE location');
+    if (loc.type !== 'WAREHOUSE')
+      throw new BadRequestException('Pick order requires a WAREHOUSE location');
 
     if (dto.shipmentId) {
       const shipment = await this.prisma.shipment.findFirst({
@@ -76,7 +89,9 @@ export class PickingService {
       });
       if (!shipment) throw new NotFoundException('Shipment not found');
       if (shipment.originLocationId !== dto.locationId) {
-        throw new BadRequestException('Pick order location must match the shipment origin warehouse');
+        throw new BadRequestException(
+          'Pick order location must match the shipment origin warehouse',
+        );
       }
     }
 
@@ -105,25 +120,45 @@ export class PickingService {
   }
 
   async addLine(tenantId: string, id: string, dto: AddPickLineDto) {
-    const order = await this.prisma.pickOrder.findFirst({ where: { id, tenantId }, select: { id: true, status: true } });
+    const order = await this.prisma.pickOrder.findFirst({
+      where: { id, tenantId },
+      select: { id: true, status: true },
+    });
     if (!order) throw new NotFoundException('Pick order not found');
-    if (order.status !== PickOrderStatus.OPEN) throw new BadRequestException('Pick order is not editable');
+    if (order.status !== PickOrderStatus.OPEN)
+      throw new BadRequestException('Pick order is not editable');
 
-    const item = await this.prisma.wmsItem.findFirst({ where: { id: dto.itemId, tenantId }, select: { id: true } });
+    const item = await this.prisma.wmsItem.findFirst({
+      where: { id: dto.itemId, tenantId },
+      select: { id: true },
+    });
     if (!item) throw new NotFoundException('Item not found');
-    const bin = await this.prisma.bin.findFirst({ where: { id: dto.fromBinId, tenantId }, select: { id: true } });
+    const bin = await this.prisma.bin.findFirst({
+      where: { id: dto.fromBinId, tenantId },
+      select: { id: true },
+    });
     if (!bin) throw new NotFoundException('Bin not found');
 
     await this.prisma.pickLine.create({
-      data: { tenantId, pickOrderId: id, itemId: dto.itemId, fromBinId: dto.fromBinId, qty: dto.qty },
+      data: {
+        tenantId,
+        pickOrderId: id,
+        itemId: dto.itemId,
+        fromBinId: dto.fromBinId,
+        qty: dto.qty,
+      },
     });
     return this.get(tenantId, id);
   }
 
   async removeLine(tenantId: string, id: string, lineId: string) {
-    const order = await this.prisma.pickOrder.findFirst({ where: { id, tenantId }, select: { id: true, status: true } });
+    const order = await this.prisma.pickOrder.findFirst({
+      where: { id, tenantId },
+      select: { id: true, status: true },
+    });
     if (!order) throw new NotFoundException('Pick order not found');
-    if (order.status !== PickOrderStatus.OPEN) throw new BadRequestException('Pick order is not editable');
+    if (order.status !== PickOrderStatus.OPEN)
+      throw new BadRequestException('Pick order is not editable');
 
     await this.prisma.pickLine.deleteMany({ where: { id: lineId, tenantId, pickOrderId: id } });
     return this.get(tenantId, id);
@@ -165,11 +200,30 @@ export class PickingService {
       before: { status: order.status },
       after: { status: PickOrderStatus.COMPLETED, lines: order.lines.length },
     });
+
+    // Cross-module spine (best-effort): a pick tied to a shipment means freight is
+    // prepared and ready to ship — surface it to the operating workbench / dispatch.
+    if (order.shipment) {
+      await this.domainEvents.emit(
+        tenantId,
+        'wms.pick.completed',
+        { type: 'shipment', id: order.shipment.id },
+        {
+          shipmentId: order.shipment.id,
+          shipmentNumber: order.shipment.shipmentNumber,
+          pickOrderId: id,
+          pickOrderNumber: order.number,
+        },
+      );
+    }
     return this.get(tenantId, id);
   }
 
   async cancel(tenantId: string, userId: string, id: string) {
-    const order = await this.prisma.pickOrder.findFirst({ where: { id, tenantId }, select: { id: true, status: true } });
+    const order = await this.prisma.pickOrder.findFirst({
+      where: { id, tenantId },
+      select: { id: true, status: true },
+    });
     if (!order) throw new NotFoundException('Pick order not found');
     if (!canTransitionPickOrder(order.status as PickOrderStatus, PickOrderStatus.CANCELLED)) {
       throw new BadRequestException(`Cannot cancel a pick order in status ${order.status}`);

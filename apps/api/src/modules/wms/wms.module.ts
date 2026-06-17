@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
+import { OperatingModule } from '../../core/operating/operating.module';
 import { ItemsService } from './items/items.service';
 import { ItemsController } from './items/items.controller';
 import { BinsService } from './bins/bins.service';
@@ -27,7 +28,7 @@ import { FulfillmentController } from './fulfillment/fulfillment.controller';
  * so it resolves from providers.
  */
 @Module({
-  imports: [AuditLogsModule],
+  imports: [AuditLogsModule, forwardRef(() => OperatingModule)],
   controllers: [
     ItemsController,
     BinsController,

@@ -51,12 +51,60 @@ describe('resolvePolicies', () => {
 
 describe('FREIGHT_AUDIT policy', () => {
   it('maps carrier-invoice.received to a FREIGHT_AUDIT task (AUTO)', () => {
-    const specs = resolvePolicies({ type: DOMAIN_EVENT_TYPES.CARRIER_INVOICE_RECEIVED, payload: { invoiceId: 'inv1', carrierId: 'c1' } });
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.CARRIER_INVOICE_RECEIVED,
+      payload: { invoiceId: 'inv1', carrierId: 'c1' },
+    });
     expect(specs).toHaveLength(1);
     expect(specs[0].category).toBe('FREIGHT_AUDIT');
     expect(specs[0].subjectType).toBe('incoming-carrier-invoice');
     expect(specs[0].subjectId).toBe('inv1');
     expect(specs[0].dedupKey).toBe('FREIGHT_AUDIT:inv1');
     expect(specs[0].assignHint).toBe('AUTO');
+  });
+});
+
+describe('cross-module policies', () => {
+  it('maps fleet.asset.maintenance to a FLEET_MAINTENANCE task, one per work order', () => {
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.FLEET_ASSET_MAINTENANCE,
+      payload: { assetKind: 'trailer', assetId: 'a1', unitNumber: 'TRL-7', woId: 'wo1' },
+    });
+    expect(specs).toHaveLength(1);
+    expect(specs[0].category).toBe('FLEET_MAINTENANCE');
+    expect(specs[0].subjectType).toBe('trailer');
+    expect(specs[0].subjectId).toBe('a1');
+    expect(specs[0].dedupKey).toBe('FLEET_MAINTENANCE:wo1');
+    expect(specs[0].title).toContain('TRL-7');
+    expect(specs[0].severity).toBe('WARNING');
+  });
+
+  it('maps wms.pick.completed to a FULFILLMENT_READY task only when tied to a shipment', () => {
+    const linked = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.WMS_PICK_COMPLETED,
+      payload: { shipmentId: 'sh1', shipmentNumber: 'SH-1', pickOrderId: 'pk1' },
+    });
+    expect(linked).toHaveLength(1);
+    expect(linked[0].category).toBe('FULFILLMENT_READY');
+    expect(linked[0].subjectId).toBe('sh1');
+    expect(linked[0].dedupKey).toBe('FULFILLMENT_READY:pk1');
+
+    const unlinked = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.WMS_PICK_COMPLETED,
+      payload: { pickOrderId: 'pk2' },
+    });
+    expect(unlinked).toEqual([]);
+  });
+
+  it('maps yard.visit.checked-in to a YARD_ARRIVAL task', () => {
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.YARD_VISIT_CHECKED_IN,
+      payload: { visitId: 'v1', visitNumber: 'YV-1', trailerLabel: 'TRL-9' },
+    });
+    expect(specs).toHaveLength(1);
+    expect(specs[0].category).toBe('YARD_ARRIVAL');
+    expect(specs[0].subjectType).toBe('yard-visit');
+    expect(specs[0].dedupKey).toBe('YARD_ARRIVAL:v1');
+    expect(specs[0].title).toContain('TRL-9');
   });
 });

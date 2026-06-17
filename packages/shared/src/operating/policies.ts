@@ -6,6 +6,10 @@ export const DOMAIN_EVENT_TYPES = {
   TENDER_DECLINED: 'tender.declined',
   TENDER_EXPIRED: 'tender.expired',
   CARRIER_INVOICE_RECEIVED: 'carrier-invoice.received',
+  // Cross-module spine: business modules speak to the operating workbench.
+  FLEET_ASSET_MAINTENANCE: 'fleet.asset.maintenance',
+  WMS_PICK_COMPLETED: 'wms.pick.completed',
+  YARD_VISIT_CHECKED_IN: 'yard.visit.checked-in',
 } as const;
 
 export interface DomainEventInput {
@@ -76,6 +80,77 @@ const POLICIES: Policy[] = [
           subjectType: 'incoming-carrier-invoice',
           subjectId: invoiceId,
           dedupKey: `FREIGHT_AUDIT:${invoiceId}`,
+          details: { ...e.payload },
+          assignHint: 'AUTO' as const,
+        },
+      ];
+    },
+  },
+  {
+    // Fleet → Dispatch: an asset entering maintenance leaves the dispatchable pool.
+    eventType: DOMAIN_EVENT_TYPES.FLEET_ASSET_MAINTENANCE,
+    produce: (e) => {
+      const assetKind = str(e.payload.assetKind) || 'asset';
+      const assetId = str(e.payload.assetId);
+      const unit = str(e.payload.unitNumber);
+      const woId = str(e.payload.woId);
+      const label = unit || assetId;
+      return [
+        {
+          type: OperationalTaskType.EXCEPTION,
+          category: 'FLEET_MAINTENANCE',
+          severity: 'WARNING' as const,
+          title: `${assetKind === 'trailer' ? 'Remorque' : 'Véhicule'} ${label} en maintenance — vérifier l'impact dispatch`,
+          subjectType: assetKind,
+          subjectId: assetId,
+          // One task per work order opening.
+          dedupKey: `FLEET_MAINTENANCE:${woId}`,
+          details: { ...e.payload },
+          assignHint: 'AUTO' as const,
+        },
+      ];
+    },
+  },
+  {
+    // WMS → TMS: a pick order linked to a shipment is completed → freight is ready to ship.
+    eventType: DOMAIN_EVENT_TYPES.WMS_PICK_COMPLETED,
+    produce: (e) => {
+      const shipmentId = str(e.payload.shipmentId);
+      const shipmentNumber = str(e.payload.shipmentNumber);
+      const pickOrderId = str(e.payload.pickOrderId);
+      // Only cross-module when the pick is tied to a shipment.
+      if (!shipmentId) return [];
+      return [
+        {
+          type: OperationalTaskType.EXCEPTION,
+          category: 'FULFILLMENT_READY',
+          severity: 'INFO' as const,
+          title: `Shipment ${shipmentNumber || shipmentId} préparé — prêt à expédier`,
+          subjectType: 'shipment',
+          subjectId: shipmentId,
+          dedupKey: `FULFILLMENT_READY:${pickOrderId}`,
+          details: { ...e.payload },
+          assignHint: 'AUTO' as const,
+        },
+      ];
+    },
+  },
+  {
+    // Yard → Dispatch: a trailer/carrier checking in at the gate is operational context.
+    eventType: DOMAIN_EVENT_TYPES.YARD_VISIT_CHECKED_IN,
+    produce: (e) => {
+      const visitId = str(e.payload.visitId);
+      const visitNumber = str(e.payload.visitNumber);
+      const trailer = str(e.payload.trailerLabel);
+      return [
+        {
+          type: OperationalTaskType.EXCEPTION,
+          category: 'YARD_ARRIVAL',
+          severity: 'INFO' as const,
+          title: `Arrivée cour ${visitNumber || visitId}${trailer ? ` — ${trailer}` : ''}`,
+          subjectType: 'yard-visit',
+          subjectId: visitId,
+          dedupKey: `YARD_ARRIVAL:${visitId}`,
           details: { ...e.payload },
           assignHint: 'AUTO' as const,
         },
