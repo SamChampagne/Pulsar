@@ -14,7 +14,7 @@
     EmptyState,
     Card,
     Skeleton,
-    Panel,
+    Modal,
     ErrorNotice,
     type Tone,
   } from '$lib/components/ui';
@@ -286,7 +286,7 @@
   </Table>
 {/if}
 
-<Panel bind:open={showForm} title={editing ? `Éditer ${editing.code}` : 'Nouveau lieu'}>
+<Modal bind:open={showForm} title={editing ? `Éditer ${editing.code}` : 'Nouveau lieu'} size="md">
   {#snippet children()}
     <form onsubmit={save} class="space-y-3">
       {#if error}<p class="text-sm text-danger">{error}</p>{/if}
@@ -344,4 +344,4 @@
       </div>
     </form>
   {/snippet}
-</Panel>
+</Modal>
