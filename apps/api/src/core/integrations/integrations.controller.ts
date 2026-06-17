@@ -16,6 +16,10 @@ class CreateIntegrationDto {
   name!: string;
 
   @IsOptional()
+  @IsIn(['DISABLED', 'ENABLED', 'ERROR'])
+  status?: 'DISABLED' | 'ENABLED' | 'ERROR';
+
+  @IsOptional()
   @IsObject()
   config?: Record<string, unknown>;
 }

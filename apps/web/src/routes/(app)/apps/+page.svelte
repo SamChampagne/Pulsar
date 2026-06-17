@@ -1,195 +1,243 @@
 <script lang="ts">
   import { MODULE_KEYS, type ModuleKey } from '@pulsar/shared';
   import { auth } from '$lib/stores/auth';
-  import { Badge, Card, PageHeader } from '$lib/components/ui';
+  import { MODULE_UNIVERSES } from '$lib/modules/universe';
+  import {
+    Bot,
+    Boxes,
+    Cable,
+    CircleDollarSign,
+    Container,
+    Cuboid,
+    Database,
+    Factory,
+    PackageOpen,
+    Settings,
+    ShieldCheck,
+    Truck,
+    Users,
+    Warehouse,
+    Workflow,
+    Wrench,
+  } from 'lucide-svelte';
+  import type { ComponentType } from 'svelte';
 
-  interface AppTile {
+  interface DeskApp {
     key: string;
-    title: string;
-    subtitle: string;
+    label: string;
+    subtitle?: string;
     href: string;
     moduleKey?: ModuleKey;
-    status: 'core' | 'enabled' | 'disabled';
-    kpi: string;
-    next: string;
-    agent: string;
+    status: 'core' | 'enabled' | 'disabled' | 'soon';
+    icon: ComponentType;
+    accent: string;
+    meta?: string;
   }
 
   const moduleEnabled = (key: ModuleKey): boolean => $auth?.tenant.enabledModules.includes(key) ?? false;
+  const universe = (key: string) => MODULE_UNIVERSES[key]?.accent ?? '#0ea5e9';
 
-  const apps = $derived<AppTile[]>([
+  const businessApps = $derived<DeskApp[]>([
     {
       key: 'transport',
-      title: 'Transport / Operations',
-      subtitle: 'TMS, dispatch, loads, routing, tracking and POD.',
+      label: 'Transport',
+      subtitle: 'Dispatch, loads, shipments, lanes and rates.',
       href: '/dispatch',
       moduleKey: MODULE_KEYS.TRANSPORTATION,
       status: moduleEnabled(MODULE_KEYS.TRANSPORTATION) ? 'enabled' : 'disabled',
-      kpi: 'Live execution',
-      next: 'Planifier, tender, suivre et fermer les mouvements.',
-      agent: 'Dispatcher / Exception agent',
+      icon: Truck,
+      accent: universe('transport'),
     },
     {
       key: 'finance',
-      title: 'Finance / Ledger',
-      subtitle: 'Receivables, payables, invoice audit, margin and payment readiness.',
+      label: 'Comptabilité',
+      subtitle: 'Finance, audit, invoices, margins and cash readiness.',
       href: '/finance',
       moduleKey: MODULE_KEYS.BILLING,
       status: moduleEnabled(MODULE_KEYS.BILLING) ? 'enabled' : 'disabled',
-      kpi: 'Money movement',
-      next: 'Transformer les opérations en cash, marge et litiges contrôlés.',
-      agent: 'Invoice auditor / margin analyst',
+      icon: CircleDollarSign,
+      accent: universe('billing'),
     },
     {
       key: 'assets',
-      title: 'Assets / Fleet',
-      subtitle: 'Vehicles, trailers, equipment, maintenance, compliance and lifecycle cost.',
-      href: '/fleet',
+      label: 'Actifs - Fleet',
+      subtitle: 'Vehicles, trailers, drivers, maintenance and compliance.',
+      href: '/assets',
       moduleKey: MODULE_KEYS.FLEET,
       status: moduleEnabled(MODULE_KEYS.FLEET) ? 'enabled' : 'disabled',
-      kpi: 'Readiness',
-      next: 'Savoir ce qui est disponible, assigné, expiré ou en maintenance.',
-      agent: 'Maintenance / compliance agent',
+      icon: Boxes,
+      accent: universe('fleet'),
     },
     {
       key: 'warehouse',
-      title: 'Warehouse / Inventory',
-      subtitle: 'Items, bins, receiving, inventory movement, picking and fulfillment.',
+      label: 'Stock',
+      subtitle: 'Warehouse, inventory, receiving, picking and fulfillment.',
       href: '/wms',
       moduleKey: MODULE_KEYS.WMS,
       status: moduleEnabled(MODULE_KEYS.WMS) ? 'enabled' : 'disabled',
-      kpi: 'Inventory flow',
-      next: 'Réceptionner, déplacer, préparer et relier l’entrepôt aux commandes.',
-      agent: 'Warehouse prep agent',
+      icon: Warehouse,
+      accent: universe('wms'),
     },
     {
       key: 'yard',
-      title: 'Yard / Dock',
-      subtitle: 'Gate, dock appointments, yard spots, dwell and trailer movement.',
+      label: 'Cour / Dock',
+      subtitle: 'Gate, appointments, spots and dwell state.',
       href: '/yard',
       moduleKey: MODULE_KEYS.YARD,
       status: moduleEnabled(MODULE_KEYS.YARD) ? 'enabled' : 'disabled',
-      kpi: 'Yard state',
-      next: 'Voir la cour comme un outil visuel, pas comme une table.',
-      agent: 'Dock scheduler agent',
+      icon: Container,
+      accent: universe('yard'),
     },
     {
       key: 'agents',
-      title: 'AI Workforce',
-      subtitle: 'Governed Hermes employees, tasks, proposed actions and evidence.',
+      label: 'Agents IA',
+      subtitle: 'Employés Hermes, approvals, workbench and evidence.',
       href: '/agents',
       status: 'core',
-      kpi: 'Governed autonomy',
-      next: 'Assigner des employés IA aux modules avec caps, audit et kill switch.',
-      agent: 'Manager / specialist roster',
+      icon: Bot,
+      accent: universe('agents'),
     },
     {
       key: 'connect',
-      title: 'Connect / Developer Platform',
-      subtitle: 'Integrations, API keys, webhooks, MCP tools and external system readiness.',
+      label: 'Connect',
+      subtitle: 'Integrations, API keys, webhooks and MCP tools.',
       href: '/connect',
       status: 'core',
-      kpi: 'Connectivity',
-      next: 'Brancher ERP, EDI, accounting, télématique et outils agents.',
-      agent: 'Integration operator agent',
+      icon: Cable,
+      accent: universe('connect'),
+    },
+    {
+      key: 'production',
+      label: 'Production',
+      subtitle: 'Manufacturing and work orders — future module.',
+      href: '/settings/modules',
+      status: 'soon',
+      icon: Factory,
+      accent: '#0ea5e9',
+    },
+    {
+      key: 'quality',
+      label: 'Qualité',
+      subtitle: 'Inspections, non-conformance and quality gates — future module.',
+      href: '/settings/modules',
+      status: 'soon',
+      icon: ShieldCheck,
+      accent: '#0ea5e9',
+    },
+    {
+      key: 'purchase',
+      label: 'Achat',
+      subtitle: 'Procurement, vendors and purchase orders — future module.',
+      href: '/settings/modules',
+      status: 'soon',
+      icon: PackageOpen,
+      accent: '#0ea5e9',
+    },
+    {
+      key: 'projects',
+      label: 'Projets',
+      subtitle: 'Project delivery and customer work — future module.',
+      href: '/settings/modules',
+      status: 'soon',
+      icon: Workflow,
+      accent: '#0ea5e9',
     },
   ]);
+
+  const systemShortcuts: DeskApp[] = [
+    { key: 'settings', label: 'Réglages', href: '/settings/users', status: 'core', icon: Settings, accent: '#737985' },
+    { key: 'data', label: 'Données', href: '/settings/modules', status: 'core', icon: Database, accent: '#737985' },
+    { key: 'users', label: 'Utilisateurs', href: '/settings/users', status: 'core', icon: Users, accent: '#737985' },
+    { key: 'automation', label: 'Automation', href: '/settings/agent-runtime', status: 'core', icon: Wrench, accent: '#737985' },
+  ];
+
+  const allApps = $derived(businessApps);
+  let frameworkOpen = $state(false);
 </script>
 
-<PageHeader
-  title="Pulsar Apps"
-  subtitle="Une plateforme LSOS composée de gros modules métier. Transport est un module phare — pas toute la plateforme."
-/>
+<svelte:head><title>Pulsar Desk</title></svelte:head>
 
-<section class="mb-5 overflow-hidden rounded-card border border-edge bg-ink text-white shadow-sm">
-  <div class="grid gap-5 p-5 lg:grid-cols-[1.15fr_0.85fr] lg:p-6">
-    <div>
-      <p class="text-xs font-semibold tracking-[0.24em] text-white/55 uppercase">Platform operating system</p>
-      <h1 class="mt-2 max-w-3xl text-2xl font-bold tracking-tight sm:text-3xl">
-        Chaque module doit se sentir comme une vraie application, avec ses données, ses workflows et ses agents.
-      </h1>
-      <p class="mt-3 max-w-2xl text-sm leading-6 text-white/68">
-        Le core garde les tenants, permissions, audit, intégrations et politiques. Les apps métier — Finance,
-        Assets, Warehouse, Yard, Transport — deviennent des surfaces profondes branchées à la même gouvernance.
+<section class="min-h-[calc(100vh-3.5rem)] bg-[#f8f8f7] px-4 py-14 text-ink sm:px-8 lg:px-12">
+  <div class="mx-auto max-w-5xl">
+    <div class="mb-10 text-center">
+      <p class="text-xs font-semibold tracking-[0.26em] text-ink-faint uppercase">Pulsar Desk</p>
+      <h1 class="mt-2 text-xl font-semibold tracking-tight text-ink">Choisis un univers</h1>
+      <p class="mx-auto mt-2 max-w-xl text-sm leading-6 text-ink-muted">
+        Le bureau garde les modules métier comme vraies apps. Le Framework reste un bloc de contexte au hover, pas une page sèche qui casse le flow.
       </p>
     </div>
-    <div class="grid grid-cols-2 gap-2 text-sm">
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Apps visibles</p>
-        <p class="mt-1 text-2xl font-semibold">{apps.length}</p>
+
+    <div class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6">
+      <div class="relative flex w-24 flex-col items-center text-center">
+        <button
+          type="button"
+          class="group flex w-24 flex-col items-center text-center outline-none"
+          aria-label="Ouvrir le dossier Framework"
+          aria-expanded={frameworkOpen}
+          onclick={() => (frameworkOpen = !frameworkOpen)}
+        >
+          <span class="relative grid size-14 place-items-center rounded-[18px] bg-[#737985] text-white shadow-sm ring-1 ring-black/5 transition duration-150 group-hover:-translate-y-1 group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-accent">
+            <span class="absolute inset-1 grid grid-cols-2 gap-1 rounded-[14px] bg-white/10 p-1">
+              <span class="rounded-md bg-white/35"></span>
+              <span class="rounded-md bg-white/20"></span>
+              <span class="rounded-md bg-white/20"></span>
+              <span class="rounded-md bg-white/35"></span>
+            </span>
+            <Cuboid class="relative size-6" strokeWidth={2.2} />
+          </span>
+          <span class="mt-3 line-clamp-2 text-sm font-semibold leading-tight text-ink group-hover:text-accent">Framework</span>
+          <span class="mt-1 text-xs leading-tight text-ink-faint">Dossier</span>
+        </button>
+
+        {#if frameworkOpen}
+          <div class="absolute left-1/2 top-[5.25rem] z-30 w-[min(430px,calc(100vw-2rem))] -translate-x-1/2 rounded-[30px] border border-edge bg-white/96 p-4 text-left shadow-pop backdrop-blur">
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 class="text-sm font-semibold text-ink">Framework</h2>
+                <p class="mt-1 text-xs leading-5 text-ink-muted">Core système: réglages, données, utilisateurs et automation. Comme un dossier d'apps, sans quitter le bureau.</p>
+              </div>
+              <button type="button" class="rounded-full bg-surface-muted px-2 py-1 text-xs font-semibold text-ink-muted hover:text-ink" onclick={() => (frameworkOpen = false)}>Fermer</button>
+            </div>
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {#each systemShortcuts as shortcut (shortcut.key)}
+                {@const Icon = shortcut.icon}
+                <a href={shortcut.href} class="group/item flex flex-col items-center rounded-2xl bg-[#f3f3f2] p-3 text-center transition hover:-translate-y-0.5 hover:bg-[#ececea]">
+                  <span class="flex size-10 items-center justify-center rounded-2xl bg-[#737985] text-white shadow-sm"><Icon class="size-5" /></span>
+                  <span class="mt-2 text-xs font-semibold leading-tight text-ink-muted group-hover/item:text-ink">{shortcut.label}</span>
+                </a>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Core partagé</p>
-        <p class="mt-1 text-2xl font-semibold">1</p>
-      </div>
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Mode</p>
-        <p class="mt-1 text-2xl font-semibold">LSOS</p>
-      </div>
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">AI</p>
-        <p class="mt-1 text-2xl font-semibold">Workforce</p>
-      </div>
+
+      {#each allApps as app (app.key)}
+        {@const Icon = app.icon}
+        <a
+          href={app.status === 'disabled' ? '/settings/modules' : app.href}
+          class="group flex w-24 flex-col items-center text-center outline-none"
+          aria-label={`${app.label}${app.status === 'disabled' ? ' à activer' : ''}`}
+          title={app.subtitle ?? app.label}
+        >
+          <span
+            class="relative flex size-14 items-center justify-center rounded-2xl text-white shadow-sm ring-1 ring-black/5 transition duration-150 group-hover:-translate-y-1 group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-accent"
+            style={`background: ${app.status === 'disabled' || app.status === 'soon' ? '#9aa1ad' : app.accent}`}
+          >
+            <Icon class="size-7" strokeWidth={2.15} />
+            {#if app.status === 'soon'}
+              <span class="absolute -right-1 -top-1 size-3 rounded-full border-2 border-[#f8f8f7] bg-amber-400"></span>
+            {:else if app.status === 'disabled'}
+              <span class="absolute -right-1 -top-1 size-3 rounded-full border-2 border-[#f8f8f7] bg-slate-300"></span>
+            {/if}
+          </span>
+          <span class="mt-3 line-clamp-2 text-sm font-semibold leading-tight text-ink group-hover:text-accent">{app.label}</span>
+          {#if app.meta}
+            <span class="mt-1 text-xs leading-tight text-ink-faint">{app.meta}</span>
+          {:else if app.status === 'soon'}
+            <span class="mt-1 text-xs leading-tight text-ink-faint">Plus tard</span>
+          {/if}
+        </a>
+      {/each}
     </div>
   </div>
 </section>
-
-<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-  {#each apps as app (app.key)}
-    <a
-      href={app.status === 'disabled' ? '/settings/modules' : app.href}
-      class="group block rounded-card border border-edge-soft bg-surface p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-accent hover:shadow-card"
-    >
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">{app.kpi}</p>
-          <h2 class="mt-1 text-lg font-bold text-ink">{app.title}</h2>
-        </div>
-        {#if app.status === 'disabled'}
-          <Badge tone="neutral">À activer</Badge>
-        {:else if app.status === 'core'}
-          <Badge tone="info">Core</Badge>
-        {:else}
-          <Badge tone="ok">Actif</Badge>
-        {/if}
-      </div>
-      <p class="mt-3 min-h-10 text-sm leading-5 text-ink-muted">{app.subtitle}</p>
-      <div class="mt-4 rounded-inner border border-edge-soft bg-surface-muted p-3">
-        <p class="text-xs font-semibold text-ink">Prochain travail</p>
-        <p class="mt-1 text-xs leading-5 text-ink-muted">{app.next}</p>
-      </div>
-      <div class="mt-3 flex items-center justify-between text-xs">
-        <span class="text-ink-faint">Agent</span>
-        <span class="font-medium text-ink-muted">{app.agent}</span>
-      </div>
-    </a>
-  {/each}
-</div>
-
-<div class="mt-5">
-  <Card>
-  <div class="grid gap-4 lg:grid-cols-3">
-    <div>
-      <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">Principe</p>
-      <h2 class="mt-1 text-base font-bold text-ink">Pas une navbar de TMS</h2>
-      <p class="mt-2 text-sm leading-6 text-ink-muted">
-        Chaque app doit avoir une mission, des KPIs, des objets métier, des exceptions et des agents assignés.
-      </p>
-    </div>
-    <div>
-      <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">Connexion</p>
-      <h2 class="mt-1 text-base font-bold text-ink">Le core relie tout</h2>
-      <p class="mt-2 text-sm leading-6 text-ink-muted">
-        Tenants, permissions, audit, documents, notifications, intégrations et ProposedActions restent communs.
-      </p>
-    </div>
-    <div>
-      <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">Différence</p>
-      <h2 class="mt-1 text-base font-bold text-ink">Fleetbase comme mécanisme</h2>
-      <p class="mt-2 text-sm leading-6 text-ink-muted">
-        On reprend l’idée de modules profonds — Fleet-Ops, Ledger, Pallet, Extensions — sans copier leur code/UI.
-      </p>
-    </div>
-  </div>
-  </Card>
-</div>

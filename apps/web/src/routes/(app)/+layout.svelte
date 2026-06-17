@@ -6,11 +6,12 @@
   import { auth, clearAuth, getRefreshToken } from '$lib/stores/auth';
   import {
     Bell, LogOut, Search, LayoutDashboard, Truck, Warehouse, Container,
-    Boxes, CircleDollarSign, Bot, Settings, Cable,
+    Boxes, CircleDollarSign, Bot, Settings, Cable, UserRound,
   } from 'lucide-svelte';
   import type { ComponentType } from 'svelte';
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
   import AssistantPanel from '$lib/components/agents/AssistantPanel.svelte';
+  import { MODULE_UNIVERSES } from '$lib/modules/universe';
 
   let { children } = $props();
 
@@ -19,6 +20,7 @@
   }
   let notifications = $state<Notification[]>([]);
   let notifOpen = $state(false);
+  let profileOpen = $state(false);
   const unreadCount = $derived(notifications.filter((n) => !n.readAt).length);
 
   const canReadWorkbench = $derived($auth?.user.permissions.includes(PERMISSIONS.CORE.OPERATING_TASKS_READ) ?? false);
@@ -65,14 +67,14 @@
     icon: ComponentType;
     home: string; // where clicking the domain icon lands
     prefixes: string[]; // route prefixes that belong to this domain
-    sections: NavSection[]; // contextual rail content
+    sections: NavSection[]; // contextual module links
     visible: boolean;
   }
 
   const domains = $derived<Domain[]>([
     {
       key: 'dashboard', label: 'Plateforme', icon: LayoutDashboard,
-      home: '/apps', prefixes: ['/apps', '/dashboard'], visible: true, sections: [],
+      home: '/apps', prefixes: ['/apps', '/framework', '/dashboard'], visible: true, sections: [],
     },
     {
       key: 'transport', label: 'Transport', icon: Truck, home: '/dispatch',
@@ -127,9 +129,12 @@
       ],
     },
     {
-      key: 'fleet', label: 'Assets', icon: Boxes, home: '/fleet',
-      prefixes: ['/fleet', '/assets'], visible: hasFleet,
-      sections: [{ links: [{ href: '/fleet', label: 'Assets & maintenance' }] }],
+      key: 'fleet', label: 'Assets', icon: Boxes, home: '/assets',
+      prefixes: ['/assets', '/fleet'], visible: hasFleet,
+      sections: [{ links: [
+        { href: '/assets', label: 'Assets home' },
+        { href: '/fleet', label: 'Fleet roster' },
+      ] }],
     },
     {
       key: 'billing', label: 'Finance', icon: CircleDollarSign, home: '/finance',
@@ -188,9 +193,31 @@
       .sort((a, b) => Math.max(...b.prefixes.map((p) => p.length)) - Math.max(...a.prefixes.map((p) => p.length)))[0]
       ?? visibleDomains.find((d) => d.key === 'dashboard'),
   );
+  const activeUniverse = $derived(MODULE_UNIVERSES[activeDomain?.key ?? 'dashboard'] ?? MODULE_UNIVERSES.dashboard);
+  const activeLinks = $derived(activeDomain?.sections.flatMap((s) => s.links) ?? []);
+  const deskMode = $derived(String(page.url.pathname) === '/apps' || String(page.url.pathname) === '/framework');
 
   function linkActive(href: string): boolean {
     return page.url.pathname === href || page.url.pathname.startsWith(href + '/');
+  }
+
+  function displayName(): string {
+    const user = $auth?.user;
+    if (!user) return 'Utilisateur Pulsar';
+    const name = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim();
+    return name || user.email;
+  }
+
+  function initials(): string {
+    const user = $auth?.user;
+    if (!user) return 'U';
+    const letters = `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.trim();
+    return (letters || user.email.slice(0, 2)).toUpperCase();
+  }
+
+  function closeFloaters() {
+    notifOpen = false;
+    profileOpen = false;
   }
 
   function logout() {
@@ -207,90 +234,176 @@
       d.sections.flatMap((s) => s.links.map((l) => ({ label: l.label, hint: d.label, run: () => goto(l.href) }))),
     ),
     { label: 'Pulsar Apps', hint: 'plateforme', run: () => goto('/apps') },
+    { label: 'Framework', hint: 'plateforme', run: () => goto('/framework') },
   ]);
 </script>
 
 {#if $auth}
-  <div class="flex min-h-screen">
-    <!-- Rail 1 — domains -->
-    <aside class="flex w-[4.75rem] flex-col items-center gap-1 bg-sidebar py-3">
-      <a href="/apps" class="mb-2 text-lg font-bold text-white" aria-label="Pulsar">⬢</a>
-      <button
-        class="mb-1 flex size-10 flex-col items-center justify-center rounded-lg text-ink-faint hover:bg-sidebar-hover hover:text-white"
-        onclick={() => (paletteOpen = true)} aria-label="Rechercher (⌘K)" title="Rechercher  ⌘K"
-      >
-        <Search class="size-5" />
-      </button>
-
-      <nav class="flex flex-1 flex-col items-center gap-1">
-        {#each visibleDomains as d (d.key)}
-          {@const Icon = d.icon}
-          {@const active = activeDomain?.key === d.key}
-          <a
-            href={d.home}
-            class={`group flex w-full flex-col items-center gap-0.5 rounded-lg px-1 py-2 transition-colors ${active ? 'bg-accent text-white' : 'text-ink-faint hover:bg-sidebar-hover hover:text-white'}`}
-            aria-label={d.label} title={d.label}
+  <div
+    class="flex min-h-screen"
+    style={`--module-accent: ${activeUniverse.accent}; --module-soft: ${activeUniverse.soft}; --module-rgb: ${activeUniverse.rgb};`}
+  >
+    {#if deskMode}
+      <div class="flex min-h-screen flex-1 flex-col bg-[#f8f8f7]">
+        <header class="sticky top-0 z-20 flex h-14 items-center border-b border-edge-soft bg-surface/96 px-4 shadow-[0_1px_0_rgba(15,23,42,0.04)] backdrop-blur">
+          <a href="/apps" class="flex size-8 items-center justify-center rounded-xl bg-[#6f7480] text-sm font-bold text-white shadow-sm" aria-label="Pulsar desk">⬢</a>
+          <button
+            class="mx-auto hidden h-9 w-full max-w-sm items-center justify-between rounded-lg bg-surface-muted px-3 text-sm text-ink-faint ring-1 ring-edge-soft transition hover:bg-surface sm:flex"
+            onclick={() => { closeFloaters(); paletteOpen = true; }}
+            aria-label="Rechercher (Ctrl+K)"
           >
-            <Icon class="size-5" />
-            <span class="text-[9.5px] leading-tight">{d.label.split(' ')[0]}</span>
-          </a>
-        {/each}
+            <span class="inline-flex items-center gap-2"><Search class="size-4" /> Search</span>
+            <span class="text-xs">Ctrl+K</span>
+          </button>
+          <div class="flex items-center gap-2">
+            <button
+              class="relative flex size-8 items-center justify-center rounded-full text-ink-muted hover:bg-surface-muted hover:text-ink"
+              onclick={() => { profileOpen = false; notifOpen = !notifOpen; }} aria-label="Notifications" aria-expanded={notifOpen}
+            >
+              <Bell class="size-4" />
+              {#if unreadCount > 0}<span class="absolute top-1 right-1 size-2 rounded-full bg-danger"></span>{/if}
+            </button>
+            <button
+              class={`grid size-8 place-items-center rounded-full text-xs font-semibold transition ${profileOpen ? 'bg-ink text-white' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}
+              onclick={() => { notifOpen = false; profileOpen = !profileOpen; }}
+              aria-label="Profil utilisateur"
+              aria-expanded={profileOpen}
+              title={$auth.user.email}
+            >
+              {initials()}
+            </button>
+          </div>
+        </header>
+        <main class="min-w-0 flex-1 overflow-x-hidden">{@render children()}</main>
+      </div>
+    {:else}
+    <!-- Module shell — once an app is opened, show ONLY that selected universe. Global app switching lives on /apps. -->
+    <aside class="flex w-64 shrink-0 flex-col border-r border-edge bg-surface">
+      <div class="border-b border-edge-soft p-4">
+        <a href="/apps" class="inline-flex items-center gap-2 rounded-xl bg-surface-muted px-3 py-2 text-xs font-semibold text-ink-muted transition hover:bg-accent-soft hover:text-accent" aria-label="Retour au bureau Pulsar">
+          <span class="text-base leading-none">⬢</span>
+          Bureau des apps
+        </a>
+        <div class="mt-5 flex items-start gap-3">
+          {#if activeDomain}
+            {@const Icon = activeDomain.icon}
+            <div class="grid size-11 place-items-center rounded-2xl text-white shadow-sm" style={`background: ${activeUniverse.accent}`}>
+              <Icon class="size-5" />
+            </div>
+          {/if}
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <h1 class="truncate text-base font-bold text-ink">{activeUniverse.title}</h1>
+              <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={`background: ${activeUniverse.accent}`}>{activeUniverse.signal}</span>
+            </div>
+            <p class="mt-1 text-xs leading-5 text-ink-muted">{activeUniverse.mission}</p>
+          </div>
+        </div>
+      </div>
+
+      <nav class="min-h-0 flex-1 overflow-y-auto p-3" aria-label="Menu du module sélectionné">
+        {#if activeDomain && activeDomain.sections.length > 0}
+          <div class="space-y-4">
+            {#each activeDomain.sections as section (section.label ?? section.links[0]?.href)}
+              <section>
+                {#if section.label}
+                  <div class="px-2 pb-1 text-[10px] font-semibold tracking-[0.18em] text-ink-faint uppercase">{section.label}</div>
+                {/if}
+                <div class="grid gap-1">
+                  {#each section.links as l (l.href)}
+                    <a
+                      href={l.href}
+                      class={`flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm transition ${linkActive(l.href) ? 'font-semibold text-white shadow-sm' : 'text-ink-muted hover:bg-surface-muted hover:text-ink'}`}
+                      style={linkActive(l.href) ? `background: ${activeUniverse.accent}` : ''}
+                    >
+                      <span class="truncate">{l.label}</span>
+                      {#if l.badge}<span class="rounded-full bg-danger px-1.5 text-[10px] font-semibold text-white">{l.badge}</span>{/if}
+                    </a>
+                  {/each}
+                </div>
+              </section>
+            {/each}
+          </div>
+        {:else}
+          <p class="rounded-2xl bg-surface-muted p-3 text-sm text-ink-muted">Ce module n'a pas encore de menu dédié.</p>
+        {/if}
       </nav>
 
-      <button
-        class="relative flex size-10 items-center justify-center rounded-lg text-ink-faint hover:bg-sidebar-hover hover:text-white"
-        onclick={() => (notifOpen = !notifOpen)} aria-label="Notifications" aria-expanded={notifOpen}
-      >
-        <Bell class="size-5" />
-        {#if unreadCount > 0}<span class="absolute top-1 right-1 size-2 rounded-full bg-danger"></span>{/if}
-      </button>
-      <button class="flex size-10 items-center justify-center rounded-lg text-ink-faint hover:bg-sidebar-hover hover:text-white" onclick={logout} aria-label="Déconnexion" title="Déconnexion">
-        <LogOut class="size-5" />
-      </button>
+      <div class="border-t border-edge-soft p-3">
+        <div class="mb-3 rounded-2xl bg-surface-muted p-3 text-xs text-ink-muted">
+          <div class="font-semibold text-ink">{$auth.tenant.name}</div>
+          <div class="mt-1 font-mono text-[10px] text-ink-faint">tenant {$auth.tenant.slug}</div>
+        </div>
+        <div class="flex gap-2">
+          <button
+            class="relative flex size-10 items-center justify-center rounded-xl text-ink-muted hover:bg-surface-muted hover:text-ink"
+            onclick={() => { profileOpen = false; notifOpen = !notifOpen; }} aria-label="Notifications" aria-expanded={notifOpen}
+          >
+            <Bell class="size-5" />
+            {#if unreadCount > 0}<span class="absolute top-1 right-1 size-2 rounded-full bg-danger"></span>{/if}
+          </button>
+          <button
+            class={`grid size-10 flex-1 place-items-center rounded-xl text-xs font-bold transition-colors ${profileOpen ? 'bg-ink text-white' : 'bg-surface-muted text-ink hover:bg-accent-soft hover:text-accent'}`}
+            onclick={() => { notifOpen = false; profileOpen = !profileOpen; }}
+            aria-label="Profil utilisateur" aria-expanded={profileOpen}
+            title="Profil utilisateur"
+          >
+            {initials()}
+          </button>
+        </div>
+      </div>
     </aside>
 
-    <!-- Rail 2 — contextual pages of the active domain (hidden for dashboard) -->
-    {#if activeDomain && activeDomain.sections.length > 0}
-      <aside class="flex w-56 flex-col border-r border-edge bg-surface">
-        <div class="border-b border-edge-soft px-4 py-3.5">
-          <div class="text-[11px] tracking-wide text-ink-faint uppercase">{$auth.tenant.name}</div>
-          <div class="text-sm font-bold text-ink">{activeDomain.label}</div>
-        </div>
-        <nav class="flex-1 space-y-3 overflow-y-auto px-2 py-3">
-          {#each activeDomain.sections as section (section.label ?? section.links[0]?.href)}
-            <div>
-              {#if section.label}
-                <div class="px-2 pb-1 text-[10px] font-semibold tracking-wider text-ink-faint uppercase">{section.label}</div>
-              {/if}
-              {#each section.links as l (l.href)}
-                <a
-                  href={l.href}
-                  class={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${linkActive(l.href) ? 'bg-accent-soft font-semibold text-accent' : 'text-ink-muted hover:bg-surface-muted hover:text-ink'}`}
-                >
-                  <span class="flex-1">{l.label}</span>
-                  {#if l.badge}<span class="rounded-full bg-danger px-1.5 text-[10px] font-semibold text-white">{l.badge}</span>{/if}
-                </a>
-              {/each}
-            </div>
-          {/each}
-        </nav>
-        <div class="border-t border-edge-soft px-4 py-3">
-          <div class="mb-2 rounded-lg border border-edge-soft bg-surface-muted px-2.5 py-2">
-            <div class="text-[10px] font-semibold tracking-wider text-ink-faint uppercase">Tenant actif</div>
-            <div class="mt-0.5 truncate text-sm font-semibold text-ink">{$auth.tenant.name}</div>
-            <div class="mt-0.5 inline-flex max-w-full rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10px] font-semibold text-accent">
-              <span class="truncate">{$auth.tenant.slug}</span>
-            </div>
-          </div>
-          <div class="truncate text-xs text-ink-faint">{$auth.user.email}</div>
-        </div>
-      </aside>
+    <main
+      class="min-w-0 flex-1 overflow-x-hidden p-6"
+      style={`background: radial-gradient(circle at top left, rgb(${activeUniverse.rgb} / 0.10), transparent 360px), var(--color-canvas);`}
+    >
+      {@render children()}
+    </main>
     {/if}
 
-    <main class="min-w-0 flex-1 overflow-x-hidden p-6">{@render children()}</main>
+    {#if profileOpen}
+      <div class={`fixed z-50 w-80 rounded-2xl border border-edge bg-surface p-3 shadow-pop ${deskMode ? 'top-14 right-4' : 'bottom-4 left-[17rem]'}`}>
+        <div class="flex items-start gap-3 border-b border-edge-soft pb-3">
+          <div class="grid size-11 place-items-center rounded-2xl text-sm font-bold text-white" style={`background: ${activeUniverse.accent}`}>{initials()}</div>
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-sm font-bold text-ink">{displayName()}</div>
+            <div class="truncate text-xs text-ink-muted">{$auth.user.email}</div>
+            <div class="mt-2 inline-flex rounded-full bg-ok-soft px-2 py-0.5 text-[10px] font-bold text-ok">Compte actif</div>
+          </div>
+        </div>
+        <div class="grid gap-2 py-3 text-xs">
+          <div class="rounded-xl bg-surface-muted p-3">
+            <div class="font-semibold text-ink">Tenant</div>
+            <div class="mt-1 flex items-center justify-between gap-2">
+              <span class="truncate text-ink-muted">{$auth.tenant.name}</span>
+              <span class="rounded-full px-2 py-0.5 font-mono text-[10px] font-bold" style={`background: ${activeUniverse.soft}; color: ${activeUniverse.accent}`}>{$auth.tenant.slug}</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="rounded-xl bg-surface-muted p-3">
+              <div class="text-ink-faint">Modules</div>
+              <div class="mt-1 text-base font-bold text-ink">{$auth.tenant.enabledModules.length}</div>
+            </div>
+            <div class="rounded-xl bg-surface-muted p-3">
+              <div class="text-ink-faint">Permissions</div>
+              <div class="mt-1 text-base font-bold text-ink">{$auth.user.permissions.length}</div>
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-2 border-t border-edge-soft pt-3">
+          <a href="/settings/users" class="flex flex-1 items-center justify-center gap-2 rounded-lg bg-surface-muted px-3 py-2 text-xs font-semibold text-ink hover:bg-accent-soft hover:text-accent">
+            <UserRound class="size-4" /> Profil
+          </a>
+          <button class="flex flex-1 items-center justify-center gap-2 rounded-lg bg-danger/10 px-3 py-2 text-xs font-semibold text-danger hover:bg-danger hover:text-white" onclick={logout}>
+            <LogOut class="size-4" /> Déconnexion
+          </button>
+        </div>
+      </div>
+    {/if}
 
     {#if notifOpen}
-      <div class="fixed bottom-4 left-[5.5rem] z-30 max-h-96 w-72 overflow-y-auto rounded-card border border-edge bg-surface p-2 shadow-pop">
+      <div class="fixed bottom-4 left-[17rem] z-30 max-h-96 w-72 overflow-y-auto rounded-card border border-edge bg-surface p-2 shadow-pop">
         {#if notifications.length === 0}
           <p class="px-2 py-3 text-center text-xs text-ink-faint">Aucune notification</p>
         {:else}
