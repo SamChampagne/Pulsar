@@ -37,19 +37,6 @@
   const moduleEnabled = (key: ModuleKey): boolean => $auth?.tenant.enabledModules.includes(key) ?? false;
   const universe = (key: string) => MODULE_UNIVERSES[key]?.accent ?? '#0ea5e9';
 
-  const frameworkApps: DeskApp[] = [
-    {
-      key: 'framework',
-      label: 'Framework',
-      subtitle: 'Core système, agents, réglages et futur développement Pulsar.',
-      href: '/framework',
-      status: 'core',
-      icon: Cuboid,
-      accent: '#737985',
-      meta: '9 workspaces',
-    },
-  ];
-
   const businessApps = $derived<DeskApp[]>([
     {
       key: 'transport',
@@ -159,12 +146,13 @@
 
   const systemShortcuts: DeskApp[] = [
     { key: 'settings', label: 'Réglages', href: '/settings/users', status: 'core', icon: Settings, accent: '#737985' },
-    { key: 'data', label: 'Données', href: '/framework', status: 'core', icon: Database, accent: '#737985' },
+    { key: 'data', label: 'Données', href: '/settings/modules', status: 'core', icon: Database, accent: '#737985' },
     { key: 'users', label: 'Utilisateurs', href: '/settings/users', status: 'core', icon: Users, accent: '#737985' },
-    { key: 'automation', label: 'Automation', href: '/framework', status: 'core', icon: Wrench, accent: '#737985' },
+    { key: 'automation', label: 'Automation', href: '/settings/agent-runtime', status: 'core', icon: Wrench, accent: '#737985' },
   ];
 
-  const allApps = $derived([...frameworkApps, ...businessApps]);
+  const allApps = $derived(businessApps);
+  let frameworkOpen = $state(false);
 </script>
 
 <svelte:head><title>Pulsar Desk</title></svelte:head>
@@ -175,11 +163,54 @@
       <p class="text-xs font-semibold tracking-[0.26em] text-ink-faint uppercase">Pulsar Desk</p>
       <h1 class="mt-2 text-xl font-semibold tracking-tight text-ink">Choisis un univers</h1>
       <p class="mx-auto mt-2 max-w-xl text-sm leading-6 text-ink-muted">
-        Le bureau sépare maintenant le coeur Framework des modules métier. Framework sert à configurer, gouverner et bientôt développer; les modules restent les univers opérationnels.
+        Le bureau garde les modules métier comme vraies apps. Le Framework reste un bloc de contexte au hover, pas une page sèche qui casse le flow.
       </p>
     </div>
 
-    <div class="mx-auto grid max-w-[760px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6">
+    <div class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6">
+      <div class="relative flex w-24 flex-col items-center text-center">
+        <button
+          type="button"
+          class="group flex w-24 flex-col items-center text-center outline-none"
+          aria-label="Ouvrir le dossier Framework"
+          aria-expanded={frameworkOpen}
+          onclick={() => (frameworkOpen = !frameworkOpen)}
+        >
+          <span class="relative grid size-14 place-items-center rounded-[18px] bg-[#737985] text-white shadow-sm ring-1 ring-black/5 transition duration-150 group-hover:-translate-y-1 group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-accent">
+            <span class="absolute inset-1 grid grid-cols-2 gap-1 rounded-[14px] bg-white/10 p-1">
+              <span class="rounded-md bg-white/35"></span>
+              <span class="rounded-md bg-white/20"></span>
+              <span class="rounded-md bg-white/20"></span>
+              <span class="rounded-md bg-white/35"></span>
+            </span>
+            <Cuboid class="relative size-6" strokeWidth={2.2} />
+          </span>
+          <span class="mt-3 line-clamp-2 text-sm font-semibold leading-tight text-ink group-hover:text-accent">Framework</span>
+          <span class="mt-1 text-xs leading-tight text-ink-faint">Dossier</span>
+        </button>
+
+        {#if frameworkOpen}
+          <div class="absolute left-1/2 top-[5.25rem] z-30 w-[min(430px,calc(100vw-2rem))] -translate-x-1/2 rounded-[30px] border border-edge bg-white/96 p-4 text-left shadow-pop backdrop-blur">
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 class="text-sm font-semibold text-ink">Framework</h2>
+                <p class="mt-1 text-xs leading-5 text-ink-muted">Core système: réglages, données, utilisateurs et automation. Comme un dossier d'apps, sans quitter le bureau.</p>
+              </div>
+              <button type="button" class="rounded-full bg-surface-muted px-2 py-1 text-xs font-semibold text-ink-muted hover:text-ink" onclick={() => (frameworkOpen = false)}>Fermer</button>
+            </div>
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {#each systemShortcuts as shortcut (shortcut.key)}
+                {@const Icon = shortcut.icon}
+                <a href={shortcut.href} class="group/item flex flex-col items-center rounded-2xl bg-[#f3f3f2] p-3 text-center transition hover:-translate-y-0.5 hover:bg-[#ececea]">
+                  <span class="flex size-10 items-center justify-center rounded-2xl bg-[#737985] text-white shadow-sm"><Icon class="size-5" /></span>
+                  <span class="mt-2 text-xs font-semibold leading-tight text-ink-muted group-hover/item:text-ink">{shortcut.label}</span>
+                </a>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </div>
+
       {#each allApps as app (app.key)}
         {@const Icon = app.icon}
         <a
@@ -207,25 +238,6 @@
           {/if}
         </a>
       {/each}
-    </div>
-
-    <div class="mx-auto mt-14 max-w-3xl rounded-[28px] border border-edge-soft bg-white/72 p-5 shadow-sm">
-      <div class="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h2 class="text-sm font-semibold text-ink">Raccourcis Framework</h2>
-          <p class="mt-1 text-xs text-ink-muted">Les outils qui appartiennent au coeur Pulsar, pas à un module métier.</p>
-        </div>
-        <a href="/framework" class="rounded-full bg-[#737985] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#636976]">Ouvrir Framework</a>
-      </div>
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {#each systemShortcuts as shortcut (shortcut.key)}
-          {@const Icon = shortcut.icon}
-          <a href={shortcut.href} class="flex items-center gap-2 rounded-2xl bg-[#f3f3f2] px-3 py-2 text-sm font-medium text-ink-muted hover:bg-[#ececea] hover:text-ink">
-            <span class="flex size-8 items-center justify-center rounded-xl bg-[#737985] text-white"><Icon class="size-4" /></span>
-            {shortcut.label}
-          </a>
-        {/each}
-      </div>
     </div>
   </div>
 </section>
