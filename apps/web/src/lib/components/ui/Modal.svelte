@@ -2,7 +2,13 @@
   import { X } from 'lucide-svelte';
   import { fade, scale } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { pushOverlay, popOverlay, isTopOverlay } from '$lib/stores/overlay-stack';
+  import {
+    pushOverlay,
+    popOverlay,
+    isTopOverlay,
+    lockScroll,
+    unlockScroll,
+  } from '$lib/stores/overlay-stack';
 
   type Size = 'sm' | 'md' | 'lg' | 'xl';
   let {
@@ -27,8 +33,9 @@
   const dur = reduce ? 0 : 150;
 
   let token = $state<symbol | null>(null);
-  let dialogEl = $state<HTMLElement | null>(null);
+  let dialogEl: HTMLElement | null = null;
   let lastFocused: HTMLElement | null = null;
+  const titleId = `modal-title-${Math.random().toString(36).slice(2, 9)}`;
 
   function close() {
     open = false;
@@ -40,7 +47,7 @@
       const t = pushOverlay();
       token = t;
       lastFocused = document.activeElement as HTMLElement | null;
-      document.body.style.overflow = 'hidden';
+      lockScroll();
       queueMicrotask(() => {
         const focusable = dialogEl?.querySelector<HTMLElement>(
           'input, select, textarea, button, [href], [tabindex]:not([tabindex="-1"])',
@@ -50,7 +57,7 @@
       return () => {
         popOverlay(t);
         token = null;
-        document.body.style.overflow = '';
+        unlockScroll();
         lastFocused?.focus?.();
       };
     }
@@ -67,7 +74,9 @@
         dialogEl.querySelectorAll<HTMLElement>(
           'input, select, textarea, button, [href], [tabindex]:not([tabindex="-1"])',
         ),
-      ).filter((n) => !n.hasAttribute('disabled'));
+      ).filter(
+        (n) => !n.hasAttribute('disabled') && n.getAttribute('aria-disabled') !== 'true',
+      );
       if (nodes.length === 0) return;
       const first = nodes[0];
       const last = nodes[nodes.length - 1];
@@ -99,11 +108,11 @@
       class="flex max-h-[85vh] w-full {widths[size]} flex-col rounded-card bg-surface shadow-pop"
       role="dialog"
       aria-modal="true"
-      aria-label={title}
+      aria-labelledby={titleId}
       transition:scale={{ duration: dur, start: 0.96, easing: cubicOut }}
     >
       <div class="flex items-center justify-between border-b border-edge px-4 py-3">
-        <h2 class="text-sm font-bold text-ink">{title}</h2>
+        <h2 id={titleId} class="text-sm font-bold text-ink">{title}</h2>
         <button class="text-ink-faint hover:text-ink" onclick={close} aria-label="Close">
           <X class="size-4" />
         </button>
