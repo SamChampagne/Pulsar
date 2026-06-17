@@ -1,15 +1,23 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
-  import { Badge, Button, Card, EmptyState, Field, Input, PageHeader, Select, Skeleton, Textarea } from '$lib/components/ui';
+  import {
+    Badge,
+    Button,
+    Card,
+    EmptyState,
+    Field,
+    Input,
+    PageHeader,
+    Select,
+    Skeleton,
+    Textarea,
+  } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
 
   // assetKind drives the asset endpoint, the WO create key (vehicleId|trailerId),
   // the WO list query key, and the compliance subjectType. Reused for vehicles + trailers.
-  let {
-    assetKind,
-    assetId,
-  }: { assetKind: 'VEHICLE' | 'TRAILER'; assetId: string } = $props();
+  let { assetKind, assetId }: { assetKind: 'VEHICLE' | 'TRAILER'; assetId: string } = $props();
 
   const isTrailer = $derived(assetKind === 'TRAILER');
   const assetEndpoint = $derived(isTrailer ? 'trailers' : 'vehicles');
@@ -25,6 +33,9 @@
     model?: string | null;
     year?: number | null;
     plate?: string | null;
+    capacityWeightKg?: number | null;
+    capacityVolumeM3?: number | null;
+    capacityPallets?: number | null;
   }
 
   interface MaintenanceOrder {
@@ -57,9 +68,29 @@
   let loading = $state(true);
   let error = $state('');
 
+  // Descriptive edit (never status — asset status changes only via the maintenance workflow).
+  let editOpen = $state(false);
+  let savingEdit = $state(false);
+  let editForm = $state({
+    unitNumber: '',
+    plate: '',
+    make: '',
+    model: '',
+    year: '',
+    capacityWeightKg: '',
+    capacityVolumeM3: '',
+    capacityPallets: '',
+  });
+
   // New work-order form
   let woFormOpen = $state(false);
-  let woForm = $state({ type: 'PREVENTIVE', description: '', odometerKm: '', vendor: '', dueDate: '' });
+  let woForm = $state({
+    type: 'PREVENTIVE',
+    description: '',
+    odometerKm: '',
+    vendor: '',
+    dueDate: '',
+  });
 
   // Complete work-order sub-form (per WO id)
   let completingId = $state<string | null>(null);
@@ -67,7 +98,13 @@
 
   // New compliance-document form
   let docFormOpen = $state(false);
-  let docForm = $state({ docType: 'REGISTRATION', reference: '', expiresAt: '', issuedAt: '', notes: '' });
+  let docForm = $state({
+    docType: 'REGISTRATION',
+    reference: '',
+    expiresAt: '',
+    issuedAt: '',
+    notes: '',
+  });
 
   function assetTone(status: string): Tone {
     switch (status) {
@@ -140,6 +177,55 @@
   $effect(() => {
     if (assetId) void load();
   });
+
+  function openEdit() {
+    if (!asset) return;
+    editForm = {
+      unitNumber: asset.unitNumber,
+      plate: asset.plate ?? '',
+      make: asset.make ?? '',
+      model: asset.model ?? '',
+      year: asset.year != null ? String(asset.year) : '',
+      capacityWeightKg: asset.capacityWeightKg != null ? String(asset.capacityWeightKg) : '',
+      capacityVolumeM3: asset.capacityVolumeM3 != null ? String(asset.capacityVolumeM3) : '',
+      capacityPallets: asset.capacityPallets != null ? String(asset.capacityPallets) : '',
+    };
+    editOpen = true;
+  }
+
+  async function saveEdit() {
+    if (!editForm.unitNumber.trim()) {
+      toast.error('Le numéro d’unité est requis');
+      return;
+    }
+    savingEdit = true;
+    try {
+      const body: Record<string, unknown> = {
+        unitNumber: editForm.unitNumber.trim(),
+        plate: editForm.plate.trim() || undefined,
+      };
+      if (isTrailer) {
+        body.capacityWeightKg =
+          editForm.capacityWeightKg === '' ? undefined : Number(editForm.capacityWeightKg);
+        body.capacityVolumeM3 =
+          editForm.capacityVolumeM3 === '' ? undefined : Number(editForm.capacityVolumeM3);
+        body.capacityPallets =
+          editForm.capacityPallets === '' ? undefined : Number(editForm.capacityPallets);
+      } else {
+        body.make = editForm.make.trim() || undefined;
+        body.model = editForm.model.trim() || undefined;
+        body.year = editForm.year === '' ? undefined : Number(editForm.year);
+      }
+      await api(`/transportation/${assetEndpoint}/${assetId}`, { method: 'PATCH', body });
+      toast.success('Asset mis à jour');
+      editOpen = false;
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Échec de la mise à jour');
+    } finally {
+      savingEdit = false;
+    }
+  }
 
   async function createWorkOrder() {
     if (!woForm.description.trim()) {
@@ -261,6 +347,7 @@
   <PageHeader title={asset.unitNumber}>
     {#snippet actions()}
       <Badge tone={assetTone(asset!.status)}>{asset!.status}</Badge>
+      {#if !editOpen}<Button variant="secondary" onclick={openEdit}>Éditer</Button>{/if}
     {/snippet}
   </PageHeader>
 
@@ -273,13 +360,60 @@
     {#if asset.plate}<span>· {asset.plate}</span>{/if}
   </div>
 
-  <div class="grid gap-4 lg:grid-cols-2">
+  {#if editOpen}
+    <Card>
+      <h2 class="mb-3 font-semibold text-ink">Éditer le {backLabel}</h2>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <Field label="Numéro d’unité"><Input bind:value={editForm.unitNumber} /></Field>
+        <Field label="Plaque"><Input bind:value={editForm.plate} /></Field>
+        {#if isTrailer}
+          <Field label="Capacité poids (kg)"
+            ><Input type="number" min="0" bind:value={editForm.capacityWeightKg} /></Field
+          >
+          <Field label="Capacité volume (m³)"
+            ><Input
+              type="number"
+              min="0"
+              step="0.1"
+              bind:value={editForm.capacityVolumeM3}
+            /></Field
+          >
+          <Field label="Capacité palettes"
+            ><Input type="number" min="0" bind:value={editForm.capacityPallets} /></Field
+          >
+        {:else}
+          <Field label="Marque"><Input bind:value={editForm.make} /></Field>
+          <Field label="Modèle"><Input bind:value={editForm.model} /></Field>
+          <Field label="Année"><Input type="number" bind:value={editForm.year} /></Field>
+        {/if}
+      </div>
+      <p class="mt-2 text-xs text-ink-faint">
+        Le statut de l’asset n’est pas modifiable ici : il suit le workflow de maintenance.
+      </p>
+      <div class="mt-3 flex gap-2">
+        <Button variant="primary" onclick={saveEdit} loading={savingEdit}>Enregistrer</Button>
+        <Button
+          variant="secondary"
+          onclick={() => {
+            editOpen = false;
+          }}>Annuler</Button
+        >
+      </div>
+    </Card>
+  {/if}
+
+  <div class="mt-4 grid gap-4 lg:grid-cols-2">
     <!-- Maintenance panel -->
     <Card>
       <div class="mb-3 flex items-center justify-between">
         <h2 class="font-semibold text-ink">Maintenance</h2>
         {#if !woFormOpen}
-          <Button variant="secondary" onclick={() => { woFormOpen = true; }}>Nouveau work order</Button>
+          <Button
+            variant="secondary"
+            onclick={() => {
+              woFormOpen = true;
+            }}>Nouveau work order</Button
+          >
         {/if}
       </div>
 
@@ -291,7 +425,11 @@
             </Select>
           </Field>
           <Field label="Description">
-            <Textarea bind:value={woForm.description} rows={2} placeholder="Nature de l'intervention" />
+            <Textarea
+              bind:value={woForm.description}
+              rows={2}
+              placeholder="Nature de l'intervention"
+            />
           </Field>
           <Field label="Odomètre (km)">
             <Input type="number" min="0" bind:value={woForm.odometerKm} />
@@ -304,7 +442,12 @@
           </Field>
           <div class="flex gap-2">
             <Button variant="primary" onclick={createWorkOrder}>Créer</Button>
-            <Button variant="secondary" onclick={() => { woFormOpen = false; }}>Annuler</Button>
+            <Button
+              variant="secondary"
+              onclick={() => {
+                woFormOpen = false;
+              }}>Annuler</Button
+            >
           </div>
         </div>
       {/if}
@@ -323,7 +466,9 @@
               <p class="mt-1 text-ink">{wo.description}</p>
               <div class="mt-1 flex flex-wrap gap-3 text-xs text-ink-muted">
                 {#if wo.odometerKm != null}<span>{wo.odometerKm} km</span>{/if}
-                {#if wo.costAmount != null}<span>{Number(wo.costAmount).toLocaleString()} {wo.costCurrency ?? ''}</span>{/if}
+                {#if wo.costAmount != null}<span
+                    >{Number(wo.costAmount).toLocaleString()} {wo.costCurrency ?? ''}</span
+                  >{/if}
                 {#if wo.vendor}<span>{wo.vendor}</span>{/if}
                 {#if wo.dueDate}<span>échéance {fmtDate(wo.dueDate)}</span>{/if}
               </div>
@@ -339,7 +484,9 @@
               {/if}
 
               {#if completingId === wo.id}
-                <div class="mt-3 flex flex-col gap-3 rounded-card border border-edge bg-surface-muted p-3">
+                <div
+                  class="mt-3 flex flex-col gap-3 rounded-card border border-edge bg-surface-muted p-3"
+                >
                   <Field label="Coût">
                     <Input type="number" min="0" step="0.01" bind:value={completeForm.costAmount} />
                   </Field>
@@ -348,7 +495,12 @@
                   </Field>
                   <div class="flex gap-2">
                     <Button variant="primary" onclick={completeWo}>Confirmer</Button>
-                    <Button variant="secondary" onclick={() => { completingId = null; }}>Annuler</Button>
+                    <Button
+                      variant="secondary"
+                      onclick={() => {
+                        completingId = null;
+                      }}>Annuler</Button
+                    >
                   </div>
                 </div>
               {/if}
@@ -363,7 +515,12 @@
       <div class="mb-3 flex items-center justify-between">
         <h2 class="font-semibold text-ink">Conformité</h2>
         {#if !docFormOpen}
-          <Button variant="secondary" onclick={() => { docFormOpen = true; }}>Ajouter un document</Button>
+          <Button
+            variant="secondary"
+            onclick={() => {
+              docFormOpen = true;
+            }}>Ajouter un document</Button
+          >
         {/if}
       </div>
 
@@ -388,7 +545,12 @@
           </Field>
           <div class="flex gap-2">
             <Button variant="primary" onclick={createDoc}>Ajouter</Button>
-            <Button variant="secondary" onclick={() => { docFormOpen = false; }}>Annuler</Button>
+            <Button
+              variant="secondary"
+              onclick={() => {
+                docFormOpen = false;
+              }}>Annuler</Button
+            >
           </div>
         </div>
       {/if}

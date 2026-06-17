@@ -153,6 +153,7 @@
         '/fuel-tables',
         '/customers',
         '/carriers',
+        '/locations',
         '/analytics',
       ],
       visible: hasTransportation,
@@ -180,6 +181,7 @@
           links: [
             { href: '/customers', label: 'Clients' },
             { href: '/carriers', label: 'Transporteurs' },
+            { href: '/locations', label: 'Lieux' },
           ],
         },
         { label: 'Analyse', links: [{ href: '/analytics', label: 'Analytics' }] },
@@ -272,12 +274,19 @@
       label: 'Agents',
       icon: Bot,
       home: '/agents',
-      prefixes: ['/agents', '/agent-actions', '/workbench', '/settings/agent-runtime'],
+      prefixes: [
+        '/agents',
+        '/agent-actions',
+        '/workbench',
+        '/control-tower',
+        '/settings/agent-runtime',
+      ],
       visible: canReadAgents || canReadWorkbench || canReadAgentActions,
       sections: [
         {
           links: [
             ...(canReadAgents ? [{ href: '/agents', label: 'Employés' }] : []),
+            ...(canReadAgents ? [{ href: '/control-tower', label: 'Control Tower' }] : []),
             ...(canReadAgentActions
               ? [{ href: '/agent-actions', label: 'Actions à approuver', badge: pendingActions }]
               : []),
