@@ -9,7 +9,7 @@
     Table,
     EmptyState,
     Skeleton,
-    Panel,
+    Modal,
     Field,
     Input,
     Select,
@@ -328,8 +328,8 @@
   </Table>
 {/if}
 
-<!-- ─── Create lane Panel ───────────────────────────────────────────────────────── -->
-<Panel bind:open={showForm} title="Nouveau corridor">
+<!-- ─── Create lane Modal ───────────────────────────────────────────────────────── -->
+<Modal bind:open={showForm} title="Nouveau corridor" size="md">
   {#snippet children()}
     <form onsubmit={create} class="space-y-4">
       <Field label="Nom (optionnel)">
@@ -428,10 +428,10 @@
       </div>
     </form>
   {/snippet}
-</Panel>
+</Modal>
 
-<!-- ─── Carrier preferences Panel ─────────────────────────────────────────────── -->
-<Panel bind:open={showCarrierPanel} title="Préférences — {carrierPanelLane?.name ?? '—'}" onclose={cancelEditCarriers}>
+<!-- ─── Carrier preferences Modal ─────────────────────────────────────────────── -->
+<Modal bind:open={showCarrierPanel} title="Préférences — {carrierPanelLane?.name ?? '—'}" onclose={cancelEditCarriers} size="md">
   {#snippet children()}
     <div class="space-y-3">
       <Field label="Ajouter un transporteur">
@@ -471,4 +471,4 @@
       </div>
     </div>
   {/snippet}
-</Panel>
+</Modal>

@@ -13,7 +13,7 @@
     EmptyState,
     Card,
     Skeleton,
-    Panel,
+    Modal,
   } from '$lib/components/ui';
 
   interface UserRow {
@@ -194,7 +194,7 @@
   </Table>
 {/if}
 
-<Panel bind:open={showForm} title="Inviter un utilisateur">
+<Modal bind:open={showForm} title="Inviter un utilisateur" size="md">
   {#snippet children()}
     <form onsubmit={invite} class="space-y-3">
       {#if error}<p class="text-sm text-danger">{error}</p>{/if}
@@ -234,4 +234,4 @@
       </div>
     </form>
   {/snippet}
-</Panel>
+</Modal>

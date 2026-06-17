@@ -13,7 +13,7 @@
     EmptyState,
     Card,
     Skeleton,
-    Panel,
+    Modal,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -139,7 +139,7 @@
   </Table>
 {/if}
 
-<Panel bind:open={showForm} title="Nouveau transporteur">
+<Modal bind:open={showForm} title="Nouveau transporteur" size="md">
   {#snippet children()}
     <form onsubmit={create} class="space-y-3">
       {#if error}<p class="text-sm text-danger">{error}</p>{/if}
@@ -164,4 +164,4 @@
       </div>
     </form>
   {/snippet}
-</Panel>
+</Modal>

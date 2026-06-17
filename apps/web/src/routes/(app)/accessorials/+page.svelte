@@ -10,7 +10,7 @@
     Badge,
     EmptyState,
     Skeleton,
-    Panel,
+    Modal,
     Field,
     Input,
     Select,
@@ -160,7 +160,7 @@
   </Table>
 {/if}
 
-<Panel bind:open={showForm} title={editingId ? 'Modifier accessoriel' : 'Nouvel accessoriel'}>
+<Modal bind:open={showForm} title={editingId ? 'Modifier accessoriel' : 'Nouvel accessoriel'} size="md">
   {#snippet children()}
     <form onsubmit={save} class="space-y-3">
       {#if error}<p class="text-sm text-danger">{error}</p>{/if}
@@ -188,4 +188,4 @@
       </div>
     </form>
   {/snippet}
-</Panel>
+</Modal>
