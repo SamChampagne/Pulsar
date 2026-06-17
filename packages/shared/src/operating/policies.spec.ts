@@ -96,6 +96,34 @@ describe('cross-module policies', () => {
     expect(unlinked).toEqual([]);
   });
 
+  it('maps fleet.maintenance.due to a FLEET_PM_DUE task, CRITICAL when overdue', () => {
+    const due = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.FLEET_MAINTENANCE_DUE,
+      payload: {
+        scheduleId: 'sc1',
+        name: 'Vidange',
+        assetLabel: 'TRK-1',
+        status: 'DUE',
+        cycle: 'c1',
+      },
+    });
+    expect(due[0].category).toBe('FLEET_PM_DUE');
+    expect(due[0].severity).toBe('WARNING');
+    expect(due[0].dedupKey).toBe('FLEET_PM_DUE:sc1:c1');
+
+    const overdue = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.FLEET_MAINTENANCE_DUE,
+      payload: {
+        scheduleId: 'sc1',
+        name: 'Vidange',
+        assetLabel: 'TRK-1',
+        status: 'OVERDUE',
+        cycle: 'c2',
+      },
+    });
+    expect(overdue[0].severity).toBe('CRITICAL');
+  });
+
   it('maps yard.visit.checked-in to a YARD_ARRIVAL task', () => {
     const specs = resolvePolicies({
       type: DOMAIN_EVENT_TYPES.YARD_VISIT_CHECKED_IN,

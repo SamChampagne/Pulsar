@@ -142,6 +142,146 @@
     overview ? [...overview.complianceExpired, ...overview.complianceExpiring] : [],
   );
 
+  // --- Preventive maintenance schedules --------------------------------------
+  interface ScheduleDue {
+    status: 'OK' | 'DUE_SOON' | 'DUE' | 'OVERDUE';
+    nextDueDate: string | null;
+    nextDueKm: number | null;
+    daysUntilDue: number | null;
+    kmUntilDue: number | null;
+    isDue: boolean;
+  }
+  interface Schedule {
+    id: string;
+    name: string;
+    type: string;
+    intervalDays: number | null;
+    intervalKm: number | null;
+    leadDays: number;
+    isActive: boolean;
+    vehicleId: string | null;
+    trailerId: string | null;
+    currentOdometerKm: number | null;
+    due: ScheduleDue;
+  }
+
+  let schedules = $state<Schedule[]>([]);
+  let savingSchedule = $state(false);
+  // asset value encodes kind+id: "vehicle:<id>" | "trailer:<id>"
+  let scheduleForm = $state({
+    asset: '',
+    name: '',
+    intervalDays: '',
+    intervalKm: '',
+    leadDays: '7',
+  });
+
+  function scheduleTone(s: string): Tone {
+    return s === 'OVERDUE' ? 'danger' : s === 'DUE' ? 'warn' : s === 'DUE_SOON' ? 'info' : 'ok';
+  }
+  function assetLabel(s: Schedule): string {
+    if (s.vehicleId) return vehicles.find((v) => v.id === s.vehicleId)?.unitNumber ?? 'véhicule';
+    if (s.trailerId) return trailers.find((t) => t.id === s.trailerId)?.unitNumber ?? 'remorque';
+    return '—';
+  }
+  function intervalLabel(s: Schedule): string {
+    const parts: string[] = [];
+    if (s.intervalDays) parts.push(`${s.intervalDays} j`);
+    if (s.intervalKm) parts.push(`${s.intervalKm.toLocaleString()} km`);
+    return parts.join(' · ') || '—';
+  }
+  function nextDueLabel(s: Schedule): string {
+    const parts: string[] = [];
+    if (s.due.nextDueDate) parts.push(fmtDate(s.due.nextDueDate));
+    if (s.due.nextDueKm != null) parts.push(`${s.due.nextDueKm.toLocaleString()} km`);
+    return parts.join(' · ') || '—';
+  }
+
+  const pmOverdue = $derived(
+    schedules.filter((s) => s.isActive && s.due.status === 'OVERDUE').length,
+  );
+  const pmDue = $derived(schedules.filter((s) => s.isActive && s.due.status === 'DUE').length);
+  const pmDueSoon = $derived(
+    schedules.filter((s) => s.isActive && s.due.status === 'DUE_SOON').length,
+  );
+  const pmActionable = $derived(
+    [...schedules]
+      .filter((s) => s.isActive)
+      .sort(
+        (a, b) =>
+          (b.due.isDue ? 1 : 0) - (a.due.isDue ? 1 : 0) ||
+          (a.due.daysUntilDue ?? 9999) - (b.due.daysUntilDue ?? 9999),
+      ),
+  );
+
+  async function loadSchedules() {
+    try {
+      schedules = await api<Schedule[]>('/fleet/maintenance-schedules');
+    } catch {
+      /* non-critical */
+    }
+  }
+
+  async function createSchedule(e: SubmitEvent) {
+    e.preventDefault();
+    if (!scheduleForm.asset || !scheduleForm.name.trim()) return;
+    if (!scheduleForm.intervalDays && !scheduleForm.intervalKm) {
+      toast.error('Renseigne au moins un intervalle (jours ou km)');
+      return;
+    }
+    savingSchedule = true;
+    try {
+      const [kind, id] = scheduleForm.asset.split(':');
+      await api('/fleet/maintenance-schedules', {
+        method: 'POST',
+        body: {
+          [kind === 'vehicle' ? 'vehicleId' : 'trailerId']: id,
+          name: scheduleForm.name.trim(),
+          intervalDays: scheduleForm.intervalDays ? Number(scheduleForm.intervalDays) : undefined,
+          intervalKm: scheduleForm.intervalKm ? Number(scheduleForm.intervalKm) : undefined,
+          leadDays: scheduleForm.leadDays ? Number(scheduleForm.leadDays) : undefined,
+        },
+      });
+      toast.success('Plan d’entretien créé');
+      scheduleForm = { asset: '', name: '', intervalDays: '', intervalKm: '', leadDays: '7' };
+      await loadSchedules();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Échec de la création du plan');
+    } finally {
+      savingSchedule = false;
+    }
+  }
+
+  async function generateFromSchedule(id: string) {
+    try {
+      await api(`/fleet/maintenance-schedules/${id}/generate-order`, { method: 'POST' });
+      toast.success('Work order généré — asset en maintenance');
+      await Promise.all([loadSchedules(), load()]);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Échec de la génération');
+    }
+  }
+  async function toggleSchedule(s: Schedule) {
+    try {
+      await api(`/fleet/maintenance-schedules/${s.id}`, {
+        method: 'PATCH',
+        body: { isActive: !s.isActive },
+      });
+      await loadSchedules();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Échec');
+    }
+  }
+  async function deleteSchedule(id: string) {
+    if (!confirm('Supprimer ce plan d’entretien ?')) return;
+    try {
+      await api(`/fleet/maintenance-schedules/${id}`, { method: 'DELETE' });
+      await loadSchedules();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Échec');
+    }
+  }
+
   async function load() {
     loading = true;
     error = '';
@@ -156,6 +296,7 @@
       vehicles = veh.items;
       trailers = trl.items;
       drivers = drv.items;
+      void loadSchedules();
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load fleet';
       toast.error(error);
@@ -423,6 +564,103 @@
               </span>
               {#if doc.reference}<span class="text-ink-faint">{doc.reference}</span>{/if}
               <span class="ml-auto text-ink-muted">expire le {fmtDate(doc.expiresAt)}</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </Card>
+  </div>
+
+  <!-- B2. Preventive maintenance schedules -->
+  <div class="mb-5">
+    <div class="mb-2 flex flex-wrap items-center gap-2">
+      <h2 class="text-sm font-semibold text-ink">Maintenance préventive</h2>
+      {#if pmOverdue > 0}<Badge tone="danger">{pmOverdue} en retard</Badge>{/if}
+      {#if pmDue > 0}<Badge tone="warn">{pmDue} dû</Badge>{/if}
+      {#if pmDueSoon > 0}<Badge tone="info">{pmDueSoon} bientôt</Badge>{/if}
+    </div>
+
+    <Card padded={false}>
+      <!-- create -->
+      <form
+        class="grid gap-3 border-b border-edge p-4 lg:grid-cols-[1fr_1fr_120px_130px_110px_auto]"
+        onsubmit={createSchedule}
+      >
+        <label class="space-y-1 text-xs font-semibold text-ink-muted">
+          Asset
+          <Select bind:value={scheduleForm.asset}>
+            <option value="">Choisir…</option>
+            {#each internalVehicles as v (v.id)}<option value={`vehicle:${v.id}`}
+                >{v.unitNumber} (véh.)</option
+              >{/each}
+            {#each internalTrailers as t (t.id)}<option value={`trailer:${t.id}`}
+                >{t.unitNumber} (rem.)</option
+              >{/each}
+          </Select>
+        </label>
+        <label class="space-y-1 text-xs font-semibold text-ink-muted">
+          Nom du plan
+          <Input bind:value={scheduleForm.name} placeholder="Vidange, inspection DOT…" />
+        </label>
+        <label class="space-y-1 text-xs font-semibold text-ink-muted">
+          Tous les (jours)
+          <Input bind:value={scheduleForm.intervalDays} type="number" min="1" placeholder="90" />
+        </label>
+        <label class="space-y-1 text-xs font-semibold text-ink-muted">
+          ou (km)
+          <Input bind:value={scheduleForm.intervalKm} type="number" min="1" placeholder="20000" />
+        </label>
+        <label class="space-y-1 text-xs font-semibold text-ink-muted">
+          Préavis (j)
+          <Input bind:value={scheduleForm.leadDays} type="number" min="0" />
+        </label>
+        <button
+          type="submit"
+          disabled={savingSchedule || !scheduleForm.asset || !scheduleForm.name.trim()}
+          class="self-end rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-strong disabled:opacity-50"
+        >
+          {savingSchedule ? 'Ajout…' : 'Ajouter'}
+        </button>
+      </form>
+
+      <!-- list -->
+      {#if schedules.length === 0}
+        <EmptyState
+          message="Aucun plan d'entretien. Crée un intervalle (km/jours) — l'échéance se calcule toute seule et alimente le Workbench."
+        />
+      {:else}
+        <div class="divide-y divide-edge">
+          {#each pmActionable as s (s.id)}
+            <div
+              class={`flex flex-wrap items-center gap-3 px-4 py-2.5 text-sm ${s.isActive ? '' : 'opacity-50'}`}
+            >
+              <Badge tone={scheduleTone(s.due.status)}>{s.due.status}</Badge>
+              <span class="font-medium text-ink">{assetLabel(s)}</span>
+              <span class="text-ink-muted">{s.name}</span>
+              <span class="text-xs text-ink-faint">chaque {intervalLabel(s)}</span>
+              <span class="ml-auto text-xs text-ink-muted">
+                prochaine: {nextDueLabel(s)}
+                {#if s.due.daysUntilDue != null}
+                  <span class="text-ink-faint">({s.due.daysUntilDue} j)</span>
+                {/if}
+              </span>
+              <div class="flex gap-1">
+                {#if s.due.isDue && s.isActive}
+                  <button
+                    class="rounded-md bg-accent px-2.5 py-1 text-xs font-semibold text-white hover:bg-accent-strong"
+                    onclick={() => generateFromSchedule(s.id)}>Générer WO</button
+                  >
+                {/if}
+                <button
+                  class="rounded-md border border-edge px-2.5 py-1 text-xs font-semibold text-ink-muted hover:bg-surface-muted"
+                  onclick={() => toggleSchedule(s)}>{s.isActive ? 'Pause' : 'Activer'}</button
+                >
+                <button
+                  class="rounded-md px-2.5 py-1 text-xs font-semibold text-danger hover:bg-danger/10"
+                  onclick={() => deleteSchedule(s.id)}
+                  aria-label="Supprimer le plan">✕</button
+                >
+              </div>
             </div>
           {/each}
         </div>

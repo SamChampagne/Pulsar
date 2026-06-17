@@ -8,6 +8,7 @@ export const DOMAIN_EVENT_TYPES = {
   CARRIER_INVOICE_RECEIVED: 'carrier-invoice.received',
   // Cross-module spine: business modules speak to the operating workbench.
   FLEET_ASSET_MAINTENANCE: 'fleet.asset.maintenance',
+  FLEET_MAINTENANCE_DUE: 'fleet.maintenance.due',
   WMS_PICK_COMPLETED: 'wms.pick.completed',
   YARD_VISIT_CHECKED_IN: 'yard.visit.checked-in',
 } as const;
@@ -105,6 +106,30 @@ const POLICIES: Policy[] = [
           subjectId: assetId,
           // One task per work order opening.
           dedupKey: `FLEET_MAINTENANCE:${woId}`,
+          details: { ...e.payload },
+          assignHint: 'AUTO' as const,
+        },
+      ];
+    },
+  },
+  {
+    // Fleet continuity: a preventive-maintenance schedule reached its due/overdue point.
+    eventType: DOMAIN_EVENT_TYPES.FLEET_MAINTENANCE_DUE,
+    produce: (e) => {
+      const scheduleId = str(e.payload.scheduleId);
+      const cycle = str(e.payload.cycle); // stable per due cycle → one task per cycle
+      const label = str(e.payload.assetLabel) || str(e.payload.assetId);
+      const name = str(e.payload.name) || 'entretien préventif';
+      const overdue = str(e.payload.status) === 'OVERDUE';
+      return [
+        {
+          type: OperationalTaskType.EXCEPTION,
+          category: 'FLEET_PM_DUE',
+          severity: overdue ? ('CRITICAL' as const) : ('WARNING' as const),
+          title: `Entretien ${overdue ? 'en retard' : 'dû'} — ${name} (${label})`,
+          subjectType: 'maintenance-schedule',
+          subjectId: scheduleId,
+          dedupKey: `FLEET_PM_DUE:${scheduleId}:${cycle}`,
           details: { ...e.payload },
           assignHint: 'AUTO' as const,
         },

@@ -51,7 +51,12 @@ export class MaintenanceService {
     return wo;
   }
 
-  async create(tenantId: string, userId: string, dto: CreateMaintenanceOrderDto) {
+  async create(
+    tenantId: string,
+    userId: string,
+    dto: CreateMaintenanceOrderDto,
+    scheduleId?: string | null,
+  ) {
     if (!!dto.vehicleId === !!dto.trailerId) {
       throw new BadRequestException('Exactly one of vehicleId or trailerId is required');
     }
@@ -70,6 +75,7 @@ export class MaintenanceService {
         vendor: dto.vendor ?? null,
         dueDate: dto.dueDate ?? null,
         dueOdometerKm: dto.dueOdometerKm ?? null,
+        scheduleId: scheduleId ?? null,
         openedAt: new Date(),
       },
     });
@@ -190,6 +196,18 @@ export class MaintenanceService {
       before: { status: wo.status },
       after: { status: MaintenanceOrderStatus.COMPLETED },
     });
+
+    // Continuity: completing a scheduled WO advances the schedule anchor so the
+    // next cycle is recomputed forward (date = now, odometer = recorded reading).
+    if (wo.scheduleId) {
+      await this.prisma.maintenanceSchedule.updateMany({
+        where: { id: wo.scheduleId, tenantId },
+        data: {
+          anchorDate: new Date(),
+          ...(dto.odometerKm != null ? { anchorOdometerKm: dto.odometerKm } : {}),
+        },
+      });
+    }
     return this.get(tenantId, id);
   }
 

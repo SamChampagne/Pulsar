@@ -7,6 +7,8 @@ import { ComplianceController } from './compliance/compliance.controller';
 import { ComplianceService } from './compliance/compliance.service';
 import { FleetOverviewController } from './overview/fleet-overview.controller';
 import { FleetOverviewService } from './overview/fleet-overview.service';
+import { MaintenanceSchedulesController } from './schedules/maintenance-schedules.controller';
+import { MaintenanceSchedulesService } from './schedules/maintenance-schedules.service';
 
 /**
  * Fleet module (maintenance + compliance + overview).
@@ -19,8 +21,18 @@ import { FleetOverviewService } from './overview/fleet-overview.service';
  */
 @Module({
   imports: [AuditLogsModule, forwardRef(() => OperatingModule)],
-  controllers: [MaintenanceController, ComplianceController, FleetOverviewController],
-  providers: [MaintenanceService, ComplianceService, FleetOverviewService],
+  controllers: [
+    MaintenanceController,
+    ComplianceController,
+    FleetOverviewController,
+    MaintenanceSchedulesController,
+  ],
+  providers: [
+    MaintenanceService,
+    ComplianceService,
+    FleetOverviewService,
+    MaintenanceSchedulesService,
+  ],
   exports: [MaintenanceService, ComplianceService],
 })
 export class FleetModule {}

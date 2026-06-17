@@ -75,6 +75,7 @@ model Tenant {
   agentRuns         AgentRun[]
   incomingCarrierInvoices IncomingCarrierInvoice[]
   maintenanceOrders       MaintenanceOrder[]
+  maintenanceSchedules    MaintenanceSchedule[]
   complianceDocuments     ComplianceDocument[]
   wmsItems        WmsItem[]
   wmsBins         Bin[]
@@ -599,10 +600,11 @@ model Vehicle {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
-  tenant            Tenant             @relation(fields: [tenantId], references: [id])
-  carrier           Carrier?           @relation(fields: [carrierId], references: [id])
-  loads             Load[]
-  maintenanceOrders MaintenanceOrder[]
+  tenant               Tenant                @relation(fields: [tenantId], references: [id])
+  carrier              Carrier?              @relation(fields: [carrierId], references: [id])
+  loads                Load[]
+  maintenanceOrders    MaintenanceOrder[]
+  maintenanceSchedules MaintenanceSchedule[]
 
   @@unique([tenantId, unitNumber])
   @@index([tenantId])
@@ -631,11 +633,12 @@ model Trailer {
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
-  tenant            Tenant             @relation(fields: [tenantId], references: [id])
-  carrier           Carrier?           @relation(fields: [carrierId], references: [id])
-  loads             Load[]
-  maintenanceOrders MaintenanceOrder[]
-  yardVisits        YardVisit[]
+  tenant               Tenant                @relation(fields: [tenantId], references: [id])
+  carrier              Carrier?              @relation(fields: [carrierId], references: [id])
+  loads                Load[]
+  maintenanceOrders    MaintenanceOrder[]
+  maintenanceSchedules MaintenanceSchedule[]
+  yardVisits           YardVisit[]
 
   @@unique([tenantId, unitNumber])
   @@index([tenantId])
@@ -1701,19 +1704,53 @@ model MaintenanceOrder {
   vendor        String?
   dueDate       DateTime?
   dueOdometerKm Int?
+  scheduleId    String?
   openedAt      DateTime               @default(now())
   completedAt   DateTime?
   createdById   String?
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id])
-  vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
-  trailer Trailer? @relation(fields: [trailerId], references: [id])
+  tenant   Tenant               @relation(fields: [tenantId], references: [id])
+  vehicle  Vehicle?             @relation(fields: [vehicleId], references: [id])
+  trailer  Trailer?             @relation(fields: [trailerId], references: [id])
+  schedule MaintenanceSchedule? @relation(fields: [scheduleId], references: [id])
 
   @@index([tenantId, status])
   @@index([tenantId, vehicleId])
+  @@index([tenantId, scheduleId])
   @@map("maintenance_orders")
+}
+
+/// Preventive-maintenance plan: an interval (days and/or km) per asset. The cron
+/// computes due/overdue from the anchor; completing a linked work order advances
+/// the anchor so the cycle continues. Asset status is never derived from this.
+model MaintenanceSchedule {
+  id               String          @id @default(cuid())
+  tenantId         String
+  vehicleId        String?
+  trailerId        String?
+  name             String
+  type             MaintenanceType @default(PREVENTIVE)
+  intervalDays     Int?
+  intervalKm       Int?
+  anchorDate       DateTime        @default(now())
+  anchorOdometerKm Int?
+  leadDays         Int             @default(7)
+  isActive         Boolean         @default(true)
+  createdById      String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  tenant  Tenant             @relation(fields: [tenantId], references: [id])
+  vehicle Vehicle?           @relation(fields: [vehicleId], references: [id])
+  trailer Trailer?           @relation(fields: [trailerId], references: [id])
+  orders  MaintenanceOrder[]
+
+  @@index([tenantId, isActive])
+  @@index([tenantId, vehicleId])
+  @@index([tenantId, trailerId])
+  @@map("maintenance_schedules")
 }
 
 model ComplianceDocument {
