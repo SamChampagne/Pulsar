@@ -9,6 +9,7 @@
     MonitorCog,
     Plug,
     Printer,
+    ScrollText,
     Settings,
     ShieldCheck,
     Users,
@@ -99,7 +100,14 @@
       label: 'Sécurité',
       href: '/settings/sso',
       icon: ShieldCheck,
-      description: 'SSO, sessions, policies, audit et garde-fous.',
+      description: 'SSO, sessions, policies et garde-fous.',
+      status: 'ready',
+    },
+    {
+      label: 'Audit',
+      href: '/settings/audit',
+      icon: ScrollText,
+      description: 'Journal immuable des créations, modifications et changements de statut.',
       status: 'ready',
     },
     {
@@ -114,26 +122,44 @@
 
 <svelte:head><title>Framework · Pulsar</title></svelte:head>
 
-<section class="min-h-[calc(100vh-3.5rem)] bg-[radial-gradient(circle_at_top,rgba(115,121,133,0.18),transparent_360px),#f8f8f7] px-4 py-10 text-ink sm:px-8">
+<section
+  class="min-h-[calc(100vh-3.5rem)] bg-[radial-gradient(circle_at_top,rgba(115,121,133,0.18),transparent_360px),#f8f8f7] px-4 py-10 text-ink sm:px-8"
+>
   <div class="mx-auto max-w-4xl">
     <div class="mb-8 text-center">
-      <a href="/apps" class="text-xs font-semibold tracking-[0.22em] text-ink-faint uppercase hover:text-ink">← Pulsar Desk</a>
+      <a
+        href="/apps"
+        class="text-xs font-semibold tracking-[0.22em] text-ink-faint uppercase hover:text-ink"
+        >← Pulsar Desk</a
+      >
       <h1 class="mt-5 text-2xl font-semibold tracking-tight text-ink">Framework</h1>
-
     </div>
 
-    <div class="rounded-[32px] border border-edge-soft bg-white p-7 shadow-[0_24px_80px_rgba(15,23,42,0.10)] sm:p-9">
+    <div
+      class="rounded-[32px] border border-edge-soft bg-white p-7 shadow-[0_24px_80px_rgba(15,23,42,0.10)] sm:p-9"
+    >
       <div class="grid grid-cols-3 gap-x-7 gap-y-9 sm:grid-cols-4">
         {#each workspaces as workspace (workspace.label)}
           {@const Icon = workspace.icon}
-          <a href={workspace.href} class="group flex flex-col items-center text-center outline-none" title={workspace.description}>
-            <span class="relative flex size-14 items-center justify-center rounded-2xl bg-[#737985] text-white shadow-sm transition duration-150 group-hover:-translate-y-1 group-hover:bg-[#636976] group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-accent">
+          <a
+            href={workspace.href}
+            class="group flex flex-col items-center text-center outline-none"
+            title={workspace.description}
+          >
+            <span
+              class="relative flex size-14 items-center justify-center rounded-2xl bg-[#737985] text-white shadow-sm transition duration-150 group-hover:-translate-y-1 group-hover:bg-[#636976] group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-accent"
+            >
               <Icon class="size-7" strokeWidth={2.05} />
               {#if workspace.status === 'planned'}
-                <span class="absolute -right-1 -top-1 size-3 rounded-full border-2 border-white bg-amber-400"></span>
+                <span
+                  class="absolute -right-1 -top-1 size-3 rounded-full border-2 border-white bg-amber-400"
+                ></span>
               {/if}
             </span>
-            <span class="mt-3 text-sm font-semibold leading-tight text-ink group-hover:text-[#636976]">{workspace.label}</span>
+            <span
+              class="mt-3 text-sm font-semibold leading-tight text-ink group-hover:text-[#636976]"
+              >{workspace.label}</span
+            >
             {#if workspace.status === 'planned'}
               <span class="mt-1 text-[11px] text-ink-faint">prévu</span>
             {/if}
