@@ -15,6 +15,8 @@
     Select,
     Skeleton,
     Textarea,
+    ViewToggle,
+    type ViewId,
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
@@ -57,6 +59,7 @@
   let warehouses = $state<LocationOption[]>([]);
   let loading = $state(true);
   let error = $state('');
+  let view = $state<ViewId>('table');
 
   // Create modal
   let createOpen = $state(false);
@@ -64,6 +67,13 @@
   let createReference = $state('');
   let createNote = $state('');
   let createSaving = $state(false);
+
+  const KANBAN_COLS: { status: string; label: string }[] = [
+    { status: 'OPEN', label: 'Ouvert' },
+    { status: 'PICKED', label: 'Prélevé' },
+    { status: 'COMPLETED', label: 'Complété' },
+    { status: 'CANCELLED', label: 'Annulé' },
+  ];
 
   function statusTone(status: string): Tone {
     switch (status) {
@@ -80,9 +90,28 @@
     }
   }
 
+  function statusLabel(status: string): string {
+    switch (status) {
+      case 'OPEN':
+        return 'Ouvert';
+      case 'PICKED':
+        return 'Prélevé';
+      case 'COMPLETED':
+        return 'Complété';
+      case 'CANCELLED':
+        return 'Annulé';
+      default:
+        return status;
+    }
+  }
+
   function locName(id: string): string {
     const l = warehouses.find((w) => w.id === id);
     return l ? `${l.code} — ${l.name}` : id;
+  }
+
+  function fmtDate(iso: string): string {
+    return new Date(iso).toLocaleDateString();
   }
 
   // Optional shipment pre-filter, driven by ?shipmentId=… (set from the fulfillment workbench).
@@ -149,6 +178,7 @@
 
 <PageHeader title="Prélèvement">
   {#snippet actions()}
+    <ViewToggle bind:view views={['table', 'cards', 'kanban']} />
     <Button onclick={openCreate}>Nouveau pick order</Button>
   {/snippet}
 </PageHeader>
@@ -169,28 +199,92 @@
   </div>
 {:else if error}
   <Card><p class="text-sm text-danger">{error}</p></Card>
-{:else if orders.length === 0}
-  <EmptyState message="Aucun pick order." />
-{:else}
-  <Card padded={false}>
-    <div class="divide-y divide-edge">
+{:else if view === 'table'}
+  {#if orders.length === 0}
+    <EmptyState message="Aucun pick order." />
+  {:else}
+    <Card padded={false}>
+      <div class="divide-y divide-edge">
+        {#each orders as o (o.id)}
+          <button
+            type="button"
+            class="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-surface-muted"
+            onclick={() => goto(`/wms/picking/${o.id}`)}
+          >
+            <Badge tone={statusTone(o.status)}>{statusLabel(o.status)}</Badge>
+            <span class="font-medium text-ink">{o.number}</span>
+            {#if o.shipment}
+              <span class="text-xs font-medium text-accent">↔ {o.shipment.shipmentNumber}</span>
+            {/if}
+            <span class="text-ink-muted">{locName(o.locationId)}</span>
+            <span class="ml-auto text-xs text-ink-faint">{o._count.lines} ligne(s)</span>
+          </button>
+        {/each}
+      </div>
+    </Card>
+  {/if}
+{:else if view === 'cards'}
+  {#if orders.length === 0}
+    <EmptyState message="Aucun pick order." />
+  {:else}
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {#each orders as o (o.id)}
-        <button
-          type="button"
-          class="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-surface-muted"
-          onclick={() => goto(`/wms/picking/${o.id}`)}
-        >
-          <Badge tone={statusTone(o.status)}>{o.status}</Badge>
-          <span class="font-medium text-ink">{o.number}</span>
-          {#if o.shipment}
-            <span class="text-xs font-medium text-accent">↔ {o.shipment.shipmentNumber}</span>
-          {/if}
-          <span class="text-ink-muted">{locName(o.locationId)}</span>
-          <span class="ml-auto text-xs text-ink-faint">{o._count.lines} ligne(s)</span>
-        </button>
+        <a href={`/wms/picking/${o.id}`} class="block">
+          <Card>
+            <div class="flex items-start justify-between gap-2">
+              <span class="font-semibold text-ink">{o.number}</span>
+              <Badge tone={statusTone(o.status)}>{statusLabel(o.status)}</Badge>
+            </div>
+            {#if o.shipment}
+              <p class="mt-0.5 text-xs font-medium text-accent">↔ {o.shipment.shipmentNumber}</p>
+            {/if}
+            <p class="mt-1 truncate text-sm text-ink-muted">{locName(o.locationId)}</p>
+            {#if o.reference}
+              <p class="mt-0.5 truncate text-xs text-ink-faint">Réf : {o.reference}</p>
+            {/if}
+            <div class="mt-2 flex items-center justify-between text-xs text-ink-faint">
+              <span>{o._count.lines} ligne(s)</span>
+              <span>{fmtDate(o.createdAt)}</span>
+            </div>
+          </Card>
+        </a>
       {/each}
     </div>
-  </Card>
+  {/if}
+{:else if view === 'kanban'}
+  <div class="flex gap-3 overflow-x-auto pb-2">
+    {#each KANBAN_COLS as col (col.status)}
+      {@const items = orders.filter((o) => o.status === col.status)}
+      <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+        <div class="flex items-center justify-between px-3 py-2">
+          <Badge tone={statusTone(col.status)}>{col.label}</Badge>
+          <span class="font-mono text-xs text-ink-muted">{items.length}</span>
+        </div>
+        <div class="flex max-h-[65vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
+          {#if items.length === 0}
+            <p class="px-1 py-3 text-center text-xs text-ink-faint">—</p>
+          {:else}
+            {#each items as o (o.id)}
+              <a
+                href={`/wms/picking/${o.id}`}
+                class="block rounded-inner border border-edge-soft bg-surface p-2.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-card"
+              >
+                <div class="font-semibold text-sm text-ink">{o.number}</div>
+                {#if o.shipment}
+                  <div class="mt-0.5 text-[11px] font-medium text-accent">↔ {o.shipment.shipmentNumber}</div>
+                {/if}
+                <div class="mt-0.5 truncate text-xs text-ink-muted">{locName(o.locationId)}</div>
+                <div class="mt-1 flex items-center justify-between text-[11px] text-ink-faint">
+                  <span>{o._count.lines} ligne(s)</span>
+                  <span>{fmtDate(o.createdAt)}</span>
+                </div>
+              </a>
+            {/each}
+          {/if}
+        </div>
+      </div>
+    {/each}
+  </div>
 {/if}
 
 <!-- Create modal -->
