@@ -76,42 +76,29 @@
 </script>
 
 <PageHeader
-  title="Connect / Developer Platform"
-  subtitle="API, webhooks, connectors, MCP tools and external-system readiness — la couche qui rend Pulsar extensible."
+  title="Connect"
+  subtitle="Connecteurs, API keys, webhooks, MCP."
 />
 
 {#if error}<ErrorNotice message={error} />{/if}
 
-<section class="mb-5 overflow-hidden rounded-card border border-edge bg-ink text-white shadow-sm">
-  <div class="grid gap-5 p-5 lg:grid-cols-[1.1fr_0.9fr] lg:p-6">
+<section class="mb-5 rounded-card border border-edge bg-surface p-4 shadow-sm">
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
     <div>
-      <p class="text-xs font-semibold tracking-[0.24em] text-white/55 uppercase">Platform connectivity</p>
-      <h1 class="mt-2 max-w-3xl text-2xl font-bold tracking-tight sm:text-3xl">
-        Connect n’est plus un réglage caché : c’est l’app qui branche Pulsar au reste de l’entreprise.
-      </h1>
-      <p class="mt-3 max-w-2xl text-sm leading-6 text-white/68">
-        ERP, comptabilité, EDI, télématique, webhooks, API keys et outils MCP doivent vivre dans une même surface
-        avec santé, capacités manquantes, logs et actions d’agents.
-      </p>
+      <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">Platform connectivity</p>
+      <h1 class="mt-1 text-xl font-bold text-ink">Integration command</h1>
     </div>
-    <div class="grid grid-cols-2 gap-2 text-sm">
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Connecteurs</p>
-        <p class="mt-1 text-2xl font-semibold">{loading ? '—' : summary.total}</p>
-      </div>
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Live</p>
-        <p class="mt-1 text-2xl font-semibold">{loading ? '—' : summary.live}</p>
-      </div>
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">Bloqués</p>
-        <p class="mt-1 text-2xl font-semibold">{loading ? '—' : summary.blocked}</p>
-      </div>
-      <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-        <p class="text-xs text-white/55">À configurer</p>
-        <p class="mt-1 text-2xl font-semibold">{loading ? '—' : summary.notConfigured}</p>
-      </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="/integrations" class="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-strong">Connect Studio</a>
+      <a href="/settings/api-keys" class="rounded-md border border-edge px-3 py-2 text-sm font-semibold text-ink-muted hover:bg-surface-muted">API keys</a>
+      <a href="/agents" class="rounded-md border border-edge px-3 py-2 text-sm font-semibold text-ink-muted hover:bg-surface-muted">MCP / agents</a>
     </div>
+  </div>
+  <div class="mt-4 grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+    <div class="rounded-xl bg-surface-muted p-3"><p class="text-xs text-ink-faint">Connecteurs</p><p class="mt-1 text-2xl font-semibold text-ink">{loading ? '—' : summary.total}</p></div>
+    <div class="rounded-xl bg-surface-muted p-3"><p class="text-xs text-ink-faint">Live</p><p class="mt-1 text-2xl font-semibold text-ink">{loading ? '—' : summary.live}</p></div>
+    <div class="rounded-xl bg-surface-muted p-3"><p class="text-xs text-ink-faint">Bloqués</p><p class="mt-1 text-2xl font-semibold text-ink">{loading ? '—' : summary.blocked}</p></div>
+    <div class="rounded-xl bg-surface-muted p-3"><p class="text-xs text-ink-faint">À configurer</p><p class="mt-1 text-2xl font-semibold text-ink">{loading ? '—' : summary.notConfigured}</p></div>
   </div>
 </section>
 

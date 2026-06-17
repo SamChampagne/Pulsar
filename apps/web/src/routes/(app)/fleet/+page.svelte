@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import { Badge, Card, EmptyState, PageHeader, Skeleton, Tabs } from '$lib/components/ui';
+  import { Badge, Card, EmptyState, ErrorNotice, Input, PageHeader, Select, Skeleton, Tabs } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
 
@@ -45,13 +45,39 @@
     carrierId: string | null;
   }
 
+  type AssetKind = 'vehicle' | 'trailer';
+  interface AssetForm {
+    kind: AssetKind;
+    unitNumber: string;
+    type: string;
+    plate: string;
+    make: string;
+    model: string;
+    year: string;
+    capacityPallets: string;
+  }
+
+  const vehicleTypes = ['TRACTOR', 'STRAIGHT_TRUCK', 'VAN', 'OTHER'];
+  const trailerTypes = ['DRY_VAN', 'REEFER', 'FLATBED', 'TANKER', 'OTHER'];
+
   let overview = $state<Overview | null>(null);
   let vehicles = $state<Asset[]>([]);
   let trailers = $state<Asset[]>([]);
   let drivers = $state<Driver[]>([]);
   let loading = $state(true);
+  let savingAsset = $state(false);
   let error = $state('');
   let activeTab = $state('vehicles');
+  let assetForm = $state<AssetForm>({
+    kind: 'vehicle',
+    unitNumber: '',
+    type: 'TRACTOR',
+    plate: '',
+    make: '',
+    model: '',
+    year: '',
+    capacityPallets: '',
+  });
 
   // AssetStatus → visual tone. Drivers use ACTIVE/INACTIVE (handled separately).
   function assetTone(status: string): Tone {
@@ -113,6 +139,71 @@
     }
   }
 
+  function setAssetKind(kind: AssetKind) {
+    assetForm.kind = kind;
+    assetForm.type = kind === 'vehicle' ? 'TRACTOR' : 'DRY_VAN';
+    activeTab = kind === 'vehicle' ? 'vehicles' : 'trailers';
+  }
+
+  function resetAssetForm(kind: AssetKind = assetForm.kind) {
+    assetForm = {
+      kind,
+      unitNumber: '',
+      type: kind === 'vehicle' ? 'TRACTOR' : 'DRY_VAN',
+      plate: '',
+      make: '',
+      model: '',
+      year: '',
+      capacityPallets: '',
+    };
+  }
+
+  function clean<T extends Record<string, unknown>>(payload: T): T {
+    return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== '' && value !== undefined && value !== null)) as T;
+  }
+
+  async function createAsset(event: SubmitEvent) {
+    event.preventDefault();
+    if (!assetForm.unitNumber.trim()) return;
+    savingAsset = true;
+    error = '';
+    try {
+      if (assetForm.kind === 'vehicle') {
+        await api('/transportation/vehicles', {
+          method: 'POST',
+          body: clean({
+            unitNumber: assetForm.unitNumber.trim(),
+            type: assetForm.type,
+            plate: assetForm.plate.trim(),
+            make: assetForm.make.trim(),
+            model: assetForm.model.trim(),
+            year: assetForm.year ? Number(assetForm.year) : undefined,
+          }),
+        });
+        activeTab = 'vehicles';
+      } else {
+        await api('/transportation/trailers', {
+          method: 'POST',
+          body: clean({
+            unitNumber: assetForm.unitNumber.trim(),
+            type: assetForm.type,
+            plate: assetForm.plate.trim(),
+            capacityPallets: assetForm.capacityPallets ? Number(assetForm.capacityPallets) : undefined,
+          }),
+        });
+        activeTab = 'trailers';
+      }
+      toast.success(`${assetForm.unitNumber.trim()} ajouté à la flotte`);
+      resetAssetForm(assetForm.kind);
+      await load();
+    } catch (e) {
+      error = e instanceof ApiError ? e.message : 'Impossible d’ajouter l’asset';
+      toast.error(error);
+    } finally {
+      savingAsset = false;
+    }
+  }
+
   $effect(() => {
     void load();
   });
@@ -124,14 +215,14 @@
   ];
 </script>
 
-<PageHeader title="Fleet" />
+<PageHeader title="Fleet" subtitle="Actifs, conformité et maintenance." />
 
 {#if loading}
   <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
     {#each Array(4) as _, i (i)}<Skeleton />{/each}
   </div>
 {:else if error}
-  <Card><p class="text-sm text-danger">{error}</p></Card>
+  <ErrorNotice message={error} onretry={load} />
 {:else if overview}
   <!-- A. Attention cards -->
   <div class="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -160,6 +251,56 @@
       </Card>
     </a>
   </div>
+
+  <Card padded={false}>
+    <form class="grid gap-3 p-4 lg:grid-cols-[140px_1fr_150px_150px_130px]" onsubmit={createAsset}>
+      <div>
+        <p class="text-xs font-semibold tracking-[0.18em] text-ink-faint uppercase">Ajouter</p>
+        <div class="mt-2 flex rounded-lg bg-surface-muted p-1 text-xs font-semibold">
+          <button type="button" class={`flex-1 rounded-md px-2 py-1 ${assetForm.kind === 'vehicle' ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted'}`} onclick={() => setAssetKind('vehicle')}>Véhicule</button>
+          <button type="button" class={`flex-1 rounded-md px-2 py-1 ${assetForm.kind === 'trailer' ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted'}`} onclick={() => setAssetKind('trailer')}>Remorque</button>
+        </div>
+      </div>
+      <label class="space-y-1 text-xs font-semibold text-ink-muted">
+        Unit #
+        <Input bind:value={assetForm.unitNumber} placeholder={assetForm.kind === 'vehicle' ? 'TRK-104' : 'TRL-204'} required />
+      </label>
+      <label class="space-y-1 text-xs font-semibold text-ink-muted">
+        Type
+        <Select bind:value={assetForm.type}>
+          {#each assetForm.kind === 'vehicle' ? vehicleTypes : trailerTypes as type (type)}
+            <option value={type}>{type}</option>
+          {/each}
+        </Select>
+      </label>
+      <label class="space-y-1 text-xs font-semibold text-ink-muted">
+        Plaque
+        <Input bind:value={assetForm.plate} placeholder="QC-4821" />
+      </label>
+      <button type="submit" disabled={savingAsset || !assetForm.unitNumber.trim()} class="self-end rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-strong disabled:opacity-50">
+        {savingAsset ? 'Ajout…' : 'Ajouter asset'}
+      </button>
+      {#if assetForm.kind === 'vehicle'}
+        <label class="space-y-1 text-xs font-semibold text-ink-muted lg:col-start-2">
+          Marque
+          <Input bind:value={assetForm.make} placeholder="Freightliner" />
+        </label>
+        <label class="space-y-1 text-xs font-semibold text-ink-muted">
+          Modèle
+          <Input bind:value={assetForm.model} placeholder="Cascadia" />
+        </label>
+        <label class="space-y-1 text-xs font-semibold text-ink-muted">
+          Année
+          <Input bind:value={assetForm.year} type="number" placeholder="2024" />
+        </label>
+      {:else}
+        <label class="space-y-1 text-xs font-semibold text-ink-muted lg:col-start-2">
+          Palettes
+          <Input bind:value={assetForm.capacityPallets} type="number" placeholder="26" />
+        </label>
+      {/if}
+    </form>
+  </Card>
 
   <!-- B. Compliance attention list -->
   <div id="compliance" class="mb-5">

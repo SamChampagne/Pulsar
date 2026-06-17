@@ -119,9 +119,7 @@
     <div class="mb-8 text-center">
       <a href="/apps" class="text-xs font-semibold tracking-[0.22em] text-ink-faint uppercase hover:text-ink">← Pulsar Desk</a>
       <h1 class="mt-5 text-2xl font-semibold tracking-tight text-ink">Framework</h1>
-      <p class="mx-auto mt-2 max-w-xl text-sm leading-6 text-ink-muted">
-        Le coeur de Pulsar : système, utilisateurs, agents, intégrations et futur environnement de développement de modules.
-      </p>
+
     </div>
 
     <div class="rounded-[32px] border border-edge-soft bg-white p-7 shadow-[0_24px_80px_rgba(15,23,42,0.10)] sm:p-9">
@@ -141,21 +139,6 @@
             {/if}
           </a>
         {/each}
-      </div>
-    </div>
-
-    <div class="mt-7 grid gap-3 sm:grid-cols-3">
-      <div class="rounded-2xl border border-edge-soft bg-white/70 p-4">
-        <p class="text-xs font-semibold tracking-[0.18em] text-ink-faint uppercase">Rôle</p>
-        <p class="mt-2 text-sm leading-6 text-ink-muted">Framework n’est pas un module métier : il porte la configuration, la gouvernance et les primitives de développement.</p>
-      </div>
-      <div class="rounded-2xl border border-edge-soft bg-white/70 p-4">
-        <p class="text-xs font-semibold tracking-[0.18em] text-ink-faint uppercase">Plus tard</p>
-        <p class="mt-2 text-sm leading-6 text-ink-muted">Le workspace Build pourra devenir l’équivalent Odoo: créer des objets, vues, workflows et modules installables.</p>
-      </div>
-      <div class="rounded-2xl border border-edge-soft bg-white/70 p-4">
-        <p class="text-xs font-semibold tracking-[0.18em] text-ink-faint uppercase">Agents</p>
-        <p class="mt-2 text-sm leading-6 text-ink-muted">Les agents restent dans le coeur parce qu’ils traversent tous les univers avec permissions, audit et approvals.</p>
       </div>
     </div>
   </div>
