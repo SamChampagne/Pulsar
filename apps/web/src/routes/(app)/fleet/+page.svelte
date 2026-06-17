@@ -3,10 +3,12 @@
   import { api, ApiError } from '$lib/api/client';
   import {
     Badge,
+    Button,
     Card,
     EmptyState,
     ErrorNotice,
     Input,
+    Modal,
     PageHeader,
     Select,
     Skeleton,
@@ -85,6 +87,8 @@
   let error = $state('');
   let activeTab = $state('vehicles');
   let assetForm = $state<AssetForm>(emptyAssetForm('vehicle'));
+  let showCreate = $state(false);
+  let showSchedule = $state(false);
 
   function emptyAssetForm(kind: AssetKind): AssetForm {
     return {
@@ -242,8 +246,9 @@
           leadDays: scheduleForm.leadDays ? Number(scheduleForm.leadDays) : undefined,
         },
       });
-      toast.success('Plan d’entretien créé');
+      toast.success("Plan d'entretien créé");
       scheduleForm = { asset: '', name: '', intervalDays: '', intervalKm: '', leadDays: '7' };
+      showSchedule = false;
       await loadSchedules();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Échec de la création du plan');
@@ -273,7 +278,7 @@
     }
   }
   async function deleteSchedule(id: string) {
-    if (!confirm('Supprimer ce plan d’entretien ?')) return;
+    if (!confirm("Supprimer ce plan d'entretien ?")) return;
     try {
       await api(`/fleet/maintenance-schedules/${id}`, { method: 'DELETE' });
       await loadSchedules();
@@ -380,9 +385,10 @@
       }
       toast.success(`${label} ajouté à la flotte`);
       resetAssetForm(assetForm.kind);
+      showCreate = false;
       await load();
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Impossible d’ajouter l’asset';
+      error = e instanceof ApiError ? e.message : "Impossible d'ajouter l'asset";
       toast.error(error);
     } finally {
       savingAsset = false;
@@ -400,7 +406,12 @@
   ];
 </script>
 
-<PageHeader title="Fleet" subtitle="Actifs, conformité et maintenance." />
+<PageHeader title="Fleet" subtitle="Actifs, conformité et maintenance.">
+  {#snippet actions()}
+    <Button onclick={() => { showSchedule = true; }} variant="secondary">Planifier un entretien</Button>
+    <Button onclick={() => { showCreate = true; }}>Ajouter</Button>
+  {/snippet}
+</PageHeader>
 
 {#if loading}
   <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -437,10 +448,10 @@
     </a>
   </div>
 
-  <Card padded={false}>
-    <form class="p-4" onsubmit={createAsset}>
+  <Modal bind:open={showCreate} title="Ajouter un asset" size="lg">
+    <form id="asset-create-form" onsubmit={createAsset}>
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <p class="text-xs font-semibold tracking-[0.18em] text-ink-faint uppercase">Ajouter</p>
+        <p class="text-xs font-semibold tracking-[0.18em] text-ink-faint uppercase">Type</p>
         <div class="flex rounded-lg bg-surface-muted p-1 text-xs font-semibold">
           <button
             type="button"
@@ -461,7 +472,7 @@
       </div>
 
       {#if assetForm.kind === 'driver'}
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_130px]">
+        <div class="grid gap-3 sm:grid-cols-2">
           <label class="space-y-1 text-xs font-semibold text-ink-muted">
             Prénom
             <Input bind:value={assetForm.firstName} placeholder="Jean" required />
@@ -478,13 +489,6 @@
             Téléphone
             <Input bind:value={assetForm.phone} placeholder="514-555-0199" />
           </label>
-          <button
-            type="submit"
-            disabled={savingAsset || !assetFormValid}
-            class="self-end rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-strong disabled:opacity-50"
-          >
-            {savingAsset ? 'Ajout…' : 'Ajouter'}
-          </button>
           <label class="space-y-1 text-xs font-semibold text-ink-muted sm:col-span-2">
             Courriel
             <Input
@@ -495,7 +499,7 @@
           </label>
         </div>
       {:else}
-        <div class="grid gap-3 lg:grid-cols-[1fr_150px_150px_130px]">
+        <div class="grid gap-3 sm:grid-cols-2">
           <label class="space-y-1 text-xs font-semibold text-ink-muted">
             Unit #
             <Input
@@ -516,13 +520,6 @@
             Plaque
             <Input bind:value={assetForm.plate} placeholder="QC-4821" />
           </label>
-          <button
-            type="submit"
-            disabled={savingAsset || !assetFormValid}
-            class="self-end rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-strong disabled:opacity-50"
-          >
-            {savingAsset ? 'Ajout…' : 'Ajouter asset'}
-          </button>
           {#if assetForm.kind === 'vehicle'}
             <label class="space-y-1 text-xs font-semibold text-ink-muted">
               Marque
@@ -545,7 +542,19 @@
         </div>
       {/if}
     </form>
-  </Card>
+    {#snippet footer()}
+      <Button variant="secondary" onclick={() => { showCreate = false; }}>Annuler</Button>
+      <Button
+        variant="primary"
+        loading={savingAsset}
+        disabled={!assetFormValid}
+        onclick={(e) => {
+          const form = document.getElementById('asset-create-form') as HTMLFormElement | null;
+          form?.requestSubmit();
+        }}
+      >Ajouter</Button>
+    {/snippet}
+  </Modal>
 
   <!-- B. Compliance attention list -->
   <div id="compliance" class="mb-5">
@@ -572,36 +581,25 @@
   </div>
 
   <!-- B2. Preventive maintenance schedules -->
-  <div class="mb-5">
-    <div class="mb-2 flex flex-wrap items-center gap-2">
-      <h2 class="text-sm font-semibold text-ink">Maintenance préventive</h2>
-      {#if pmOverdue > 0}<Badge tone="danger">{pmOverdue} en retard</Badge>{/if}
-      {#if pmDue > 0}<Badge tone="warn">{pmDue} dû</Badge>{/if}
-      {#if pmDueSoon > 0}<Badge tone="info">{pmDueSoon} bientôt</Badge>{/if}
-    </div>
-
-    <Card padded={false}>
-      <!-- create -->
-      <form
-        class="grid gap-3 border-b border-edge p-4 lg:grid-cols-[1fr_1fr_120px_130px_110px_auto]"
-        onsubmit={createSchedule}
-      >
-        <label class="space-y-1 text-xs font-semibold text-ink-muted">
-          Asset
-          <Select bind:value={scheduleForm.asset}>
-            <option value="">Choisir…</option>
-            {#each internalVehicles as v (v.id)}<option value={`vehicle:${v.id}`}
-                >{v.unitNumber} (véh.)</option
-              >{/each}
-            {#each internalTrailers as t (t.id)}<option value={`trailer:${t.id}`}
-                >{t.unitNumber} (rem.)</option
-              >{/each}
-          </Select>
-        </label>
-        <label class="space-y-1 text-xs font-semibold text-ink-muted">
-          Nom du plan
-          <Input bind:value={scheduleForm.name} placeholder="Vidange, inspection DOT…" />
-        </label>
+  <Modal bind:open={showSchedule} title="Planifier un entretien préventif" size="md">
+    <form id="schedule-create-form" class="grid gap-3" onsubmit={createSchedule}>
+      <label class="space-y-1 text-xs font-semibold text-ink-muted">
+        Asset
+        <Select bind:value={scheduleForm.asset}>
+          <option value="">Choisir…</option>
+          {#each internalVehicles as v (v.id)}<option value={`vehicle:${v.id}`}
+              >{v.unitNumber} (véh.)</option
+            >{/each}
+          {#each internalTrailers as t (t.id)}<option value={`trailer:${t.id}`}
+              >{t.unitNumber} (rem.)</option
+            >{/each}
+        </Select>
+      </label>
+      <label class="space-y-1 text-xs font-semibold text-ink-muted">
+        Nom du plan
+        <Input bind:value={scheduleForm.name} placeholder="Vidange, inspection DOT…" />
+      </label>
+      <div class="grid gap-3 sm:grid-cols-3">
         <label class="space-y-1 text-xs font-semibold text-ink-muted">
           Tous les (jours)
           <Input bind:value={scheduleForm.intervalDays} type="number" min="1" placeholder="90" />
@@ -614,15 +612,31 @@
           Préavis (j)
           <Input bind:value={scheduleForm.leadDays} type="number" min="0" />
         </label>
-        <button
-          type="submit"
-          disabled={savingSchedule || !scheduleForm.asset || !scheduleForm.name.trim()}
-          class="self-end rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-strong disabled:opacity-50"
-        >
-          {savingSchedule ? 'Ajout…' : 'Ajouter'}
-        </button>
-      </form>
+      </div>
+    </form>
+    {#snippet footer()}
+      <Button variant="secondary" onclick={() => { showSchedule = false; }}>Annuler</Button>
+      <Button
+        variant="primary"
+        loading={savingSchedule}
+        disabled={!scheduleForm.asset || !scheduleForm.name.trim()}
+        onclick={() => {
+          const form = document.getElementById('schedule-create-form') as HTMLFormElement | null;
+          form?.requestSubmit();
+        }}
+      >Planifier</Button>
+    {/snippet}
+  </Modal>
 
+  <div class="mb-5">
+    <div class="mb-2 flex flex-wrap items-center gap-2">
+      <h2 class="text-sm font-semibold text-ink">Maintenance préventive</h2>
+      {#if pmOverdue > 0}<Badge tone="danger">{pmOverdue} en retard</Badge>{/if}
+      {#if pmDue > 0}<Badge tone="warn">{pmDue} dû</Badge>{/if}
+      {#if pmDueSoon > 0}<Badge tone="info">{pmDueSoon} bientôt</Badge>{/if}
+    </div>
+
+    <Card padded={false}>
       <!-- list -->
       {#if schedules.length === 0}
         <EmptyState
