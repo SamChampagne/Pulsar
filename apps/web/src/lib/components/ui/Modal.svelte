@@ -33,7 +33,7 @@
   const dur = reduce ? 0 : 150;
 
   let token = $state<symbol | null>(null);
-  let dialogEl: HTMLElement | null = null;
+  let dialogEl = $state<HTMLElement | null>(null);
   let lastFocused: HTMLElement | null = null;
   const titleId = `modal-title-${Math.random().toString(36).slice(2, 9)}`;
 
