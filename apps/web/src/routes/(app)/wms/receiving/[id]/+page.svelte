@@ -220,6 +220,9 @@
     {#if receipt.reference}
       <p class="mb-3 text-sm text-ink-muted">Réf : {receipt.reference}</p>
     {/if}
+    {#if receipt.note}
+      <p class="mb-3 text-sm text-ink-muted">Note : {receipt.note}</p>
+    {/if}
     <p class="mb-4 text-xs text-ink-faint">
       Créée le {new Date(receipt.createdAt).toLocaleString()}
     </p>
