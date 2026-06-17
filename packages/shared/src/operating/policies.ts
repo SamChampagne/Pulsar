@@ -13,6 +13,8 @@ export const DOMAIN_EVENT_TYPES = {
   WMS_ITEM_BELOW_MIN: 'wms.item.below-min',
   WMS_CYCLE_COUNT_VARIANCE: 'wms.cycle-count.variance',
   YARD_VISIT_CHECKED_IN: 'yard.visit.checked-in',
+  YARD_VISIT_DETENTION: 'yard.visit.detention',
+  YARD_APPOINTMENT_LATE: 'yard.appointment.late',
 } as const;
 
 export interface DomainEventInput {
@@ -223,6 +225,51 @@ const POLICIES: Policy[] = [
           subjectType: 'yard-visit',
           subjectId: visitId,
           dedupKey: `YARD_ARRIVAL:${visitId}`,
+          details: { ...e.payload },
+          assignHint: 'AUTO' as const,
+        },
+      ];
+    },
+  },
+  {
+    // Yard continuity: a trailer overstayed its free dwell window — detention accrues.
+    eventType: DOMAIN_EVENT_TYPES.YARD_VISIT_DETENTION,
+    produce: (e) => {
+      const visitId = str(e.payload.visitId);
+      const visitNumber = str(e.payload.visitNumber);
+      const trailer = str(e.payload.trailerLabel);
+      const detentionMinutes = num(e.payload.detentionMinutes);
+      return [
+        {
+          type: OperationalTaskType.EXCEPTION,
+          category: 'YARD_DETENTION',
+          severity: 'WARNING' as const,
+          title: `Détention — ${visitNumber || visitId}${trailer ? ` (${trailer})` : ''} +${detentionMinutes} min`,
+          subjectType: 'yard-visit',
+          subjectId: visitId,
+          dedupKey: `YARD_DETENTION:${visitId}`,
+          details: { ...e.payload },
+          assignHint: 'AUTO' as const,
+        },
+      ];
+    },
+  },
+  {
+    // Yard continuity: a scheduled dock appointment is past its window and unfulfilled.
+    eventType: DOMAIN_EVENT_TYPES.YARD_APPOINTMENT_LATE,
+    produce: (e) => {
+      const appointmentId = str(e.payload.appointmentId);
+      const number = str(e.payload.number);
+      const minutesLate = num(e.payload.minutesLate);
+      return [
+        {
+          type: OperationalTaskType.EXCEPTION,
+          category: 'YARD_APPOINTMENT_LATE',
+          severity: 'WARNING' as const,
+          title: `Rendez-vous en retard — ${number || appointmentId} (+${minutesLate} min)`,
+          subjectType: 'dock-appointment',
+          subjectId: appointmentId,
+          dedupKey: `YARD_APPT_LATE:${appointmentId}`,
           details: { ...e.payload },
           assignHint: 'AUTO' as const,
         },

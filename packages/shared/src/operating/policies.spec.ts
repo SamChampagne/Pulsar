@@ -142,6 +142,24 @@ describe('cross-module policies', () => {
     expect(r[0].dedupKey).toBe('WMS_COUNT_VARIANCE:cc1');
   });
 
+  it('maps yard.visit.detention to a YARD_DETENTION task', () => {
+    const r = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.YARD_VISIT_DETENTION,
+      payload: { visitId: 'v1', visitNumber: 'YV-1', trailerLabel: 'TRL-2', detentionMinutes: 45 },
+    });
+    expect(r[0].category).toBe('YARD_DETENTION');
+    expect(r[0].dedupKey).toBe('YARD_DETENTION:v1');
+  });
+
+  it('maps yard.appointment.late to a YARD_APPOINTMENT_LATE task', () => {
+    const r = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.YARD_APPOINTMENT_LATE,
+      payload: { appointmentId: 'a1', number: 'DA-1', minutesLate: 30 },
+    });
+    expect(r[0].category).toBe('YARD_APPOINTMENT_LATE');
+    expect(r[0].dedupKey).toBe('YARD_APPT_LATE:a1');
+  });
+
   it('maps yard.visit.checked-in to a YARD_ARRIVAL task', () => {
     const specs = resolvePolicies({
       type: DOMAIN_EVENT_TYPES.YARD_VISIT_CHECKED_IN,

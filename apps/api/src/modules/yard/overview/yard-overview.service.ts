@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { computeDwell } from '@pulsar/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
 
 /**
@@ -41,6 +42,21 @@ export class YardOverviewService {
         }),
       ]);
 
+    // Continuity clocks (computed on read).
+    const [activeVisits, lateAppointments] = await Promise.all([
+      this.prisma.yardVisit.findMany({
+        where: { tenantId, status: { in: ['CHECKED_IN', 'ASSIGNED'] }, checkOutAt: null },
+        select: { checkInAt: true },
+        take: 1000,
+      }),
+      this.prisma.dockAppointment.count({
+        where: { tenantId, status: 'SCHEDULED', windowEnd: { lt: now } },
+      }),
+    ]);
+    const detentionCount = activeVisits.filter(
+      (v) => computeDwell({ checkInAt: v.checkInAt }, now).status === 'DETENTION',
+    ).length;
+
     return {
       trucksInYard,
       doorCount,
@@ -48,6 +64,8 @@ export class YardOverviewService {
       freeDoors: doorCount - occupiedDoors,
       visitsWithoutSpot,
       appointmentsToday,
+      detentionCount,
+      lateAppointments,
     };
   }
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { X } from 'lucide-svelte';
   import { api, ApiError } from '$lib/api/client';
+  import { computeDwell } from '@pulsar/shared';
   import { Badge, Button, Select } from '$lib/components/ui';
   import { toneFor } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
@@ -20,6 +21,7 @@
     trailerRef: string | null;
     driverName: string | null;
     checkInAt: string | null;
+    checkOutAt?: string | null;
     trailer: { unitNumber: string; plate: string | null } | null;
     carrier: { name: string } | null;
     spot: { code: string } | null;
@@ -65,7 +67,8 @@
         if (visitId === id) visit = v;
       })
       .catch((e) => {
-        if (visitId === id) error = e instanceof ApiError ? e.message : 'Échec du chargement de la visite';
+        if (visitId === id)
+          error = e instanceof ApiError ? e.message : 'Échec du chargement de la visite';
       })
       .finally(() => {
         if (visitId === id) loading = false;
@@ -91,6 +94,14 @@
   const dwell = $derived(
     visit?.checkInAt ? formatDwell(now - new Date(visit.checkInAt).getTime()) : null,
   );
+  const dwellInfo = $derived(
+    visit?.checkInAt
+      ? computeDwell(
+          { checkInAt: visit.checkInAt, checkOutAt: visit.checkOutAt ?? null },
+          new Date(now),
+        )
+      : null,
+  );
 
   function fmtDate(iso: string | null): string {
     if (!iso) return '—';
@@ -104,7 +115,10 @@
   }
 
   function trailerLabel(v: VisitDetail): string {
-    if (v.trailer) return v.trailer.plate ? `${v.trailer.unitNumber} (${v.trailer.plate})` : v.trailer.unitNumber;
+    if (v.trailer)
+      return v.trailer.plate
+        ? `${v.trailer.unitNumber} (${v.trailer.plate})`
+        : v.trailer.unitNumber;
     return v.trailerRef ?? '—';
   }
 
@@ -152,7 +166,9 @@
   tabindex="-1"
   aria-label="Fermer"
   onclick={onClose}
-  onkeydown={(e) => { if (e.key === 'Enter') onClose(); }}
+  onkeydown={(e) => {
+    if (e.key === 'Enter') onClose();
+  }}
 ></div>
 
 <aside
@@ -198,7 +214,14 @@
         </div>
         <div class="flex justify-between gap-2">
           <dt class="text-ink-muted">Séjour</dt>
-          <dd class="text-right font-semibold text-warn">{dwell ?? '—'}</dd>
+          <dd class="flex items-center justify-end gap-2 text-right font-semibold text-warn">
+            {dwell ?? '—'}
+            {#if dwellInfo && dwellInfo.status === 'DETENTION'}
+              <Badge tone="danger">Détention +{dwellInfo.detentionMinutes}m</Badge>
+            {:else if dwellInfo && dwellInfo.status === 'WARNING'}
+              <Badge tone="warn">Bientôt</Badge>
+            {/if}
+          </dd>
         </div>
         <div class="flex justify-between gap-2">
           <dt class="text-ink-muted">Spot actuel</dt>
@@ -214,7 +237,9 @@
 
       <!-- Move log -->
       <div class="mt-5">
-        <h3 class="mb-2 text-xs font-semibold tracking-wide text-ink-muted uppercase">Journal des mouvements</h3>
+        <h3 class="mb-2 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+          Journal des mouvements
+        </h3>
         {#if visit.moves.length === 0}
           <p class="text-xs text-ink-faint">Aucun mouvement.</p>
         {:else}
@@ -233,7 +258,9 @@
 
       <!-- Move action -->
       <div class="mt-5">
-        <h3 class="mb-2 text-xs font-semibold tracking-wide text-ink-muted uppercase">Déplacer vers</h3>
+        <h3 class="mb-2 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+          Déplacer vers
+        </h3>
         <Select bind:value={moveSpotId}>
           <option value="">— Choisir un spot libre —</option>
           {#each freeSpots as s (s.id)}
@@ -249,7 +276,9 @@
 
   {#if visit && !loading && !error}
     <div class="flex gap-2 border-t border-edge px-4 py-3">
-      <Button variant="secondary" loading={moving} disabled={!moveSpotId} onclick={doMove}>Déplacer</Button>
+      <Button variant="secondary" loading={moving} disabled={!moveSpotId} onclick={doMove}
+        >Déplacer</Button
+      >
       <Button variant="danger" loading={checkingOut} onclick={doCheckOut}>Check-out</Button>
     </div>
   {/if}

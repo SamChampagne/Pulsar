@@ -40,3 +40,4 @@ export * from './fleet/compliance';
 export * from './wms/wms.workflow';
 export * from './wms/replenishment';
 export * from './yard/yard.workflow';
+export * from './yard/dwell';

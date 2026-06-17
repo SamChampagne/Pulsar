@@ -45,6 +45,8 @@
     freeDoors: number;
     visitsWithoutSpot: number;
     appointmentsToday: number;
+    detentionCount: number;
+    lateAppointments: number;
   }
 
   interface LayoutPos {
@@ -203,7 +205,11 @@
       <Button variant="secondary" onclick={cancelEdit}>Annuler</Button>
       <Button onclick={saveLayout}>Enregistrer la disposition</Button>
     {:else}
-      <Button variant="secondary" onclick={enterEdit} disabled={!locationId || board.spots.length === 0}>
+      <Button
+        variant="secondary"
+        onclick={enterEdit}
+        disabled={!locationId || board.spots.length === 0}
+      >
         Éditer la disposition
       </Button>
     {/if}
@@ -220,14 +226,16 @@
   <Card><p class="text-sm text-ink-muted">Sélectionnez un site pour voir la cour.</p></Card>
 {:else}
   {#if overview}
-    <div class="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       <Card>
         <div class="text-xs font-medium text-ink-muted">Camions en cour</div>
         <div class="mt-1 text-3xl font-bold text-ink">{overview.trucksInYard}</div>
       </Card>
       <Card>
         <div class="text-xs font-medium text-ink-muted">Portes occupées</div>
-        <div class="mt-1 text-3xl font-bold text-ink">{overview.occupiedDoors} / {overview.doorCount}</div>
+        <div class="mt-1 text-3xl font-bold text-ink">
+          {overview.occupiedDoors} / {overview.doorCount}
+        </div>
       </Card>
       <Card>
         <div class="text-xs font-medium text-ink-muted">Portes libres</div>
@@ -237,6 +245,22 @@
         <div class="text-xs font-medium text-ink-muted">Rendez-vous du jour</div>
         <div class="mt-1 text-3xl font-bold text-ink">{overview.appointmentsToday}</div>
       </Card>
+      <Card>
+        <div class="text-xs font-medium text-warn">Détention</div>
+        <div
+          class={`mt-1 text-3xl font-bold ${overview.detentionCount > 0 ? 'text-warn' : 'text-ink'}`}
+        >
+          {overview.detentionCount}
+        </div>
+      </Card>
+      <Card>
+        <div class="text-xs font-medium text-danger">RDV en retard</div>
+        <div
+          class={`mt-1 text-3xl font-bold ${overview.lateAppointments > 0 ? 'text-danger' : 'text-ink'}`}
+        >
+          {overview.lateAppointments}
+        </div>
+      </Card>
     </div>
   {/if}
 
@@ -244,8 +268,12 @@
     <Card><p class="text-sm text-ink-muted">Aucun spot pour ce site.</p></Card>
   {:else}
     {#if allUnplaced && !editing}
-      <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-accent/50 bg-accent/5 px-4 py-3">
-        <p class="text-sm text-ink">Place tes spots sur le plan pour démarrer le plan de cour visuel.</p>
+      <div
+        class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-accent/50 bg-accent/5 px-4 py-3"
+      >
+        <p class="text-sm text-ink">
+          Place tes spots sur le plan pour démarrer le plan de cour visuel.
+        </p>
         <Button onclick={enterEdit}>Éditer la disposition</Button>
       </div>
     {/if}

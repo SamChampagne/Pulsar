@@ -2,10 +2,13 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { AuditAction, DockAppointmentStatus, canTransitionDockAppointment } from '@pulsar/shared';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
@@ -20,12 +23,49 @@ import { AppointmentListQueryDto, CreateAppointmentDto } from './dto/appointment
  */
 @Injectable()
 export class AppointmentsService {
+  private readonly logger = new Logger(AppointmentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequences: SequencesService,
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
+
+  /**
+   * Continuity cron: flag SCHEDULED appointments past their window as late →
+   * yard.appointment.late (idempotent per appointment). Best-effort, never throws (rule 24).
+   */
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  async runAppointmentCheck(): Promise<void> {
+    try {
+      const now = new Date();
+      const late = await this.prisma.dockAppointment.findMany({
+        where: { status: DockAppointmentStatus.SCHEDULED, windowEnd: { lt: now } },
+        take: 500,
+      });
+      for (const a of late) {
+        try {
+          const minutesLate = Math.round((now.getTime() - a.windowEnd.getTime()) / 60_000);
+          await this.domainEvents.emit(
+            a.tenantId,
+            'yard.appointment.late',
+            { type: 'dock-appointment', id: a.id },
+            { appointmentId: a.id, number: a.appointmentNumber, minutesLate },
+          );
+        } catch (err) {
+          this.logger.error(
+            `appointment late-check failed for ${a.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.error(
+        `runAppointmentCheck failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   async list(tenantId: string, q: AppointmentListQueryDto) {
     return this.prisma.dockAppointment.findMany({
