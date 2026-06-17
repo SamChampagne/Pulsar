@@ -15,6 +15,7 @@ export * from './workflows/freight-audit.workflow';
 export * from './billing/reconciliation';
 export * from './cost/rate-cost';
 export * from './rating/lane-key';
+export * from './optimize/consolidation';
 export * from './planning/windows';
 export * from './planning/capacity';
 export * from './planning/mode';
