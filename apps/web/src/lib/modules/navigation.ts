@@ -347,7 +347,9 @@ export function visibleDomains(caps: NavCaps): NavDomain[] {
       sections: d.sections
         .map((s) => ({
           ...s,
-          links: s.links.filter((l) => !l.perm || caps.can(l.perm)),
+          // Spread each link so runtime badge injection by one consumer
+          // never aliases the shared catalogue objects (e.g. /apps + palette).
+          links: s.links.filter((l) => !l.perm || caps.can(l.perm)).map((l) => ({ ...l })),
         }))
         .filter((s) => s.links.length > 0),
     }))
