@@ -15,7 +15,7 @@
     Card,
     EmptyState,
     Skeleton,
-    Panel,
+    Modal,
     ErrorNotice,
     type Tone,
   } from '$lib/components/ui';
@@ -310,7 +310,7 @@
   {/if}
 {/if}
 
-<Panel open={selected !== null} title="Détail de l’événement" onclose={() => (selected = null)}>
+<Modal open={selected !== null} size="lg" title="Détail de l’événement" onclose={() => (selected = null)}>
   {#snippet children()}
     {#if selected}
       <div class="space-y-4 text-sm">
@@ -397,4 +397,4 @@
       </div>
     {/if}
   {/snippet}
-</Panel>
+</Modal>

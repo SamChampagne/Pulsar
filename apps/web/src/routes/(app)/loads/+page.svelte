@@ -4,7 +4,7 @@
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import {
-    PageHeader, Button, FilterBar, Select, Table, Badge, EmptyState, Panel, Card, Skeleton, ErrorNotice,
+    PageHeader, Button, FilterBar, Select, Table, Badge, EmptyState, Modal, Card, Skeleton, ErrorNotice,
     toneFor, labelFor, ViewToggle, type ViewId,
   } from '$lib/components/ui';
   import OpsMap from '$lib/components/OpsMap.svelte';
@@ -240,7 +240,7 @@
 
 {#if selected}
   {@const sel = selected}
-  <Panel open={true} title={sel.loadNumber} href={`/loads/${sel.id}`} onclose={() => (selected = null)}>
+  <Modal open={true} size="lg" title={sel.loadNumber} onclose={() => (selected = null)}>
     <div class="space-y-3">
       <div><div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Statut</div><Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge></div>
       <div><div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Transporteur</div><div class="text-sm text-ink">{sel.carrier?.name ?? 'Non assigné'}</div></div>
@@ -249,5 +249,8 @@
       <div><div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Dispatché</div><div class="text-sm text-ink">{sel.dispatchedAt ? new Date(sel.dispatchedAt).toLocaleString() : '—'}</div></div>
       <div><div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Mode</div><div class="text-sm text-ink">{sel.mode ?? 'Tous modes'}</div></div>
     </div>
-  </Panel>
+    {#snippet footer()}
+      <Button variant="secondary" href={`/loads/${sel.id}`}>Ouvrir la page complète</Button>
+    {/snippet}
+  </Modal>
 {/if}

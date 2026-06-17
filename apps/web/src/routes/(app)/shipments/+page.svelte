@@ -9,7 +9,7 @@
     Table,
     Badge,
     EmptyState,
-    Panel,
+    Modal,
     Card,
     Skeleton,
     ErrorNotice,
@@ -400,7 +400,7 @@
 
 {#if selected}
   {@const sel = selected}
-  <Panel open={true} title={sel.shipmentNumber} onclose={() => { selected = null; assigning = null; }}>
+  <Modal open={true} size="lg" title={sel.shipmentNumber} onclose={() => { selected = null; assigning = null; }}>
     <div class="mb-3">
       <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Statut</div>
       <div class="text-sm text-ink"><Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge></div>
@@ -506,5 +506,5 @@
         <Button variant="secondary" onclick={() => shareTracking(sel)}>Partager le suivi</Button>
       </div>
     </div>
-  </Panel>
+  </Modal>
 {/if}

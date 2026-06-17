@@ -11,7 +11,6 @@
     Table,
     Badge,
     EmptyState,
-    Panel,
     Modal,
     Card,
     Skeleton,
@@ -323,7 +322,7 @@
 
 {#if selected}
   {@const sel = selected}
-  <Panel open={true} title={sel.orderNumber} href={`/transport-orders/${sel.id}`} onclose={() => (selected = null)}>
+  <Modal open={true} size="lg" title={sel.orderNumber} onclose={() => (selected = null)}>
     <div class="mb-3">
       <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Statut</div>
       <div class="text-sm text-ink"><Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge></div>
@@ -361,8 +360,9 @@
     {:else if sel.status === 'CONFIRMED'}
       <Button variant="primary" onclick={async () => { await action(sel.id, 'plan'); selected = null; }}>Planifier</Button>
     {/if}
+    <Button variant="secondary" href={`/transport-orders/${sel.id}`}>Ouvrir la page complète</Button>
   {/snippet}
-  </Panel>
+  </Modal>
 {/if}
 
 <Modal bind:open={showForm} title="Nouvelle commande de transport">
