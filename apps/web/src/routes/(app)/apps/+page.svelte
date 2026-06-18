@@ -445,7 +445,12 @@
   {:else if !search && layout.items.length === 0}
     <p class="text-center text-sm text-ink-faint">Aucune page disponible.</p>
   {:else}
-    <div class="relative w-full" bind:clientWidth={canvasW} bind:clientHeight={canvasH} style="min-height: calc(100vh - 7rem)">
+    <div
+      class="relative mx-auto"
+      bind:clientWidth={canvasW}
+      bind:clientHeight={canvasH}
+      style={`width:min(100%, ${DESK_CANVAS_W}px); min-height: calc(100vh - 9rem)`}
+    >
       {#if search}
         <div class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6">
           {#each visibleItems as item, i (deskId(item) + '#' + i)}
@@ -465,7 +470,7 @@
         {/each}
       {:else}
         <!-- auto + reorder: flowing grid -->
-        <div class="flex flex-wrap gap-x-10 gap-y-11 px-2 py-4">
+        <div class="flex flex-wrap justify-center gap-x-10 gap-y-11 px-2 py-4">
           {#each layout.items as item, i (deskId(item) + '#' + i)}
             {@const id = deskId(item)}
             <div data-desk-id={id}
