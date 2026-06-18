@@ -10,6 +10,7 @@ import {
   BidStatus,
   InviteStatus,
   MODULE_KEYS,
+  RateType,
   RfpStatus,
   canTransitionBid,
   canTransitionRfp,
@@ -89,7 +90,15 @@ export class ProcurementService {
             award: true,
           },
         },
-        invites: true,
+        invites: {
+          select: {
+            id: true,
+            carrierId: true,
+            status: true,
+            sentAt: true,
+            respondedAt: true,
+          },
+        },
         bids: true,
       },
     });
@@ -123,16 +132,15 @@ export class ProcurementService {
 
   async updateRfp(tenantId: string, id: string, dto: UpdateRfpDto) {
     await this.assertRfpExists(tenantId, id);
-    return this.prisma.rfp.update({
-      where: { id },
-      data: {
-        ...(dto.title !== undefined ? { title: dto.title } : {}),
-        ...(dto.description !== undefined ? { description: dto.description } : {}),
-        ...(dto.deadline !== undefined
-          ? { deadline: dto.deadline ? new Date(dto.deadline) : null }
-          : {}),
-      },
-    });
+    const data = {
+      ...(dto.title !== undefined ? { title: dto.title } : {}),
+      ...(dto.description !== undefined ? { description: dto.description } : {}),
+      ...(dto.deadline !== undefined
+        ? { deadline: dto.deadline ? new Date(dto.deadline) : null }
+        : {}),
+    };
+    await this.prisma.rfp.updateMany({ where: { id, tenantId }, data });
+    return this.prisma.rfp.findFirst({ where: { id, tenantId } });
   }
 
   // ---------------------------------------------------------------------------
@@ -308,18 +316,22 @@ export class ProcurementService {
       },
     });
 
-    // Mark bid ACCEPTED via claim
-    await this.prisma.bid.updateMany({
-      where: { id: dto.bidId, tenantId },
+    // Mark bid ACCEPTED via claim (status guard ensures idempotency)
+    const bidClaim = await this.prisma.bid.updateMany({
+      where: { id: dto.bidId, tenantId, status: { in: [BidStatus.SUBMITTED, BidStatus.SHORTLISTED] } },
       data: { status: BidStatus.ACCEPTED },
     });
+    if (bidClaim.count === 0) throw new ConflictException('Offre déjà traitée');
 
     // Optionally create a Rate from the winning bid
     if (dto.createRate) {
       try {
+        if (!Object.values(RateType).includes(bid.rateType as RateType)) {
+          throw new BadRequestException('rateType invalide');
+        }
         const rate = await this.rates.create(tenantId, {
           name: `Award RFP ${rfp.rfpNumber ?? rfp.id}`,
-          rateType: bid.rateType as any,
+          rateType: bid.rateType as RateType,
           baseAmount: Number(bid.amount),
           currency: bid.currency,
           carrierId: bid.carrierId,
@@ -374,7 +386,10 @@ export class ProcurementService {
 
   routingGuide(tenantId: string) {
     return this.prisma.award.findMany({
-      where: { tenantId },
+      where: {
+        tenantId,
+        rfpLane: { rfp: { status: { not: RfpStatus.CANCELLED } } },
+      },
       include: {
         rfpLane: {
           include: {
