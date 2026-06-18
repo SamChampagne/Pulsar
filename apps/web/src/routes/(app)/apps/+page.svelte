@@ -525,6 +525,13 @@
           <button
             type="button"
             class="rounded-lg border border-edge px-3 py-1.5 text-sm text-ink-faint transition hover:border-accent hover:text-ink"
+            onclick={() => { enterEditMode(); closeFolder(); }}
+          >
+            Personnaliser le bureau
+          </button>
+          <button
+            type="button"
+            class="rounded-lg border border-edge px-3 py-1.5 text-sm text-ink-faint transition hover:border-accent hover:text-ink"
             onclick={() => { editing = true; closeFolder(); }}
           >
             Gérer les liens rapides
