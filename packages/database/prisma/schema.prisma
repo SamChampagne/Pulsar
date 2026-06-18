@@ -1691,6 +1691,10 @@ model OperationalTask {
   sourceEventId   String?
   resolvedById    String?
   resolutionNote  String?
+  caseNumber      String?
+  slaDueAt        DateTime?
+  escalatedAt     DateTime?
+  notes           Json?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   resolvedAt      DateTime?
@@ -1698,6 +1702,7 @@ model OperationalTask {
   @@unique([tenantId, dedupKey])
   @@index([tenantId, status, assigneeType])
   @@index([tenantId, assigneeAgentId, status])
+  @@index([tenantId, status, slaDueAt])
   @@map("operational_tasks")
 }
 
