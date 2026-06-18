@@ -62,7 +62,7 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
 
 ## Modules additionnels (priorité moindre, après les chantiers)
 - [done] **B. Procurement / Bid Board** : RFP lanes, spot bids, award carrier, routing guide.
-- [todo] **C. Carrier Portal** : tenders reçus, accept/refuse, upload facture/POD, paiements,
+- [done] **C. Carrier Portal** : tenders reçus, accept/refuse, upload facture/POD, paiements,
   litiges, tracking, profil, conformité.
 - [todo] **D. Driver Mobile PWA** : stops du jour, arrivée/départ, POD/photo, signature,
   exception/damage, position, BOL, notes.
