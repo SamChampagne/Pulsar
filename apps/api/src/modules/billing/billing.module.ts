@@ -20,6 +20,6 @@ import { InvoicesService } from './invoices.service';
   imports: [AuditLogsModule, EmailModule, TransportationModule, forwardRef(() => OperatingModule)],
   controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController],
   providers: [InvoicesService, CustomerInvoicesService, FreightAuditService],
-  exports: [FreightAuditService],
+  exports: [FreightAuditService, CustomerInvoicesService],
 })
 export class BillingModule {}

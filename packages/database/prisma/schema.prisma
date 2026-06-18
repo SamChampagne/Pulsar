@@ -97,6 +97,7 @@ model Tenant {
   rfpInvites       RfpInvite[]
   bids             Bid[]
   awards           Award[]
+  orderTemplates   OrderTemplate[]
 
   @@map("tenants")
 }
@@ -474,6 +475,7 @@ model Customer {
   transportOrders  TransportOrder[]
   rates            Rate[]
   customerInvoices CustomerInvoice[]
+  orderTemplates   OrderTemplate[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -753,6 +755,28 @@ model TransportOrder {
   @@index([tenantId, status])
   @@index([tenantId, customerId])
   @@map("transport_orders")
+}
+
+model OrderTemplate {
+  id                    String         @id @default(cuid())
+  tenantId              String
+  customerId            String
+  name                  String
+  originLocationId      String?
+  destinationLocationId String?
+  mode                  TransportMode?
+  totalWeightKg         Float?
+  totalVolumeM3         Float?
+  palletCount           Int?
+  notes                 String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  customer  Customer @relation(fields: [customerId], references: [id])
+
+  @@index([tenantId, customerId])
+  @@map("order_templates")
 }
 
 enum ShipmentStatus {
