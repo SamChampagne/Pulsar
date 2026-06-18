@@ -161,8 +161,8 @@
     persist();
   }
 
-  function removeItem(i: number) {
-    layout = { ...layout, items: layout.items.filter((_, idx) => idx !== i) };
+  function removeItem(item: DeskItem) {
+    layout = { ...layout, items: layout.items.filter((it) => it !== item) };
     persist();
   }
 
@@ -179,34 +179,29 @@
   // ---------------------------------------------------------------------------
   // Rename
   // ---------------------------------------------------------------------------
-  let renamingIndex = $state<number | null>(null);
+  let renamingItem = $state<DeskItem | null>(null);
   let renameValue = $state('');
 
-  function startRename(i: number) {
-    const item = layout.items[i];
-    if (!item || item.type === 'module') return;
+  function startRename(item: DeskItem) {
+    if (item.type === 'module') return;
     renameValue = item.type === 'folder' ? item.name : item.label;
-    renamingIndex = i;
+    renamingItem = item;
   }
 
   function commitRename() {
-    if (renamingIndex === null) return;
-    const item = layout.items[renamingIndex];
-    if (!item || item.type === 'module') { renamingIndex = null; return; }
+    const item = renamingItem;
+    if (!item || item.type === 'module') { renamingItem = null; return; }
     const val = renameValue.trim() || (item.type === 'folder' ? item.name : item.label);
-    const updated = item.type === 'folder'
-      ? { ...item, name: val }
-      : { ...item, label: val };
-    const items = [...layout.items] as DeskItem[];
-    items[renamingIndex] = updated;
-    layout = { ...layout, items };
-    renamingIndex = null;
+    const updated: DeskItem =
+      item.type === 'folder' ? { ...item, name: val } : { ...item, label: val };
+    layout = { ...layout, items: layout.items.map((it) => (it === item ? updated : it)) };
+    renamingItem = null;
     persist();
   }
 
   function onRenameKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
-    if (e.key === 'Escape') { renamingIndex = null; }
+    if (e.key === 'Escape') { renamingItem = null; }
   }
 
   /** Svelte action: focuses the element on mount (avoids the a11y_autofocus warning). */
@@ -233,7 +228,7 @@
   let menuY = $state(0);
   let menuActions = $state<{ label: string; run: () => void }[]>([]);
 
-  function openMenu(e: MouseEvent, i: number, item: DeskItem) {
+  function openMenu(e: MouseEvent, item: DeskItem) {
     e.preventDefault();
     menuX = e.clientX;
     menuY = e.clientY;
@@ -244,12 +239,14 @@
     ];
 
     if (item.type === 'module') {
-      menuActions = [...common, { label: 'Retirer', run: () => removeItem(i) }];
-    } else if (item.type === 'link') {
-      menuActions = [...common, { label: 'Renommer', run: () => startRename(i) }, { label: 'Retirer', run: () => removeItem(i) }];
+      menuActions = [...common, { label: 'Retirer', run: () => removeItem(item) }];
     } else {
-      // folder
-      menuActions = [...common, { label: 'Renommer', run: () => startRename(i) }, { label: 'Retirer', run: () => removeItem(i) }];
+      // link or folder — both renamable + removable
+      menuActions = [
+        ...common,
+        { label: 'Renommer', run: () => startRename(item) },
+        { label: 'Retirer', run: () => removeItem(item) },
+      ];
     }
     menuOpen = true;
   }
@@ -381,22 +378,22 @@
                   accent={universe.accent}
                   {editing}
                   onactivate={() => { if (!editing) goto(domain.home); }}
-                  onremove={() => removeItem(i)}
-                  oncontext={(e) => openMenu(e, i, item)}
+                  onremove={() => removeItem(item)}
+                  oncontext={(e) => openMenu(e, item)}
                 />
               {/if}
             {:else if item.type === 'link'}
               <div class="flex w-24 flex-col items-center text-center">
                 <DeskIcon
-                  label={renamingIndex === i ? renameValue : item.label}
+                  label={renamingItem === item ? renameValue : item.label}
                   icon={Link}
                   accent="#6f7480"
                   {editing}
                   onactivate={() => { if (!editing) goto(item.href); }}
-                  onremove={() => removeItem(i)}
-                  oncontext={(e) => openMenu(e, i, item)}
+                  onremove={() => removeItem(item)}
+                  oncontext={(e) => openMenu(e, item)}
                 />
-                {#if renamingIndex === i}
+                {#if renamingItem === item}
                   <input
                     class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none"
                     bind:value={renameValue}
@@ -409,13 +406,13 @@
             {:else if item.type === 'folder'}
               <div class="flex w-24 flex-col items-center text-center">
                 <DeskFolderTile
-                  name={renamingIndex === i ? renameValue : item.name}
+                  name={renamingItem === item ? renameValue : item.name}
                   {editing}
                   onopen={() => { if (!editing) openFolderById(item.id); }}
-                  onremove={() => removeItem(i)}
-                  oncontext={(e) => openMenu(e, i, item)}
+                  onremove={() => removeItem(item)}
+                  oncontext={(e) => openMenu(e, item)}
                 />
-                {#if renamingIndex === i}
+                {#if renamingItem === item}
                   <input
                     class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none"
                     bind:value={renameValue}

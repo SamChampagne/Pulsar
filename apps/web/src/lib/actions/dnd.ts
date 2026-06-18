@@ -92,9 +92,21 @@ export function gridDrag(node: HTMLElement, params: GridDragParams) {
     lastOver = null;
   }
 
+  function onpointercancel() {
+    // OS gesture / palm rejection aborted the drag: reset state, do NOT commit a drop.
+    clearDwell();
+    const wasDragging = dragging;
+    armed = false;
+    dragging = false;
+    folderIntent = false;
+    lastOver = null;
+    if (wasDragging) p.onhover(null, false);
+  }
+
   node.addEventListener('pointerdown', onpointerdown);
   node.addEventListener('pointermove', onpointermove);
   node.addEventListener('pointerup', onpointerup);
+  node.addEventListener('pointercancel', onpointercancel);
 
   return {
     update(next: GridDragParams) { p = next; },
@@ -103,6 +115,7 @@ export function gridDrag(node: HTMLElement, params: GridDragParams) {
       node.removeEventListener('pointerdown', onpointerdown);
       node.removeEventListener('pointermove', onpointermove);
       node.removeEventListener('pointerup', onpointerup);
+      node.removeEventListener('pointercancel', onpointercancel);
     },
   };
 }
