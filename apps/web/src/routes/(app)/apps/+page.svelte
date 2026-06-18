@@ -6,11 +6,12 @@
   import { deskSearch } from '$lib/stores/desk';
   import { getPreferences } from '$lib/api/preferences';
   import { defaultDeskLayout, reconcileDeskLayout } from '@pulsar/shared';
-  import type { DeskLayout, DeskItem } from '@pulsar/shared';
+  import type { DeskLayout, DeskItem, DeskFolderChild } from '@pulsar/shared';
   import DeskIcon from '$lib/components/desk/DeskIcon.svelte';
   import DeskFolderTile from '$lib/components/desk/DeskFolderTile.svelte';
   import FolderOverlay from '$lib/components/desk/FolderOverlay.svelte';
   import { Link } from 'lucide-svelte';
+  import { gridDrag } from '$lib/actions/dnd';
 
   // Build visible domains from auth caps — mirrors +layout.svelte exactly.
   const domains = $derived(
@@ -53,7 +54,89 @@
     layout = reconcileDeskLayout(rawSaved, domains);
   });
 
+  // ---------------------------------------------------------------------------
+  // Edit mode
+  // ---------------------------------------------------------------------------
+  let editing = $state(false);
+
+  /** Stub — wired up in a later task. */
+  function persist() { /* wired in a later task */ }
+
+  function enterEditMode() {
+    deskSearch.set('');
+    editing = true;
+  }
+
+  function exitEditMode() {
+    editing = false;
+    persist();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Drag state
+  // ---------------------------------------------------------------------------
+  let dragIndex = $state<number | null>(null);
+  let hoverIndex = $state<number | null>(null);
+
+  function onpick(i: number) { dragIndex = i; }
+  function onhover(i: number) { hoverIndex = i; }
+
+  function toChild(item: Extract<DeskItem, { type: 'module' | 'link' }>): DeskFolderChild {
+    return item.type === 'module'
+      ? { type: 'module' as const, moduleKey: item.moduleKey }
+      : { type: 'link' as const, href: item.href, label: item.label, icon: item.icon };
+  }
+
+  function ondrop(from: number, over: number | null) {
+    dragIndex = null;
+    hoverIndex = null;
+    if (over === null || over === from) return;
+
+    const items = [...layout.items] as DeskItem[];
+    const dragged = items[from];
+    const target = items[over];
+    if (!dragged || !target) return;
+
+    if (dragged.type !== 'folder' && target.type !== 'folder') {
+      // Drop module/link onto module/link → create a folder
+      const folder: Extract<DeskItem, { type: 'folder' }> = {
+        type: 'folder',
+        id: (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `folder-${items.length}-${over}`,
+        name: 'Dossier',
+        items: [toChild(target as Extract<DeskItem, { type: 'module' | 'link' }>), toChild(dragged as Extract<DeskItem, { type: 'module' | 'link' }>)],
+      };
+      items.splice(from, 1);
+      const targetIdxAfter = from < over ? over - 1 : over;
+      items.splice(targetIdxAfter, 1, folder);
+      layout = { ...layout, items };
+    } else if (target.type === 'folder' && dragged.type !== 'folder') {
+      // Drop module/link into an existing folder
+      const folderCopy: Extract<DeskItem, { type: 'folder' }> = {
+        ...target,
+        items: [...target.items, toChild(dragged as Extract<DeskItem, { type: 'module' | 'link' }>)],
+      };
+      items.splice(from, 1);
+      const targetIdxAfter = from < over ? over - 1 : over;
+      items.splice(targetIdxAfter, 1, folderCopy);
+      layout = { ...layout, items };
+    } else {
+      // Plain reorder (folder↔folder or folder moved to a position)
+      items.splice(over, 0, items.splice(from, 1)[0] as DeskItem);
+      layout = { ...layout, items };
+    }
+    persist();
+  }
+
+  function removeItem(i: number) {
+    layout = { ...layout, items: layout.items.filter((_, idx) => idx !== i) };
+    persist();
+  }
+
+  // ---------------------------------------------------------------------------
   // Folder overlay
+  // ---------------------------------------------------------------------------
   let openFolderId = $state<string | null>(null);
   let folderIsOpen = $state(false);
 
@@ -74,7 +157,11 @@
     openFolderId = null;
   }
 
-  // Helper: find domain by moduleKey
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  /** Find domain by moduleKey */
   function domainByKey(key: string) {
     return domains.find((d) => d.key === key) ?? null;
   }
@@ -106,6 +193,17 @@
   }
 
   const visibleItems = $derived(layout.items.filter(itemMatchesSearch));
+
+  // In edit mode render the full layout (indices must align with drag positions).
+  // In normal mode render the search-filtered list.
+  const renderItems = $derived(editing ? layout.items : visibleItems);
+
+  // Stable key for each item (used in {#each} key expression)
+  function itemKey(item: DeskItem): string {
+    if (item.type === 'folder') return `folder:${item.id}`;
+    if (item.type === 'module') return `module:${item.moduleKey}`;
+    return `link:${item.href}`;
+  }
 </script>
 
 <svelte:head><title>Pulsar Desk</title></svelte:head>
@@ -113,46 +211,70 @@
 <section class="min-h-[calc(100vh-3.5rem)] bg-[#f8f8f7] px-4 py-14 text-ink sm:px-8 lg:px-12">
   <div class="mx-auto max-w-5xl">
     <!-- Header -->
-    <div class="mb-8 text-center">
-      <p class="text-xs font-semibold tracking-[0.26em] text-ink-faint uppercase">Pulsar Desk</p>
-      <h1 class="mt-2 text-xl font-semibold tracking-tight text-ink">Toutes les pages</h1>
+    <div class="mb-8 flex items-center justify-center gap-3">
+      <div class="text-center">
+        <p class="text-xs font-semibold tracking-[0.26em] text-ink-faint uppercase">Pulsar Desk</p>
+        <h1 class="mt-2 text-xl font-semibold tracking-tight text-ink">Toutes les pages</h1>
+      </div>
+      {#if loaded}
+        <button
+          type="button"
+          class="absolute right-4 rounded-full border border-edge px-3 py-1 text-sm text-ink-faint transition hover:text-ink sm:right-8 lg:right-12"
+          onclick={() => editing ? exitEditMode() : enterEditMode()}
+        >
+          {editing ? 'OK' : 'Personnaliser'}
+        </button>
+      {/if}
     </div>
 
     {#if !loaded}
       <div class="flex justify-center py-20">
         <span class="text-sm text-ink-faint">Chargement…</span>
       </div>
-    {:else if visibleItems.length === 0}
+    {:else if renderItems.length === 0}
       <p class="text-center text-sm text-ink-faint">
         {search ? `Aucune page ne correspond à « ${$deskSearch} ».` : 'Aucune page disponible.'}
       </p>
     {:else}
       <div class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6">
-        {#each visibleItems as item (item.type === 'folder' ? item.id : item.type === 'module' ? item.moduleKey : item.href)}
-          {#if item.type === 'module'}
-            {@const domain = domainByKey(item.moduleKey)}
-            {#if domain}
-              {@const universe = MODULE_UNIVERSES[domain.key] ?? MODULE_UNIVERSES['dashboard']}
+        {#each renderItems as item, i (itemKey(item))}
+          <div
+            data-desk-index={i}
+            style={editing ? 'touch-action: none;' : ''}
+            class={editing && hoverIndex === i && dragIndex !== null && dragIndex !== i ? 'opacity-60 scale-95 transition-transform duration-100' : ''}
+            use:gridDrag={{ index: i, enabled: editing, onpick, onhover, ondrop }}
+          >
+            {#if item.type === 'module'}
+              {@const domain = domainByKey(item.moduleKey)}
+              {#if domain}
+                {@const universe = MODULE_UNIVERSES[domain.key] ?? MODULE_UNIVERSES['dashboard']}
+                <DeskIcon
+                  label={domain.label}
+                  icon={domain.icon}
+                  accent={universe.accent}
+                  {editing}
+                  onactivate={() => { if (!editing) goto(domain.home); }}
+                  onremove={() => removeItem(i)}
+                />
+              {/if}
+            {:else if item.type === 'link'}
               <DeskIcon
-                label={domain.label}
-                icon={domain.icon}
-                accent={universe.accent}
-                onactivate={() => goto(domain.home)}
+                label={item.label}
+                icon={Link}
+                accent="#6f7480"
+                {editing}
+                onactivate={() => { if (!editing) goto(item.href); }}
+                onremove={() => removeItem(i)}
+              />
+            {:else if item.type === 'folder'}
+              <DeskFolderTile
+                name={item.name}
+                {editing}
+                onopen={() => { if (!editing) openFolderById(item.id); }}
+                onremove={() => removeItem(i)}
               />
             {/if}
-          {:else if item.type === 'link'}
-            <DeskIcon
-              label={item.label}
-              icon={Link}
-              accent="#6f7480"
-              onactivate={() => goto(item.href)}
-            />
-          {:else if item.type === 'folder'}
-            <DeskFolderTile
-              name={item.name}
-              onopen={() => openFolderById(item.id)}
-            />
-          {/if}
+          </div>
         {/each}
       </div>
     {/if}
