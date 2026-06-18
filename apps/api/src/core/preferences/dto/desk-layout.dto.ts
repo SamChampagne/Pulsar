@@ -1,9 +1,13 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsInt, IsOptional, ValidateNested } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsOptional, ValidateNested } from 'class-validator';
 
 export class DeskLayoutDto {
   @IsInt()
   version!: number;
+
+  @IsOptional()
+  @IsIn(['auto', 'free', 'reorder'])
+  mode?: string;
 
   @IsArray()
   items!: Record<string, unknown>[];
