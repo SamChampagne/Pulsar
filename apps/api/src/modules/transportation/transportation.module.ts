@@ -105,6 +105,8 @@ import { BolService } from './bol/bol.service';
     ShipmentsService,
     TendersService,
     AnalyticsService,
+    VehiclesService,
+    TrailersService,
   ],
 })
 export class TransportationModule {}
