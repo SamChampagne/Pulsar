@@ -53,5 +53,6 @@ import { CycleCountsController } from './cycle-counts/cycle-counts.controller';
     ReplenishmentService,
     CycleCountsService,
   ],
+  exports: [WmsOverviewService, PickingService, CycleCountsService],
 })
 export class WmsModule {}
