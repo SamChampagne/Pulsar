@@ -6,8 +6,8 @@
   import { MODULE_UNIVERSES } from '$lib/modules/universe';
   import { deskSearch } from '$lib/stores/desk';
   import { getPreferences, putDeskLayout } from '$lib/api/preferences';
-  import { defaultDeskLayout, reconcileDeskLayout, FRAMEWORK_FOLDER_ID, DESK_CANVAS_W, DESK_TILE, defaultPosition, DESK_MODES } from '@pulsar/shared';
-  import type { DeskLayout, DeskItem, DeskFolderChild } from '@pulsar/shared';
+  import { defaultDeskLayout, reconcileDeskLayout, FRAMEWORK_FOLDER_ID, DESK_CANVAS_W, DESK_TILE, defaultPosition, DESK_MODES, TILE_SIZES } from '@pulsar/shared';
+  import type { DeskLayout, DeskItem, DeskFolderChild, DeskTileSize } from '@pulsar/shared';
   import { toast } from '$lib/stores/toast';
   import DeskIcon from '$lib/components/desk/DeskIcon.svelte';
   import DeskFolderTile from '$lib/components/desk/DeskFolderTile.svelte';
@@ -26,6 +26,7 @@
   );
 
   let layout = $state<DeskLayout>(defaultDeskLayout([]));
+  const tilePx = $derived(TILE_SIZES[(layout.tileSize ?? 'md') as DeskTileSize]);
   let loaded = $state(false);
   let rawSaved = $state<unknown>(undefined);
   let fetchedOnce = $state(false);
@@ -133,12 +134,12 @@
 
   function clampX(x: number) {
     const w = canvasW || DESK_CANVAS_W;
-    return Math.max(0, Math.min(x, w - DESK_TILE));
+    return Math.max(0, Math.min(x, w - tilePx));
   }
 
   function clampY(y: number) {
     const h = canvasH || 600;
-    return Math.max(0, Math.min(y, h - DESK_TILE));
+    return Math.max(0, Math.min(y, h - tilePx));
   }
 
   function toChild(item: Extract<DeskItem, { type: 'module' | 'link' }>): DeskFolderChild {
@@ -396,17 +397,17 @@
     {@const domain = domainByKey(item.moduleKey)}
     {#if domain}
       {@const universe = MODULE_UNIVERSES[domain.key] ?? MODULE_UNIVERSES['dashboard']}
-      <DeskIcon label={domain.label} icon={domain.icon} accent={universe.accent} {editing}
+      <DeskIcon label={domain.label} icon={domain.icon} accent={universe.accent} {editing} size={tilePx}
         onactivate={() => { if (!suppressClick && !editing) goto(domain.home); }}
         onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
     {/if}
   {:else if item.type === 'link'}
-    <DeskIcon label={renamingItem === item ? renameValue : item.label} icon={Link} accent="#6f7480" {editing}
+    <DeskIcon label={renamingItem === item ? renameValue : item.label} icon={Link} accent="#6f7480" {editing} size={tilePx}
       onactivate={() => { if (!suppressClick && !editing) goto(item.href); }}
       onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
     {#if renamingItem === item}<input class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none" bind:value={renameValue} onblur={commitRename} onkeydown={onRenameKeydown} use:focusOnMount />{/if}
   {:else if item.type === 'folder'}
-    <DeskFolderTile name={renamingItem === item ? renameValue : item.name} {editing}
+    <DeskFolderTile name={renamingItem === item ? renameValue : item.name} {editing} size={tilePx}
       onopen={() => { if (!suppressClick && !editing) openFolderById(item.id); }}
       onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
     {#if renamingItem === item}<input class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none" bind:value={renameValue} onblur={commitRename} onkeydown={onRenameKeydown} use:focusOnMount />{/if}
@@ -436,6 +437,14 @@
                 class={`rounded px-2.5 py-1 text-sm font-medium transition-colors ${layout.mode === m ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink'}`}
                 onclick={() => { layout = { ...layout, mode: m }; persist(); }}
               >{m === 'auto' ? 'Grille auto' : m === 'free' ? 'Libre' : 'Réordonnable'}</button>
+            {/each}
+          </div>
+          <div class="inline-flex items-center gap-1 rounded-md border border-edge bg-surface p-0.5">
+            {#each (['sm','md','lg'] as DeskTileSize[]) as sz (sz)}
+              <button type="button"
+                class={`rounded px-2.5 py-1 text-sm font-medium transition-colors ${(layout.tileSize ?? 'md') === sz ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink'}`}
+                onclick={() => { layout = { ...layout, tileSize: sz }; persist(); }}
+              >{sz === 'sm' ? 'S' : sz === 'md' ? 'M' : 'L'}</button>
             {/each}
           </div>
         {/if}
