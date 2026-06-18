@@ -3,12 +3,14 @@ import {
   defaultDeskLayout,
   reconcileDeskLayout,
   DESK_LAYOUT_VERSION,
+  DESK_MODES,
   FRAMEWORK_LINKS,
   defaultPosition,
   DESK_COLS,
   DESK_TILE,
   DESK_GAP,
   type DeskLayout,
+  type DeskMode,
 } from './desk-layout';
 
 const domains = [{ key: 'transport' }, { key: 'wms' }, { key: 'agents' }];
@@ -40,6 +42,7 @@ describe('reconcileDeskLayout', () => {
   it('removes module items whose module is no longer visible', () => {
     const saved: DeskLayout = {
       version: DESK_LAYOUT_VERSION,
+      mode: 'auto',
       items: [
         { type: 'module', moduleKey: 'transport' },
         { type: 'module', moduleKey: 'billing' },
@@ -54,6 +57,7 @@ describe('reconcileDeskLayout', () => {
   it('removes non-visible modules nested inside folders too', () => {
     const saved: DeskLayout = {
       version: DESK_LAYOUT_VERSION,
+      mode: 'auto',
       items: [
         {
           type: 'folder',
@@ -75,6 +79,7 @@ describe('reconcileDeskLayout', () => {
   it('appends modules that are newly visible and not already placed (top-level or in a folder)', () => {
     const saved: DeskLayout = {
       version: DESK_LAYOUT_VERSION,
+      mode: 'auto',
       items: [{ type: 'folder', id: 'f1', name: 'Ops', items: [{ type: 'module', moduleKey: 'transport' }] }],
     };
     const out = reconcileDeskLayout(saved, domains);
@@ -87,6 +92,7 @@ describe('reconcileDeskLayout', () => {
   it('keeps link items as-is and dedups folder ids', () => {
     const saved: DeskLayout = {
       version: DESK_LAYOUT_VERSION,
+      mode: 'auto',
       items: [
         { type: 'link', href: '/loads', label: 'Loads' },
         { type: 'folder', id: 'dup', name: 'A', items: [] },
@@ -116,6 +122,7 @@ describe('positions', () => {
   it('reconcileDeskLayout preserves existing pos', () => {
     const saved: DeskLayout = {
       version: DESK_LAYOUT_VERSION,
+      mode: 'auto',
       items: [{ type: 'module', moduleKey: 'transport', pos: { x: 500, y: 300 } }],
     };
     const out = reconcileDeskLayout(saved, [{ key: 'transport' }]);
@@ -126,6 +133,7 @@ describe('positions', () => {
   it('reconcileDeskLayout assigns a pos to items lacking one and to newly-visible modules', () => {
     const saved: DeskLayout = {
       version: DESK_LAYOUT_VERSION,
+      mode: 'auto',
       items: [{ type: 'module', moduleKey: 'transport' }],
     };
     const out = reconcileDeskLayout(saved, [{ key: 'transport' }, { key: 'wms' }]);
@@ -135,9 +143,28 @@ describe('positions', () => {
   });
 
   it('reconcileDeskLayout is deterministic', () => {
-    const saved: DeskLayout = { version: DESK_LAYOUT_VERSION, items: [{ type: 'module', moduleKey: 'transport' }] };
+    const saved: DeskLayout = { version: DESK_LAYOUT_VERSION, mode: 'auto', items: [{ type: 'module', moduleKey: 'transport' }] };
     expect(reconcileDeskLayout(saved, [{ key: 'transport' }])).toEqual(
       reconcileDeskLayout(saved, [{ key: 'transport' }]),
     );
+  });
+});
+
+describe('mode', () => {
+  it('defaultDeskLayout defaults to auto', () => {
+    expect(defaultDeskLayout([{ key: 'transport' }]).mode).toBe('auto');
+  });
+  it('reconcileDeskLayout preserves a valid saved mode', () => {
+    const saved: DeskLayout = { version: DESK_LAYOUT_VERSION, mode: 'free', items: [] };
+    expect(reconcileDeskLayout(saved, [{ key: 'transport' }]).mode).toBe('free');
+  });
+  it('reconcileDeskLayout falls back to auto for missing/invalid mode', () => {
+    const noMode = { version: DESK_LAYOUT_VERSION, items: [] } as unknown;
+    expect(reconcileDeskLayout(noMode, [{ key: 'transport' }]).mode).toBe('auto');
+    const bad = { version: DESK_LAYOUT_VERSION, mode: 'nope', items: [] } as unknown;
+    expect(reconcileDeskLayout(bad, [{ key: 'transport' }]).mode).toBe('auto');
+  });
+  it('DESK_MODES lists the three modes', () => {
+    expect(DESK_MODES).toEqual(['auto', 'free', 'reorder']);
   });
 });

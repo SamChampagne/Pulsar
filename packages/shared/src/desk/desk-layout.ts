@@ -1,5 +1,8 @@
 export const DESK_LAYOUT_VERSION = 1;
 
+export type DeskMode = 'auto' | 'free' | 'reorder';
+export const DESK_MODES: DeskMode[] = ['auto', 'free', 'reorder'];
+
 export interface DeskPosition {
   x: number;
   y: number;
@@ -30,6 +33,7 @@ export type DeskItem =
 
 export interface DeskLayout {
   version: number;
+  mode: DeskMode;
   items: DeskItem[];
 }
 
@@ -51,6 +55,7 @@ export function defaultDeskLayout(domains: { key: string }[]): DeskLayout {
   ];
   return {
     version: DESK_LAYOUT_VERSION,
+    mode: 'auto',
     items: base.map((it, i) => ({ ...it, pos: defaultPosition(i) })),
   };
 }
@@ -131,5 +136,7 @@ export function reconcileDeskLayout(saved: unknown, domains: { key: string }[]):
   }
 
   const positioned = items.map((it, i) => (it.pos ? it : { ...it, pos: defaultPosition(i) }));
-  return { version: DESK_LAYOUT_VERSION, items: positioned };
+  const savedMode = (s && typeof s === 'object') ? (s as { mode?: unknown }).mode : undefined;
+  const mode: DeskMode = DESK_MODES.includes(savedMode as DeskMode) ? (savedMode as DeskMode) : 'auto';
+  return { version: DESK_LAYOUT_VERSION, mode, items: positioned };
 }
