@@ -7,15 +7,10 @@
     EmptyState,
     Skeleton,
   } from '$lib/components/ui';
+  import { laneLabel, formatDate } from '$lib/procurement/helpers';
+  import type { LaneEndpoint, EndpointType } from '$lib/procurement/helpers';
 
   // ─── Types ────────────────────────────────────────────────────────────────────
-  type EndpointType = 'LOCATION' | 'CITY' | 'STATE' | 'COUNTRY';
-
-  interface LaneEndpoint {
-    id: string;
-    name: string;
-    city: string;
-  }
 
   interface Lane {
     id: string;
@@ -55,37 +50,6 @@
     carrier: { id: string; code: string; name: string };
     rfpLane: RfpLaneRef;
     rate?: RateRef | null;
-  }
-
-  // ─── Helpers ─────────────────────────────────────────────────────────────────
-  function endpointLabel(
-    type: EndpointType,
-    loc: LaneEndpoint | null,
-    city: string | null,
-    state: string | null,
-    country: string | null,
-  ): string {
-    switch (type) {
-      case 'LOCATION':
-        return loc ? `${loc.name} (${loc.city})` : '—';
-      case 'CITY':
-        return `${city ?? ''}, ${state ?? ''} (${country ?? ''})`;
-      case 'STATE':
-        return `${state ?? ''} (${country ?? ''})`;
-      case 'COUNTRY':
-        return country ?? '—';
-    }
-  }
-
-  function laneLabel(lane: Lane): string {
-    const orig = endpointLabel(lane.originType, lane.originLocation, lane.originCity, lane.originState, lane.originCountry);
-    const dest = endpointLabel(lane.destinationType, lane.destinationLocation, lane.destinationCity, lane.destinationState, lane.destinationCountry);
-    return `${orig} → ${dest}`;
-  }
-
-  function formatDate(val: string | null | undefined): string {
-    if (!val) return '—';
-    return new Date(val).toLocaleDateString('fr-CA');
   }
 
   // ─── Data ─────────────────────────────────────────────────────────────────────

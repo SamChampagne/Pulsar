@@ -1,7 +1,9 @@
 <script lang="ts">
   import { page } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
+  import { PERMISSIONS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
   import { toast } from '$lib/stores/toast';
   import {
     PageHeader,
@@ -18,15 +20,10 @@
     toneFor,
     labelFor,
   } from '$lib/components/ui';
+  import { endpointLabel, laneLabel, formatDate } from '$lib/procurement/helpers';
+  import type { LaneEndpoint, EndpointType } from '$lib/procurement/helpers';
 
   // ─── Types ────────────────────────────────────────────────────────────────────
-  type EndpointType = 'LOCATION' | 'CITY' | 'STATE' | 'COUNTRY';
-
-  interface LaneEndpoint {
-    id: string;
-    name: string;
-    city: string;
-  }
 
   interface Lane {
     id: string;
@@ -125,36 +122,10 @@
     email?: string | null;
   }
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────────
-  function endpointLabel(
-    type: EndpointType,
-    loc: LaneEndpoint | null,
-    city: string | null,
-    state: string | null,
-    country: string | null,
-  ): string {
-    switch (type) {
-      case 'LOCATION':
-        return loc ? `${loc.name} (${loc.city})` : '—';
-      case 'CITY':
-        return `${city ?? ''}, ${state ?? ''} (${country ?? ''})`;
-      case 'STATE':
-        return `${state ?? ''} (${country ?? ''})`;
-      case 'COUNTRY':
-        return country ?? '—';
-    }
-  }
-
-  function laneLabel(lane: Lane | LaneOption): string {
-    const orig = endpointLabel(lane.originType, lane.originLocation, lane.originCity, lane.originState, lane.originCountry);
-    const dest = endpointLabel(lane.destinationType, lane.destinationLocation, lane.destinationCity, lane.destinationState, lane.destinationCountry);
-    return `${orig} → ${dest}`;
-  }
-
-  function formatDate(val: string | null | undefined): string {
-    if (!val) return '—';
-    return new Date(val).toLocaleDateString('fr-CA');
-  }
+  // ─── Permissions ─────────────────────────────────────────────────────────────
+  const canManage = $derived(
+    $auth?.user.permissions.includes(PERMISSIONS.PROCUREMENT.MANAGE) ?? false,
+  );
 
   // ─── Data ─────────────────────────────────────────────────────────────────────
   const rfpId = $derived(page.params.id as string);
@@ -321,6 +292,7 @@
   }
 
   $effect(() => {
+    rfpId;
     void load();
   });
 </script>
@@ -334,15 +306,17 @@
     {#snippet actions()}
       <div class="flex items-center gap-2">
         <Badge tone={toneFor(rfp!.status)}>{labelFor(rfp!.status)}</Badge>
-        {#if rfp!.status === 'DRAFT'}
-          <Button onclick={() => transition('open')}>Ouvrir</Button>
-          <Button variant="danger" onclick={() => transition('cancel')}>Annuler</Button>
-        {:else if rfp!.status === 'OPEN'}
-          <Button onclick={() => transition('evaluation')}>Passage en évaluation</Button>
-          <Button variant="danger" onclick={() => transition('cancel')}>Annuler</Button>
-        {:else if rfp!.status === 'EVALUATION'}
-          <Button variant="secondary" onclick={() => transition('open')}>Re-ouvrir</Button>
-          <Button variant="danger" onclick={() => transition('cancel')}>Annuler</Button>
+        {#if canManage}
+          {#if rfp!.status === 'DRAFT'}
+            <Button onclick={() => transition('open')}>Ouvrir</Button>
+            <Button variant="danger" onclick={() => transition('cancel')}>Annuler</Button>
+          {:else if rfp!.status === 'OPEN'}
+            <Button onclick={() => transition('evaluation')}>Passage en évaluation</Button>
+            <Button variant="danger" onclick={() => transition('cancel')}>Annuler</Button>
+          {:else if rfp!.status === 'EVALUATION'}
+            <Button variant="secondary" onclick={() => transition('open')}>Re-ouvrir</Button>
+            <Button variant="danger" onclick={() => transition('cancel')}>Annuler</Button>
+          {/if}
         {/if}
       </div>
     {/snippet}
@@ -352,7 +326,9 @@
   <div class="mb-4 rounded-card border border-edge-soft bg-surface shadow-sm">
     <div class="flex items-center justify-between border-b border-edge-soft px-4 py-3">
       <span class="font-semibold text-ink">Lanes</span>
-      <Button variant="secondary" onclick={() => { addLaneId = ''; addLaneMode = ''; addLaneVolume = ''; showAddLane = true; }}>Ajouter</Button>
+      {#if canManage}
+        <Button variant="secondary" onclick={() => { addLaneId = ''; addLaneMode = ''; addLaneVolume = ''; showAddLane = true; }}>Ajouter</Button>
+      {/if}
     </div>
     <div class="p-4">
       {#if rfp!.rfpLanes.length === 0}
@@ -372,7 +348,9 @@
                 <td>{rl.mode ? rl.mode : '—'}</td>
                 <td>{rl.volumeEstimate !== null && rl.volumeEstimate !== undefined ? rl.volumeEstimate : '—'}</td>
                 <td class="text-right">
-                  <Button variant="danger" onclick={() => deleteLane(rl.id)}>Retirer</Button>
+                  {#if canManage}
+                    <Button variant="danger" onclick={() => deleteLane(rl.id)}>Retirer</Button>
+                  {/if}
                 </td>
               </tr>
             {/each}
@@ -386,7 +364,9 @@
   <div class="mb-4 rounded-card border border-edge-soft bg-surface shadow-sm">
     <div class="flex items-center justify-between border-b border-edge-soft px-4 py-3">
       <span class="font-semibold text-ink">Invitations</span>
-      <Button variant="secondary" onclick={() => { inviteCarrierId = ''; inviteLink = ''; showInvite = true; }}>Inviter</Button>
+      {#if canManage}
+        <Button variant="secondary" onclick={() => { inviteCarrierId = ''; inviteLink = ''; showInvite = true; }}>Inviter</Button>
+      {/if}
     </div>
     <div class="p-4">
       {#if rfp!.invites.length === 0}
@@ -452,17 +432,19 @@
                       <td class="text-sm text-ink-muted">{bid.transitDays !== null && bid.transitDays !== undefined ? bid.transitDays + ' j' : '—'}</td>
                       <td><Badge tone={toneFor(bid.status)}>{labelFor(bid.status)}</Badge></td>
                       <td class="text-right">
-                        <div class="inline-flex gap-1">
-                          {#if bid.status === 'SUBMITTED'}
-                            <Button variant="secondary" onclick={() => shortlistBid(bid.id)}>Présélectionner</Button>
-                          {/if}
-                          {#if bid.status === 'SUBMITTED' || bid.status === 'SHORTLISTED'}
-                            <Button variant="danger" onclick={() => rejectBid(bid.id)}>Rejeter</Button>
-                          {/if}
-                          {#if bid.status !== 'ACCEPTED' && bid.status !== 'REJECTED'}
-                            <Button onclick={() => openAward(bid)}>Attribuer</Button>
-                          {/if}
-                        </div>
+                        {#if canManage}
+                          <div class="inline-flex gap-1">
+                            {#if bid.status === 'SUBMITTED'}
+                              <Button variant="secondary" onclick={() => shortlistBid(bid.id)}>Présélectionner</Button>
+                            {/if}
+                            {#if bid.status === 'SUBMITTED' || bid.status === 'SHORTLISTED'}
+                              <Button variant="danger" onclick={() => rejectBid(bid.id)}>Rejeter</Button>
+                            {/if}
+                            {#if bid.status !== 'ACCEPTED' && bid.status !== 'REJECTED'}
+                              <Button onclick={() => openAward(bid)}>Attribuer</Button>
+                            {/if}
+                          </div>
+                        {/if}
                       </td>
                     </tr>
                   {/each}
@@ -477,6 +459,7 @@
 {/if}
 
 <!-- ─── Add Lane Modal ────────────────────────────────────────────────────────── -->
+{#if canManage}
 <Modal bind:open={showAddLane} title="Ajouter une lane" size="md">
   {#snippet children()}
     <form onsubmit={addLane} class="space-y-4">
@@ -507,8 +490,10 @@
     </form>
   {/snippet}
 </Modal>
+{/if}
 
 <!-- ─── Invite Modal ─────────────────────────────────────────────────────────── -->
+{#if canManage}
 <Modal bind:open={showInvite} title="Inviter un transporteur" size="md" onclose={resetInvite}>
   {#snippet children()}
     <div class="space-y-4">
@@ -540,8 +525,10 @@
     </div>
   {/snippet}
 </Modal>
+{/if}
 
 <!-- ─── Award Modal ──────────────────────────────────────────────────────────── -->
+{#if canManage}
 <Modal bind:open={showAward} title="Attribuer la lane" size="sm">
   {#snippet children()}
     {#if awardBid}
@@ -561,3 +548,4 @@
     {/if}
   {/snippet}
 </Modal>
+{/if}
