@@ -4,6 +4,10 @@ import {
   reconcileDeskLayout,
   DESK_LAYOUT_VERSION,
   FRAMEWORK_LINKS,
+  defaultPosition,
+  DESK_COLS,
+  DESK_TILE,
+  DESK_GAP,
   type DeskLayout,
 } from './desk-layout';
 
@@ -93,5 +97,47 @@ describe('reconcileDeskLayout', () => {
     expect(out.items.some((i) => i.type === 'link' && (i as any).href === '/loads')).toBe(true);
     const folderIds = out.items.filter((i) => i.type === 'folder').map((i) => (i as any).id);
     expect(new Set(folderIds).size).toBe(folderIds.length);
+  });
+});
+
+describe('positions', () => {
+  it('defaultPosition lays out in a grid by index', () => {
+    expect(defaultPosition(0)).toEqual({ x: DESK_GAP, y: DESK_GAP });
+    expect(defaultPosition(1)).toEqual({ x: DESK_GAP + (DESK_TILE + DESK_GAP), y: DESK_GAP });
+    expect(defaultPosition(DESK_COLS)).toEqual({ x: DESK_GAP, y: DESK_GAP + (DESK_TILE + DESK_GAP) });
+  });
+
+  it('defaultDeskLayout assigns a pos to every top-level item', () => {
+    const layout = defaultDeskLayout([{ key: 'transport' }, { key: 'wms' }]);
+    expect(layout.items.every((i) => i.pos && typeof i.pos.x === 'number')).toBe(true);
+    expect(layout.items[0].pos).toEqual(defaultPosition(0));
+  });
+
+  it('reconcileDeskLayout preserves existing pos', () => {
+    const saved: DeskLayout = {
+      version: DESK_LAYOUT_VERSION,
+      items: [{ type: 'module', moduleKey: 'transport', pos: { x: 500, y: 300 } }],
+    };
+    const out = reconcileDeskLayout(saved, [{ key: 'transport' }]);
+    const t = out.items.find((i) => i.type === 'module' && (i as any).moduleKey === 'transport');
+    expect(t?.pos).toEqual({ x: 500, y: 300 });
+  });
+
+  it('reconcileDeskLayout assigns a pos to items lacking one and to newly-visible modules', () => {
+    const saved: DeskLayout = {
+      version: DESK_LAYOUT_VERSION,
+      items: [{ type: 'module', moduleKey: 'transport' }],
+    };
+    const out = reconcileDeskLayout(saved, [{ key: 'transport' }, { key: 'wms' }]);
+    expect(out.items.every((i) => i.pos && typeof i.pos.x === 'number')).toBe(true);
+    const wms = out.items.find((i) => i.type === 'module' && (i as any).moduleKey === 'wms');
+    expect(wms?.pos).toBeTruthy();
+  });
+
+  it('reconcileDeskLayout is deterministic', () => {
+    const saved: DeskLayout = { version: DESK_LAYOUT_VERSION, items: [{ type: 'module', moduleKey: 'transport' }] };
+    expect(reconcileDeskLayout(saved, [{ key: 'transport' }])).toEqual(
+      reconcileDeskLayout(saved, [{ key: 'transport' }]),
+    );
   });
 });

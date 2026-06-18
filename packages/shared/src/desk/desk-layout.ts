@@ -1,13 +1,32 @@
 export const DESK_LAYOUT_VERSION = 1;
 
+export interface DeskPosition {
+  x: number;
+  y: number;
+}
+
+export const DESK_TILE = 96;
+export const DESK_GAP = 28;
+export const DESK_COLS = 6;
+export const DESK_CANVAS_W = DESK_COLS * (DESK_TILE + DESK_GAP) + DESK_GAP;
+
+export function defaultPosition(index: number): DeskPosition {
+  const col = index % DESK_COLS;
+  const row = Math.floor(index / DESK_COLS);
+  return {
+    x: DESK_GAP + col * (DESK_TILE + DESK_GAP),
+    y: DESK_GAP + row * (DESK_TILE + DESK_GAP),
+  };
+}
+
 export type DeskFolderChild =
   | { type: 'module'; moduleKey: string }
   | { type: 'link'; href: string; label: string; icon?: string };
 
 export type DeskItem =
-  | { type: 'module'; moduleKey: string }
-  | { type: 'link'; href: string; label: string; icon?: string }
-  | { type: 'folder'; id: string; name: string; items: DeskFolderChild[] };
+  | { type: 'module'; moduleKey: string; pos?: DeskPosition }
+  | { type: 'link'; href: string; label: string; icon?: string; pos?: DeskPosition }
+  | { type: 'folder'; id: string; name: string; items: DeskFolderChild[]; pos?: DeskPosition };
 
 export interface DeskLayout {
   version: number;
@@ -24,15 +43,15 @@ export const FRAMEWORK_LINKS: DeskFolderChild[] = [
 ];
 
 export function defaultDeskLayout(domains: { key: string }[]): DeskLayout {
-  const moduleItems: DeskItem[] = domains
-    .filter((d) => d.key !== 'dashboard')
-    .map((d) => ({ type: 'module', moduleKey: d.key }));
+  const base: DeskItem[] = [
+    ...domains
+      .filter((d) => d.key !== 'dashboard')
+      .map((d): DeskItem => ({ type: 'module', moduleKey: d.key })),
+    { type: 'folder', id: FRAMEWORK_FOLDER_ID, name: 'Framework', items: [...FRAMEWORK_LINKS] },
+  ];
   return {
     version: DESK_LAYOUT_VERSION,
-    items: [
-      ...moduleItems,
-      { type: 'folder', id: FRAMEWORK_FOLDER_ID, name: 'Framework', items: [...FRAMEWORK_LINKS] },
-    ],
+    items: base.map((it, i) => ({ ...it, pos: defaultPosition(i) })),
   };
 }
 
@@ -92,7 +111,14 @@ export function reconcileDeskLayout(saved: unknown, domains: { key: string }[]):
         bump += 1;
       }
       seenFolderIds.add(id);
-      items.push({ type: 'folder', id, name: raw.name, items: cleanChildren(raw.items) });
+      const folderItem: DeskItem = {
+        type: 'folder',
+        id,
+        name: raw.name,
+        items: cleanChildren(raw.items),
+        ...(raw.pos ? { pos: raw.pos } : {}),
+      };
+      items.push(folderItem);
     }
   }
 
@@ -104,5 +130,6 @@ export function reconcileDeskLayout(saved: unknown, domains: { key: string }[]):
     }
   }
 
-  return { version: DESK_LAYOUT_VERSION, items };
+  const positioned = items.map((it, i) => (it.pos ? it : { ...it, pos: defaultPosition(i) }));
+  return { version: DESK_LAYOUT_VERSION, items: positioned };
 }
