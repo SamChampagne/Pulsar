@@ -13,6 +13,8 @@
     Select,
     Skeleton,
     Tabs,
+    ViewToggle,
+    type ViewId,
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
@@ -171,6 +173,14 @@
 
   let schedules = $state<Schedule[]>([]);
   let savingSchedule = $state(false);
+  let mxView = $state<ViewId>('table');
+
+  const MX_KANBAN_COLS: { status: string; label: string }[] = [
+    { status: 'OVERDUE', label: 'En retard' },
+    { status: 'DUE', label: 'Dû' },
+    { status: 'DUE_SOON', label: 'Bientôt' },
+    { status: 'OK', label: 'OK' },
+  ];
   // asset value encodes kind+id: "vehicle:<id>" | "trailer:<id>"
   let scheduleForm = $state({
     asset: '',
@@ -634,15 +644,17 @@
       {#if pmOverdue > 0}<Badge tone="danger">{pmOverdue} en retard</Badge>{/if}
       {#if pmDue > 0}<Badge tone="warn">{pmDue} dû</Badge>{/if}
       {#if pmDueSoon > 0}<Badge tone="info">{pmDueSoon} bientôt</Badge>{/if}
+      <span class="ml-auto"><ViewToggle bind:view={mxView} views={['table', 'cards', 'kanban']} /></span>
     </div>
 
-    <Card padded={false}>
-      <!-- list -->
-      {#if schedules.length === 0}
+    {#if schedules.length === 0}
+      <Card>
         <EmptyState
           message="Aucun plan d'entretien. Crée un intervalle (km/jours) — l'échéance se calcule toute seule et alimente le Workbench."
         />
-      {:else}
+      </Card>
+    {:else if mxView === 'table'}
+      <Card padded={false}>
         <div class="divide-y divide-edge">
           {#each pmActionable as s (s.id)}
             <div
@@ -678,8 +690,87 @@
             </div>
           {/each}
         </div>
-      {/if}
-    </Card>
+      </Card>
+    {:else if mxView === 'cards'}
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {#each pmActionable as s (s.id)}
+          <Card>
+            <div class="flex items-start justify-between gap-2">
+              <span class="font-semibold text-ink">{assetLabel(s)}</span>
+              <Badge tone={scheduleTone(s.due.status)}>{s.due.status}</Badge>
+            </div>
+            <p class="mt-0.5 text-sm text-ink-muted">{s.name}</p>
+            <p class="mt-0.5 text-xs text-ink-faint">chaque {intervalLabel(s)}</p>
+            <div class="mt-1 text-xs text-ink-muted">
+              prochaine : {nextDueLabel(s)}
+              {#if s.due.daysUntilDue != null}
+                <span class="text-ink-faint">({s.due.daysUntilDue} j)</span>
+              {/if}
+            </div>
+            <div class="mt-2 flex flex-wrap gap-1">
+              {#if s.due.isDue && s.isActive}
+                <button
+                  class="rounded-md bg-accent px-2.5 py-1 text-xs font-semibold text-white hover:bg-accent-strong"
+                  onclick={() => generateFromSchedule(s.id)}>Générer WO</button
+                >
+              {/if}
+              <button
+                class="rounded-md border border-edge px-2.5 py-1 text-xs font-semibold text-ink-muted hover:bg-surface-muted"
+                onclick={() => toggleSchedule(s)}>{s.isActive ? 'Pause' : 'Activer'}</button
+              >
+              <button
+                class="rounded-md px-2.5 py-1 text-xs font-semibold text-danger hover:bg-danger/10"
+                onclick={() => deleteSchedule(s.id)}
+                aria-label="Supprimer le plan">✕</button
+              >
+            </div>
+          </Card>
+        {/each}
+      </div>
+    {:else if mxView === 'kanban'}
+      <div class="flex gap-3 overflow-x-auto pb-2">
+        {#each MX_KANBAN_COLS as col (col.status)}
+          {@const items = pmActionable.filter((s) => s.due.status === col.status)}
+          <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+            <div class="flex items-center justify-between px-3 py-2">
+              <Badge tone={scheduleTone(col.status)}>{col.label}</Badge>
+              <span class="font-mono text-xs text-ink-muted">{items.length}</span>
+            </div>
+            <div class="flex max-h-[65vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
+              {#if items.length === 0}
+                <p class="px-1 py-3 text-center text-xs text-ink-faint">—</p>
+              {:else}
+                {#each items as s (s.id)}
+                  <div class={`rounded-inner border border-edge-soft bg-surface p-2.5 shadow-sm ${s.isActive ? '' : 'opacity-50'}`}>
+                    <div class="font-semibold text-sm text-ink">{assetLabel(s)}</div>
+                    <div class="mt-0.5 truncate text-xs text-ink-muted">{s.name}</div>
+                    <div class="mt-0.5 text-[11px] text-ink-faint">chaque {intervalLabel(s)}</div>
+                    <div class="mt-0.5 text-[11px] text-ink-muted">prochaine : {nextDueLabel(s)}</div>
+                    <div class="mt-1.5 flex flex-wrap gap-1">
+                      {#if s.due.isDue && s.isActive}
+                        <button
+                          class="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-accent-strong"
+                          onclick={() => generateFromSchedule(s.id)}>Générer WO</button
+                        >
+                      {/if}
+                      <button
+                        class="rounded-md border border-edge px-2 py-0.5 text-[11px] font-semibold text-ink-muted hover:bg-surface-muted"
+                        onclick={() => toggleSchedule(s)}>{s.isActive ? 'Pause' : 'Activer'}</button
+                      >
+                      <button
+                        class="rounded-md px-2 py-0.5 text-[11px] font-semibold text-danger hover:bg-danger/10"
+                        onclick={() => deleteSchedule(s.id)}
+                        aria-label="Supprimer le plan">✕</button
+                      >
+                    </div>
+                  </div>
+                {/each}
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
   </div>
 
   <!-- C. Asset roster -->
