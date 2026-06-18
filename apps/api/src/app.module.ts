@@ -30,6 +30,7 @@ import { YardModule } from './modules/yard/yard.module';
 import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { OperatingModule } from './core/operating/operating.module';
+import { PreferencesModule } from './core/preferences/preferences.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { OperatingModule } from './core/operating/operating.module';
     ModuleRegistryModule,
     PlatformModule,
     OperatingModule,
+    PreferencesModule,
     // Business modules (activable per tenant — see ModulesGuard)
     TransportationModule,
     FleetModule,
