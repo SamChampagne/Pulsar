@@ -39,6 +39,10 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
   release_shipment_when_pick_complete.
   (Tous via le registre `core/agents/tool-registry.ts` — règle 21/22 : tier/permission/module/
   zod/handler ; MUTATING/SENSITIVE → ProposedAction.)
+  **Note** : 19 outils livrés. 5 DIFFÉRÉS (pas de service adossé / advisory / dérivé) —
+  `upload_compliance_document` (binaire impossible en MCP, attend l'ingestion C4),
+  `suggest_asset_replacement` (advisory), `create_replenishment_task`, `prioritize_pick_orders`,
+  `release_shipment_when_pick_complete` (statut dérivé, rule 33 v2). Détails : spec C3.
 
 ## Chantier 4 — Connect / Ingestion
 - [todo] **Inbox Connect** : page de tout ce qui entre (email, PDF facture, CSV, webhook, EDI,
