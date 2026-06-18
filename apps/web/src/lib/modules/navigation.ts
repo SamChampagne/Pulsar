@@ -20,6 +20,7 @@ import {
   Settings,
   Cable,
   BarChart3,
+  ClipboardList,
 } from 'lucide-svelte';
 import type { ComponentType } from 'svelte';
 
@@ -295,6 +296,25 @@ export function navCatalogue(): NavDomain[] {
               label: 'Scorecard transporteurs',
               perm: 'transportation.analytics.read',
             },
+          ],
+        },
+      ],
+    },
+
+    // ── Procurement / Bid Board ────────────────────────────────────────────
+    {
+      key: 'procurement',
+      label: 'Achats',
+      icon: ClipboardList,
+      home: '/procurement/rfps',
+      module: MODULE_KEYS.PROCUREMENT,
+      anyPerms: ['procurement.read'],
+      prefixes: ['/procurement'],
+      sections: [
+        {
+          links: [
+            { href: '/procurement/rfps', label: "Appels d'offres", perm: 'procurement.read' },
+            { href: '/procurement/routing-guide', label: 'Guide de routage', perm: 'procurement.read' },
           ],
         },
       ],
