@@ -66,7 +66,7 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
   litiges, tracking, profil, conformité.
 - [done] **D. Driver Mobile PWA** : stops du jour, arrivée/départ, POD/photo, signature,
   exception/damage, position, BOL, notes.
-- [todo] **E. Customer Portal v2** : créer ordre, templates récurrents, tracking, docs, POD,
+- [done] **E. Customer Portal v2** : créer ordre, templates récurrents, tracking, docs, POD,
   factures, demandes de changement, chat par shipment, branding.
 - [todo] **F. Planning Board** : shipments non assignés, loads ouverts, assets/drivers dispo,
   carrier options, warnings capacité, drag & drop shipment→load, plan proposal agent, scénario A/B.
