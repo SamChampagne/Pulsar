@@ -5,6 +5,7 @@
   import { PERMISSIONS } from '@pulsar/shared';
   import { api } from '$lib/api/client';
   import { auth, clearAuth, getRefreshToken } from '$lib/stores/auth';
+  import { deskSearch } from '$lib/stores/desk';
   import { Bell, LogOut, Search, UserRound } from 'lucide-svelte';
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
   import AssistantPanel from '$lib/components/agents/AssistantPanel.svelte';
@@ -72,6 +73,9 @@
   });
   $effect(() => {
     if (!$auth) void goto('/login');
+  });
+  $effect(() => {
+    if (page.url.pathname !== '/apps') deskSearch.set('');
   });
 
   // Build the filtered domain list from the catalogue, then inject the runtime badge.
@@ -183,17 +187,39 @@
             class="flex size-8 items-center justify-center rounded-xl bg-[#6f7480] text-sm font-bold text-white shadow-sm"
             aria-label="Pulsar desk">⬢</a
           >
-          <button
-            class="mx-auto hidden h-9 w-full max-w-sm items-center justify-between rounded-lg bg-surface-muted px-3 text-sm text-ink-faint ring-1 ring-edge-soft transition hover:bg-surface sm:flex"
-            onclick={() => {
-              closeFloaters();
-              paletteOpen = true;
-            }}
-            aria-label="Rechercher (Ctrl+K)"
-          >
-            <span class="inline-flex items-center gap-2"><Search class="size-4" /> Search</span>
-            <span class="text-xs">Ctrl+K</span>
-          </button>
+          {#if page.url.pathname === '/apps'}
+            <div
+              class="mx-auto hidden h-9 w-full max-w-sm items-center gap-2 rounded-lg bg-surface-muted px-3 ring-1 ring-edge-soft focus-within:ring-accent sm:flex"
+            >
+              <Search class="size-4 shrink-0 text-ink-faint" />
+              <input
+                class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-faint"
+                placeholder="Rechercher une app…"
+                bind:value={$deskSearch}
+                aria-label="Rechercher une app"
+              />
+              {#if $deskSearch}
+                <button
+                  type="button"
+                  class="rounded-md px-1 text-xs text-ink-faint hover:text-ink"
+                  onclick={() => ($deskSearch = '')}
+                  aria-label="Effacer">✕</button
+                >
+              {/if}
+            </div>
+          {:else}
+            <button
+              class="mx-auto hidden h-9 w-full max-w-sm items-center justify-between rounded-lg bg-surface-muted px-3 text-sm text-ink-faint ring-1 ring-edge-soft transition hover:bg-surface sm:flex"
+              onclick={() => {
+                closeFloaters();
+                paletteOpen = true;
+              }}
+              aria-label="Rechercher (Ctrl+K)"
+            >
+              <span class="inline-flex items-center gap-2"><Search class="size-4" /> Search</span>
+              <span class="text-xs">Ctrl+K</span>
+            </button>
+          {/if}
           <div class="flex items-center gap-2">
             <button
               class="relative flex size-8 items-center justify-center rounded-full text-ink-muted hover:bg-surface-muted hover:text-ink"
