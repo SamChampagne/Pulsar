@@ -315,6 +315,19 @@
     menuOpen = true;
   }
 
+  function openCanvasMenu(e: MouseEvent) {
+    // Only when the click target is the board itself (not a tile).
+    if ((e.target as HTMLElement)?.closest('[data-desk-id]')) return;
+    e.preventDefault();
+    menuX = e.clientX;
+    menuY = e.clientY;
+    menuActions = [
+      { label: 'Nouveau dossier', run: () => makeEmptyFolder() },
+      { label: 'Ajouter un lien rapide', run: () => (addLinkOpen = true) },
+    ];
+    menuOpen = true;
+  }
+
   // ---------------------------------------------------------------------------
   // Folder overlay
   // ---------------------------------------------------------------------------
@@ -448,10 +461,12 @@
   {:else if !search && layout.items.length === 0}
     <p class="text-center text-sm text-ink-faint">Aucune page disponible.</p>
   {:else}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="relative mx-auto"
       bind:clientWidth={canvasW}
       bind:clientHeight={canvasH}
+      oncontextmenu={openCanvasMenu}
       style={`width:min(100%, ${DESK_CANVAS_W}px); min-height: calc(100vh - 9rem)`}
     >
       {#if search}
