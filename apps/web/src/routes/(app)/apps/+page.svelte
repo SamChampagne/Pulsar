@@ -354,7 +354,7 @@
       </p>
     {:else}
       <div class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6">
-        {#each renderItems as item, i (itemKey(item))}
+        {#each renderItems as item, i (itemKey(item) + '#' + i)}
           <div
             data-desk-index={i}
             style={editing ? 'touch-action: none;' : ''}
@@ -452,7 +452,7 @@
 <!-- Folder overlay (single instance, driven by openFolderId) -->
 {#if openFolder}
   <FolderOverlay bind:open={folderIsOpen} name={openFolder.name} onclose={closeFolder}>
-    {#each openFolder.items as child (child.type === 'module' ? child.moduleKey : child.href)}
+    {#each openFolder.items as child, ci (child.type === 'module' ? `m:${child.moduleKey}#${ci}` : `l:${child.href}#${ci}`)}
       {#if child.type === 'module'}
         {@const domain = domainByKey(child.moduleKey)}
         {#if domain}

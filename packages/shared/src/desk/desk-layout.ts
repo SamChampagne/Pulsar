@@ -17,7 +17,7 @@ export interface DeskLayout {
 export const FRAMEWORK_FOLDER_ID = 'framework';
 
 export const FRAMEWORK_LINKS: DeskFolderChild[] = [
-  { type: 'link', href: '/settings/users', label: 'Réglages' },
+  { type: 'link', href: '/settings/appearance', label: 'Réglages' },
   { type: 'link', href: '/settings/modules', label: 'Modules' },
   { type: 'link', href: '/settings/users', label: 'Utilisateurs' },
   { type: 'link', href: '/settings/agent-runtime', label: 'Automation' },

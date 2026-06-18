@@ -3,10 +3,18 @@ import {
   defaultDeskLayout,
   reconcileDeskLayout,
   DESK_LAYOUT_VERSION,
+  FRAMEWORK_LINKS,
   type DeskLayout,
 } from './desk-layout';
 
 const domains = [{ key: 'transport' }, { key: 'wms' }, { key: 'agents' }];
+
+describe('FRAMEWORK_LINKS', () => {
+  it('has no duplicate hrefs (duplicate keys crash the keyed folder render)', () => {
+    const hrefs = FRAMEWORK_LINKS.map((l) => (l.type === 'link' ? l.href : ''));
+    expect(new Set(hrefs).size).toBe(hrefs.length);
+  });
+});
 
 describe('defaultDeskLayout', () => {
   it('creates one module item per domain plus a framework folder', () => {
