@@ -54,8 +54,8 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
 - [done] **CSV importer** : customers, locations, carriers, rates, items, inventory,
   vehicles/trailers, transport orders.
 
-## Chantier 5 — Agent Dispatcher / Exceptions (agent phare)
-- [todo] Sur événement (stop delayed, tender declined/expired, shipment ready from WMS, yard
+## Chantier 5 — Agent Dispatcher / Exceptions (agent phare)  [SKIPPED par Sam 2026-06-18 — on passe aux modules B→J]
+- [skip] Sur événement (stop delayed, tender declined/expired, shipment ready from WMS, yard
   appointment late, asset unavailable, carrier invoice mismatch) : ouvre/analyse un cas et
   propose (re-tender, notifier client, déplacer dock appointment, réassigner asset, recalculer
   ETA, créer tâche humaine, escalader). UI cas + propositions [Approuver]/[Modifier]/[Rejeter].
