@@ -43,7 +43,7 @@ export class FreightAuditService {
   }
 
   /** Intake: persist the carrier's invoice + lines, emit the domain event (best-effort). */
-  async create(tenantId: string, userId: string, dto: CreateIncomingInvoiceDto) {
+  async create(tenantId: string, userId: string, dto: CreateIncomingInvoiceDto, sourceRef = 'manual') {
     const chargedTotal = round(dto.lines.reduce((a, l) => a + l.chargedAmount, 0));
     const created = await this.prisma.incomingCarrierInvoice.create({
       data: {
@@ -52,6 +52,7 @@ export class FreightAuditService {
         carrierInvoiceNumber: dto.carrierInvoiceNumber,
         currency: dto.currency ?? 'CAD',
         chargedTotal,
+        sourceRef,
         createdById: userId,
         lines: { create: dto.lines.map((l) => ({ lineRef: l.lineRef, description: l.description, chargedAmount: l.chargedAmount })) },
       },
