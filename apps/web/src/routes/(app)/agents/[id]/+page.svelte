@@ -13,6 +13,7 @@
     Field,
     Input,
     PageHeader,
+    Skeleton,
     Textarea,
   } from '$lib/components/ui';
   import Conversation from '$lib/components/agents/Conversation.svelte';
@@ -432,7 +433,10 @@
 {:else if loadError && !agent}
   <p class="mt-8 text-sm text-danger">{loadError}</p>
 {:else if !agent}
-  <div class="py-16 text-center text-sm text-ink-muted">Chargement…</div>
+  <div class="space-y-4">
+    <Card><Skeleton rows={3} /></Card>
+    <Card><Skeleton rows={6} /></Card>
+  </div>
 {:else}
   <!-- Page header: avatar + name + badges + revoke action -->
   <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -888,9 +892,7 @@
         </Card>
       </div>
     {:else if !activityError}
-      <Card>
-        <p class="py-6 text-center text-sm text-ink-muted">Chargement de l'activité…</p>
-      </Card>
+      <Card><Skeleton rows={5} /></Card>
     {/if}
   </div>
 
