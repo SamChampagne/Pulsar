@@ -5,12 +5,16 @@ import {
   DESK_LAYOUT_VERSION,
   DESK_MODES,
   FRAMEWORK_LINKS,
+  FRAMEWORK_FOLDER_ID,
   defaultPosition,
   DESK_COLS,
   DESK_TILE,
   DESK_GAP,
+  TILE_SIZES,
+  DESK_GRADIENTS,
   type DeskLayout,
   type DeskMode,
+  type DeskTileSize,
 } from './desk-layout';
 
 const domains = [{ key: 'transport' }, { key: 'wms' }, { key: 'agents' }];
@@ -166,5 +170,53 @@ describe('mode', () => {
   });
   it('DESK_MODES lists the three modes', () => {
     expect(DESK_MODES).toEqual(['auto', 'free', 'reorder']);
+  });
+});
+
+describe('tile sizes & background', () => {
+  it('TILE_SIZES maps sm/md/lg to 76/96/120', () => {
+    expect(TILE_SIZES).toEqual({ sm: 76, md: 96, lg: 120 });
+  });
+
+  it('DESK_GRADIENTS entries have unique ids and a css string', () => {
+    expect(DESK_GRADIENTS.length).toBeGreaterThan(0);
+    const ids = DESK_GRADIENTS.map((g) => g.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(DESK_GRADIENTS.every((g) => typeof g.css === 'string' && g.css.length > 0)).toBe(true);
+  });
+
+  it('reconcileDeskLayout preserves tileSize and background', () => {
+    const saved: DeskLayout = {
+      version: DESK_LAYOUT_VERSION,
+      mode: 'free',
+      items: [{ type: 'module', moduleKey: 'transport' }],
+      tileSize: 'lg' as DeskTileSize,
+      background: { type: 'color', value: '#101010' },
+    };
+    const out = reconcileDeskLayout(saved, [{ key: 'transport' }]);
+    expect(out.tileSize).toBe('lg');
+    expect(out.background).toEqual({ type: 'color', value: '#101010' });
+  });
+
+  it('reconcileDeskLayout re-injects the Framework folder when missing', () => {
+    const saved: DeskLayout = {
+      version: DESK_LAYOUT_VERSION,
+      mode: 'auto',
+      items: [{ type: 'module', moduleKey: 'transport' }],
+    };
+    const out = reconcileDeskLayout(saved, [{ key: 'transport' }]);
+    const fw = out.items.find((i) => i.type === 'folder' && (i as any).id === FRAMEWORK_FOLDER_ID);
+    expect(fw).toBeTruthy();
+  });
+
+  it('reconcileDeskLayout does not duplicate an existing Framework folder', () => {
+    const saved: DeskLayout = {
+      version: DESK_LAYOUT_VERSION,
+      mode: 'auto',
+      items: [{ type: 'folder', id: FRAMEWORK_FOLDER_ID, name: 'Framework', items: [] }],
+    };
+    const out = reconcileDeskLayout(saved, [{ key: 'transport' }]);
+    const fws = out.items.filter((i) => i.type === 'folder' && (i as any).id === FRAMEWORK_FOLDER_ID);
+    expect(fws.length).toBe(1);
   });
 });
