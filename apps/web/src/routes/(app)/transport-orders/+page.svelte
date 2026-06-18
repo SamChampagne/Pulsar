@@ -2,7 +2,6 @@
   import type { Paginated } from '@pulsar/shared';
   import { suggestMode, TransportMode } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import { Table as TableIcon, KanbanSquare } from 'lucide-svelte';
   import {
     PageHeader,
     Button,
@@ -12,13 +11,14 @@
     Table,
     Badge,
     EmptyState,
-    Panel,
     Modal,
     Card,
     Skeleton,
     ErrorNotice,
     toneFor,
     labelFor,
+    ViewToggle,
+    type ViewId,
   } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
 
@@ -42,8 +42,7 @@
     name: string;
   }
 
-  type View = 'table' | 'kanban';
-  let view = $state<View>('table');
+  let view = $state<ViewId>('table');
   let search = $state('');
   let error = $state('');
   let selected = $state<OrderRow | null>(null);
@@ -97,13 +96,16 @@
 
   const fmtWindow = (early: string | null, late?: string | null) =>
     early
-      ? new Date(early).toLocaleDateString() + (late ? ' → ' + new Date(late).toLocaleDateString() : '')
+      ? new Date(early).toLocaleDateString() +
+        (late ? ' → ' + new Date(late).toLocaleDateString() : '')
       : '—';
 
   const orderScope = $derived(view === 'kanban' ? kanbanRows : orders);
   const draftCount = $derived(orderScope.filter((o) => o.status === 'DRAFT').length);
   const confirmedCount = $derived(orderScope.filter((o) => o.status === 'CONFIRMED').length);
-  const plannedCount = $derived(orderScope.filter((o) => ['PLANNED', 'IN_EXECUTION'].includes(o.status)).length);
+  const plannedCount = $derived(
+    orderScope.filter((o) => ['PLANNED', 'IN_EXECUTION'].includes(o.status)).length,
+  );
 
   async function loadTable() {
     loadingTable = true;
@@ -196,18 +198,16 @@
   }
 
   // Reset to page 1 whenever the search changes.
-  $effect(() => { search; page = 1; });
+  $effect(() => {
+    search;
+    page = 1;
+  });
 
   $effect(() => {
     error = '';
     if (view === 'table') void loadTable();
     else void loadKanban();
   });
-
-  const views: { id: View; label: string; icon: typeof TableIcon }[] = [
-    { id: 'table', label: 'Tableau', icon: TableIcon },
-    { id: 'kanban', label: 'Kanban', icon: KanbanSquare },
-  ];
 </script>
 
 <PageHeader
@@ -223,30 +223,36 @@
 <ErrorNotice message={error} onretry={refresh} />
 
 <div class="mb-4 grid gap-3 md:grid-cols-3">
-  <Card><div class="text-xl font-bold text-ink">{draftCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Draft</div><p class="mt-1 text-xs text-ink-faint">Customer demand still needs confirmation.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{confirmedCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Ready to plan</div><p class="mt-1 text-xs text-ink-faint">Next step: create shipments from confirmed orders.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{plannedCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">In flow</div><p class="mt-1 text-xs text-ink-faint">Already planned or moving through execution.</p></Card>
+  <Card
+    ><div class="text-xl font-bold text-ink">{draftCount}</div>
+    <div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Draft</div>
+    <p class="mt-1 text-xs text-ink-faint">Customer demand still needs confirmation.</p></Card
+  >
+  <Card
+    ><div class="text-xl font-bold text-ink">{confirmedCount}</div>
+    <div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Ready to plan</div>
+    <p class="mt-1 text-xs text-ink-faint">
+      Next step: create shipments from confirmed orders.
+    </p></Card
+  >
+  <Card
+    ><div class="text-xl font-bold text-ink">{plannedCount}</div>
+    <div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">In flow</div>
+    <p class="mt-1 text-xs text-ink-faint">Already planned or moving through execution.</p></Card
+  >
 </div>
 
 <div class="mb-3 flex flex-wrap items-center gap-3">
   <!-- view switcher -->
-  <div class="inline-flex rounded-md border border-edge-soft bg-surface p-0.5 shadow-sm">
-    {#each views as v (v.id)}
-      {@const Icon = v.icon}
-      <button
-        class={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium transition-colors ${view === v.id ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink'}`}
-        onclick={() => (view = v.id)}
-      >
-        <Icon class="size-3.5" /> {v.label}
-      </button>
-    {/each}
-  </div>
+  <ViewToggle bind:view views={['table', 'kanban']} />
   {#if view === 'table'}
     <div class="w-72">
       <input
         placeholder="Rechercher commande #, référence, client…"
         bind:value={search}
-        onkeydown={(e) => { if (e.key === 'Enter') void loadTable(); }}
+        onkeydown={(e) => {
+          if (e.key === 'Enter') void loadTable();
+        }}
         class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
       />
     </div>
@@ -267,14 +273,19 @@
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
           <tr class="cursor-pointer" onclick={() => (selected = row)}>
             <td>
-              <a href={`/transport-orders/${row.id}`} class="font-semibold text-accent hover:underline"
-                 onclick={(e) => e.stopPropagation()}>{row.orderNumber}</a>
+              <a
+                href={`/transport-orders/${row.id}`}
+                class="font-semibold text-accent hover:underline"
+                onclick={(e) => e.stopPropagation()}>{row.orderNumber}</a
+              >
             </td>
             <td>{row.customer.name}</td>
             <td>{row.originLocation.city} → {row.destinationLocation.city}</td>
             <td>
               {#if row.mode}
-                <span class="rounded border border-edge px-1.5 text-xs text-neutral">{row.mode}</span>
+                <span class="rounded border border-edge px-1.5 text-xs text-neutral"
+                  >{row.mode}</span
+                >
               {:else}
                 —
               {/if}
@@ -283,79 +294,130 @@
             <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
           </tr>
         {:else}
-          <tr><td colspan="6"><EmptyState title="Aucune commande de transport" message="Créez une commande pour capturer la demande client, puis confirmez-la avant la planification.">
-            {#snippet children()}<Button onclick={openForm}>Créer la première commande</Button>{/snippet}
-          </EmptyState></td></tr>
+          <tr
+            ><td colspan="6"
+              ><EmptyState
+                title="Aucune commande de transport"
+                message="Créez une commande pour capturer la demande client, puis confirmez-la avant la planification."
+              >
+                {#snippet children()}<Button onclick={openForm}>Créer la première commande</Button
+                  >{/snippet}
+              </EmptyState></td
+            ></tr
+          >
         {/each}
       {/snippet}
     </Table>
 
     {#if total > pageSize}
       <div class="mt-3 flex items-center justify-between text-sm text-ink-muted">
-        <span class="font-mono text-xs">{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} sur {total}</span>
+        <span class="font-mono text-xs"
+          >{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} sur {total}</span
+        >
         <div class="flex items-center gap-2">
-          <Button variant="secondary" disabled={page <= 1} onclick={() => { page = Math.max(1, page - 1); void loadTable(); }}>Précédent</Button>
+          <Button
+            variant="secondary"
+            disabled={page <= 1}
+            onclick={() => {
+              page = Math.max(1, page - 1);
+              void loadTable();
+            }}>Précédent</Button
+          >
           <span class="font-mono text-xs">Page {page} / {totalPages}</span>
-          <Button variant="secondary" disabled={page >= totalPages} onclick={() => { page = Math.min(totalPages, page + 1); void loadTable(); }}>Suivant</Button>
+          <Button
+            variant="secondary"
+            disabled={page >= totalPages}
+            onclick={() => {
+              page = Math.min(totalPages, page + 1);
+              void loadTable();
+            }}>Suivant</Button
+          >
         </div>
       </div>
     {/if}
   {/if}
+{:else if loadingKanban}
+  <Card padded={false}><div class="p-4"><Skeleton rows={6} /></div></Card>
 {:else}
-  {#if loadingKanban}
-    <Card padded={false}><div class="p-4"><Skeleton rows={6} /></div></Card>
-  {:else}
-    <div class="flex gap-3 overflow-x-auto pb-2">
-      {#each KANBAN_COLS as col (col)}
-        {@const items = byStatus(col)}
-        <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
-          <div class="flex items-center justify-between px-3 py-2">
-            <Badge tone={toneFor(col)}>{labelFor(col)}</Badge>
-            <span class="font-mono text-xs text-ink-muted">{items.length}</span>
-          </div>
-          <div class="flex max-h-[65vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
-            {#each items as row (row.id)}
-              <div role="button" tabindex="0" class="cursor-pointer rounded-inner border border-edge-soft bg-surface p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-card" onclick={() => (selected = row)} onkeydown={(e) => { if (e.key === 'Enter') selected = row; }}>
-                <div class="font-semibold text-sm text-accent">{row.orderNumber}</div>
-                <div class="mt-0.5 truncate text-xs text-ink-muted">{row.customer.name}</div>
-                <div class="mt-1 flex items-center justify-between text-[11px] text-ink-faint">
-                  <span class="truncate">{row.originLocation.city} → {row.destinationLocation.city}</span>
-                  {#if row.mode}<span class="rounded border border-edge px-1">{row.mode}</span>{/if}
-                </div>
-              </div>
-            {:else}
-              <p class="px-1 py-3 text-center text-xs text-ink-faint">—</p>
-            {/each}
-          </div>
+  <div class="flex gap-3 overflow-x-auto pb-2">
+    {#each KANBAN_COLS as col (col)}
+      {@const items = byStatus(col)}
+      <div
+        class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted"
+      >
+        <div class="flex items-center justify-between px-3 py-2">
+          <Badge tone={toneFor(col)}>{labelFor(col)}</Badge>
+          <span class="font-mono text-xs text-ink-muted">{items.length}</span>
         </div>
-      {/each}
-    </div>
-    {#if kanbanTotal > 100}<p class="mt-2 text-xs text-ink-faint">Affiche les 100 commandes les plus récentes. Utilise le tableau pour la liste complète.</p>{/if}
-  {/if}
+        <div class="flex max-h-[65vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
+          {#each items as row (row.id)}
+            <div
+              role="button"
+              tabindex="0"
+              class="cursor-pointer rounded-inner border border-edge-soft bg-surface p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-card"
+              onclick={() => (selected = row)}
+              onkeydown={(e) => {
+                if (e.key === 'Enter') selected = row;
+              }}
+            >
+              <div class="font-semibold text-sm text-accent">{row.orderNumber}</div>
+              <div class="mt-0.5 truncate text-xs text-ink-muted">{row.customer.name}</div>
+              <div class="mt-1 flex items-center justify-between text-[11px] text-ink-faint">
+                <span class="truncate"
+                  >{row.originLocation.city} → {row.destinationLocation.city}</span
+                >
+                {#if row.mode}<span class="rounded border border-edge px-1">{row.mode}</span>{/if}
+              </div>
+            </div>
+          {:else}
+            <p class="px-1 py-3 text-center text-xs text-ink-faint">—</p>
+          {/each}
+        </div>
+      </div>
+    {/each}
+  </div>
+  {#if kanbanTotal > 100}<p class="mt-2 text-xs text-ink-faint">
+      Affiche les 100 commandes les plus récentes. Utilise le tableau pour la liste complète.
+    </p>{/if}
 {/if}
 
 {#if selected}
   {@const sel = selected}
-  <Panel open={true} title={sel.orderNumber} href={`/transport-orders/${sel.id}`} onclose={() => (selected = null)}>
+  <Modal open={true} size="lg" title={sel.orderNumber} onclose={() => (selected = null)}>
     <div class="mb-3">
       <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Statut</div>
-      <div class="text-sm text-ink"><Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge></div>
+      <div class="text-sm text-ink">
+        <Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge>
+      </div>
     </div>
     <div class="mb-3">
       <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Client</div>
       <div class="text-sm text-ink">{sel.customer.name}</div>
     </div>
     <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Origine → Destination</div>
-      <div class="text-sm text-ink">{sel.originLocation.name}, {sel.originLocation.city} → {sel.destinationLocation.name}, {sel.destinationLocation.city}</div>
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">
+        Origine → Destination
+      </div>
+      <div class="text-sm text-ink">
+        {sel.originLocation.name}, {sel.originLocation.city} → {sel.destinationLocation.name}, {sel
+          .destinationLocation.city}
+      </div>
     </div>
     <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Enlèvement demandé</div>
-      <div class="text-sm text-ink">{fmtWindow(sel.requestedPickupEarly, sel.requestedPickupLate)}</div>
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">
+        Enlèvement demandé
+      </div>
+      <div class="text-sm text-ink">
+        {fmtWindow(sel.requestedPickupEarly, sel.requestedPickupLate)}
+      </div>
     </div>
     <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Livraison demandée</div>
-      <div class="text-sm text-ink">{fmtWindow(sel.requestedDeliveryEarly, sel.requestedDeliveryLate)}</div>
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">
+        Livraison demandée
+      </div>
+      <div class="text-sm text-ink">
+        {fmtWindow(sel.requestedDeliveryEarly, sel.requestedDeliveryLate)}
+      </div>
     </div>
     <div class="mb-3">
       <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Mode</div>
@@ -363,19 +425,42 @@
     </div>
     {#if sel.customerReference}
       <div class="mb-3">
-        <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Référence</div>
+        <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">
+          Référence
+        </div>
         <div class="text-sm text-ink">{sel.customerReference}</div>
       </div>
     {/if}
-  {#snippet footer()}
-    {#if sel.status === 'DRAFT'}
-      <Button variant="primary" onclick={async () => { await action(sel.id, 'confirm'); selected = null; }}>Confirmer</Button>
-      <Button variant="danger" onclick={async () => { await action(sel.id, 'cancel'); selected = null; }}>Annuler</Button>
-    {:else if sel.status === 'CONFIRMED'}
-      <Button variant="primary" onclick={async () => { await action(sel.id, 'plan'); selected = null; }}>Planifier</Button>
-    {/if}
-  {/snippet}
-  </Panel>
+    {#snippet footer()}
+      {#if sel.status === 'DRAFT'}
+        <Button
+          variant="primary"
+          onclick={async () => {
+            await action(sel.id, 'confirm');
+            selected = null;
+          }}>Confirmer</Button
+        >
+        <Button
+          variant="danger"
+          onclick={async () => {
+            await action(sel.id, 'cancel');
+            selected = null;
+          }}>Annuler</Button
+        >
+      {:else if sel.status === 'CONFIRMED'}
+        <Button
+          variant="primary"
+          onclick={async () => {
+            await action(sel.id, 'plan');
+            selected = null;
+          }}>Planifier</Button
+        >
+      {/if}
+      <Button variant="secondary" href={`/transport-orders/${sel.id}`}
+        >Ouvrir la page complète</Button
+      >
+    {/snippet}
+  </Modal>
 {/if}
 
 <Modal bind:open={showForm} title="Nouvelle commande de transport">
@@ -441,7 +526,12 @@
         </div>
       </div>
       <div class="mt-4 flex justify-end gap-2 border-t border-edge pt-3">
-        <Button variant="secondary" onclick={() => { showForm = false; }}>Annuler</Button>
+        <Button
+          variant="secondary"
+          onclick={() => {
+            showForm = false;
+          }}>Annuler</Button
+        >
         <Button variant="primary" type="submit">Créer</Button>
       </div>
     </form>

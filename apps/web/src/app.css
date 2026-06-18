@@ -144,3 +144,5 @@ h3 {
   text-decoration-thickness: 0.18em;
   text-underline-offset: 0.18em;
 }
+
+@keyframes wiggle { 0%,100%{transform:rotate(-1.2deg)} 50%{transform:rotate(1.2deg)} }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import {
@@ -13,6 +14,8 @@
     Select,
     Skeleton,
     Textarea,
+    ViewToggle,
+    type ViewId,
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
@@ -27,33 +30,15 @@
     _count: { lines: number };
   }
 
-  interface ReceiptLine {
+  interface ReceiptDetail {
     id: string;
-    itemId: string;
-    toBinId: string;
-    qty: string;
-    item: { sku: string; name: string };
-    toBin: { code: string };
-  }
-
-  interface ReceiptDetail extends ReceiptRow {
-    note?: string | null;
-    lines: ReceiptLine[];
-  }
-
-  interface Item {
-    id: string;
-    sku: string;
-    name: string;
-    unit: string;
-  }
-
-  interface Bin {
-    id: string;
-    code: string;
-    kind: string;
+    number: string;
+    status: string;
     locationId: string;
-    location: { code: string; name: string };
+    reference?: string | null;
+    note?: string | null;
+    createdAt: string;
+    _count: { lines: number };
   }
 
   interface LocationOption {
@@ -64,15 +49,10 @@
   }
 
   let receipts = $state<ReceiptRow[]>([]);
-  let items = $state<Item[]>([]);
-  let bins = $state<Bin[]>([]);
   let warehouses = $state<LocationOption[]>([]);
   let loading = $state(true);
   let error = $state('');
-
-  // Selected detail
-  let selected = $state<ReceiptDetail | null>(null);
-  let detailLoading = $state(false);
+  let view = $state<ViewId>('table');
 
   // Create modal
   let createOpen = $state(false);
@@ -81,11 +61,11 @@
   let createNote = $state('');
   let createSaving = $state(false);
 
-  // Add-line form
-  let lineItemId = $state('');
-  let lineToBinId = $state('');
-  let lineQty = $state<number>(0);
-  let lineSaving = $state(false);
+  const KANBAN_COLS: { status: string; label: string }[] = [
+    { status: 'DRAFT', label: 'Brouillon' },
+    { status: 'POSTED', label: 'Validée' },
+    { status: 'CANCELLED', label: 'Annulée' },
+  ];
 
   function statusTone(status: string): Tone {
     switch (status) {
@@ -100,29 +80,37 @@
     }
   }
 
+  function statusLabel(status: string): string {
+    switch (status) {
+      case 'DRAFT':
+        return 'Brouillon';
+      case 'POSTED':
+        return 'Validée';
+      case 'CANCELLED':
+        return 'Annulée';
+      default:
+        return status;
+    }
+  }
+
   function locName(id: string): string {
     const l = warehouses.find((w) => w.id === id);
     return l ? `${l.code} — ${l.name}` : id;
   }
 
-  // Bins that belong to the selected receipt's location.
-  const selectedBins = $derived(
-    selected ? bins.filter((b) => b.locationId === selected!.locationId) : [],
-  );
+  function fmtDate(iso: string): string {
+    return new Date(iso).toLocaleDateString();
+  }
 
   async function load() {
     loading = true;
     error = '';
     try {
-      const [recs, itemsRes, binsRes, locsRes] = await Promise.all([
+      const [recs, locsRes] = await Promise.all([
         api<ReceiptRow[]>('/wms/receipts'),
-        api<Paginated<Item>>('/wms/items', { query: { pageSize: 100 } }),
-        api<Bin[]>('/wms/bins'),
         api<Paginated<LocationOption>>('/transportation/locations', { query: { pageSize: 100 } }),
       ]);
       receipts = recs;
-      items = itemsRes.items;
-      bins = binsRes;
       warehouses = locsRes.items.filter((l) => l.type === 'WAREHOUSE');
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Échec du chargement des réceptions';
@@ -135,24 +123,6 @@
   $effect(() => {
     void load();
   });
-
-  async function selectReceipt(id: string) {
-    detailLoading = true;
-    lineItemId = '';
-    lineToBinId = '';
-    lineQty = 0;
-    try {
-      selected = await api<ReceiptDetail>(`/wms/receipts/${id}`);
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Échec du chargement de la réception');
-    } finally {
-      detailLoading = false;
-    }
-  }
-
-  async function reloadSelected() {
-    if (selected) await selectReceipt(selected.id);
-  }
 
   function openCreate() {
     createLocationId = warehouses[0]?.id ?? '';
@@ -178,80 +148,18 @@
       });
       toast.success('Réception créée');
       createOpen = false;
-      await load();
-      await selectReceipt(created.id);
+      await goto(`/wms/receiving/${created.id}`);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Échec de la création');
     } finally {
       createSaving = false;
     }
   }
-
-  async function addLine() {
-    if (!selected) return;
-    if (!lineItemId || !lineToBinId || !lineQty) {
-      toast.error('Article, bin et quantité sont requis');
-      return;
-    }
-    lineSaving = true;
-    try {
-      await api(`/wms/receipts/${selected.id}/lines`, {
-        method: 'POST',
-        body: { itemId: lineItemId, toBinId: lineToBinId, qty: Number(lineQty) },
-      });
-      toast.success('Ligne ajoutée');
-      lineItemId = '';
-      lineToBinId = '';
-      lineQty = 0;
-      await reloadSelected();
-      await load();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Échec de l'ajout de la ligne");
-    } finally {
-      lineSaving = false;
-    }
-  }
-
-  async function removeLine(lineId: string) {
-    if (!selected) return;
-    try {
-      await api(`/wms/receipts/${selected.id}/lines/${lineId}`, { method: 'DELETE' });
-      toast.success('Ligne retirée');
-      await reloadSelected();
-      await load();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Échec du retrait');
-    }
-  }
-
-  async function postReceipt() {
-    if (!selected) return;
-    try {
-      await api(`/wms/receipts/${selected.id}/post`, { method: 'POST' });
-      toast.success('Réception postée');
-      await reloadSelected();
-      await load();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Échec du postage');
-    }
-  }
-
-  async function cancelReceipt() {
-    if (!selected) return;
-    if (!confirm('Annuler cette réception ?')) return;
-    try {
-      await api(`/wms/receipts/${selected.id}/cancel`, { method: 'POST' });
-      toast.success('Réception annulée');
-      await reloadSelected();
-      await load();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Échec de l'annulation");
-    }
-  }
 </script>
 
 <PageHeader title="Réception">
   {#snippet actions()}
+    <ViewToggle bind:view views={['table', 'cards', 'kanban']} />
     <Button onclick={openCreate}>Nouvelle réception</Button>
   {/snippet}
 </PageHeader>
@@ -266,97 +174,82 @@
   </div>
 {:else if error}
   <Card><p class="text-sm text-danger">{error}</p></Card>
-{:else}
-  <div class="grid gap-4 lg:grid-cols-2">
-    <!-- List -->
+{:else if view === 'table'}
+  {#if receipts.length === 0}
+    <EmptyState message="Aucune réception." />
+  {:else}
     <Card padded={false}>
-      {#if receipts.length === 0}
-        <EmptyState message="Aucune réception." />
-      {:else}
-        <div class="divide-y divide-edge">
-          {#each receipts as r (r.id)}
-            <button
-              type="button"
-              class={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-surface-muted ${selected?.id === r.id ? 'bg-surface-muted' : ''}`}
-              onclick={() => selectReceipt(r.id)}
-            >
-              <Badge tone={statusTone(r.status)}>{r.status}</Badge>
-              <span class="font-medium text-ink">{r.number}</span>
-              <span class="text-ink-muted">{locName(r.locationId)}</span>
-              <span class="ml-auto text-xs text-ink-faint">{r._count.lines} ligne(s)</span>
-            </button>
-          {/each}
-        </div>
-      {/if}
+      <div class="divide-y divide-edge">
+        {#each receipts as r (r.id)}
+          <button
+            type="button"
+            class="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-surface-muted"
+            onclick={() => goto(`/wms/receiving/${r.id}`)}
+          >
+            <Badge tone={statusTone(r.status)}>{statusLabel(r.status)}</Badge>
+            <span class="font-medium text-ink">{r.number}</span>
+            <span class="text-ink-muted">{locName(r.locationId)}</span>
+            <span class="ml-auto text-xs text-ink-faint">{r._count.lines} ligne(s)</span>
+          </button>
+        {/each}
+      </div>
     </Card>
-
-    <!-- Detail -->
-    <Card>
-      {#if detailLoading}
-        <Skeleton />
-      {:else if !selected}
-        <EmptyState message="Sélectionnez une réception pour voir le détail." />
-      {:else}
-        <div class="mb-3 flex flex-wrap items-center gap-2">
-          <Badge tone={statusTone(selected.status)}>{selected.status}</Badge>
-          <h2 class="font-semibold text-ink">{selected.number}</h2>
-          <span class="text-sm text-ink-muted">{locName(selected.locationId)}</span>
-        </div>
-        {#if selected.reference}
-          <p class="mb-2 text-sm text-ink-muted">Réf : {selected.reference}</p>
-        {/if}
-
-        {#if selected.lines.length === 0}
-          <EmptyState message="Aucune ligne." />
-        {:else}
-          <div class="divide-y divide-edge">
-            {#each selected.lines as line (line.id)}
-              <div class="flex items-center gap-3 py-2.5 text-sm">
-                <span class="font-medium text-ink">{line.item.sku}</span>
-                <span class="text-ink-muted">{line.item.name}</span>
-                <span class="text-ink-faint">→ {line.toBin.code}</span>
-                <span class="ml-auto font-semibold text-ink">{line.qty}</span>
-                {#if selected.status === 'DRAFT'}
-                  <Button variant="ghost" onclick={() => removeLine(line.id)}>Retirer</Button>
-                {/if}
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-        {#if selected.status === 'DRAFT'}
-          <div class="mt-4 flex flex-col gap-3 rounded-card border border-edge bg-surface-muted p-3">
-            <Field label="Article">
-              <Select bind:value={lineItemId}>
-                <option value="">— Sélectionner —</option>
-                {#each items as it (it.id)}
-                  <option value={it.id}>{it.sku} — {it.name}</option>
-                {/each}
-              </Select>
-            </Field>
-            <Field label="Bin destination">
-              <Select bind:value={lineToBinId}>
-                <option value="">— Sélectionner —</option>
-                {#each selectedBins as b (b.id)}
-                  <option value={b.id}>{b.code} ({b.kind})</option>
-                {/each}
-              </Select>
-            </Field>
-            <Field label="Quantité">
-              <Input type="number" bind:value={lineQty} min={0} step="any" />
-            </Field>
-            <div>
-              <Button loading={lineSaving} onclick={addLine}>Ajouter la ligne</Button>
+  {/if}
+{:else if view === 'cards'}
+  {#if receipts.length === 0}
+    <EmptyState message="Aucune réception." />
+  {:else}
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {#each receipts as r (r.id)}
+        <a href={`/wms/receiving/${r.id}`} class="block">
+          <Card>
+            <div class="flex items-start justify-between gap-2">
+              <span class="font-semibold text-ink">{r.number}</span>
+              <Badge tone={statusTone(r.status)}>{statusLabel(r.status)}</Badge>
             </div>
-          </div>
-
-          <div class="mt-4 flex gap-2">
-            <Button onclick={postReceipt} disabled={selected.lines.length === 0}>Poster</Button>
-            <Button variant="danger" onclick={cancelReceipt}>Annuler</Button>
-          </div>
-        {/if}
-      {/if}
-    </Card>
+            <p class="mt-1 truncate text-sm text-ink-muted">{locName(r.locationId)}</p>
+            {#if r.reference}
+              <p class="mt-0.5 truncate text-xs text-ink-faint">Réf : {r.reference}</p>
+            {/if}
+            <div class="mt-2 flex items-center justify-between text-xs text-ink-faint">
+              <span>{r._count.lines} ligne(s)</span>
+              <span>{fmtDate(r.createdAt)}</span>
+            </div>
+          </Card>
+        </a>
+      {/each}
+    </div>
+  {/if}
+{:else if view === 'kanban'}
+  <div class="flex gap-3 overflow-x-auto pb-2">
+    {#each KANBAN_COLS as col (col.status)}
+      {@const items = receipts.filter((r) => r.status === col.status)}
+      <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+        <div class="flex items-center justify-between px-3 py-2">
+          <Badge tone={statusTone(col.status)}>{col.label}</Badge>
+          <span class="font-mono text-xs text-ink-muted">{items.length}</span>
+        </div>
+        <div class="flex max-h-[65vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
+          {#if items.length === 0}
+            <p class="px-1 py-3 text-center text-xs text-ink-faint">—</p>
+          {:else}
+            {#each items as r (r.id)}
+              <a
+                href={`/wms/receiving/${r.id}`}
+                class="block rounded-inner border border-edge-soft bg-surface p-2.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-card"
+              >
+                <div class="font-semibold text-sm text-ink">{r.number}</div>
+                <div class="mt-0.5 truncate text-xs text-ink-muted">{locName(r.locationId)}</div>
+                <div class="mt-1 flex items-center justify-between text-[11px] text-ink-faint">
+                  <span>{r._count.lines} ligne(s)</span>
+                  <span>{fmtDate(r.createdAt)}</span>
+                </div>
+              </a>
+            {/each}
+          {/if}
+        </div>
+      </div>
+    {/each}
   </div>
 {/if}
 

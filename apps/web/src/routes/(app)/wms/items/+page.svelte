@@ -9,7 +9,7 @@
     Field,
     FilterBar,
     Input,
-    Panel,
+    Modal,
     PageHeader,
     Skeleton,
     Table,
@@ -203,7 +203,7 @@
   </Table>
 {/if}
 
-<Panel bind:open={formOpen} title={editId ? "Modifier l'article" : 'Nouvel article'}>
+<Modal bind:open={formOpen} title={editId ? "Modifier l'article" : 'Nouvel article'} size="md">
   {#snippet children()}
     <div class="space-y-3">
       <Field label="SKU">
@@ -243,4 +243,4 @@
       </div>
     </div>
   {/snippet}
-</Panel>
+</Modal>

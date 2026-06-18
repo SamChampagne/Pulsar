@@ -1,28 +1,16 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
+  import { fade } from 'svelte/transition';
+  import { PERMISSIONS } from '@pulsar/shared';
   import { api } from '$lib/api/client';
   import { auth, clearAuth, getRefreshToken } from '$lib/stores/auth';
-  import {
-    Bell,
-    LogOut,
-    Search,
-    LayoutDashboard,
-    Truck,
-    Warehouse,
-    Container,
-    Boxes,
-    CircleDollarSign,
-    Bot,
-    Settings,
-    Cable,
-    UserRound,
-  } from 'lucide-svelte';
-  import type { ComponentType } from 'svelte';
+  import { deskSearch } from '$lib/stores/desk';
+  import { Bell, LogOut, Search, UserRound } from 'lucide-svelte';
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
   import AssistantPanel from '$lib/components/agents/AssistantPanel.svelte';
   import { MODULE_UNIVERSES } from '$lib/modules/universe';
+  import { visibleDomains as buildVisibleDomains, type NavDomain } from '$lib/modules/navigation';
 
   let { children } = $props();
 
@@ -39,20 +27,8 @@
   let profileOpen = $state(false);
   const unreadCount = $derived(notifications.filter((n) => !n.readAt).length);
 
-  const canReadWorkbench = $derived(
-    $auth?.user.permissions.includes(PERMISSIONS.CORE.OPERATING_TASKS_READ) ?? false,
-  );
   const canReadAgentActions = $derived(
     $auth?.user.permissions.includes(PERMISSIONS.CORE.AGENTS_ACTIONS_READ) ?? false,
-  );
-  const canReadAgents = $derived(
-    $auth?.user.permissions.includes(PERMISSIONS.CORE.AGENTS_READ) ?? false,
-  );
-  const canReadIntegrations = $derived(
-    $auth?.user.permissions.includes(PERMISSIONS.CORE.INTEGRATIONS_READ) ?? false,
-  );
-  const canReadAudit = $derived(
-    $auth?.user.permissions.includes(PERMISSIONS.CORE.AUDIT_READ) ?? false,
   );
   const canChatAgents = $derived(
     $auth?.user.permissions.includes(PERMISSIONS.CORE.AGENTS_CHAT) ?? false,
@@ -98,249 +74,30 @@
   $effect(() => {
     if (!$auth) void goto('/login');
   });
+  $effect(() => {
+    if (page.url.pathname !== '/apps') deskSearch.set('');
+  });
 
-  const hasTransportation = $derived(
-    $auth?.tenant.enabledModules.includes(MODULE_KEYS.TRANSPORTATION) ?? false,
-  );
-  const hasBilling = $derived($auth?.tenant.enabledModules.includes(MODULE_KEYS.BILLING) ?? false);
-  const hasFleet = $derived($auth?.tenant.enabledModules.includes(MODULE_KEYS.FLEET) ?? false);
-  const hasWms = $derived($auth?.tenant.enabledModules.includes(MODULE_KEYS.WMS) ?? false);
-  const hasYard = $derived($auth?.tenant.enabledModules.includes(MODULE_KEYS.YARD) ?? false);
+  // Build the filtered domain list from the catalogue, then inject the runtime badge.
+  const visibleDomains = $derived.by(() => {
+    const domains = buildVisibleDomains({
+      enabledModules: ($auth?.tenant.enabledModules ?? []) as string[],
+      can: (p) => (($auth?.user.permissions ?? []) as string[]).includes(p),
+    });
+    // Inject pendingActions badge onto the agent-actions link (runtime value).
+    if (pendingActions > 0) {
+      for (const d of domains) {
+        for (const s of d.sections) {
+          for (const l of s.links) {
+            if (l.href === '/agent-actions') l.badge = pendingActions;
+          }
+        }
+      }
+    }
+    return domains;
+  });
 
-  // A page link inside a domain. A section groups links inside the contextual rail.
-  interface NavLink {
-    href: string;
-    label: string;
-    badge?: number;
-  }
-  interface NavSection {
-    label?: string;
-    links: NavLink[];
-  }
-  interface Domain {
-    key: string;
-    label: string;
-    icon: ComponentType;
-    home: string; // where clicking the domain icon lands
-    prefixes: string[]; // route prefixes that belong to this domain
-    sections: NavSection[]; // contextual module links
-    visible: boolean;
-  }
-
-  const domains = $derived<Domain[]>([
-    {
-      key: 'dashboard',
-      label: 'Plateforme',
-      icon: LayoutDashboard,
-      home: '/apps',
-      prefixes: ['/apps', '/framework', '/dashboard'],
-      visible: true,
-      sections: [],
-    },
-    {
-      key: 'transport',
-      label: 'Transport',
-      icon: Truck,
-      home: '/dispatch',
-      prefixes: [
-        '/dispatch',
-        '/transport-orders',
-        '/shipments',
-        '/loads',
-        '/lanes',
-        '/rates',
-        '/accessorials',
-        '/fuel-tables',
-        '/customers',
-        '/carriers',
-        '/locations',
-        '/analytics',
-      ],
-      visible: hasTransportation,
-      sections: [
-        {
-          label: 'Exécution',
-          links: [
-            { href: '/dispatch', label: 'Dispatch' },
-            { href: '/transport-orders', label: 'Ordres de transport' },
-            { href: '/shipments', label: 'Shipments' },
-            { href: '/loads', label: 'Loads' },
-          ],
-        },
-        {
-          label: 'Tarification',
-          links: [
-            { href: '/lanes', label: 'Voies (lanes)' },
-            { href: '/rates', label: 'Tarifs' },
-            { href: '/accessorials', label: 'Accessoriaux' },
-            { href: '/fuel-tables', label: 'Carburant' },
-          ],
-        },
-        {
-          label: 'Partenaires',
-          links: [
-            { href: '/customers', label: 'Clients' },
-            { href: '/carriers', label: 'Transporteurs' },
-            { href: '/locations', label: 'Lieux' },
-          ],
-        },
-        { label: 'Analyse', links: [{ href: '/analytics', label: 'Analytics' }] },
-      ],
-    },
-    {
-      key: 'wms',
-      label: 'Entrepôt',
-      icon: Warehouse,
-      home: '/wms',
-      prefixes: ['/wms'],
-      visible: hasWms,
-      sections: [
-        {
-          links: [
-            { href: '/wms', label: 'Vue d’ensemble' },
-            { href: '/wms/inventory', label: 'Inventaire' },
-          ],
-        },
-        {
-          label: 'Flux',
-          links: [
-            { href: '/wms/receiving', label: 'Réception' },
-            { href: '/wms/fulfillment', label: 'Préparation' },
-            { href: '/wms/picking', label: 'Prélèvement' },
-            { href: '/wms/cycle-counts', label: 'Comptages' },
-          ],
-        },
-        {
-          label: 'Données',
-          links: [
-            { href: '/wms/items', label: 'Articles' },
-            { href: '/wms/bins', label: 'Emplacements' },
-          ],
-        },
-      ],
-    },
-    {
-      key: 'yard',
-      label: 'Cour',
-      icon: Container,
-      home: '/yard',
-      prefixes: ['/yard'],
-      visible: hasYard,
-      sections: [
-        {
-          links: [
-            { href: '/yard', label: 'Plan de cour' },
-            { href: '/yard/gate', label: 'Gate' },
-            { href: '/yard/appointments', label: 'Rendez-vous' },
-            { href: '/yard/spots', label: 'Emplacements' },
-          ],
-        },
-      ],
-    },
-    {
-      key: 'fleet',
-      label: 'Assets',
-      icon: Boxes,
-      home: '/assets',
-      prefixes: ['/assets', '/fleet'],
-      visible: hasFleet,
-      sections: [
-        {
-          links: [
-            { href: '/assets', label: 'Assets home' },
-            { href: '/fleet', label: 'Fleet roster' },
-          ],
-        },
-      ],
-    },
-    {
-      key: 'billing',
-      label: 'Finance',
-      icon: CircleDollarSign,
-      home: '/finance',
-      prefixes: ['/finance', '/invoices', '/billing'],
-      visible: hasBilling,
-      sections: [
-        {
-          links: [
-            { href: '/finance', label: 'Finance home' },
-            { href: '/invoices', label: 'Receivables / Payables' },
-            { href: '/billing/freight-audit', label: 'Freight audit' },
-          ],
-        },
-      ],
-    },
-    {
-      key: 'agents',
-      label: 'Agents',
-      icon: Bot,
-      home: '/agents',
-      prefixes: [
-        '/agents',
-        '/agent-actions',
-        '/workbench',
-        '/control-tower',
-        '/settings/agent-runtime',
-      ],
-      visible: canReadAgents || canReadWorkbench || canReadAgentActions,
-      sections: [
-        {
-          links: [
-            ...(canReadAgents ? [{ href: '/agents', label: 'Employés' }] : []),
-            ...(canReadAgents ? [{ href: '/control-tower', label: 'Control Tower' }] : []),
-            ...(canReadAgentActions
-              ? [{ href: '/agent-actions', label: 'Actions à approuver', badge: pendingActions }]
-              : []),
-            ...(canReadWorkbench ? [{ href: '/workbench', label: 'Workbench' }] : []),
-            { href: '/settings/agent-runtime', label: 'Connexion du modèle' },
-          ],
-        },
-      ],
-    },
-    {
-      key: 'connect',
-      label: 'Connect',
-      icon: Cable,
-      home: '/connect',
-      prefixes: ['/connect', '/integrations'],
-      visible: canReadIntegrations,
-      sections: [
-        {
-          links: [
-            { href: '/connect', label: 'Connect home' },
-            { href: '/integrations', label: 'Connecteurs' },
-            { href: '/settings/api-keys', label: 'Clés API' },
-            { href: '/agents', label: 'MCP / agents' },
-          ],
-        },
-      ],
-    },
-    {
-      key: 'settings',
-      label: 'Réglages',
-      icon: Settings,
-      home: '/settings/users',
-      prefixes: ['/settings'],
-      visible: true,
-      sections: [
-        {
-          label: 'Plateforme',
-          links: [
-            { href: '/settings/users', label: 'Utilisateurs' },
-            { href: '/settings/api-keys', label: 'Clés API' },
-            { href: '/settings/modules', label: 'Modules' },
-            { href: '/settings/sso', label: 'SSO' },
-            ...(canReadAudit ? [{ href: '/settings/audit', label: 'Journal d’audit' }] : []),
-          ],
-        },
-        { label: 'Préférences', links: [{ href: '/settings/appearance', label: 'Apparence' }] },
-      ],
-    },
-  ]);
-
-  const visibleDomains = $derived(domains.filter((d) => d.visible));
-
-  function pathInDomain(d: Domain): boolean {
+  function pathInDomain(d: NavDomain): boolean {
     return d.prefixes.some(
       (p) =>
         page.url.pathname === p ||
@@ -365,6 +122,9 @@
   const deskMode = $derived(
     String(page.url.pathname) === '/apps' || String(page.url.pathname) === '/framework',
   );
+
+  const reduceMotion =
+    typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
   function linkActive(href: string): boolean {
     return page.url.pathname === href || page.url.pathname.startsWith(href + '/');
@@ -427,17 +187,39 @@
             class="flex size-8 items-center justify-center rounded-xl bg-[#6f7480] text-sm font-bold text-white shadow-sm"
             aria-label="Pulsar desk">⬢</a
           >
-          <button
-            class="mx-auto hidden h-9 w-full max-w-sm items-center justify-between rounded-lg bg-surface-muted px-3 text-sm text-ink-faint ring-1 ring-edge-soft transition hover:bg-surface sm:flex"
-            onclick={() => {
-              closeFloaters();
-              paletteOpen = true;
-            }}
-            aria-label="Rechercher (Ctrl+K)"
-          >
-            <span class="inline-flex items-center gap-2"><Search class="size-4" /> Search</span>
-            <span class="text-xs">Ctrl+K</span>
-          </button>
+          {#if page.url.pathname === '/apps'}
+            <div
+              class="mx-auto hidden h-9 w-full max-w-sm items-center gap-2 rounded-lg bg-surface-muted px-3 ring-1 ring-edge-soft focus-within:ring-accent sm:flex"
+            >
+              <Search class="size-4 shrink-0 text-ink-faint" />
+              <input
+                class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-faint"
+                placeholder="Rechercher une app…"
+                bind:value={$deskSearch}
+                aria-label="Rechercher une app"
+              />
+              {#if $deskSearch}
+                <button
+                  type="button"
+                  class="rounded-md px-1 text-xs text-ink-faint hover:text-ink"
+                  onclick={() => ($deskSearch = '')}
+                  aria-label="Effacer">✕</button
+                >
+              {/if}
+            </div>
+          {:else}
+            <button
+              class="mx-auto hidden h-9 w-full max-w-sm items-center justify-between rounded-lg bg-surface-muted px-3 text-sm text-ink-faint ring-1 ring-edge-soft transition hover:bg-surface sm:flex"
+              onclick={() => {
+                closeFloaters();
+                paletteOpen = true;
+              }}
+              aria-label="Rechercher (Ctrl+K)"
+            >
+              <span class="inline-flex items-center gap-2"><Search class="size-4" /> Search</span>
+              <span class="text-xs">Ctrl+K</span>
+            </button>
+          {/if}
           <div class="flex items-center gap-2">
             <button
               class="relative flex size-8 items-center justify-center rounded-full text-ink-muted hover:bg-surface-muted hover:text-ink"
@@ -467,7 +249,13 @@
             </button>
           </div>
         </header>
-        <main class="min-w-0 flex-1 overflow-x-hidden">{@render children()}</main>
+        <main class="min-w-0 flex-1 overflow-x-hidden">
+          {#key page.url.pathname}
+            <div in:fade={{ duration: reduceMotion ? 0 : 120 }}>
+              {@render children()}
+            </div>
+          {/key}
+        </main>
       </div>
     {:else}
       <!-- Module shell — once an app is opened, show ONLY that selected universe. Global app switching lives on /apps. -->
@@ -580,7 +368,11 @@
         class="min-w-0 flex-1 overflow-x-hidden p-6"
         style={`background: radial-gradient(circle at top left, rgb(${activeUniverse.rgb} / 0.10), transparent 360px), var(--color-canvas);`}
       >
-        {@render children()}
+        {#key page.url.pathname}
+          <div in:fade={{ duration: reduceMotion ? 0 : 120 }}>
+            {@render children()}
+          </div>
+        {/key}
       </main>
     {/if}
 

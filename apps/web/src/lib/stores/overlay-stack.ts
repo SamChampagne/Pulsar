@@ -14,3 +14,14 @@ export function popOverlay(token: symbol) {
 export function isTopOverlay(token: symbol): boolean {
   return stack[stack.length - 1] === token;
 }
+
+/** Reference-counted body scroll lock so nested overlays don't unlock each other. */
+let lockCount = 0;
+
+export function lockScroll() {
+  if (++lockCount === 1) document.body.style.overflow = 'hidden';
+}
+
+export function unlockScroll() {
+  if (lockCount > 0 && --lockCount === 0) document.body.style.overflow = '';
+}

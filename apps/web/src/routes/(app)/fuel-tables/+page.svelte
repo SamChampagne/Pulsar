@@ -10,7 +10,7 @@
     Table,
     EmptyState,
     Skeleton,
-    Panel,
+    Modal,
     Field,
     Input,
   } from '$lib/components/ui';
@@ -196,7 +196,7 @@
   </Table>
 {/if}
 
-<Panel bind:open={showForm} title={editingId ? 'Modifier la table' : 'Nouvelle table de carburant'}>
+<Modal bind:open={showForm} title={editingId ? 'Modifier la table' : 'Nouvelle table de carburant'} size="md">
   {#snippet children()}
     <form onsubmit={save} class="space-y-4">
       {#if error}<p class="text-sm text-danger">{error}</p>{/if}
@@ -241,4 +241,4 @@
       </div>
     </form>
   {/snippet}
-</Panel>
+</Modal>

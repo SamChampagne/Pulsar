@@ -1,3 +1,6 @@
+# Local agent/tooling workspace (Claude Code)
+.claude/
+
 # Dependencies
 node_modules/
 # pnpm repo: a stray npm run must never commit its lockfile

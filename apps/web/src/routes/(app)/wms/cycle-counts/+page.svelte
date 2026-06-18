@@ -10,6 +10,8 @@
     Select,
     Skeleton,
     Table,
+    ViewToggle,
+    type ViewId,
     type Tone,
   } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
@@ -44,8 +46,16 @@
   let busy = $state(false);
   let createBinId = $state('');
   let createNote = $state('');
+  let view = $state<ViewId>('table');
   // line id -> entered count (string)
   let entered = $state<Record<string, string>>({});
+
+  const KANBAN_COLS: { status: CycleCount['status']; label: string }[] = [
+    { status: 'OPEN', label: 'Ouvert' },
+    { status: 'COUNTED', label: 'Compté' },
+    { status: 'RECONCILED', label: 'Réconcilié' },
+    { status: 'CANCELLED', label: 'Annulé' },
+  ];
 
   function statusTone(s: string): Tone {
     return s === 'RECONCILED'
@@ -55,6 +65,16 @@
         : s === 'CANCELLED'
           ? 'neutral'
           : 'warn';
+  }
+
+  function statusLabel(s: string): string {
+    switch (s) {
+      case 'OPEN': return 'Ouvert';
+      case 'COUNTED': return 'Compté';
+      case 'RECONCILED': return 'Réconcilié';
+      case 'CANCELLED': return 'Annulé';
+      default: return s;
+    }
   }
 
   async function load() {
@@ -173,7 +193,11 @@
   title="Comptages cycliques"
   subtitle="Boucle de précision d'inventaire : compter un emplacement, comparer au système, réconcilier — les écarts postent des ajustements et alimentent le Workbench."
   count={counts.length}
-/>
+>
+  {#snippet actions()}
+    <ViewToggle bind:view views={['table', 'cards', 'kanban']} />
+  {/snippet}
+</PageHeader>
 
 <div class="grid gap-3 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
   <!-- Left: create + list -->
@@ -201,25 +225,85 @@
 
     {#if loading}
       <Card padded={false}><Skeleton rows={5} /></Card>
-    {:else if counts.length === 0}
-      <Card><EmptyState message="Aucun comptage. Démarre-en un sur un emplacement." /></Card>
-    {:else}
-      <Card padded={false}>
-        <div class="divide-y divide-edge">
+    {:else if view === 'table'}
+      {#if counts.length === 0}
+        <Card><EmptyState message="Aucun comptage. Démarre-en un sur un emplacement." /></Card>
+      {:else}
+        <Card padded={false}>
+          <div class="divide-y divide-edge">
+            {#each counts as c (c.id)}
+              <button
+                type="button"
+                class={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-surface-muted ${selected?.id === c.id ? 'bg-surface-muted' : ''}`}
+                onclick={() => openCount(c.id)}
+              >
+                <span class="font-mono font-semibold text-ink">{c.number}</span>
+                <span class="text-ink-muted">{c.bin.code}</span>
+                <Badge tone={statusTone(c.status)}>{statusLabel(c.status)}</Badge>
+                <span class="ml-auto text-xs text-ink-faint">{c._count?.lines ?? 0} lignes</span>
+              </button>
+            {/each}
+          </div>
+        </Card>
+      {/if}
+    {:else if view === 'cards'}
+      {#if counts.length === 0}
+        <Card><EmptyState message="Aucun comptage. Démarre-en un sur un emplacement." /></Card>
+      {:else}
+        <div class="grid gap-3">
           {#each counts as c (c.id)}
             <button
               type="button"
-              class={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-surface-muted ${selected?.id === c.id ? 'bg-surface-muted' : ''}`}
+              class="block w-full text-left"
               onclick={() => openCount(c.id)}
             >
-              <span class="font-mono font-semibold text-ink">{c.number}</span>
-              <span class="text-ink-muted">{c.bin.code}</span>
-              <Badge tone={statusTone(c.status)}>{c.status}</Badge>
-              <span class="ml-auto text-xs text-ink-faint">{c._count?.lines ?? 0} lignes</span>
+              <Card>
+                <div class="flex items-start justify-between gap-2">
+                  <span class="font-mono font-semibold text-ink">{c.number}</span>
+                  <Badge tone={statusTone(c.status)}>{statusLabel(c.status)}</Badge>
+                </div>
+                <p class="mt-1 text-sm text-ink-muted">{c.bin.code}</p>
+                <div class="mt-2 text-xs text-ink-faint">
+                  {c._count?.lines ?? 0} lignes
+                </div>
+              </Card>
             </button>
           {/each}
         </div>
-      </Card>
+      {/if}
+    {:else if view === 'kanban'}
+      {#if counts.length === 0}
+        <Card><EmptyState message="Aucun comptage. Démarre-en un sur un emplacement." /></Card>
+      {:else}
+        <div class="flex gap-2 overflow-x-auto pb-2">
+          {#each KANBAN_COLS as col (col.status)}
+            {@const items = counts.filter((c) => c.status === col.status)}
+            <div class="flex w-52 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+              <div class="flex items-center justify-between px-3 py-2">
+                <Badge tone={statusTone(col.status)}>{col.label}</Badge>
+                <span class="font-mono text-xs text-ink-muted">{items.length}</span>
+              </div>
+              <div class="flex max-h-[50vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
+                {#if items.length === 0}
+                  <p class="px-1 py-3 text-center text-xs text-ink-faint">—</p>
+                {:else}
+                  {#each items as c (c.id)}
+                    <button
+                      type="button"
+                      class={`block w-full rounded-inner border text-left p-2.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-card ${selected?.id === c.id ? 'border-accent bg-surface' : 'border-edge-soft bg-surface'}`}
+                      onclick={() => openCount(c.id)}
+                    >
+                      <div class="font-mono font-semibold text-sm text-ink">{c.number}</div>
+                      <div class="mt-0.5 text-xs text-ink-muted">{c.bin.code}</div>
+                      <div class="mt-1 text-[11px] text-ink-faint">{c._count?.lines ?? 0} lignes</div>
+                    </button>
+                  {/each}
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
     {/if}
   </div>
 
@@ -234,7 +318,7 @@
         <div class="flex items-center gap-2">
           <span class="font-mono font-semibold text-ink">{selected.number}</span>
           <span class="text-ink-muted">{selected.bin.code}</span>
-          <Badge tone={statusTone(selected.status)}>{selected.status}</Badge>
+          <Badge tone={statusTone(selected.status)}>{statusLabel(selected.status)}</Badge>
         </div>
         <div class="flex gap-2">
           {#if selected.status === 'OPEN'}

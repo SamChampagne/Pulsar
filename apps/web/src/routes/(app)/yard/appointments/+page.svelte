@@ -13,6 +13,8 @@
     PageHeader,
     Select,
     Skeleton,
+    ViewToggle,
+    type ViewId,
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
@@ -57,6 +59,15 @@
   let spots = $state<SpotOption[]>([]);
   let loading = $state(true);
   let error = $state('');
+  let view = $state<ViewId>('table');
+
+  const KANBAN_COLS: { status: string; label: string }[] = [
+    { status: 'SCHEDULED', label: 'Planifié' },
+    { status: 'ARRIVED', label: 'Arrivé' },
+    { status: 'COMPLETED', label: 'Complété' },
+    { status: 'CANCELLED', label: 'Annulé' },
+    { status: 'NO_SHOW', label: 'No-show' },
+  ];
 
   // Create modal
   let createOpen = $state(false);
@@ -83,6 +94,23 @@
         return 'danger';
       default:
         return 'neutral';
+    }
+  }
+
+  function statusLabel(status: string): string {
+    switch (status) {
+      case 'SCHEDULED':
+        return 'Planifié';
+      case 'ARRIVED':
+        return 'Arrivé';
+      case 'COMPLETED':
+        return 'Complété';
+      case 'CANCELLED':
+        return 'Annulé';
+      case 'NO_SHOW':
+        return 'No-show';
+      default:
+        return status;
     }
   }
 
@@ -199,6 +227,7 @@
 
 <PageHeader title="Rendez-vous">
   {#snippet actions()}
+    <ViewToggle bind:view views={['table', 'cards', 'kanban']} />
     <Button onclick={openCreate}>Nouveau rendez-vous</Button>
   {/snippet}
 </PageHeader>
@@ -213,7 +242,7 @@
   </div>
 {:else if error}
   <Card><p class="text-sm text-danger">{error}</p></Card>
-{:else}
+{:else if view === 'table'}
   <Card padded={false}>
     {#if appointments.length === 0}
       <EmptyState message="Aucun rendez-vous." />
@@ -245,7 +274,7 @@
               </td>
               <td class="px-4 py-2.5">
                 <div class="flex items-center gap-2">
-                  <Badge tone={statusTone(a.status)}>{a.status}</Badge>
+                  <Badge tone={statusTone(a.status)}>{statusLabel(a.status)}</Badge>
                   {#if timing.status === 'LATE'}
                     <Badge tone="danger">En retard +{timing.minutesLate}m</Badge>
                   {:else if timing.status === 'DUE'}
@@ -293,6 +322,122 @@
       </table>
     {/if}
   </Card>
+{:else if view === 'cards'}
+  {#if appointments.length === 0}
+    <EmptyState message="Aucun rendez-vous." />
+  {:else}
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {#each appointments as a (a.id)}
+        {@const timing = computeAppointmentTiming({
+          windowStart: a.windowStart,
+          windowEnd: a.windowEnd,
+          status: a.status,
+        })}
+        <Card>
+          <div class="flex items-start justify-between gap-2">
+            <span class="font-semibold text-ink">{a.appointmentNumber}</span>
+            <div class="flex flex-wrap justify-end gap-1">
+              <Badge tone={statusTone(a.status)}>{statusLabel(a.status)}</Badge>
+              {#if timing.status === 'LATE'}
+                <Badge tone="danger">+{timing.minutesLate}m</Badge>
+              {:else if timing.status === 'DUE'}
+                <Badge tone="warn">Fenêtre</Badge>
+              {/if}
+            </div>
+          </div>
+          {#if a.reference}
+            <p class="mt-0.5 truncate text-xs text-ink-faint">Réf : {a.reference}</p>
+          {/if}
+          <div class="mt-1 text-sm text-ink-muted">
+            {a.direction}{a.spot ? ` · ${a.spot.code}` : ''}
+            {#if a.carrier}<span class="block text-xs text-ink-faint">{a.carrier.name}</span>{/if}
+          </div>
+          <p class="mt-1 text-xs text-ink-faint">{fmtDate(a.windowStart)} → {fmtDate(a.windowEnd)}</p>
+          {#if a.status === 'SCHEDULED' || a.status === 'ARRIVED'}
+            <div class="mt-2 flex flex-wrap gap-1">
+              {#if a.status === 'SCHEDULED'}
+                <Button variant="secondary" onclick={() => action(a, 'arrive', 'Arrivée enregistrée')}>Arrivée</Button>
+                <Button variant="ghost" onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}>Annuler</Button>
+                <Button variant="ghost" onclick={() => action(a, 'no-show', 'No-show enregistré')}>No-show</Button>
+              {:else if a.status === 'ARRIVED'}
+                <Button variant="secondary" onclick={() => action(a, 'complete', 'Rendez-vous complété')}>Compléter</Button>
+                <Button variant="ghost" onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}>Annuler</Button>
+              {/if}
+            </div>
+          {/if}
+        </Card>
+      {/each}
+    </div>
+  {/if}
+{:else if view === 'kanban'}
+  <div class="flex gap-3 overflow-x-auto pb-2">
+    {#each KANBAN_COLS as col (col.status)}
+      {@const items = appointments.filter((a) => a.status === col.status)}
+      <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+        <div class="flex items-center justify-between px-3 py-2">
+          <Badge tone={statusTone(col.status)}>{col.label}</Badge>
+          <span class="font-mono text-xs text-ink-muted">{items.length}</span>
+        </div>
+        <div class="flex max-h-[65vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
+          {#if items.length === 0}
+            <p class="px-1 py-3 text-center text-xs text-ink-faint">—</p>
+          {:else}
+            {#each items as a (a.id)}
+              {@const timing = computeAppointmentTiming({
+                windowStart: a.windowStart,
+                windowEnd: a.windowEnd,
+                status: a.status,
+              })}
+              <div class="rounded-inner border border-edge-soft bg-surface p-2.5 shadow-sm">
+                <div class="flex items-start justify-between gap-1">
+                  <div class="font-semibold text-sm text-ink">{a.appointmentNumber}</div>
+                  {#if timing.status === 'LATE'}
+                    <Badge tone="danger">+{timing.minutesLate}m</Badge>
+                  {:else if timing.status === 'DUE'}
+                    <Badge tone="warn">Fenêtre</Badge>
+                  {/if}
+                </div>
+                <div class="mt-0.5 text-xs text-ink-muted">
+                  {a.direction}{a.spot ? ` · ${a.spot.code}` : ''}
+                </div>
+                {#if a.carrier}
+                  <div class="mt-0.5 truncate text-xs text-ink-faint">{a.carrier.name}</div>
+                {/if}
+                <div class="mt-1 text-[11px] text-ink-faint">{fmtDate(a.windowStart)}</div>
+                {#if a.status === 'SCHEDULED' || a.status === 'ARRIVED'}
+                  <div class="mt-1.5 flex flex-wrap gap-1">
+                    {#if a.status === 'SCHEDULED'}
+                      <button
+                        class="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-accent-strong"
+                        onclick={() => action(a, 'arrive', 'Arrivée enregistrée')}>Arrivée</button
+                      >
+                      <button
+                        class="rounded-md border border-edge px-2 py-0.5 text-[11px] font-semibold text-ink-muted hover:bg-surface-muted"
+                        onclick={() => action(a, 'no-show', 'No-show enregistré')}>No-show</button
+                      >
+                      <button
+                        class="rounded-md border border-edge px-2 py-0.5 text-[11px] font-semibold text-ink-muted hover:bg-surface-muted"
+                        onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}>Annuler</button
+                      >
+                    {:else if a.status === 'ARRIVED'}
+                      <button
+                        class="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-accent-strong"
+                        onclick={() => action(a, 'complete', 'Rendez-vous complété')}>Compléter</button
+                      >
+                      <button
+                        class="rounded-md border border-edge px-2 py-0.5 text-[11px] font-semibold text-ink-muted hover:bg-surface-muted"
+                        onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}>Annuler</button
+                      >
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          {/if}
+        </div>
+      </div>
+    {/each}
+  </div>
 {/if}
 
 <Modal bind:open={createOpen} title="Nouveau rendez-vous">

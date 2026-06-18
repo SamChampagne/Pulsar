@@ -10,7 +10,7 @@
     Field,
     FilterBar,
     Input,
-    Panel,
+    Modal,
     PageHeader,
     Select,
     Skeleton,
@@ -198,7 +198,7 @@
   </Table>
 {/if}
 
-<Panel bind:open={formOpen} title={editId ? 'Modifier le spot' : 'Nouveau spot'}>
+<Modal bind:open={formOpen} title={editId ? 'Modifier le spot' : 'Nouveau spot'} size="md">
   {#snippet children()}
     <div class="space-y-3">
       <Field label="Site">
@@ -229,4 +229,4 @@
       </div>
     </div>
   {/snippet}
-</Panel>
+</Modal>

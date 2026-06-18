@@ -13,7 +13,7 @@
     Table,
     Badge,
     EmptyState,
-    Panel,
+    Modal,
     Card,
     Skeleton,
     Textarea,
@@ -337,8 +337,9 @@
 
 {#if selected}
   {@const sel = selected}
-  <Panel
+  <Modal
     open={true}
+    size="lg"
     title={sel.title}
     onclose={() => {
       selected = null;
@@ -436,5 +437,5 @@
         <Textarea bind:value={note} placeholder="Add a resolution note…" rows={2} />
       </div>
     {/if}
-  </Panel>
+  </Modal>
 {/if}

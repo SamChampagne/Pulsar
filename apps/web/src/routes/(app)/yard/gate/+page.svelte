@@ -2,7 +2,7 @@
   import type { Paginated } from '@pulsar/shared';
   import { YardDirection } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import { Badge, Button, Card, EmptyState, Field, Input, PageHeader, Select, Skeleton } from '$lib/components/ui';
+  import { Badge, Button, Card, EmptyState, Field, Input, PageHeader, Select, Skeleton, ViewToggle, type ViewId } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
 
@@ -66,6 +66,14 @@
   let visits = $state<Visit[]>([]);
   let loading = $state(true);
   let error = $state('');
+  let visitView = $state<ViewId>('table');
+
+  const VISIT_KANBAN_COLS: { status: string; label: string }[] = [
+    { status: 'CHECKED_IN', label: 'En cours' },
+    { status: 'ASSIGNED', label: 'Assigné' },
+    { status: 'DEPARTED', label: 'Parti' },
+    { status: 'CANCELLED', label: 'Annulé' },
+  ];
 
   // Check-in form
   let formLocationId = $state('');
@@ -90,6 +98,21 @@
         return 'neutral';
       default:
         return 'neutral';
+    }
+  }
+
+  function visitStatusLabel(status: string): string {
+    switch (status) {
+      case 'ASSIGNED':
+        return 'Assigné';
+      case 'CHECKED_IN':
+        return 'En cours';
+      case 'DEPARTED':
+        return 'Parti';
+      case 'CANCELLED':
+        return 'Annulé';
+      default:
+        return status;
     }
   }
 
@@ -288,25 +311,85 @@
       </div>
     </Card>
 
-    <!-- Active visits -->
+    <!-- Visits -->
     <Card padded={false}>
-      <div class="border-b border-edge px-4 py-3">
-        <h2 class="font-semibold text-ink">Visites actives</h2>
+      <div class="flex items-center justify-between border-b border-edge px-4 py-3">
+        <h2 class="font-semibold text-ink">Visites</h2>
+        <ViewToggle bind:view={visitView} views={['table', 'cards', 'kanban']} />
       </div>
-      {#if activeVisits.length === 0}
-        <EmptyState message="Aucune visite active." />
-      {:else}
-        <div class="divide-y divide-edge">
-          {#each activeVisits as v (v.id)}
-            <div class="flex items-center gap-3 px-4 py-2.5 text-sm">
-              <Badge tone={statusTone(v.status)}>{v.status}</Badge>
-              <div class="min-w-0">
-                <div class="font-medium text-ink">{v.visitNumber}</div>
-                <div class="text-ink-muted">{trailerLabel(v)}{v.spot ? ` · ${v.spot.code}` : ''}</div>
+      {#if visitView === 'table'}
+        {#if visits.length === 0}
+          <EmptyState message="Aucune visite." />
+        {:else}
+          <div class="divide-y divide-edge">
+            {#each visits as v (v.id)}
+              <div class="flex items-center gap-3 px-4 py-2.5 text-sm">
+                <Badge tone={statusTone(v.status)}>{visitStatusLabel(v.status)}</Badge>
+                <div class="min-w-0">
+                  <div class="font-medium text-ink">{v.visitNumber}</div>
+                  <div class="text-ink-muted">{trailerLabel(v)}{v.spot ? ` · ${v.spot.code}` : ''}</div>
+                </div>
+                {#if v.status === 'CHECKED_IN' || v.status === 'ASSIGNED'}
+                  <span class="ml-auto">
+                    <Button variant="ghost" onclick={() => checkOut(v)}>Check-out</Button>
+                  </span>
+                {:else}
+                  <span class="ml-auto text-xs text-ink-faint">{fmtDate(v.checkInAt)}</span>
+                {/if}
               </div>
-              <span class="ml-auto">
-                <Button variant="ghost" onclick={() => checkOut(v)}>Check-out</Button>
-              </span>
+            {/each}
+          </div>
+        {/if}
+      {:else if visitView === 'cards'}
+        {#if visits.length === 0}
+          <EmptyState message="Aucune visite." />
+        {:else}
+          <div class="grid gap-3 p-3 sm:grid-cols-2">
+            {#each visits as v (v.id)}
+              <Card>
+                <div class="flex items-start justify-between gap-2">
+                  <span class="font-semibold text-ink">{v.visitNumber}</span>
+                  <Badge tone={statusTone(v.status)}>{visitStatusLabel(v.status)}</Badge>
+                </div>
+                <p class="mt-1 text-sm text-ink-muted">{trailerLabel(v)}{v.spot ? ` · ${v.spot.code}` : ''}</p>
+                <p class="mt-0.5 text-xs text-ink-faint">{v.direction} · {fmtDate(v.checkInAt)}</p>
+                {#if v.status === 'CHECKED_IN' || v.status === 'ASSIGNED'}
+                  <div class="mt-2">
+                    <Button variant="ghost" onclick={() => checkOut(v)}>Check-out</Button>
+                  </div>
+                {/if}
+              </Card>
+            {/each}
+          </div>
+        {/if}
+      {:else if visitView === 'kanban'}
+        <div class="flex gap-3 overflow-x-auto p-3 pb-4">
+          {#each VISIT_KANBAN_COLS as col (col.status)}
+            {@const items = visits.filter((v) => v.status === col.status)}
+            <div class="flex w-56 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+              <div class="flex items-center justify-between px-3 py-2">
+                <Badge tone={statusTone(col.status)}>{col.label}</Badge>
+                <span class="font-mono text-xs text-ink-muted">{items.length}</span>
+              </div>
+              <div class="flex max-h-[55vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
+                {#if items.length === 0}
+                  <p class="px-1 py-3 text-center text-xs text-ink-faint">—</p>
+                {:else}
+                  {#each items as v (v.id)}
+                    <div class="rounded-inner border border-edge-soft bg-surface p-2.5 shadow-sm">
+                      <div class="font-semibold text-sm text-ink">{v.visitNumber}</div>
+                      <div class="mt-0.5 truncate text-xs text-ink-muted">{trailerLabel(v)}{v.spot ? ` · ${v.spot.code}` : ''}</div>
+                      <div class="mt-0.5 text-[11px] text-ink-faint">{v.direction}</div>
+                      {#if v.status === 'CHECKED_IN' || v.status === 'ASSIGNED'}
+                        <button
+                          class="mt-1.5 rounded-md border border-edge px-2 py-0.5 text-[11px] font-semibold text-ink-muted hover:bg-surface-muted"
+                          onclick={() => checkOut(v)}>Check-out</button
+                        >
+                      {/if}
+                    </div>
+                  {/each}
+                {/if}
+              </div>
             </div>
           {/each}
         </div>

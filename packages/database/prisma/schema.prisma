@@ -135,11 +135,23 @@ model User {
   recordedTrackingEvents TrackingEvent[]
   receivedPods           ProofOfDelivery[]
   agentServiceFor        Agent[]           @relation("AgentServiceUser")
+  preferences            UserPreferences?
 
   @@unique([tenantId, email])
   @@unique([tenantId, oidcSubject])
   @@index([tenantId])
   @@map("users")
+}
+
+model UserPreferences {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  deskLayout Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
 }
 
 // Inbound API keys (read-only scopes in v1). Only the SHA-256 hash is stored;

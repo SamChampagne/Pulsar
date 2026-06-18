@@ -1,6 +1,7 @@
 <script lang="ts">
-  import type { Paginated } from '@pulsar/shared';
+  import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import {
     Badge,
@@ -14,6 +15,8 @@
     Select,
     Skeleton,
     Textarea,
+    ViewToggle,
+    type ViewId,
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
@@ -35,40 +38,14 @@
     _count: { lines: number };
   }
 
-  interface PickLine {
+  interface PickDetail {
     id: string;
-    itemId: string;
-    fromBinId: string;
-    qty: string;
-    item: { sku: string; name: string };
-    fromBin: { code: string };
-  }
-
-  interface PickDetail extends PickRow {
-    note?: string | null;
-    lines: PickLine[];
-  }
-
-  interface Item {
-    id: string;
-    sku: string;
-    name: string;
-    unit: string;
-  }
-
-  interface Bin {
-    id: string;
-    code: string;
-    kind: string;
+    number: string;
+    status: string;
     locationId: string;
-    location: { code: string; name: string };
-  }
-
-  interface Level {
-    id: string;
-    itemId: string;
-    binId: string;
-    qtyOnHand: string;
+    reference?: string | null;
+    note?: string | null;
+    createdAt: string;
   }
 
   interface LocationOption {
@@ -79,15 +56,10 @@
   }
 
   let orders = $state<PickRow[]>([]);
-  let items = $state<Item[]>([]);
-  let bins = $state<Bin[]>([]);
   let warehouses = $state<LocationOption[]>([]);
   let loading = $state(true);
   let error = $state('');
-
-  // Selected detail
-  let selected = $state<PickDetail | null>(null);
-  let detailLoading = $state(false);
+  let view = $state<ViewId>('table');
 
   // Create modal
   let createOpen = $state(false);
@@ -96,12 +68,12 @@
   let createNote = $state('');
   let createSaving = $state(false);
 
-  // Add-line form
-  let lineItemId = $state('');
-  let lineFromBinId = $state('');
-  let lineQty = $state<number>(0);
-  let lineSaving = $state(false);
-  let availableOnHand = $state<number | null>(null);
+  const KANBAN_COLS: { status: string; label: string }[] = [
+    { status: 'OPEN', label: 'Ouvert' },
+    { status: 'PICKED', label: 'Prélevé' },
+    { status: 'COMPLETED', label: 'Complété' },
+    { status: 'CANCELLED', label: 'Annulé' },
+  ];
 
   function statusTone(status: string): Tone {
     switch (status) {
@@ -118,15 +90,29 @@
     }
   }
 
+  function statusLabel(status: string): string {
+    switch (status) {
+      case 'OPEN':
+        return 'Ouvert';
+      case 'PICKED':
+        return 'Prélevé';
+      case 'COMPLETED':
+        return 'Complété';
+      case 'CANCELLED':
+        return 'Annulé';
+      default:
+        return status;
+    }
+  }
+
   function locName(id: string): string {
     const l = warehouses.find((w) => w.id === id);
     return l ? `${l.code} — ${l.name}` : id;
   }
 
-  // Bins that belong to the selected order's location.
-  const selectedBins = $derived(
-    selected ? bins.filter((b) => b.locationId === selected!.locationId) : [],
-  );
+  function fmtDate(iso: string): string {
+    return new Date(iso).toLocaleDateString();
+  }
 
   // Optional shipment pre-filter, driven by ?shipmentId=… (set from the fulfillment workbench).
   const shipmentFilter = $derived(page.url.searchParams.get('shipmentId'));
@@ -135,17 +121,13 @@
     loading = true;
     error = '';
     try {
-      const [ords, itemsRes, binsRes, locsRes] = await Promise.all([
+      const [ords, locsRes] = await Promise.all([
         api<PickRow[]>('/wms/pick-orders', {
           query: shipmentFilter ? { shipmentId: shipmentFilter } : undefined,
         }),
-        api<Paginated<Item>>('/wms/items', { query: { pageSize: 100 } }),
-        api<Bin[]>('/wms/bins'),
         api<Paginated<LocationOption>>('/transportation/locations', { query: { pageSize: 100 } }),
       ]);
       orders = ords;
-      items = itemsRes.items;
-      bins = binsRes;
       warehouses = locsRes.items.filter((l) => l.type === 'WAREHOUSE');
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Échec du chargement des pick orders';
@@ -160,44 +142,6 @@
     void shipmentFilter;
     void load();
   });
-
-  // Refresh the available on-hand whenever item + from-bin are both chosen.
-  $effect(() => {
-    const itemId = lineItemId;
-    const binId = lineFromBinId;
-    if (!itemId || !binId) {
-      availableOnHand = null;
-      return;
-    }
-    void (async () => {
-      try {
-        const levels = await api<Level[]>('/wms/inventory', { query: { itemId, binId } });
-        const match = levels.find((l) => l.itemId === itemId && l.binId === binId);
-        availableOnHand = match ? Number(match.qtyOnHand) : 0;
-      } catch {
-        availableOnHand = null;
-      }
-    })();
-  });
-
-  async function selectOrder(id: string) {
-    detailLoading = true;
-    lineItemId = '';
-    lineFromBinId = '';
-    lineQty = 0;
-    availableOnHand = null;
-    try {
-      selected = await api<PickDetail>(`/wms/pick-orders/${id}`);
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Échec du chargement du pick order');
-    } finally {
-      detailLoading = false;
-    }
-  }
-
-  async function reloadSelected() {
-    if (selected) await selectOrder(selected.id);
-  }
 
   function openCreate() {
     createLocationId = warehouses[0]?.id ?? '';
@@ -223,81 +167,18 @@
       });
       toast.success('Pick order créé');
       createOpen = false;
-      await load();
-      await selectOrder(created.id);
+      await goto(`/wms/picking/${created.id}`);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Échec de la création');
     } finally {
       createSaving = false;
     }
   }
-
-  async function addLine() {
-    if (!selected) return;
-    if (!lineItemId || !lineFromBinId || !lineQty) {
-      toast.error('Article, bin et quantité sont requis');
-      return;
-    }
-    lineSaving = true;
-    try {
-      await api(`/wms/pick-orders/${selected.id}/lines`, {
-        method: 'POST',
-        body: { itemId: lineItemId, fromBinId: lineFromBinId, qty: Number(lineQty) },
-      });
-      toast.success('Ligne ajoutée');
-      lineItemId = '';
-      lineFromBinId = '';
-      lineQty = 0;
-      availableOnHand = null;
-      await reloadSelected();
-      await load();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Échec de l'ajout de la ligne");
-    } finally {
-      lineSaving = false;
-    }
-  }
-
-  async function removeLine(lineId: string) {
-    if (!selected) return;
-    try {
-      await api(`/wms/pick-orders/${selected.id}/lines/${lineId}`, { method: 'DELETE' });
-      toast.success('Ligne retirée');
-      await reloadSelected();
-      await load();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Échec du retrait');
-    }
-  }
-
-  async function completeOrder() {
-    if (!selected) return;
-    try {
-      await api(`/wms/pick-orders/${selected.id}/complete`, { method: 'POST' });
-      toast.success('Pick order complété');
-      await reloadSelected();
-      await load();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Échec de la complétion');
-    }
-  }
-
-  async function cancelOrder() {
-    if (!selected) return;
-    if (!confirm('Annuler ce pick order ?')) return;
-    try {
-      await api(`/wms/pick-orders/${selected.id}/cancel`, { method: 'POST' });
-      toast.success('Pick order annulé');
-      await reloadSelected();
-      await load();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Échec de l'annulation");
-    }
-  }
 </script>
 
 <PageHeader title="Prélèvement">
   {#snippet actions()}
+    <ViewToggle bind:view views={['table', 'cards', 'kanban']} />
     <Button onclick={openCreate}>Nouveau pick order</Button>
   {/snippet}
 </PageHeader>
@@ -318,110 +199,91 @@
   </div>
 {:else if error}
   <Card><p class="text-sm text-danger">{error}</p></Card>
-{:else}
-  <div class="grid gap-4 lg:grid-cols-2">
-    <!-- List -->
+{:else if view === 'table'}
+  {#if orders.length === 0}
+    <EmptyState message="Aucun pick order." />
+  {:else}
     <Card padded={false}>
-      {#if orders.length === 0}
-        <EmptyState message="Aucun pick order." />
-      {:else}
-        <div class="divide-y divide-edge">
-          {#each orders as o (o.id)}
-            <button
-              type="button"
-              class={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-surface-muted ${selected?.id === o.id ? 'bg-surface-muted' : ''}`}
-              onclick={() => selectOrder(o.id)}
-            >
-              <Badge tone={statusTone(o.status)}>{o.status}</Badge>
-              <span class="font-medium text-ink">{o.number}</span>
-              {#if o.shipment}
-                <span class="text-xs font-medium text-accent">↔ {o.shipment.shipmentNumber}</span>
-              {/if}
-              <span class="text-ink-muted">{locName(o.locationId)}</span>
-              <span class="ml-auto text-xs text-ink-faint">{o._count.lines} ligne(s)</span>
-            </button>
-          {/each}
-        </div>
-      {/if}
+      <div class="divide-y divide-edge">
+        {#each orders as o (o.id)}
+          <button
+            type="button"
+            class="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-surface-muted"
+            onclick={() => goto(`/wms/picking/${o.id}`)}
+          >
+            <Badge tone={statusTone(o.status)}>{statusLabel(o.status)}</Badge>
+            <span class="font-medium text-ink">{o.number}</span>
+            {#if o.shipment}
+              <span class="text-xs font-medium text-accent">↔ {o.shipment.shipmentNumber}</span>
+            {/if}
+            <span class="text-ink-muted">{locName(o.locationId)}</span>
+            <span class="ml-auto text-xs text-ink-faint">{o._count.lines} ligne(s)</span>
+          </button>
+        {/each}
+      </div>
     </Card>
-
-    <!-- Detail -->
-    <Card>
-      {#if detailLoading}
-        <Skeleton />
-      {:else if !selected}
-        <EmptyState message="Sélectionnez un pick order pour voir le détail." />
-      {:else}
-        <div class="mb-3 flex flex-wrap items-center gap-2">
-          <Badge tone={statusTone(selected.status)}>{selected.status}</Badge>
-          <h2 class="font-semibold text-ink">{selected.number}</h2>
-          {#if selected.shipment}
-            <span class="text-sm font-medium text-accent">↔ {selected.shipment.shipmentNumber}</span>
-          {/if}
-          <span class="text-sm text-ink-muted">{locName(selected.locationId)}</span>
-        </div>
-        {#if selected.reference}
-          <p class="mb-2 text-sm text-ink-muted">Réf : {selected.reference}</p>
-        {/if}
-
-        {#if selected.lines.length === 0}
-          <EmptyState message="Aucune ligne." />
-        {:else}
-          <div class="divide-y divide-edge">
-            {#each selected.lines as line (line.id)}
-              <div class="flex items-center gap-3 py-2.5 text-sm">
-                <span class="font-medium text-ink">{line.item.sku}</span>
-                <span class="text-ink-muted">{line.item.name}</span>
-                <span class="text-ink-faint">{line.fromBin.code} →</span>
-                <span class="ml-auto font-semibold text-ink">{line.qty}</span>
-                {#if selected.status === 'OPEN'}
-                  <Button variant="ghost" onclick={() => removeLine(line.id)}>Retirer</Button>
-                {/if}
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-        {#if selected.status === 'OPEN' || selected.status === 'PICKED'}
-          {#if selected.status === 'OPEN'}
-            <div class="mt-4 flex flex-col gap-3 rounded-card border border-edge bg-surface-muted p-3">
-              <Field label="Article">
-                <Select bind:value={lineItemId}>
-                  <option value="">— Sélectionner —</option>
-                  {#each items as it (it.id)}
-                    <option value={it.id}>{it.sku} — {it.name}</option>
-                  {/each}
-                </Select>
-              </Field>
-              <Field label="Bin source">
-                <Select bind:value={lineFromBinId}>
-                  <option value="">— Sélectionner —</option>
-                  {#each selectedBins as b (b.id)}
-                    <option value={b.id}>{b.code} ({b.kind})</option>
-                  {/each}
-                </Select>
-              </Field>
-              {#if availableOnHand !== null}
-                <p class={`text-xs ${availableOnHand <= 0 ? 'text-danger' : 'text-ink-muted'}`}>
-                  Disponible dans ce bin : <span class="font-semibold">{availableOnHand}</span>
-                </p>
-              {/if}
-              <Field label="Quantité">
-                <Input type="number" bind:value={lineQty} min={0} step="any" />
-              </Field>
-              <div>
-                <Button loading={lineSaving} onclick={addLine}>Ajouter la ligne</Button>
-              </div>
+  {/if}
+{:else if view === 'cards'}
+  {#if orders.length === 0}
+    <EmptyState message="Aucun pick order." />
+  {:else}
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {#each orders as o (o.id)}
+        <a href={`/wms/picking/${o.id}`} class="block">
+          <Card>
+            <div class="flex items-start justify-between gap-2">
+              <span class="font-semibold text-ink">{o.number}</span>
+              <Badge tone={statusTone(o.status)}>{statusLabel(o.status)}</Badge>
             </div>
+            {#if o.shipment}
+              <p class="mt-0.5 text-xs font-medium text-accent">↔ {o.shipment.shipmentNumber}</p>
+            {/if}
+            <p class="mt-1 truncate text-sm text-ink-muted">{locName(o.locationId)}</p>
+            {#if o.reference}
+              <p class="mt-0.5 truncate text-xs text-ink-faint">Réf : {o.reference}</p>
+            {/if}
+            <div class="mt-2 flex items-center justify-between text-xs text-ink-faint">
+              <span>{o._count.lines} ligne(s)</span>
+              <span>{fmtDate(o.createdAt)}</span>
+            </div>
+          </Card>
+        </a>
+      {/each}
+    </div>
+  {/if}
+{:else if view === 'kanban'}
+  <div class="flex gap-3 overflow-x-auto pb-2">
+    {#each KANBAN_COLS as col (col.status)}
+      {@const items = orders.filter((o) => o.status === col.status)}
+      <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+        <div class="flex items-center justify-between px-3 py-2">
+          <Badge tone={statusTone(col.status)}>{col.label}</Badge>
+          <span class="font-mono text-xs text-ink-muted">{items.length}</span>
+        </div>
+        <div class="flex max-h-[65vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
+          {#if items.length === 0}
+            <p class="px-1 py-3 text-center text-xs text-ink-faint">—</p>
+          {:else}
+            {#each items as o (o.id)}
+              <a
+                href={`/wms/picking/${o.id}`}
+                class="block rounded-inner border border-edge-soft bg-surface p-2.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-card"
+              >
+                <div class="font-semibold text-sm text-ink">{o.number}</div>
+                {#if o.shipment}
+                  <div class="mt-0.5 text-[11px] font-medium text-accent">↔ {o.shipment.shipmentNumber}</div>
+                {/if}
+                <div class="mt-0.5 truncate text-xs text-ink-muted">{locName(o.locationId)}</div>
+                <div class="mt-1 flex items-center justify-between text-[11px] text-ink-faint">
+                  <span>{o._count.lines} ligne(s)</span>
+                  <span>{fmtDate(o.createdAt)}</span>
+                </div>
+              </a>
+            {/each}
           {/if}
-
-          <div class="mt-4 flex gap-2">
-            <Button onclick={completeOrder} disabled={selected.lines.length === 0}>Compléter</Button>
-            <Button variant="danger" onclick={cancelOrder}>Annuler</Button>
-          </div>
-        {/if}
-      {/if}
-    </Card>
+        </div>
+      </div>
+    {/each}
   </div>
 {/if}
 
