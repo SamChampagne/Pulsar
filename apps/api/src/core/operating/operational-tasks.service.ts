@@ -185,8 +185,8 @@ export class OperationalTasksService {
     };
     const updatedNotes = [...existingNotes, newNote];
 
-    await this.prisma.operationalTask.update({
-      where: { id },
+    await this.prisma.operationalTask.updateMany({
+      where: { id, tenantId },
       data: { notes: updatedNotes as unknown as Prisma.InputJsonValue },
     });
 

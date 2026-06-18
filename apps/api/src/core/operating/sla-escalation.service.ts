@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { AuditAction, OperationalTaskStatus } from '@pulsar/shared';
+import { AuditAction, NotificationLevel, OperationalTaskStatus } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const SLA_ESCALATION_BATCH = 200;
 
@@ -13,6 +14,7 @@ export class SlaEscalationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
@@ -41,7 +43,7 @@ export class SlaEscalationService {
         slaDueAt: { lt: now },
         escalatedAt: null,
       },
-      select: { id: true, tenantId: true, title: true, category: true },
+      select: { id: true, tenantId: true, title: true, category: true, assigneeUserId: true },
       take: SLA_ESCALATION_BATCH,
     });
 
@@ -59,14 +61,13 @@ export class SlaEscalationService {
 
         // Notify (best-effort): create an in-app notification for the tenant.
         try {
-          await this.prisma.notification.create({
-            data: {
-              tenantId: task.tenantId,
-              level: 'WARNING',
-              title: `SLA breached: ${task.title}`,
-              body: `Operational task (${task.category}) has exceeded its SLA deadline.`,
-              payload: { taskId: task.id, eventType: 'SLA_BREACHED' } as never,
-            },
+          await this.notifications.notify({
+            tenantId: task.tenantId,
+            userId: task.assigneeUserId ?? undefined,
+            title: 'SLA dépassé',
+            body: `Operational task (${task.category}) has exceeded its SLA deadline.`,
+            level: NotificationLevel.CRITICAL,
+            payload: { taskId: task.id },
           });
         } catch (notifyErr) {
           this.logger.warn(
