@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   applyMapping,
   AuditAction,
@@ -72,7 +72,7 @@ export class ImportsService {
       case 'trailers':
         return this.trailers.create(tenantId, data as any);
       default:
-        throw new Error(`Unknown target: ${targetKey}`);
+        throw new BadRequestException(`Unknown import target: "${targetKey}"`);
     }
   }
 
@@ -134,7 +134,7 @@ export class ImportsService {
     // 1. Validate target
     const target = getImportTarget(targetKey);
     if (!target) {
-      throw new NotFoundException(`Unknown import target: "${targetKey}"`);
+      throw new BadRequestException(`Unknown import target: "${targetKey}"`);
     }
 
     // 2. Target-specific permission check (no privilege escalation).
@@ -151,27 +151,14 @@ export class ImportsService {
     try {
       mapping = JSON.parse(input.mapping) as Record<string, string>;
     } catch {
-      throw new Error('mapping must be valid JSON');
+      throw new BadRequestException('mapping must be valid JSON');
     }
 
-    // 4. Store CSV file via DocumentsService (rule 12).
-    //    We use a temporary entityId; the real batch id is assigned after creation.
-    //    The document is linked via ImportBatch.documentId.
-    const placeholderId = `pending-${Date.now()}`;
-    const doc = await this.documents.upload(tenantId, {
-      entityType: 'import-batch',
-      entityId: placeholderId,
-      fileName: file.originalname,
-      mimeType: file.mimetype,
-      body: file.buffer,
-      uploadedById: user.id,
-    });
-
-    // 5. Parse CSV
+    // 4. Parse CSV (before creating the batch so totalRows is known)
     const csvText = file.buffer.toString('utf-8');
     const parsed = parseCsv(csvText);
 
-    // 6. Create batch record (PROCESSING)
+    // 5. Create batch record first (without documentId) so we have the real id
     const number = await this.sequences.nextNumber(tenantId, 'import-batch');
     const batch = await this.prisma.importBatch.create({
       data: {
@@ -183,9 +170,24 @@ export class ImportsService {
         importedRows: 0,
         failedRows: 0,
         mapping: mapping as any,
-        documentId: doc.id,
         createdById: user.id,
       },
+    });
+
+    // 6. Store CSV file via DocumentsService (rule 12), linked to the real batch id.
+    const doc = await this.documents.upload(tenantId, {
+      entityType: 'import-batch',
+      entityId: batch.id,
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+      body: file.buffer,
+      uploadedById: user.id,
+    });
+
+    // Back-patch documentId onto the batch now that we have it.
+    await this.prisma.importBatch.update({
+      where: { id: batch.id },
+      data: { documentId: doc.id },
     });
 
     // 7. Process each row — best-effort (one failure never aborts the batch)
