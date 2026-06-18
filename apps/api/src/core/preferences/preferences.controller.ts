@@ -18,6 +18,9 @@ export class PreferencesController {
 
   @Put()
   update(@CurrentUser() user: AuthUser, @Body() dto: UpdatePreferencesDto) {
-    return this.preferences.update(user.id, dto.deskLayout ?? {});
+    return this.preferences.update(user.id, {
+      deskLayout: dto.deskLayout,
+      appearance: dto.appearance,
+    });
   }
 }

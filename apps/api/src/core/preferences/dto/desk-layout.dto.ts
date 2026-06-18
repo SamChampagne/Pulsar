@@ -1,5 +1,21 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsInt, IsOptional, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsHexColor,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+
+export class DeskBackgroundDto {
+  @IsIn(['color', 'gradient', 'image'])
+  type!: string;
+
+  @IsString()
+  value!: string;
+}
 
 export class DeskLayoutDto {
   @IsInt()
@@ -11,6 +27,25 @@ export class DeskLayoutDto {
 
   @IsArray()
   items!: Record<string, unknown>[];
+
+  @IsOptional()
+  @IsIn(['sm', 'md', 'lg'])
+  tileSize?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeskBackgroundDto)
+  background?: DeskBackgroundDto;
+}
+
+export class AppearanceDto {
+  @IsOptional()
+  @IsIn(['warm', 'cool', 'dark'])
+  theme?: string;
+
+  @IsOptional()
+  @IsHexColor()
+  accent?: string;
 }
 
 export class UpdatePreferencesDto {
@@ -18,4 +53,9 @@ export class UpdatePreferencesDto {
   @ValidateNested()
   @Type(() => DeskLayoutDto)
   deskLayout?: DeskLayoutDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AppearanceDto)
+  appearance?: AppearanceDto;
 }
