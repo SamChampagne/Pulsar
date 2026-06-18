@@ -6,7 +6,7 @@
   import { MODULE_UNIVERSES } from '$lib/modules/universe';
   import { deskSearch } from '$lib/stores/desk';
   import { getPreferences, putDeskLayout } from '$lib/api/preferences';
-  import { defaultDeskLayout, reconcileDeskLayout, FRAMEWORK_FOLDER_ID } from '@pulsar/shared';
+  import { defaultDeskLayout, reconcileDeskLayout, FRAMEWORK_FOLDER_ID, DESK_CANVAS_W, DESK_TILE, defaultPosition } from '@pulsar/shared';
   import type { DeskLayout, DeskItem, DeskFolderChild } from '@pulsar/shared';
   import { toast } from '$lib/stores/toast';
   import DeskIcon from '$lib/components/desk/DeskIcon.svelte';
@@ -15,7 +15,7 @@
   import AddLinkPicker from '$lib/components/desk/AddLinkPicker.svelte';
   import DeskContextMenu from '$lib/components/desk/DeskContextMenu.svelte';
   import { Link } from 'lucide-svelte';
-  import { gridDrag } from '$lib/actions/dnd';
+  import { freeDrag } from '$lib/actions/dnd';
 
   // Build visible domains from auth caps — mirrors +layout.svelte exactly.
   const domains = $derived(
@@ -94,22 +94,38 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Drag state
+  // Free-position drag state
   // ---------------------------------------------------------------------------
-  let dragIndex = $state<number | null>(null);
-  let hoverIndex = $state<number | null>(null);
-  /** Index of the tile currently showing the "folder-intent" dwell highlight. */
-  let folderTargetIndex = $state<number | null>(null);
+  let movingId = $state<string | null>(null);
+  let movingPos = $state<{ x: number; y: number } | null>(null);
+  let folderTargetId = $state<string | null>(null);
+  let suppressClick = false; // set true on drag start; blocks the click right after a move
 
-  function onpick(i: number) {
-    dragIndex = i;
-    hoverIndex = null;
-    folderTargetIndex = null;
+  function deskId(item: DeskItem): string {
+    if (item.type === 'folder') return `folder:${item.id}`;
+    if (item.type === 'module') return `module:${item.moduleKey}`;
+    return `link:${item.href}`;
   }
 
-  function onhover(over: number | null, folderIntent: boolean) {
-    hoverIndex = over;
-    folderTargetIndex = folderIntent ? over : null;
+  function itemById(id: string): DeskItem | undefined {
+    return layout.items.find((it) => deskId(it) === id);
+  }
+
+  function onDragStart(id: string) {
+    movingId = id;
+    suppressClick = true;
+  }
+
+  function onDragMove(x: number, y: number) {
+    movingPos = { x, y };
+  }
+
+  function onFolderIntent(id: string | null) {
+    folderTargetId = id;
+  }
+
+  function clampX(x: number) {
+    return Math.max(0, Math.min(x, DESK_CANVAS_W - DESK_TILE));
   }
 
   function toChild(item: Extract<DeskItem, { type: 'module' | 'link' }>): DeskFolderChild {
@@ -118,47 +134,68 @@
       : { type: 'link' as const, href: item.href, label: item.label, icon: item.icon };
   }
 
-  function ondrop(from: number, over: number | null, folderIntent: boolean) {
-    dragIndex = null;
-    hoverIndex = null;
-    folderTargetIndex = null;
-    if (over === null || over === from) return;
+  function foldInto(dragId: string, targetId: string) {
+    const dragged = itemById(dragId);
+    const target = itemById(targetId);
+    if (!dragged || !target) return;
+    // Folders are not folded into other items — caller already guards this
+    if (dragged.type === 'folder') return;
 
     const items = [...layout.items] as DeskItem[];
-    const dragged = items[from];
-    const target = items[over];
-    if (!dragged || !target) return;
 
-    if (folderIntent && dragged.type !== 'folder' && target.type !== 'folder') {
-      // Dwell on module/link → create a folder
-      const folder: Extract<DeskItem, { type: 'folder' }> = {
-        type: 'folder',
-        id: (typeof crypto !== 'undefined' && crypto.randomUUID)
-          ? crypto.randomUUID()
-          : `folder-${items.length}-${over}`,
-        name: 'Dossier',
-        items: [toChild(target as Extract<DeskItem, { type: 'module' | 'link' }>), toChild(dragged as Extract<DeskItem, { type: 'module' | 'link' }>)],
-      };
-      items.splice(from, 1);
-      const targetIdxAfter = from < over ? over - 1 : over;
-      items.splice(targetIdxAfter, 1, folder);
-      layout = { ...layout, items };
-    } else if (folderIntent && target.type === 'folder' && dragged.type !== 'folder') {
-      // Dwell on an existing folder → append into it
+    if (target.type === 'folder') {
+      // Append into existing folder
       const folderCopy: Extract<DeskItem, { type: 'folder' }> = {
         ...target,
         items: [...target.items, toChild(dragged as Extract<DeskItem, { type: 'module' | 'link' }>)],
       };
-      items.splice(from, 1);
-      const targetIdxAfter = from < over ? over - 1 : over;
-      items.splice(targetIdxAfter, 1, folderCopy);
-      layout = { ...layout, items };
+      layout = {
+        ...layout,
+        items: items
+          .filter((it) => deskId(it) !== dragId)
+          .map((it) => (deskId(it) === targetId ? folderCopy : it)),
+      };
     } else {
-      // Default: plain reorder (no dwell, or folder-to-folder)
-      items.splice(over, 0, items.splice(from, 1)[0] as DeskItem);
-      layout = { ...layout, items };
+      // Create new folder in place of the target
+      const folder: Extract<DeskItem, { type: 'folder' }> = {
+        type: 'folder',
+        id: (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `folder-${Date.now()}`,
+        name: 'Dossier',
+        pos: target.pos,
+        items: [
+          toChild(target as Extract<DeskItem, { type: 'module' | 'link' }>),
+          toChild(dragged as Extract<DeskItem, { type: 'module' | 'link' }>),
+        ],
+      };
+      layout = {
+        ...layout,
+        items: items
+          .filter((it) => deskId(it) !== dragId)
+          .map((it) => (deskId(it) === targetId ? folder : it)),
+      };
+    }
+  }
+
+  function onDragDrop(id: string, x: number, y: number, targetId: string | null) {
+    movingId = null;
+    movingPos = null;
+    folderTargetId = null;
+    const dragged = itemById(id);
+    if (!dragged) return;
+    if (targetId && dragged.type !== 'folder') {
+      foldInto(id, targetId);
+    } else {
+      const nx = clampX(x);
+      const ny = Math.max(0, y);
+      layout = {
+        ...layout,
+        items: layout.items.map((it) => (deskId(it) === id ? { ...it, pos: { x: nx, y: ny } } : it)),
+      };
     }
     persist();
+    setTimeout(() => { suppressClick = false; }, 0);
   }
 
   function removeItem(item: DeskItem) {
@@ -172,7 +209,13 @@
   let addLinkOpen = $state(false);
 
   function addQuickLink(l: { href: string; label: string }) {
-    layout = { ...layout, items: [...layout.items, { type: 'link' as const, href: l.href, label: l.label }] };
+    layout = {
+      ...layout,
+      items: [
+        ...layout.items,
+        { type: 'link' as const, href: l.href, label: l.label, pos: defaultPosition(layout.items.length) },
+      ],
+    };
     persist();
   }
 
@@ -216,7 +259,7 @@
     const id = (typeof crypto !== 'undefined' && crypto.randomUUID)
       ? crypto.randomUUID()
       : `folder-${Date.now()}`;
-    layout = { ...layout, items: [...layout.items, { type: 'folder' as const, id, name: 'Dossier', items: [] }] };
+    layout = { ...layout, items: [...layout.items, { type: 'folder' as const, id, name: 'Dossier', items: [], pos: defaultPosition(layout.items.length) }] };
     persist();
   }
 
@@ -311,16 +354,10 @@
 
   const visibleItems = $derived(layout.items.filter(itemMatchesSearch));
 
-  // In edit mode render the full layout (indices must align with drag positions).
-  // In normal mode render the search-filtered list.
-  const renderItems = $derived(editing ? layout.items : visibleItems);
-
-  // Stable key for each item (used in {#each} key expression)
-  function itemKey(item: DeskItem): string {
-    if (item.type === 'folder') return `folder:${item.id}`;
-    if (item.type === 'module') return `module:${item.moduleKey}`;
-    return `link:${item.href}`;
-  }
+  // Canvas height: enough to fit all items with 56px for labels below tiles
+  const canvasHeight = $derived(
+    Math.max(420, ...layout.items.map((it) => (it.pos?.y ?? 0) + DESK_TILE + 56)),
+  );
 </script>
 
 <svelte:head><title>Pulsar Desk</title></svelte:head>
@@ -334,13 +371,24 @@
         <h1 class="mt-2 text-xl font-semibold tracking-tight text-ink">Toutes les pages</h1>
       </div>
       {#if loaded}
-        <button
-          type="button"
-          class="absolute right-4 rounded-full border border-edge px-3 py-1 text-sm text-ink-faint transition hover:text-ink sm:right-8 lg:right-12"
-          onclick={() => editing ? exitEditMode() : enterEditMode()}
-        >
-          {editing ? 'OK' : 'Personnaliser'}
-        </button>
+        <div class="absolute right-4 flex items-center gap-2 sm:right-8 lg:right-12">
+          {#if editing}
+            <button
+              type="button"
+              class="rounded-full border border-edge px-3 py-1 text-sm text-ink-faint transition hover:text-ink"
+              onclick={() => (addLinkOpen = true)}
+            >
+              + Ajouter un lien
+            </button>
+          {/if}
+          <button
+            type="button"
+            class="rounded-full border border-edge px-3 py-1 text-sm text-ink-faint transition hover:text-ink"
+            onclick={() => editing ? exitEditMode() : enterEditMode()}
+          >
+            {editing ? 'OK' : 'Personnaliser'}
+          </button>
+        </div>
       {/if}
     </div>
 
@@ -348,96 +396,125 @@
       <div class="flex justify-center py-20">
         <span class="text-sm text-ink-faint">Chargement…</span>
       </div>
-    {:else if renderItems.length === 0}
+    {:else if search && visibleItems.length === 0}
       <p class="text-center text-sm text-ink-faint">
-        {search ? `Aucune page ne correspond à « ${$deskSearch} ».` : 'Aucune page disponible.'}
+        {`Aucune page ne correspond à « ${$deskSearch} ».`}
       </p>
-    {:else}
+    {:else if !search && layout.items.length === 0}
+      <p class="text-center text-sm text-ink-faint">Aucune page disponible.</p>
+    {:else if search}
+      <!-- Search results: simple centered grid, no drag -->
       <div class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6">
-        {#each renderItems as item, i (itemKey(item) + '#' + i)}
-          <div
-            data-desk-index={i}
-            style={editing ? 'touch-action: none;' : ''}
-            class={[
-              editing && hoverIndex === i && dragIndex !== null && dragIndex !== i && folderTargetIndex !== i
-                ? 'opacity-60 scale-95 transition-transform duration-100'
-                : '',
-              editing && folderTargetIndex === i && dragIndex !== null
-                ? 'ring-2 ring-accent scale-105 transition-transform duration-100'
-                : '',
-            ].filter(Boolean).join(' ')}
-            use:gridDrag={{ index: i, enabled: editing, onpick, onhover, ondrop }}
-          >
-            {#if item.type === 'module'}
-              {@const domain = domainByKey(item.moduleKey)}
-              {#if domain}
-                {@const universe = MODULE_UNIVERSES[domain.key] ?? MODULE_UNIVERSES['dashboard']}
-                <DeskIcon
-                  label={domain.label}
-                  icon={domain.icon}
-                  accent={universe.accent}
-                  {editing}
-                  onactivate={() => { if (!editing) goto(domain.home); }}
-                  onremove={() => removeItem(item)}
-                  oncontext={(e) => openMenu(e, item)}
-                />
-              {/if}
-            {:else if item.type === 'link'}
-              <div class="flex w-24 flex-col items-center text-center">
-                <DeskIcon
-                  label={renamingItem === item ? renameValue : item.label}
-                  icon={Link}
-                  accent="#6f7480"
-                  {editing}
-                  onactivate={() => { if (!editing) goto(item.href); }}
-                  onremove={() => removeItem(item)}
-                  oncontext={(e) => openMenu(e, item)}
-                />
-                {#if renamingItem === item}
-                  <input
-                    class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none"
-                    bind:value={renameValue}
-                    onblur={commitRename}
-                    onkeydown={onRenameKeydown}
-                    use:focusOnMount
-                  />
-                {/if}
-              </div>
-            {:else if item.type === 'folder'}
-              <div class="flex w-24 flex-col items-center text-center">
-                <DeskFolderTile
-                  name={renamingItem === item ? renameValue : item.name}
-                  {editing}
-                  onopen={() => { if (!editing) openFolderById(item.id); }}
-                  onremove={() => removeItem(item)}
-                  oncontext={(e) => openMenu(e, item)}
-                />
-                {#if renamingItem === item}
-                  <input
-                    class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none"
-                    bind:value={renameValue}
-                    onblur={commitRename}
-                    onkeydown={onRenameKeydown}
-                    use:focusOnMount
-                  />
-                {/if}
-              </div>
+        {#each visibleItems as item, i (deskId(item) + '#' + i)}
+          {#if item.type === 'module'}
+            {@const domain = domainByKey(item.moduleKey)}
+            {#if domain}
+              {@const universe = MODULE_UNIVERSES[domain.key] ?? MODULE_UNIVERSES['dashboard']}
+              <DeskIcon
+                label={domain.label}
+                icon={domain.icon}
+                accent={universe.accent}
+                {editing}
+                onactivate={() => { if (!editing) goto(domain.home); }}
+                onremove={() => removeItem(item)}
+                oncontext={(e) => openMenu(e, item)}
+              />
             {/if}
-          </div>
+          {:else if item.type === 'link'}
+            <DeskIcon
+              label={item.label}
+              icon={Link}
+              accent="#6f7480"
+              {editing}
+              onactivate={() => { if (!editing) goto(item.href); }}
+              onremove={() => removeItem(item)}
+              oncontext={(e) => openMenu(e, item)}
+            />
+          {:else if item.type === 'folder'}
+            <DeskFolderTile
+              name={item.name}
+              {editing}
+              onopen={() => { if (!editing) openFolderById(item.id); }}
+              onremove={() => removeItem(item)}
+              oncontext={(e) => openMenu(e, item)}
+            />
+          {/if}
         {/each}
-        {#if editing}
-          <div class="flex w-24 flex-col items-center text-center">
-            <button
-              type="button"
-              class="grid size-14 place-items-center rounded-2xl border-2 border-dashed border-edge text-ink-faint transition hover:border-accent hover:text-accent"
-              onclick={() => (addLinkOpen = true)}
-              aria-label="Ajouter un lien rapide"
+      </div>
+    {:else}
+      <!-- Free-placement absolute canvas -->
+      <div class="overflow-x-auto">
+        <div class="relative mx-auto" style={`width:${DESK_CANVAS_W}px; height:${canvasHeight}px`}>
+          {#each layout.items as item, i (deskId(item) + '#' + i)}
+            {@const id = deskId(item)}
+            {@const pos = (movingId === id && movingPos) ? movingPos : (item.pos ?? defaultPosition(i))}
+            <div
+              data-desk-id={id}
+              class={[
+                'absolute',
+                folderTargetId === id ? 'ring-2 ring-accent rounded-2xl' : '',
+              ].filter(Boolean).join(' ')}
+              style={`left:${pos.x}px; top:${pos.y}px; touch-action:none;${movingId === id ? ' z-index:20;' : ''}`}
+              use:freeDrag={{ id, pos: item.pos ?? defaultPosition(i), enabled: true, onstart: () => onDragStart(id), onmove: onDragMove, onfolderintent: onFolderIntent, ondrop: (x, y, t) => onDragDrop(id, x, y, t) }}
             >
-              <span class="text-2xl leading-none">+</span>
-            </button>
-            <span class="mt-3 text-xs text-ink-faint">Ajouter un lien</span>
-          </div>
-        {/if}
+              {#if item.type === 'module'}
+                {@const domain = domainByKey(item.moduleKey)}
+                {#if domain}
+                  {@const universe = MODULE_UNIVERSES[domain.key] ?? MODULE_UNIVERSES['dashboard']}
+                  <DeskIcon
+                    label={domain.label}
+                    icon={domain.icon}
+                    accent={universe.accent}
+                    {editing}
+                    onactivate={() => { if (!suppressClick && !editing) goto(domain.home); }}
+                    onremove={() => removeItem(item)}
+                    oncontext={(e) => openMenu(e, item)}
+                  />
+                {/if}
+              {:else if item.type === 'link'}
+                <div class="flex w-24 flex-col items-center text-center">
+                  <DeskIcon
+                    label={renamingItem === item ? renameValue : item.label}
+                    icon={Link}
+                    accent="#6f7480"
+                    {editing}
+                    onactivate={() => { if (!suppressClick && !editing) goto(item.href); }}
+                    onremove={() => removeItem(item)}
+                    oncontext={(e) => openMenu(e, item)}
+                  />
+                  {#if renamingItem === item}
+                    <input
+                      class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none"
+                      bind:value={renameValue}
+                      onblur={commitRename}
+                      onkeydown={onRenameKeydown}
+                      use:focusOnMount
+                    />
+                  {/if}
+                </div>
+              {:else if item.type === 'folder'}
+                <div class="flex w-24 flex-col items-center text-center">
+                  <DeskFolderTile
+                    name={renamingItem === item ? renameValue : item.name}
+                    {editing}
+                    onopen={() => { if (!suppressClick && !editing) openFolderById(item.id); }}
+                    onremove={() => removeItem(item)}
+                    oncontext={(e) => openMenu(e, item)}
+                  />
+                  {#if renamingItem === item}
+                    <input
+                      class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none"
+                      bind:value={renameValue}
+                      onblur={commitRename}
+                      onkeydown={onRenameKeydown}
+                      use:focusOnMount
+                    />
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
       </div>
     {/if}
   </div>
