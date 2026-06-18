@@ -53,6 +53,10 @@ export const PERMISSIONS = {
   CUSTOMER_PORTAL: {
     LINKS_MANAGE: 'customer-portal.links.manage',
   },
+  CARRIER_PORTAL: {
+    LINKS_MANAGE: 'carrier-portal.links.manage',
+    READ: 'carrier-portal.read',
+  },
   BILLING: {
     INVOICES_READ: 'billing.invoices.read',
     INVOICES_MANAGE: 'billing.invoices.manage',
@@ -94,7 +98,8 @@ export type PermissionKey =
   | (typeof PERMISSIONS.WMS)[keyof typeof PERMISSIONS.WMS]
   | (typeof PERMISSIONS.YARD)[keyof typeof PERMISSIONS.YARD]
   | (typeof PERMISSIONS.ANALYTICS)[keyof typeof PERMISSIONS.ANALYTICS]
-  | (typeof PERMISSIONS.PROCUREMENT)[keyof typeof PERMISSIONS.PROCUREMENT];
+  | (typeof PERMISSIONS.PROCUREMENT)[keyof typeof PERMISSIONS.PROCUREMENT]
+  | (typeof PERMISSIONS.CARRIER_PORTAL)[keyof typeof PERMISSIONS.CARRIER_PORTAL];
 
 export interface PermissionDescriptor {
   key: PermissionKey;
@@ -145,6 +150,11 @@ const analytics = (key: PermissionKey, description: string): PermissionDescripto
 const procurement = (key: PermissionKey, description: string): PermissionDescriptor => ({
   key,
   module: MODULE_KEYS.PROCUREMENT,
+  description,
+});
+const carrierPortal = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.CARRIER_PORTAL,
   description,
 });
 
@@ -208,6 +218,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   analytics(PERMISSIONS.ANALYTICS.READ, 'View the operational Control Tower and analytics'),
   procurement(PERMISSIONS.PROCUREMENT.READ, 'View RFPs, bids, invites and routing guide'),
   procurement(PERMISSIONS.PROCUREMENT.MANAGE, 'Manage RFPs, invite carriers, evaluate bids and award lanes'),
+  carrierPortal(PERMISSIONS.CARRIER_PORTAL.LINKS_MANAGE, 'Generate and revoke carrier portal links'),
+  carrierPortal(PERMISSIONS.CARRIER_PORTAL.READ, 'View carrier portal configuration and access links'),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);

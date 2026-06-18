@@ -547,6 +547,8 @@ model Carrier {
   email       String?
   phone       String?
   status      CarrierStatus @default(ACTIVE)
+  // Carrier Portal capability link (module carrier-portal must be enabled).
+  portalToken String?       @unique
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
