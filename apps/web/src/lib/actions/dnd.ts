@@ -39,13 +39,16 @@ export function freeDrag(node: HTMLElement, params: FreeDragParams) {
     armed = true;
     startX = e.clientX; startY = e.clientY;
     originX = p.pos.x; originY = p.pos.y;
-    try { node.setPointerCapture(e.pointerId); } catch { /* ignore (e.g. no active pointer) */ }
+    // NOTE: do NOT capture the pointer here — capturing on pointerdown suppresses the
+    // native `click` event, breaking tap-to-open. Capture only once a real drag starts.
   }
   function onpointermove(e: PointerEvent) {
     if (!armed) return;
     if (!dragging) {
       if (Math.hypot(e.clientX - startX, e.clientY - startY) < THRESH) return;
       dragging = true;
+      // Capture now (drag confirmed) so moves keep firing even off the tile bounds.
+      try { node.setPointerCapture(e.pointerId); } catch { /* ignore */ }
       p.onstart();
     }
     p.onmove(originX + (e.clientX - startX), originY + (e.clientY - startY));
