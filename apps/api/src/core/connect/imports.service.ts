@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   applyMapping,
+  AuditAction,
   coerceTypes,
   getImportTarget,
   IMPORT_TARGETS,
@@ -262,7 +263,7 @@ export class ImportsService {
     await this.audit.log({
       tenantId,
       userId: user.id,
-      action: 'CREATE',
+      action: AuditAction.CREATE,
       entityType: 'import-batch',
       entityId: batch.id,
       after: {
