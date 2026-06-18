@@ -13,6 +13,28 @@ export const DESK_GAP = 28;
 export const DESK_COLS = 6;
 export const DESK_CANVAS_W = DESK_COLS * (DESK_TILE + DESK_GAP) + DESK_GAP;
 
+export type DeskTileSize = 'sm' | 'md' | 'lg';
+export const TILE_SIZES: Record<DeskTileSize, number> = { sm: 76, md: 96, lg: 120 };
+
+export type DeskBackground =
+  | { type: 'color'; value: string }
+  | { type: 'gradient'; value: string } // value = DeskGradient.id
+  | { type: 'image'; value: string }; // value = Document id
+
+export interface DeskGradient {
+  id: string;
+  label: string;
+  css: string;
+}
+
+export const DESK_GRADIENTS: DeskGradient[] = [
+  { id: 'aurora', label: 'Aurore', css: 'linear-gradient(135deg,#1e3a8a 0%,#7e22ce 100%)' },
+  { id: 'sunset', label: 'Coucher', css: 'linear-gradient(135deg,#f1700f 0%,#be123c 100%)' },
+  { id: 'mint', label: 'Menthe', css: 'linear-gradient(135deg,#0f766e 0%,#22c55e 100%)' },
+  { id: 'slate', label: 'Ardoise', css: 'linear-gradient(135deg,#0f172a 0%,#334155 100%)' },
+  { id: 'sand', label: 'Sable', css: 'linear-gradient(135deg,#fdf2e9 0%,#e7d3b3 100%)' },
+];
+
 export function defaultPosition(index: number): DeskPosition {
   const col = index % DESK_COLS;
   const row = Math.floor(index / DESK_COLS);
@@ -35,6 +57,8 @@ export interface DeskLayout {
   version: number;
   mode: DeskMode;
   items: DeskItem[];
+  tileSize?: DeskTileSize;
+  background?: DeskBackground;
 }
 
 export const FRAMEWORK_FOLDER_ID = 'framework';
@@ -82,7 +106,7 @@ function isItem(x: unknown): x is DeskItem {
 
 export function reconcileDeskLayout(saved: unknown, domains: { key: string }[]): DeskLayout {
   const visible = new Set(domains.filter((d) => d.key !== 'dashboard').map((d) => d.key));
-  const s = saved as DeskLayout | null | undefined;
+  const s = saved as (DeskLayout & { tileSize?: unknown; background?: unknown }) | null | undefined;
   if (!s || typeof s !== 'object' || !Array.isArray(s.items)) {
     return defaultDeskLayout(domains);
   }
@@ -138,5 +162,42 @@ export function reconcileDeskLayout(saved: unknown, domains: { key: string }[]):
   const positioned = items.map((it, i) => (it.pos ? it : { ...it, pos: defaultPosition(i) }));
   const savedMode = (s && typeof s === 'object') ? (s as { mode?: unknown }).mode : undefined;
   const mode: DeskMode = DESK_MODES.includes(savedMode as DeskMode) ? (savedMode as DeskMode) : 'auto';
-  return { version: DESK_LAYOUT_VERSION, mode, items: positioned };
+
+  // Re-inject the Framework folder if the saved layout lost it (symmetric to re-adding modules).
+  const hasFramework = positioned.some(
+    (it) => it.type === 'folder' && it.id === FRAMEWORK_FOLDER_ID,
+  );
+  const finalItems = hasFramework
+    ? positioned
+    : [
+        ...positioned,
+        {
+          type: 'folder' as const,
+          id: FRAMEWORK_FOLDER_ID,
+          name: 'Framework',
+          items: [...FRAMEWORK_LINKS],
+          pos: defaultPosition(positioned.length),
+        },
+      ];
+
+  const tileSize: DeskTileSize | undefined =
+    s.tileSize === 'sm' || s.tileSize === 'md' || s.tileSize === 'lg' ? s.tileSize : undefined;
+  const bg = isDeskBackground(s.background) ? s.background : undefined;
+
+  return {
+    version: DESK_LAYOUT_VERSION,
+    mode,
+    items: finalItems,
+    ...(tileSize ? { tileSize } : {}),
+    ...(bg ? { background: bg } : {}),
+  };
+}
+
+function isDeskBackground(x: unknown): x is DeskBackground {
+  if (!x || typeof x !== 'object') return false;
+  const o = x as Record<string, unknown>;
+  return (
+    (o.type === 'color' || o.type === 'gradient' || o.type === 'image') &&
+    typeof o.value === 'string'
+  );
 }

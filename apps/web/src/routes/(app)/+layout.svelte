@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { fade } from 'svelte/transition';
@@ -6,6 +7,8 @@
   import { api } from '$lib/api/client';
   import { auth, clearAuth, getRefreshToken } from '$lib/stores/auth';
   import { deskSearch } from '$lib/stores/desk';
+  import { getPreferences } from '$lib/api/preferences';
+  import { loadAppearanceFrom } from '$lib/stores/appearance';
   import { Bell, LogOut, Search, UserRound } from 'lucide-svelte';
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
   import AssistantPanel from '$lib/components/agents/AssistantPanel.svelte';
@@ -76,6 +79,12 @@
   });
   $effect(() => {
     if (page.url.pathname !== '/apps') deskSearch.set('');
+  });
+
+  onMount(() => {
+    void getPreferences()
+      .then((p) => loadAppearanceFrom(p.appearance))
+      .catch(() => {});
   });
 
   // Build the filtered domain list from the catalogue, then inject the runtime badge.

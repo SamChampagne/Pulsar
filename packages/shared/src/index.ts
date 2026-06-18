@@ -42,3 +42,4 @@ export * from './wms/replenishment';
 export * from './yard/yard.workflow';
 export * from './yard/dwell';
 export * from './desk/desk-layout';
+export * from './appearance/appearance';

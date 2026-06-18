@@ -6,8 +6,9 @@
   import { MODULE_UNIVERSES } from '$lib/modules/universe';
   import { deskSearch } from '$lib/stores/desk';
   import { getPreferences, putDeskLayout } from '$lib/api/preferences';
-  import { defaultDeskLayout, reconcileDeskLayout, FRAMEWORK_FOLDER_ID, DESK_CANVAS_W, DESK_TILE, defaultPosition, DESK_MODES } from '@pulsar/shared';
-  import type { DeskLayout, DeskItem, DeskFolderChild } from '@pulsar/shared';
+  import { defaultDeskLayout, reconcileDeskLayout, FRAMEWORK_FOLDER_ID, DESK_CANVAS_W, DESK_TILE, defaultPosition, DESK_MODES, TILE_SIZES, DESK_GRADIENTS } from '@pulsar/shared';
+  import type { DeskLayout, DeskItem, DeskFolderChild, DeskTileSize, DeskBackground } from '@pulsar/shared';
+  import { fetchDocumentObjectUrl } from '$lib/api/files';
   import { toast } from '$lib/stores/toast';
   import DeskIcon from '$lib/components/desk/DeskIcon.svelte';
   import DeskFolderTile from '$lib/components/desk/DeskFolderTile.svelte';
@@ -26,15 +27,55 @@
   );
 
   let layout = $state<DeskLayout>(defaultDeskLayout([]));
+  const tilePx = $derived(TILE_SIZES[(layout.tileSize ?? 'md') as DeskTileSize]);
+
+  let bgImageUrl = $state<string | null>(null);
+  let bgImageForId: string | null = null;
+
+  // Resolve the desk-background CSS for the section.
+  const bgStyle = $derived.by(() => {
+    const bg = layout.background;
+    if (!bg) return 'background:#f8f8f7';
+    if (bg.type === 'color') return `background:${bg.value}`;
+    if (bg.type === 'gradient') {
+      const g = DESK_GRADIENTS.find((x) => x.id === bg.value);
+      return g ? `background:${g.css}` : 'background:#f8f8f7';
+    }
+    if (bg.type === 'image' && bgImageUrl) {
+      return `background-image:url('${bgImageUrl}');background-size:cover;background-position:center`;
+    }
+    return 'background:#f8f8f7';
+  });
+
+  // Fetch/refresh the image blob when an image background is selected.
+  $effect(() => {
+    const bg = layout.background;
+    if (bg?.type === 'image') {
+      if (bg.value !== bgImageForId) {
+        bgImageForId = bg.value;
+        void fetchDocumentObjectUrl(bg.value)
+          .then((url) => {
+            if (bgImageUrl) URL.revokeObjectURL(bgImageUrl);
+            bgImageUrl = url;
+          })
+          .catch(() => { bgImageUrl = null; toast.error("Impossible de charger l'image de fond"); });
+      }
+    } else if (bgImageUrl) {
+      URL.revokeObjectURL(bgImageUrl);
+      bgImageUrl = null;
+      bgImageForId = null;
+    }
+  });
+
   let loaded = $state(false);
   let rawSaved = $state<unknown>(undefined);
   let fetchedOnce = $state(false);
 
-  // Fetch preferences once; re-reconcile when domains change after load.
+  // Fetch preferences once; reconcile against current domains.
   $effect(() => {
     if (fetchedOnce) return;
     fetchedOnce = true;
-    const snap = domains; // capture current value inside the effect
+    const snap = domains;
     void (async () => {
       try {
         const res = await getPreferences();
@@ -44,18 +85,20 @@
         layout = defaultDeskLayout(snap);
       } finally {
         loaded = true;
+        lastDomainSig = snap.map((d) => d.key).sort().join('|');
       }
     })();
   });
 
-  // When domains settle after initial load (module toggled, perms refreshed),
-  // re-reconcile without re-fetching — rawSaved may still be undefined (first fetch
-  // in progress), but reconcileDeskLayout handles that gracefully.
+  // When the set of visible modules actually changes (module toggled / perms refreshed),
+  // reconcile from the CURRENT layout so live positions/folders/background are preserved.
+  let lastDomainSig = $state('');
   $effect(() => {
     if (!loaded) return;
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    domains; // reactive dependency
-    layout = reconcileDeskLayout(rawSaved, domains);
+    const sig = domains.map((d) => d.key).sort().join('|');
+    if (sig === lastDomainSig) return;
+    lastDomainSig = sig;
+    layout = reconcileDeskLayout(layout, domains);
   });
 
   // ---------------------------------------------------------------------------
@@ -70,6 +113,7 @@
 
   function persist() {
     if (!loaded) return;
+    rawSaved = layout;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       void putDeskLayout(layout).catch(() => toast.error('Échec de la sauvegarde du bureau'));
@@ -77,6 +121,7 @@
   }
 
   onDestroy(() => {
+    if (bgImageUrl) URL.revokeObjectURL(bgImageUrl);
     if (saveTimer) {
       clearTimeout(saveTimer);
       void putDeskLayout(layout).catch(() => {});
@@ -130,12 +175,12 @@
 
   function clampX(x: number) {
     const w = canvasW || DESK_CANVAS_W;
-    return Math.max(0, Math.min(x, w - DESK_TILE));
+    return Math.max(0, Math.min(x, w - tilePx));
   }
 
   function clampY(y: number) {
     const h = canvasH || 600;
-    return Math.max(0, Math.min(y, h - DESK_TILE));
+    return Math.max(0, Math.min(y, h - tilePx));
   }
 
   function toChild(item: Extract<DeskItem, { type: 'module' | 'link' }>): DeskFolderChild {
@@ -312,6 +357,19 @@
     menuOpen = true;
   }
 
+  function openCanvasMenu(e: MouseEvent) {
+    // Only when the click target is the board itself (not a tile).
+    if ((e.target as HTMLElement)?.closest('[data-desk-id]')) return;
+    e.preventDefault();
+    menuX = e.clientX;
+    menuY = e.clientY;
+    menuActions = [
+      { label: 'Nouveau dossier', run: () => makeEmptyFolder() },
+      { label: 'Ajouter un lien rapide', run: () => (addLinkOpen = true) },
+    ];
+    menuOpen = true;
+  }
+
   // ---------------------------------------------------------------------------
   // Folder overlay
   // ---------------------------------------------------------------------------
@@ -380,24 +438,28 @@
     {@const domain = domainByKey(item.moduleKey)}
     {#if domain}
       {@const universe = MODULE_UNIVERSES[domain.key] ?? MODULE_UNIVERSES['dashboard']}
-      <DeskIcon label={domain.label} icon={domain.icon} accent={universe.accent} {editing}
+      <DeskIcon label={domain.label} icon={domain.icon} accent={universe.accent} {editing} size={tilePx}
         onactivate={() => { if (!suppressClick && !editing) goto(domain.home); }}
         onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
     {/if}
   {:else if item.type === 'link'}
-    <DeskIcon label={renamingItem === item ? renameValue : item.label} icon={Link} accent="#6f7480" {editing}
+    <DeskIcon label={renamingItem === item ? renameValue : item.label} icon={Link} accent="#6f7480" {editing} size={tilePx}
       onactivate={() => { if (!suppressClick && !editing) goto(item.href); }}
       onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
     {#if renamingItem === item}<input class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none" bind:value={renameValue} onblur={commitRename} onkeydown={onRenameKeydown} use:focusOnMount />{/if}
   {:else if item.type === 'folder'}
-    <DeskFolderTile name={renamingItem === item ? renameValue : item.name} {editing}
+    <DeskFolderTile name={renamingItem === item ? renameValue : item.name} {editing} size={tilePx}
       onopen={() => { if (!suppressClick && !editing) openFolderById(item.id); }}
       onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
     {#if renamingItem === item}<input class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none" bind:value={renameValue} onblur={commitRename} onkeydown={onRenameKeydown} use:focusOnMount />{/if}
   {/if}
 {/snippet}
 
-<section class="min-h-[calc(100vh-3.5rem)] bg-[#f8f8f7] px-4 py-14 text-ink sm:px-8 lg:px-12">
+<section class="relative min-h-[calc(100vh-3.5rem)] px-4 py-14 text-ink sm:px-8 lg:px-12" style={bgStyle}>
+  {#if layout.background && layout.background.type !== 'color'}
+    <div class="pointer-events-none absolute inset-0 bg-surface/35"></div>
+  {/if}
+  <div class="relative">
   <!-- Header -->
   <div class="mb-8 flex items-center justify-center gap-3">
     <div class="text-center">
@@ -420,6 +482,14 @@
                 class={`rounded px-2.5 py-1 text-sm font-medium transition-colors ${layout.mode === m ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink'}`}
                 onclick={() => { layout = { ...layout, mode: m }; persist(); }}
               >{m === 'auto' ? 'Grille auto' : m === 'free' ? 'Libre' : 'Réordonnable'}</button>
+            {/each}
+          </div>
+          <div class="inline-flex items-center gap-1 rounded-md border border-edge bg-surface p-0.5">
+            {#each (['sm','md','lg'] as DeskTileSize[]) as sz (sz)}
+              <button type="button"
+                class={`rounded px-2.5 py-1 text-sm font-medium transition-colors ${(layout.tileSize ?? 'md') === sz ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink'}`}
+                onclick={() => { layout = { ...layout, tileSize: sz }; persist(); }}
+              >{sz === 'sm' ? 'S' : sz === 'md' ? 'M' : 'L'}</button>
             {/each}
           </div>
         {/if}
@@ -445,7 +515,14 @@
   {:else if !search && layout.items.length === 0}
     <p class="text-center text-sm text-ink-faint">Aucune page disponible.</p>
   {:else}
-    <div class="relative w-full" bind:clientWidth={canvasW} bind:clientHeight={canvasH} style="min-height: calc(100vh - 7rem)">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="relative mx-auto"
+      bind:clientWidth={canvasW}
+      bind:clientHeight={canvasH}
+      oncontextmenu={openCanvasMenu}
+      style={`width:min(100%, ${DESK_CANVAS_W}px); min-height: calc(100vh - 9rem)`}
+    >
       {#if search}
         <div class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6">
           {#each visibleItems as item, i (deskId(item) + '#' + i)}
@@ -465,7 +542,7 @@
         {/each}
       {:else}
         <!-- auto + reorder: flowing grid -->
-        <div class="flex flex-wrap gap-x-10 gap-y-11 px-2 py-4">
+        <div class="flex flex-wrap justify-center gap-x-10 gap-y-11 px-2 py-4">
           {#each layout.items as item, i (deskId(item) + '#' + i)}
             {@const id = deskId(item)}
             <div data-desk-id={id}
@@ -479,6 +556,7 @@
       {/if}
     </div>
   {/if}
+  </div>
 </section>
 
 <!-- Add-link picker (single instance) -->
@@ -514,6 +592,13 @@
     {#snippet footer()}
       {#if openFolder.id === FRAMEWORK_FOLDER_ID}
         <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            class="rounded-lg border border-edge px-3 py-1.5 text-sm text-ink-faint transition hover:border-accent hover:text-ink"
+            onclick={() => { enterEditMode(); closeFolder(); }}
+          >
+            Personnaliser le bureau
+          </button>
           <button
             type="button"
             class="rounded-lg border border-edge px-3 py-1.5 text-sm text-ink-faint transition hover:border-accent hover:text-ink"
