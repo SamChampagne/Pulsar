@@ -29,12 +29,12 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
   Résolu.
 
 ## Chantier 3 — Outils agents par module
-- [todo] **Agent Fleet** : list_assets, get_vehicle, get_trailer, list_maintenance_due,
+- [done] **Agent Fleet** : list_assets, get_vehicle, get_trailer, list_maintenance_due,
   create_maintenance_order, mark_asset_out_of_service, upload_compliance_document,
   flag_expiring_compliance, suggest_asset_replacement.
-- [todo] **Agent Yard** : list_yard_visits, get_yard_board, assign_yard_spot, move_trailer,
+- [done] **Agent Yard** : list_yard_visits, get_yard_board, assign_yard_spot, move_trailer,
   create_dock_appointment, mark_arrived, mark_departed, flag_detention.
-- [todo] **Agent WMS** : list_low_stock_items, create_replenishment_task, get_pick_order,
+- [done] **Agent WMS** : list_low_stock_items, create_replenishment_task, get_pick_order,
   prioritize_pick_orders, flag_inventory_variance, create_cycle_count,
   release_shipment_when_pick_complete.
   (Tous via le registre `core/agents/tool-registry.ts` — règle 21/22 : tier/permission/module/
