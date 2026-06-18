@@ -172,6 +172,8 @@ export class PublicLinksController {
 
   /** Attach a PNG signature image to a shipment's proof-of-delivery. */
   @Post('driver/:token/pod/:shipmentId/signature')
+  @UseGuards(ThrottlerGuard)
+  @HttpCode(200)
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   driverPodSignature(

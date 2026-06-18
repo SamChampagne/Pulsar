@@ -313,7 +313,7 @@ export class PublicLinksService {
         payload: { kind: dto.kind, note: dto.note, shipmentId: dto.shipmentId, stopId: dto.stopId },
       },
     });
-    await this.domainEvents.emit(
+    void this.domainEvents.emit(
       load.tenantId,
       'driver.exception',
       { type: 'load', id: load.id },
@@ -326,7 +326,7 @@ export class PublicLinksService {
         note: dto.note,
         bucket,
       },
-    );
+    ).catch(() => {});
     return { ok: true };
   }
 }
