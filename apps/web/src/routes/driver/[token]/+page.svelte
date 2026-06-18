@@ -27,6 +27,7 @@
       actualArrivalAt: string | null;
       actualDepartureAt: string | null;
       location: { name: string; addressLine1: string; city: string; state: string | null };
+      notes?: string | null;
     }[];
   }
 
@@ -42,6 +43,20 @@
   let signedByName = $state('');
   let podNotes = $state('');
   let photo = $state<File | null>(null);
+
+  // Signature canvas state
+  let sigCanvas = $state<HTMLCanvasElement | null>(null);
+  let sigDrawing = $state(false);
+  let sigNotice = $state('');
+  let sigBusy = $state(false);
+
+  // Exception form state
+  let showException = $state(false);
+  let excKind = $state('DAMAGE');
+  let excShipmentId = $state('');
+  let excNote = $state('');
+  let excBusy = $state(false);
+  let excNotice = $state('');
 
   async function load() {
     try {
@@ -98,6 +113,63 @@
       notice = e instanceof ApiError ? e.message : 'Failed to save POD';
     } finally {
       busy = false;
+    }
+  }
+
+  async function submitSignature(shipmentId: string) {
+    sigBusy = true;
+    sigNotice = '';
+    try {
+      const dataUrl = sigCanvas!.toDataURL('image/png');
+      const blob = await (await fetch(dataUrl)).blob();
+      const form = new FormData();
+      form.append('file', blob, 'signature.png');
+      const res = await fetch(`/api/v1/public/driver/${token}/pod/${shipmentId}/signature`, {
+        method: 'POST',
+        body: form,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        sigNotice = (data as { message?: string }).message ?? 'Failed to save signature';
+      } else {
+        sigNotice = 'Signature saved';
+        const ctx = sigCanvas?.getContext('2d');
+        if (ctx && sigCanvas) ctx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+      }
+    } catch (e) {
+      sigNotice = e instanceof Error ? e.message : 'Failed to save signature';
+    } finally {
+      sigBusy = false;
+    }
+  }
+
+  async function submitException() {
+    excBusy = true;
+    excNotice = '';
+    try {
+      const res = await fetch(`/api/v1/public/driver/${token}/exception`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shipmentId: excShipmentId || undefined,
+          kind: excKind,
+          note: excNote,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        excNotice = (data as { message?: string }).message ?? 'Failed to report exception';
+      } else {
+        excNotice = 'Problème signalé';
+        excKind = 'DAMAGE';
+        excShipmentId = '';
+        excNote = '';
+        showException = false;
+      }
+    } catch (e) {
+      excNotice = e instanceof Error ? e.message : 'Failed to report exception';
+    } finally {
+      excBusy = false;
     }
   }
 
@@ -209,6 +281,7 @@
               {stop.location.name}<br />
               {stop.location.addressLine1}, {stop.location.city}{stop.location.state ? `, ${stop.location.state}` : ''}
             </p>
+            {#if stop.notes}<p class="mt-1 text-xs text-ink-muted italic">{stop.notes}</p>{/if}
             {#if stop.plannedArrivalEarly}
               <p class="mt-1 text-xs text-ink-muted">Planned: {fmtWindow(stop.plannedArrivalEarly, stop.plannedArrivalLate)}</p>
             {/if}
@@ -246,6 +319,57 @@
     {:else}
       <p class="text-sm text-ink-muted">No stops on this load yet.</p>
     {/each}
+
+    <!-- Exception report -->
+    <div>
+      <button
+        type="button"
+        class="w-full rounded-md border border-edge bg-surface px-3 py-2 text-sm font-medium text-ink-muted hover:bg-surface-muted"
+        onclick={() => (showException = !showException)}
+      >
+        {showException ? 'Annuler' : 'Signaler un problème'}
+      </button>
+      {#if showException}
+        <Card>
+          <h2 class="mb-3 text-base font-semibold text-ink">Signaler un problème</h2>
+          <div class="flex flex-col gap-3">
+            <div>
+              <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="excKind">Type</label>
+              <select id="excKind" bind:value={excKind} class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none">
+                <option value="DAMAGE">Dommage</option>
+                <option value="DELAY">Retard</option>
+                <option value="REFUSED">Refusé</option>
+                <option value="OTHER">Autre</option>
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="excShipment">Envoi (optionnel)</label>
+              <select id="excShipment" bind:value={excShipmentId} class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none">
+                <option value="">— Général —</option>
+                {#each view.shipments as s (s.id)}
+                  <option value={s.id}>{s.shipmentNumber}</option>
+                {/each}
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="excNote">Note</label>
+              <textarea id="excNote" rows={3} bind:value={excNote} class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"></textarea>
+            </div>
+            {#if excNotice}
+              <p class="text-sm" class:text-danger={!excNotice.startsWith('Problème signalé')} class:text-success={excNotice.startsWith('Problème signalé')}>{excNotice}</p>
+            {/if}
+            <button
+              type="button"
+              disabled={excBusy}
+              class="w-full rounded-md bg-accent px-3 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-accent-hover"
+              onclick={() => void submitException()}
+            >
+              Envoyer
+            </button>
+          </div>
+        </Card>
+      {/if}
+    </div>
 
     <!-- POD form -->
     {#if podCandidates.length > 0}
@@ -294,6 +418,24 @@
               class="w-full text-sm text-ink"
               onchange={(e) => (photo = (e.currentTarget as HTMLInputElement).files?.[0] ?? null)}
             />
+          </div>
+          <div>
+            <!-- svelte-ignore a11y_label_has_associated_control -->
+            <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Signature</label>
+            <canvas
+              bind:this={sigCanvas}
+              width={340}
+              height={160}
+              class="w-full touch-none rounded-md border border-edge bg-white"
+              onpointerdown={(e) => { sigDrawing = true; const ctx = sigCanvas!.getContext('2d')!; const r = sigCanvas!.getBoundingClientRect(); ctx.beginPath(); ctx.moveTo(e.clientX - r.left, e.clientY - r.top); }}
+              onpointermove={(e) => { if (!sigDrawing) return; const ctx = sigCanvas!.getContext('2d')!; const r = sigCanvas!.getBoundingClientRect(); ctx.lineTo(e.clientX - r.left, e.clientY - r.top); ctx.stroke(); }}
+              onpointerup={() => { sigDrawing = false; }}
+            ></canvas>
+            <div class="mt-1 flex gap-2">
+              <button type="button" class="text-xs text-ink-muted hover:text-ink underline" onclick={() => { const ctx = sigCanvas?.getContext('2d'); if (ctx && sigCanvas) ctx.clearRect(0, 0, sigCanvas.width, sigCanvas.height); sigNotice = ''; }}>Effacer</button>
+              <button type="button" disabled={sigBusy} class="text-xs font-semibold text-accent hover:underline disabled:opacity-50" onclick={() => { if (podShipmentId) void submitSignature(podShipmentId); else sigNotice = 'Sélectionnez un envoi d\'abord'; }}>Enregistrer signature</button>
+            </div>
+            {#if sigNotice}<p class="mt-1 text-xs" class:text-danger={sigNotice !== 'Signature saved'} class:text-success={sigNotice === 'Signature saved'}>{sigNotice}</p>{/if}
           </div>
           <button
             type="submit"
