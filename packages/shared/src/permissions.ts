@@ -79,6 +79,10 @@ export const PERMISSIONS = {
   ANALYTICS: {
     READ: 'analytics.read',
   },
+  PROCUREMENT: {
+    READ: 'procurement.read',
+    MANAGE: 'procurement.manage',
+  },
 } as const;
 
 export type PermissionKey =
@@ -89,7 +93,8 @@ export type PermissionKey =
   | (typeof PERMISSIONS.FLEET)[keyof typeof PERMISSIONS.FLEET]
   | (typeof PERMISSIONS.WMS)[keyof typeof PERMISSIONS.WMS]
   | (typeof PERMISSIONS.YARD)[keyof typeof PERMISSIONS.YARD]
-  | (typeof PERMISSIONS.ANALYTICS)[keyof typeof PERMISSIONS.ANALYTICS];
+  | (typeof PERMISSIONS.ANALYTICS)[keyof typeof PERMISSIONS.ANALYTICS]
+  | (typeof PERMISSIONS.PROCUREMENT)[keyof typeof PERMISSIONS.PROCUREMENT];
 
 export interface PermissionDescriptor {
   key: PermissionKey;
@@ -135,6 +140,11 @@ const yard = (key: PermissionKey, description: string): PermissionDescriptor => 
 const analytics = (key: PermissionKey, description: string): PermissionDescriptor => ({
   key,
   module: MODULE_KEYS.ANALYTICS,
+  description,
+});
+const procurement = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.PROCUREMENT,
   description,
 });
 
@@ -196,6 +206,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   yard(PERMISSIONS.YARD.READ, 'View yard spots, visits and dock appointments'),
   yard(PERMISSIONS.YARD.MANAGE, 'Manage yard spots, gate check-in/out, moves and appointments'),
   analytics(PERMISSIONS.ANALYTICS.READ, 'View the operational Control Tower and analytics'),
+  procurement(PERMISSIONS.PROCUREMENT.READ, 'View RFPs, bids, invites and routing guide'),
+  procurement(PERMISSIONS.PROCUREMENT.MANAGE, 'Manage RFPs, invite carriers, evaluate bids and award lanes'),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);

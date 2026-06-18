@@ -92,6 +92,11 @@ model Tenant {
   inboundMessages  InboundMessage[]
   importBatches    ImportBatch[]
   importRows       ImportRow[]
+  rfps             Rfp[]
+  rfpLanes         RfpLane[]
+  rfpInvites       RfpInvite[]
+  bids             Bid[]
+  awards           Award[]
 
   @@map("tenants")
 }
@@ -2270,4 +2275,125 @@ model ImportRow {
 
   @@index([tenantId, batchId])
   @@map("import_rows")
+}
+
+// ============================================================================
+// PROCUREMENT — RFP, Bid Board, Awards (module: procurement)
+// ============================================================================
+
+enum RfpStatus {
+  DRAFT
+  OPEN
+  EVALUATION
+  AWARDED
+  CANCELLED
+}
+
+enum BidStatus {
+  SUBMITTED
+  SHORTLISTED
+  ACCEPTED
+  REJECTED
+}
+
+enum InviteStatus {
+  SENT
+  RESPONDED
+  EXPIRED
+}
+
+model Rfp {
+  id          String    @id @default(cuid())
+  tenantId    String
+  rfpNumber   String?
+  title       String
+  description String?
+  status      RfpStatus @default(DRAFT)
+  deadline    DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant  Tenant      @relation(fields: [tenantId], references: [id])
+  lanes   RfpLane[]
+  invites RfpInvite[]
+  bids    Bid[]
+
+  @@index([tenantId, status, createdAt])
+  @@map("rfps")
+}
+
+model RfpLane {
+  id              String         @id @default(cuid())
+  tenantId        String
+  rfpId           String
+  laneId          String
+  mode            TransportMode?
+  volumeEstimate  Int?
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id])
+  rfp    Rfp     @relation(fields: [rfpId], references: [id], onDelete: Cascade)
+  bids   Bid[]
+  award  Award?
+
+  @@index([tenantId, rfpId])
+  @@map("rfp_lanes")
+}
+
+model RfpInvite {
+  id          String       @id @default(cuid())
+  tenantId    String
+  rfpId       String
+  carrierId   String
+  token       String       @unique
+  status      InviteStatus @default(SENT)
+  sentAt      DateTime     @default(now())
+  respondedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  rfp    Rfp    @relation(fields: [rfpId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, rfpId])
+  @@map("rfp_invites")
+}
+
+model Bid {
+  id          String    @id @default(cuid())
+  tenantId    String
+  rfpId       String
+  rfpLaneId   String
+  carrierId   String
+  rateType    RateType
+  amount      Decimal   @db.Decimal(12, 2)
+  currency    String    @default("CAD")
+  validFrom   DateTime?
+  validTo     DateTime?
+  transitDays Int?
+  notes       String?
+  status      BidStatus @default(SUBMITTED)
+  submittedAt DateTime  @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  rfp     Rfp     @relation(fields: [rfpId], references: [id], onDelete: Cascade)
+  rfpLane RfpLane @relation(fields: [rfpLaneId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, rfpId])
+  @@index([tenantId, rfpLaneId])
+  @@map("bids")
+}
+
+model Award {
+  id          String   @id @default(cuid())
+  tenantId    String
+  rfpLaneId   String   @unique
+  carrierId   String
+  bidId       String?
+  rateId      String?
+  awardedById String?
+  awardedAt   DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  rfpLane RfpLane @relation(fields: [rfpLaneId], references: [id], onDelete: Cascade)
+
+  @@map("awards")
 }

@@ -13,6 +13,7 @@ export const MODULE_KEYS = {
   CUSTOMER_PORTAL: 'customer-portal',
   ANALYTICS: 'analytics',
   BILLING: 'billing',
+  PROCUREMENT: 'procurement',
 } as const;
 
 export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS];
@@ -80,6 +81,13 @@ export const MODULE_CATALOG: ModuleDescriptor[] = [
     key: MODULE_KEYS.BILLING,
     name: 'Finance / Ledger',
     description: 'Receivables, payables, invoicing, payments, margin and invoice audit.',
+    isCore: false,
+    available: true,
+  },
+  {
+    key: MODULE_KEYS.PROCUREMENT,
+    name: 'Procurement / Bid Board',
+    description: 'RFP on lanes, carrier invitations, competitive bids, award and routing guide.',
     isCore: false,
     available: true,
   },
