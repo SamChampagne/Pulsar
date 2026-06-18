@@ -17,6 +17,7 @@
     Table,
     type Tone,
   } from '$lib/components/ui';
+  import { fetchDocumentObjectUrl } from '$lib/api/files';
 
   // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@
   let detailLoading = $state(false);
   let ignoring = $state(false);
   let actionError = $state('');
+  let docError = $state('');
 
   // ── Permissions ────────────────────────────────────────────────────────────
 
@@ -119,6 +121,7 @@
     selected = msg;
     modalOpen = true;
     actionError = '';
+    docError = '';
     detailLoading = true;
     try {
       const detail = await api<InboundMessageDetail>(`/connect/inbox/${msg.id}`);
@@ -148,13 +151,25 @@
     }
   }
 
+  // ── Document download (authenticated blob) ────────────────────────────────
+
+  async function downloadDocument(id: string) {
+    docError = '';
+    try {
+      const objUrl = await fetchDocumentObjectUrl(id);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.target = '_blank';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(objUrl), 10_000);
+    } catch {
+      docError = 'Impossible de télécharger le document.';
+    }
+  }
+
   // ── Reactivity ────────────────────────────────────────────────────────────
 
-  $effect(() => {
-    void load();
-  });
-
-  // Re-load on filter change (debounce via $effect tracking filterSource/filterStatus)
+  // Single effect tracks filters + covers initial load (filterSource/filterStatus are read)
   $effect(() => {
     const _s = filterSource;
     const _st = filterStatus;
@@ -310,20 +325,21 @@
         </div>
       {/if}
 
-      <!-- Document link -->
+      <!-- Document download (authenticated blob — avoids 401 on bare URL in new tab) -->
       {#if detailLoading}
         <div class="text-xs text-ink-faint">Chargement du document…</div>
-      {:else if selected.documentUrl}
+      {:else if selected.documentId}
         <div>
           <p class="text-xs font-semibold uppercase tracking-wide text-ink-faint">Document</p>
-          <a
-            href={selected.documentUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
             class="mt-1 inline-flex items-center gap-1 text-xs font-medium text-accent underline hover:text-accent-strong"
+            onclick={() => void downloadDocument(selected!.documentId!)}
           >
-            Télécharger / ouvrir le document
-          </a>
+            Télécharger le document
+          </button>
+          {#if docError}
+            <p class="mt-1 text-xs text-danger">{docError}</p>
+          {/if}
         </div>
       {/if}
 
