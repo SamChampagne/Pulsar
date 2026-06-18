@@ -19,6 +19,7 @@ import {
   Bot,
   Settings,
   Cable,
+  BarChart3,
 } from 'lucide-svelte';
 import type { ComponentType } from 'svelte';
 
@@ -271,6 +272,29 @@ export function navCatalogue(): NavDomain[] {
             // Always visible when the domain is visible (no perm override needed —
             // the domain-level anyPerms gate already ensures the user can see agents)
             { href: '/settings/agent-runtime', label: 'Connexion du modèle' },
+          ],
+        },
+      ],
+    },
+
+    // ── Analytics / Control Tower ─────────────────────────────────────────
+    {
+      key: 'analytics',
+      label: 'Analytics',
+      icon: BarChart3,
+      home: '/analytics/control-tower',
+      module: MODULE_KEYS.ANALYTICS,
+      anyPerms: ['analytics.read'],
+      prefixes: ['/analytics'],
+      sections: [
+        {
+          links: [
+            { href: '/analytics/control-tower', label: 'Control Tower', perm: 'analytics.read' },
+            {
+              href: '/analytics',
+              label: 'Scorecard transporteurs',
+              perm: 'transportation.analytics.read',
+            },
           ],
         },
       ],
