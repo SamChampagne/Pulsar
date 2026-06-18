@@ -39,7 +39,7 @@ export function freeDrag(node: HTMLElement, params: FreeDragParams) {
     armed = true;
     startX = e.clientX; startY = e.clientY;
     originX = p.pos.x; originY = p.pos.y;
-    node.setPointerCapture(e.pointerId);
+    try { node.setPointerCapture(e.pointerId); } catch { /* ignore (e.g. no active pointer) */ }
   }
   function onpointermove(e: PointerEvent) {
     if (!armed) return;

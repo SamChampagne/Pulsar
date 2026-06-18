@@ -454,7 +454,7 @@
                 'absolute',
                 folderTargetId === id ? 'ring-2 ring-accent rounded-2xl' : '',
               ].filter(Boolean).join(' ')}
-              style={`left:${pos.x}px; top:${pos.y}px; touch-action:none;${movingId === id ? ' z-index:20;' : ''}`}
+              style={`left:${pos.x}px; top:${pos.y}px; touch-action:none;${movingId === id ? ' z-index:20; pointer-events:none;' : ''}`}
               use:freeDrag={{ id, pos: item.pos ?? defaultPosition(i), enabled: true, onstart: () => onDragStart(id), onmove: onDragMove, onfolderintent: onFolderIntent, ondrop: (x, y, t) => onDragDrop(id, x, y, t) }}
             >
               {#if item.type === 'module'}
