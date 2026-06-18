@@ -45,13 +45,13 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
   `release_shipment_when_pick_complete` (statut dérivé, rule 33 v2). Détails : spec C3.
 
 ## Chantier 4 — Connect / Ingestion
-- [todo] **Inbox Connect** : page de tout ce qui entre (email, PDF facture, CSV, webhook, EDI,
+- [done] **Inbox Connect** : page de tout ce qui entre (email, PDF facture, CSV, webhook, EDI,
   erreurs de mapping, doc non reconnu).
-- [todo] **Objets canoniques** : InboundMessage, ParsedDocument, IntegrationRun,
+- [done] **Objets canoniques** : InboundMessage, ParsedDocument, IntegrationRun,
   MappingException, ImportBatch.
-- [todo] **Ingestion PDF** : facture transporteur → IncomingCarrierInvoice ; POD → document ;
+- [done] **Ingestion PDF** : facture transporteur → IncomingCarrierInvoice ; POD → document ;
   BOL → document ; rate sheet → rates/lanes/accessorials.
-- [todo] **CSV importer** : customers, locations, carriers, rates, items, inventory,
+- [done] **CSV importer** : customers, locations, carriers, rates, items, inventory,
   vehicles/trailers, transport orders.
 
 ## Chantier 5 — Agent Dispatcher / Exceptions (agent phare)
