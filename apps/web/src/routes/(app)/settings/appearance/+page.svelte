@@ -1,9 +1,10 @@
 <script lang="ts">
   import { PageHeader, Card } from '$lib/components/ui';
   import { appearance, setTheme, setAccent } from '$lib/stores/appearance';
-  import { APPEARANCE_THEMES, type AppearanceTheme, DESK_GRADIENTS, type DeskBackground, type DeskLayout } from '@pulsar/shared';
+  import { APPEARANCE_THEMES, type AppearanceTheme, DESK_GRADIENTS, type DeskBackground, type DeskLayout, DESK_LAYOUT_VERSION } from '@pulsar/shared';
   import { getPreferences, putDeskLayout } from '$lib/api/preferences';
   import { uploadDocument } from '$lib/api/files';
+  import { auth } from '$lib/stores/auth';
   import { onMount } from 'svelte';
   import { toast } from '$lib/stores/toast';
 
@@ -23,7 +24,12 @@
 
   onMount(() => {
     void getPreferences()
-      .then((p) => { rawDesk = (p.deskLayout ?? { version: 1, mode: 'auto', items: [] }) as DeskLayout; })
+      .then((p) => {
+        const raw = p.deskLayout as Partial<DeskLayout> | null | undefined;
+        rawDesk = raw && typeof raw.version === 'number'
+          ? (raw as DeskLayout)
+          : { version: DESK_LAYOUT_VERSION, mode: 'auto', items: [] };
+      })
       .catch(() => {});
   });
 
@@ -42,7 +48,7 @@
     if (!file.type.startsWith('image/')) { toast.error('Choisis une image'); return; }
     uploading = true;
     try {
-      const doc = await uploadDocument(file, 'desk-wallpaper', 'self');
+      const doc = await uploadDocument(file, 'desk-wallpaper', $auth?.user.id ?? 'self');
       setBackground({ type: 'image', value: doc.id });
     } catch {
       toast.error("Échec de l'upload");

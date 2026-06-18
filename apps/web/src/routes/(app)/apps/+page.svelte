@@ -58,7 +58,7 @@
             if (bgImageUrl) URL.revokeObjectURL(bgImageUrl);
             bgImageUrl = url;
           })
-          .catch(() => { bgImageUrl = null; });
+          .catch(() => { bgImageUrl = null; toast.error("Impossible de charger l'image de fond"); });
       }
     } else if (bgImageUrl) {
       URL.revokeObjectURL(bgImageUrl);
