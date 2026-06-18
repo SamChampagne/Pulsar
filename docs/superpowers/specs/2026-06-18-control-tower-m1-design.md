@@ -64,8 +64,10 @@ le rôle admin du seed obtient `analytics.read`).
 - **Attention** (tenant-scopé, borné, top ~50, trié `sortAttention`) :
   - `load_late` : `Load` non livré dont une échéance shipment (`plannedDeliveryLate`) est dépassée.
   - `freight_dispute` : `IncomingCarrierInvoice.status = DISPUTED` (ou litige ouvert).
-  - `asset_out_of_service` : `Vehicle`/`Trailer.status = OUT_OF_SERVICE`.
-  - `dock_at_risk` : `DockAppointment` non terminé dont `windowEnd < now` (SCHEDULED/CONFIRMED).
+  - `asset_out_of_service` : `Vehicle`/`Trailer.status = MAINTENANCE` (l'enum `AssetStatus` n'a
+    pas de `OUT_OF_SERVICE` ; `MAINTENANCE` est l'état hors-service réel du workflow Fleet).
+  - `dock_at_risk` : `DockAppointment` non terminé dont `windowEnd < now`
+    (`DockAppointmentStatus` réel = SCHEDULED/ARRIVED ; pas de `CONFIRMED`).
   - `pick_ready_not_dispatched` : `PickOrder.status = COMPLETED` avec `shipmentId` dont le shipment
     n'est pas dispatché (loadId null OU load non dispatché).
   - `agent_action_pending` : `ProposedAction.status = PENDING`.
