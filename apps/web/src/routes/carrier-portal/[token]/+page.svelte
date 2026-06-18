@@ -57,6 +57,7 @@
   let declineReason = $state('');
   let uploadingPod = $state<string | null>(null);
   let uploadingInvoice = $state<string | null>(null);
+  let tenderError = $state('');
   let podNotice = $state('');
   let invoiceNotice = $state('');
 
@@ -71,16 +72,18 @@
   }
 
   async function acceptTender(id: string) {
+    tenderError = '';
     try {
       await api(`/public/carrier-portal/${token}/tenders/${id}/accept`, { method: 'POST' });
       await load();
-    } catch {
-      // silently ignore — view unchanged
+    } catch (e) {
+      tenderError = e instanceof ApiError ? e.message : 'Action échouée';
     }
   }
 
   async function confirmDecline() {
     if (!declining) return;
+    tenderError = '';
     try {
       await api(`/public/carrier-portal/${token}/tenders/${declining}/decline`, {
         method: 'POST',
@@ -89,8 +92,8 @@
       declining = null;
       declineReason = '';
       await load();
-    } catch {
-      // silently ignore
+    } catch (e) {
+      tenderError = e instanceof ApiError ? e.message : 'Action échouée';
     }
   }
 
@@ -145,6 +148,7 @@
     <h1 class="mb-4 text-xl font-bold text-ink">{view.carrier.name}</h1>
 
     <!-- Carrier profile card -->
+    <div class="mb-6">
     <Card>
       <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
         <div>
@@ -165,9 +169,13 @@
         </div>
       </div>
     </Card>
+    </div>
 
     <!-- Tenders section -->
     <h2 class="mb-2 mt-6 text-base font-semibold text-ink">Appels d'offres</h2>
+    {#if tenderError}
+      <p class="mb-2 text-sm text-danger">{tenderError}</p>
+    {/if}
     {#if view.tenders.length === 0}
       <p class="text-sm text-ink-muted">Aucun appel d'offres.</p>
     {:else}

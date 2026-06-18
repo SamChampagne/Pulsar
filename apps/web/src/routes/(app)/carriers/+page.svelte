@@ -43,6 +43,9 @@
   const hasCarrierPortal = $derived(
     $auth?.tenant.enabledModules.includes(MODULE_KEYS.CARRIER_PORTAL) ?? false,
   );
+  const canManageCarrierLinks = $derived(
+    ($auth?.user?.permissions ?? []).includes('carrier-portal.links.manage'),
+  );
   let showPortalModal = $state(false);
   let portalModal = $state<{ carrierId: string; carrierName: string; url: string | null } | null>(null);
   let portalLoading = $state(false);
@@ -177,7 +180,7 @@
   <Table>
     {#snippet head()}
       <th>Code</th><th>Nom</th><th>SCAC</th><th>Contact</th><th>Téléphone</th><th>Statut</th>
-      {#if hasCarrierPortal}<th></th>{/if}
+      {#if hasCarrierPortal && canManageCarrierLinks}<th></th>{/if}
     {/snippet}
     {#snippet body()}
       {#each carriers as carrier (carrier.id)}
@@ -188,7 +191,7 @@
           <td>{carrier.contactName ?? '—'}</td>
           <td class="font-mono text-ink-muted">{carrier.phone ?? '—'}</td>
           <td><Badge tone={toneFor(carrier.status)}>{labelFor(carrier.status)}</Badge></td>
-          {#if hasCarrierPortal}
+          {#if hasCarrierPortal && canManageCarrierLinks}
             <td class="text-right">
               <Button variant="secondary" onclick={() => openPortalLink(carrier)}>Portail</Button>
             </td>
