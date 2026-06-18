@@ -75,8 +75,14 @@ export function navCatalogue(): NavDomain[] {
       home: '/apps',
       prefixes: ['/apps', '/framework', '/dashboard'],
       // Always visible; no module or perm gate.
-      sections: [],
-      // /apps and /framework are handled by the layout's deskMode; no section links needed.
+      sections: [
+        {
+          links: [
+            { href: '/dashboard', label: 'Tableau de bord' },
+            { href: '/apps', label: 'Pulsar Desk' },
+          ],
+        },
+      ],
     },
 
     // ── Transport ──────────────────────────────────────────────────────────
@@ -329,7 +335,7 @@ export function navCatalogue(): NavDomain[] {
  *   at least one perm held.
  * - Link-level: `perm` absent, or the user holds that perm.
  * - Sections with no remaining links are dropped; domains with no remaining sections are
- *   dropped UNLESS they are the `dashboard` domain (which has empty sections by design).
+ *   dropped UNLESS they are the `dashboard` domain.
  */
 export function visibleDomains(caps: NavCaps): NavDomain[] {
   return navCatalogue()
