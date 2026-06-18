@@ -9,12 +9,11 @@ import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.ser
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { DocumentsService } from '../../core/documents/documents.service';
 import { DomainEventsService } from '../../core/operating/domain-events.service';
-import { CustomerInvoicesService } from '../billing/customer-invoices.service';
 import { toDate, assertWindowCoherence } from '../transportation/planning/window-validation';
 
 export interface PortalOrderInput {
-  originLocationId: string;
-  destinationLocationId: string;
+  originLocationId?: string;
+  destinationLocationId?: string;
   customerReference?: string;
   requestedPickupEarly?: string;
   requestedPickupLate?: string;
@@ -60,7 +59,6 @@ export class PortalService {
     private readonly sequences: SequencesService,
     private readonly audit: AuditLogsService,
     private readonly config: ConfigService,
-    private readonly invoices: CustomerInvoicesService,
     private readonly documents: DocumentsService,
     private readonly domainEvents: DomainEventsService,
   ) {}
@@ -94,13 +92,17 @@ export class PortalService {
       if (!tpl) throw new NotFoundException('Template not found');
       mergedInput = {
         ...mergedInput,
-        originLocationId: input.originLocationId || tpl.originLocationId || input.originLocationId,
-        destinationLocationId: input.destinationLocationId || tpl.destinationLocationId || input.destinationLocationId,
-        mode: input.mode || (tpl.mode as TransportMode | undefined) || input.mode,
+        originLocationId: input.originLocationId ?? tpl.originLocationId ?? undefined,
+        destinationLocationId: input.destinationLocationId ?? tpl.destinationLocationId ?? undefined,
+        mode: input.mode ?? (tpl.mode as TransportMode | undefined) ?? undefined,
         totalWeightKg: input.totalWeightKg ?? tpl.totalWeightKg ?? undefined,
         palletCount: input.palletCount ?? tpl.palletCount ?? undefined,
-        notes: input.notes || tpl.notes || undefined,
+        notes: input.notes ?? tpl.notes ?? undefined,
       };
+    }
+
+    if (!mergedInput.originLocationId || !mergedInput.destinationLocationId) {
+      throw new BadRequestException('origin/destination requis (fournir directement ou via un template)');
     }
 
     await Promise.all([
@@ -120,8 +122,8 @@ export class PortalService {
         orderNumber: await this.sequences.nextNumber(customer.tenantId, 'transport-order'),
         customerId: customer.id,
         customerReference: mergedInput.customerReference,
-        originLocationId: mergedInput.originLocationId,
-        destinationLocationId: mergedInput.destinationLocationId,
+        originLocationId: mergedInput.originLocationId!,
+        destinationLocationId: mergedInput.destinationLocationId!,
         requestedPickupEarly: pickupEarly,
         requestedPickupLate: pickupLate,
         requestedDeliveryEarly: deliveryEarly,
@@ -233,18 +235,25 @@ export class PortalService {
 
   async listInvoices(token: string) {
     const customer = await this.customerByToken(token);
-    const all = await this.invoices.list(customer.tenantId, undefined, customer.id);
-    const visible: string[] = [CustomerInvoiceStatus.APPROVED, CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.PAID];
-    return all
-      .filter((inv) => visible.includes(inv.status))
-      .map(({ invoiceNumber, status, currency, totalAmount, sentAt, paidAt }) => ({
-        invoiceNumber,
-        status,
-        currency,
-        totalAmount,
-        sentAt,
-        paidAt,
-      }));
+    const enabled = await this.modulesCache.getEnabledKeys(customer.tenantId);
+    if (!enabled.has(MODULE_KEYS.BILLING)) return [];
+    const invoices = await this.prisma.customerInvoice.findMany({
+      where: {
+        tenantId: customer.tenantId,
+        customerId: customer.id,
+        status: { in: [CustomerInvoiceStatus.APPROVED, CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.PAID] },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return invoices.map(({ invoiceNumber, status, currency, totalAmount, sentAt, paidAt }) => ({
+      invoiceNumber,
+      status,
+      currency,
+      totalAmount,
+      sentAt,
+      paidAt,
+    }));
   }
 
   async listShipmentDocuments(token: string, shipmentId: string) {
@@ -337,7 +346,10 @@ export class PortalService {
       where: { id, tenantId: customer.tenantId, customerId: customer.id },
     });
     if (!template) throw new NotFoundException('Template not found');
-    await this.prisma.orderTemplate.delete({ where: { id } });
+    const { count } = await this.prisma.orderTemplate.deleteMany({
+      where: { id, tenantId: customer.tenantId, customerId: customer.id },
+    });
+    if (count === 0) throw new NotFoundException('Template not found');
     await this.audit.log({
       tenantId: customer.tenantId,
       action: AuditAction.DELETE,
@@ -386,6 +398,14 @@ export class PortalService {
       })
       .catch(() => { /* best-effort */ });
 
+    void this.audit.log({
+      tenantId: customer.tenantId,
+      action: AuditAction.CREATE,
+      entityType: 'change-request',
+      entityId: dto.shipmentId ?? dto.orderId ?? '',
+      after: { kind: dto.kind, note: dto.note, customer: customer.name },
+    }).catch(() => { /* best-effort */ });
+
     return { ok: true };
   }
 
@@ -413,6 +433,7 @@ export class PortalService {
       action: AuditAction.UPDATE,
       entityType: 'tenant-branding',
       entityId: tenantId,
+      before: currentBranding,
       after: newBranding,
     });
     return newBranding;

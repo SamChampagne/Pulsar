@@ -14,11 +14,13 @@ import { PortalService } from './portal.service';
 import type { CreateOrderTemplateInput, PortalChangeRequestInput } from './portal.service';
 
 class PortalOrderDto {
+  @IsOptional()
   @IsString()
-  originLocationId!: string;
+  originLocationId?: string;
 
+  @IsOptional()
   @IsString()
-  destinationLocationId!: string;
+  destinationLocationId?: string;
 
   @IsOptional()
   @IsString()
