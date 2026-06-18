@@ -1,12 +1,14 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { onDestroy } from 'svelte';
   import { auth } from '$lib/stores/auth';
   import { visibleDomains } from '$lib/modules/navigation';
   import { MODULE_UNIVERSES } from '$lib/modules/universe';
   import { deskSearch } from '$lib/stores/desk';
-  import { getPreferences } from '$lib/api/preferences';
-  import { defaultDeskLayout, reconcileDeskLayout } from '@pulsar/shared';
+  import { getPreferences, putDeskLayout } from '$lib/api/preferences';
+  import { defaultDeskLayout, reconcileDeskLayout, FRAMEWORK_FOLDER_ID } from '@pulsar/shared';
   import type { DeskLayout, DeskItem, DeskFolderChild } from '@pulsar/shared';
+  import { toast } from '$lib/stores/toast';
   import DeskIcon from '$lib/components/desk/DeskIcon.svelte';
   import DeskFolderTile from '$lib/components/desk/DeskFolderTile.svelte';
   import FolderOverlay from '$lib/components/desk/FolderOverlay.svelte';
@@ -61,8 +63,25 @@
   // ---------------------------------------------------------------------------
   let editing = $state(false);
 
-  /** Stub — wired up in a later task. */
-  function persist() { /* wired in a later task */ }
+  // ---------------------------------------------------------------------------
+  // Persistence — debounced PUT, flushed on unmount
+  // ---------------------------------------------------------------------------
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function persist() {
+    if (!loaded) return;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      void putDeskLayout(layout).catch(() => toast.error('Échec de la sauvegarde du bureau'));
+    }, 500);
+  }
+
+  onDestroy(() => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      void putDeskLayout(layout).catch(() => {});
+    }
+  });
 
   function enterEditMode() {
     deskSearch.set('');
@@ -457,5 +476,31 @@
         />
       {/if}
     {/each}
+    {#snippet footer()}
+      {#if openFolder.id === FRAMEWORK_FOLDER_ID}
+        <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            class="rounded-lg border border-edge px-3 py-1.5 text-sm text-ink-faint transition hover:border-accent hover:text-ink"
+            onclick={() => { editing = true; closeFolder(); }}
+          >
+            Gérer les liens rapides
+          </button>
+          <button
+            type="button"
+            class="rounded-lg border border-edge px-3 py-1.5 text-sm text-ink-faint transition hover:border-red-400 hover:text-red-600"
+            onclick={() => {
+              if (confirm('Réinitialiser la disposition du bureau ?')) {
+                layout = defaultDeskLayout(domains);
+                persist();
+                closeFolder();
+              }
+            }}
+          >
+            Réinitialiser la disposition
+          </button>
+        </div>
+      {/if}
+    {/snippet}
   </FolderOverlay>
 {/if}
