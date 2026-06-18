@@ -172,3 +172,52 @@ describe('cross-module policies', () => {
     expect(specs[0].title).toContain('TRL-9');
   });
 });
+
+describe('driver.exception policy', () => {
+  it('maps driver.exception DAMAGE to a CRITICAL DRIVER_EXCEPTION task', () => {
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.DRIVER_EXCEPTION,
+      payload: {
+        loadId: 'l1',
+        loadNumber: 'LD-42',
+        kind: 'DAMAGE',
+        note: 'Front bumper dented',
+        bucket: '2026-06-18T14:00',
+      },
+    });
+    expect(specs).toHaveLength(1);
+    expect(specs[0].type).toBe(OperationalTaskType.EXCEPTION);
+    expect(specs[0].category).toBe('DRIVER_EXCEPTION');
+    expect(specs[0].severity).toBe('CRITICAL');
+    expect(specs[0].subjectType).toBe('load');
+    expect(specs[0].subjectId).toBe('l1');
+    expect(specs[0].title).toBe('Exception conducteur — DAMAGE (load LD-42)');
+    expect(specs[0].dedupKey).toBe('driver-exception:l1:DAMAGE:2026-06-18T14:00');
+    expect(specs[0].assignHint).toBe('AUTO');
+  });
+
+  it('maps driver.exception REFUSED to CRITICAL severity', () => {
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.DRIVER_EXCEPTION,
+      payload: { loadId: 'l2', loadNumber: 'LD-99', kind: 'REFUSED', note: 'Customer absent', bucket: 'b1' },
+    });
+    expect(specs[0].severity).toBe('CRITICAL');
+  });
+
+  it('maps driver.exception DELAY to WARNING severity', () => {
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.DRIVER_EXCEPTION,
+      payload: { loadId: 'l3', loadNumber: 'LD-7', kind: 'DELAY', note: 'Traffic jam', bucket: 'b2' },
+    });
+    expect(specs[0].severity).toBe('WARNING');
+    expect(specs[0].dedupKey).toBe('driver-exception:l3:DELAY:b2');
+  });
+
+  it('maps driver.exception OTHER to WARNING severity', () => {
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.DRIVER_EXCEPTION,
+      payload: { loadId: 'l4', loadNumber: 'LD-3', kind: 'OTHER', note: 'Weather', bucket: 'b3' },
+    });
+    expect(specs[0].severity).toBe('WARNING');
+  });
+});

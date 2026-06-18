@@ -15,6 +15,7 @@ export const DOMAIN_EVENT_TYPES = {
   YARD_VISIT_CHECKED_IN: 'yard.visit.checked-in',
   YARD_VISIT_DETENTION: 'yard.visit.detention',
   YARD_APPOINTMENT_LATE: 'yard.appointment.late',
+  DRIVER_EXCEPTION: 'driver.exception',
 } as const;
 
 export interface DomainEventInput {
@@ -272,6 +273,31 @@ const POLICIES: Policy[] = [
           dedupKey: `YARD_APPT_LATE:${appointmentId}`,
           details: { ...e.payload },
           assignHint: 'AUTO' as const,
+        },
+      ];
+    },
+  },
+  {
+    // Driver on-road exception: damage, delay, refusal, or other incident.
+    eventType: DOMAIN_EVENT_TYPES.DRIVER_EXCEPTION,
+    produce: (e) => {
+      const loadId = str(e.payload.loadId);
+      const loadNumber = str(e.payload.loadNumber);
+      const kind = str(e.payload.kind);
+      // Stable time bucket from caller (ISO minute or event timestamp) for dedup.
+      const bucket = str(e.payload.bucket);
+      const criticalKinds = ['DAMAGE', 'REFUSED'];
+      return [
+        {
+          type: OperationalTaskType.EXCEPTION,
+          category: 'DRIVER_EXCEPTION',
+          severity: (criticalKinds.includes(kind) ? 'CRITICAL' : 'WARNING') as Severity,
+          title: `Exception conducteur — ${kind} (load ${loadNumber || loadId})`,
+          subjectType: 'load',
+          subjectId: loadId,
+          dedupKey: `driver-exception:${loadId}:${kind}:${bucket}`,
+          details: { ...e.payload },
+          assignHint: 'AUTO' as AssignHint,
         },
       ];
     },
