@@ -16,6 +16,7 @@ export const DOMAIN_EVENT_TYPES = {
   YARD_VISIT_DETENTION: 'yard.visit.detention',
   YARD_APPOINTMENT_LATE: 'yard.appointment.late',
   DRIVER_EXCEPTION: 'driver.exception',
+  PORTAL_CHANGE_REQUEST: 'portal.change-request',
 } as const;
 
 export interface DomainEventInput {
@@ -47,6 +48,8 @@ interface Policy {
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+const obj = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
 /** A delayed stop escalates to CRITICAL severity beyond this many minutes late. */
 const DELAY_CRITICAL_MINUTES = 60;
@@ -298,6 +301,29 @@ const POLICIES: Policy[] = [
           dedupKey: `driver-exception:${loadId}:${kind}:${bucket}`,
           details: { ...e.payload },
           assignHint: 'AUTO' as AssignHint,
+        },
+      ];
+    },
+  },
+  {
+    // Customer Portal: a client submitted a change request (date, address, cancel, other).
+    eventType: DOMAIN_EVENT_TYPES.PORTAL_CHANGE_REQUEST,
+    produce: (e) => {
+      const subject = obj(e.payload.subject);
+      const kind = str(e.payload.kind);
+      // Stable time bucket from caller for dedup (ISO minute or event timestamp).
+      const bucket = str(e.payload.bucket);
+      return [
+        {
+          type: OperationalTaskType.EXCEPTION,
+          category: 'CHANGE_REQUEST',
+          severity: 'WARNING' as Severity,
+          title: `Demande de changement client — ${kind}`,
+          subjectType: str(subject.type),
+          subjectId: str(subject.id),
+          dedupKey: `portal-change:${str(subject.id)}:${kind}:${bucket}`,
+          details: { ...e.payload },
+          assignHint: 'UNASSIGNED' as AssignHint,
         },
       ];
     },
