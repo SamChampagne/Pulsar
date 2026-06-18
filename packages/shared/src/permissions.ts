@@ -74,6 +74,9 @@ export const PERMISSIONS = {
     READ: 'yard.read',
     MANAGE: 'yard.manage',
   },
+  ANALYTICS: {
+    READ: 'analytics.read',
+  },
 } as const;
 
 export type PermissionKey =
@@ -83,7 +86,8 @@ export type PermissionKey =
   | (typeof PERMISSIONS.BILLING)[keyof typeof PERMISSIONS.BILLING]
   | (typeof PERMISSIONS.FLEET)[keyof typeof PERMISSIONS.FLEET]
   | (typeof PERMISSIONS.WMS)[keyof typeof PERMISSIONS.WMS]
-  | (typeof PERMISSIONS.YARD)[keyof typeof PERMISSIONS.YARD];
+  | (typeof PERMISSIONS.YARD)[keyof typeof PERMISSIONS.YARD]
+  | (typeof PERMISSIONS.ANALYTICS)[keyof typeof PERMISSIONS.ANALYTICS];
 
 export interface PermissionDescriptor {
   key: PermissionKey;
@@ -124,6 +128,11 @@ const wms = (key: PermissionKey, description: string): PermissionDescriptor => (
 const yard = (key: PermissionKey, description: string): PermissionDescriptor => ({
   key,
   module: MODULE_KEYS.YARD,
+  description,
+});
+const analytics = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.ANALYTICS,
   description,
 });
 
@@ -182,6 +191,7 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   wms(PERMISSIONS.WMS.MANAGE, 'Manage warehouse items, bins, receipts and pick orders'),
   yard(PERMISSIONS.YARD.READ, 'View yard spots, visits and dock appointments'),
   yard(PERMISSIONS.YARD.MANAGE, 'Manage yard spots, gate check-in/out, moves and appointments'),
+  analytics(PERMISSIONS.ANALYTICS.READ, 'View the operational Control Tower and analytics'),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);

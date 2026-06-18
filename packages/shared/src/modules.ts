@@ -74,7 +74,7 @@ export const MODULE_CATALOG: ModuleDescriptor[] = [
     name: 'Analytics',
     description: 'Operational KPIs, carrier scorecards, cost analysis.',
     isCore: false,
-    available: false,
+    available: true,
   },
   {
     key: MODULE_KEYS.BILLING,
