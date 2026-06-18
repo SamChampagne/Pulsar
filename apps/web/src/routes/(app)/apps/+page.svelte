@@ -77,9 +77,19 @@
   // ---------------------------------------------------------------------------
   let dragIndex = $state<number | null>(null);
   let hoverIndex = $state<number | null>(null);
+  /** Index of the tile currently showing the "folder-intent" dwell highlight. */
+  let folderTargetIndex = $state<number | null>(null);
 
-  function onpick(i: number) { dragIndex = i; }
-  function onhover(i: number) { hoverIndex = i; }
+  function onpick(i: number) {
+    dragIndex = i;
+    hoverIndex = null;
+    folderTargetIndex = null;
+  }
+
+  function onhover(over: number | null, folderIntent: boolean) {
+    hoverIndex = over;
+    folderTargetIndex = folderIntent ? over : null;
+  }
 
   function toChild(item: Extract<DeskItem, { type: 'module' | 'link' }>): DeskFolderChild {
     return item.type === 'module'
@@ -87,9 +97,10 @@
       : { type: 'link' as const, href: item.href, label: item.label, icon: item.icon };
   }
 
-  function ondrop(from: number, over: number | null) {
+  function ondrop(from: number, over: number | null, folderIntent: boolean) {
     dragIndex = null;
     hoverIndex = null;
+    folderTargetIndex = null;
     if (over === null || over === from) return;
 
     const items = [...layout.items] as DeskItem[];
@@ -97,8 +108,8 @@
     const target = items[over];
     if (!dragged || !target) return;
 
-    if (dragged.type !== 'folder' && target.type !== 'folder') {
-      // Drop module/link onto module/link → create a folder
+    if (folderIntent && dragged.type !== 'folder' && target.type !== 'folder') {
+      // Dwell on module/link → create a folder
       const folder: Extract<DeskItem, { type: 'folder' }> = {
         type: 'folder',
         id: (typeof crypto !== 'undefined' && crypto.randomUUID)
@@ -111,8 +122,8 @@
       const targetIdxAfter = from < over ? over - 1 : over;
       items.splice(targetIdxAfter, 1, folder);
       layout = { ...layout, items };
-    } else if (target.type === 'folder' && dragged.type !== 'folder') {
-      // Drop module/link into an existing folder
+    } else if (folderIntent && target.type === 'folder' && dragged.type !== 'folder') {
+      // Dwell on an existing folder → append into it
       const folderCopy: Extract<DeskItem, { type: 'folder' }> = {
         ...target,
         items: [...target.items, toChild(dragged as Extract<DeskItem, { type: 'module' | 'link' }>)],
@@ -122,7 +133,7 @@
       items.splice(targetIdxAfter, 1, folderCopy);
       layout = { ...layout, items };
     } else {
-      // Plain reorder (folder↔folder or folder moved to a position)
+      // Default: plain reorder (no dwell, or folder-to-folder)
       items.splice(over, 0, items.splice(from, 1)[0] as DeskItem);
       layout = { ...layout, items };
     }
@@ -241,7 +252,14 @@
           <div
             data-desk-index={i}
             style={editing ? 'touch-action: none;' : ''}
-            class={editing && hoverIndex === i && dragIndex !== null && dragIndex !== i ? 'opacity-60 scale-95 transition-transform duration-100' : ''}
+            class={[
+              editing && hoverIndex === i && dragIndex !== null && dragIndex !== i && folderTargetIndex !== i
+                ? 'opacity-60 scale-95 transition-transform duration-100'
+                : '',
+              editing && folderTargetIndex === i && dragIndex !== null
+                ? 'ring-2 ring-accent scale-105 transition-transform duration-100'
+                : '',
+            ].filter(Boolean).join(' ')}
             use:gridDrag={{ index: i, enabled: editing, onpick, onhover, ondrop }}
           >
             {#if item.type === 'module'}
