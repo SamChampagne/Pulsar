@@ -2395,5 +2395,6 @@ model Award {
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
   rfpLane RfpLane @relation(fields: [rfpLaneId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId])
   @@map("awards")
 }
