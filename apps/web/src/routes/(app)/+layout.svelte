@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { fade } from 'svelte/transition';
   import { PERMISSIONS } from '@pulsar/shared';
   import { api } from '$lib/api/client';
   import { auth, clearAuth, getRefreshToken } from '$lib/stores/auth';
@@ -118,6 +119,9 @@
     String(page.url.pathname) === '/apps' || String(page.url.pathname) === '/framework',
   );
 
+  const reduceMotion =
+    typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
   function linkActive(href: string): boolean {
     return page.url.pathname === href || page.url.pathname.startsWith(href + '/');
   }
@@ -219,7 +223,13 @@
             </button>
           </div>
         </header>
-        <main class="min-w-0 flex-1 overflow-x-hidden">{@render children()}</main>
+        <main class="min-w-0 flex-1 overflow-x-hidden">
+          {#key page.url.pathname}
+            <div in:fade={{ duration: reduceMotion ? 0 : 120 }}>
+              {@render children()}
+            </div>
+          {/key}
+        </main>
       </div>
     {:else}
       <!-- Module shell — once an app is opened, show ONLY that selected universe. Global app switching lives on /apps. -->
@@ -332,7 +342,11 @@
         class="min-w-0 flex-1 overflow-x-hidden p-6"
         style={`background: radial-gradient(circle at top left, rgb(${activeUniverse.rgb} / 0.10), transparent 360px), var(--color-canvas);`}
       >
-        {@render children()}
+        {#key page.url.pathname}
+          <div in:fade={{ duration: reduceMotion ? 0 : 120 }}>
+            {@render children()}
+          </div>
+        {/key}
       </main>
     {/if}
 
