@@ -107,6 +107,21 @@
     }
   }
 
+  function statusLabel(status: string): string {
+    switch (status) {
+      case 'OPEN':
+        return 'Ouvert';
+      case 'PICKED':
+        return 'Prélevé';
+      case 'COMPLETED':
+        return 'Complété';
+      case 'CANCELLED':
+        return 'Annulé';
+      default:
+        return status;
+    }
+  }
+
   function locName(id: string): string {
     const l = warehouses.find((w) => w.id === id);
     return l ? `${l.code} — ${l.name}` : id;
@@ -237,19 +252,13 @@
 {:else if order}
   <PageHeader title={`Prélèvement ${order.number}`} subtitle={locName(order.locationId)}>
     {#snippet actions()}
-      <Badge tone={statusTone(order!.status)}>{order!.status}</Badge>
+      <Badge tone={statusTone(order!.status)}>{statusLabel(order!.status)}</Badge>
       {#if order!.status === 'OPEN'}
         <Button onclick={openAddLine}>Ajouter une ligne</Button>
-        <Button
-          onclick={completeOrder}
-          disabled={order!.lines.length === 0}
-        >Compléter</Button>
+        <Button onclick={completeOrder} disabled={order!.lines.length === 0}>Compléter</Button>
         <Button variant="danger" onclick={cancelOrder}>Annuler</Button>
       {:else if order!.status === 'PICKED'}
-        <Button
-          onclick={completeOrder}
-          disabled={order!.lines.length === 0}
-        >Compléter</Button>
+        <Button onclick={completeOrder} disabled={order!.lines.length === 0}>Compléter</Button>
         <Button variant="danger" onclick={cancelOrder}>Annuler</Button>
       {/if}
     {/snippet}
@@ -322,7 +331,12 @@
     </Field>
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { addLineOpen = false; }}>Annuler</Button>
+    <Button
+      variant="secondary"
+      onclick={() => {
+        addLineOpen = false;
+      }}>Annuler</Button
+    >
     <Button loading={lineSaving} onclick={addLine}>Ajouter</Button>
   {/snippet}
 </Modal>

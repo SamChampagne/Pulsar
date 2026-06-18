@@ -290,7 +290,7 @@ export function navCatalogue(): NavDomain[] {
             { href: '/connect', label: 'Connect home' },
             { href: '/integrations', label: 'Connecteurs' },
             { href: '/settings/api-keys', label: 'Clés API' },
-            { href: '/agents', label: 'MCP / agents' },
+            { href: '/agents', label: 'MCP / agents', perm: PERMISSIONS.CORE.AGENTS_READ },
           ],
         },
       ],

@@ -5,12 +5,13 @@
   import { Cuboid, Search, Settings, Database, Users, Wrench } from 'lucide-svelte';
   import type { ComponentType } from 'svelte';
 
-  const systemShortcuts: Array<{ key: string; label: string; href: string; icon: ComponentType }> = [
-    { key: 'settings', label: 'Réglages',    href: '/settings/users',        icon: Settings },
-    { key: 'data',     label: 'Données',     href: '/settings/modules',      icon: Database },
-    { key: 'users',    label: 'Utilisateurs',href: '/settings/users',        icon: Users    },
-    { key: 'automation',label: 'Automation', href: '/settings/agent-runtime',icon: Wrench   },
-  ];
+  const systemShortcuts: Array<{ key: string; label: string; href: string; icon: ComponentType }> =
+    [
+      { key: 'settings', label: 'Réglages', href: '/settings/users', icon: Settings },
+      { key: 'data', label: 'Données', href: '/settings/modules', icon: Database },
+      { key: 'users', label: 'Utilisateurs', href: '/settings/users', icon: Users },
+      { key: 'automation', label: 'Automation', href: '/settings/agent-runtime', icon: Wrench },
+    ];
 
   // Build caps from auth store — mirrors +layout.svelte exactly.
   const domains = $derived(
@@ -18,16 +19,6 @@
       enabledModules: ($auth?.tenant.enabledModules ?? []) as string[],
       can: (p) => (($auth?.user.permissions ?? []) as string[]).includes(p),
     }),
-  );
-
-  // Flatten all links per domain for searching.
-  interface FlatLink { domainKey: string; domainLabel: string; href: string; label: string }
-  const allLinks = $derived<FlatLink[]>(
-    domains.flatMap((d) =>
-      d.sections.flatMap((s) =>
-        s.links.map((l) => ({ domainKey: d.key, domainLabel: d.label, href: l.href, label: l.label })),
-      ),
-    ),
   );
 
   let query = $state('');
@@ -68,7 +59,9 @@
     </div>
 
     <!-- Search -->
-    <div class="mx-auto mb-10 flex max-w-sm items-center gap-2 rounded-xl border border-edge bg-white px-3 py-2 shadow-sm ring-1 ring-black/5 focus-within:ring-accent">
+    <div
+      class="mx-auto mb-10 flex max-w-sm items-center gap-2 rounded-xl border border-edge bg-white px-3 py-2 shadow-sm ring-1 ring-black/5 focus-within:ring-accent"
+    >
       <Search class="size-4 shrink-0 text-ink-faint" />
       <input
         class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-faint"
@@ -81,8 +74,8 @@
           type="button"
           class="rounded-md px-1 text-xs text-ink-faint hover:text-ink"
           onclick={() => (query = '')}
-          aria-label="Effacer la recherche"
-        >✕</button>
+          aria-label="Effacer la recherche">✕</button
+        >
       {/if}
     </div>
 
@@ -107,7 +100,9 @@
                 </div>
                 <h2 class="text-sm font-semibold text-ink">{domain.label}</h2>
               </div>
-              <div class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6">
+              <div
+                class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6"
+              >
                 <!-- Framework folder (special) -->
                 <div class="relative flex w-24 flex-col items-center text-center">
                   <button
@@ -117,8 +112,12 @@
                     aria-expanded={frameworkOpen}
                     onclick={() => (frameworkOpen = !frameworkOpen)}
                   >
-                    <span class="relative grid size-14 place-items-center rounded-[18px] bg-[#737985] text-white shadow-sm ring-1 ring-black/5 transition duration-150 group-hover:-translate-y-1 group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-accent">
-                      <span class="absolute inset-1 grid grid-cols-2 gap-1 rounded-[14px] bg-white/10 p-1">
+                    <span
+                      class="relative grid size-14 place-items-center rounded-[18px] bg-[#737985] text-white shadow-sm ring-1 ring-black/5 transition duration-150 group-hover:-translate-y-1 group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-accent"
+                    >
+                      <span
+                        class="absolute inset-1 grid grid-cols-2 gap-1 rounded-[14px] bg-white/10 p-1"
+                      >
                         <span class="rounded-md bg-white/35"></span>
                         <span class="rounded-md bg-white/20"></span>
                         <span class="rounded-md bg-white/20"></span>
@@ -126,25 +125,45 @@
                       </span>
                       <Cuboid class="relative size-6" strokeWidth={2.2} />
                     </span>
-                    <span class="mt-3 line-clamp-2 text-sm font-semibold leading-tight text-ink group-hover:text-accent">Framework</span>
+                    <span
+                      class="mt-3 line-clamp-2 text-sm font-semibold leading-tight text-ink group-hover:text-accent"
+                      >Framework</span
+                    >
                     <span class="mt-1 text-xs leading-tight text-ink-faint">Dossier</span>
                   </button>
 
                   {#if frameworkOpen}
-                    <div class="absolute left-1/2 top-[5.25rem] z-30 w-[min(430px,calc(100vw-2rem))] -translate-x-1/2 rounded-[30px] border border-edge bg-white/96 p-4 text-left shadow-pop backdrop-blur">
+                    <div
+                      class="absolute left-1/2 top-[5.25rem] z-30 w-[min(430px,calc(100vw-2rem))] -translate-x-1/2 rounded-[30px] border border-edge bg-white/96 p-4 text-left shadow-pop backdrop-blur"
+                    >
                       <div class="mb-4 flex items-center justify-between gap-3">
                         <div>
                           <h2 class="text-sm font-semibold text-ink">Framework</h2>
-                          <p class="mt-1 text-xs leading-5 text-ink-muted">Réglages, données, utilisateurs, automation.</p>
+                          <p class="mt-1 text-xs leading-5 text-ink-muted">
+                            Réglages, données, utilisateurs, automation.
+                          </p>
                         </div>
-                        <button type="button" class="rounded-full bg-surface-muted px-2 py-1 text-xs font-semibold text-ink-muted hover:text-ink" onclick={() => (frameworkOpen = false)}>Fermer</button>
+                        <button
+                          type="button"
+                          class="rounded-full bg-surface-muted px-2 py-1 text-xs font-semibold text-ink-muted hover:text-ink"
+                          onclick={() => (frameworkOpen = false)}>Fermer</button
+                        >
                       </div>
                       <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
                         {#each systemShortcuts as shortcut (shortcut.key)}
                           {@const ShortcutIcon = shortcut.icon}
-                          <a href={shortcut.href} class="group/item flex flex-col items-center rounded-2xl bg-[#f3f3f2] p-3 text-center transition hover:-translate-y-0.5 hover:bg-[#ececea]">
-                            <span class="flex size-10 items-center justify-center rounded-2xl bg-[#737985] text-white shadow-sm"><ShortcutIcon class="size-5" /></span>
-                            <span class="mt-2 text-xs font-semibold leading-tight text-ink-muted group-hover/item:text-ink">{shortcut.label}</span>
+                          <a
+                            href={shortcut.href}
+                            class="group/item flex flex-col items-center rounded-2xl bg-[#f3f3f2] p-3 text-center transition hover:-translate-y-0.5 hover:bg-[#ececea]"
+                          >
+                            <span
+                              class="flex size-10 items-center justify-center rounded-2xl bg-[#737985] text-white shadow-sm"
+                              ><ShortcutIcon class="size-5" /></span
+                            >
+                            <span
+                              class="mt-2 text-xs font-semibold leading-tight text-ink-muted group-hover/item:text-ink"
+                              >{shortcut.label}</span
+                            >
                           </a>
                         {/each}
                       </div>
@@ -165,7 +184,10 @@
                     >
                       <Icon class="size-7" strokeWidth={2.15} />
                     </span>
-                    <span class="mt-3 line-clamp-2 text-sm font-semibold leading-tight text-ink group-hover:text-accent">{link.label}</span>
+                    <span
+                      class="mt-3 line-clamp-2 text-sm font-semibold leading-tight text-ink group-hover:text-accent"
+                      >{link.label}</span
+                    >
                   </a>
                 {/each}
               </div>
@@ -182,7 +204,9 @@
                 </div>
                 <h2 class="text-sm font-semibold text-ink">{domain.label}</h2>
               </div>
-              <div class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6">
+              <div
+                class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6"
+              >
                 {#each allDomainLinks as link (link.href)}
                   <a
                     href={link.href}
@@ -195,7 +219,10 @@
                     >
                       <Icon class="size-7" strokeWidth={2.15} />
                     </span>
-                    <span class="mt-3 line-clamp-2 text-sm font-semibold leading-tight text-ink group-hover:text-accent">{link.label}</span>
+                    <span
+                      class="mt-3 line-clamp-2 text-sm font-semibold leading-tight text-ink group-hover:text-accent"
+                      >{link.label}</span
+                    >
                   </a>
                 {/each}
               </div>

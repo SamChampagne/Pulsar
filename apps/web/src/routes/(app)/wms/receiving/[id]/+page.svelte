@@ -90,6 +90,19 @@
     }
   }
 
+  function statusLabel(status: string): string {
+    switch (status) {
+      case 'DRAFT':
+        return 'Brouillon';
+      case 'POSTED':
+        return 'Validée';
+      case 'CANCELLED':
+        return 'Annulée';
+      default:
+        return status;
+    }
+  }
+
   function locName(id: string): string {
     const l = warehouses.find((w) => w.id === id);
     return l ? `${l.code} — ${l.name}` : id;
@@ -200,13 +213,10 @@
 {:else if receipt}
   <PageHeader title={`Réception ${receipt.number}`} subtitle={locName(receipt.locationId)}>
     {#snippet actions()}
-      <Badge tone={statusTone(receipt!.status)}>{receipt!.status}</Badge>
+      <Badge tone={statusTone(receipt!.status)}>{statusLabel(receipt!.status)}</Badge>
       {#if receipt!.status === 'DRAFT'}
         <Button onclick={openAddLine}>Ajouter une ligne</Button>
-        <Button
-          onclick={postReceipt}
-          disabled={receipt!.lines.length === 0}
-        >Poster</Button>
+        <Button onclick={postReceipt} disabled={receipt!.lines.length === 0}>Poster</Button>
         <Button variant="danger" onclick={cancelReceipt}>Annuler</Button>
       {/if}
     {/snippet}
@@ -271,7 +281,12 @@
     </Field>
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { addLineOpen = false; }}>Annuler</Button>
+    <Button
+      variant="secondary"
+      onclick={() => {
+        addLineOpen = false;
+      }}>Annuler</Button
+    >
     <Button loading={lineSaving} onclick={addLine}>Ajouter</Button>
   {/snippet}
 </Modal>

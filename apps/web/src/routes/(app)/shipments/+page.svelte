@@ -40,7 +40,8 @@
 
   const fmtWindow = (early: string | null, late?: string | null) =>
     early
-      ? new Date(early).toLocaleDateString() + (late ? ' → ' + new Date(late).toLocaleDateString() : '')
+      ? new Date(early).toLocaleDateString() +
+        (late ? ' → ' + new Date(late).toLocaleDateString() : '')
       : '—';
 
   interface LoadOption {
@@ -86,9 +87,21 @@
 
   // — Map view (live tracking, reuses the loads active-map payload) —
   interface MapLoad {
-    id: string; loadNumber: string; status: string; carrier: string | null; isLate: boolean;
+    id: string;
+    loadNumber: string;
+    status: string;
+    carrier: string | null;
+    isLate: boolean;
     lastPosition: { latitude: number; longitude: number; occurredAt: string } | null;
-    stops: { sequence: number; type: string; status: string; name: string; city: string; latitude: number | null; longitude: number | null }[];
+    stops: {
+      sequence: number;
+      type: string;
+      status: string;
+      name: string;
+      city: string;
+      latitude: number | null;
+      longitude: number | null;
+    }[];
   }
   let mapLoads = $state<MapLoad[]>([]);
   let loadingMap = $state(false);
@@ -166,7 +179,10 @@
     try {
       let loadId = force ? pendingLoadId : selectedLoadId;
       if (!loadId) {
-        const created = await api<LoadOption>('/transportation/loads', { method: 'POST', body: {} });
+        const created = await api<LoadOption>('/transportation/loads', {
+          method: 'POST',
+          body: {},
+        });
         loadId = created.id;
       }
       const resp = await api<{ modeWarning?: { loadMode: string; orderMode: string } }>(
@@ -178,7 +194,9 @@
       );
       if (resp?.modeWarning) {
         const { loadMode, orderMode } = resp.modeWarning;
-        toast.error(`Mode incompatible : load ${loadMode} / commande ${orderMode} — assigné quand même`);
+        toast.error(
+          `Mode incompatible : load ${loadMode} / commande ${orderMode} — assigné quand même`,
+        );
       } else {
         toast.success(`${assigning.shipmentNumber} assigné au load`);
       }
@@ -254,11 +272,18 @@
 
   const shipmentScope = $derived(view === 'kanban' ? kanbanRows : shipments);
   const unassignedCount = $derived(shipmentScope.filter((s) => !s.load).length);
-  const inMotionCount = $derived(shipmentScope.filter((s) => ['DISPATCHED', 'IN_TRANSIT'].includes(s.status)).length);
-  const deliveredCount = $derived(shipmentScope.filter((s) => ['DELIVERED', 'CLOSED'].includes(s.status)).length);
+  const inMotionCount = $derived(
+    shipmentScope.filter((s) => ['DISPATCHED', 'IN_TRANSIT'].includes(s.status)).length,
+  );
+  const deliveredCount = $derived(
+    shipmentScope.filter((s) => ['DELIVERED', 'CLOSED'].includes(s.status)).length,
+  );
 
   // Reset to page 1 whenever the filter changes.
-  $effect(() => { statusFilter; page = 1; });
+  $effect(() => {
+    statusFilter;
+    page = 1;
+  });
 
   $effect(() => {
     error = '';
@@ -266,8 +291,6 @@
     else if (view === 'kanban') void loadKanban();
     else void loadMap();
   });
-
-
 </script>
 
 <PageHeader
@@ -279,9 +302,23 @@
 <ErrorNotice message={error} onretry={refresh} />
 
 <div class="mb-4 grid gap-3 md:grid-cols-3">
-  <Card><div class="text-xl font-bold text-ink">{unassignedCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Unassigned</div><p class="mt-1 text-xs text-ink-faint">Needs a load before dispatch can move.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{inMotionCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">In motion</div><p class="mt-1 text-xs text-ink-faint">Dispatched or currently in transit.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{deliveredCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Delivered / closed</div><p class="mt-1 text-xs text-ink-faint">Ready for proof, billing, or audit handoff.</p></Card>
+  <Card
+    ><div class="text-xl font-bold text-ink">{unassignedCount}</div>
+    <div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Unassigned</div>
+    <p class="mt-1 text-xs text-ink-faint">Needs a load before dispatch can move.</p></Card
+  >
+  <Card
+    ><div class="text-xl font-bold text-ink">{inMotionCount}</div>
+    <div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">In motion</div>
+    <p class="mt-1 text-xs text-ink-faint">Dispatched or currently in transit.</p></Card
+  >
+  <Card
+    ><div class="text-xl font-bold text-ink">{deliveredCount}</div>
+    <div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+      Delivered / closed
+    </div>
+    <p class="mt-1 text-xs text-ink-faint">Ready for proof, billing, or audit handoff.</p></Card
+  >
 </div>
 
 <div class="mb-3 flex flex-wrap items-center gap-3">
@@ -314,15 +351,21 @@
           <tr class="cursor-pointer" onclick={() => (selected = row)}>
             <td class="font-semibold">{row.shipmentNumber}</td>
             <td>
-              <a href={`/transport-orders/${row.transportOrder.id}`} class="font-semibold text-accent hover:underline"
-                 onclick={(e) => e.stopPropagation()}>{row.transportOrder.orderNumber}</a>
+              <a
+                href={`/transport-orders/${row.transportOrder.id}`}
+                class="font-semibold text-accent hover:underline"
+                onclick={(e) => e.stopPropagation()}>{row.transportOrder.orderNumber}</a
+              >
             </td>
             <td>{row.originLocation.city} → {row.destinationLocation.city}</td>
             <td class="text-sm text-ink-muted">{fmtDims(row)}</td>
             <td>
               {#if row.load}
-                <a href={`/loads/${row.load.id}`} class="font-semibold text-accent hover:underline"
-                   onclick={(e) => e.stopPropagation()}>{row.load.loadNumber}</a>
+                <a
+                  href={`/loads/${row.load.id}`}
+                  class="font-semibold text-accent hover:underline"
+                  onclick={(e) => e.stopPropagation()}>{row.load.loadNumber}</a
+                >
               {:else}
                 —
               {/if}
@@ -330,20 +373,44 @@
             <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
           </tr>
         {:else}
-          <tr><td colspan="6"><EmptyState title="Aucun shipment à planifier" message="Planifiez une commande confirmée pour créer un shipment, puis assignez-le à un load depuis Dispatch.">
-            {#snippet children()}<Button href="/transport-orders">Voir les commandes</Button>{/snippet}
-          </EmptyState></td></tr>
+          <tr
+            ><td colspan="6"
+              ><EmptyState
+                title="Aucun shipment à planifier"
+                message="Planifiez une commande confirmée pour créer un shipment, puis assignez-le à un load depuis Dispatch."
+              >
+                {#snippet children()}<Button href="/transport-orders">Voir les commandes</Button
+                  >{/snippet}
+              </EmptyState></td
+            ></tr
+          >
         {/each}
       {/snippet}
     </Table>
 
     {#if total > pageSize}
       <div class="mt-3 flex items-center justify-between text-sm text-ink-muted">
-        <span class="font-mono text-xs">{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} sur {total}</span>
+        <span class="font-mono text-xs"
+          >{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} sur {total}</span
+        >
         <div class="flex items-center gap-2">
-          <Button variant="secondary" disabled={page <= 1} onclick={() => { page = Math.max(1, page - 1); void loadTable(); }}>Précédent</Button>
+          <Button
+            variant="secondary"
+            disabled={page <= 1}
+            onclick={() => {
+              page = Math.max(1, page - 1);
+              void loadTable();
+            }}>Précédent</Button
+          >
           <span class="font-mono text-xs">Page {page} / {totalPages}</span>
-          <Button variant="secondary" disabled={page >= totalPages} onclick={() => { page = Math.min(totalPages, page + 1); void loadTable(); }}>Suivant</Button>
+          <Button
+            variant="secondary"
+            disabled={page >= totalPages}
+            onclick={() => {
+              page = Math.min(totalPages, page + 1);
+              void loadTable();
+            }}>Suivant</Button
+          >
         </div>
       </div>
     {/if}
@@ -355,19 +422,33 @@
     <div class="flex gap-3 overflow-x-auto pb-2">
       {#each KANBAN_COLS as col (col)}
         {@const items = byStatus(col)}
-        <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+        <div
+          class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted"
+        >
           <div class="flex items-center justify-between px-3 py-2">
             <Badge tone={toneFor(col)}>{labelFor(col)}</Badge>
             <span class="font-mono text-xs text-ink-muted">{items.length}</span>
           </div>
           <div class="flex max-h-[65vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
             {#each items as row (row.id)}
-              <div role="button" tabindex="0" class="cursor-pointer rounded-inner border border-edge-soft bg-surface p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-card" onclick={() => (selected = row)} onkeydown={(e) => { if (e.key === 'Enter') selected = row; }}>
+              <div
+                role="button"
+                tabindex="0"
+                class="cursor-pointer rounded-inner border border-edge-soft bg-surface p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-card"
+                onclick={() => (selected = row)}
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') selected = row;
+                }}
+              >
                 <div class="font-semibold text-sm text-ink">{row.shipmentNumber}</div>
-                <div class="mt-0.5 truncate text-xs text-ink-muted">{row.originLocation.city} → {row.destinationLocation.city}</div>
+                <div class="mt-0.5 truncate text-xs text-ink-muted">
+                  {row.originLocation.city} → {row.destinationLocation.city}
+                </div>
                 <div class="mt-1 flex items-center justify-between text-[11px] text-ink-faint">
                   <span>{fmtDims(row)}</span>
-                  {#if row.load}<span class="rounded border border-edge px-1 font-mono">{row.load.loadNumber}</span>{/if}
+                  {#if row.load}<span class="rounded border border-edge px-1 font-mono"
+                      >{row.load.loadNumber}</span
+                    >{/if}
                 </div>
               </div>
             {:else}
@@ -377,7 +458,9 @@
         </div>
       {/each}
     </div>
-    {#if kanbanTotal > 100}<p class="mt-2 text-xs text-ink-faint">Affiche les 100 shipments les plus récents. Utilise le tableau pour la liste complète.</p>{/if}
+    {#if kanbanTotal > 100}<p class="mt-2 text-xs text-ink-faint">
+        Affiche les 100 shipments les plus récents. Utilise le tableau pour la liste complète.
+      </p>{/if}
   {/if}
 {:else}
   <!-- map view (live tracking) -->
@@ -385,13 +468,19 @@
     <div class="flex items-center justify-between px-4 pt-3 pb-2">
       <h2 class="text-sm font-bold text-ink">Suivi en direct</h2>
       <span class="font-mono text-xs text-ink-muted">
-        {mapLoads.length} actifs{#if mapLoads.some((l) => l.isLate)} · <span class="text-danger">{mapLoads.filter((l) => l.isLate).length} en retard</span>{/if}
+        {mapLoads.length} actifs{#if mapLoads.some((l) => l.isLate)}
+          · <span class="text-danger">{mapLoads.filter((l) => l.isLate).length} en retard</span
+          >{/if}
       </span>
     </div>
     {#if loadingMap}
       <div class="px-4 pb-4"><Skeleton rows={6} /></div>
     {:else if mapLoads.length === 0}
-      <div class="px-4 pb-4"><EmptyState message="Aucun shipment actif à suivre — les loads dispatchés et en transit apparaissent ici." /></div>
+      <div class="px-4 pb-4">
+        <EmptyState
+          message="Aucun shipment actif à suivre — les loads dispatchés et en transit apparaissent ici."
+        />
+      </div>
     {:else}
       <OpsMap loads={mapLoads} />
     {/if}
@@ -400,38 +489,65 @@
 
 {#if selected}
   {@const sel = selected}
-  <Modal open={true} size="lg" title={sel.shipmentNumber} onclose={() => { selected = null; assigning = null; }}>
+  <Modal
+    open={true}
+    size="lg"
+    title={sel.shipmentNumber}
+    onclose={() => {
+      selected = null;
+      assigning = null;
+    }}
+  >
     <div class="mb-3">
       <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Statut</div>
-      <div class="text-sm text-ink"><Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge></div>
+      <div class="text-sm text-ink">
+        <Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge>
+      </div>
     </div>
     <div class="mb-3">
       <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Commande</div>
       <div class="text-sm text-ink">
-        <a href={`/transport-orders/${sel.transportOrder.id}`} class="text-accent hover:underline">{sel.transportOrder.orderNumber}</a>
+        <a href={`/transport-orders/${sel.transportOrder.id}`} class="text-accent hover:underline"
+          >{sel.transportOrder.orderNumber}</a
+        >
       </div>
     </div>
     <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Origine → Destination</div>
-      <div class="text-sm text-ink">{sel.originLocation.name}, {sel.originLocation.city} → {sel.destinationLocation.name}, {sel.destinationLocation.city}</div>
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">
+        Origine → Destination
+      </div>
+      <div class="text-sm text-ink">
+        {sel.originLocation.name}, {sel.originLocation.city} → {sel.destinationLocation.name}, {sel
+          .destinationLocation.city}
+      </div>
     </div>
     <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Fenêtre d'enlèvement</div>
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">
+        Fenêtre d'enlèvement
+      </div>
       <div class="text-sm text-ink">{fmtWindow(sel.plannedPickupEarly, sel.plannedPickupLate)}</div>
     </div>
     <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Fenêtre de livraison</div>
-      <div class="text-sm text-ink">{fmtWindow(sel.plannedDeliveryEarly, sel.plannedDeliveryLate)}</div>
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">
+        Fenêtre de livraison
+      </div>
+      <div class="text-sm text-ink">
+        {fmtWindow(sel.plannedDeliveryEarly, sel.plannedDeliveryLate)}
+      </div>
     </div>
     <div class="mb-3">
-      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Poids / Vol / Pal</div>
+      <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">
+        Poids / Vol / Pal
+      </div>
       <div class="text-sm text-ink">{fmtDims(sel)}</div>
     </div>
     <div class="mb-3">
       <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Load</div>
       <div class="text-sm text-ink">
         {#if sel.load}
-          <a href={`/loads/${sel.load.id}`} class="text-accent hover:underline">{sel.load.loadNumber}</a>
+          <a href={`/loads/${sel.load.id}`} class="text-accent hover:underline"
+            >{sel.load.loadNumber}</a
+          >
         {:else}
           —
         {/if}
@@ -444,13 +560,17 @@
         {#if !assigning || assigning.id !== sel.id}
           <Button variant="primary" onclick={() => openAssign(sel)}>Assigner à un load</Button>
           <div class="mt-2">
-            <Button variant="danger" onclick={() => cancelShipment(sel)}>Annuler le shipment</Button>
+            <Button variant="danger" onclick={() => cancelShipment(sel)}>Annuler le shipment</Button
+            >
           </div>
         {:else}
           <Field label="Load">
             <select
               bind:value={selectedLoadId}
-              onchange={() => { assignCapacityExcesses = []; assignForce = false; }}
+              onchange={() => {
+                assignCapacityExcesses = [];
+                assignForce = false;
+              }}
               class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
             >
               <option value="">+ Créer un nouveau load</option>
@@ -492,11 +612,18 @@
 
           <div class="mt-3 flex gap-2">
             {#if assignCapacityExcesses.length > 0 && assignForce}
-              <Button variant="danger" onclick={() => assign(true)}>Confirmer l'assignation forcée</Button>
+              <Button variant="danger" onclick={() => assign(true)}
+                >Confirmer l'assignation forcée</Button
+              >
             {:else}
               <Button variant="primary" onclick={() => assign()}>Assigner</Button>
             {/if}
-            <Button variant="secondary" onclick={() => { assigning = null; }}>Annuler</Button>
+            <Button
+              variant="secondary"
+              onclick={() => {
+                assigning = null;
+              }}>Annuler</Button
+            >
           </div>
         {/if}
       {:else if sel.status === 'PLANNED'}
