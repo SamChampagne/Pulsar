@@ -54,6 +54,7 @@
   let showException = $state(false);
   let excKind = $state('DAMAGE');
   let excShipmentId = $state('');
+  let excStopId = $state('');
   let excNote = $state('');
   let excBusy = $state(false);
   let excNotice = $state('');
@@ -152,6 +153,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           shipmentId: excShipmentId || undefined,
+          stopId: excStopId || undefined,
           kind: excKind,
           note: excNote,
         }),
@@ -163,6 +165,7 @@
         excNotice = 'Problème signalé';
         excKind = 'DAMAGE';
         excShipmentId = '';
+        excStopId = '';
         excNote = '';
         showException = false;
       }
@@ -325,7 +328,7 @@
       <button
         type="button"
         class="w-full rounded-md border border-edge bg-surface px-3 py-2 text-sm font-medium text-ink-muted hover:bg-surface-muted"
-        onclick={() => (showException = !showException)}
+        onclick={() => { showException = !showException; if (!showException) excNotice = ''; }}
       >
         {showException ? 'Annuler' : 'Signaler un problème'}
       </button>
@@ -348,6 +351,15 @@
                 <option value="">— Général —</option>
                 {#each view.shipments as s (s.id)}
                   <option value={s.id}>{s.shipmentNumber}</option>
+                {/each}
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="excStop">Arrêt (optionnel)</label>
+              <select id="excStop" bind:value={excStopId} class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none">
+                <option value="">— Aucun —</option>
+                {#each view.stops as st (st.id)}
+                  <option value={st.id}>#{st.sequence} {st.type} — {st.location.name}</option>
                 {/each}
               </select>
             </div>
@@ -382,6 +394,7 @@
               id="podShipment"
               bind:value={podShipmentId}
               required
+              onchange={() => { sigNotice = ''; }}
               class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
             >
               <option value="" disabled>Select…</option>
@@ -430,6 +443,7 @@
               onpointerdown={(e) => { sigDrawing = true; const ctx = sigCanvas!.getContext('2d')!; const r = sigCanvas!.getBoundingClientRect(); ctx.beginPath(); ctx.moveTo(e.clientX - r.left, e.clientY - r.top); }}
               onpointermove={(e) => { if (!sigDrawing) return; const ctx = sigCanvas!.getContext('2d')!; const r = sigCanvas!.getBoundingClientRect(); ctx.lineTo(e.clientX - r.left, e.clientY - r.top); ctx.stroke(); }}
               onpointerup={() => { sigDrawing = false; }}
+              onpointerleave={() => { sigDrawing = false; }}
             ></canvas>
             <div class="mt-1 flex gap-2">
               <button type="button" class="text-xs text-ink-muted hover:text-ink underline" onclick={() => { const ctx = sigCanvas?.getContext('2d'); if (ctx && sigCanvas) ctx.clearRect(0, 0, sigCanvas.width, sigCanvas.height); sigNotice = ''; }}>Effacer</button>
