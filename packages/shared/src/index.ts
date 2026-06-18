@@ -45,3 +45,4 @@ export * from './yard/dwell';
 export * from './desk/desk-layout';
 export * from './appearance/appearance';
 export * from './analytics/control-tower';
+export * from './connect/connect';

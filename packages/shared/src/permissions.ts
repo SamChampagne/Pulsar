@@ -29,6 +29,8 @@ export const PERMISSIONS = {
     AGENTS_CHAT: 'core.agents.chat',
     OPERATING_TASKS_READ: 'core.operating.tasks.read',
     OPERATING_TASKS_MANAGE: 'core.operating.tasks.manage',
+    CONNECT_READ: 'core.connect.read',
+    CONNECT_MANAGE: 'core.connect.manage',
   },
   TRANSPORTATION: {
     MASTER_DATA_READ: 'transportation.master-data.read',
@@ -159,6 +161,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.AGENTS_CHAT, 'Converse with AI agents (⌘K assistant)'),
   core(PERMISSIONS.CORE.OPERATING_TASKS_READ, 'View the operating workbench (tasks & exceptions)'),
   core(PERMISSIONS.CORE.OPERATING_TASKS_MANAGE, 'Assign, resolve and dismiss operating tasks'),
+  core(PERMISSIONS.CORE.CONNECT_READ, 'View the Connect inbox and imports'),
+  core(PERMISSIONS.CORE.CONNECT_MANAGE, 'Run imports and manage inbound messages'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ, 'View customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_MANAGE, 'Manage customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.ORDERS_READ, 'View transport orders'),

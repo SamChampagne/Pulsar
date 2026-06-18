@@ -89,6 +89,9 @@ model Tenant {
   yardVisits       YardVisit[]
   yardMoves        YardMove[]
   dockAppointments DockAppointment[]
+  inboundMessages  InboundMessage[]
+  importBatches    ImportBatch[]
+  importRows       ImportRow[]
 
   @@map("tenants")
 }
@@ -2174,4 +2177,97 @@ model DockAppointment {
   @@index([tenantId, status])
   @@index([tenantId, windowStart])
   @@map("dock_appointments")
+}
+
+// ============================================================================
+// CONNECT — Ingestion / Inbox
+// ============================================================================
+
+enum InboundSource {
+  CSV
+  PDF
+  DOCUMENT
+  WEBHOOK
+}
+
+enum InboundStatus {
+  RECEIVED
+  PARSED
+  IMPORTED
+  FAILED
+  IGNORED
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ImportRowStatus {
+  IMPORTED
+  FAILED
+}
+
+model InboundMessage {
+  id          String        @id @default(cuid())
+  tenantId    String
+  source      InboundSource
+  status      InboundStatus @default(RECEIVED)
+  kind        String?
+  summary     String
+  documentId  String?
+  parsed      Json?
+  error       String?
+  refType     String?
+  refId       String?
+  createdById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status, createdAt])
+  @@map("inbound_messages")
+}
+
+model ImportBatch {
+  id           String       @id @default(cuid())
+  tenantId     String
+  number       String?
+  target       String
+  status       ImportStatus @default(PENDING)
+  totalRows    Int          @default(0)
+  importedRows Int          @default(0)
+  failedRows   Int          @default(0)
+  mapping      Json
+  documentId   String?
+  error        String?
+  createdById  String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id])
+  rows   ImportRow[]
+
+  @@index([tenantId, status, createdAt])
+  @@map("import_batches")
+}
+
+model ImportRow {
+  id        String          @id @default(cuid())
+  tenantId  String
+  batchId   String
+  rowIndex  Int
+  status    ImportRowStatus
+  error     String?
+  data      Json
+  createdAt DateTime        @default(now())
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id])
+  batch  ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, batchId])
+  @@map("import_rows")
 }
