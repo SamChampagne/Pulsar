@@ -30,11 +30,11 @@
   let rawSaved = $state<unknown>(undefined);
   let fetchedOnce = $state(false);
 
-  // Fetch preferences once; re-reconcile when domains change after load.
+  // Fetch preferences once; reconcile against current domains.
   $effect(() => {
     if (fetchedOnce) return;
     fetchedOnce = true;
-    const snap = domains; // capture current value inside the effect
+    const snap = domains;
     void (async () => {
       try {
         const res = await getPreferences();
@@ -44,18 +44,20 @@
         layout = defaultDeskLayout(snap);
       } finally {
         loaded = true;
+        lastDomainSig = snap.map((d) => d.key).sort().join('|');
       }
     })();
   });
 
-  // When domains settle after initial load (module toggled, perms refreshed),
-  // re-reconcile without re-fetching — rawSaved may still be undefined (first fetch
-  // in progress), but reconcileDeskLayout handles that gracefully.
+  // When the set of visible modules actually changes (module toggled / perms refreshed),
+  // reconcile from the CURRENT layout so live positions/folders/background are preserved.
+  let lastDomainSig = $state('');
   $effect(() => {
     if (!loaded) return;
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    domains; // reactive dependency
-    layout = reconcileDeskLayout(rawSaved, domains);
+    const sig = domains.map((d) => d.key).sort().join('|');
+    if (sig === lastDomainSig) return;
+    lastDomainSig = sig;
+    layout = reconcileDeskLayout(layout, domains);
   });
 
   // ---------------------------------------------------------------------------
@@ -70,6 +72,7 @@
 
   function persist() {
     if (!loaded) return;
+    rawSaved = layout;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       void putDeskLayout(layout).catch(() => toast.error('Échec de la sauvegarde du bureau'));
