@@ -19,13 +19,13 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
   agent ROI (économies, tâches résolues, taux d'approbation, breaker trips, temps moyen).
 
 ## Chantier 2 — Workbench v2 (centre de résolution)
-- [todo] **ExceptionCase** : cas (statut, SLA, owner humain/agent, events liés, actions
+- [done] **ExceptionCase** : cas (statut, SLA, owner humain/agent, events liés, actions
   proposées, notes, timeline, documents, impact financier).
-- [todo] **Playbooks** : load en retard, tender expiré, facture carrier avec écart, asset en
+- [done] **Playbooks** : load en retard, tender expiré, facture carrier avec écart, asset en
   maintenance, pick terminé non dispatché, dock appointment late, inventory below min.
-- [todo] **SLA / priorité** : critique après X min, escalade auto, assignation auto agent,
+- [done] **SLA / priorité** : critique après X min, escalade auto, assignation auto agent,
   notification humain si non résolu.
-- [todo] **Kanban opérationnel** : Nouveau / En analyse / Action proposée / En attente humain /
+- [done] **Kanban opérationnel** : Nouveau / En analyse / Action proposée / En attente humain /
   Résolu.
 
 ## Chantier 3 — Outils agents par module
