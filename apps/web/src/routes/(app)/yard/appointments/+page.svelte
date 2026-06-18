@@ -415,10 +415,18 @@
                         class="rounded-md border border-edge px-2 py-0.5 text-[11px] font-semibold text-ink-muted hover:bg-surface-muted"
                         onclick={() => action(a, 'no-show', 'No-show enregistré')}>No-show</button
                       >
+                      <button
+                        class="rounded-md border border-edge px-2 py-0.5 text-[11px] font-semibold text-ink-muted hover:bg-surface-muted"
+                        onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}>Annuler</button
+                      >
                     {:else if a.status === 'ARRIVED'}
                       <button
                         class="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-accent-strong"
                         onclick={() => action(a, 'complete', 'Rendez-vous complété')}>Compléter</button
+                      >
+                      <button
+                        class="rounded-md border border-edge px-2 py-0.5 text-[11px] font-semibold text-ink-muted hover:bg-surface-muted"
+                        onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}>Annuler</button
                       >
                     {/if}
                   </div>
