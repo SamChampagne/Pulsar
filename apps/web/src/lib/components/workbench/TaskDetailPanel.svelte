@@ -116,8 +116,7 @@
 
   const slaStatus = $derived((): 'breached' | 'escalated' | 'ok' | 'none' => {
     if (!task.slaDueAt) return 'none';
-    if ((task.slaBreached ?? false) || isSlaBreached(task.slaDueAt, Date.now())) return 'breached';
-    if (task.escalatedAt) return 'escalated';
+    if ((task.slaBreached ?? false) || isSlaBreached(task.slaDueAt, Date.now()) || !!task.escalatedAt) return 'breached';
     return 'ok';
   });
 

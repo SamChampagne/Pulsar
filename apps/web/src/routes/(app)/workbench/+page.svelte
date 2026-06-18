@@ -131,26 +131,20 @@
   // Derived summary counts
   // ──────────────────────────────────────────────────────────
 
-  const now = Date.now();
-
   const criticalCount = $derived(tasks.filter((t) => t.severity === 'CRITICAL').length);
   const agentAssignedCount = $derived(tasks.filter((t) => t.assigneeType === 'AGENT').length);
-  const slaBreachedCount = $derived(
-    tasks.filter((t) => isSlaBreached(t.slaDueAt, now)).length,
-  );
+  const slaBreachedCount = $derived(tasks.filter((t) => isSlaBreached(t.slaDueAt, Date.now())).length);
 
   // ──────────────────────────────────────────────────────────
   // Kanban columns — derived from current tasks list
   // ──────────────────────────────────────────────────────────
 
-  const kanbanColumns = $derived(() => {
-    // For Kanban, fetch all statuses when no status filter is applied
-    // We split the tasks by status column
-    return KANBAN_COLUMNS.map((col) => ({
+  const kanbanColumns = $derived(
+    KANBAN_COLUMNS.map((col) => ({
       ...col,
       tasks: tasks.filter((t) => t.status === col.key),
-    }));
-  });
+    })),
+  );
 
   // ──────────────────────────────────────────────────────────
   // Data loading
@@ -160,7 +154,7 @@
     loading = true;
     try {
       // For kanban: load all statuses at once (no status filter override)
-      const effectiveStatus = view === 'kanban' ? (statusFilter || undefined) : (statusFilter || undefined);
+      const effectiveStatus = statusFilter || undefined;
       const result = await api<Paginated<OperationalTask>>('/operational-tasks', {
         query: {
           pageSize: 100,
@@ -217,6 +211,7 @@
 
   function slaBadgeInfo(task: OperationalTask): { label: string; cls: string } | null {
     if (!task.slaDueAt) return null;
+    const now = Date.now();
     const due = new Date(task.slaDueAt).getTime();
     const diffMs = due - now;
     const breached = diffMs <= 0 || !!task.escalatedAt;
@@ -377,9 +372,8 @@
   </Table>
 {:else}
   <!-- ─── KANBAN VIEW ─── -->
-  {@const cols = kanbanColumns()}
   <div class="flex gap-4 overflow-x-auto pb-4">
-    {#each cols as col (col.key)}
+    {#each kanbanColumns as col (col.key)}
       <div class="flex w-72 shrink-0 flex-col">
         <!-- Column header -->
         <div class="mb-3 flex items-center justify-between">
