@@ -186,6 +186,7 @@ export class PortalService {
       orderBy: { createdAt: 'desc' },
       take: 50,
       select: {
+        id: true,
         orderNumber: true,
         customerReference: true,
         status: true,
@@ -198,6 +199,7 @@ export class PortalService {
         destinationLocation: { select: { city: true, state: true } },
         shipments: {
           select: {
+            id: true,
             shipmentNumber: true,
             status: true,
             actualDeliveryAt: true,

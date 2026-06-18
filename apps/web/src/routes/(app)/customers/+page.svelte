@@ -135,7 +135,7 @@
 
   $effect(() => {
     void load();
-    if (hasPortal) void loadBranding();
+    if (hasPortal && canManageLinks) void loadBranding();
   });
 </script>
 

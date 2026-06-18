@@ -13,6 +13,7 @@
     branding: { logoUrl?: string; accentColor?: string };
     locations: { id: string; name: string; city: string }[];
     orders: {
+      id: string;
       orderNumber: string;
       customerReference: string | null;
       status: string;
@@ -104,21 +105,21 @@
 
   // Change request
   let changeKind = $state('');
-  let changeOrderNumber = $state('');
+  let changeOrderId = $state('');
   let changeShipmentId = $state('');
   let changeNote = $state('');
   let changeNotice = $state('');
   let changeSending = $state(false);
   let changeError = $state('');
 
-  const portalModeSuggestion = $derived(() => {
+  const portalModeSuggestion = $derived.by(() => {
     const w = request.totalWeightKg ? Number(request.totalWeightKg) : null;
     const suggested = suggestMode(w);
     return suggested && suggested !== request.mode ? suggested : null;
   });
 
   const selectedOrderForChange = $derived(
-    view?.orders.find((o) => o.orderNumber === changeOrderNumber) ?? null,
+    view?.orders.find((o) => o.id === changeOrderId) ?? null,
   );
 
   const fmtWindow = (early: string | null, late?: string | null) =>
@@ -289,13 +290,13 @@
         body: {
           kind: changeKind,
           note: changeNote,
-          orderId: changeOrderNumber || undefined,
+          orderId: changeOrderId || undefined,
           shipmentId: changeShipmentId || undefined,
         },
       });
       changeNotice = 'Demande envoyée.';
       changeKind = '';
-      changeOrderNumber = '';
+      changeOrderId = '';
       changeShipmentId = '';
       changeNote = '';
     } catch (e) {
@@ -455,8 +456,8 @@
                       {/each}
                     </Select>
                   </Field>
-                  {#if portalModeSuggestion()}
-                    <p class="mt-1 text-xs text-ink-muted">Suggéré : {portalModeSuggestion()} selon le poids</p>
+                  {#if portalModeSuggestion}
+                    <p class="mt-1 text-xs text-ink-muted">Suggéré : {portalModeSuggestion} selon le poids</p>
                   {/if}
                 </div>
               </div>
@@ -547,7 +548,7 @@
     {#if activeTab === 'invoices'}
       {#if invoicesLoading}
         <p class="text-sm text-ink-muted">Chargement…</p>
-      {:else if invoices.length === 0}
+      {:else if invoicesLoaded && invoices.length === 0}
         <p class="text-sm text-ink-muted">Aucune facture.</p>
       {:else}
         <div class="overflow-x-auto">
@@ -651,10 +652,10 @@
           </Select>
         </Field>
         <Field label="Commande (optionnel)">
-          <Select bind:value={changeOrderNumber}>
+          <Select bind:value={changeOrderId}>
             <option value="">— Toutes —</option>
-            {#each view.orders as order (order.orderNumber)}
-              <option value={order.orderNumber}>{order.orderNumber}</option>
+            {#each view.orders as order (order.id)}
+              <option value={order.id}>{order.orderNumber}</option>
             {/each}
           </Select>
         </Field>
