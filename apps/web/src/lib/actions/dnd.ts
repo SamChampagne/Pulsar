@@ -11,8 +11,8 @@ export interface FreeDragParams {
   onmove: (x: number, y: number) => void;
   /** data-desk-id under the pointer after a 500ms dwell, or null. */
   onfolderintent: (targetId: string | null) => void;
-  /** Final top-left position + folder-target id if a dwell was armed. */
-  ondrop: (x: number, y: number, folderTargetId: string | null) => void;
+  /** Final top-left position + folder-target id if a dwell was armed + the tile id under the pointer at drop. */
+  ondrop: (x: number, y: number, folderTargetId: string | null, overTargetId: string | null) => void;
 }
 
 export function freeDrag(node: HTMLElement, params: FreeDragParams) {
@@ -65,7 +65,7 @@ export function freeDrag(node: HTMLElement, params: FreeDragParams) {
     try { node.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     clearDwell();
     if (dragging && commit) {
-      p.ondrop(originX + (e.clientX - startX), originY + (e.clientY - startY), folderTargetId);
+      p.ondrop(originX + (e.clientX - startX), originY + (e.clientY - startY), folderTargetId, lastTargetId);
     }
     armed = false; dragging = false; folderTargetId = null; lastTargetId = null;
     p.onfolderintent(null);
