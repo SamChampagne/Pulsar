@@ -10,6 +10,8 @@
   import DeskIcon from '$lib/components/desk/DeskIcon.svelte';
   import DeskFolderTile from '$lib/components/desk/DeskFolderTile.svelte';
   import FolderOverlay from '$lib/components/desk/FolderOverlay.svelte';
+  import AddLinkPicker from '$lib/components/desk/AddLinkPicker.svelte';
+  import DeskContextMenu from '$lib/components/desk/DeskContextMenu.svelte';
   import { Link } from 'lucide-svelte';
   import { gridDrag } from '$lib/actions/dnd';
 
@@ -146,6 +148,94 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Add-link picker
+  // ---------------------------------------------------------------------------
+  let addLinkOpen = $state(false);
+
+  function addQuickLink(l: { href: string; label: string }) {
+    layout = { ...layout, items: [...layout.items, { type: 'link' as const, href: l.href, label: l.label }] };
+    persist();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Rename
+  // ---------------------------------------------------------------------------
+  let renamingIndex = $state<number | null>(null);
+  let renameValue = $state('');
+
+  function startRename(i: number) {
+    const item = layout.items[i];
+    if (!item || item.type === 'module') return;
+    renameValue = item.type === 'folder' ? item.name : item.label;
+    renamingIndex = i;
+  }
+
+  function commitRename() {
+    if (renamingIndex === null) return;
+    const item = layout.items[renamingIndex];
+    if (!item || item.type === 'module') { renamingIndex = null; return; }
+    const val = renameValue.trim() || (item.type === 'folder' ? item.name : item.label);
+    const updated = item.type === 'folder'
+      ? { ...item, name: val }
+      : { ...item, label: val };
+    const items = [...layout.items] as DeskItem[];
+    items[renamingIndex] = updated;
+    layout = { ...layout, items };
+    renamingIndex = null;
+    persist();
+  }
+
+  function onRenameKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+    if (e.key === 'Escape') { renamingIndex = null; }
+  }
+
+  /** Svelte action: focuses the element on mount (avoids the a11y_autofocus warning). */
+  function focusOnMount(node: HTMLElement) {
+    node.focus();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Make empty folder
+  // ---------------------------------------------------------------------------
+  function makeEmptyFolder() {
+    const id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `folder-${Date.now()}`;
+    layout = { ...layout, items: [...layout.items, { type: 'folder' as const, id, name: 'Dossier', items: [] }] };
+    persist();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Context menu
+  // ---------------------------------------------------------------------------
+  let menuOpen = $state(false);
+  let menuX = $state(0);
+  let menuY = $state(0);
+  let menuActions = $state<{ label: string; run: () => void }[]>([]);
+
+  function openMenu(e: MouseEvent, i: number, item: DeskItem) {
+    e.preventDefault();
+    menuX = e.clientX;
+    menuY = e.clientY;
+
+    const common = [
+      { label: 'Nouveau dossier', run: () => makeEmptyFolder() },
+      { label: 'Ajouter un lien rapide', run: () => (addLinkOpen = true) },
+    ];
+
+    if (item.type === 'module') {
+      menuActions = [...common, { label: 'Retirer', run: () => removeItem(i) }];
+    } else if (item.type === 'link') {
+      menuActions = [...common, { label: 'Renommer', run: () => startRename(i) }, { label: 'Retirer', run: () => removeItem(i) }];
+    } else {
+      // folder
+      menuActions = [...common, { label: 'Renommer', run: () => startRename(i) }, { label: 'Retirer', run: () => removeItem(i) }];
+    }
+    menuOpen = true;
+  }
+
+  // ---------------------------------------------------------------------------
   // Folder overlay
   // ---------------------------------------------------------------------------
   let openFolderId = $state<string | null>(null);
@@ -273,31 +363,75 @@
                   {editing}
                   onactivate={() => { if (!editing) goto(domain.home); }}
                   onremove={() => removeItem(i)}
+                  oncontext={(e) => openMenu(e, i, item)}
                 />
               {/if}
             {:else if item.type === 'link'}
-              <DeskIcon
-                label={item.label}
-                icon={Link}
-                accent="#6f7480"
-                {editing}
-                onactivate={() => { if (!editing) goto(item.href); }}
-                onremove={() => removeItem(i)}
-              />
+              <div class="flex w-24 flex-col items-center text-center">
+                <DeskIcon
+                  label={renamingIndex === i ? renameValue : item.label}
+                  icon={Link}
+                  accent="#6f7480"
+                  {editing}
+                  onactivate={() => { if (!editing) goto(item.href); }}
+                  onremove={() => removeItem(i)}
+                  oncontext={(e) => openMenu(e, i, item)}
+                />
+                {#if renamingIndex === i}
+                  <input
+                    class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none"
+                    bind:value={renameValue}
+                    onblur={commitRename}
+                    onkeydown={onRenameKeydown}
+                    use:focusOnMount
+                  />
+                {/if}
+              </div>
             {:else if item.type === 'folder'}
-              <DeskFolderTile
-                name={item.name}
-                {editing}
-                onopen={() => { if (!editing) openFolderById(item.id); }}
-                onremove={() => removeItem(i)}
-              />
+              <div class="flex w-24 flex-col items-center text-center">
+                <DeskFolderTile
+                  name={renamingIndex === i ? renameValue : item.name}
+                  {editing}
+                  onopen={() => { if (!editing) openFolderById(item.id); }}
+                  onremove={() => removeItem(i)}
+                  oncontext={(e) => openMenu(e, i, item)}
+                />
+                {#if renamingIndex === i}
+                  <input
+                    class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none"
+                    bind:value={renameValue}
+                    onblur={commitRename}
+                    onkeydown={onRenameKeydown}
+                    use:focusOnMount
+                  />
+                {/if}
+              </div>
             {/if}
           </div>
         {/each}
+        {#if editing}
+          <div class="flex w-24 flex-col items-center text-center">
+            <button
+              type="button"
+              class="grid size-14 place-items-center rounded-2xl border-2 border-dashed border-edge text-ink-faint transition hover:border-accent hover:text-accent"
+              onclick={() => (addLinkOpen = true)}
+              aria-label="Ajouter un lien rapide"
+            >
+              <span class="text-2xl leading-none">+</span>
+            </button>
+            <span class="mt-3 text-xs text-ink-faint">Ajouter un lien</span>
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
 </section>
+
+<!-- Add-link picker (single instance) -->
+<AddLinkPicker bind:open={addLinkOpen} {domains} onpick={addQuickLink} />
+
+<!-- Context menu (single instance) -->
+<DeskContextMenu bind:open={menuOpen} x={menuX} y={menuY} actions={menuActions} />
 
 <!-- Folder overlay (single instance, driven by openFolderId) -->
 {#if openFolder}
