@@ -6,8 +6,9 @@
   import { MODULE_UNIVERSES } from '$lib/modules/universe';
   import { deskSearch } from '$lib/stores/desk';
   import { getPreferences, putDeskLayout } from '$lib/api/preferences';
-  import { defaultDeskLayout, reconcileDeskLayout, FRAMEWORK_FOLDER_ID, DESK_CANVAS_W, DESK_TILE, defaultPosition, DESK_MODES, TILE_SIZES } from '@pulsar/shared';
-  import type { DeskLayout, DeskItem, DeskFolderChild, DeskTileSize } from '@pulsar/shared';
+  import { defaultDeskLayout, reconcileDeskLayout, FRAMEWORK_FOLDER_ID, DESK_CANVAS_W, DESK_TILE, defaultPosition, DESK_MODES, TILE_SIZES, DESK_GRADIENTS } from '@pulsar/shared';
+  import type { DeskLayout, DeskItem, DeskFolderChild, DeskTileSize, DeskBackground } from '@pulsar/shared';
+  import { fetchDocumentObjectUrl } from '$lib/api/files';
   import { toast } from '$lib/stores/toast';
   import DeskIcon from '$lib/components/desk/DeskIcon.svelte';
   import DeskFolderTile from '$lib/components/desk/DeskFolderTile.svelte';
@@ -27,6 +28,45 @@
 
   let layout = $state<DeskLayout>(defaultDeskLayout([]));
   const tilePx = $derived(TILE_SIZES[(layout.tileSize ?? 'md') as DeskTileSize]);
+
+  let bgImageUrl = $state<string | null>(null);
+  let bgImageForId: string | null = null;
+
+  // Resolve the desk-background CSS for the section.
+  const bgStyle = $derived.by(() => {
+    const bg = layout.background;
+    if (!bg) return 'background:#f8f8f7';
+    if (bg.type === 'color') return `background:${bg.value}`;
+    if (bg.type === 'gradient') {
+      const g = DESK_GRADIENTS.find((x) => x.id === bg.value);
+      return g ? `background:${g.css}` : 'background:#f8f8f7';
+    }
+    if (bg.type === 'image' && bgImageUrl) {
+      return `background-image:url('${bgImageUrl}');background-size:cover;background-position:center`;
+    }
+    return 'background:#f8f8f7';
+  });
+
+  // Fetch/refresh the image blob when an image background is selected.
+  $effect(() => {
+    const bg = layout.background;
+    if (bg?.type === 'image') {
+      if (bg.value !== bgImageForId) {
+        bgImageForId = bg.value;
+        void fetchDocumentObjectUrl(bg.value)
+          .then((url) => {
+            if (bgImageUrl) URL.revokeObjectURL(bgImageUrl);
+            bgImageUrl = url;
+          })
+          .catch(() => { bgImageUrl = null; });
+      }
+    } else if (bgImageUrl) {
+      URL.revokeObjectURL(bgImageUrl);
+      bgImageUrl = null;
+      bgImageForId = null;
+    }
+  });
+
   let loaded = $state(false);
   let rawSaved = $state<unknown>(undefined);
   let fetchedOnce = $state(false);
@@ -81,6 +121,7 @@
   }
 
   onDestroy(() => {
+    if (bgImageUrl) URL.revokeObjectURL(bgImageUrl);
     if (saveTimer) {
       clearTimeout(saveTimer);
       void putDeskLayout(layout).catch(() => {});
@@ -414,7 +455,11 @@
   {/if}
 {/snippet}
 
-<section class="min-h-[calc(100vh-3.5rem)] bg-[#f8f8f7] px-4 py-14 text-ink sm:px-8 lg:px-12">
+<section class="relative min-h-[calc(100vh-3.5rem)] px-4 py-14 text-ink sm:px-8 lg:px-12" style={bgStyle}>
+  {#if layout.background && layout.background.type !== 'color'}
+    <div class="pointer-events-none absolute inset-0 bg-surface/35"></div>
+  {/if}
+  <div class="relative">
   <!-- Header -->
   <div class="mb-8 flex items-center justify-center gap-3">
     <div class="text-center">
@@ -511,6 +556,7 @@
       {/if}
     </div>
   {/if}
+  </div>
 </section>
 
 <!-- Add-link picker (single instance) -->

@@ -1,7 +1,11 @@
 <script lang="ts">
   import { PageHeader, Card } from '$lib/components/ui';
   import { appearance, setTheme, setAccent } from '$lib/stores/appearance';
-  import { APPEARANCE_THEMES, type AppearanceTheme } from '@pulsar/shared';
+  import { APPEARANCE_THEMES, type AppearanceTheme, DESK_GRADIENTS, type DeskBackground, type DeskLayout } from '@pulsar/shared';
+  import { getPreferences, putDeskLayout } from '$lib/api/preferences';
+  import { uploadDocument } from '$lib/api/files';
+  import { onMount } from 'svelte';
+  import { toast } from '$lib/stores/toast';
 
   const THEME_META: Record<AppearanceTheme, { label: string; hint: string; bg: string; surface: string; accent: string; ink: string }> = {
     warm: { label: 'Chaud', hint: 'Orange & crème (défaut)', bg: '#faf6f0', surface: '#ffffff', accent: '#f1700f', ink: '#221913' },
@@ -12,6 +16,43 @@
   const PRESET_ACCENTS = ['#f1700f', '#2150d4', '#0f766e', '#be123c', '#7e22ce', '#0ea5e9'];
 
   let accentInput = $state($appearance.accent ?? '#f1700f');
+
+  // --- Desk background ---
+  let rawDesk = $state<DeskLayout | null>(null);
+  let uploading = $state(false);
+
+  onMount(() => {
+    void getPreferences()
+      .then((p) => { rawDesk = (p.deskLayout ?? { version: 1, mode: 'auto', items: [] }) as DeskLayout; })
+      .catch(() => {});
+  });
+
+  function setBackground(bg: DeskBackground | null) {
+    if (!rawDesk) return;
+    const next = { ...rawDesk } as DeskLayout;
+    if (bg) next.background = bg; else delete next.background;
+    rawDesk = next;
+    void putDeskLayout(next).catch(() => toast.error('Échec de la sauvegarde'));
+  }
+
+  async function onWallpaperChange(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('Choisis une image'); return; }
+    uploading = true;
+    try {
+      const doc = await uploadDocument(file, 'desk-wallpaper', 'self');
+      setBackground({ type: 'image', value: doc.id });
+    } catch {
+      toast.error("Échec de l'upload");
+    } finally {
+      uploading = false;
+      input.value = '';
+    }
+  }
+
+  const BG_COLORS = ['#f8f8f7', '#0f172a', '#1e293b', '#fdf2e9', '#ecfeff', '#241c15'];
 </script>
 
 <PageHeader title="Apparence" />
@@ -67,6 +108,48 @@
           Réinitialiser
         </button>
       {/if}
+    </div>
+  </Card>
+</div>
+
+<div class="mt-4">
+  <Card>
+    <h2 class="text-sm font-bold text-ink">Fond du bureau</h2>
+    <p class="mt-0.5 mb-4 text-sm text-ink-muted">Couleur, dégradé ou image. Visible sur la page « Toutes les pages ».</p>
+
+    <div class="space-y-4">
+      <div>
+        <p class="mb-2 text-xs font-semibold tracking-wide text-ink-faint uppercase">Couleur</p>
+        <div class="flex flex-wrap items-center gap-2">
+          {#each BG_COLORS as c (c)}
+            <button type="button" aria-label={`Fond ${c}`} onclick={() => setBackground({ type: 'color', value: c })}
+              class="size-8 rounded-lg ring-1 ring-edge transition hover:ring-ink" style={`background:${c}`}></button>
+          {/each}
+        </div>
+      </div>
+
+      <div>
+        <p class="mb-2 text-xs font-semibold tracking-wide text-ink-faint uppercase">Dégradé</p>
+        <div class="flex flex-wrap items-center gap-2">
+          {#each DESK_GRADIENTS as g (g.id)}
+            <button type="button" aria-label={g.label} onclick={() => setBackground({ type: 'gradient', value: g.id })}
+              class="h-8 w-14 rounded-lg ring-1 ring-edge transition hover:ring-ink" style={`background:${g.css}`}></button>
+          {/each}
+        </div>
+      </div>
+
+      <div>
+        <p class="mb-2 text-xs font-semibold tracking-wide text-ink-faint uppercase">Image</p>
+        <label class="inline-flex cursor-pointer items-center gap-2 rounded-full border border-edge px-3 py-1 text-sm text-ink-faint transition hover:text-ink">
+          {uploading ? 'Téléversement…' : 'Téléverser une image'}
+          <input type="file" accept="image/*" class="hidden" onchange={onWallpaperChange} disabled={uploading} />
+        </label>
+      </div>
+
+      <button type="button" onclick={() => setBackground(null)}
+        class="rounded-full border border-edge px-3 py-1 text-sm text-ink-faint transition hover:text-ink">
+        Réinitialiser le fond
+      </button>
     </div>
   </Card>
 </div>
