@@ -528,7 +528,7 @@
           </div>
         </form>
       {:else}
-        <div class="rounded-inner border border-edge bg-surface-subtle p-3 space-y-2">
+        <div class="rounded-inner border border-edge bg-surface-muted p-3 space-y-2">
           <p class="text-sm font-semibold text-ink">Lien d'invitation publique</p>
           <p class="break-all font-mono text-xs text-ink-muted">{inviteLink}</p>
           <Button variant="secondary" onclick={copyLink}>Copier</Button>
