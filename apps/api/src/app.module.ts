@@ -28,6 +28,7 @@ import { FleetModule } from './modules/fleet/fleet.module';
 import { WmsModule } from './modules/wms/wms.module';
 import { YardModule } from './modules/yard/yard.module';
 import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
+import { CarrierPortalModule } from './modules/carrier-portal/carrier-portal.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
@@ -73,6 +74,7 @@ import { ConnectModule } from './core/connect/connect.module';
     WmsModule,
     YardModule,
     CustomerPortalModule,
+    CarrierPortalModule,
     BillingModule,
     AnalyticsModule,
     ProcurementModule,
