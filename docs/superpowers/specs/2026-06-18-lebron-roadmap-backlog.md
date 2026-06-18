@@ -8,7 +8,7 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
 État : `todo` / `wip` / `done`.
 
 ## Chantier 1 — Control Tower / Analytics
-- [wip] **M1 — Module analytics + Control Tower opérationnelle (MVP)** : activer le module,
+- [done] **M1 — Module analytics + Control Tower opérationnelle (MVP)** : activer le module,
   permission `analytics.read`, `GET /analytics/control-tower?days=` (calculs à la lecture),
   panneau « Attention » (loads en retard, litiges freight-audit, assets OUT_OF_SERVICE, dock
   appointments à risque, pick COMPLETED sans dispatch, actions agents en attente) + KPI en-tête
