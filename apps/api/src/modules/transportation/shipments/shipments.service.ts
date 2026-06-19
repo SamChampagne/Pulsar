@@ -8,6 +8,7 @@ import { paginated, paginationArgs } from '../../../common/pagination';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { LoadCostService } from '../loads/load-cost.service';
+import { projectShipmentComment, type ShipmentCommentView } from '../../customer-portal/portal.service';
 
 const shipmentInclude = {
   transportOrder: { select: { id: true, orderNumber: true, status: true } },
@@ -203,6 +204,46 @@ export class ShipmentsService {
       data: { status: ShipmentStatus.CANCELLED },
       include: shipmentInclude,
     });
+  }
+
+  /** Internal: the comment thread for a shipment (tenant-scoped, projected). */
+  async listComments(tenantId: string, id: string): Promise<ShipmentCommentView[]> {
+    await this.get(tenantId, id); // assertOwned: throws if shipment not in tenant
+    const comments = await this.prisma.shipmentComment.findMany({
+      where: { tenantId, shipmentId: id },
+      orderBy: { createdAt: 'asc' },
+    });
+    return comments.map(projectShipmentComment);
+  }
+
+  /** Internal: a staff user posts a comment on a shipment. */
+  async createComment(
+    tenantId: string,
+    user: { id: string; firstName: string; lastName: string; email: string },
+    id: string,
+    body: string,
+  ): Promise<ShipmentCommentView> {
+    await this.get(tenantId, id); // assertOwned: throws if shipment not in tenant
+    const authorName = `${user.firstName} ${user.lastName}`.trim() || user.email;
+    const comment = await this.prisma.shipmentComment.create({
+      data: {
+        tenantId,
+        shipmentId: id,
+        authorType: 'STAFF',
+        authorId: user.id,
+        authorName,
+        body,
+      },
+    });
+    await this.audit.log({
+      tenantId,
+      userId: user.id,
+      action: AuditAction.CREATE,
+      entityType: 'shipment-comment',
+      entityId: comment.id,
+      after: { shipmentId: id, authorType: 'STAFF', author: authorName },
+    });
+    return projectShipmentComment(comment);
   }
 
   async removeFromLoad(tenantId: string, id: string) {

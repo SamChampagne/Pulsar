@@ -1,11 +1,14 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { PERMISSIONS } from '@pulsar/shared';
+  import { auth } from '$lib/stores/auth';
   import { api, ApiError } from '$lib/api/client';
   import {
     PageHeader,
     Button,
     Select,
     Field,
+    Textarea,
     Table,
     Badge,
     EmptyState,
@@ -57,10 +60,69 @@
     excess: number;
   }
 
+  interface ShipmentComment {
+    id: string;
+    authorType: 'CUSTOMER' | 'STAFF';
+    authorName: string;
+    body: string;
+    createdAt: string;
+  }
+
   let view = $state<ViewId>('table');
   let statusFilter = $state('');
   let error = $state('');
   let selected = $state<ShipmentRow | null>(null);
+
+  const canReply = $derived(
+    $auth?.user.permissions.includes(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE) ?? false,
+  );
+
+  // — Comments modal —
+  let commentsFor = $state<ShipmentRow | null>(null);
+  let comments = $state<ShipmentComment[]>([]);
+  let commentsLoading = $state(false);
+  let commentDraft = $state('');
+  let commentSending = $state(false);
+
+  async function loadComments(shipmentId: string) {
+    commentsLoading = true;
+    try {
+      comments = await api<ShipmentComment[]>(
+        `/transportation/shipments/${shipmentId}/comments`,
+      );
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Échec du chargement des commentaires');
+      comments = [];
+    } finally {
+      commentsLoading = false;
+    }
+  }
+
+  async function openComments(shipment: ShipmentRow) {
+    commentsFor = shipment;
+    comments = [];
+    commentDraft = '';
+    await loadComments(shipment.id);
+  }
+
+  async function submitComment() {
+    if (!commentsFor) return;
+    const body = commentDraft.trim();
+    if (!body) return;
+    commentSending = true;
+    try {
+      await api(`/transportation/shipments/${commentsFor.id}/comments`, {
+        method: 'POST',
+        body: { body },
+      });
+      commentDraft = '';
+      await loadComments(commentsFor.id);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Échec de l'envoi du commentaire");
+    } finally {
+      commentSending = false;
+    }
+  }
 
   // — Table view (paginated) —
   let shipments = $state<ShipmentRow[]>([]);
@@ -632,6 +694,66 @@
       <div class="mt-2">
         <Button variant="secondary" onclick={() => shareTracking(sel)}>Partager le suivi</Button>
       </div>
+      <div class="mt-2">
+        <Button variant="secondary" onclick={() => openComments(sel)}>Commentaires</Button>
+      </div>
     </div>
+  </Modal>
+{/if}
+
+{#if commentsFor}
+  {@const c = commentsFor}
+  <Modal
+    open={true}
+    size="lg"
+    title={`Commentaires · ${c.shipmentNumber}`}
+    onclose={() => {
+      commentsFor = null;
+    }}
+  >
+    {#if commentsLoading}
+      <Skeleton rows={4} />
+    {:else if comments.length === 0}
+      <EmptyState message="Aucun commentaire pour le moment." />
+    {:else}
+      <ul class="flex flex-col gap-2">
+        {#each comments as comment (comment.id)}
+          <li class="rounded-card border border-edge-soft bg-surface-muted px-3 py-2">
+            <div class="mb-1 flex items-center gap-2">
+              <span class="text-sm font-semibold text-ink">{comment.authorName}</span>
+              <Badge tone={comment.authorType === 'STAFF' ? 'info' : 'neutral'}>
+                {comment.authorType === 'STAFF' ? 'Équipe' : 'Client'}
+              </Badge>
+              <span class="text-xs text-ink-faint">{new Date(comment.createdAt).toLocaleString()}</span>
+            </div>
+            <p class="whitespace-pre-wrap text-sm text-ink">{comment.body}</p>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    {#snippet footer()}
+      {#if canReply}
+        <div class="flex w-full flex-col gap-2">
+          <Field label="Répondre">
+            <Textarea bind:value={commentDraft} rows={2} placeholder="Écrire une réponse…" />
+          </Field>
+          <div class="flex justify-end">
+            <Button
+              variant="primary"
+              loading={commentSending}
+              disabled={!commentDraft.trim()}
+              onclick={submitComment}
+            >
+              Envoyer
+            </Button>
+          </div>
+        </div>
+      {:else}
+        <p class="text-xs text-ink-faint">
+          Lecture seule — la permission de planification est requise pour répondre.
+        </p>
+      {/if}
+    {/snippet}
   </Modal>
 {/if}

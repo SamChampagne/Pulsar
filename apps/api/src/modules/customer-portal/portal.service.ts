@@ -44,6 +44,35 @@ export interface PortalChangeRequestInput {
   note: string;
 }
 
+/** Public/internal-safe projection of a shipment comment (rule 10: never tenantId/authorId). */
+export interface ShipmentCommentView {
+  id: string;
+  authorType: 'CUSTOMER' | 'STAFF';
+  authorName: string;
+  body: string;
+  createdAt: Date;
+}
+
+/**
+ * Single source of truth for the comment projection used by BOTH the public portal
+ * and the internal shipments surface — never leaks tenantId, authorId or shipmentId.
+ */
+export function projectShipmentComment(comment: {
+  id: string;
+  authorType: string;
+  authorName: string;
+  body: string;
+  createdAt: Date;
+}): ShipmentCommentView {
+  return {
+    id: comment.id,
+    authorType: comment.authorType as 'CUSTOMER' | 'STAFF',
+    authorName: comment.authorName,
+    body: comment.body,
+    createdAt: comment.createdAt,
+  };
+}
+
 /**
  * Customer Portal v1: capability-link visibility for the shipper's customers.
  * One revocable token per customer opens a read-only page listing their orders,
@@ -409,6 +438,56 @@ export class PortalService {
     }).catch(() => { /* best-effort */ });
 
     return { ok: true };
+  }
+
+  /**
+   * Resolves a shipment the customer is allowed to see (it must belong to one of
+   * their transport orders). Same ownership logic as change-request/documents.
+   */
+  private async customerShipment(tenantId: string, customerId: string, shipmentId: string) {
+    const shipment = await this.prisma.shipment.findFirst({
+      where: { id: shipmentId, tenantId },
+      select: { id: true, transportOrder: { select: { customerId: true } } },
+    });
+    if (!shipment || shipment.transportOrder.customerId !== customerId) {
+      throw new NotFoundException('Shipment not found');
+    }
+    return shipment;
+  }
+
+  /** Public: the comment thread for a shipment, projected per rule 10. */
+  async listShipmentComments(token: string, shipmentId: string): Promise<ShipmentCommentView[]> {
+    const customer = await this.customerByToken(token);
+    await this.customerShipment(customer.tenantId, customer.id, shipmentId);
+    const comments = await this.prisma.shipmentComment.findMany({
+      where: { tenantId: customer.tenantId, shipmentId },
+      orderBy: { createdAt: 'asc' },
+    });
+    return comments.map(projectShipmentComment);
+  }
+
+  /** Public: the customer posts a comment on one of their shipments. */
+  async createShipmentComment(token: string, shipmentId: string, body: string): Promise<ShipmentCommentView> {
+    const customer = await this.customerByToken(token);
+    await this.customerShipment(customer.tenantId, customer.id, shipmentId);
+    const comment = await this.prisma.shipmentComment.create({
+      data: {
+        tenantId: customer.tenantId,
+        shipmentId,
+        authorType: 'CUSTOMER',
+        authorId: customer.id,
+        authorName: customer.name,
+        body,
+      },
+    });
+    await this.audit.log({
+      tenantId: customer.tenantId,
+      action: AuditAction.CREATE,
+      entityType: 'shipment-comment',
+      entityId: comment.id,
+      after: { shipmentId, authorType: 'CUSTOMER', customer: customer.name },
+    });
+    return projectShipmentComment(comment);
   }
 
   async setBranding(tenantId: string, dto: { logoUrl?: string; accentColor?: string }) {

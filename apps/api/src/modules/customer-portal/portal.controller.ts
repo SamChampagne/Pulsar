@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { MODULE_KEYS, PERMISSIONS, TransportMode } from '@pulsar/shared';
 import {
-  IsDateString, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, Matches, Min,
+  IsDateString, IsEnum, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Matches, MaxLength, Min,
 } from 'class-validator';
 import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -115,6 +115,13 @@ class PortalChangeRequestDtoClass implements PortalChangeRequestInput {
 
   @IsString()
   note!: string;
+}
+
+class ShipmentCommentDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000)
+  body!: string;
 }
 
 class SetBrandingDto {
@@ -236,5 +243,22 @@ export class PortalPublicController {
     @Body() dto: PortalChangeRequestDtoClass,
   ) {
     return this.portal.createChangeRequest(token, dto);
+  }
+
+  @Get(':token/shipments/:shipmentId/comments')
+  listShipmentComments(
+    @Param('token') token: string,
+    @Param('shipmentId') shipmentId: string,
+  ) {
+    return this.portal.listShipmentComments(token, shipmentId);
+  }
+
+  @Post(':token/shipments/:shipmentId/comments')
+  createShipmentComment(
+    @Param('token') token: string,
+    @Param('shipmentId') shipmentId: string,
+    @Body() dto: ShipmentCommentDto,
+  ) {
+    return this.portal.createShipmentComment(token, shipmentId, dto.body);
   }
 }

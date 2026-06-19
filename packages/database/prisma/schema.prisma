@@ -846,11 +846,28 @@ model Shipment {
   proofOfDelivery     ProofOfDelivery?
   legs                ShipmentLoadLeg[]
   pickOrders          PickOrder[]
+  comments            ShipmentComment[]
 
   @@unique([tenantId, shipmentNumber])
   @@index([tenantId, status])
   @@index([tenantId, transportOrderId])
   @@map("shipments")
+}
+
+model ShipmentComment {
+  id         String   @id @default(cuid())
+  tenantId   String
+  shipmentId String
+  authorType String // 'CUSTOMER' | 'STAFF'
+  authorId   String? // userId (STAFF) | customerId (CUSTOMER) — internal, never exposed publicly
+  authorName String
+  body       String
+  createdAt  DateTime @default(now())
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, shipmentId, createdAt])
+  @@map("shipment_comments")
 }
 
 enum LoadStatus {
