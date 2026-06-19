@@ -68,8 +68,10 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
   exception/damage, position, BOL, notes.
 - [done] **E. Customer Portal v2** : créer ordre, templates récurrents, tracking, docs, POD,
   factures, demandes de changement, chat par shipment, branding.
-- [todo] **F. Planning Board** : shipments non assignés, loads ouverts, assets/drivers dispo,
-  carrier options, warnings capacité, drag & drop shipment→load, plan proposal agent, scénario A/B.
+- [phase-1 done] **F. Planning Board** : shipments non assignés, loads ouverts, assets/drivers dispo,
+  warnings capacité, drag & drop shipment→load — LIVRÉ (endpoint agrégation `planning-board` +
+  page `/planning` réutilisant assign/remove). DIFFÉRÉ F-phase-2 : plan proposal agent, scénario A/B.
+  Spec : `docs/superpowers/specs/2026-06-19-module-f-planning-board.md`.
 - [todo] **G. Rate Studio** : rate sheet importer, lane builder, accessorial catalog, fuel
   tables, effective dates, simulation, « why this rate? », compare carriers, audit trail, test load.
 - [todo] **H. Document Center** : docs par load/shipment/customer/carrier, types
