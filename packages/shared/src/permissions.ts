@@ -31,6 +31,8 @@ export const PERMISSIONS = {
     OPERATING_TASKS_MANAGE: 'core.operating.tasks.manage',
     CONNECT_READ: 'core.connect.read',
     CONNECT_MANAGE: 'core.connect.manage',
+    AUTOMATION_RULES_READ: 'core.automation.rules.read',
+    AUTOMATION_RULES_MANAGE: 'core.automation.rules.manage',
   },
   TRANSPORTATION: {
     MASTER_DATA_READ: 'transportation.master-data.read',
@@ -183,6 +185,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.OPERATING_TASKS_MANAGE, 'Assign, resolve and dismiss operating tasks'),
   core(PERMISSIONS.CORE.CONNECT_READ, 'View the Connect inbox and imports'),
   core(PERMISSIONS.CORE.CONNECT_MANAGE, 'Run imports and manage inbound messages'),
+  core(PERMISSIONS.CORE.AUTOMATION_RULES_READ, 'View tenant automation rules'),
+  core(PERMISSIONS.CORE.AUTOMATION_RULES_MANAGE, 'Create, update and delete automation rules'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ, 'View customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_MANAGE, 'Manage customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.ORDERS_READ, 'View transport orders'),

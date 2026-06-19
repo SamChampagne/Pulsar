@@ -98,6 +98,7 @@ model Tenant {
   bids             Bid[]
   awards           Award[]
   orderTemplates   OrderTemplate[]
+  automationRules  AutomationRule[]
 
   @@map("tenants")
 }
@@ -777,6 +778,28 @@ model OrderTemplate {
 
   @@index([tenantId, customerId])
   @@map("order_templates")
+}
+
+// Tenant-configurable automation rule (Module I): "Quand <event> [Si <conditions>] Alors créer une tâche".
+// match (ALL/ANY), conditions[] and the CREATE_TASK action are validated against @pulsar/shared unions;
+// stored as String/Json (no new Prisma enum).
+model AutomationRule {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  eventType   String
+  enabled     Boolean  @default(true)
+  match       String
+  conditions  Json
+  action      Json
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, eventType, enabled])
+  @@map("automation_rules")
 }
 
 enum ShipmentStatus {
