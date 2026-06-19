@@ -33,6 +33,6 @@ import { MaintenanceSchedulesService } from './schedules/maintenance-schedules.s
     FleetOverviewService,
     MaintenanceSchedulesService,
   ],
-  exports: [MaintenanceService, ComplianceService],
+  exports: [MaintenanceService, ComplianceService, FleetOverviewService],
 })
 export class FleetModule {}

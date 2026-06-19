@@ -5,11 +5,13 @@ import {
   NotificationLevel,
   OperationalTaskStatus,
   TaskAssigneeType,
+  computeSlaDueAt,
   resolvePolicies,
   type Severity,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SequencesService } from '../../prisma/sequences.service';
 import { AgentWorkerService } from './agent-worker.service';
 import { TaskAssignmentResolver } from './event-policies';
 
@@ -30,6 +32,7 @@ export class DomainEventsService {
     private readonly prisma: PrismaService,
     private readonly assignment: TaskAssignmentResolver,
     private readonly worker: AgentWorkerService,
+    private readonly sequences: SequencesService,
   ) {}
 
   /** Persist a domain event. Best-effort: a failure is logged, never thrown into the caller. */
@@ -80,6 +83,19 @@ export class DomainEventsService {
         const specs = resolvePolicies({ type: event.type, payload: (event.payload ?? {}) as Record<string, unknown> });
         for (const spec of specs) {
           const agentId = await this.assignment.resolveAgent(event.tenantId, spec);
+          const nowMs = Date.now();
+          const slaDueAt = new Date(computeSlaDueAt(spec.category, nowMs));
+
+          // Best-effort: obtain a case number, but never block task creation on failure.
+          let caseNumber: string | undefined;
+          try {
+            caseNumber = await this.sequences.nextNumber(event.tenantId, 'exception-case');
+          } catch (seqErr) {
+            this.logger.error(
+              `caseNumber sequence failed for tenant ${event.tenantId}: ${seqErr instanceof Error ? seqErr.message : String(seqErr)}`,
+            );
+          }
+
           try {
             const created = await this.prisma.operationalTask.create({
               data: {
@@ -96,6 +112,8 @@ export class DomainEventsService {
                 assigneeAgentId: agentId,
                 dedupKey: spec.dedupKey,
                 sourceEventId: event.id,
+                slaDueAt,
+                ...(caseNumber !== undefined ? { caseNumber } : {}),
               },
               select: { id: true },
             });

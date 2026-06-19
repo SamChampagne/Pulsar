@@ -28,9 +28,13 @@ import { FleetModule } from './modules/fleet/fleet.module';
 import { WmsModule } from './modules/wms/wms.module';
 import { YardModule } from './modules/yard/yard.module';
 import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
+import { CarrierPortalModule } from './modules/carrier-portal/carrier-portal.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { ProcurementModule } from './modules/procurement/procurement.module';
 import { OperatingModule } from './core/operating/operating.module';
 import { PreferencesModule } from './core/preferences/preferences.module';
+import { ConnectModule } from './core/connect/connect.module';
 
 @Module({
   imports: [
@@ -63,13 +67,17 @@ import { PreferencesModule } from './core/preferences/preferences.module';
     PlatformModule,
     OperatingModule,
     PreferencesModule,
+    ConnectModule,
     // Business modules (activable per tenant — see ModulesGuard)
     TransportationModule,
     FleetModule,
     WmsModule,
     YardModule,
     CustomerPortalModule,
+    CarrierPortalModule,
     BillingModule,
+    AnalyticsModule,
+    ProcurementModule,
   ],
   providers: [
     // Guard order matters: authenticate, then check module activation, then permissions.

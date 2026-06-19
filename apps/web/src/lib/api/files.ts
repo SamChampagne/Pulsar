@@ -32,3 +32,32 @@ export async function fetchDocumentObjectUrl(id: string): Promise<string> {
   const blob = await res.blob();
   return URL.createObjectURL(blob);
 }
+
+/**
+ * Submit a CSV import batch.
+ * Sends multipart/form-data: file, target, mapping (JSON string).
+ */
+export async function submitCsvImport<T>(
+  file: File,
+  target: string,
+  mapping: Record<string, string>,
+): Promise<T> {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('target', target);
+  fd.append('mapping', JSON.stringify(mapping));
+  const token = getAccessToken();
+  const res = await fetch(`${BASE}/connect/imports`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: fd,
+  });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null);
+    const msg = Array.isArray(payload?.message)
+      ? payload.message.join(', ')
+      : (payload?.message ?? res.statusText);
+    throw new Error(msg);
+  }
+  return (await res.json()) as T;
+}

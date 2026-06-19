@@ -172,3 +172,115 @@ describe('cross-module policies', () => {
     expect(specs[0].title).toContain('TRL-9');
   });
 });
+
+describe('driver.exception policy', () => {
+  it('maps driver.exception DAMAGE to a CRITICAL DRIVER_EXCEPTION task', () => {
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.DRIVER_EXCEPTION,
+      payload: {
+        loadId: 'l1',
+        loadNumber: 'LD-42',
+        kind: 'DAMAGE',
+        note: 'Front bumper dented',
+        bucket: '2026-06-18T14:00',
+      },
+    });
+    expect(specs).toHaveLength(1);
+    expect(specs[0].type).toBe(OperationalTaskType.EXCEPTION);
+    expect(specs[0].category).toBe('DRIVER_EXCEPTION');
+    expect(specs[0].severity).toBe('CRITICAL');
+    expect(specs[0].subjectType).toBe('load');
+    expect(specs[0].subjectId).toBe('l1');
+    expect(specs[0].title).toBe('Exception conducteur — DAMAGE (load LD-42)');
+    expect(specs[0].dedupKey).toBe('driver-exception:l1:DAMAGE:2026-06-18T14:00');
+    expect(specs[0].assignHint).toBe('AUTO');
+  });
+
+  it('maps driver.exception REFUSED to CRITICAL severity', () => {
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.DRIVER_EXCEPTION,
+      payload: { loadId: 'l2', loadNumber: 'LD-99', kind: 'REFUSED', note: 'Customer absent', bucket: 'b1' },
+    });
+    expect(specs[0].severity).toBe('CRITICAL');
+  });
+
+  it('maps driver.exception DELAY to WARNING severity', () => {
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.DRIVER_EXCEPTION,
+      payload: { loadId: 'l3', loadNumber: 'LD-7', kind: 'DELAY', note: 'Traffic jam', bucket: 'b2' },
+    });
+    expect(specs[0].severity).toBe('WARNING');
+    expect(specs[0].dedupKey).toBe('driver-exception:l3:DELAY:b2');
+  });
+
+  it('maps driver.exception OTHER to WARNING severity', () => {
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.DRIVER_EXCEPTION,
+      payload: { loadId: 'l4', loadNumber: 'LD-3', kind: 'OTHER', note: 'Weather', bucket: 'b3' },
+    });
+    expect(specs[0].severity).toBe('WARNING');
+  });
+});
+
+describe('PORTAL_CHANGE_REQUEST policy', () => {
+  const orderId = 'to-abc';
+  const bucket = '2026-06-18T15:00';
+
+  it('maps portal.change-request with subject transport-order → CHANGE_REQUEST WARNING task', () => {
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.PORTAL_CHANGE_REQUEST,
+      payload: {
+        subject: { type: 'transport-order', id: orderId },
+        kind: 'DATE',
+        bucket,
+        customerName: 'Acme',
+        note: 'Please move to next week',
+        orderNumber: 'TO-1',
+      },
+    });
+    expect(specs).toHaveLength(1);
+    expect(specs[0].type).toBe(OperationalTaskType.EXCEPTION);
+    expect(specs[0].category).toBe('CHANGE_REQUEST');
+    expect(specs[0].severity).toBe('WARNING');
+    expect(specs[0].subjectType).toBe('transport-order');
+    expect(specs[0].subjectId).toBe(orderId);
+    expect(specs[0].title).toBe('Demande de changement client — DATE');
+    expect(specs[0].title).toContain('DATE');
+    expect(specs[0].dedupKey).toBe(`portal-change:${orderId}:DATE:${bucket}`);
+    expect(specs[0].assignHint).toBe('UNASSIGNED');
+  });
+
+  it('maps portal.change-request with subject shipment → correct subjectType and subjectId', () => {
+    const shipmentId = 'sh-xyz';
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.PORTAL_CHANGE_REQUEST,
+      payload: {
+        subject: { type: 'shipment', id: shipmentId },
+        kind: 'ADDRESS',
+        bucket,
+        customerName: 'Acme',
+        note: 'New delivery address',
+      },
+    });
+    expect(specs).toHaveLength(1);
+    expect(specs[0].subjectType).toBe('shipment');
+    expect(specs[0].subjectId).toBe(shipmentId);
+    expect(specs[0].dedupKey).toBe(`portal-change:${shipmentId}:ADDRESS:${bucket}`);
+  });
+
+  it('returns stable dedupKey — same subject+kind+bucket always yields the same key', () => {
+    const makeSpecs = () =>
+      resolvePolicies({
+        type: DOMAIN_EVENT_TYPES.PORTAL_CHANGE_REQUEST,
+        payload: {
+          subject: { type: 'transport-order', id: orderId },
+          kind: 'CANCEL',
+          bucket,
+          customerName: 'Acme',
+          note: 'Client changed their mind',
+        },
+      });
+    expect(makeSpecs()[0].dedupKey).toBe(makeSpecs()[0].dedupKey);
+    expect(makeSpecs()[0].dedupKey).toBe(`portal-change:${orderId}:CANCEL:${bucket}`);
+  });
+});

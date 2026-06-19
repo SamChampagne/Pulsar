@@ -16,7 +16,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 import { ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { StopStatus } from '@pulsar/shared';
 import type { Response } from 'express';
-import { IsEnum, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsEnum, IsIn, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Public } from '../../../common/decorators/public.decorator';
 import { TendersService } from '../tenders/tenders.service';
 import { BolService } from '../bol/bol.service';
@@ -56,6 +56,23 @@ class DriverPositionDto {
   @Min(-180)
   @Max(180)
   longitude!: number;
+}
+
+class DriverReportExceptionDto {
+  @IsOptional()
+  @IsString()
+  shipmentId?: string;
+
+  @IsOptional()
+  @IsString()
+  stopId?: string;
+
+  @IsIn(['DAMAGE', 'DELAY', 'REFUSED', 'OTHER'])
+  @IsString()
+  kind!: string;
+
+  @IsString()
+  note!: string;
 }
 
 /**
@@ -151,5 +168,28 @@ export class PublicLinksController {
       else res.destroy();
     });
     stream.pipe(res);
+  }
+
+  /** Attach a PNG signature image to a shipment's proof-of-delivery. */
+  @Post('driver/:token/pod/:shipmentId/signature')
+  @UseGuards(ThrottlerGuard)
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  driverPodSignature(
+    @Param('token') token: string,
+    @Param('shipmentId') shipmentId: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('Missing "file" field (multipart/form-data)');
+    return this.links.driverAttachSignature(token, shipmentId, file);
+  }
+
+  /** Report a driver exception (damage, delay, refusal, other) for audit and workbench task creation. */
+  @Post('driver/:token/exception')
+  @UseGuards(ThrottlerGuard)
+  @HttpCode(200)
+  driverException(@Param('token') token: string, @Body() dto: DriverReportExceptionDto) {
+    return this.links.driverReportException(token, dto);
   }
 }

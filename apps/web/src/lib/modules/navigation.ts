@@ -19,6 +19,8 @@ import {
   Bot,
   Settings,
   Cable,
+  BarChart3,
+  ClipboardList,
 } from 'lucide-svelte';
 import type { ComponentType } from 'svelte';
 
@@ -276,6 +278,48 @@ export function navCatalogue(): NavDomain[] {
       ],
     },
 
+    // ── Analytics / Control Tower ─────────────────────────────────────────
+    {
+      key: 'analytics',
+      label: 'Analytics',
+      icon: BarChart3,
+      home: '/analytics/control-tower',
+      module: MODULE_KEYS.ANALYTICS,
+      anyPerms: ['analytics.read'],
+      prefixes: ['/analytics'],
+      sections: [
+        {
+          links: [
+            { href: '/analytics/control-tower', label: 'Control Tower', perm: 'analytics.read' },
+            {
+              href: '/analytics',
+              label: 'Scorecard transporteurs',
+              perm: 'transportation.analytics.read',
+            },
+          ],
+        },
+      ],
+    },
+
+    // ── Procurement / Bid Board ────────────────────────────────────────────
+    {
+      key: 'procurement',
+      label: 'Achats',
+      icon: ClipboardList,
+      home: '/procurement/rfps',
+      module: MODULE_KEYS.PROCUREMENT,
+      anyPerms: ['procurement.read'],
+      prefixes: ['/procurement'],
+      sections: [
+        {
+          links: [
+            { href: '/procurement/rfps', label: "Appels d'offres", perm: 'procurement.read' },
+            { href: '/procurement/routing-guide', label: 'Guide de routage', perm: 'procurement.read' },
+          ],
+        },
+      ],
+    },
+
     // ── Connect / Developer Platform ───────────────────────────────────────
     {
       key: 'connect',
@@ -288,6 +332,8 @@ export function navCatalogue(): NavDomain[] {
         {
           links: [
             { href: '/connect', label: 'Connect home' },
+            { href: '/connect/inbox', label: 'Inbox', perm: PERMISSIONS.CORE.CONNECT_READ },
+            { href: '/connect/imports', label: 'Imports', perm: PERMISSIONS.CORE.CONNECT_READ },
             { href: '/integrations', label: 'Connecteurs' },
             { href: '/settings/api-keys', label: 'Clés API' },
             { href: '/agents', label: 'MCP / agents', perm: PERMISSIONS.CORE.AGENTS_READ },

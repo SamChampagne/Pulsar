@@ -40,6 +40,14 @@
     $auth?.tenant.enabledModules.includes(MODULE_KEYS.CUSTOMER_PORTAL) ?? false,
   );
 
+  const canManageLinks = $derived(
+    ($auth?.user.permissions ?? []).includes('customer-portal.links.manage') ?? false,
+  );
+
+  let brandLogoUrl = $state('');
+  let brandAccentColor = $state('#000000');
+  let brandSaving = $state(false);
+
   async function portalLink(customer: CustomerRow) {
     try {
       const { url } = await api<{ url: string }>(
@@ -100,8 +108,34 @@
     }
   }
 
+  async function loadBranding() {
+    try {
+      const b = await api<{ logoUrl?: string; accentColor?: string }>('/customer-portal/branding');
+      brandLogoUrl = b.logoUrl ?? '';
+      brandAccentColor = b.accentColor ?? '#000000';
+    } catch {
+      // 404 or not available — keep defaults
+    }
+  }
+
+  async function saveBranding() {
+    brandSaving = true;
+    try {
+      await api('/customer-portal/branding', {
+        method: 'PUT',
+        body: { logoUrl: brandLogoUrl || undefined, accentColor: brandAccentColor || undefined },
+      });
+      toast.success('Branding mis à jour');
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Échec de la mise à jour du branding');
+    } finally {
+      brandSaving = false;
+    }
+  }
+
   $effect(() => {
     void load();
+    if (hasPortal && canManageLinks) void loadBranding();
   });
 </script>
 
@@ -163,6 +197,25 @@
       {/each}
     {/snippet}
   </Table>
+{/if}
+
+{#if hasPortal && canManageLinks}
+  <div class="mt-6">
+    <Card>
+      <h2 class="mb-4 text-base font-semibold text-ink">Branding du portail</h2>
+      <div class="flex flex-col gap-4">
+        <Field label="URL du logo">
+          <Input bind:value={brandLogoUrl} placeholder="https://...logo.png" />
+        </Field>
+        <Field label="Couleur d'accent">
+          <input type="color" bind:value={brandAccentColor} class="h-9 w-16 cursor-pointer rounded border border-edge" />
+        </Field>
+        <div class="flex justify-end">
+          <Button onclick={saveBranding} loading={brandSaving}>Enregistrer</Button>
+        </div>
+      </div>
+    </Card>
+  </div>
 {/if}
 
 <Modal bind:open={showForm} title="Nouveau client" size="md">

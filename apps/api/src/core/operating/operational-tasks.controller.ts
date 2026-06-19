@@ -5,7 +5,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { OperationalTasksService } from './operational-tasks.service';
 import { ListTasksDto } from './dto/list-tasks.dto';
-import { AssignTaskDto, ResolveTaskDto } from './dto/task-action.dto';
+import { AddNoteDto, AssignTaskDto, ResolveTaskDto } from './dto/task-action.dto';
 
 @ApiTags('core/operating')
 @ApiBearerAuth()
@@ -48,5 +48,27 @@ export class OperationalTasksController {
   @RequirePermissions(PERMISSIONS.CORE.OPERATING_TASKS_MANAGE)
   dismiss(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: ResolveTaskDto) {
     return this.tasks.dismiss(user.tenantId, id, user.id, body.note);
+  }
+
+  @Post(':id/start')
+  @RequirePermissions(PERMISSIONS.CORE.OPERATING_TASKS_MANAGE)
+  start(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.tasks.start(user.tenantId, id, user.id);
+  }
+
+  @Post(':id/note')
+  @RequirePermissions(PERMISSIONS.CORE.OPERATING_TASKS_MANAGE)
+  addNote(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body: AddNoteDto,
+  ) {
+    return this.tasks.addNote(user.tenantId, id, user.id, body.text);
+  }
+
+  @Get(':id/timeline')
+  @RequirePermissions(PERMISSIONS.CORE.OPERATING_TASKS_READ)
+  timeline(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.tasks.timeline(user.tenantId, id);
   }
 }

@@ -12,6 +12,7 @@ import {
   TrackingEventType,
 } from '@pulsar/shared';
 import { DocumentsService } from '../../../core/documents/documents.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
 import { RoutesService } from '../routes/routes.service';
@@ -32,6 +33,7 @@ export class PublicLinksService {
     private readonly tracking: TrackingService,
     private readonly documents: DocumentsService,
     private readonly modulesCache: TenantModulesCacheService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
 
   // --- Customer tracking -----------------------------------------------------
@@ -147,6 +149,7 @@ export class PublicLinksService {
           plannedArrivalLate: s.plannedArrivalLate,
           actualArrivalAt: s.actualArrivalAt,
           actualDepartureAt: s.actualDepartureAt,
+          notes: s.notes,
           location: s.location,
         })) ?? [],
     };
@@ -234,5 +237,96 @@ export class PublicLinksService {
       throw err;
     }
     return { recorded: true };
+  }
+
+  async driverAttachSignature(
+    token: string,
+    shipmentId: string,
+    file: Express.Multer.File,
+  ): Promise<{ ok: boolean }> {
+    const load = await this.loadByDriverToken(token);
+    // Public routes bypass ModulesGuard — re-check activation (CLAUDE.md rule 15).
+    const enabled = await this.modulesCache.getEnabledKeys(load.tenantId);
+    if (!enabled.has(MODULE_KEYS.TRANSPORTATION)) {
+      throw new ForbiddenException('Transportation is not enabled for this shipper');
+    }
+    if (!load.shipments.some((s) => s.id === shipmentId)) {
+      throw new NotFoundException('Shipment not on this load');
+    }
+    if (file.mimetype !== 'image/png') {
+      throw new BadRequestException('Only PNG signatures are accepted');
+    }
+    const doc = await this.documents.upload(load.tenantId, {
+      entityType: 'proof-of-delivery',
+      entityId: shipmentId,
+      fileName: 'signature.png',
+      mimeType: 'image/png',
+      body: file.buffer,
+    });
+    const existing = await this.prisma.proofOfDelivery.findUnique({
+      where: { shipmentId },
+      select: { id: true },
+    });
+    if (existing) {
+      await this.prisma.proofOfDelivery.update({
+        where: { shipmentId },
+        data: { signatureDocumentId: doc.id },
+      });
+    } else {
+      await this.prisma.proofOfDelivery.create({
+        data: {
+          tenantId: load.tenantId,
+          shipmentId,
+          signatureDocumentId: doc.id,
+          signedAt: new Date(),
+        },
+      });
+    }
+    return { ok: true };
+  }
+
+  async driverReportException(
+    token: string,
+    dto: { shipmentId?: string; stopId?: string; kind: string; note: string },
+  ): Promise<{ ok: boolean }> {
+    const load = await this.loadByDriverToken(token);
+    // Public routes bypass ModulesGuard — re-check activation (CLAUDE.md rule 15).
+    const enabled = await this.modulesCache.getEnabledKeys(load.tenantId);
+    if (!enabled.has(MODULE_KEYS.TRANSPORTATION)) {
+      throw new ForbiddenException('Transportation is not enabled for this shipper');
+    }
+    if (dto.shipmentId && !load.shipments.some((s) => s.id === dto.shipmentId)) {
+      throw new NotFoundException('Shipment not on this load');
+    }
+    if (dto.stopId && !load.route?.stops.some((s) => s.id === dto.stopId)) {
+      throw new NotFoundException('Stop not on this load');
+    }
+    // Minute-bucket dedupKey mirrors position recording convention.
+    const bucket = new Date().toISOString().slice(0, 16); // "YYYY-MM-DDTHH:MM"
+    await this.prisma.trackingEvent.create({
+      data: {
+        tenantId: load.tenantId,
+        type: TrackingEventType.EXCEPTION,
+        loadId: load.id,
+        shipmentId: dto.shipmentId ?? null,
+        stopId: dto.stopId ?? null,
+        payload: { kind: dto.kind, note: dto.note, shipmentId: dto.shipmentId, stopId: dto.stopId },
+      },
+    });
+    void this.domainEvents.emit(
+      load.tenantId,
+      'driver.exception',
+      { type: 'load', id: load.id },
+      {
+        loadId: load.id,
+        loadNumber: load.loadNumber,
+        shipmentId: dto.shipmentId,
+        stopId: dto.stopId,
+        kind: dto.kind,
+        note: dto.note,
+        bucket,
+      },
+    ).catch(() => {});
+    return { ok: true };
   }
 }

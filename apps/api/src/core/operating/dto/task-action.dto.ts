@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsNotEmpty } from 'class-validator';
 import { TaskAssigneeType } from '@pulsar/shared';
 
 export class ResolveTaskDto {
@@ -7,6 +7,13 @@ export class ResolveTaskDto {
   @IsOptional()
   @IsString()
   note?: string;
+}
+
+export class AddNoteDto {
+  @ApiProperty({ description: 'Note text to append to the task.' })
+  @IsString()
+  @IsNotEmpty()
+  text!: string;
 }
 
 export class AssignTaskDto {

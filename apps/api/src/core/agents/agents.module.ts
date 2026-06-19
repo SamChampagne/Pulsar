@@ -10,9 +10,23 @@ import { RatingService } from '../../modules/transportation/rating/rating.servic
 import { ShipmentsService } from '../../modules/transportation/shipments/shipments.service';
 import { TendersService } from '../../modules/transportation/tenders/tenders.service';
 import { AnalyticsService } from '../../modules/transportation/analytics/analytics.service';
+import { VehiclesService } from '../../modules/transportation/vehicles/vehicles.service';
+import { TrailersService } from '../../modules/transportation/trailers/trailers.service';
 import { OperationalTasksService } from '../operating/operational-tasks.service';
 import { BillingModule } from '../../modules/billing/billing.module';
 import { FreightAuditService } from '../../modules/billing/freight-audit/freight-audit.service';
+import { FleetModule } from '../../modules/fleet/fleet.module';
+import { MaintenanceService } from '../../modules/fleet/maintenance/maintenance.service';
+import { ComplianceService } from '../../modules/fleet/compliance/compliance.service';
+import { FleetOverviewService } from '../../modules/fleet/overview/fleet-overview.service';
+import { YardModule } from '../../modules/yard/yard.module';
+import { VisitsService } from '../../modules/yard/visits/visits.service';
+import { AppointmentsService } from '../../modules/yard/appointments/appointments.service';
+import { YardOverviewService } from '../../modules/yard/overview/yard-overview.service';
+import { WmsModule } from '../../modules/wms/wms.module';
+import { WmsOverviewService } from '../../modules/wms/overview/wms-overview.service';
+import { PickingService } from '../../modules/wms/picking/picking.service';
+import { CycleCountsService } from '../../modules/wms/cycle-counts/cycle-counts.service';
 import { AgentsController } from './agents.controller';
 import { AgentsService } from './agents.service';
 import { ProposedActionsController } from './proposed-actions.controller';
@@ -45,6 +59,9 @@ import { RuntimeConfigController } from './runtime-config.controller';
     NotificationsModule,
     forwardRef(() => OperatingModule),
     forwardRef(() => BillingModule),
+    FleetModule,
+    YardModule,
+    WmsModule,
   ],
   controllers: [
     AgentsController,
@@ -68,8 +85,19 @@ import { RuntimeConfigController } from './runtime-config.controller';
         ShipmentsService,
         TendersService,
         AnalyticsService,
+        VehiclesService,
+        TrailersService,
         OperationalTasksService,
         FreightAuditService,
+        MaintenanceService,
+        ComplianceService,
+        FleetOverviewService,
+        VisitsService,
+        AppointmentsService,
+        YardOverviewService,
+        WmsOverviewService,
+        PickingService,
+        CycleCountsService,
       ],
       useFactory: (
         transportOrders: TransportOrdersService,
@@ -78,8 +106,19 @@ import { RuntimeConfigController } from './runtime-config.controller';
         shipments: ShipmentsService,
         tenders: TendersService,
         analytics: AnalyticsService,
+        vehicles: VehiclesService,
+        trailers: TrailersService,
         operationalTasks: OperationalTasksService,
         freightAudit: FreightAuditService,
+        maintenance: MaintenanceService,
+        compliance: ComplianceService,
+        fleetOverview: FleetOverviewService,
+        visits: VisitsService,
+        appointments: AppointmentsService,
+        yardOverview: YardOverviewService,
+        wmsOverview: WmsOverviewService,
+        picking: PickingService,
+        cycleCounts: CycleCountsService,
       ): ToolServices => ({
         transportOrders: {
           list: (tenantId, query) => transportOrders.list(tenantId, query as never),
@@ -111,6 +150,52 @@ import { RuntimeConfigController } from './runtime-config.controller';
         freightAudit: {
           audit: (t, u, id) => freightAudit.audit(t, u, id),
           dispute: (t, a, id, dto, agentId) => freightAudit.dispute(t, a, id, dto as never, agentId),
+        },
+        vehicles: {
+          list: (tenantId, query) => vehicles.list(tenantId, query as never),
+          get: (tenantId, id) => vehicles.get(tenantId, id),
+        },
+        trailers: {
+          list: (tenantId, query) => trailers.list(tenantId, query as never),
+          get: (tenantId, id) => trailers.get(tenantId, id),
+        },
+        fleetOverview: {
+          overview: (tenantId) => fleetOverview.overview(tenantId),
+        },
+        fleetCompliance: {
+          expiring: (tenantId, days) => compliance.expiring(tenantId, days),
+        },
+        fleetMaintenance: {
+          create: (tenantId, userId, dto) => maintenance.create(tenantId, userId, dto as never),
+        },
+        yardVisits: {
+          list: (tenantId, q) => visits.list(tenantId, q as never),
+          get: (tenantId, id) => visits.get(tenantId, id),
+          assign: (tenantId, userId, visitId, dto) =>
+            visits.assign(tenantId, userId, visitId, dto),
+          move: (tenantId, userId, visitId, dto) =>
+            visits.move(tenantId, userId, visitId, dto),
+          checkOut: (tenantId, userId, visitId) =>
+            visits.checkOut(tenantId, userId, visitId),
+        },
+        yardOverview: {
+          overview: (tenantId) => yardOverview.overview(tenantId),
+          board: (tenantId, locationId) => yardOverview.board(tenantId, locationId),
+        },
+        yardAppointments: {
+          create: (tenantId, userId, dto) =>
+            appointments.create(tenantId, userId, dto as never),
+          arrive: (tenantId, userId, id) =>
+            appointments.arrive(tenantId, userId, id),
+        },
+        wmsOverview: {
+          overview: (tenantId) => wmsOverview.overview(tenantId),
+        },
+        wmsPicking: {
+          get: (tenantId, id) => picking.get(tenantId, id),
+        },
+        wmsCycleCounts: {
+          create: (tenantId, userId, dto) => cycleCounts.create(tenantId, userId, dto),
         },
       }),
     },

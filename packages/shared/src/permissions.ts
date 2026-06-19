@@ -29,6 +29,8 @@ export const PERMISSIONS = {
     AGENTS_CHAT: 'core.agents.chat',
     OPERATING_TASKS_READ: 'core.operating.tasks.read',
     OPERATING_TASKS_MANAGE: 'core.operating.tasks.manage',
+    CONNECT_READ: 'core.connect.read',
+    CONNECT_MANAGE: 'core.connect.manage',
   },
   TRANSPORTATION: {
     MASTER_DATA_READ: 'transportation.master-data.read',
@@ -50,6 +52,10 @@ export const PERMISSIONS = {
   },
   CUSTOMER_PORTAL: {
     LINKS_MANAGE: 'customer-portal.links.manage',
+  },
+  CARRIER_PORTAL: {
+    LINKS_MANAGE: 'carrier-portal.links.manage',
+    READ: 'carrier-portal.read',
   },
   BILLING: {
     INVOICES_READ: 'billing.invoices.read',
@@ -74,6 +80,13 @@ export const PERMISSIONS = {
     READ: 'yard.read',
     MANAGE: 'yard.manage',
   },
+  ANALYTICS: {
+    READ: 'analytics.read',
+  },
+  PROCUREMENT: {
+    READ: 'procurement.read',
+    MANAGE: 'procurement.manage',
+  },
 } as const;
 
 export type PermissionKey =
@@ -83,7 +96,10 @@ export type PermissionKey =
   | (typeof PERMISSIONS.BILLING)[keyof typeof PERMISSIONS.BILLING]
   | (typeof PERMISSIONS.FLEET)[keyof typeof PERMISSIONS.FLEET]
   | (typeof PERMISSIONS.WMS)[keyof typeof PERMISSIONS.WMS]
-  | (typeof PERMISSIONS.YARD)[keyof typeof PERMISSIONS.YARD];
+  | (typeof PERMISSIONS.YARD)[keyof typeof PERMISSIONS.YARD]
+  | (typeof PERMISSIONS.ANALYTICS)[keyof typeof PERMISSIONS.ANALYTICS]
+  | (typeof PERMISSIONS.PROCUREMENT)[keyof typeof PERMISSIONS.PROCUREMENT]
+  | (typeof PERMISSIONS.CARRIER_PORTAL)[keyof typeof PERMISSIONS.CARRIER_PORTAL];
 
 export interface PermissionDescriptor {
   key: PermissionKey;
@@ -126,6 +142,21 @@ const yard = (key: PermissionKey, description: string): PermissionDescriptor => 
   module: MODULE_KEYS.YARD,
   description,
 });
+const analytics = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.ANALYTICS,
+  description,
+});
+const procurement = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.PROCUREMENT,
+  description,
+});
+const carrierPortal = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.CARRIER_PORTAL,
+  description,
+});
 
 export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.TENANT_READ, 'View tenant profile and settings'),
@@ -150,6 +181,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.AGENTS_CHAT, 'Converse with AI agents (⌘K assistant)'),
   core(PERMISSIONS.CORE.OPERATING_TASKS_READ, 'View the operating workbench (tasks & exceptions)'),
   core(PERMISSIONS.CORE.OPERATING_TASKS_MANAGE, 'Assign, resolve and dismiss operating tasks'),
+  core(PERMISSIONS.CORE.CONNECT_READ, 'View the Connect inbox and imports'),
+  core(PERMISSIONS.CORE.CONNECT_MANAGE, 'Run imports and manage inbound messages'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ, 'View customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_MANAGE, 'Manage customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.ORDERS_READ, 'View transport orders'),
@@ -182,6 +215,11 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   wms(PERMISSIONS.WMS.MANAGE, 'Manage warehouse items, bins, receipts and pick orders'),
   yard(PERMISSIONS.YARD.READ, 'View yard spots, visits and dock appointments'),
   yard(PERMISSIONS.YARD.MANAGE, 'Manage yard spots, gate check-in/out, moves and appointments'),
+  analytics(PERMISSIONS.ANALYTICS.READ, 'View the operational Control Tower and analytics'),
+  procurement(PERMISSIONS.PROCUREMENT.READ, 'View RFPs, bids, invites and routing guide'),
+  procurement(PERMISSIONS.PROCUREMENT.MANAGE, 'Manage RFPs, invite carriers, evaluate bids and award lanes'),
+  carrierPortal(PERMISSIONS.CARRIER_PORTAL.LINKS_MANAGE, 'Generate and revoke carrier portal links'),
+  carrierPortal(PERMISSIONS.CARRIER_PORTAL.READ, 'View carrier portal configuration and access links'),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);

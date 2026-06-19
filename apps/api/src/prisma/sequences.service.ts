@@ -12,7 +12,11 @@ export type SequenceKey =
   | 'pick-order'
   | 'cycle-count'
   | 'dock-appointment'
-  | 'yard-visit';
+  | 'yard-visit'
+  | 'exception-case'
+  | 'import-batch'
+  | 'inbound-message'
+  | 'rfp';
 
 const PREFIXES: Record<SequenceKey, string> = {
   'transport-order': 'TO',
@@ -26,6 +30,10 @@ const PREFIXES: Record<SequenceKey, string> = {
   'cycle-count': 'CC',
   'dock-appointment': 'DA',
   'yard-visit': 'YV',
+  'exception-case': 'EC',
+  'import-batch': 'IB',
+  'inbound-message': 'IN',
+  'rfp': 'RFP',
 };
 
 /**

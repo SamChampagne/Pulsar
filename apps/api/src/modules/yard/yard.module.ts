@@ -24,5 +24,6 @@ import { YardOverviewController } from './overview/yard-overview.controller';
   imports: [AuditLogsModule, forwardRef(() => OperatingModule)],
   controllers: [SpotsController, VisitsController, AppointmentsController, YardOverviewController],
   providers: [SpotsService, VisitsService, AppointmentsService, YardOverviewService],
+  exports: [VisitsService, AppointmentsService, YardOverviewService],
 })
 export class YardModule {}

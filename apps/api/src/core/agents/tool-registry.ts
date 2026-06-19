@@ -58,6 +58,46 @@ export interface ToolServices {
       agentId?: string,
     ): Promise<unknown>;
   };
+  // ── Fleet ──────────────────────────────────────────────────────────────────
+  vehicles: {
+    list(tenantId: string, query: object): Promise<unknown>;
+    get(tenantId: string, id: string): Promise<unknown>;
+  };
+  trailers: {
+    list(tenantId: string, query: object): Promise<unknown>;
+    get(tenantId: string, id: string): Promise<unknown>;
+  };
+  fleetOverview: { overview(tenantId: string): Promise<unknown> };
+  fleetCompliance: { expiring(tenantId: string, days?: number): Promise<unknown> };
+  fleetMaintenance: {
+    create(
+      tenantId: string,
+      userId: string,
+      dto: { vehicleId?: string; trailerId?: string; type: string; description: string },
+    ): Promise<unknown>;
+  };
+  // ── Yard ───────────────────────────────────────────────────────────────────
+  yardVisits: {
+    list(tenantId: string, q: object): Promise<unknown>;
+    get(tenantId: string, id: string): Promise<unknown>;
+    assign(tenantId: string, userId: string, visitId: string, dto: { spotId: string; note?: string }): Promise<unknown>;
+    move(tenantId: string, userId: string, visitId: string, dto: { spotId: string; note?: string }): Promise<unknown>;
+    checkOut(tenantId: string, userId: string, visitId: string): Promise<unknown>;
+  };
+  yardOverview: {
+    overview(tenantId: string): Promise<unknown>;
+    board(tenantId: string, locationId?: string): Promise<unknown>;
+  };
+  yardAppointments: {
+    create(tenantId: string, userId: string, dto: object): Promise<unknown>;
+    arrive(tenantId: string, userId: string, id: string): Promise<unknown>;
+  };
+  // ── WMS ────────────────────────────────────────────────────────────────────
+  wmsOverview: { overview(tenantId: string): Promise<unknown> };
+  wmsPicking: { get(tenantId: string, id: string): Promise<unknown> };
+  wmsCycleCounts: {
+    create(tenantId: string, userId: string, dto: { binId: string; note?: string }): Promise<unknown>;
+  };
 }
 
 export interface ToolContext {
@@ -267,6 +307,339 @@ export const TOOL_REGISTRY: ToolDef[] = [
         ctx.principal.agentId,
       ),
     amountFrom: (args) => (typeof args.amount === 'number' ? args.amount : undefined),
+  },
+  // ── Fleet ──────────────────────────────────────────────────────────────────
+  {
+    name: 'list_assets',
+    description: 'List all fleet assets (vehicles and trailers) for the tenant.',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.FLEET.READ,
+    module: MODULE_KEYS.FLEET,
+    inputSchema: z.object({}),
+    run: async (_args, ctx) => {
+      const tenantId = ctx.principal.user.tenantId;
+      const [vehicles, trailers] = await Promise.all([
+        ctx.services.vehicles.list(tenantId, {}),
+        ctx.services.trailers.list(tenantId, {}),
+      ]);
+      return { vehicles, trailers };
+    },
+  },
+  {
+    name: 'get_vehicle',
+    description: 'Get a single vehicle by id.',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.FLEET.READ,
+    module: MODULE_KEYS.FLEET,
+    inputSchema: z.object({ vehicleId: z.string().min(1) }),
+    run: (args, ctx) =>
+      ctx.services.vehicles.get(ctx.principal.user.tenantId, args.vehicleId as string),
+  },
+  {
+    name: 'get_trailer',
+    description: 'Get a single trailer by id.',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.FLEET.READ,
+    module: MODULE_KEYS.FLEET,
+    inputSchema: z.object({ trailerId: z.string().min(1) }),
+    run: (args, ctx) =>
+      ctx.services.trailers.get(ctx.principal.user.tenantId, args.trailerId as string),
+  },
+  {
+    name: 'list_maintenance_due',
+    description:
+      'List fleet assets with open maintenance orders due within 7 days, plus PM schedules due/overdue.',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.FLEET.READ,
+    module: MODULE_KEYS.FLEET,
+    inputSchema: z.object({}),
+    run: async (_args, ctx) => {
+      const overview = await ctx.services.fleetOverview.overview(ctx.principal.user.tenantId) as {
+        openWorkOrders: number;
+        maintenanceDue: unknown[];
+        pmDue: unknown[];
+        pmOverdue: unknown[];
+        pmDueSoon: unknown[];
+      };
+      return {
+        openWorkOrders: overview.openWorkOrders,
+        maintenanceDue: overview.maintenanceDue,
+        pmDue: overview.pmDue,
+        pmOverdue: overview.pmOverdue,
+        pmDueSoon: overview.pmDueSoon,
+      };
+    },
+  },
+  {
+    name: 'flag_expiring_compliance',
+    description: 'List compliance documents expiring within the given number of days (default 30).',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.FLEET.READ,
+    module: MODULE_KEYS.FLEET,
+    inputSchema: z.object({ days: z.number().int().positive().optional() }),
+    run: (args, ctx) =>
+      ctx.services.fleetCompliance.expiring(
+        ctx.principal.user.tenantId,
+        typeof args.days === 'number' ? args.days : undefined,
+      ),
+  },
+  {
+    name: 'create_maintenance_order',
+    description:
+      'Create a maintenance work order for a vehicle or trailer. Exactly one of vehicleId or trailerId must be provided. PROPOSED — requires human approval.',
+    tier: RiskTier.MUTATING,
+    permission: PERMISSIONS.FLEET.MANAGE,
+    module: MODULE_KEYS.FLEET,
+    inputSchema: z.object({
+      vehicleId: z.string().min(1).optional(),
+      trailerId: z.string().min(1).optional(),
+      type: z.string().min(1),
+      description: z.string().min(1),
+    }),
+    run: (args, ctx) =>
+      ctx.services.fleetMaintenance.create(
+        ctx.principal.user.tenantId,
+        ctx.principal.user.id,
+        {
+          vehicleId: args.vehicleId as string | undefined,
+          trailerId: args.trailerId as string | undefined,
+          type: args.type as string,
+          description: args.description as string,
+        },
+      ),
+  },
+  {
+    name: 'mark_asset_out_of_service',
+    description:
+      'Open a REPAIR work order to put a vehicle or trailer out of service. Exactly one of vehicleId or trailerId must be provided. PROPOSED — requires human approval.',
+    tier: RiskTier.MUTATING,
+    permission: PERMISSIONS.FLEET.MANAGE,
+    module: MODULE_KEYS.FLEET,
+    inputSchema: z.object({
+      vehicleId: z.string().min(1).optional(),
+      trailerId: z.string().min(1).optional(),
+      reason: z.string().optional(),
+    }),
+    run: (args, ctx) =>
+      ctx.services.fleetMaintenance.create(
+        ctx.principal.user.tenantId,
+        ctx.principal.user.id,
+        {
+          vehicleId: args.vehicleId as string | undefined,
+          trailerId: args.trailerId as string | undefined,
+          type: 'REPAIR',
+          description: (args.reason as string | undefined) ?? 'Hors service (agent)',
+        },
+      ),
+  },
+  // ── Yard ───────────────────────────────────────────────────────────────────
+  {
+    name: 'list_yard_visits',
+    description: 'List yard visits, optionally filtered by status and/or location.',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.YARD.READ,
+    module: MODULE_KEYS.YARD,
+    inputSchema: z.object({
+      status: z.string().optional(),
+      locationId: z.string().min(1).optional(),
+    }),
+    run: (args, ctx) =>
+      ctx.services.yardVisits.list(ctx.principal.user.tenantId, {
+        status: args.status,
+        locationId: args.locationId,
+      }),
+  },
+  {
+    name: 'get_yard_board',
+    description:
+      'Get the live yard board: all spots with their occupying visit, and unassigned visits. Optionally filter by locationId.',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.YARD.READ,
+    module: MODULE_KEYS.YARD,
+    inputSchema: z.object({ locationId: z.string().min(1).optional() }),
+    run: (args, ctx) =>
+      ctx.services.yardOverview.board(
+        ctx.principal.user.tenantId,
+        args.locationId as string | undefined,
+      ),
+  },
+  {
+    name: 'flag_detention',
+    description:
+      'Return yard detention summary: number of active visits in detention and late appointments.',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.YARD.READ,
+    module: MODULE_KEYS.YARD,
+    inputSchema: z.object({}),
+    run: async (_args, ctx) => {
+      const overview = await ctx.services.yardOverview.overview(ctx.principal.user.tenantId) as {
+        detentionCount: number;
+        lateAppointments: number;
+        trucksInYard: number;
+      };
+      return {
+        detentionCount: overview.detentionCount,
+        lateAppointments: overview.lateAppointments,
+        trucksInYard: overview.trucksInYard,
+      };
+    },
+  },
+  {
+    name: 'assign_yard_spot',
+    description: 'Assign an active yard visit to a spot. PROPOSED — requires human approval.',
+    tier: RiskTier.MUTATING,
+    permission: PERMISSIONS.YARD.MANAGE,
+    module: MODULE_KEYS.YARD,
+    inputSchema: z.object({
+      visitId: z.string().min(1),
+      spotId: z.string().min(1),
+      note: z.string().optional(),
+    }),
+    run: (args, ctx) =>
+      ctx.services.yardVisits.assign(
+        ctx.principal.user.tenantId,
+        ctx.principal.user.id,
+        args.visitId as string,
+        { spotId: args.spotId as string, note: args.note as string | undefined },
+      ),
+  },
+  {
+    name: 'move_trailer',
+    description: 'Move an assigned yard visit to a different spot. PROPOSED — requires human approval.',
+    tier: RiskTier.MUTATING,
+    permission: PERMISSIONS.YARD.MANAGE,
+    module: MODULE_KEYS.YARD,
+    inputSchema: z.object({
+      visitId: z.string().min(1),
+      spotId: z.string().min(1),
+      note: z.string().optional(),
+    }),
+    run: (args, ctx) =>
+      ctx.services.yardVisits.move(
+        ctx.principal.user.tenantId,
+        ctx.principal.user.id,
+        args.visitId as string,
+        { spotId: args.spotId as string, note: args.note as string | undefined },
+      ),
+  },
+  {
+    name: 'create_dock_appointment',
+    description:
+      'Create a dock appointment for a carrier. PROPOSED — requires human approval.',
+    tier: RiskTier.MUTATING,
+    permission: PERMISSIONS.YARD.MANAGE,
+    module: MODULE_KEYS.YARD,
+    inputSchema: z.object({
+      locationId: z.string().min(1),
+      windowStart: z.string().min(1).describe('ISO 8601 datetime'),
+      windowEnd: z.string().min(1).describe('ISO 8601 datetime'),
+      carrierId: z.string().min(1).optional(),
+      spotId: z.string().min(1).optional(),
+      direction: z.string().optional(),
+      reference: z.string().optional(),
+      notes: z.string().optional(),
+    }),
+    run: (args, ctx) =>
+      ctx.services.yardAppointments.create(
+        ctx.principal.user.tenantId,
+        ctx.principal.user.id,
+        {
+          locationId: args.locationId as string,
+          windowStart: new Date(args.windowStart as string),
+          windowEnd: new Date(args.windowEnd as string),
+          carrierId: args.carrierId as string | undefined,
+          spotId: args.spotId as string | undefined,
+          direction: args.direction as string | undefined,
+          reference: args.reference as string | undefined,
+          notes: args.notes as string | undefined,
+        },
+      ),
+  },
+  {
+    name: 'mark_arrived',
+    description:
+      'Mark a dock appointment as ARRIVED (carrier showed up). PROPOSED — requires human approval.',
+    tier: RiskTier.MUTATING,
+    permission: PERMISSIONS.YARD.MANAGE,
+    module: MODULE_KEYS.YARD,
+    inputSchema: z.object({ appointmentId: z.string().min(1) }),
+    run: (args, ctx) =>
+      ctx.services.yardAppointments.arrive(
+        ctx.principal.user.tenantId,
+        ctx.principal.user.id,
+        args.appointmentId as string,
+      ),
+  },
+  {
+    name: 'mark_departed',
+    description: 'Check out an active yard visit (mark as DEPARTED). PROPOSED — requires human approval.',
+    tier: RiskTier.MUTATING,
+    permission: PERMISSIONS.YARD.MANAGE,
+    module: MODULE_KEYS.YARD,
+    inputSchema: z.object({ visitId: z.string().min(1) }),
+    run: (args, ctx) =>
+      ctx.services.yardVisits.checkOut(
+        ctx.principal.user.tenantId,
+        ctx.principal.user.id,
+        args.visitId as string,
+      ),
+  },
+  // ── WMS ────────────────────────────────────────────────────────────────────
+  {
+    name: 'list_low_stock_items',
+    description: 'List WMS items at or below their reorder point (low stock / replenishment needed).',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.WMS.READ,
+    module: MODULE_KEYS.WMS,
+    inputSchema: z.object({}),
+    run: async (_args, ctx) => {
+      const overview = await ctx.services.wmsOverview.overview(ctx.principal.user.tenantId) as {
+        belowMin: unknown[];
+      };
+      return { belowMin: overview.belowMin };
+    },
+  },
+  {
+    name: 'get_pick_order',
+    description: 'Get a single pick order by id, including its lines.',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.WMS.READ,
+    module: MODULE_KEYS.WMS,
+    inputSchema: z.object({ pickOrderId: z.string().min(1) }),
+    run: (args, ctx) =>
+      ctx.services.wmsPicking.get(ctx.principal.user.tenantId, args.pickOrderId as string),
+  },
+  {
+    name: 'flag_inventory_variance',
+    description: 'Return bins with negative inventory levels (data-integrity attention list).',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.WMS.READ,
+    module: MODULE_KEYS.WMS,
+    inputSchema: z.object({}),
+    run: async (_args, ctx) => {
+      const overview = await ctx.services.wmsOverview.overview(ctx.principal.user.tenantId) as {
+        negativeBins: unknown[];
+      };
+      return { negativeBins: overview.negativeBins };
+    },
+  },
+  {
+    name: 'create_cycle_count',
+    description:
+      'Create a cycle count for a bin (snapshots current system quantities). PROPOSED — requires human approval.',
+    tier: RiskTier.MUTATING,
+    permission: PERMISSIONS.WMS.MANAGE,
+    module: MODULE_KEYS.WMS,
+    inputSchema: z.object({
+      binId: z.string().min(1),
+      note: z.string().optional(),
+    }),
+    run: (args, ctx) =>
+      ctx.services.wmsCycleCounts.create(
+        ctx.principal.user.tenantId,
+        ctx.principal.user.id,
+        { binId: args.binId as string, note: args.note as string | undefined },
+      ),
   },
 ];
 

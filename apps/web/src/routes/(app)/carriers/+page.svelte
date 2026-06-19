@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { MODULE_KEYS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
   import { toast } from '$lib/stores/toast';
   import {
     PageHeader,
@@ -36,6 +38,17 @@
   let loading = $state(true);
   let saving = $state(false);
   let form = $state({ code: '', name: '', scacCode: '', contactName: '', phone: '' });
+
+  // Carrier portal link modal
+  const hasCarrierPortal = $derived(
+    $auth?.tenant.enabledModules.includes(MODULE_KEYS.CARRIER_PORTAL) ?? false,
+  );
+  const canManageCarrierLinks = $derived(
+    ($auth?.user?.permissions ?? []).includes('carrier-portal.links.manage'),
+  );
+  let showPortalModal = $state(false);
+  let portalModal = $state<{ carrierId: string; carrierName: string; url: string | null } | null>(null);
+  let portalLoading = $state(false);
 
   async function load() {
     try {
@@ -85,6 +98,50 @@
     }
   }
 
+  async function openPortalLink(carrier: CarrierRow) {
+    portalModal = { carrierId: carrier.id, carrierName: carrier.name, url: null };
+    showPortalModal = true;
+    portalLoading = true;
+    try {
+      const result = await api<{ url: string }>(
+        `/carrier-portal/carriers/${carrier.id}/portal-link`,
+        { method: 'POST' },
+      );
+      portalModal.url = result.url;
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Échec de la génération du lien';
+      toast.error(msg);
+      portalModal = null;
+      showPortalModal = false;
+    } finally {
+      portalLoading = false;
+    }
+  }
+
+  async function revokePortalLink() {
+    if (!portalModal) return;
+    portalLoading = true;
+    try {
+      await api(`/carrier-portal/carriers/${portalModal.carrierId}/portal-link`, {
+        method: 'DELETE',
+      });
+      toast.success('Lien portail révoqué');
+      portalModal = null;
+      showPortalModal = false;
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Échec de la révocation';
+      toast.error(msg);
+    } finally {
+      portalLoading = false;
+    }
+  }
+
+  async function copyPortalUrl() {
+    if (!portalModal?.url) return;
+    await navigator.clipboard.writeText(portalModal.url);
+    toast.success('Lien copié');
+  }
+
   $effect(() => {
     void load();
   });
@@ -123,6 +180,7 @@
   <Table>
     {#snippet head()}
       <th>Code</th><th>Nom</th><th>SCAC</th><th>Contact</th><th>Téléphone</th><th>Statut</th>
+      {#if hasCarrierPortal && canManageCarrierLinks}<th></th>{/if}
     {/snippet}
     {#snippet body()}
       {#each carriers as carrier (carrier.id)}
@@ -133,6 +191,11 @@
           <td>{carrier.contactName ?? '—'}</td>
           <td class="font-mono text-ink-muted">{carrier.phone ?? '—'}</td>
           <td><Badge tone={toneFor(carrier.status)}>{labelFor(carrier.status)}</Badge></td>
+          {#if hasCarrierPortal && canManageCarrierLinks}
+            <td class="text-right">
+              <Button variant="secondary" onclick={() => openPortalLink(carrier)}>Portail</Button>
+            </td>
+          {/if}
         </tr>
       {/each}
     {/snippet}
@@ -163,5 +226,25 @@
         <Button variant="primary" type="submit" loading={saving}>Créer</Button>
       </div>
     </form>
+  {/snippet}
+</Modal>
+
+<Modal bind:open={showPortalModal} title="Portail transporteur — {portalModal?.carrierName ?? ''}" size="md">
+  {#snippet children()}
+    {#if portalModal}
+      {#if portalModal.url}
+        <p class="mb-2 text-sm text-ink-muted">Lien actif :</p>
+        <div class="mb-4 flex items-center gap-2 rounded border border-edge bg-canvas px-3 py-2">
+          <span class="flex-1 truncate font-mono text-xs text-ink">{portalModal.url}</span>
+          <Button variant="secondary" onclick={copyPortalUrl}>Copier</Button>
+        </div>
+        <div class="flex justify-end gap-2 border-t border-edge pt-3">
+          <Button variant="danger" onclick={revokePortalLink} loading={portalLoading}>Révoquer</Button>
+          <Button variant="secondary" onclick={() => { portalModal = null; showPortalModal = false; }}>Fermer</Button>
+        </div>
+      {:else}
+        <p class="text-sm text-ink-muted">Génération du lien…</p>
+      {/if}
+    {/if}
   {/snippet}
 </Modal>

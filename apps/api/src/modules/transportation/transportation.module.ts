@@ -105,6 +105,12 @@ import { BolService } from './bol/bol.service';
     ShipmentsService,
     TendersService,
     AnalyticsService,
+    VehiclesService,
+    TrailersService,
+    // Consumed by ConnectModule (CSV importer).
+    CustomersService,
+    LocationsService,
+    CarriersService,
   ],
 })
 export class TransportationModule {}

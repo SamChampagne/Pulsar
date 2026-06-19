@@ -89,6 +89,15 @@ model Tenant {
   yardVisits       YardVisit[]
   yardMoves        YardMove[]
   dockAppointments DockAppointment[]
+  inboundMessages  InboundMessage[]
+  importBatches    ImportBatch[]
+  importRows       ImportRow[]
+  rfps             Rfp[]
+  rfpLanes         RfpLane[]
+  rfpInvites       RfpInvite[]
+  bids             Bid[]
+  awards           Award[]
+  orderTemplates   OrderTemplate[]
 
   @@map("tenants")
 }
@@ -466,6 +475,7 @@ model Customer {
   transportOrders  TransportOrder[]
   rates            Rate[]
   customerInvoices CustomerInvoice[]
+  orderTemplates   OrderTemplate[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -539,6 +549,8 @@ model Carrier {
   email       String?
   phone       String?
   status      CarrierStatus @default(ACTIVE)
+  // Carrier Portal capability link (module carrier-portal must be enabled).
+  portalToken String?       @unique
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -743,6 +755,28 @@ model TransportOrder {
   @@index([tenantId, status])
   @@index([tenantId, customerId])
   @@map("transport_orders")
+}
+
+model OrderTemplate {
+  id                    String         @id @default(cuid())
+  tenantId              String
+  customerId            String
+  name                  String
+  originLocationId      String?
+  destinationLocationId String?
+  mode                  TransportMode?
+  totalWeightKg         Float?
+  totalVolumeM3         Float?
+  palletCount           Int?
+  notes                 String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  customer  Customer @relation(fields: [customerId], references: [id])
+
+  @@index([tenantId, customerId])
+  @@map("order_templates")
 }
 
 enum ShipmentStatus {
@@ -1691,6 +1725,10 @@ model OperationalTask {
   sourceEventId   String?
   resolvedById    String?
   resolutionNote  String?
+  caseNumber      String?
+  slaDueAt        DateTime?
+  escalatedAt     DateTime?
+  notes           Json?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   resolvedAt      DateTime?
@@ -1698,6 +1736,7 @@ model OperationalTask {
   @@unique([tenantId, dedupKey])
   @@index([tenantId, status, assigneeType])
   @@index([tenantId, assigneeAgentId, status])
+  @@index([tenantId, status, slaDueAt])
   @@map("operational_tasks")
 }
 
@@ -2169,4 +2208,219 @@ model DockAppointment {
   @@index([tenantId, status])
   @@index([tenantId, windowStart])
   @@map("dock_appointments")
+}
+
+// ============================================================================
+// CONNECT — Ingestion / Inbox
+// ============================================================================
+
+enum InboundSource {
+  CSV
+  PDF
+  DOCUMENT
+  WEBHOOK
+}
+
+enum InboundStatus {
+  RECEIVED
+  PARSED
+  IMPORTED
+  FAILED
+  IGNORED
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ImportRowStatus {
+  IMPORTED
+  FAILED
+}
+
+model InboundMessage {
+  id          String        @id @default(cuid())
+  tenantId    String
+  source      InboundSource
+  status      InboundStatus @default(RECEIVED)
+  kind        String?
+  summary     String
+  documentId  String?
+  parsed      Json?
+  error       String?
+  refType     String?
+  refId       String?
+  createdById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status, createdAt])
+  @@map("inbound_messages")
+}
+
+model ImportBatch {
+  id           String       @id @default(cuid())
+  tenantId     String
+  number       String?
+  target       String
+  status       ImportStatus @default(PENDING)
+  totalRows    Int          @default(0)
+  importedRows Int          @default(0)
+  failedRows   Int          @default(0)
+  mapping      Json
+  documentId   String?
+  error        String?
+  createdById  String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id])
+  rows   ImportRow[]
+
+  @@index([tenantId, status, createdAt])
+  @@map("import_batches")
+}
+
+model ImportRow {
+  id        String          @id @default(cuid())
+  tenantId  String
+  batchId   String
+  rowIndex  Int
+  status    ImportRowStatus
+  error     String?
+  data      Json
+  createdAt DateTime        @default(now())
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id])
+  batch  ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, batchId])
+  @@map("import_rows")
+}
+
+// ============================================================================
+// PROCUREMENT — RFP, Bid Board, Awards (module: procurement)
+// ============================================================================
+
+enum RfpStatus {
+  DRAFT
+  OPEN
+  EVALUATION
+  AWARDED
+  CANCELLED
+}
+
+enum BidStatus {
+  SUBMITTED
+  SHORTLISTED
+  ACCEPTED
+  REJECTED
+}
+
+enum InviteStatus {
+  SENT
+  RESPONDED
+  EXPIRED
+}
+
+model Rfp {
+  id          String    @id @default(cuid())
+  tenantId    String
+  rfpNumber   String?
+  title       String
+  description String?
+  status      RfpStatus @default(DRAFT)
+  deadline    DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant  Tenant      @relation(fields: [tenantId], references: [id])
+  lanes   RfpLane[]
+  invites RfpInvite[]
+  bids    Bid[]
+
+  @@index([tenantId, status, createdAt])
+  @@map("rfps")
+}
+
+model RfpLane {
+  id              String         @id @default(cuid())
+  tenantId        String
+  rfpId           String
+  laneId          String
+  mode            TransportMode?
+  volumeEstimate  Int?
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id])
+  rfp    Rfp     @relation(fields: [rfpId], references: [id], onDelete: Cascade)
+  bids   Bid[]
+  award  Award?
+
+  @@index([tenantId, rfpId])
+  @@map("rfp_lanes")
+}
+
+model RfpInvite {
+  id          String       @id @default(cuid())
+  tenantId    String
+  rfpId       String
+  carrierId   String
+  token       String       @unique
+  status      InviteStatus @default(SENT)
+  sentAt      DateTime     @default(now())
+  respondedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  rfp    Rfp    @relation(fields: [rfpId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, rfpId])
+  @@map("rfp_invites")
+}
+
+model Bid {
+  id          String    @id @default(cuid())
+  tenantId    String
+  rfpId       String
+  rfpLaneId   String
+  carrierId   String
+  rateType    RateType
+  amount      Decimal   @db.Decimal(12, 2)
+  currency    String    @default("CAD")
+  validFrom   DateTime?
+  validTo     DateTime?
+  transitDays Int?
+  notes       String?
+  status      BidStatus @default(SUBMITTED)
+  submittedAt DateTime  @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  rfp     Rfp     @relation(fields: [rfpId], references: [id], onDelete: Cascade)
+  rfpLane RfpLane @relation(fields: [rfpLaneId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, rfpId])
+  @@index([tenantId, rfpLaneId])
+  @@map("bids")
+}
+
+model Award {
+  id          String   @id @default(cuid())
+  tenantId    String
+  rfpLaneId   String   @unique
+  carrierId   String
+  bidId       String?
+  rateId      String?
+  awardedById String?
+  awardedAt   DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  rfpLane RfpLane @relation(fields: [rfpLaneId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("awards")
 }

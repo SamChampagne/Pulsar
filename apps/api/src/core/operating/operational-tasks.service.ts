@@ -4,12 +4,21 @@ import {
   OperationalTaskStatus,
   TaskAssigneeType,
   canTransitionOperationalTask,
+  isSlaBreached,
+  mergeTimeline,
+  type TimelineEntry,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { ListQueryDto } from '../../common/dto/list-query.dto';
 import { paginationArgs, paginated } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+
+interface NoteEntry {
+  at: string;
+  byUserId: string;
+  text: string;
+}
 
 export interface ListFilter extends ListQueryDto {
   status?: OperationalTaskStatus;
@@ -61,7 +70,19 @@ export class OperationalTasksService {
       take: 50,
       select: { id: true, tool: true, riskTier: true, status: true, triggeredByRef: true, proposedAt: true, decidedAt: true },
     });
-    return { ...task, proposedActions };
+    const slaBreached = isSlaBreached(
+      task.slaDueAt ? task.slaDueAt.toISOString() : null,
+      Date.now(),
+    );
+    return {
+      ...task,
+      caseNumber: task.caseNumber,
+      slaDueAt: task.slaDueAt,
+      escalatedAt: task.escalatedAt,
+      notes: task.notes,
+      slaBreached,
+      proposedActions,
+    };
   }
 
   /**
@@ -143,6 +164,95 @@ export class OperationalTasksService {
 
   async start(tenantId: string, id: string, actorId: string) {
     return this.transition(tenantId, id, OperationalTaskStatus.IN_PROGRESS, {}, actorId);
+  }
+
+  /**
+   * Append a note to an OperationalTask's notes JSON array.
+   * Rejects empty text (400). Audited as UPDATE.
+   */
+  async addNote(tenantId: string, id: string, userId: string, text: string) {
+    if (!text || !text.trim()) {
+      throw new BadRequestException('Note text must not be empty');
+    }
+    const task = await this.prisma.operationalTask.findFirst({ where: { id, tenantId } });
+    if (!task) throw new NotFoundException(`OperationalTask ${id} not found`);
+
+    const existingNotes = Array.isArray(task.notes) ? (task.notes as unknown as NoteEntry[]) : [];
+    const newNote: NoteEntry = {
+      at: new Date().toISOString(),
+      byUserId: userId,
+      text: text.trim(),
+    };
+    const updatedNotes = [...existingNotes, newNote];
+
+    await this.prisma.operationalTask.updateMany({
+      where: { id, tenantId },
+      data: { notes: updatedNotes as unknown as Prisma.InputJsonValue },
+    });
+
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'OperationalTask',
+      entityId: id,
+      before: { notes: existingNotes.length },
+      after: { noteAdded: newNote },
+    });
+
+    return this.prisma.operationalTask.findFirst({ where: { id, tenantId } });
+  }
+
+  /**
+   * Derived, read-time timeline for a task.
+   * Merges audit log entries, proposed actions, and inline notes into a
+   * unified TimelineEntry[] sorted newest-first (max 100 entries).
+   */
+  async timeline(tenantId: string, id: string): Promise<TimelineEntry[]> {
+    const task = await this.prisma.operationalTask.findFirst({
+      where: { id, tenantId },
+      select: { notes: true },
+    });
+    if (!task) throw new NotFoundException(`OperationalTask ${id} not found`);
+
+    const [auditLogs, proposedActions] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where: { tenantId, entityType: 'OperationalTask', entityId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+        select: { id: true, createdAt: true, action: true, before: true, after: true, userId: true },
+      }),
+      this.prisma.proposedAction.findMany({
+        where: { tenantId, triggeredByRef: `task:${id}` },
+        orderBy: { proposedAt: 'desc' },
+        take: 200,
+        select: { id: true, proposedAt: true, tool: true, status: true, riskTier: true },
+      }),
+    ]);
+
+    const auditEntries: TimelineEntry[] = auditLogs.map((log) => ({
+      at: log.createdAt.toISOString(),
+      kind: 'audit',
+      summary: `${log.action}${log.userId ? ` by ${log.userId}` : ''}`,
+      ref: log.id,
+    }));
+
+    const actionEntries: TimelineEntry[] = proposedActions.map((pa) => ({
+      at: pa.proposedAt.toISOString(),
+      kind: 'action',
+      summary: `${pa.tool} — ${pa.status} (${pa.riskTier})`,
+      ref: pa.id,
+    }));
+
+    const rawNotes = Array.isArray(task.notes) ? (task.notes as unknown as NoteEntry[]) : [];
+    const noteEntries: TimelineEntry[] = rawNotes.map((n) => ({
+      at: n.at,
+      kind: 'note',
+      summary: n.text,
+      ref: n.byUserId,
+    }));
+
+    return mergeTimeline([auditEntries, actionEntries, noteEntries], 100);
   }
 
   listForAgent(tenantId: string, agentId: string) {
