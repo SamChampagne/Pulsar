@@ -76,13 +76,14 @@ export function navCatalogue(): NavDomain[] {
       label: 'Plateforme',
       icon: LayoutDashboard,
       home: '/apps',
-      prefixes: ['/apps', '/framework', '/dashboard'],
+      prefixes: ['/apps', '/framework', '/dashboard', '/onboarding'],
       // Always visible; no module or perm gate.
       sections: [
         {
           links: [
             { href: '/dashboard', label: 'Tableau de bord' },
             { href: '/apps', label: 'Pulsar Desk' },
+            { href: '/onboarding', label: 'Onboarding' },
           ],
         },
       ],
