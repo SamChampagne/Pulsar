@@ -87,8 +87,11 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
   `processPending`, CRUD `/automation/rules`, page `/automation`). DIFFÉRÉ I-phase-2 : actions autres
   que CREATE_TASK (email/outil agent/webhook), groupes de conditions, dry-run historique, versioning.
   Spec : `docs/superpowers/specs/2026-06-19-module-i-rules-builder.md`. NB migration à appliquer (`pnpm db:migrate`).
-- [todo] **J. Onboarding / Demo tenant / Sample data** : wizard tenant (modules, données, users,
-  LLM, email/API), sample data, reset demo, scénarios de démo.
+- [phase-1 done] **J. Onboarding / Demo tenant / Sample data** : checklist/wizard d'onboarding —
+  LIVRÉ (GET `/onboarding/status` calcule la progression réelle du tenant, page `/onboarding` guidée).
+  DIFFÉRÉ J-phase-2 (à faire DB démarrée, opération destructive) : générateur de sample data tagué
+  `DEMO-` (ADD-only) + reset démo + wizard création de tenant (platform).
+  Spec : `docs/superpowers/specs/2026-06-19-module-j-onboarding.md`.
 
 ## Principe d'exécution
 Chaque morceau : spec court → tâches → subagents (implémenteur + reviewer) → commit. Décisions
