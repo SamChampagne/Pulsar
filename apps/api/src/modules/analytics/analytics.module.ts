@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ControlTowerController } from './control-tower.controller';
 import { ControlTowerService } from './control-tower.service';
+import { ScorecardsController } from './scorecards.controller';
+import { ScorecardsService } from './scorecards.service';
 
 /**
  * Analytics module — operational Control Tower (read-time KPIs + attention items).
@@ -9,7 +11,7 @@ import { ControlTowerService } from './control-tower.service';
  * and do not need to be imported here.
  */
 @Module({
-  controllers: [ControlTowerController],
-  providers: [ControlTowerService],
+  controllers: [ControlTowerController, ScorecardsController],
+  providers: [ControlTowerService, ScorecardsService],
 })
 export class AnalyticsModule {}

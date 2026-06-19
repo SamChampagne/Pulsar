@@ -307,6 +307,7 @@ export function navCatalogue(): NavDomain[] {
         {
           links: [
             { href: '/analytics/control-tower', label: 'Control Tower', perm: 'analytics.read' },
+            { href: '/analytics/scorecards', label: 'Scorecards', perm: 'analytics.read' },
             {
               href: '/analytics',
               label: 'Scorecard transporteurs',
