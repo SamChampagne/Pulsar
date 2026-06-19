@@ -96,6 +96,7 @@ export function navCatalogue(): NavDomain[] {
       module: MODULE_KEYS.TRANSPORTATION,
       prefixes: [
         '/dispatch',
+        '/planning',
         '/transport-orders',
         '/shipments',
         '/loads',
@@ -113,6 +114,11 @@ export function navCatalogue(): NavDomain[] {
           label: 'Exécution',
           links: [
             { href: '/dispatch', label: 'Dispatch' },
+            {
+              href: '/planning',
+              label: 'Planning Board',
+              perm: PERMISSIONS.TRANSPORTATION.PLANNING_READ,
+            },
             { href: '/transport-orders', label: 'Ordres de transport' },
             { href: '/shipments', label: 'Shipments' },
             { href: '/loads', label: 'Loads' },

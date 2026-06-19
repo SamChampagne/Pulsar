@@ -437,9 +437,16 @@
       </button>
     {/each}
   </div>
-  <p class="text-xs text-ink-muted">
-    Switch modes based on the job: route context, status pipeline, or dense planning table.
-  </p>
+  <div class="flex items-center gap-3">
+    <a
+      href="/planning"
+      class="rounded-md border border-edge bg-surface px-3 py-1.5 text-sm font-semibold text-ink-muted transition hover:bg-surface-muted hover:text-ink"
+      >Planning Board</a
+    >
+    <p class="hidden text-xs text-ink-muted lg:block">
+      Switch modes based on the job: route context, status pipeline, or dense planning table.
+    </p>
+  </div>
 </div>
 
 {#if view === 'map'}
