@@ -1,18 +1,22 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@pulsar/database';
 import {
   AccessorialUnit,
   CostBreakdown,
   CostMetrics,
   ENDPOINT_SPECIFICITY,
+  LaneEndpointType,
   RateStatus,
   RateType,
   RequestedAccessorial,
+  TransportMode,
+  buildEndpointKey,
   calculateRateCost,
   candidateEndpointKeys,
   pickFuelEntry,
 } from '@pulsar/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { SimulateRateDto } from './dto/simulate-rate.dto';
 import { resolveLoadEndpoints } from './load-endpoints';
 
 export interface RateOption {
@@ -323,46 +327,71 @@ export class RatingService {
   }
 
   /**
-   * Rate shopping: every ACTIVE rate valid at the reference date whose lane matches the
-   * load (or catch-all), costed in full. Sorted per currency, complete candidates first,
-   * cheapest first. Read-only — assignment stays the existing manual endpoint.
+   * Core rate-shopping engine, shared by load-bound `rateOptions` and the load-free
+   * `simulate` endpoint. Given pre-resolved lane keys, a reference date, the cost metrics
+   * and the requested accessorials, it fetches every ACTIVE rate valid at that date whose
+   * lane matches (or catch-all), evaluates each via `evaluate`, and ranks with
+   * `compareRateOptions`. `originKeys`/`destinationKeys` = null means "endpoints
+   * indeterminable" → only catch-all (laneId null) rates apply.
    */
-  async rateOptions(tenantId: string, loadId: string) {
-    const load = await this.loadForRating(tenantId, loadId);
-    if (!load) throw new NotFoundException('Load not found');
-    const endpoints = await resolveLoadEndpoints(this.prisma, tenantId, loadId);
-    const date = this.referenceDate(load.shipments);
+  private async shopRates(
+    tenantId: string,
+    params: {
+      originKeys: string[] | null;
+      destinationKeys: string[] | null;
+      date: Date;
+      mode: string | null;
+      metrics: CostMetrics;
+      accessorials: RequestedAccessorial[];
+      carrierIds?: string[];
+      customerId?: string | null;
+    },
+  ) {
+    const { originKeys, destinationKeys, date, mode, metrics, accessorials } = params;
 
-    const laneFilter: Prisma.RateWhereInput = endpoints
-      ? {
-          OR: [
-            { laneId: null },
-            {
-              lane: {
-                originKey: { in: candidateEndpointKeys(endpoints.origin) },
-                destinationKey: { in: candidateEndpointKeys(endpoints.destination) },
-              },
-            },
-          ],
-        }
-      : { laneId: null };
+    const laneFilter: Prisma.RateWhereInput =
+      originKeys && destinationKeys
+        ? {
+            OR: [
+              { laneId: null },
+              { lane: { originKey: { in: originKeys }, destinationKey: { in: destinationKeys } } },
+            ],
+          }
+        : { laneId: null };
+
+    const and: Prisma.RateWhereInput[] = [
+      laneFilter,
+      { OR: [{ validFrom: null }, { validFrom: { lte: date } }] },
+      { OR: [{ validTo: null }, { validTo: { gte: date } }] },
+    ];
+    // null mode = applies to all modes; only narrow when a mode is supplied.
+    if (mode) and.push({ OR: [{ mode: null }, { mode: mode as any }] });
+    if (params.carrierIds && params.carrierIds.length > 0)
+      and.push({ carrierId: { in: params.carrierIds } });
+    if (params.customerId) and.push({ customerId: params.customerId });
 
     const rates = await this.prisma.rate.findMany({
-      where: {
-        tenantId,
-        status: RateStatus.ACTIVE,
-        AND: [
-          laneFilter,
-          { OR: [{ validFrom: null }, { validFrom: { lte: date } }] },
-          { OR: [{ validTo: null }, { validTo: { gte: date } }] },
-          { OR: [{ mode: null }, { mode: load.mode as any }] },
-        ],
-      },
+      where: { tenantId, status: RateStatus.ACTIVE, AND: and },
       include: rateDetailInclude,
     });
 
-    const options = rates
-      .map((rate) => ({ rate, evaluation: this.evaluate(rate, load, date) }))
+    // Reuse `evaluate` (calculateRateCost) by wrapping the scenario metrics/accessorials
+    // in the same LoadForRating shape the load-bound path uses — no cost math duplicated.
+    const scenario: LoadForRating = {
+      id: 'simulate',
+      mode: mode ?? '',
+      route: { totalDistanceKm: metrics.distanceKm ?? null },
+      shipments: [
+        { weightKg: metrics.weightKg ?? null, palletCount: metrics.palletCount ?? null, plannedPickupEarly: null },
+      ],
+      accessorials: accessorials.map((a) => ({
+        quantity: a.quantity,
+        accessorial: { code: a.code, unit: a.unit },
+      })),
+    };
+
+    return rates
+      .map((rate) => ({ rate, evaluation: this.evaluate(rate, scenario, date) }))
       .filter((o): o is { rate: RateDetail; evaluation: RateEvaluation } => o.evaluation !== null)
       .map(({ rate, evaluation }) => ({
         rateId: rate.id,
@@ -379,10 +408,135 @@ export class RatingService {
             }
           : null,
         breakdown: evaluation.breakdown,
+        fuel: evaluation.fuel,
         missingAccessorials: evaluation.breakdown.missingAccessorials,
       }))
       .sort(compareRateOptions);
+  }
+
+  /**
+   * Rate shopping: every ACTIVE rate valid at the reference date whose lane matches the
+   * load (or catch-all), costed in full. Sorted per currency, complete candidates first,
+   * cheapest first. Read-only — assignment stays the existing manual endpoint.
+   */
+  async rateOptions(tenantId: string, loadId: string) {
+    const load = await this.loadForRating(tenantId, loadId);
+    if (!load) throw new NotFoundException('Load not found');
+    const endpoints = await resolveLoadEndpoints(this.prisma, tenantId, loadId);
+    const date = this.referenceDate(load.shipments);
+
+    const options = await this.shopRates(tenantId, {
+      originKeys: endpoints ? candidateEndpointKeys(endpoints.origin) : null,
+      destinationKeys: endpoints ? candidateEndpointKeys(endpoints.destination) : null,
+      date,
+      mode: load.mode,
+      metrics: this.metricsOf(load),
+      accessorials: this.requestedAccessorials(load),
+    });
 
     return { referenceDate: date.toISOString(), options };
+  }
+
+  /**
+   * Resolves the candidate origin/destination lane keys for a simulation scenario.
+   * From an existing lane (its exact originKey/destinationKey) or from raw endpoint
+   * inputs via the shared `buildEndpointKey`/`candidateEndpointKeys` helpers — the
+   * SAME normalization the load-bound path uses (rule 17). For a LOCATION endpoint the
+   * location's full geo is loaded so it also matches CITY/STATE/COUNTRY-level lanes.
+   */
+  private async resolveSimulationKeys(
+    tenantId: string,
+    type: LaneEndpointType,
+    input: { locationId?: string; city?: string; state?: string; country?: string },
+  ): Promise<string[]> {
+    if (type === LaneEndpointType.LOCATION) {
+      if (!input.locationId) throw new BadRequestException('A LOCATION endpoint requires locationId');
+      const location = await this.prisma.location.findFirst({
+        where: { id: input.locationId, tenantId },
+        select: { id: true, city: true, state: true, country: true },
+      });
+      if (!location) throw new NotFoundException('Location not found');
+      return candidateEndpointKeys(location);
+    }
+    try {
+      return [buildEndpointKey(type, input)];
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+  }
+
+  /**
+   * Read-only rate simulation for a hypothetical scenario (no load). Builds candidate
+   * lane keys from a lane id or raw endpoints, then runs the SAME shopping engine
+   * (`shopRates` → `evaluate` → `calculateRateCost` → `compareRateOptions`) as the
+   * load-bound path. No write, no entity created.
+   */
+  async simulate(tenantId: string, dto: SimulateRateDto) {
+    const hasRawPair = dto.originType && dto.origin && dto.destinationType && dto.destination;
+    if (!dto.laneId && !hasRawPair)
+      throw new BadRequestException(
+        'Provide either laneId or both origin (originType+origin) and destination (destinationType+destination).',
+      );
+
+    let originKeys: string[];
+    let destinationKeys: string[];
+
+    if (dto.laneId) {
+      const lane = await this.prisma.lane.findFirst({
+        where: { id: dto.laneId, tenantId },
+        select: { originKey: true, destinationKey: true },
+      });
+      if (!lane) throw new NotFoundException('Lane not found');
+      originKeys = [lane.originKey];
+      destinationKeys = [lane.destinationKey];
+    } else {
+      [originKeys, destinationKeys] = await Promise.all([
+        this.resolveSimulationKeys(tenantId, dto.originType!, dto.origin!),
+        this.resolveSimulationKeys(tenantId, dto.destinationType!, dto.destination!),
+      ]);
+    }
+
+    const date = dto.referenceDate ? new Date(dto.referenceDate) : new Date();
+    const accessorials = await this.resolveAccessorials(tenantId, dto.accessorialCodes ?? []);
+
+    const options = await this.shopRates(tenantId, {
+      originKeys,
+      destinationKeys,
+      date,
+      mode: dto.mode ?? null,
+      metrics: {
+        distanceKm: dto.distanceKm ?? null,
+        weightKg: dto.weightKg ?? null,
+        palletCount: dto.palletCount ?? null,
+      },
+      accessorials,
+      carrierIds: dto.carrierIds,
+      customerId: dto.customerId,
+    });
+
+    return {
+      referenceDate: date.toISOString(),
+      resolved: { originKey: originKeys[0], destinationKey: destinationKeys[0] },
+      options,
+    };
+  }
+
+  /**
+   * Looks up the tenant's accessorials by code to recover each one's unit (the cost
+   * engine needs FLAT vs PER_UNIT/PER_HOUR). Unknown codes are dropped here; they then
+   * surface as `missingAccessorials` only if a rate would otherwise price them. Quantity
+   * defaults to 1 (FLAT ignores it; per-unit accessorials use a single unit in a
+   * hypothetical scenario).
+   */
+  private async resolveAccessorials(
+    tenantId: string,
+    codes: string[],
+  ): Promise<RequestedAccessorial[]> {
+    if (codes.length === 0) return [];
+    const rows = await this.prisma.accessorial.findMany({
+      where: { tenantId, code: { in: codes } },
+      select: { code: true, unit: true },
+    });
+    return rows.map((r) => ({ code: r.code, unit: r.unit as AccessorialUnit, quantity: 1 }));
   }
 }

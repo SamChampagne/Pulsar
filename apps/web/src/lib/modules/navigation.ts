@@ -100,6 +100,7 @@ export function navCatalogue(): NavDomain[] {
         '/transport-orders',
         '/shipments',
         '/loads',
+        '/rate-studio',
         '/lanes',
         '/rates',
         '/accessorials',
@@ -127,6 +128,7 @@ export function navCatalogue(): NavDomain[] {
         {
           label: 'Tarification',
           links: [
+            { href: '/rate-studio', label: 'Rate Studio', perm: PERMISSIONS.TRANSPORTATION.RATES_READ },
             { href: '/lanes', label: 'Voies (lanes)' },
             { href: '/rates', label: 'Tarifs' },
             { href: '/accessorials', label: 'Accessoriaux' },
