@@ -250,6 +250,7 @@ export function navCatalogue(): NavDomain[] {
         '/agents',
         '/agent-actions',
         '/workbench',
+        '/automation',
         '/control-tower',
         '/settings/agent-runtime',
       ],
@@ -278,6 +279,11 @@ export function navCatalogue(): NavDomain[] {
               href: '/workbench',
               label: 'Workbench',
               perm: PERMISSIONS.CORE.OPERATING_TASKS_READ,
+            },
+            {
+              href: '/automation',
+              label: "Règles d'automatisation",
+              perm: PERMISSIONS.CORE.AUTOMATION_RULES_READ,
             },
             // Always visible when the domain is visible (no perm override needed —
             // the domain-level anyPerms gate already ensures the user can see agents)
