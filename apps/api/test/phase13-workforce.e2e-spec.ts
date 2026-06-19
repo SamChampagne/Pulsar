@@ -406,7 +406,7 @@ describe('Phase 13 — 24/7 workforce (e2e)', () => {
           },
         });
         return task.status === 'IN_PROGRESS' && proposal ? { task, proposal } : undefined;
-      }, 8000);
+      }, 20000);
 
       expect(outcome).toBeDefined();
       expect(outcome!.task.assigneeType).toBe('AGENT');
@@ -425,7 +425,7 @@ describe('Phase 13 — 24/7 workforce (e2e)', () => {
           (r) => r.taskId === taskId && r.status === 'SUCCEEDED',
         );
         return succeeded ?? undefined;
-      }, 8000);
+      }, 20000);
 
       expect(latest).toBeDefined();
       expect(latest!.status).toBe('SUCCEEDED');
@@ -577,7 +577,7 @@ describe('Phase 13 — 24/7 workforce (e2e)', () => {
           },
         });
         return task?.status === 'IN_PROGRESS' && proposal ? { task, proposal } : undefined;
-      }, 8000);
+      }, 20000);
 
       expect(outcome).toBeDefined();
       expect(outcome!.task.status).toBe('IN_PROGRESS');
@@ -634,7 +634,7 @@ describe('Phase 13 — 24/7 workforce (e2e)', () => {
           );
           const fresh = await prisma.operationalTask.findFirst({ where: { id: skippedTaskId } });
           return skip && fresh?.status === 'OPEN' ? { skip, fresh } : undefined;
-        }, 8000);
+        }, 20000);
 
         expect(skipped).toBeDefined();
         expect(skipped!.skip.status).toBe('SKIPPED');

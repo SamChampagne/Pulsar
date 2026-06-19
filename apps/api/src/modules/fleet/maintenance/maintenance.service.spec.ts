@@ -16,7 +16,8 @@ function harness(assetStatus = 'AVAILABLE') {
   } as any;
   const ownership = { assertOwnedIfSet: async () => undefined } as any;
   const audit = { log: async () => undefined } as any;
-  return { svc: new MaintenanceService(prisma, ownership, audit), vehicle, wo };
+  const domainEvents = { emit: async () => undefined } as any;
+  return { svc: new MaintenanceService(prisma, ownership, audit, domainEvents), vehicle, wo };
 }
 
 describe('MaintenanceService', () => {

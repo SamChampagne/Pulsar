@@ -31,7 +31,8 @@ function harness(opts: { occupied?: boolean } = {}) {
   const sequences = { nextNumber: async () => 'YV-0001' } as any;
   const ownership = { assertOwnedIfSet: async () => undefined } as any;
   const audit = { log: async () => undefined } as any;
-  return { svc: new VisitsService(client, sequences, ownership, audit), visit, moves };
+  const domainEvents = { emit: async () => undefined } as any;
+  return { svc: new VisitsService(client, sequences, ownership, audit, domainEvents), visit, moves };
 }
 
 describe('VisitsService.assign', () => {
