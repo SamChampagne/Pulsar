@@ -72,8 +72,10 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
   warnings capacité, drag & drop shipment→load — LIVRÉ (endpoint agrégation `planning-board` +
   page `/planning` réutilisant assign/remove). DIFFÉRÉ F-phase-2 : plan proposal agent, scénario A/B.
   Spec : `docs/superpowers/specs/2026-06-19-module-f-planning-board.md`.
-- [todo] **G. Rate Studio** : rate sheet importer, lane builder, accessorial catalog, fuel
-  tables, effective dates, simulation, « why this rate? », compare carriers, audit trail, test load.
+- [phase-1 done] **G. Rate Studio** : simulation sans load, « why this rate? », compare carriers —
+  LIVRÉ (POST `rating/simulate` réutilisant le moteur, page `/rate-studio`). lane builder/accessorial/
+  fuel = pages existantes liées depuis le hub. DIFFÉRÉ G-phase-2 : import CSV rates/lanes/accessorials,
+  audit-trail des changements de tarifs, test-load. Spec : `docs/superpowers/specs/2026-06-19-module-g-rate-studio.md`.
 - [todo] **H. Document Center** : docs par load/shipment/customer/carrier, types
   (BOL/POD/invoice/rate sheet/compliance/customs), statut missing/received/verified/rejected,
   OCR/extraction, agent review, expiration, liens publics sécurisés.
