@@ -76,9 +76,11 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
   LIVRÉ (POST `rating/simulate` réutilisant le moteur, page `/rate-studio`). lane builder/accessorial/
   fuel = pages existantes liées depuis le hub. DIFFÉRÉ G-phase-2 : import CSV rates/lanes/accessorials,
   audit-trail des changements de tarifs, test-load. Spec : `docs/superpowers/specs/2026-06-19-module-g-rate-studio.md`.
-- [todo] **H. Document Center** : docs par load/shipment/customer/carrier, types
-  (BOL/POD/invoice/rate sheet/compliance/customs), statut missing/received/verified/rejected,
-  OCR/extraction, agent review, expiration, liens publics sécurisés.
+- [phase-1 done] **H. Document Center** : vue unifiée de tous les documents (facettes par type,
+  filtres fileName/date, download) + panneau conformité expirante — LIVRÉ (GET `/documents/center`,
+  app desk `/documents`). DIFFÉRÉ H-phase-2 : statut missing/received/verified/rejected (+migration),
+  OCR/extraction, agent review, détection docs manquants, liens publics dédiés.
+  Spec : `docs/superpowers/specs/2026-06-19-module-h-document-center.md`.
 - [todo] **I. Rules / Policy Builder** : interface « Quand … Alors … » configurable (events→
   actions), au-dessus du moteur policies existant (`@pulsar/shared/operating`).
 - [todo] **J. Onboarding / Demo tenant / Sample data** : wizard tenant (modules, données, users,
