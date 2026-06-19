@@ -42,8 +42,11 @@ import { AccessorialsController } from './accessorials/accessorials.controller';
 import { AccessorialsService } from './accessorials/accessorials.service';
 import { FuelTablesController } from './fuel-tables/fuel-tables.controller';
 import { FuelTablesService } from './fuel-tables/fuel-tables.service';
+import { RatingController } from './rating/rating.controller';
 import { RatingService } from './rating/rating.service';
 import { BolService } from './bol/bol.service';
+import { PlanningBoardController } from './planning-board/planning-board.controller';
+import { PlanningBoardService } from './planning-board/planning-board.service';
 
 /**
  * Transportation Management module (TMS).
@@ -69,6 +72,8 @@ import { BolService } from './bol/bol.service';
     LanesController,
     AccessorialsController,
     FuelTablesController,
+    PlanningBoardController,
+    RatingController,
     // Public, token-authenticated endpoints (tender response, tracking, driver)
     PublicLinksController,
   ],
@@ -96,6 +101,7 @@ import { BolService } from './bol/bol.service';
     FuelTablesService,
     BolService,
     DelayDetectionService,
+    PlanningBoardService,
   ],
   exports: [
     RatingService,

@@ -2,6 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AgentsModule } from '../agents/agents.module';
+import { AutomationModule } from '../automation/automation.module';
 import { AgentRunsService } from './agent-runs.service';
 import { AgentWorkerService } from './agent-worker.service';
 import { DomainEventsService } from './domain-events.service';
@@ -11,7 +12,7 @@ import { OperationalTasksController } from './operational-tasks.controller';
 import { SlaEscalationService } from './sla-escalation.service';
 
 @Module({
-  imports: [AuditLogsModule, NotificationsModule, forwardRef(() => AgentsModule)],
+  imports: [AuditLogsModule, NotificationsModule, AutomationModule, forwardRef(() => AgentsModule)],
   controllers: [OperationalTasksController],
   providers: [
     DomainEventsService,

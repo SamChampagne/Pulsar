@@ -21,6 +21,7 @@ import {
   Cable,
   BarChart3,
   ClipboardList,
+  FileText,
 } from 'lucide-svelte';
 import type { ComponentType } from 'svelte';
 
@@ -75,13 +76,14 @@ export function navCatalogue(): NavDomain[] {
       label: 'Plateforme',
       icon: LayoutDashboard,
       home: '/apps',
-      prefixes: ['/apps', '/framework', '/dashboard'],
+      prefixes: ['/apps', '/framework', '/dashboard', '/onboarding'],
       // Always visible; no module or perm gate.
       sections: [
         {
           links: [
             { href: '/dashboard', label: 'Tableau de bord' },
             { href: '/apps', label: 'Pulsar Desk' },
+            { href: '/onboarding', label: 'Onboarding' },
           ],
         },
       ],
@@ -96,9 +98,11 @@ export function navCatalogue(): NavDomain[] {
       module: MODULE_KEYS.TRANSPORTATION,
       prefixes: [
         '/dispatch',
+        '/planning',
         '/transport-orders',
         '/shipments',
         '/loads',
+        '/rate-studio',
         '/lanes',
         '/rates',
         '/accessorials',
@@ -113,6 +117,11 @@ export function navCatalogue(): NavDomain[] {
           label: 'Exécution',
           links: [
             { href: '/dispatch', label: 'Dispatch' },
+            {
+              href: '/planning',
+              label: 'Planning Board',
+              perm: PERMISSIONS.TRANSPORTATION.PLANNING_READ,
+            },
             { href: '/transport-orders', label: 'Ordres de transport' },
             { href: '/shipments', label: 'Shipments' },
             { href: '/loads', label: 'Loads' },
@@ -121,6 +130,7 @@ export function navCatalogue(): NavDomain[] {
         {
           label: 'Tarification',
           links: [
+            { href: '/rate-studio', label: 'Rate Studio', perm: PERMISSIONS.TRANSPORTATION.RATES_READ },
             { href: '/lanes', label: 'Voies (lanes)' },
             { href: '/rates', label: 'Tarifs' },
             { href: '/accessorials', label: 'Accessoriaux' },
@@ -241,6 +251,7 @@ export function navCatalogue(): NavDomain[] {
         '/agents',
         '/agent-actions',
         '/workbench',
+        '/automation',
         '/control-tower',
         '/settings/agent-runtime',
       ],
@@ -270,6 +281,11 @@ export function navCatalogue(): NavDomain[] {
               label: 'Workbench',
               perm: PERMISSIONS.CORE.OPERATING_TASKS_READ,
             },
+            {
+              href: '/automation',
+              label: "Règles d'automatisation",
+              perm: PERMISSIONS.CORE.AUTOMATION_RULES_READ,
+            },
             // Always visible when the domain is visible (no perm override needed —
             // the domain-level anyPerms gate already ensures the user can see agents)
             { href: '/settings/agent-runtime', label: 'Connexion du modèle' },
@@ -291,6 +307,7 @@ export function navCatalogue(): NavDomain[] {
         {
           links: [
             { href: '/analytics/control-tower', label: 'Control Tower', perm: 'analytics.read' },
+            { href: '/analytics/scorecards', label: 'Scorecards', perm: 'analytics.read' },
             {
               href: '/analytics',
               label: 'Scorecard transporteurs',
@@ -316,6 +333,22 @@ export function navCatalogue(): NavDomain[] {
             { href: '/procurement/rfps', label: "Appels d'offres", perm: 'procurement.read' },
             { href: '/procurement/routing-guide', label: 'Guide de routage', perm: 'procurement.read' },
           ],
+        },
+      ],
+    },
+
+    // ── Documents / Document Center ────────────────────────────────────────
+    // Core domain (no module gate); visible when the user can read documents.
+    {
+      key: 'documents',
+      label: 'Documents',
+      icon: FileText,
+      home: '/documents',
+      prefixes: ['/documents'],
+      anyPerms: [PERMISSIONS.CORE.DOCUMENTS_READ],
+      sections: [
+        {
+          links: [{ href: '/documents', label: 'Document Center' }],
         },
       ],
     },

@@ -10,7 +10,7 @@
  */
 import { PrismaClient, TransportOrderStatus } from '@prisma/client';
 import { hashSync } from 'bcryptjs';
-import { MODULE_CATALOG, PERMISSION_CATALOG, MODULE_KEYS, LaneEndpointType, buildEndpointKey } from '@pulsar/shared';
+import { MODULE_CATALOG, PERMISSION_CATALOG, LaneEndpointType, buildEndpointKey } from '@pulsar/shared';
 
 const prisma = new PrismaClient();
 
@@ -46,8 +46,11 @@ async function main() {
     create: { slug: 'acme', name: 'Acme Manufacturing', status: 'ACTIVE' },
   });
 
-  for (const key of [MODULE_KEYS.CORE, MODULE_KEYS.TRANSPORTATION]) {
-    const mod = await prisma.moduleDefinition.findUniqueOrThrow({ where: { key } });
+  // Enable every available module on the demo tenant so the whole product surface
+  // (Transport, Fleet, Yard, WMS, Billing, Analytics, Procurement, both portals)
+  // is visible and reachable from the desk/nav out of the box.
+  for (const descriptor of MODULE_CATALOG.filter((m) => m.available)) {
+    const mod = await prisma.moduleDefinition.findUniqueOrThrow({ where: { key: descriptor.key } });
     await prisma.tenantModule.upsert({
       where: { tenantId_moduleId: { tenantId: tenant.id, moduleId: mod.id } },
       update: { enabled: true },

@@ -61,6 +61,14 @@
     createdAt: string;
   }
 
+  interface ShipmentComment {
+    id: string;
+    authorType: 'CUSTOMER' | 'STAFF';
+    authorName: string;
+    body: string;
+    createdAt: string;
+  }
+
   const token = $derived(page.params.token);
 
   let view = $state<PortalView | null>(null);
@@ -102,6 +110,15 @@
   let shipmentDocs = $state<Record<string, PortalDocument[]>>({});
   let shipmentDocsOpen = $state<Record<string, boolean>>({});
   let shipmentDocsLoading = $state<Record<string, boolean>>({});
+
+  // Comments (lazy, per shipment)
+  let shipmentComments = $state<Record<string, ShipmentComment[]>>({});
+  let shipmentCommentsOpen = $state<Record<string, boolean>>({});
+  let shipmentCommentsLoading = $state<Record<string, boolean>>({});
+  let commentDraft = $state<Record<string, string>>({});
+  let commentSending = $state<Record<string, boolean>>({});
+  let commentNotice = $state<Record<string, string>>({});
+  let commentError = $state<Record<string, string>>({});
 
   // Change request
   let changeKind = $state('');
@@ -192,6 +209,53 @@
     a.download = doc.fileName;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function loadShipmentComments(shipmentId: string) {
+    if (shipmentCommentsLoading[shipmentId]) return;
+    shipmentCommentsLoading = { ...shipmentCommentsLoading, [shipmentId]: true };
+    try {
+      const comments = await api<ShipmentComment[]>(
+        `/public/portal/${token}/shipments/${shipmentId}/comments`,
+      );
+      shipmentComments = { ...shipmentComments, [shipmentId]: comments };
+    } catch {
+      shipmentComments = { ...shipmentComments, [shipmentId]: [] };
+    } finally {
+      shipmentCommentsLoading = { ...shipmentCommentsLoading, [shipmentId]: false };
+    }
+  }
+
+  function toggleShipmentComments(shipmentId: string) {
+    const isOpen = shipmentCommentsOpen[shipmentId];
+    shipmentCommentsOpen = { ...shipmentCommentsOpen, [shipmentId]: !isOpen };
+    if (!isOpen && !(shipmentId in shipmentComments)) {
+      void loadShipmentComments(shipmentId);
+    }
+  }
+
+  async function submitComment(shipmentId: string) {
+    const body = (commentDraft[shipmentId] ?? '').trim();
+    if (!body) return;
+    commentNotice = { ...commentNotice, [shipmentId]: '' };
+    commentError = { ...commentError, [shipmentId]: '' };
+    commentSending = { ...commentSending, [shipmentId]: true };
+    try {
+      await api(`/public/portal/${token}/shipments/${shipmentId}/comments`, {
+        method: 'POST',
+        body: { body },
+      });
+      commentDraft = { ...commentDraft, [shipmentId]: '' };
+      commentNotice = { ...commentNotice, [shipmentId]: 'Commentaire envoyé.' };
+      await loadShipmentComments(shipmentId);
+    } catch (e) {
+      commentError = {
+        ...commentError,
+        [shipmentId]: e instanceof ApiError ? e.message : 'Échec de l\'envoi',
+      };
+    } finally {
+      commentSending = { ...commentSending, [shipmentId]: false };
+    }
   }
 
   async function submitRequest(event: SubmitEvent) {
@@ -529,11 +593,71 @@
                           {shipment.actualDeliveryAt ? `livré ${fmt(shipment.actualDeliveryAt)}` : ''}
                         </td>
                         <td class="py-1.5 text-right">
+                          <button
+                            type="button"
+                            class="text-accent hover:underline"
+                            onclick={() => toggleShipmentComments(shipment.id)}
+                          >
+                            Commentaires{#if shipmentComments[shipment.id]} ({shipmentComments[shipment.id].length}){/if}
+                          </button>
                           {#if shipment.trackingUrl}
-                            <a href={shipment.trackingUrl} class="text-accent hover:underline">Suivre</a>
+                            <a href={shipment.trackingUrl} class="ml-3 text-accent hover:underline">Suivre</a>
                           {/if}
                         </td>
                       </tr>
+                      {#if shipmentCommentsOpen[shipment.id]}
+                        <tr class="border-b border-edge last:border-0">
+                          <td colspan="4" class="py-2">
+                            {#if shipmentCommentsLoading[shipment.id]}
+                              <p class="text-xs text-ink-muted">Chargement…</p>
+                            {:else}
+                              {#if !shipmentComments[shipment.id] || shipmentComments[shipment.id].length === 0}
+                                <p class="text-xs text-ink-muted">Aucun commentaire pour le moment.</p>
+                              {:else}
+                                <ul class="mb-3 flex flex-col gap-2">
+                                  {#each shipmentComments[shipment.id] as comment (comment.id)}
+                                    <li class="rounded bg-surface-muted px-3 py-2">
+                                      <div class="mb-1 flex items-center gap-2">
+                                        <span class="text-sm font-semibold text-ink">{comment.authorName}</span>
+                                        <Badge tone={comment.authorType === 'STAFF' ? 'info' : 'neutral'}>
+                                          {comment.authorType === 'STAFF' ? 'Équipe' : 'Client'}
+                                        </Badge>
+                                        <span class="text-xs text-ink-faint">{formatDate(comment.createdAt)}</span>
+                                      </div>
+                                      <p class="whitespace-pre-wrap text-sm text-ink">{comment.body}</p>
+                                    </li>
+                                  {/each}
+                                </ul>
+                              {/if}
+
+                              {#if commentNotice[shipment.id]}
+                                <p class="mb-2 text-sm text-ok">{commentNotice[shipment.id]}</p>
+                              {/if}
+                              {#if commentError[shipment.id]}
+                                <p class="mb-2 text-sm text-danger">{commentError[shipment.id]}</p>
+                              {/if}
+
+                              <div class="flex flex-col gap-2">
+                                <Textarea
+                                  bind:value={commentDraft[shipment.id]}
+                                  rows={2}
+                                  placeholder="Écrire un commentaire…"
+                                />
+                                <div class="flex justify-end">
+                                  <Button
+                                    type="button"
+                                    loading={commentSending[shipment.id]}
+                                    disabled={!(commentDraft[shipment.id] ?? '').trim()}
+                                    onclick={() => submitComment(shipment.id)}
+                                  >
+                                    Envoyer
+                                  </Button>
+                                </div>
+                              </div>
+                            {/if}
+                          </td>
+                        </tr>
+                      {/if}
                     {/each}
                   </tbody>
                 </table>

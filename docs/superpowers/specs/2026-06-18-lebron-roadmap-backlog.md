@@ -14,9 +14,10 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
   appointments à risque, pick COMPLETED sans dispatch, actions agents en attente) + KPI en-tête
   (loads en transit/retard, OTIF, coût moyen/load, $ récupérés, dispo flotte, actions en
   attente, tâches ouvertes). Page web + nav/universe. Réutilise le carrier scorecard existant.
-- [todo] **M2 — Scorecards & profitabilité** : carrier scorecard enrichi, lane profitability,
-  customer profitability, fleet uptime, yard congestion, warehouse readiness, exception heatmap,
-  agent ROI (économies, tâches résolues, taux d'approbation, breaker trips, temps moyen).
+- [phase-1 done] **M2 — Scorecards & profitabilité** : fleet uptime, yard congestion, warehouse
+  readiness, exception heatmap, agent ROI — LIVRÉ (GET `/analytics/scorecards`, calculs purs testés,
+  page `/analytics/scorecards`). DIFFÉRÉ M2-phase-2 : lane/customer profitability (besoin lien
+  revenu→load, `CustomerInvoiceLine` sans `loadId`). Spec : `docs/superpowers/specs/2026-06-19-c1m2-scorecards.md`.
 
 ## Chantier 2 — Workbench v2 (centre de résolution)
 - [done] **ExceptionCase** : cas (statut, SLA, owner humain/agent, events liés, actions
@@ -68,17 +69,30 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
   exception/damage, position, BOL, notes.
 - [done] **E. Customer Portal v2** : créer ordre, templates récurrents, tracking, docs, POD,
   factures, demandes de changement, chat par shipment, branding.
-- [todo] **F. Planning Board** : shipments non assignés, loads ouverts, assets/drivers dispo,
-  carrier options, warnings capacité, drag & drop shipment→load, plan proposal agent, scénario A/B.
-- [todo] **G. Rate Studio** : rate sheet importer, lane builder, accessorial catalog, fuel
-  tables, effective dates, simulation, « why this rate? », compare carriers, audit trail, test load.
-- [todo] **H. Document Center** : docs par load/shipment/customer/carrier, types
-  (BOL/POD/invoice/rate sheet/compliance/customs), statut missing/received/verified/rejected,
-  OCR/extraction, agent review, expiration, liens publics sécurisés.
-- [todo] **I. Rules / Policy Builder** : interface « Quand … Alors … » configurable (events→
-  actions), au-dessus du moteur policies existant (`@pulsar/shared/operating`).
-- [todo] **J. Onboarding / Demo tenant / Sample data** : wizard tenant (modules, données, users,
-  LLM, email/API), sample data, reset demo, scénarios de démo.
+- [phase-1 done] **F. Planning Board** : shipments non assignés, loads ouverts, assets/drivers dispo,
+  warnings capacité, drag & drop shipment→load — LIVRÉ (endpoint agrégation `planning-board` +
+  page `/planning` réutilisant assign/remove). DIFFÉRÉ F-phase-2 : plan proposal agent, scénario A/B.
+  Spec : `docs/superpowers/specs/2026-06-19-module-f-planning-board.md`.
+- [phase-1 done] **G. Rate Studio** : simulation sans load, « why this rate? », compare carriers —
+  LIVRÉ (POST `rating/simulate` réutilisant le moteur, page `/rate-studio`). lane builder/accessorial/
+  fuel = pages existantes liées depuis le hub. DIFFÉRÉ G-phase-2 : import CSV rates/lanes/accessorials,
+  audit-trail des changements de tarifs, test-load. Spec : `docs/superpowers/specs/2026-06-19-module-g-rate-studio.md`.
+- [phase-1 done] **H. Document Center** : vue unifiée de tous les documents (facettes par type,
+  filtres fileName/date, download) + panneau conformité expirante — LIVRÉ (GET `/documents/center`,
+  app desk `/documents`). DIFFÉRÉ H-phase-2 : statut missing/received/verified/rejected (+migration),
+  OCR/extraction, agent review, détection docs manquants, liens publics dédiés.
+  Spec : `docs/superpowers/specs/2026-06-19-module-h-document-center.md`.
+- [phase-1 done] **I. Rules / Policy Builder** : UI « Quand…Alors… » configurable (events→créer une
+  tâche) au-dessus du moteur policies — LIVRÉ (entité `AutomationRule` + migration, moteur pur
+  `@pulsar/shared/automation` testé, `CustomRuleResolver` best-effort branché au point unique
+  `processPending`, CRUD `/automation/rules`, page `/automation`). DIFFÉRÉ I-phase-2 : actions autres
+  que CREATE_TASK (email/outil agent/webhook), groupes de conditions, dry-run historique, versioning.
+  Spec : `docs/superpowers/specs/2026-06-19-module-i-rules-builder.md`. NB migration à appliquer (`pnpm db:migrate`).
+- [phase-1 done] **J. Onboarding / Demo tenant / Sample data** : checklist/wizard d'onboarding —
+  LIVRÉ (GET `/onboarding/status` calcule la progression réelle du tenant, page `/onboarding` guidée).
+  DIFFÉRÉ J-phase-2 (à faire DB démarrée, opération destructive) : générateur de sample data tagué
+  `DEMO-` (ADD-only) + reset démo + wizard création de tenant (platform).
+  Spec : `docs/superpowers/specs/2026-06-19-module-j-onboarding.md`.
 
 ## Principe d'exécution
 Chaque morceau : spec court → tâches → subagents (implémenteur + reviewer) → commit. Décisions

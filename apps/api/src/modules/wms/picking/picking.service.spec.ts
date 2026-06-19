@@ -33,7 +33,8 @@ function harness(throwOnPost = false) {
   const sequences = { nextNumber: async () => 'PK-0001' } as any;
   const ownership = { assertOwnedIfSet: async () => undefined } as any;
   const audit = { log: async () => undefined } as any;
-  return { svc: new PickingService(client, inventory, sequences, ownership, audit), order, posted };
+  const domainEvents = { emit: async () => undefined } as any;
+  return { svc: new PickingService(client, inventory, sequences, ownership, audit, domainEvents), order, posted };
 }
 
 describe('PickingService.complete', () => {
@@ -67,7 +68,8 @@ function createHarness(opts: { shipment?: any; location?: any } = {}) {
   const sequences = { nextNumber: async () => 'PK-0001' } as any;
   const ownership = { assertOwnedIfSet: async () => undefined } as any;
   const audit = { log: async () => undefined } as any;
-  return { svc: new PickingService(prisma, inventory, sequences, ownership, audit), created };
+  const domainEvents = { emit: async () => undefined } as any;
+  return { svc: new PickingService(prisma, inventory, sequences, ownership, audit, domainEvents), created };
 }
 
 describe('PickingService.create with shipmentId', () => {

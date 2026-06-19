@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { MODULE_KEYS, PERMISSIONS, ShipmentStatus } from '@pulsar/shared';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
@@ -29,6 +29,13 @@ class AssignLoadDto {
   @IsOptional()
   @IsBoolean()
   force?: boolean;
+}
+
+class ShipmentCommentDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000)
+  body!: string;
 }
 
 @ApiTags('transportation/shipments')
@@ -66,6 +73,22 @@ export class ShipmentsController {
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
   cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.shipments.cancel(user.tenantId, id);
+  }
+
+  @Get(':id/comments')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_READ)
+  listComments(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.shipments.listComments(user.tenantId, id);
+  }
+
+  @Post(':id/comments')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
+  createComment(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: ShipmentCommentDto,
+  ) {
+    return this.shipments.createComment(user.tenantId, user, id, dto.body);
   }
 
   /** Public tracking link management (share with the end customer). */

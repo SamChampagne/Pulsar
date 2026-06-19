@@ -22,6 +22,7 @@ import { DocumentsModule } from './core/documents/documents.module';
 import { NotificationsModule } from './core/notifications/notifications.module';
 import { IntegrationsModule } from './core/integrations/integrations.module';
 import { ModuleRegistryModule } from './core/module-registry/module-registry.module';
+import { OnboardingModule } from './core/onboarding/onboarding.module';
 import { PlatformModule } from './core/platform/platform.module';
 import { TransportationModule } from './modules/transportation/transportation.module';
 import { FleetModule } from './modules/fleet/fleet.module';
@@ -33,6 +34,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { OperatingModule } from './core/operating/operating.module';
+import { AutomationModule } from './core/automation/automation.module';
 import { PreferencesModule } from './core/preferences/preferences.module';
 import { ConnectModule } from './core/connect/connect.module';
 
@@ -64,8 +66,10 @@ import { ConnectModule } from './core/connect/connect.module';
     NotificationsModule,
     IntegrationsModule,
     ModuleRegistryModule,
+    OnboardingModule,
     PlatformModule,
     OperatingModule,
+    AutomationModule,
     PreferencesModule,
     ConnectModule,
     // Business modules (activable per tenant — see ModulesGuard)
