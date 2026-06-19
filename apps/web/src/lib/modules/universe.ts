@@ -130,6 +130,20 @@ export const MODULE_UNIVERSES: Record<string, ModuleUniverse> = {
     agent: 'Procurement negotiation agent',
     signal: 'Best carrier per lane',
   },
+  documents: {
+    key: 'documents',
+    title: 'Document Center',
+    short: 'Files',
+    mission:
+      'Find any document across every entity, filter by category, search and date, and watch compliance that is about to expire.',
+    accent: '#e11d48',
+    soft: '#ffe4e6',
+    rgb: '225 29 72',
+    objects: ['Documents', 'Categories', 'Compliance', 'Uploads'],
+    workflows: ['Search', 'Filter', 'Download', 'Monitor'],
+    agent: 'Document librarian agent',
+    signal: 'Evidence on file',
+  },
   connect: {
     key: 'connect',
     title: 'Connect / Developer Platform',

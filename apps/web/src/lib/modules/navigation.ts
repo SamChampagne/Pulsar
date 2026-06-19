@@ -21,6 +21,7 @@ import {
   Cable,
   BarChart3,
   ClipboardList,
+  FileText,
 } from 'lucide-svelte';
 import type { ComponentType } from 'svelte';
 
@@ -324,6 +325,22 @@ export function navCatalogue(): NavDomain[] {
             { href: '/procurement/rfps', label: "Appels d'offres", perm: 'procurement.read' },
             { href: '/procurement/routing-guide', label: 'Guide de routage', perm: 'procurement.read' },
           ],
+        },
+      ],
+    },
+
+    // ── Documents / Document Center ────────────────────────────────────────
+    // Core domain (no module gate); visible when the user can read documents.
+    {
+      key: 'documents',
+      label: 'Documents',
+      icon: FileText,
+      home: '/documents',
+      prefixes: ['/documents'],
+      anyPerms: [PERMISSIONS.CORE.DOCUMENTS_READ],
+      sections: [
+        {
+          links: [{ href: '/documents', label: 'Document Center' }],
         },
       ],
     },
