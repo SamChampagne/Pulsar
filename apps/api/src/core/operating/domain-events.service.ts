@@ -14,6 +14,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { AgentWorkerService } from './agent-worker.service';
 import { TaskAssignmentResolver } from './event-policies';
+import { CustomRuleResolver } from '../automation/custom-rule.resolver';
 
 const SEVERITY_TO_LEVEL: Record<Severity, NotificationLevel> = {
   INFO: NotificationLevel.INFO,
@@ -33,6 +34,7 @@ export class DomainEventsService {
     private readonly assignment: TaskAssignmentResolver,
     private readonly worker: AgentWorkerService,
     private readonly sequences: SequencesService,
+    private readonly customRuleResolver: CustomRuleResolver,
   ) {}
 
   /** Persist a domain event. Best-effort: a failure is logged, never thrown into the caller. */
@@ -80,8 +82,21 @@ export class DomainEventsService {
       if (claimed.count === 0) continue;
 
       try {
-        const specs = resolvePolicies({ type: event.type, payload: (event.payload ?? {}) as Record<string, unknown> });
-        for (const spec of specs) {
+        const payload = (event.payload ?? {}) as Record<string, unknown>;
+        const specs = resolvePolicies({ type: event.type, payload });
+
+        // Additive layer: consult tenant-configured automation rules. Best-effort
+        // (rule 24) — a failure here must never break built-in task creation.
+        let customSpecs: typeof specs = [];
+        try {
+          customSpecs = await this.customRuleResolver.resolve(event.tenantId, event.type, payload);
+        } catch (ruleErr) {
+          this.logger.error(
+            `customRuleResolver failed for event ${event.id} (${event.type}): ${ruleErr instanceof Error ? ruleErr.message : String(ruleErr)}`,
+          );
+        }
+
+        for (const spec of [...specs, ...customSpecs]) {
           const agentId = await this.assignment.resolveAgent(event.tenantId, spec);
           const nowMs = Date.now();
           const slaDueAt = new Date(computeSlaDueAt(spec.category, nowMs));

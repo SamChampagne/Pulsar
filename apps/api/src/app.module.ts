@@ -33,6 +33,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { OperatingModule } from './core/operating/operating.module';
+import { AutomationModule } from './core/automation/automation.module';
 import { PreferencesModule } from './core/preferences/preferences.module';
 import { ConnectModule } from './core/connect/connect.module';
 
@@ -66,6 +67,7 @@ import { ConnectModule } from './core/connect/connect.module';
     ModuleRegistryModule,
     PlatformModule,
     OperatingModule,
+    AutomationModule,
     PreferencesModule,
     ConnectModule,
     // Business modules (activable per tenant — see ModulesGuard)
