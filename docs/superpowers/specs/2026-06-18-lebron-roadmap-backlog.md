@@ -14,9 +14,10 @@ Ce fichier est le **plan maître**. Chaque morceau a son propre spec + exécutio
   appointments à risque, pick COMPLETED sans dispatch, actions agents en attente) + KPI en-tête
   (loads en transit/retard, OTIF, coût moyen/load, $ récupérés, dispo flotte, actions en
   attente, tâches ouvertes). Page web + nav/universe. Réutilise le carrier scorecard existant.
-- [todo] **M2 — Scorecards & profitabilité** : carrier scorecard enrichi, lane profitability,
-  customer profitability, fleet uptime, yard congestion, warehouse readiness, exception heatmap,
-  agent ROI (économies, tâches résolues, taux d'approbation, breaker trips, temps moyen).
+- [phase-1 done] **M2 — Scorecards & profitabilité** : fleet uptime, yard congestion, warehouse
+  readiness, exception heatmap, agent ROI — LIVRÉ (GET `/analytics/scorecards`, calculs purs testés,
+  page `/analytics/scorecards`). DIFFÉRÉ M2-phase-2 : lane/customer profitability (besoin lien
+  revenu→load, `CustomerInvoiceLine` sans `loadId`). Spec : `docs/superpowers/specs/2026-06-19-c1m2-scorecards.md`.
 
 ## Chantier 2 — Workbench v2 (centre de résolution)
 - [done] **ExceptionCase** : cas (statut, SLA, owner humain/agent, events liés, actions
