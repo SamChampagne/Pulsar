@@ -37,6 +37,11 @@ export class AgentConversationsService {
     });
   }
 
+  /** Repoint a conversation at a freshly (re)opened Hermes session. */
+  updateHermesSession(id: string, hermesSessionId: string) {
+    return this.prisma.agentConversation.update({ where: { id }, data: { hermesSessionId } });
+  }
+
   /** Tenant-scoped guard used before streaming a turn. Returns the conversation. */
   async assertOwned(tenantId: string, userId: string, id: string) {
     const conv = await this.prisma.agentConversation.findFirst({ where: { id, tenantId } });

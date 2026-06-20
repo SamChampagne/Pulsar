@@ -106,23 +106,24 @@
     return domains;
   });
 
-  function pathInDomain(d: NavDomain): boolean {
-    return d.prefixes.some(
-      (p) =>
-        page.url.pathname === p ||
-        page.url.pathname.startsWith(p + '/') ||
-        page.url.pathname.startsWith(p),
-    );
+  // Length of the LONGEST prefix of `d` that the current path actually matches
+  // (0 if none). Used so the most-specific *matching* prefix wins — never an
+  // unrelated longer prefix of the same domain.
+  function matchedPrefixLen(d: NavDomain): number {
+    let best = 0;
+    for (const p of d.prefixes) {
+      if (page.url.pathname === p || page.url.pathname.startsWith(p + '/')) {
+        if (p.length > best) best = p.length;
+      }
+    }
+    return best;
   }
-  // Active domain = most-specific prefix match; fall back to dashboard.
+  // Active domain = the domain whose matching prefix is most specific; fall back to dashboard.
   const activeDomain = $derived(
     visibleDomains
-      .filter((d) => d.key !== 'dashboard' && pathInDomain(d))
-      .sort(
-        (a, b) =>
-          Math.max(...b.prefixes.map((p) => p.length)) -
-          Math.max(...a.prefixes.map((p) => p.length)),
-      )[0] ?? visibleDomains.find((d) => d.key === 'dashboard'),
+      .filter((d) => d.key !== 'dashboard' && matchedPrefixLen(d) > 0)
+      .sort((a, b) => matchedPrefixLen(b) - matchedPrefixLen(a))[0] ??
+      visibleDomains.find((d) => d.key === 'dashboard'),
   );
   const activeUniverse = $derived(
     MODULE_UNIVERSES[activeDomain?.key ?? 'dashboard'] ?? MODULE_UNIVERSES.dashboard,
@@ -133,8 +134,22 @@
   const reduceMotion =
     typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
+  // The single active link = the LONGEST href among the visible links that the
+  // current path matches. Without this, a module "home" link (e.g. /analytics)
+  // would also light up on every child route (/analytics/control-tower, …),
+  // making it look like two menu items are selected at once.
+  const activeLinkHref = $derived.by(() => {
+    let best = '';
+    for (const l of activeLinks) {
+      if (page.url.pathname === l.href || page.url.pathname.startsWith(l.href + '/')) {
+        if (l.href.length > best.length) best = l.href;
+      }
+    }
+    return best;
+  });
+
   function linkActive(href: string): boolean {
-    return page.url.pathname === href || page.url.pathname.startsWith(href + '/');
+    return href === activeLinkHref;
   }
 
   function displayName(): string {

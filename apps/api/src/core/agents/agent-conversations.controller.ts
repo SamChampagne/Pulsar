@@ -74,11 +74,27 @@ export class AgentConversationsController {
 
     let assistantText = '';
     try {
-      if (!conv.hermesSessionId) {
+      // Ensure a live Hermes session. The in-memory session dies on runtime
+      // restart (or was never opened) — transparently resume the persisted
+      // conversation so the user can keep chatting instead of hitting an error.
+      let sessionId: string | null = conv.hermesSessionId;
+      if (!this.runtime.isLive(sessionId)) {
+        const agent = await this.agents.getOwned(user.tenantId, conv.agentId);
+        sessionId = await this.runtime.resumeSession({
+          tenantId: user.tenantId,
+          agent: { id: agent.id, model: agent.model, persona: agent.persona },
+          pulsarMcpUrl: PULSAR_MCP_URL,
+          existingSessionId: conv.hermesSessionId,
+        });
+        if (sessionId !== conv.hermesSessionId) {
+          await this.conversations.updateHermesSession(conv.id, sessionId);
+        }
+      }
+      if (!sessionId) {
         send('error', { message: 'Conversation has no live session' });
         return;
       }
-      for await (const ev of this.runtime.sendTurn(conv.hermesSessionId, dto.text)) {
+      for await (const ev of this.runtime.sendTurn(sessionId, dto.text)) {
         if (ev.type === 'text') {
           assistantText += ev.text;
           send('text', { text: ev.text });
@@ -91,7 +107,8 @@ export class AgentConversationsController {
         }
       }
       if (assistantText) await this.conversations.addMessage(conv.id, 'assistant', assistantText);
-    } catch {
+    } catch (e) {
+      console.error('[agent-conversations] turn failed:', e instanceof Error ? e.message : e);
       send('error', { message: 'Agent runtime error' });
     } finally {
       res.end();

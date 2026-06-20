@@ -1,5 +1,6 @@
 export * from './modules';
 export * from './permissions';
+export * from './config/module-settings';
 export * from './enums/core';
 export * from './enums/transportation';
 export * from './enums/billing';

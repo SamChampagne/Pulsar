@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { downloadDocument, fetchDocumentObjectUrl } from '$lib/api/files';
+  import { toast } from '$lib/stores/toast';
   import {
     PageHeader,
     Button,
@@ -12,6 +15,7 @@
     Input,
     Field,
     ErrorNotice,
+    Modal,
   } from '$lib/components/ui';
 
   interface DocCenterItem {
@@ -78,6 +82,72 @@
   function shortId(id: string): string {
     return id.length > 8 ? id.slice(0, 8) : id;
   }
+
+  // — Authenticated download (a plain <a href> would 401 — no bearer token) —
+  let downloadingId = $state<string | null>(null);
+  async function download(doc: { id: string; fileName: string }) {
+    downloadingId = doc.id;
+    try {
+      await downloadDocument(doc.id, doc.fileName);
+    } catch {
+      toast.error('Échec du téléchargement');
+    } finally {
+      downloadingId = null;
+    }
+  }
+
+  // — Inline preview —
+  let previewDoc = $state<DocCenterItem | null>(null);
+  let previewOpen = $state(false);
+  let previewUrl = $state<string | null>(null);
+  let previewLoading = $state(false);
+  let previewError = $state('');
+
+  const previewKind = $derived.by(() => {
+    const m = previewDoc?.mimeType ?? '';
+    if (m.startsWith('image/')) return 'image';
+    if (m === 'application/pdf') return 'pdf';
+    if (m.startsWith('text/') || m === 'application/json') return 'text';
+    return 'other';
+  });
+
+  function revokePreview() {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      previewUrl = null;
+    }
+  }
+
+  async function openPreview(doc: DocCenterItem) {
+    previewDoc = doc;
+    previewOpen = true;
+    previewError = '';
+    revokePreview();
+    const kind = doc.mimeType.startsWith('image/')
+      ? 'image'
+      : doc.mimeType === 'application/pdf'
+        ? 'pdf'
+        : doc.mimeType.startsWith('text/') || doc.mimeType === 'application/json'
+          ? 'text'
+          : 'other';
+    if (kind === 'other') return; // nothing to fetch; show download CTA
+    previewLoading = true;
+    try {
+      previewUrl = await fetchDocumentObjectUrl(doc.id);
+    } catch {
+      previewError = "Impossible de charger l'aperçu";
+    } finally {
+      previewLoading = false;
+    }
+  }
+
+  function closePreview() {
+    previewOpen = false;
+    previewDoc = null;
+    revokePreview();
+  }
+
+  onDestroy(revokePreview);
 
   async function load() {
     loading = true;
@@ -189,7 +259,13 @@
         {#snippet body()}
           {#each rows as row (row.id)}
             <tr>
-              <td class="font-medium text-ink">{row.fileName}</td>
+              <td>
+                <button
+                  type="button"
+                  class="text-left font-medium text-ink transition-colors hover:text-accent hover:underline"
+                  onclick={() => openPreview(row)}
+                >{row.fileName}</button>
+              </td>
               <td><Badge tone="neutral">{row.category}</Badge></td>
               <td class="text-xs text-ink-muted">
                 <span class="font-mono">{row.entityType}:{shortId(row.entityId)}</span>
@@ -198,13 +274,19 @@
               <td class="text-sm">{row.uploadedByName ?? '—'}</td>
               <td class="text-xs text-ink-muted">{new Date(row.createdAt).toLocaleString()}</td>
               <td class="text-right">
-                <a
-                  href={`/api/v1/documents/${row.id}/download`}
-                  target="_blank"
-                  rel="noopener"
-                  class="inline-flex items-center justify-center gap-1.5 rounded-md border border-edge bg-surface px-3 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-muted"
-                  >Télécharger</a
-                >
+                <div class="inline-flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onclick={() => openPreview(row)}
+                    class="inline-flex items-center justify-center rounded-md border border-edge bg-surface px-3 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-muted"
+                  >Aperçu</button>
+                  <button
+                    type="button"
+                    onclick={() => download(row)}
+                    disabled={downloadingId === row.id}
+                    class="inline-flex items-center justify-center rounded-md border border-edge bg-surface px-3 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-muted disabled:opacity-50"
+                  >{downloadingId === row.id ? '…' : 'Télécharger'}</button>
+                </div>
               </td>
             </tr>
           {:else}
@@ -281,12 +363,13 @@
               </Badge>
             </div>
             {#if item.documentId}
-              <a
-                href={`/api/v1/documents/${item.documentId}/download`}
-                target="_blank"
-                rel="noopener"
-                class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline"
-                >Télécharger le document</a
+              {@const docId = item.documentId}
+              <button
+                type="button"
+                onclick={() => download({ id: docId, fileName: `${item.docType}.pdf` })}
+                disabled={downloadingId === docId}
+                class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline disabled:opacity-50"
+                >{downloadingId === docId ? 'Téléchargement…' : 'Télécharger le document'}</button
               >
             {/if}
           </li>
@@ -295,3 +378,38 @@
     {/if}
   </Card>
 </div>
+
+<!-- Document preview -->
+<Modal bind:open={previewOpen} title={previewDoc?.fileName ?? 'Aperçu'} size="xl" onclose={closePreview}>
+  {#if previewDoc}
+    {#if previewError}
+      <div class="py-10 text-center text-sm text-danger">{previewError}</div>
+    {:else if previewLoading}
+      <div class="flex h-[60vh] items-center justify-center"><Skeleton rows={6} /></div>
+    {:else if previewKind === 'image' && previewUrl}
+      <div class="flex justify-center">
+        <img src={previewUrl} alt={previewDoc.fileName} class="max-h-[70vh] max-w-full rounded-inner object-contain" />
+      </div>
+    {:else if previewKind === 'pdf' && previewUrl}
+      <iframe src={previewUrl} title={previewDoc.fileName} class="h-[70vh] w-full rounded-inner border border-edge"></iframe>
+    {:else if previewKind === 'text' && previewUrl}
+      <iframe src={previewUrl} title={previewDoc.fileName} class="h-[60vh] w-full rounded-inner border border-edge bg-white"></iframe>
+    {:else}
+      <div class="flex flex-col items-center gap-3 py-12 text-center">
+        <p class="text-sm text-ink-muted">
+          Aperçu non disponible pour ce type de fichier ({previewDoc.mimeType || 'inconnu'}).
+        </p>
+        <Button onclick={() => { if (previewDoc) void download(previewDoc); }}>Télécharger le fichier</Button>
+      </div>
+    {/if}
+  {/if}
+  {#snippet footer()}
+    {#if previewDoc}
+      <span class="mr-auto text-xs text-ink-faint">{humanSize(previewDoc.sizeBytes)} · {previewDoc.mimeType}</span>
+      <Button variant="secondary" onclick={closePreview}>Fermer</Button>
+      <Button onclick={() => { if (previewDoc) void download(previewDoc); }} disabled={downloadingId === previewDoc.id}>
+        {downloadingId === previewDoc.id ? 'Téléchargement…' : 'Télécharger'}
+      </Button>
+    {/if}
+  {/snippet}
+</Modal>

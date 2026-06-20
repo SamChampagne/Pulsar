@@ -44,7 +44,7 @@ export class CarriersService {
       where: { tenantId_code: { tenantId, code: dto.code } },
     });
     if (existing) throw new ConflictException(`Carrier code "${dto.code}" already exists`);
-    return this.prisma.carrier.create({ data: { tenantId, ...dto } });
+    return this.prisma.carrier.create({ data: { ...dto, tenantId } });
   }
 
   async update(tenantId: string, id: string, dto: UpdateCarrierDto) {

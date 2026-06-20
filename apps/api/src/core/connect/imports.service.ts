@@ -3,6 +3,7 @@ import {
   applyMapping,
   AuditAction,
   coerceTypes,
+  type CsvLocale,
   getImportTarget,
   IMPORT_TARGETS,
   type ImportStatus,
@@ -13,6 +14,7 @@ import {
 import { DocumentsService } from '../documents/documents.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { DomainEventsService } from '../operating/domain-events.service';
+import { ModuleSettingsService } from '../module-registry/module-settings.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { paginated, paginationArgs } from '../../common/pagination';
@@ -40,6 +42,7 @@ export class ImportsService {
     private readonly documents: DocumentsService,
     private readonly audit: AuditLogsService,
     private readonly events: DomainEventsService,
+    private readonly moduleSettings: ModuleSettingsService,
     private readonly customers: CustomersService,
     private readonly locations: LocationsService,
     private readonly carriers: CarriersService,
@@ -194,6 +197,9 @@ export class ImportsService {
     let importedRows = 0;
     let failedRows = 0;
 
+    // Resolve tenant's CSV number locale once, outside the loop.
+    const { csvNumberLocale } = await this.moduleSettings.resolve(tenantId, 'connect');
+
     for (let i = 0; i < parsed.rows.length; i++) {
       const rawRow = parsed.rows[i];
       let rowStatus: 'IMPORTED' | 'FAILED' = 'FAILED';
@@ -202,7 +208,7 @@ export class ImportsService {
 
       try {
         const mapped = applyMapping(rawRow, mapping);
-        const coerced = coerceTypes(mapped, target);
+        const coerced = coerceTypes(mapped, target, csvNumberLocale as CsvLocale);
         const missing = validateRequired(coerced, target.requiredColumns);
 
         if (missing.length > 0) {

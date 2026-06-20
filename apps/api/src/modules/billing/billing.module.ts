@@ -1,6 +1,7 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { EmailModule } from '../../core/email/email.module';
+import { ModuleRegistryModule } from '../../core/module-registry/module-registry.module';
 import { OperatingModule } from '../../core/operating/operating.module';
 import { TransportationModule } from '../transportation/transportation.module';
 import { CustomerInvoicesController } from './customer-invoices.controller';
@@ -17,7 +18,7 @@ import { InvoicesService } from './invoices.service';
  * Phase 16: freight-audit (incoming carrier invoices) added.
  */
 @Module({
-  imports: [AuditLogsModule, EmailModule, TransportationModule, forwardRef(() => OperatingModule)],
+  imports: [AuditLogsModule, EmailModule, ModuleRegistryModule, TransportationModule, forwardRef(() => OperatingModule)],
   controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController],
   providers: [InvoicesService, CustomerInvoicesService, FreightAuditService],
   exports: [FreightAuditService, CustomerInvoicesService],

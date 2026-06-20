@@ -22,6 +22,7 @@ import {
   BarChart3,
   ClipboardList,
   FileText,
+  Palette,
 } from 'lucide-svelte';
 import type { ComponentType } from 'svelte';
 
@@ -110,7 +111,6 @@ export function navCatalogue(): NavDomain[] {
         '/customers',
         '/carriers',
         '/locations',
-        '/analytics',
       ],
       sections: [
         {
@@ -145,7 +145,16 @@ export function navCatalogue(): NavDomain[] {
             { href: '/locations', label: 'Lieux' },
           ],
         },
-        { label: 'Analyse', links: [{ href: '/analytics', label: 'Analytics' }] },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/transportation',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
+          ],
+        },
       ],
     },
 
@@ -218,6 +227,16 @@ export function navCatalogue(): NavDomain[] {
             { href: '/fleet', label: 'Fleet roster' },
           ],
         },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/fleet',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
+          ],
+        },
       ],
     },
 
@@ -235,6 +254,16 @@ export function navCatalogue(): NavDomain[] {
             { href: '/finance', label: 'Finance home' },
             { href: '/invoices', label: 'Receivables / Payables' },
             { href: '/billing/freight-audit', label: 'Freight audit' },
+          ],
+        },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/billing',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
           ],
         },
       ],
@@ -299,17 +328,18 @@ export function navCatalogue(): NavDomain[] {
       key: 'analytics',
       label: 'Analytics',
       icon: BarChart3,
-      home: '/analytics/control-tower',
+      home: '/analytics',
       module: MODULE_KEYS.ANALYTICS,
       anyPerms: ['analytics.read'],
       prefixes: ['/analytics'],
       sections: [
         {
           links: [
+            { href: '/analytics', label: "Vue d'ensemble", perm: 'analytics.read' },
             { href: '/analytics/control-tower', label: 'Control Tower', perm: 'analytics.read' },
             { href: '/analytics/scorecards', label: 'Scorecards', perm: 'analytics.read' },
             {
-              href: '/analytics',
+              href: '/analytics/carriers',
               label: 'Scorecard transporteurs',
               perm: 'transportation.analytics.read',
             },
@@ -332,6 +362,16 @@ export function navCatalogue(): NavDomain[] {
           links: [
             { href: '/procurement/rfps', label: "Appels d'offres", perm: 'procurement.read' },
             { href: '/procurement/routing-guide', label: 'Guide de routage', perm: 'procurement.read' },
+          ],
+        },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/procurement',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
           ],
         },
       ],
@@ -372,6 +412,31 @@ export function navCatalogue(): NavDomain[] {
             { href: '/agents', label: 'MCP / agents', perm: PERMISSIONS.CORE.AGENTS_READ },
           ],
         },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/connect',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
+          ],
+        },
+      ],
+    },
+
+    // ── Personnalisation (bureau) ──────────────────────────────────────────
+    // Core domain, always visible — own page to theme/colour/background the desk.
+    {
+      key: 'personalize',
+      label: 'Personnaliser',
+      icon: Palette,
+      home: '/personalize',
+      prefixes: ['/personalize'],
+      sections: [
+        {
+          links: [{ href: '/personalize', label: 'Apparence du bureau' }],
+        },
       ],
     },
 
@@ -395,6 +460,16 @@ export function navCatalogue(): NavDomain[] {
               href: '/settings/audit',
               label: "Journal d'audit",
               perm: PERMISSIONS.CORE.AUDIT_READ,
+            },
+          ],
+        },
+        {
+          label: 'Configuration modules',
+          links: [
+            {
+              href: '/settings/modules/carrier-portal',
+              label: 'Portail transporteur',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
           ],
         },

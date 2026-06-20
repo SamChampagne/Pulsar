@@ -97,6 +97,26 @@ export function getImportTarget(key: string): ImportTarget | undefined {
 
 // ---------- Pure helpers -----------------------------------------------------
 
+export type CsvLocale = 'EN' | 'FR' | 'AUTO';
+
+/**
+ * Parses a raw CSV string into a number, honoring the tenant's number locale.
+ *
+ * - EN  (default): treats comma as thousands separator, dot as decimal.
+ * - FR: treats space as thousands separator, comma as decimal.
+ * - AUTO: detects FR format (has comma-digit pattern without dot-digit pattern),
+ *   otherwise falls back to EN.
+ */
+export function parseCsvNumber(raw: string, locale: CsvLocale): number {
+  let s = raw.trim();
+  if (locale === 'FR' || (locale === 'AUTO' && /\d,\d/.test(s) && !/\d\.\d/.test(s))) {
+    s = s.replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+  } else {
+    s = s.replace(/[\s,]/g, '');
+  }
+  return Number(s);
+}
+
 const NUMERIC_FIELDS = new Set([
   'latitude',
   'longitude',
@@ -142,16 +162,26 @@ export function validateRequired(
 /**
  * Coerces known numeric fields to numbers when present and parseable.
  * Drops empty strings. Leaves other values as strings.
+ *
+ * Security: only fields declared in the target's required/optional columns are
+ * kept. This prevents a caller-controlled mapping from smuggling arbitrary model
+ * fields (e.g. `tenantId`, `id`, `createdById`) into the downstream create.
+ *
+ * @param locale  Tenant number locale ('EN' default / 'FR' / 'AUTO').
+ *                Defaults to 'EN' so existing callers are unaffected.
  */
 export function coerceTypes(
   record: Record<string, string>,
-  _target: ImportTarget,
+  target: ImportTarget,
+  locale: CsvLocale = 'EN',
 ): Record<string, unknown> {
+  const allowed = new Set([...target.requiredColumns, ...target.optionalColumns]);
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
+    if (!allowed.has(key)) continue; // drop unknown/injected fields
     if (value === '') continue; // drop empty strings
     if (NUMERIC_FIELDS.has(key)) {
-      const n = Number(value);
+      const n = parseCsvNumber(value, locale);
       result[key] = isNaN(n) ? value : n;
     } else {
       result[key] = value;

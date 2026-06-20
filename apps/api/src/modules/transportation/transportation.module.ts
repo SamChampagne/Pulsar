@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { DocumentsModule } from '../../core/documents/documents.module';
 import { IntegrationsModule } from '../../core/integrations/integrations.module';
+import { ModuleRegistryModule } from '../../core/module-registry/module-registry.module';
 import { NotificationsModule } from '../../core/notifications/notifications.module';
 import { OperatingModule } from '../../core/operating/operating.module';
 import { DelayDetectionService } from './exceptions/delay-detection.service';
@@ -54,7 +55,7 @@ import { PlanningBoardService } from './planning-board/planning-board.service';
  * tenants without the module enabled get a 403 from ModulesGuard.
  */
 @Module({
-  imports: [AuditLogsModule, DocumentsModule, IntegrationsModule, NotificationsModule, OperatingModule],
+  imports: [AuditLogsModule, DocumentsModule, IntegrationsModule, ModuleRegistryModule, NotificationsModule, OperatingModule],
   controllers: [
     CustomersController,
     LocationsController,

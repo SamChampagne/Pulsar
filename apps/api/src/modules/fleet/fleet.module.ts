@@ -1,5 +1,6 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
+import { ModuleRegistryModule } from '../../core/module-registry/module-registry.module';
 import { OperatingModule } from '../../core/operating/operating.module';
 import { MaintenanceController } from './maintenance/maintenance.controller';
 import { MaintenanceService } from './maintenance/maintenance.service';
@@ -20,7 +21,7 @@ import { MaintenanceSchedulesService } from './schedules/maintenance-schedules.s
  * TransportationModule).
  */
 @Module({
-  imports: [AuditLogsModule, forwardRef(() => OperatingModule)],
+  imports: [AuditLogsModule, ModuleRegistryModule, forwardRef(() => OperatingModule)],
   controllers: [
     MaintenanceController,
     ComplianceController,

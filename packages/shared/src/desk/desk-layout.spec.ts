@@ -35,6 +35,13 @@ describe('defaultDeskLayout', () => {
     const folder = layout.items.find((i) => i.type === 'folder' && (i as any).id === 'framework');
     expect(folder).toBeTruthy();
   });
+
+  it('includes a dashboard link tile', () => {
+    const layout = defaultDeskLayout(domains);
+    const dash = layout.items.find((i) => i.type === 'link' && (i as any).href === '/dashboard');
+    expect(dash).toBeTruthy();
+    expect((dash as any).label).toBe('Tableau de bord');
+  });
 });
 
 describe('reconcileDeskLayout', () => {
@@ -218,5 +225,29 @@ describe('tile sizes & background', () => {
     const out = reconcileDeskLayout(saved, [{ key: 'transport' }]);
     const fws = out.items.filter((i) => i.type === 'folder' && (i as any).id === FRAMEWORK_FOLDER_ID);
     expect(fws.length).toBe(1);
+  });
+
+  it('reconcileDeskLayout re-injects the dashboard link when missing', () => {
+    const saved: DeskLayout = {
+      version: DESK_LAYOUT_VERSION,
+      mode: 'auto',
+      items: [{ type: 'module', moduleKey: 'transport' }],
+    };
+    const out = reconcileDeskLayout(saved, [{ key: 'transport' }]);
+    const dash = out.items.filter((i) => i.type === 'link' && (i as any).href === '/dashboard');
+    expect(dash.length).toBe(1);
+  });
+
+  it('reconcileDeskLayout does not duplicate an existing dashboard link', () => {
+    const saved: DeskLayout = {
+      version: DESK_LAYOUT_VERSION,
+      mode: 'auto',
+      items: [{ type: 'link', href: '/dashboard', label: 'Mon tableau' }],
+    };
+    const out = reconcileDeskLayout(saved, [{ key: 'transport' }]);
+    const dash = out.items.filter((i) => i.type === 'link' && (i as any).href === '/dashboard');
+    expect(dash.length).toBe(1);
+    // user rename preserved
+    expect((dash[0] as any).label).toBe('Mon tableau');
   });
 });

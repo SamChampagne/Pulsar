@@ -22,7 +22,7 @@ export async function uploadDocument(
   return (await res.json()) as { id: string };
 }
 
-/** Authenticated GET of a document's bytes → blob object URL (usable in CSS). */
+/** Authenticated GET of a document's bytes → blob object URL (usable in CSS/img/iframe). */
 export async function fetchDocumentObjectUrl(id: string): Promise<string> {
   const token = getAccessToken();
   const res = await fetch(`${BASE}/documents/${id}/download`, {
@@ -31,6 +31,23 @@ export async function fetchDocumentObjectUrl(id: string): Promise<string> {
   if (!res.ok) throw new Error(`Download failed (${res.status})`);
   const blob = await res.blob();
   return URL.createObjectURL(blob);
+}
+
+/**
+ * Authenticated download that actually saves the file. A plain <a href> to the
+ * API can't carry the bearer token (SPA, no cookie) → 401, so we fetch the bytes
+ * with the token then trigger a client-side save.
+ */
+export async function downloadDocument(id: string, fileName: string): Promise<void> {
+  const url = await fetchDocumentObjectUrl(id);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName || 'document';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Give the browser a beat to start the download before releasing the blob.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 /**

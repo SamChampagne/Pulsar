@@ -52,6 +52,7 @@ export class FakeAcpServer {
 
   lastNewSession: RecordedNewSession | null = null;
   lastModel: string | null = null;
+  lastResume: string | null = null;
   script: FakeAcpScript = {};
 
   /** Records the outcome of any reverse permission call the client answered. */
@@ -149,17 +150,27 @@ export class FakeAcpServer {
           sessionId,
           models: {
             availableModels: [
+              // The synthetic "current" entry Hermes re-qualifies with a doubled
+              // provider prefix (its `name` contains a ":") — must be filtered out.
               {
-                modelId: 'anthropic:claude-sonnet-4-6',
-                name: 'Claude Sonnet 4.6',
-                description: 'fake',
+                modelId: 'anthropic:anthropic:claude-sonnet-4-6',
+                name: 'anthropic:claude-sonnet-4-6',
+                description: 'current',
               },
+              { modelId: 'anthropic:claude-sonnet-4-6', name: 'claude-sonnet-4-6', description: 'fake' },
+              { modelId: 'anthropic:claude-opus-4-8', name: 'claude-opus-4-8', description: 'fake' },
             ],
-            currentModelId: 'anthropic:claude-sonnet-4-6',
+            currentModelId: 'anthropic:anthropic:claude-sonnet-4-6',
           },
         });
         return;
       }
+
+      case 'session/resume':
+        // Echo back the requested sessionId (Hermes resumes the persisted session).
+        this.lastResume = msg.params?.sessionId ?? null;
+        this.reply(msg.id!, { sessionId: msg.params?.sessionId });
+        return;
 
       case 'session/set_model':
         this.lastModel = msg.params?.modelId ?? null;
@@ -208,23 +219,30 @@ export class FakeAcpServer {
       });
     }
 
+    // Real ACP wire: SessionNotification = { sessionId, update: SessionUpdate }.
+    // The discriminator + payload live UNDER `update` (verified against the live
+    // Hermes 0.16 sidecar) — not flat. The fake mirrors that exactly.
     if (typeof this.script.assistantText === 'string') {
       this.notify('session/update', {
         sessionId,
-        sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: this.script.assistantText },
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: this.script.assistantText },
+        },
       });
     }
 
     if (this.script.toolCall) {
       this.notify('session/update', {
         sessionId,
-        sessionUpdate: 'tool_call',
-        toolCallId: 'tc-1',
-        title: this.script.toolCall.name,
-        kind: 'other',
-        status: 'in_progress',
-        rawInput: this.script.toolCall.args,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tc-1',
+          title: this.script.toolCall.name,
+          kind: 'other',
+          status: 'in_progress',
+          rawInput: this.script.toolCall.args,
+        },
       });
     }
 

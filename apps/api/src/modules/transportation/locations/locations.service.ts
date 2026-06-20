@@ -73,7 +73,7 @@ export class LocationsService {
         if (dto.longitude == null) coords.longitude = geo.lng;
       }
     }
-    return this.prisma.location.create({ data: { tenantId, ...dto, ...coords } });
+    return this.prisma.location.create({ data: { ...dto, ...coords, tenantId } });
   }
 
   async update(tenantId: string, id: string, dto: UpdateLocationDto) {

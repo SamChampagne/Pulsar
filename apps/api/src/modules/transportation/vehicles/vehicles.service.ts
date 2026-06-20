@@ -46,7 +46,7 @@ export class VehiclesService {
     });
     if (existing) throw new ConflictException(`Vehicle "${dto.unitNumber}" already exists`);
     await this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId);
-    return this.prisma.vehicle.create({ data: { tenantId, ...dto } });
+    return this.prisma.vehicle.create({ data: { ...dto, tenantId } });
   }
 
   async update(tenantId: string, id: string, dto: UpdateVehicleDto) {
