@@ -18,6 +18,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { EmailService } from '../../core/email/email.service';
+import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SequencesService } from '../../prisma/sequences.service';
@@ -47,6 +48,7 @@ export class ProcurementService {
     private readonly email: EmailService,
     private readonly rates: RatesService,
     private readonly modulesCache: TenantModulesCacheService,
+    private readonly moduleSettings: ModuleSettingsService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -369,8 +371,10 @@ export class ProcurementService {
       });
     });
 
-    // Optionally create a Rate from the winning bid
-    if (dto.createRate) {
+    // Optionally create a Rate from the winning bid (falls back to per-tenant setting).
+    const procSettings = await this.moduleSettings.resolve(tenantId, 'procurement');
+    const shouldCreateRate = dto.createRate ?? (procSettings.awardCreatesRateByDefault as boolean);
+    if (shouldCreateRate) {
       try {
         if (!Object.values(RateType).includes(bid.rateType as RateType)) {
           throw new BadRequestException('rateType invalide');
@@ -555,6 +559,19 @@ export class ProcurementService {
       where: { id: dto.rfpLaneId, rfpId: invite.rfpId, tenantId: invite.tenantId },
     });
     if (!rfpLane) throw new NotFoundException('RFP lane not found');
+
+    const settings = await this.moduleSettings.resolve(invite.tenantId, 'procurement');
+    if (settings.bidUniqueness === 'SINGLE') {
+      // Replace any existing non-terminal bid for this (lane, carrier).
+      await this.prisma.bid.deleteMany({
+        where: {
+          rfpLaneId: dto.rfpLaneId,
+          carrierId: invite.carrierId,
+          tenantId: invite.tenantId,
+          status: { in: [BidStatus.SUBMITTED, BidStatus.SHORTLISTED] },
+        },
+      });
+    }
 
     await this.prisma.bid.create({
       data: {

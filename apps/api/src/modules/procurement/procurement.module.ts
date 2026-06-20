@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
+import { ModuleRegistryModule } from '../../core/module-registry/module-registry.module';
 import { RatesService } from '../transportation/rates/rates.service';
 import { PublicBidsController } from './public-bids.controller';
 import { ProcurementService } from './procurement.service';
@@ -15,9 +16,10 @@ import { RfpsController } from './rfps.controller';
  * EmailService comes from the @Global() EmailModule.
  * RatesService is declared locally (it only requires the two global services).
  * AuditLogsService comes from the imported AuditLogsModule.
+ * ModuleSettingsService comes from the imported ModuleRegistryModule.
  */
 @Module({
-  imports: [AuditLogsModule],
+  imports: [AuditLogsModule, ModuleRegistryModule],
   controllers: [RfpsController, PublicBidsController],
   providers: [ProcurementService, RatesService],
   exports: [ProcurementService],
