@@ -171,6 +171,28 @@ class FakeAgentRuntimeService {
     yield* live.client.prompt(sessionId, _text);
   }
 
+  /** Mirrors AgentRuntimeService.isLive — true only for a session we still hold. */
+  isLive(sessionId: string | null | undefined): boolean {
+    return !!sessionId && this.clients.has(sessionId);
+  }
+
+  /**
+   * Mirrors AgentRuntimeService.resumeSession: reuse a still-live session,
+   * otherwise transparently open a fresh one (the controller resumes a
+   * persisted conversation after a runtime restart).
+   */
+  async resumeSession(
+    input: {
+      agent: { id: string; model: string | null; persona: string | null };
+      pulsarMcpUrl: string;
+    } & { existingSessionId?: string | null },
+  ): Promise<string> {
+    if (input.existingSessionId && this.clients.has(input.existingSessionId)) {
+      return input.existingSessionId;
+    }
+    return this.openSession(input);
+  }
+
   async closeSession(sessionId: string): Promise<void> {
     const live = this.clients.get(sessionId);
     if (!live) return;
