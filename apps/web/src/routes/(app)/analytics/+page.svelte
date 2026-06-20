@@ -1,101 +1,155 @@
 <script lang="ts">
+  import type { ControlTower } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import {
-    PageHeader,
-    Table,
-    Badge,
-    EmptyState,
-    Card,
-    Skeleton,
-    Button,
-    ErrorNotice,
-    toneFor,
-    labelFor,
-  } from '$lib/components/ui';
+  import { auth } from '$lib/stores/auth';
+  import { PageHeader, Card, Skeleton, ErrorNotice, Select } from '$lib/components/ui';
+  import { BarChart3, Gauge, Truck, ArrowRight } from 'lucide-svelte';
 
-  interface Scorecard {
-    carrierId: string;
-    code: string;
-    name: string;
-    loadsCompleted: number;
-    loadsActive: number;
-    tendersSent: number;
-    tendersAccepted: number;
-    acceptanceRatePct: number | null;
-    onTimeDeliveryPct: number | null;
-    totalEstimatedCost: number;
+  let data = $state<ControlTower | null>(null);
+  let loading = $state(true);
+  let error = $state('');
+  let days = $state('30');
+
+  const canSeeCarriers = $derived(
+    $auth?.user.permissions.includes('transportation.analytics.read') ?? false,
+  );
+
+  function fmt(v: number | null, suffix = ''): string {
+    if (v === null) return '—';
+    return `${v.toLocaleString()}${suffix}`;
   }
 
-  let rows = $state<Scorecard[]>([]);
-  let error = $state('');
-  let loading = $state(true);
+  function fmtCurrency(v: number | null): string {
+    if (v === null) return '—';
+    return v.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 });
+  }
 
-  const completedLoads = $derived(rows.reduce((sum, row) => sum + row.loadsCompleted, 0));
-  const activeLoads = $derived(rows.reduce((sum, row) => sum + row.loadsActive, 0));
-  const tenderedCarriers = $derived(rows.filter((row) => row.tendersSent > 0).length);
-
-  function pct(value: number | null): string {
-    return value === null ? '—' : `${value} %`;
+  async function load() {
+    loading = true;
+    error = '';
+    try {
+      data = await api<ControlTower>('/analytics/control-tower', { query: { days } });
+    } catch (e) {
+      error = e instanceof ApiError ? e.message : "Échec du chargement de l'aperçu Analytics";
+    } finally {
+      loading = false;
+    }
   }
 
   $effect(() => {
-    api<Scorecard[]>('/transportation/analytics/carriers')
-      .then((r) => {
-        rows = r;
-        loading = false;
-      })
-      .catch((e) => {
-        error = e instanceof ApiError ? e.message : 'Failed to load analytics';
-        loading = false;
-      });
+    void days; // re-run when the window changes
+    void load();
   });
+
+  const cards = $derived([
+    {
+      href: '/analytics/control-tower',
+      label: 'Control Tower',
+      desc: "Points d'attention en direct et KPI opérationnels cross-module.",
+      icon: Gauge,
+      show: true,
+    },
+    {
+      href: '/analytics/scorecards',
+      label: 'Scorecards',
+      desc: 'Disponibilité flotte, congestion cour, préparation entrepôt, exceptions et ROI agents.',
+      icon: BarChart3,
+      show: true,
+    },
+    {
+      href: '/analytics/carriers',
+      label: 'Scorecard transporteurs',
+      desc: 'Acceptation, ponctualité, exposition et dépense estimée par transporteur.',
+      icon: Truck,
+      show: canSeeCarriers,
+    },
+  ].filter((c) => c.show));
 </script>
 
+<svelte:head><title>Analytics — Pulsar</title></svelte:head>
+
 <PageHeader
-  title="Carrier scorecard"
-  subtitle="Compare carrier acceptance, on-time execution, active load exposure, and estimated spend."
-/>
+  title="Analytics"
+  subtitle="Le pouls opérationnel de votre tenant — KPI cross-module calculés à la lecture, et accès direct aux tableaux détaillés."
+>
+  {#snippet actions()}
+    <div class="w-40">
+      <Select bind:value={days}>
+        <option value="7">7 derniers jours</option>
+        <option value="30">30 derniers jours</option>
+        <option value="90">90 derniers jours</option>
+      </Select>
+    </div>
+  {/snippet}
+</PageHeader>
 
-<div class="mb-4 grid gap-3 sm:grid-cols-3">
-  <Card><div class="text-xl font-bold text-ink">{completedLoads}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Completed loads</div><p class="mt-1 text-xs text-ink-faint">Delivered loads feeding scorecard quality.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{activeLoads}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Active exposure</div><p class="mt-1 text-xs text-ink-faint">Current loads still moving.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{tenderedCarriers}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Tendered carriers</div><p class="mt-1 text-xs text-ink-faint">Carriers with acceptance data.</p></Card>
-</div>
+<ErrorNotice message={error} onretry={load} />
 
-<ErrorNotice message={error} onretry={() => location.reload()} />
-
+<!-- Headline KPIs -->
 {#if loading}
-  <Card padded={false}><Skeleton rows={6} /></Card>
-{:else}
-<Table>
-  {#snippet head()}
-    <th>Carrier</th>
-    <th>Loads completed</th>
-    <th>Active</th>
-    <th>Tenders (sent / accepted)</th>
-    <th>Acceptance</th>
-    <th>On-time delivery</th>
-    <th class="text-right">Est. spend</th>
-  {/snippet}
-  {#snippet body()}
-    {#each rows as row (row.carrierId)}
-      <tr>
-        <td>
-          <span class="font-semibold text-ink">{row.name}</span>
-          <span class="ml-1 text-xs text-ink-muted">({row.code})</span>
-        </td>
-        <td>{row.loadsCompleted}</td>
-        <td>{row.loadsActive}</td>
-        <td>{row.tendersSent} / {row.tendersAccepted}</td>
-        <td>{pct(row.acceptanceRatePct)}</td>
-        <td>{pct(row.onTimeDeliveryPct)}</td>
-        <td class="text-right">{row.totalEstimatedCost.toLocaleString()}</td>
-      </tr>
-    {:else}
-      <tr><td colspan="7"><EmptyState title="No carrier activity yet" message="Dispatch and complete loads to build acceptance, on-time, and spend history for the carrier scorecard.">
-        {#snippet children()}<Button variant="secondary" href="/dispatch">Open Dispatch</Button><Button href="/carriers">Review carriers</Button>{/snippet}
-      </EmptyState></td></tr>
-    {/each}
-  {/snippet}
-</Table>
+  <div class="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    {#each Array(4) as _, i (i)}<Card><Skeleton rows={2} /></Card>{/each}
+  </div>
+{:else if data}
+  <div class="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <Card>
+      <div class="text-xs text-ink-faint">Loads en transit</div>
+      <div class="mt-1 text-2xl font-bold text-ink">{data.kpis.loadsInTransit}</div>
+    </Card>
+    <Card>
+      <div class="text-xs text-ink-faint">Loads en retard</div>
+      <div class={`mt-1 text-2xl font-bold ${data.kpis.loadsLate > 0 ? 'text-danger' : 'text-ink'}`}>
+        {data.kpis.loadsLate}
+      </div>
+    </Card>
+    <Card>
+      <div class="text-xs text-ink-faint">OTIF ({days} j)</div>
+      <div class="mt-1 text-2xl font-bold text-ink">{fmt(data.kpis.otifPct, '%')}</div>
+    </Card>
+    <Card>
+      <div class="text-xs text-ink-faint">Montant récupéré ({days} j)</div>
+      <div class="mt-1 text-2xl font-bold text-ok">{fmtCurrency(data.kpis.recoveredAmount)}</div>
+    </Card>
+  </div>
+
+  {#if data.attention.length > 0}
+    <div class="mb-6">
+      <a
+        href="/analytics/control-tower"
+        class="flex items-center justify-between gap-3 rounded-lg border border-l-4 border-l-warn bg-surface px-4 py-3 transition hover:bg-surface-muted"
+      >
+        <div class="min-w-0">
+          <div class="text-sm font-semibold text-ink">
+            {data.attention.length} point{data.attention.length > 1 ? 's' : ''} d'attention
+          </div>
+          <div class="truncate text-xs text-ink-muted">{data.attention[0].label}</div>
+        </div>
+        <span class="shrink-0 text-xs text-accent">Control Tower →</span>
+      </a>
+    </div>
+  {/if}
 {/if}
+
+<!-- Navigation cards -->
+<h2 class="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-muted">Tableaux</h2>
+<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+  {#each cards as c (c.href)}
+    {@const Icon = c.icon}
+    <a href={c.href} class="group block">
+      <Card>
+        <div class="flex items-start gap-3">
+          <div class="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">
+            <Icon class="size-5" />
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-semibold text-ink">{c.label}</span>
+              <ArrowRight class="size-4 shrink-0 text-ink-faint transition group-hover:translate-x-0.5 group-hover:text-accent" />
+            </div>
+            <p class="mt-1 text-xs text-ink-muted">{c.desc}</p>
+          </div>
+        </div>
+      </Card>
+    </a>
+  {/each}
+</div>

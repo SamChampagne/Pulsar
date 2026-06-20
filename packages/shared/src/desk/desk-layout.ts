@@ -25,15 +25,49 @@ export interface DeskGradient {
   id: string;
   label: string;
   css: string;
+  /** True when the gradient is dark enough that desk labels need light text. */
+  dark: boolean;
 }
 
 export const DESK_GRADIENTS: DeskGradient[] = [
-  { id: 'aurora', label: 'Aurore', css: 'linear-gradient(135deg,#1e3a8a 0%,#7e22ce 100%)' },
-  { id: 'sunset', label: 'Coucher', css: 'linear-gradient(135deg,#f1700f 0%,#be123c 100%)' },
-  { id: 'mint', label: 'Menthe', css: 'linear-gradient(135deg,#0f766e 0%,#22c55e 100%)' },
-  { id: 'slate', label: 'Ardoise', css: 'linear-gradient(135deg,#0f172a 0%,#334155 100%)' },
-  { id: 'sand', label: 'Sable', css: 'linear-gradient(135deg,#fdf2e9 0%,#e7d3b3 100%)' },
+  { id: 'aurora', label: 'Aurore', css: 'linear-gradient(135deg,#1e3a8a 0%,#7e22ce 100%)', dark: true },
+  { id: 'sunset', label: 'Coucher', css: 'linear-gradient(135deg,#f1700f 0%,#be123c 100%)', dark: true },
+  { id: 'mint', label: 'Menthe', css: 'linear-gradient(135deg,#0f766e 0%,#22c55e 100%)', dark: true },
+  { id: 'slate', label: 'Ardoise', css: 'linear-gradient(135deg,#0f172a 0%,#334155 100%)', dark: true },
+  { id: 'sand', label: 'Sable', css: 'linear-gradient(135deg,#fdf2e9 0%,#e7d3b3 100%)', dark: false },
 ];
+
+/**
+ * Relative luminance (0 = black, 1 = white) of a #rgb / #rrggbb color, or null
+ * if it can't be parsed. Used to pick legible desk label colors over a custom
+ * background.
+ */
+export function hexLuminance(hex: string): number | null {
+  if (typeof hex !== 'string') return null;
+  let h = hex.trim().replace(/^#/, '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return null;
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  // Perceived luminance (sRGB weights).
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** Whether a desk background needs light (white) labels for legibility. */
+export function deskBackgroundIsDark(
+  bg: DeskBackground | undefined,
+  gradients: DeskGradient[] = DESK_GRADIENTS,
+): boolean {
+  if (!bg) return false; // default light canvas
+  if (bg.type === 'color') {
+    const lum = hexLuminance(bg.value);
+    return lum !== null && lum < 0.5;
+  }
+  if (bg.type === 'gradient') return gradients.find((g) => g.id === bg.value)?.dark ?? true;
+  // Photos are unpredictable — pair light labels with a darkening scrim.
+  return true;
+}
 
 export function defaultPosition(index: number): DeskPosition {
   const col = index % DESK_COLS;
