@@ -2,7 +2,6 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import {
   AuditAction,
   FreightAuditStatus,
-  MODULE_KEYS,
   canTransitionFreightAudit,
   evaluateReconciliation,
 } from '@pulsar/shared';
@@ -11,6 +10,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
+import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { CreateIncomingInvoiceDto, FreightDisputeDto, FreightResolveDto } from './dto/freight-audit.dto';
 
 const invoiceInclude = { lines: true, carrier: { select: { id: true, code: true, name: true } } } as const;
@@ -23,6 +23,7 @@ export class FreightAuditService {
     private readonly ownership: OwnershipService,
     private readonly auditLogs: AuditLogsService,
     private readonly domainEvents: DomainEventsService,
+    private readonly moduleSettings: ModuleSettingsService,
   ) {}
 
   private async get(tenantId: string, id: string) {
@@ -68,10 +69,8 @@ export class FreightAuditService {
 
   /** Tenant billing tolerances (defaults 2 % / 25) — same source as the buy-side reconcile. */
   private async tolerances(tenantId: string) {
-    const tm = await this.prisma.tenantModule.findFirst({ where: { tenantId, module: { key: MODULE_KEYS.BILLING } } });
-    const s = (tm?.settings ?? {}) as { tolerancePct?: unknown; toleranceAbsolute?: unknown };
-    const sane = (v: unknown, fb: number) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : fb; };
-    return { tolerancePct: sane(s.tolerancePct, 2), toleranceAbsolute: sane(s.toleranceAbsolute, 25) };
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    return { tolerancePct: s.tolerancePct as number, toleranceAbsolute: s.toleranceAbsolute as number };
   }
 
   /** Deterministic match: each line → Load by loadNumber (tenant + carrier scoped), variance vs frozen estimatedCost. */

@@ -5,12 +5,12 @@ import {
   evaluateReconciliation,
   InvoiceStatus,
   LoadStatus,
-  MODULE_KEYS,
 } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
+import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { ReconcileInvoiceDto, ResolveDisputeDto } from './dto/reconcile.dto';
 import { csvSafe } from '../../common/csv';
 
@@ -35,6 +35,7 @@ export class InvoicesService {
     private readonly ownership: OwnershipService,
     private readonly sequences: SequencesService,
     private readonly audit: AuditLogsService,
+    private readonly moduleSettings: ModuleSettingsService,
   ) {}
 
   list(tenantId: string, status?: InvoiceStatus) {
@@ -137,24 +138,8 @@ export class InvoicesService {
 
   /** Tenant tolerances from the billing module settings (defaults: 2 % / 25). */
   private async tolerances(tenantId: string) {
-    const tenantModule = await this.prisma.tenantModule.findFirst({
-      where: { tenantId, module: { key: MODULE_KEYS.BILLING } },
-    });
-    const settings = (tenantModule?.settings ?? {}) as {
-      tolerancePct?: unknown;
-      toleranceAbsolute?: unknown;
-    };
-    // Settings come from a free-form Json column: coerce and reject bad types
-    // and negatives, otherwise a stray "2%" string would NaN the threshold and
-    // silently route EVERY invoice to DISPUTED.
-    const sane = (value: unknown, fallback: number) => {
-      const n = Number(value);
-      return Number.isFinite(n) && n >= 0 ? n : fallback;
-    };
-    return {
-      tolerancePct: sane(settings.tolerancePct, 2),
-      toleranceAbsolute: sane(settings.toleranceAbsolute, 25),
-    };
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    return { tolerancePct: s.tolerancePct as number, toleranceAbsolute: s.toleranceAbsolute as number };
   }
 
   /**

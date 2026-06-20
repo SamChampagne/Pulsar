@@ -27,7 +27,8 @@ function makeService(loads: Record<string, { id: string; estimatedCost: number |
   const ownership = { assertOwned: async () => undefined, assertOwnedIfSet: async () => undefined } as any;
   const audit = { log: async () => undefined } as any;
   const domainEvents = { emit: async () => undefined } as any;
-  return { svc: new FreightAuditService(prisma, ownership, audit, domainEvents), invoice };
+  const moduleSettings = { resolve: async () => ({ tolerancePct: 2, toleranceAbsolute: 25 }) } as any;
+  return { svc: new FreightAuditService(prisma, ownership, audit, domainEvents, moduleSettings), invoice };
 }
 
 describe('FreightAuditService.audit', () => {
