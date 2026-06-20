@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuditAction, LoadStatus, ShipmentStatus, checkCapacity } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
@@ -7,6 +7,7 @@ import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { LoadCostService } from '../loads/load-cost.service';
 import { projectShipmentComment, type ShipmentCommentView } from '../../customer-portal/portal.service';
 
@@ -24,6 +25,7 @@ export class ShipmentsService {
     private readonly config: ConfigService,
     private readonly cost: LoadCostService,
     private readonly audit: AuditLogsService,
+    private readonly moduleSettings: ModuleSettingsService,
   ) {}
 
   /** Generates (or returns) the public read-only tracking link for this shipment. */
@@ -114,10 +116,16 @@ export class ShipmentsService {
             pallets: sum(all.map((s) => s.palletCount)),
           },
         );
-        if (excesses.length > 0 && !dto.force) {
-          throw new BadRequestException({ message: 'Trailer capacity exceeded', excesses });
-        }
-        if (excesses.length > 0 && dto.force) {
+        if (excesses.length > 0) {
+          const tmsSettings = await this.moduleSettings.resolve(tenantId, 'transportation');
+          const overage = tmsSettings['capacityOverage'] as string;
+          if (overage === 'BLOCK') {
+            throw new ConflictException({ message: 'Trailer capacity exceeded (blocked by tenant policy)', excesses });
+          }
+          if (!dto.force) {
+            throw new BadRequestException({ message: 'Trailer capacity exceeded', excesses });
+          }
+          // WARN + force: log and continue
           await this.audit.log({
             tenantId,
             userId,

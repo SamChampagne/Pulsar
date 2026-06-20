@@ -13,6 +13,7 @@ import {
   type AuthUser,
 } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { OwnershipService, type OwnedEntity } from '../../prisma/ownership.service';
 import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
 import { DocumentsService } from '../documents/documents.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -32,6 +33,16 @@ export class ListInboxQueryDto extends ListQueryDto {
   status?: string;
 }
 
+/** Document refType → owned entity. Only these targets may be attached (rule 9). */
+const DOC_REF_OWNERSHIP: Record<string, OwnedEntity> = {
+  load: 'load',
+  shipment: 'shipment',
+  'transport-order': 'transportOrder',
+  transportOrder: 'transportOrder',
+  carrier: 'carrier',
+  customer: 'customer',
+};
+
 @Injectable()
 export class InboundService {
   constructor(
@@ -41,6 +52,7 @@ export class InboundService {
     private readonly audit: AuditLogsService,
     private readonly events: DomainEventsService,
     private readonly freightAudit: FreightAuditService,
+    private readonly ownership: OwnershipService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -146,6 +158,14 @@ export class InboundService {
     body: { refType: string; refId: string; kind?: string },
   ) {
     const { tenantId, id: userId } = user;
+
+    // Rule 9: only known entity types may be referenced, and the referenced row
+    // must belong to the caller's tenant.
+    const owned = DOC_REF_OWNERSHIP[body.refType];
+    if (!owned) {
+      throw new BadRequestException(`Unsupported refType "${body.refType}"`);
+    }
+    await this.ownership.assertOwned(owned, body.refId, tenantId);
 
     // Store via DocumentsService (rule 12).
     const doc = await this.documents.upload(tenantId, {

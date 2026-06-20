@@ -18,6 +18,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { EmailService } from '../../core/email/email.service';
+import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SequencesService } from '../../prisma/sequences.service';
@@ -47,6 +48,7 @@ export class ProcurementService {
     private readonly email: EmailService,
     private readonly rates: RatesService,
     private readonly modulesCache: TenantModulesCacheService,
+    private readonly moduleSettings: ModuleSettingsService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -84,26 +86,51 @@ export class ProcurementService {
     const rfp = await this.prisma.rfp.findFirst({
       where: { id, tenantId },
       include: {
-        lanes: {
-          include: {
-            bids: true,
-            award: true,
-          },
-        },
+        lanes: { include: { award: true } },
         invites: {
-          select: {
-            id: true,
-            carrierId: true,
-            status: true,
-            sentAt: true,
-            respondedAt: true,
-          },
+          select: { id: true, carrierId: true, status: true, sentAt: true, respondedAt: true },
         },
         bids: true,
       },
     });
     if (!rfp) throw new NotFoundException('RFP not found');
-    return rfp;
+
+    // Bid/Award/RfpInvite carry only carrierId (no Prisma relation), and RfpLane
+    // only laneId — but the web detail page consumes nested `carrier`/`lane`
+    // objects on a flat shape. Enrich by batch-loading the referenced rows
+    // (tenant-scoped) and mapping client-side rather than adding schema relations.
+    const awards = rfp.lanes.flatMap((l) => (l.award ? [l.award] : []));
+    const carrierIds = [
+      ...new Set([
+        ...rfp.bids.map((b) => b.carrierId),
+        ...rfp.invites.map((i) => i.carrierId),
+        ...awards.map((a) => a.carrierId),
+      ]),
+    ];
+    const laneIds = [...new Set(rfp.lanes.map((l) => l.laneId))];
+    const [carriers, lanes] = await Promise.all([
+      this.prisma.carrier.findMany({
+        where: { tenantId, id: { in: carrierIds } },
+        select: { id: true, code: true, name: true },
+      }),
+      this.prisma.lane.findMany({
+        where: { tenantId, id: { in: laneIds } },
+        include: {
+          originLocation: { select: { id: true, code: true, name: true, city: true } },
+          destinationLocation: { select: { id: true, code: true, name: true, city: true } },
+        },
+      }),
+    ]);
+    const carrierMap = new Map(carriers.map((c) => [c.id, c]));
+    const laneMap = new Map(lanes.map((l) => [l.id, l]));
+
+    return {
+      ...rfp,
+      rfpLanes: rfp.lanes.map((l) => ({ ...l, lane: laneMap.get(l.laneId) ?? null })),
+      invites: rfp.invites.map((i) => ({ ...i, carrier: carrierMap.get(i.carrierId) ?? null })),
+      bids: rfp.bids.map((b) => ({ ...b, carrier: carrierMap.get(b.carrierId) ?? null })),
+      awards: awards.map((a) => ({ ...a, carrier: carrierMap.get(a.carrierId) ?? null })),
+    };
   }
 
   async createRfp(tenantId: string, userId: string, dto: CreateRfpDto) {
@@ -281,6 +308,13 @@ export class ProcurementService {
   async award(tenantId: string, userId: string, rfpId: string, dto: AwardDto) {
     const rfp = await this.assertRfpExists(tenantId, rfpId);
 
+    // A lane can only be awarded while the RFP is being evaluated. Awarding from
+    // any other status would leave the RFP in an inconsistent state (the
+    // EVALUATION→AWARDED auto-transition below would silently fail).
+    if (rfp.status !== RfpStatus.EVALUATION) {
+      throw new BadRequestException('RFP must be in EVALUATION to award a lane');
+    }
+
     // Validate rfpLane belongs to this rfp+tenant
     const rfpLane = await this.prisma.rfpLane.findFirst({
       where: { id: dto.rfpLaneId, rfpId, tenantId },
@@ -297,34 +331,50 @@ export class ProcurementService {
       },
     });
     if (!bid) throw new NotFoundException('Bid not found or not in an awardable status');
+    if (!canTransitionBid(bid.status as BidStatus, BidStatus.ACCEPTED)) {
+      throw new BadRequestException(`Cannot accept a bid in status ${bid.status}`);
+    }
 
-    // Upsert award on rfpLaneId (unique)
-    let newAward = await this.prisma.award.upsert({
-      where: { rfpLaneId: dto.rfpLaneId },
-      create: {
-        tenantId,
-        rfpLaneId: dto.rfpLaneId,
-        carrierId: bid.carrierId,
-        bidId: dto.bidId,
-        awardedById: userId,
-      },
-      update: {
-        carrierId: bid.carrierId,
-        bidId: dto.bidId,
-        awardedById: userId,
-        awardedAt: new Date(),
-      },
+    // Atomic award: claim the winning bid (status-guarded), demote any previous
+    // winner on the lane (re-award must never leave two ACCEPTED bids), and
+    // (re)create the lane award — all in one transaction so a failed claim can
+    // never leave an Award pointing at a non-accepted bid.
+    let newAward = await this.prisma.$transaction(async (tx) => {
+      const bidClaim = await tx.bid.updateMany({
+        where: { id: dto.bidId, tenantId, status: { in: [BidStatus.SUBMITTED, BidStatus.SHORTLISTED] } },
+        data: { status: BidStatus.ACCEPTED },
+      });
+      if (bidClaim.count === 0) throw new ConflictException('Offre déjà traitée');
+
+      // Re-award correction: a previous winner is ACCEPTED (terminal in the SM);
+      // demote it to REJECTED so the lane carries exactly one accepted bid.
+      await tx.bid.updateMany({
+        where: { rfpLaneId: dto.rfpLaneId, tenantId, status: BidStatus.ACCEPTED, id: { not: dto.bidId } },
+        data: { status: BidStatus.REJECTED },
+      });
+
+      return tx.award.upsert({
+        where: { rfpLaneId: dto.rfpLaneId },
+        create: {
+          tenantId,
+          rfpLaneId: dto.rfpLaneId,
+          carrierId: bid.carrierId,
+          bidId: dto.bidId,
+          awardedById: userId,
+        },
+        update: {
+          carrierId: bid.carrierId,
+          bidId: dto.bidId,
+          awardedById: userId,
+          awardedAt: new Date(),
+        },
+      });
     });
 
-    // Mark bid ACCEPTED via claim (status guard ensures idempotency)
-    const bidClaim = await this.prisma.bid.updateMany({
-      where: { id: dto.bidId, tenantId, status: { in: [BidStatus.SUBMITTED, BidStatus.SHORTLISTED] } },
-      data: { status: BidStatus.ACCEPTED },
-    });
-    if (bidClaim.count === 0) throw new ConflictException('Offre déjà traitée');
-
-    // Optionally create a Rate from the winning bid
-    if (dto.createRate) {
+    // Optionally create a Rate from the winning bid (falls back to per-tenant setting).
+    const procSettings = await this.moduleSettings.resolve(tenantId, 'procurement');
+    const shouldCreateRate = dto.createRate ?? (procSettings.awardCreatesRateByDefault as boolean);
+    if (shouldCreateRate) {
       try {
         if (!Object.values(RateType).includes(bid.rateType as RateType)) {
           throw new BadRequestException('rateType invalide');
@@ -509,6 +559,19 @@ export class ProcurementService {
       where: { id: dto.rfpLaneId, rfpId: invite.rfpId, tenantId: invite.tenantId },
     });
     if (!rfpLane) throw new NotFoundException('RFP lane not found');
+
+    const settings = await this.moduleSettings.resolve(invite.tenantId, 'procurement');
+    if (settings.bidUniqueness === 'SINGLE') {
+      // Replace any existing non-terminal bid for this (lane, carrier).
+      await this.prisma.bid.deleteMany({
+        where: {
+          rfpLaneId: dto.rfpLaneId,
+          carrierId: invite.carrierId,
+          tenantId: invite.tenantId,
+          status: { in: [BidStatus.SUBMITTED, BidStatus.SHORTLISTED] },
+        },
+      });
+    }
 
     await this.prisma.bid.create({
       data: {

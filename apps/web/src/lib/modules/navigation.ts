@@ -145,6 +145,16 @@ export function navCatalogue(): NavDomain[] {
             { href: '/locations', label: 'Lieux' },
           ],
         },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/transportation',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
+          ],
+        },
       ],
     },
 
@@ -217,6 +227,16 @@ export function navCatalogue(): NavDomain[] {
             { href: '/fleet', label: 'Fleet roster' },
           ],
         },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/fleet',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
+          ],
+        },
       ],
     },
 
@@ -234,6 +254,16 @@ export function navCatalogue(): NavDomain[] {
             { href: '/finance', label: 'Finance home' },
             { href: '/invoices', label: 'Receivables / Payables' },
             { href: '/billing/freight-audit', label: 'Freight audit' },
+          ],
+        },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/billing',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
           ],
         },
       ],
@@ -334,6 +364,16 @@ export function navCatalogue(): NavDomain[] {
             { href: '/procurement/routing-guide', label: 'Guide de routage', perm: 'procurement.read' },
           ],
         },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/procurement',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
+          ],
+        },
       ],
     },
 
@@ -370,6 +410,16 @@ export function navCatalogue(): NavDomain[] {
             { href: '/integrations', label: 'Connecteurs' },
             { href: '/settings/api-keys', label: 'Clés API' },
             { href: '/agents', label: 'MCP / agents', perm: PERMISSIONS.CORE.AGENTS_READ },
+          ],
+        },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/connect',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
           ],
         },
       ],
@@ -410,6 +460,16 @@ export function navCatalogue(): NavDomain[] {
               href: '/settings/audit',
               label: "Journal d'audit",
               perm: PERMISSIONS.CORE.AUDIT_READ,
+            },
+          ],
+        },
+        {
+          label: 'Configuration modules',
+          links: [
+            {
+              href: '/settings/modules/carrier-portal',
+              label: 'Portail transporteur',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
           ],
         },

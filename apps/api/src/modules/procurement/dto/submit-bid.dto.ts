@@ -1,11 +1,12 @@
-import { IsDateString, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDateString, IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
+import { RateType } from '@pulsar/shared';
 
 export class SubmitBidDto {
-  @IsUUID()
+  @IsString()
   rfpLaneId!: string;
 
-  @IsString()
-  rateType!: string;
+  @IsEnum(RateType)
+  rateType!: RateType;
 
   @IsNumber()
   amount!: number;

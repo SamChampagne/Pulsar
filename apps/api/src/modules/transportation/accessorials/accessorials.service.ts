@@ -37,7 +37,7 @@ export class AccessorialsService {
 
   async create(tenantId: string, dto: CreateAccessorialDto) {
     try {
-      return await this.prisma.accessorial.create({ data: { tenantId, ...dto } });
+      return await this.prisma.accessorial.create({ data: { ...dto, tenantId } });
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException(`Accessorial code "${dto.code}" already exists`);

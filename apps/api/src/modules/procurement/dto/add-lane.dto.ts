@@ -1,12 +1,13 @@
-import { IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
+import { TransportMode } from '@pulsar/shared';
 
 export class AddLaneDto {
-  @IsUUID()
+  @IsString()
   laneId!: string;
 
   @IsOptional()
-  @IsString()
-  mode?: string;
+  @IsEnum(TransportMode)
+  mode?: TransportMode;
 
   @IsOptional()
   @IsNumber()

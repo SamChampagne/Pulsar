@@ -43,7 +43,7 @@ export class CustomersService {
       where: { tenantId_code: { tenantId, code: dto.code } },
     });
     if (existing) throw new ConflictException(`Customer code "${dto.code}" already exists`);
-    return this.prisma.customer.create({ data: { tenantId, ...dto } });
+    return this.prisma.customer.create({ data: { ...dto, tenantId } });
   }
 
   async update(tenantId: string, id: string, dto: UpdateCustomerDto) {

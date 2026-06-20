@@ -10,8 +10,10 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
 import type { AuthUser } from '@pulsar/shared';
 import { AuditAction, BidStatus, MODULE_KEYS, PERMISSIONS, RfpStatus } from '@pulsar/shared';
+import { ListQueryDto } from '../../common/dto/list-query.dto';
 import { Audit } from '../../common/decorators/audit.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../common/decorators/require-module.decorator';
@@ -23,10 +25,10 @@ import { InviteDto } from './dto/invite.dto';
 import { UpdateRfpDto } from './dto/update-rfp.dto';
 import { ProcurementService } from './procurement.service';
 
-class RfpListQueryDto {
+class RfpListQueryDto extends ListQueryDto {
+  @IsOptional()
+  @IsString()
   q?: string;
-  page?: number;
-  pageSize?: number;
 }
 
 @ApiTags('procurement')

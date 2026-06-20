@@ -5,12 +5,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AuditAction, MODULE_KEYS, TenderStatus } from '@pulsar/shared';
+import { AuditAction, LoadStatus, MODULE_KEYS, TenderStatus } from '@pulsar/shared';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { DocumentsService } from '../../core/documents/documents.service';
+import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { TendersService } from '../transportation/tenders/tenders.service';
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const;
@@ -32,6 +33,7 @@ export class CarrierPortalService {
     private readonly documents: DocumentsService,
     private readonly tenders: TendersService,
     private readonly config: ConfigService,
+    private readonly moduleSettings: ModuleSettingsService,
   ) {}
 
   /** Resolves a carrier by portal token and gates on the CARRIER_PORTAL module being enabled. */
@@ -210,18 +212,32 @@ export class CarrierPortalService {
     const carrier = await this.carrierByToken(token);
     const load = await this.prisma.load.findFirst({
       where: { id: loadId, tenantId: carrier.tenantId, carrierId: carrier.id },
-      select: { id: true },
+      select: { id: true, status: true },
     });
     if (!load) throw new NotFoundException('Load not found or not assigned to this carrier');
     if (!ALLOWED_MIME.includes(file.mimetype as (typeof ALLOWED_MIME)[number])) {
       throw new BadRequestException('Only JPEG/PNG/WebP images or PDF are accepted');
     }
-    await this.documents.upload(carrier.tenantId, {
+    const settings = await this.moduleSettings.resolve(carrier.tenantId, 'carrier-portal');
+    if (settings.podRequiresDispatched) {
+      const dispatchedOrLater: string[] = [LoadStatus.DISPATCHED, LoadStatus.IN_TRANSIT, LoadStatus.COMPLETED];
+      if (!dispatchedOrLater.includes(load.status)) {
+        throw new BadRequestException('POD requires the load to be dispatched');
+      }
+    }
+    const doc = await this.documents.upload(carrier.tenantId, {
       entityType: 'load-pod',
       entityId: loadId,
       fileName: file.originalname,
       mimeType: file.mimetype,
       body: file.buffer,
+    });
+    await this.audit.log({
+      tenantId: carrier.tenantId,
+      action: AuditAction.CREATE,
+      entityType: 'load-pod',
+      entityId: loadId,
+      after: { documentId: doc.id, via: 'carrier-portal', carrierId: carrier.id },
     });
     return { ok: true };
   }
@@ -241,12 +257,19 @@ export class CarrierPortalService {
     if (!ALLOWED_MIME.includes(file.mimetype as (typeof ALLOWED_MIME)[number])) {
       throw new BadRequestException('Only JPEG/PNG/WebP images or PDF are accepted');
     }
-    await this.documents.upload(carrier.tenantId, {
+    const doc = await this.documents.upload(carrier.tenantId, {
       entityType: 'carrier-invoice-attachment',
       entityId: invoiceId,
       fileName: file.originalname,
       mimeType: file.mimetype,
       body: file.buffer,
+    });
+    await this.audit.log({
+      tenantId: carrier.tenantId,
+      action: AuditAction.CREATE,
+      entityType: 'carrier-invoice-attachment',
+      entityId: invoiceId,
+      after: { documentId: doc.id, via: 'carrier-portal', carrierId: carrier.id },
     });
     return { ok: true };
   }

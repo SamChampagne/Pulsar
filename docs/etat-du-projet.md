@@ -101,6 +101,21 @@ drag/drop = workbench v2).
 | Démarrage local | [getting-started.md](./getting-started.md) |
 | Connexion d'un agent IA (MCP) / Hermes | [agents.md](./agents.md) |
 
+## Session de stabilisation + framework de config (2026-06-20)
+
+Branche `test-stabilisation` (depuis `main` post-merge PR#38). Deux blocs : (1) **stabilisation** —
+correction d'une fuite cross-tenant en écriture (import CSV), flux award procurement cassé
+(`@IsUUID` sur des CUID), crash page détail RFP, ownership freight-audit/connect, + specs e2e
+procurement/connect ; e2e 214/214 (phase13 flake de pollution transitoire connu). (2) **Module
+Configuration Framework** — réglages par tenant × module, catalogue déclaratif pur
+(`@pulsar/shared`), `ModuleSettingsService` sur `TenantModule.settings` (aucune migration),
+`GET/PUT /modules/:key/settings` (audité), panneau UI générique `/settings/modules/[key]` + entrée
+« Configuration » par module ; 6 modules câblés (procurement bidUniqueness/award-rate, connect
+locale CSV, carrier-portal POD, billing tolérances rétro-compat, fleet fenêtre conformité,
+transportation capacité WARN/BLOCK + auto-tender). **Différés** : TTL token carrier-portal (migration),
+seuils de mode (inertes — pas de consommateur API de `suggestMode`). Spec/plan :
+`docs/superpowers/specs/2026-06-20-module-config-framework-design.md` + `.../plans/...`.
+
 ## Prochaine session — Pulsar Agent OS (phases 15 → 22)
 
 La **phase 16 est livrée** (Freight Audit autonome — début de l'Acte II) sur la branche

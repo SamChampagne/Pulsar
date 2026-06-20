@@ -35,7 +35,8 @@ function harness(docs: any[] = []) {
   } as any;
   const ownership = { assertOwned: async () => undefined } as any;
   const audit = { log: async () => undefined } as any;
-  return { svc: new ComplianceService(prisma, ownership, audit), store };
+  const moduleSettings = { resolve: async () => ({ complianceExpiringWindowDays: 30 }) } as any;
+  return { svc: new ComplianceService(prisma, ownership, audit, moduleSettings), store };
 }
 
 const NOW = new Date('2026-06-15T00:00:00Z');

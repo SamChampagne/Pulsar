@@ -3,6 +3,7 @@ import { AuditAction, ComplianceSubject, computeComplianceStatus } from '@pulsar
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OwnershipService, OwnedEntity } from '../../../prisma/ownership.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { ComplianceListQueryDto, CreateComplianceDocumentDto } from './dto/compliance.dto';
 
 /**
@@ -18,6 +19,7 @@ export class ComplianceService {
     private readonly prisma: PrismaService,
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
+    private readonly moduleSettings: ModuleSettingsService,
   ) {}
 
   private assertSubjectOwned(tenantId: string, subjectType: ComplianceSubject, subjectId: string) {
@@ -31,6 +33,8 @@ export class ComplianceService {
   }
 
   async list(tenantId: string, query: ComplianceListQueryDto, now = Date.now()) {
+    const { complianceExpiringWindowDays } = await this.moduleSettings.resolve(tenantId, 'fleet');
+    const warnDays = complianceExpiringWindowDays as number;
     const docs = await this.prisma.complianceDocument.findMany({
       where: {
         tenantId,
@@ -40,22 +44,26 @@ export class ComplianceService {
       orderBy: { expiresAt: 'asc' },
       take: 200,
     });
-    return docs.map((doc) => ({ ...doc, status: computeComplianceStatus(doc.expiresAt, now) }));
+    return docs.map((doc) => ({ ...doc, status: computeComplianceStatus(doc.expiresAt, now, warnDays) }));
   }
 
   async expiring(tenantId: string, days = 30, now = Date.now()) {
+    const { complianceExpiringWindowDays } = await this.moduleSettings.resolve(tenantId, 'fleet');
+    const warnDays = complianceExpiringWindowDays as number;
     const docs = await this.prisma.complianceDocument.findMany({
       where: { tenantId, expiresAt: { lte: new Date(now + days * 86_400_000) } },
       orderBy: { expiresAt: 'asc' },
       take: 200,
     });
-    return docs.map((doc) => ({ ...doc, status: computeComplianceStatus(doc.expiresAt, now) }));
+    return docs.map((doc) => ({ ...doc, status: computeComplianceStatus(doc.expiresAt, now, warnDays) }));
   }
 
   async get(tenantId: string, id: string, now = Date.now()) {
+    const { complianceExpiringWindowDays } = await this.moduleSettings.resolve(tenantId, 'fleet');
+    const warnDays = complianceExpiringWindowDays as number;
     const doc = await this.prisma.complianceDocument.findFirst({ where: { id, tenantId } });
     if (!doc) throw new NotFoundException('Compliance document not found');
-    return { ...doc, status: computeComplianceStatus(doc.expiresAt, now) };
+    return { ...doc, status: computeComplianceStatus(doc.expiresAt, now, warnDays) };
   }
 
   async create(
@@ -64,6 +72,8 @@ export class ComplianceService {
     dto: CreateComplianceDocumentDto,
     now = Date.now(),
   ) {
+    const { complianceExpiringWindowDays } = await this.moduleSettings.resolve(tenantId, 'fleet');
+    const warnDays = complianceExpiringWindowDays as number;
     await this.assertSubjectOwned(tenantId, dto.subjectType, dto.subjectId);
 
     const doc = await this.prisma.complianceDocument.create({
@@ -94,7 +104,7 @@ export class ComplianceService {
         expiresAt: doc.expiresAt,
       },
     });
-    return { ...doc, status: computeComplianceStatus(doc.expiresAt, now) };
+    return { ...doc, status: computeComplianceStatus(doc.expiresAt, now, warnDays) };
   }
 
   async remove(tenantId: string, userId: string, id: string) {
