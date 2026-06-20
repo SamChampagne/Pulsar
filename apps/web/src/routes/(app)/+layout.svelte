@@ -128,9 +128,7 @@
     MODULE_UNIVERSES[activeDomain?.key ?? 'dashboard'] ?? MODULE_UNIVERSES.dashboard,
   );
   const activeLinks = $derived(activeDomain?.sections.flatMap((s) => s.links) ?? []);
-  const deskMode = $derived(
-    String(page.url.pathname) === '/apps' || String(page.url.pathname) === '/framework',
-  );
+  const deskMode = $derived(String(page.url.pathname) === '/apps');
 
   const reduceMotion =
     typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -177,13 +175,12 @@
       ),
     ),
     { label: 'Pulsar Apps', hint: 'plateforme', run: () => goto('/apps') },
-    { label: 'Framework', hint: 'plateforme', run: () => goto('/framework') },
   ]);
 </script>
 
 {#if $auth}
   <div
-    class="flex min-h-screen"
+    class="flex min-h-screen flex-col md:flex-row"
     style={`--module-accent: ${activeUniverse.accent}; --module-soft: ${activeUniverse.soft}; --module-rgb: ${activeUniverse.rgb};`}
   >
     {#if deskMode}
@@ -268,7 +265,56 @@
       </div>
     {:else}
       <!-- Module shell — once an app is opened, show ONLY that selected universe. Global app switching lives on /apps. -->
-      <aside class="flex w-64 shrink-0 flex-col border-r border-edge bg-surface">
+      <header class="sticky top-0 z-40 flex items-center gap-3 border-b border-edge bg-surface/96 px-3 py-2 backdrop-blur md:hidden">
+        <a
+          href="/apps"
+          class="grid size-10 shrink-0 place-items-center rounded-2xl bg-surface-muted text-base font-bold text-ink transition hover:bg-accent-soft hover:text-accent"
+          aria-label="Retour au bureau Pulsar"
+        >⬢</a>
+        {#if activeDomain}
+          {@const MobileIcon = activeDomain.icon}
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <span class="grid size-8 shrink-0 place-items-center rounded-xl text-white" style={`background: ${activeUniverse.accent}`}>
+                <MobileIcon class="size-4" />
+              </span>
+              <div class="min-w-0">
+                <div class="truncate text-sm font-bold text-ink">{activeUniverse.title}</div>
+                <div class="truncate text-[11px] text-ink-faint">Module encapsulé · {$auth.tenant.name}</div>
+              </div>
+            </div>
+          </div>
+        {/if}
+        <button
+          class={`grid size-10 place-items-center rounded-2xl text-xs font-bold transition-colors ${profileOpen ? 'bg-ink text-white' : 'bg-surface-muted text-ink hover:bg-accent-soft hover:text-accent'}`}
+          onclick={() => {
+            notifOpen = false;
+            profileOpen = !profileOpen;
+          }}
+          aria-label="Profil utilisateur"
+          aria-expanded={profileOpen}
+          title={$auth.user.email}
+        >
+          {initials()}
+        </button>
+      </header>
+
+      {#if activeLinks.length > 0}
+        <nav class="sticky top-[57px] z-30 flex gap-2 overflow-x-auto border-b border-edge bg-surface/95 px-3 py-2 backdrop-blur md:hidden" aria-label="Menu mobile du module">
+          {#each activeLinks as l (l.href)}
+            <a
+              href={l.href}
+              class={`shrink-0 rounded-full px-3 py-2 text-xs font-semibold transition ${linkActive(l.href) ? 'text-white shadow-sm' : 'bg-surface-muted text-ink-muted hover:text-ink'}`}
+              style={linkActive(l.href) ? `background: ${activeUniverse.accent}` : ''}
+            >
+              {l.label}
+              {#if l.badge}<span class="ml-1 rounded-full bg-danger px-1.5 text-[10px] text-white">{l.badge}</span>{/if}
+            </a>
+          {/each}
+        </nav>
+      {/if}
+
+      <aside class="hidden w-64 shrink-0 flex-col border-r border-edge bg-surface md:flex">
         <div class="border-b border-edge-soft p-4">
           <a
             href="/apps"
@@ -374,7 +420,7 @@
       </aside>
 
       <main
-        class="min-w-0 flex-1 overflow-x-hidden p-6"
+        class="min-w-0 flex-1 overflow-x-hidden p-4 md:p-6"
         style={`background: radial-gradient(circle at top left, rgb(${activeUniverse.rgb} / 0.10), transparent 360px), var(--color-canvas);`}
       >
         {#key page.url.pathname}
@@ -387,7 +433,7 @@
 
     {#if profileOpen}
       <div
-        class={`fixed z-50 w-80 rounded-2xl border border-edge bg-surface p-3 shadow-pop ${deskMode ? 'top-14 right-4' : 'bottom-4 left-[17rem]'}`}
+        class={`fixed z-50 w-[calc(100vw-1.5rem)] max-w-80 rounded-2xl border border-edge bg-surface p-3 shadow-pop ${deskMode ? 'top-14 right-3 sm:right-4' : 'right-3 bottom-3 md:left-[17rem] md:right-auto md:bottom-4'}`}
       >
         <div class="flex items-start gap-3 border-b border-edge-soft pb-3">
           <div
@@ -450,7 +496,7 @@
 
     {#if notifOpen}
       <div
-        class="fixed bottom-4 left-[17rem] z-30 max-h-96 w-72 overflow-y-auto rounded-card border border-edge bg-surface p-2 shadow-pop"
+        class="fixed right-3 bottom-3 z-30 max-h-96 w-[calc(100vw-1.5rem)] max-w-72 overflow-y-auto rounded-card border border-edge bg-surface p-2 shadow-pop md:right-auto md:left-[17rem] md:bottom-4"
       >
         {#if notifications.length === 0}
           <p class="px-2 py-3 text-center text-xs text-ink-faint">Aucune notification</p>

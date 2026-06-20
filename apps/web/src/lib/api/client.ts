@@ -53,6 +53,23 @@ export async function api<T>(path: string, options: ApiOptions = {}, isRetry = f
   }
 
   const token = getAccessToken();
+  if (token === 'demo-token') {
+    if (path === '/notifications' || path === '/agent-actions') return [] as T;
+    if (path === '/me/preferences') {
+      if ((options.method ?? 'GET') === 'PUT') return (options.body ?? {}) as T;
+      return { deskLayout: null, appearance: null } as T;
+    }
+    if (path === '/fleet/overview') {
+      return { openWorkOrders: 0, maintenanceDue: [], complianceExpiring: [], complianceExpired: [] } as T;
+    }
+    if ((options.method ?? 'GET') === 'GET') {
+      if (options.query?.pageSize !== undefined) {
+        return { items: [], total: 0, page: 1, pageSize: Number(options.query.pageSize) || 100 } as T;
+      }
+      return [] as T;
+    }
+    return undefined as T;
+  }
   const response = await fetch(url, {
     method: options.method ?? 'GET',
     headers: {

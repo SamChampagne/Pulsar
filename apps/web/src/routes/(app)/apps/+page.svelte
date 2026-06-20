@@ -448,9 +448,31 @@
       onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
     {#if renamingItem === item}<input class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none" bind:value={renameValue} onblur={commitRename} onkeydown={onRenameKeydown} use:focusOnMount />{/if}
   {:else if item.type === 'folder'}
-    <DeskFolderTile name={renamingItem === item ? renameValue : item.name} {editing} size={tilePx}
-      onopen={() => { if (!suppressClick && !editing) openFolderById(item.id); }}
-      onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
+    <div class="group relative">
+      <DeskFolderTile name={renamingItem === item ? renameValue : item.name} {editing} size={tilePx}
+        onopen={() => { if (!suppressClick && !editing) openFolderById(item.id); }}
+        onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
+      {#if item.id === FRAMEWORK_FOLDER_ID && !editing}
+        <div class="pointer-events-none absolute left-1/2 top-0 z-30 hidden w-72 -translate-x-1/2 -translate-y-[calc(100%+0.75rem)] rounded-2xl border border-edge bg-surface p-3 text-left shadow-pop group-hover:block group-focus-within:block sm:w-80">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <p class="text-[10px] font-bold tracking-[0.22em] text-ink-faint uppercase">Framework</p>
+              <h2 class="mt-0.5 text-sm font-bold text-ink">Bloc système, pas une page</h2>
+            </div>
+            <span class="rounded-full bg-surface-muted px-2 py-1 text-[10px] font-bold text-ink-muted">hover</span>
+          </div>
+          <p class="mt-2 text-xs leading-5 text-ink-muted">
+            Réglages, modules, utilisateurs et automation restent dans le core Pulsar. Le bureau affiche ce bloc au survol; on ne quitte pas le desk pour un écran “Framework”.
+          </p>
+          <div class="mt-3 grid grid-cols-2 gap-2 text-[11px] font-semibold text-ink-muted">
+            <span class="rounded-lg bg-surface-muted px-2 py-1.5">Réglages</span>
+            <span class="rounded-lg bg-surface-muted px-2 py-1.5">Modules</span>
+            <span class="rounded-lg bg-surface-muted px-2 py-1.5">Utilisateurs</span>
+            <span class="rounded-lg bg-surface-muted px-2 py-1.5">Automation</span>
+          </div>
+        </div>
+      {/if}
+    </div>
     {#if renamingItem === item}<input class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none" bind:value={renameValue} onblur={commitRename} onkeydown={onRenameKeydown} use:focusOnMount />{/if}
   {/if}
 {/snippet}
@@ -467,7 +489,7 @@
       <h1 class="mt-2 text-xl font-semibold tracking-tight text-ink">Toutes les pages</h1>
     </div>
     {#if loaded}
-      <div class="absolute right-4 flex items-center gap-2 sm:right-8 lg:right-12">
+      <div class="absolute top-14 right-1/2 flex translate-x-1/2 items-center gap-2 sm:top-auto sm:right-8 sm:translate-x-0 lg:right-12">
         {#if editing}
           <button
             type="button"
@@ -515,9 +537,15 @@
   {:else if !search && layout.items.length === 0}
     <p class="text-center text-sm text-ink-faint">Aucune page disponible.</p>
   {:else}
+    <div class="mx-auto grid max-w-[360px] grid-cols-3 justify-items-center gap-x-4 gap-y-8 px-2 py-4 md:hidden">
+      {#each visibleItems as item, i (deskId(item) + '#mobile-' + i)}
+        <div>{@render tile(item)}</div>
+      {/each}
+    </div>
+
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="relative mx-auto"
+      class="relative mx-auto hidden md:block"
       bind:clientWidth={canvasW}
       bind:clientHeight={canvasH}
       oncontextmenu={openCanvasMenu}

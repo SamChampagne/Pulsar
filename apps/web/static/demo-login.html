@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Demo login · Pulsar</title>
+  </head>
+  <body>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const to = params.get('to') || '/apps';
+      localStorage.setItem('pulsar.auth', JSON.stringify({
+        accessToken: 'demo-token',
+        refreshToken: 'demo-refresh',
+        user: {
+          id: 'user_sam_demo',
+          tenantId: 'tenant_acme',
+          email: 'sam@pulsar.dev',
+          firstName: 'Sam',
+          lastName: 'Champagne',
+          permissions: [
+            'core.agents.read',
+            'core.operating_tasks.read',
+            'core.agents_actions.read',
+            'core.agents.chat',
+            'core.integrations.read',
+            'core.connect.read',
+            'core.documents.read',
+            'core.audit.read',
+            'core.automation_rules.read',
+            'transportation.planning.read',
+            'transportation.rates.read',
+            'transportation.analytics.read',
+            'analytics.read',
+            'procurement.read'
+          ]
+        },
+        tenant: {
+          id: 'tenant_acme',
+          slug: 'acme',
+          name: 'Acme Logistics',
+          enabledModules: ['transportation', 'billing', 'fleet', 'wms', 'yard', 'analytics', 'procurement']
+        }
+      }));
+      location.replace(to);
+    </script>
+  </body>
+</html>
