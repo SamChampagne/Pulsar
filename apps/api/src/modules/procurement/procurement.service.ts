@@ -281,6 +281,13 @@ export class ProcurementService {
   async award(tenantId: string, userId: string, rfpId: string, dto: AwardDto) {
     const rfp = await this.assertRfpExists(tenantId, rfpId);
 
+    // A lane can only be awarded while the RFP is being evaluated. Awarding from
+    // any other status would leave the RFP in an inconsistent state (the
+    // EVALUATION→AWARDED auto-transition below would silently fail).
+    if (rfp.status !== RfpStatus.EVALUATION) {
+      throw new BadRequestException('RFP must be in EVALUATION to award a lane');
+    }
+
     // Validate rfpLane belongs to this rfp+tenant
     const rfpLane = await this.prisma.rfpLane.findFirst({
       where: { id: dto.rfpLaneId, rfpId, tenantId },
@@ -297,31 +304,45 @@ export class ProcurementService {
       },
     });
     if (!bid) throw new NotFoundException('Bid not found or not in an awardable status');
+    if (!canTransitionBid(bid.status as BidStatus, BidStatus.ACCEPTED)) {
+      throw new BadRequestException(`Cannot accept a bid in status ${bid.status}`);
+    }
 
-    // Upsert award on rfpLaneId (unique)
-    let newAward = await this.prisma.award.upsert({
-      where: { rfpLaneId: dto.rfpLaneId },
-      create: {
-        tenantId,
-        rfpLaneId: dto.rfpLaneId,
-        carrierId: bid.carrierId,
-        bidId: dto.bidId,
-        awardedById: userId,
-      },
-      update: {
-        carrierId: bid.carrierId,
-        bidId: dto.bidId,
-        awardedById: userId,
-        awardedAt: new Date(),
-      },
-    });
+    // Atomic award: claim the winning bid (status-guarded), demote any previous
+    // winner on the lane (re-award must never leave two ACCEPTED bids), and
+    // (re)create the lane award — all in one transaction so a failed claim can
+    // never leave an Award pointing at a non-accepted bid.
+    let newAward = await this.prisma.$transaction(async (tx) => {
+      const bidClaim = await tx.bid.updateMany({
+        where: { id: dto.bidId, tenantId, status: { in: [BidStatus.SUBMITTED, BidStatus.SHORTLISTED] } },
+        data: { status: BidStatus.ACCEPTED },
+      });
+      if (bidClaim.count === 0) throw new ConflictException('Offre déjà traitée');
 
-    // Mark bid ACCEPTED via claim (status guard ensures idempotency)
-    const bidClaim = await this.prisma.bid.updateMany({
-      where: { id: dto.bidId, tenantId, status: { in: [BidStatus.SUBMITTED, BidStatus.SHORTLISTED] } },
-      data: { status: BidStatus.ACCEPTED },
+      // Re-award correction: a previous winner is ACCEPTED (terminal in the SM);
+      // demote it to REJECTED so the lane carries exactly one accepted bid.
+      await tx.bid.updateMany({
+        where: { rfpLaneId: dto.rfpLaneId, tenantId, status: BidStatus.ACCEPTED, id: { not: dto.bidId } },
+        data: { status: BidStatus.REJECTED },
+      });
+
+      return tx.award.upsert({
+        where: { rfpLaneId: dto.rfpLaneId },
+        create: {
+          tenantId,
+          rfpLaneId: dto.rfpLaneId,
+          carrierId: bid.carrierId,
+          bidId: dto.bidId,
+          awardedById: userId,
+        },
+        update: {
+          carrierId: bid.carrierId,
+          bidId: dto.bidId,
+          awardedById: userId,
+          awardedAt: new Date(),
+        },
+      });
     });
-    if (bidClaim.count === 0) throw new ConflictException('Offre déjà traitée');
 
     // Optionally create a Rate from the winning bid
     if (dto.createRate) {
