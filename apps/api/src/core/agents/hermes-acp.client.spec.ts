@@ -36,6 +36,30 @@ describe('HermesAcpClient (ACP over injectable transport)', () => {
     expect(fake.lastModel).toBeNull();
   });
 
+  it('returns a cleaned model list from session/new (drops the doubled-prefix current entry)', async () => {
+    const fake = new FakeAcpServer();
+    const client = new HermesAcpClient(fake.clientTransport);
+
+    await client.initialize();
+    const { models } = await client.newSession({ cwd: '.' });
+
+    expect(models).toEqual([
+      { value: 'anthropic:claude-sonnet-4-6', label: 'claude-sonnet-4-6' },
+      { value: 'anthropic:claude-opus-4-8', label: 'claude-opus-4-8' },
+    ]);
+  });
+
+  it('resumes an existing session by id (session/resume)', async () => {
+    const fake = new FakeAcpServer();
+    const client = new HermesAcpClient(fake.clientTransport);
+
+    await client.initialize();
+    const { sessionId } = await client.resumeSession({ cwd: '.' }, 'prior-session-123');
+
+    expect(fake.lastResume).toBe('prior-session-123');
+    expect(sessionId).toBe('prior-session-123');
+  });
+
   it('sets the model after the session is created', async () => {
     const fake = new FakeAcpServer();
     const client = new HermesAcpClient(fake.clientTransport);

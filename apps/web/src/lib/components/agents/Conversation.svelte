@@ -160,7 +160,7 @@
           <div class="max-w-[85%] rounded-card border border-edge bg-surface p-3">
             <div class="mb-1.5 flex items-center gap-2">
               <Wrench class="size-3.5 text-ink-muted" />
-              <span class="text-xs font-semibold text-ink">Action proposée</span>
+              <span class="text-xs font-semibold text-ink">Outil utilisé</span>
               <Badge tone="info">{call.name}</Badge>
             </div>
             {#if formatArgs(call.args)}
@@ -169,11 +169,14 @@
                   call.args,
                 )}</pre>
             {/if}
+            <!-- The chat stream can't tell whether a tool was auto-executed, queued
+                 for approval, or internal — so we don't claim "à approuver" here.
+                 Real pending approvals live on the Agent actions page (nav badge). -->
             <a
               href="/agent-actions"
-              class="mt-2 inline-flex items-center gap-1 text-xs text-accent hover:underline"
+              class="mt-2 inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink hover:underline"
             >
-              Voir dans Agent actions <ExternalLink class="size-3" />
+              Journal des actions <ExternalLink class="size-3" />
             </a>
           </div>
         {/each}

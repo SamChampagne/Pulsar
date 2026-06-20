@@ -64,7 +64,14 @@ export function renderCliConfig(config: RuntimeConfigInput): string {
   const providerKey = provider?.providerKey ?? config.provider;
   const lines = ['model:', `  provider: ${yamlStr(providerKey)}`];
   if (config.defaultModel) {
-    lines.push(`  default: ${yamlStr(config.defaultModel)}`);
+    // `provider` is written separately, so `model.default` must be the BARE model
+    // id. A stored `provider:model` form (e.g. "anthropic:claude-sonnet-4-6") is
+    // sent to the provider verbatim by Hermes' default path (unlike session/set_model
+    // which splits it) and 404s. Strip a leading "<providerKey>:" if present.
+    const bareModel = config.defaultModel.startsWith(`${providerKey}:`)
+      ? config.defaultModel.slice(providerKey.length + 1)
+      : config.defaultModel;
+    lines.push(`  default: ${yamlStr(bareModel)}`);
   }
   if (config.baseUrl) {
     lines.push(`  base_url: ${yamlStr(config.baseUrl)}`);

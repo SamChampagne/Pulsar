@@ -1665,6 +1665,10 @@ model AgentRuntimeConfig {
   connectedAt  DateTime?
   lastTestAt   DateTime?
   lastTestOk   Boolean?
+  // Cache of the provider's available models, captured on the last successful
+  // connection test: [{ value: "<provider:model>", label: "<name>" }]. Populates
+  // the model dropdown in agent create/edit (no free-text typos → no 404s).
+  availableModels Json?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
