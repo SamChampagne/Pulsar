@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuditAction, LoadStatus, TenderStatus, TrackingEventType } from '@pulsar/shared';
 import { randomBytes } from 'node:crypto';
@@ -7,6 +7,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { EmailService } from '../../../core/email/email.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
+import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { LanesService } from '../lanes/lanes.service';
 
@@ -24,6 +25,8 @@ const tenderInclude = {
 
 @Injectable()
 export class TendersService {
+  private readonly logger = new Logger(TendersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ownership: OwnershipService,
@@ -33,6 +36,7 @@ export class TendersService {
     private readonly email: EmailService,
     private readonly lanes: LanesService,
     private readonly domainEvents: DomainEventsService,
+    private readonly moduleSettings: ModuleSettingsService,
   ) {}
 
   private link(token: string): string {
@@ -181,6 +185,13 @@ export class TendersService {
         include: { load: { select: { status: true } } },
       });
       if (!tender?.isAuto || tender.load.status !== LoadStatus.PLANNED) return;
+
+      // Respect the tenant's autoTenderOnPlan setting. When false, leave the load PLANNED.
+      const tmsSettings = await this.moduleSettings.resolve(tender.tenantId, 'transportation');
+      if (tmsSettings['autoTenderOnPlan'] === false) {
+        this.logger.log(`Auto-tender chain skipped for load ${tender.loadId} (autoTenderOnPlan=false)`);
+        return;
+      }
 
       const carrierIds = await this.lanes.orderedCarrierIdsForLoad(tender.tenantId, tender.loadId);
       if (carrierIds.length === 0) return;

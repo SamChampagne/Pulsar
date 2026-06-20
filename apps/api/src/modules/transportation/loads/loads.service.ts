@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
@@ -20,6 +20,7 @@ import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { EmailService } from '../../../core/email/email.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
+import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { LoadCostService } from './load-cost.service';
 import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
 import { shipmentWindowWarnings } from '../planning/window-warnings';
@@ -78,6 +79,7 @@ export class LoadsService {
     private readonly webhooks: WebhooksService,
     private readonly email: EmailService,
     private readonly config: ConfigService,
+    private readonly moduleSettings: ModuleSettingsService,
   ) {}
 
   async list(tenantId: string, query: ListQueryDto & { status?: LoadStatus }) {
@@ -313,10 +315,16 @@ export class LoadsService {
             },
           )
         : [];
-      if (excesses.length > 0 && !force) {
-        throw new BadRequestException({ message: 'Trailer capacity exceeded', excesses });
-      }
-      if (excesses.length > 0 && force) {
+      if (excesses.length > 0) {
+        const tmsSettings = await this.moduleSettings.resolve(tenantId, 'transportation');
+        const overage = tmsSettings['capacityOverage'] as string;
+        if (overage === 'BLOCK') {
+          throw new ConflictException({ message: 'Trailer capacity exceeded (blocked by tenant policy)', excesses });
+        }
+        if (!force) {
+          throw new BadRequestException({ message: 'Trailer capacity exceeded', excesses });
+        }
+        // WARN + force: record the override
         capacityOverride = { capacityOverride: true, excesses };
       }
     }
