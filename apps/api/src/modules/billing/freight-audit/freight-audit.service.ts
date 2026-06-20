@@ -8,6 +8,7 @@ import {
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { OwnershipService } from '../../../prisma/ownership.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { CreateIncomingInvoiceDto, FreightDisputeDto, FreightResolveDto } from './dto/freight-audit.dto';
@@ -19,6 +20,7 @@ const round = (n: number) => Math.round(n * 100) / 100;
 export class FreightAuditService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly ownership: OwnershipService,
     private readonly auditLogs: AuditLogsService,
     private readonly domainEvents: DomainEventsService,
   ) {}
@@ -44,6 +46,7 @@ export class FreightAuditService {
 
   /** Intake: persist the carrier's invoice + lines, emit the domain event (best-effort). */
   async create(tenantId: string, userId: string, dto: CreateIncomingInvoiceDto, sourceRef = 'manual') {
+    await this.ownership.assertOwned('carrier', dto.carrierId, tenantId);
     const chargedTotal = round(dto.lines.reduce((a, l) => a + l.chargedAmount, 0));
     const created = await this.prisma.incomingCarrierInvoice.create({
       data: {

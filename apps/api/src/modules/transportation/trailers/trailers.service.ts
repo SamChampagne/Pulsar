@@ -46,7 +46,7 @@ export class TrailersService {
     });
     if (existing) throw new ConflictException(`Trailer "${dto.unitNumber}" already exists`);
     await this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId);
-    return this.prisma.trailer.create({ data: { tenantId, ...dto } });
+    return this.prisma.trailer.create({ data: { ...dto, tenantId } });
   }
 
   async update(tenantId: string, id: string, dto: UpdateTrailerDto) {

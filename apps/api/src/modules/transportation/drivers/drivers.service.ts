@@ -50,7 +50,7 @@ export class DriversService {
 
   async create(tenantId: string, dto: CreateDriverDto) {
     await this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId);
-    return this.prisma.driver.create({ data: { tenantId, ...dto } });
+    return this.prisma.driver.create({ data: { ...dto, tenantId } });
   }
 
   async update(tenantId: string, id: string, dto: UpdateDriverDto) {

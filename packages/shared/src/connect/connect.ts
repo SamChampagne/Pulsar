@@ -142,13 +142,19 @@ export function validateRequired(
 /**
  * Coerces known numeric fields to numbers when present and parseable.
  * Drops empty strings. Leaves other values as strings.
+ *
+ * Security: only fields declared in the target's required/optional columns are
+ * kept. This prevents a caller-controlled mapping from smuggling arbitrary model
+ * fields (e.g. `tenantId`, `id`, `createdById`) into the downstream create.
  */
 export function coerceTypes(
   record: Record<string, string>,
-  _target: ImportTarget,
+  target: ImportTarget,
 ): Record<string, unknown> {
+  const allowed = new Set([...target.requiredColumns, ...target.optionalColumns]);
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
+    if (!allowed.has(key)) continue; // drop unknown/injected fields
     if (value === '') continue; // drop empty strings
     if (NUMERIC_FIELDS.has(key)) {
       const n = Number(value);
