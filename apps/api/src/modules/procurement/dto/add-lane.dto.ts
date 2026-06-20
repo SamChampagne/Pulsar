@@ -1,7 +1,7 @@
-import { IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class AddLaneDto {
-  @IsUUID()
+  @IsString()
   laneId!: string;
 
   @IsOptional()

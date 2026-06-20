@@ -1,10 +1,10 @@
-import { IsBoolean, IsOptional, IsUUID } from 'class-validator';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 
 export class AwardDto {
-  @IsUUID()
+  @IsString()
   rfpLaneId!: string;
 
-  @IsUUID()
+  @IsString()
   bidId!: string;
 
   @IsOptional()
