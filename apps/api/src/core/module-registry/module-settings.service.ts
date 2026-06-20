@@ -23,16 +23,24 @@ export class ModuleSettingsService {
     return cat.settings;
   }
 
-  private async moduleId(moduleKey: string): Promise<string> {
+  private async moduleId(moduleKey: string): Promise<string | null> {
     const def = await this.prisma.moduleDefinition.findUnique({ where: { key: moduleKey } });
-    if (!def) throw new NotFoundException(`Unknown module "${moduleKey}"`);
-    return def.id;
+    return def?.id ?? null;
+  }
+
+  private async moduleIdOrThrow(moduleKey: string): Promise<string> {
+    const id = await this.moduleId(moduleKey);
+    if (!id) throw new NotFoundException(`Unknown module "${moduleKey}"`);
+    return id;
   }
 
   async resolve(tenantId: string, moduleKey: string): Promise<ResolvedSettings> {
     const cat = catalogFor(moduleKey);
     if (!cat) return {};
+    // If the module is not registered as a moduleDefinition (e.g. 'connect' is a
+    // core feature, not a business module), fall back to catalog defaults.
     const id = await this.moduleId(moduleKey);
+    if (!id) return resolveSettings(cat, {});
     const stored = await this.cache.getRawSettings(tenantId, id);
     return resolveSettings(cat, stored);
   }
@@ -42,7 +50,7 @@ export class ModuleSettingsService {
     if (!cat) throw new NotFoundException(`No settings for module "${moduleKey}"`);
     const res = validateSettings(cat, patch);
     if (!res.ok) throw new BadRequestException(res.errors.join('; '));
-    const id = await this.moduleId(moduleKey);
+    const id = await this.moduleIdOrThrow(moduleKey);
     const existing = await this.prisma.tenantModule.findUnique({
       where: { tenantId_moduleId: { tenantId, moduleId: id } },
       select: { settings: true },

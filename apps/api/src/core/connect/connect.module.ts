@@ -2,6 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { DocumentsModule } from '../documents/documents.module';
 import { OperatingModule } from '../operating/operating.module';
+import { ModuleRegistryModule } from '../module-registry/module-registry.module';
 import { TransportationModule } from '../../modules/transportation/transportation.module';
 import { WmsModule } from '../../modules/wms/wms.module';
 import { BillingModule } from '../../modules/billing/billing.module';
@@ -18,6 +19,7 @@ import { InboundService } from './inbound.service';
  *  - DocumentsService: from DocumentsModule
  *  - AuditLogsService: from AuditLogsModule
  *  - DomainEventsService: from OperatingModule
+ *  - ModuleSettingsService: from ModuleRegistryModule (csvNumberLocale for CSV parsing)
  *  - CustomersService / LocationsService / CarriersService / VehiclesService / TrailersService:
  *    exported by TransportationModule
  *  - ItemsService: exported by WmsModule
@@ -29,6 +31,7 @@ import { InboundService } from './inbound.service';
     AuditLogsModule,
     DocumentsModule,
     OperatingModule,
+    ModuleRegistryModule,
     TransportationModule,
     WmsModule,
     forwardRef(() => BillingModule),

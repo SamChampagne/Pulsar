@@ -10,6 +10,7 @@ import {
   validateRequired,
   coerceTypes,
   parseCsv,
+  parseCsvNumber,
 } from './connect';
 
 describe('IMPORT_TARGETS', () => {
@@ -98,6 +99,30 @@ describe('validateRequired', () => {
 
   it('treats undefined as missing', () => {
     expect(validateRequired({ name: 'B' }, ['code', 'name'])).toEqual(['code']);
+  });
+});
+
+describe('parseCsvNumber', () => {
+  it('parses FR locale: "1 234,56" → 1234.56', () => {
+    expect(parseCsvNumber('1 234,56', 'FR')).toBe(1234.56);
+  });
+
+  it('parses EN locale: "1,234.56" → 1234.56', () => {
+    expect(parseCsvNumber('1,234.56', 'EN')).toBe(1234.56);
+  });
+
+  it('parses AUTO locale with plain decimal: "1234.56" → 1234.56', () => {
+    expect(parseCsvNumber('1234.56', 'AUTO')).toBe(1234.56);
+  });
+
+  it('parses AUTO locale with FR-style: "1 234,56" → 1234.56', () => {
+    expect(parseCsvNumber('1 234,56', 'AUTO')).toBe(1234.56);
+  });
+
+  it('EN default: coerceTypes with no locale arg still parses "45.5" → 45.5', () => {
+    const target = getImportTarget('locations')!;
+    const result = coerceTypes({ latitude: '45.5', code: 'LOC1', name: 'Depot' }, target);
+    expect(result.latitude).toBe(45.5);
   });
 });
 
