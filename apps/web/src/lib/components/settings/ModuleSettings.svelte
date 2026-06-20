@@ -69,7 +69,7 @@
 
 {#if loading}
   <p class="text-sm text-ink-muted">Chargement…</p>
-{:else if error && descriptors.length === 0}
+{:else if error}
   <p class="text-sm text-danger">{error}</p>
 {:else if descriptors.length === 0}
   <p class="text-sm text-ink-muted">Aucun paramètre configurable pour ce module.</p>
