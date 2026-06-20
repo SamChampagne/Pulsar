@@ -63,6 +63,18 @@ export interface DeskLayout {
 
 export const FRAMEWORK_FOLDER_ID = 'framework';
 
+/**
+ * The platform dashboard (`/dashboard`) has no business module, so the `dashboard`
+ * domain is excluded from the module tiles. We surface it explicitly as a first-class
+ * link tile so users still get a desk shortcut to the "Tableau de bord".
+ */
+export const DASHBOARD_HREF = '/dashboard';
+export const DASHBOARD_LINK: Extract<DeskItem, { type: 'link' }> = {
+  type: 'link',
+  href: DASHBOARD_HREF,
+  label: 'Tableau de bord',
+};
+
 export const FRAMEWORK_LINKS: DeskFolderChild[] = [
   { type: 'link', href: '/settings/appearance', label: 'Réglages' },
   { type: 'link', href: '/settings/modules', label: 'Modules' },
@@ -72,6 +84,7 @@ export const FRAMEWORK_LINKS: DeskFolderChild[] = [
 
 export function defaultDeskLayout(domains: { key: string }[]): DeskLayout {
   const base: DeskItem[] = [
+    { ...DASHBOARD_LINK },
     ...domains
       .filter((d) => d.key !== 'dashboard')
       .map((d): DeskItem => ({ type: 'module', moduleKey: d.key })),
@@ -163,22 +176,36 @@ export function reconcileDeskLayout(saved: unknown, domains: { key: string }[]):
   const savedMode = (s && typeof s === 'object') ? (s as { mode?: unknown }).mode : undefined;
   const mode: DeskMode = DESK_MODES.includes(savedMode as DeskMode) ? (savedMode as DeskMode) : 'auto';
 
-  // Re-inject the Framework folder if the saved layout lost it (symmetric to re-adding modules).
-  const hasFramework = positioned.some(
+  // Re-inject the Dashboard tile and the Framework folder if the saved layout lost
+  // them (symmetric to re-adding newly-visible modules). Appended at the end so we
+  // never overlap a user-positioned tile in 'free' mode.
+  let finalItems: DeskItem[] = positioned;
+
+  const hasDashboard = finalItems.some(
+    (it) => it.type === 'link' && it.href === DASHBOARD_HREF,
+  );
+  if (!hasDashboard) {
+    finalItems = [
+      ...finalItems,
+      { ...DASHBOARD_LINK, pos: defaultPosition(finalItems.length) },
+    ];
+  }
+
+  const hasFramework = finalItems.some(
     (it) => it.type === 'folder' && it.id === FRAMEWORK_FOLDER_ID,
   );
-  const finalItems = hasFramework
-    ? positioned
-    : [
-        ...positioned,
-        {
-          type: 'folder' as const,
-          id: FRAMEWORK_FOLDER_ID,
-          name: 'Framework',
-          items: [...FRAMEWORK_LINKS],
-          pos: defaultPosition(positioned.length),
-        },
-      ];
+  if (!hasFramework) {
+    finalItems = [
+      ...finalItems,
+      {
+        type: 'folder' as const,
+        id: FRAMEWORK_FOLDER_ID,
+        name: 'Framework',
+        items: [...FRAMEWORK_LINKS],
+        pos: defaultPosition(finalItems.length),
+      },
+    ];
+  }
 
   const tileSize: DeskTileSize | undefined =
     s.tileSize === 'sm' || s.tileSize === 'md' || s.tileSize === 'lg' ? s.tileSize : undefined;

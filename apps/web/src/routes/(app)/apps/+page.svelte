@@ -15,8 +15,14 @@
   import FolderOverlay from '$lib/components/desk/FolderOverlay.svelte';
   import AddLinkPicker from '$lib/components/desk/AddLinkPicker.svelte';
   import DeskContextMenu from '$lib/components/desk/DeskContextMenu.svelte';
-  import { Link } from 'lucide-svelte';
+  import { Link, LayoutDashboard } from 'lucide-svelte';
   import { freeDrag } from '$lib/actions/dnd';
+
+  // First-class look for well-known platform shortcuts surfaced as link tiles
+  // (e.g. the dashboard, which has no business module).
+  const linkIcon = (href: string) => (href === '/dashboard' ? LayoutDashboard : Link);
+  const linkAccent = (href: string) =>
+    href === '/dashboard' ? (MODULE_UNIVERSES['dashboard']?.accent ?? '#6f7480') : '#6f7480';
 
   // Build visible domains from auth caps — mirrors +layout.svelte exactly.
   const domains = $derived(
@@ -443,7 +449,7 @@
         onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
     {/if}
   {:else if item.type === 'link'}
-    <DeskIcon label={renamingItem === item ? renameValue : item.label} icon={Link} accent="#6f7480" {editing} size={tilePx}
+    <DeskIcon label={renamingItem === item ? renameValue : item.label} icon={linkIcon(item.href)} accent={linkAccent(item.href)} {editing} size={tilePx}
       onactivate={() => { if (!suppressClick && !editing) goto(item.href); }}
       onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
     {#if renamingItem === item}<input class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none" bind:value={renameValue} onblur={commitRename} onkeydown={onRenameKeydown} use:focusOnMount />{/if}
@@ -583,8 +589,8 @@
       {:else if child.type === 'link'}
         <DeskIcon
           label={child.label}
-          icon={Link}
-          accent="#6f7480"
+          icon={linkIcon(child.href)}
+          accent={linkAccent(child.href)}
           onactivate={() => { closeFolder(); goto(child.href); }}
         />
       {/if}
