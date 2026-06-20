@@ -23,25 +23,30 @@ export class ModuleSettingsService {
     return cat.settings;
   }
 
-  private async moduleId(moduleKey: string): Promise<string | null> {
+  /**
+   * Returns the moduleDefinition id to use as the storage row for `moduleKey`.
+   *
+   * - If a `moduleDefinition` row exists for `moduleKey` (i.e. a real business
+   *   module like `procurement`), return its own id — settings are stored there.
+   * - If no row exists (e.g. `connect` is a core sub-feature with no
+   *   moduleDefinition), fall back to the `core` module's id so that writes land
+   *   on the core TenantModule row (which always exists after seeding).
+   * - Throws NotFoundException only if neither the module's row nor the `core`
+   *   row can be found (should never happen on a seeded DB).
+   */
+  private async storageModuleId(moduleKey: string): Promise<string> {
     const def = await this.prisma.moduleDefinition.findUnique({ where: { key: moduleKey } });
-    return def?.id ?? null;
-  }
-
-  private async moduleIdOrThrow(moduleKey: string): Promise<string> {
-    const id = await this.moduleId(moduleKey);
-    if (!id) throw new NotFoundException(`Unknown module "${moduleKey}"`);
-    return id;
+    if (def) return def.id;
+    const core = await this.prisma.moduleDefinition.findUnique({ where: { key: 'core' } });
+    if (!core) throw new NotFoundException(`Module "${moduleKey}" has no definition row and the core module is missing`);
+    return core.id;
   }
 
   async resolve(tenantId: string, moduleKey: string): Promise<ResolvedSettings> {
     const cat = catalogFor(moduleKey);
     if (!cat) return {};
-    // If the module is not registered as a moduleDefinition (e.g. 'connect' is a
-    // core feature, not a business module), fall back to catalog defaults.
-    const id = await this.moduleId(moduleKey);
-    if (!id) return resolveSettings(cat, {});
-    const stored = await this.cache.getRawSettings(tenantId, id);
+    const storageId = await this.storageModuleId(moduleKey);
+    const stored = await this.cache.getRawSettings(tenantId, storageId);
     return resolveSettings(cat, stored);
   }
 
@@ -50,7 +55,7 @@ export class ModuleSettingsService {
     if (!cat) throw new NotFoundException(`No settings for module "${moduleKey}"`);
     const res = validateSettings(cat, patch);
     if (!res.ok) throw new BadRequestException(res.errors.join('; '));
-    const id = await this.moduleIdOrThrow(moduleKey);
+    const id = await this.storageModuleId(moduleKey);
     const existing = await this.prisma.tenantModule.findUnique({
       where: { tenantId_moduleId: { tenantId, moduleId: id } },
       select: { settings: true },

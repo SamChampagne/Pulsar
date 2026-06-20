@@ -49,6 +49,34 @@ describe('Module settings (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // connect is a core sub-feature with NO moduleDefinition row of its own.
+  // Settings must be stored under the 'core' TenantModule row and survive a
+  // round-trip (PUT → GET). This was broken before: update() threw 404 because
+  // moduleIdOrThrow('connect') found no definition row.
+  // ---------------------------------------------------------------------------
+  it('PUT /modules/connect/settings persists csvNumberLocale and GET reflects it', async () => {
+    await request(http)
+      .put('/api/v1/modules/connect/settings')
+      .set(auth())
+      .send({ settings: { csvNumberLocale: 'FR' } })
+      .expect(200);
+
+    const res = await request(http)
+      .get('/api/v1/modules/connect/settings')
+      .set(auth())
+      .expect(200);
+
+    expect((res.body as { values: Record<string, unknown> }).values.csvNumberLocale).toBe('FR');
+
+    // Reset to default so other suites are unaffected
+    await request(http)
+      .put('/api/v1/modules/connect/settings')
+      .set(auth())
+      .send({ settings: { csvNumberLocale: 'EN' } })
+      .expect(200);
+  });
+
+  // ---------------------------------------------------------------------------
   // Behavior test: bidUniqueness=SINGLE replaces the previous non-terminal bid
   // for the same (rfpLane, carrier) instead of stacking them.
   // ---------------------------------------------------------------------------
