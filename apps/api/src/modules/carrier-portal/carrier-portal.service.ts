@@ -216,12 +216,19 @@ export class CarrierPortalService {
     if (!ALLOWED_MIME.includes(file.mimetype as (typeof ALLOWED_MIME)[number])) {
       throw new BadRequestException('Only JPEG/PNG/WebP images or PDF are accepted');
     }
-    await this.documents.upload(carrier.tenantId, {
+    const doc = await this.documents.upload(carrier.tenantId, {
       entityType: 'load-pod',
       entityId: loadId,
       fileName: file.originalname,
       mimeType: file.mimetype,
       body: file.buffer,
+    });
+    await this.audit.log({
+      tenantId: carrier.tenantId,
+      action: AuditAction.CREATE,
+      entityType: 'load-pod',
+      entityId: loadId,
+      after: { documentId: doc.id, via: 'carrier-portal', carrierId: carrier.id },
     });
     return { ok: true };
   }
@@ -241,12 +248,19 @@ export class CarrierPortalService {
     if (!ALLOWED_MIME.includes(file.mimetype as (typeof ALLOWED_MIME)[number])) {
       throw new BadRequestException('Only JPEG/PNG/WebP images or PDF are accepted');
     }
-    await this.documents.upload(carrier.tenantId, {
+    const doc = await this.documents.upload(carrier.tenantId, {
       entityType: 'carrier-invoice-attachment',
       entityId: invoiceId,
       fileName: file.originalname,
       mimeType: file.mimetype,
       body: file.buffer,
+    });
+    await this.audit.log({
+      tenantId: carrier.tenantId,
+      action: AuditAction.CREATE,
+      entityType: 'carrier-invoice-attachment',
+      entityId: invoiceId,
+      after: { documentId: doc.id, via: 'carrier-portal', carrierId: carrier.id },
     });
     return { ok: true };
   }
