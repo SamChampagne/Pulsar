@@ -157,6 +157,20 @@ export const MODULE_UNIVERSES: Record<string, ModuleUniverse> = {
     agent: 'Integration operator agent',
     signal: 'Connectivity',
   },
+  personalize: {
+    key: 'personalize',
+    title: 'Personnalisation',
+    short: 'Look',
+    mission:
+      'Faites du bureau le vôtre : thème, couleur d’accent, fond, taille des tuiles et disposition — avec un aperçu en direct.',
+    accent: '#db2777',
+    soft: '#fce7f3',
+    rgb: '219 39 119',
+    objects: ['Thème', 'Accent', 'Fond', 'Tuiles'],
+    workflows: ['Choisir', 'Aperçu', 'Appliquer', 'Réorganiser'],
+    agent: 'Aucun',
+    signal: 'Bureau sur mesure',
+  },
   settings: {
     key: 'settings',
     title: 'Settings',

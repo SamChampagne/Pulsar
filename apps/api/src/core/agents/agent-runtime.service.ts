@@ -8,8 +8,8 @@ import {
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { getRuntimeProvider } from '@pulsar/shared';
-import { HermesAcpClient, type AcpEvent } from './hermes-acp.client';
+import { getRuntimeProvider, AGENT_SYSTEM_PREAMBLE } from '@pulsar/shared';
+import { HermesAcpClient, type AcpEvent, type AcpModelOption } from './hermes-acp.client';
 import { AgentsService } from './agents.service';
 import { RuntimeConfigService } from './runtime-config.service';
 import { buildRuntimeEnv, renderCliConfig } from './agent-runtime-env';
@@ -77,9 +77,11 @@ export class AgentRuntimeService {
    * vendored venv python with the per-tenant config + provider env. Returns the
    * spawned child and the live HermesAcpClient (post-`initialize`).
    */
-  private async spawnRuntime(
-    tenantId: string,
-  ): Promise<{ child: ChildProcessWithoutNullStreams; client: HermesAcpClient }> {
+  private async spawnRuntime(tenantId: string): Promise<{
+    child: ChildProcessWithoutNullStreams;
+    client: HermesAcpClient;
+    defaultModel: string | null;
+  }> {
     if (!isInstalled()) {
       throw new BadRequestException('Agent runtime not installed — run `pnpm agents:setup`');
     }
@@ -100,6 +102,26 @@ export class AgentRuntimeService {
     } catch {
       throw new ServiceUnavailableException('Agent runtime (Hermes) unavailable');
     }
+    // Capture the child's stderr (logs) and exit so a fast crash is diagnosable
+    // instead of surfacing only the opaque "ACP transport closed" from stdout EOF.
+    const stderrTail: string[] = [];
+    child.stderr.on('data', (c: Buffer | string) => {
+      const s = typeof c === 'string' ? c : c.toString('utf8');
+      stderrTail.push(s);
+      if (stderrTail.length > 50) stderrTail.shift();
+    });
+    let exitInfo: string | null = null;
+    child.on('exit', (code, signal) => {
+      exitInfo = `code=${code} signal=${signal}`;
+      // SIGTERM is our own intentional teardown (closeSession / killAgentSessions /
+      // timeout). Only shout about an UNEXPECTED self-exit (a real crash).
+      if (signal !== 'SIGTERM' && code !== 0) {
+        console.error(
+          `[agent-runtime] hermes child crashed (${exitInfo}). stderr tail:\n` +
+            stderrTail.join('').split(/\r?\n/).filter(Boolean).slice(-25).join('\n'),
+        );
+      }
+    });
     // Any failure after a successful spawn must kill the child to avoid zombie processes.
     try {
       const client = new HermesAcpClient(HermesAcpClient.stdioTransport(child));
@@ -109,16 +131,22 @@ export class AgentRuntimeService {
         () => { child.kill(); },
         'Agent runtime did not start in time',
       );
-      return { child, client };
+      return { child, client, defaultModel: config.defaultModel };
     } catch (e) {
       child.kill();
+      const tail = stderrTail.join('').split(/\r?\n/).filter(Boolean).slice(-25).join('\n');
+      console.error(
+        `[agent-runtime] spawnRuntime failed (${exitInfo ?? 'still running'}): ` +
+          (e instanceof Error ? e.message : String(e)) +
+          (tail ? `\n--- hermes stderr ---\n${tail}` : ' (no stderr captured)'),
+      );
       throw e;
     }
   }
 
   /** Spawns a dedicated Hermes ACP process, opens a session scoped to this agent. Returns the hermes sessionId. */
   async openSession(input: OpenSessionInput): Promise<string> {
-    const { child, client } = await this.spawnRuntime(input.tenantId);
+    const { child, client, defaultModel } = await this.spawnRuntime(input.tenantId);
     try {
       const token = this.agents.mintSessionToken(input.agent.id, 300, input.triggeredByRef);
       const { sessionId } = await client.newSession({
@@ -127,8 +155,13 @@ export class AgentRuntimeService {
           { type: 'http', name: 'pulsar', url: input.pulsarMcpUrl, headers: [{ name: 'X-Agent-Key', value: token }] },
         ],
       });
-      if (input.agent.model) {
-        await client.setModel(sessionId, input.agent.model).catch(() => undefined);
+      // Always pin the model via session/set_model (which correctly splits the
+      // `provider:model` form). Fall back to the tenant's runtime defaultModel when
+      // the agent has none — otherwise Hermes uses the cli-config default raw and
+      // a `provider:model` value 404s at the provider (prefix not stripped).
+      const effectiveModel = input.agent.model || defaultModel;
+      if (effectiveModel) {
+        await client.setModel(sessionId, effectiveModel).catch(() => undefined);
       }
       this.live.set(sessionId, { agentId: input.agent.id, client, child, persona: input.agent.persona, firstTurnDone: false });
       return sessionId;
@@ -140,11 +173,58 @@ export class AgentRuntimeService {
     }
   }
 
+  /** True when a Hermes session is currently live in this process. */
+  isLive(sessionId: string | null | undefined): boolean {
+    return !!sessionId && this.live.has(sessionId);
+  }
+
+  /**
+   * Re-attaches to an existing conversation whose in-memory session died (e.g. a
+   * runtime restart). Spawns a fresh Hermes process, resumes the persisted
+   * session by id (Hermes replays the transcript into the agent's context), and
+   * registers it live. Returns the effective sessionId (usually the same one).
+   * `firstTurnDone` is set true so the persona isn't re-sent — the resumed
+   * transcript already carries it.
+   */
+  async resumeSession(input: OpenSessionInput & { existingSessionId?: string | null }): Promise<string> {
+    // No prior session id to resume → behave like a fresh open.
+    if (!input.existingSessionId) return this.openSession(input);
+
+    const { child, client, defaultModel } = await this.spawnRuntime(input.tenantId);
+    try {
+      const token = this.agents.mintSessionToken(input.agent.id, 300, input.triggeredByRef);
+      const { sessionId } = await client.resumeSession(
+        {
+          cwd: process.cwd(),
+          mcpServers: [
+            { type: 'http', name: 'pulsar', url: input.pulsarMcpUrl, headers: [{ name: 'X-Agent-Key', value: token }] },
+          ],
+        },
+        input.existingSessionId,
+      );
+      const effectiveModel = input.agent.model || defaultModel;
+      if (effectiveModel) {
+        await client.setModel(sessionId, effectiveModel).catch(() => undefined);
+      }
+      this.live.set(sessionId, { agentId: input.agent.id, client, child, persona: input.agent.persona, firstTurnDone: true });
+      return sessionId;
+    } catch (err) {
+      child.kill();
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error('[agent-runtime] resumeSession failed:', detail);
+      throw new ServiceUnavailableException(`Reprise de session Hermes échouée : ${detail}`);
+    }
+  }
+
   /** Streams normalized events for one user turn. Prepends the persona on the first turn. */
   async *sendTurn(sessionId: string, text: string): AsyncGenerator<AcpEvent> {
     const live = this.live.get(sessionId);
     if (!live) throw new ServiceUnavailableException('Conversation session not live');
-    const prompt = !live.firstTurnDone && live.persona ? `${live.persona}\n\n---\n\n${text}` : text;
+    // First turn carries the system grounding (keep the agent on Pulsar tools, off
+    // the filesystem/terminal) + the agent's persona, before the user's text.
+    const prompt = live.firstTurnDone
+      ? text
+      : [AGENT_SYSTEM_PREAMBLE, live.persona, '---', text].filter(Boolean).join('\n\n');
     live.firstTurnDone = true;
     yield* live.client.prompt(sessionId, prompt);
   }
@@ -176,15 +256,22 @@ export class AgentRuntimeService {
    * opens a bare session (no MCP), records the result via `markTested`, and tears
    * the process down. Never throws — failures are returned as `{ ok:false, error }`.
    */
-  async testConnection(tenantId: string): Promise<{ ok: boolean; models?: string[]; error?: string }> {
+  async testConnection(
+    tenantId: string,
+  ): Promise<{ ok: boolean; models?: AcpModelOption[]; error?: string }> {
     let child: ChildProcessWithoutNullStreams | undefined;
     try {
       const spawned = await this.spawnRuntime(tenantId);
       child = spawned.child;
-      const { sessionId } = await spawned.client.newSession({ cwd: process.cwd(), mcpServers: [] });
+      const { sessionId, models } = await spawned.client.newSession({
+        cwd: process.cwd(),
+        mcpServers: [],
+      });
       await spawned.client.closeSession(sessionId).catch(() => undefined);
-      await this.runtimeConfig.markTested(tenantId, true);
-      return { ok: true };
+      // Cache the provider's real model list so the agent create/edit dropdown
+      // only ever offers valid ids (no free-text typos → no 404s).
+      await this.runtimeConfig.markTested(tenantId, true, models);
+      return { ok: true, models };
     } catch (err) {
       await this.runtimeConfig.markTested(tenantId, false).catch(() => undefined);
       return { ok: false, error: err instanceof Error ? err.message : String(err) };

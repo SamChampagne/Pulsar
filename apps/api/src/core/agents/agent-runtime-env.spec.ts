@@ -37,6 +37,17 @@ describe('renderCliConfig', () => {
     expect(yaml).toContain('\\"');   // escaped quote present
     expect(yaml).not.toContain('"we"ird'); // no raw unescaped quote breaking the scalar
   });
+  it('strips a leading "<provider>:" prefix from model.default (would 404 raw)', () => {
+    const yaml = renderCliConfig({
+      tenantId: 't1',
+      provider: 'anthropic',
+      authMode: 'apiKey',
+      defaultModel: 'anthropic:claude-sonnet-4-6',
+      baseUrl: null,
+    });
+    expect(yaml).toContain('default: "claude-sonnet-4-6"');
+    expect(yaml).not.toContain('anthropic:claude-sonnet-4-6');
+  });
   it('strips newlines to prevent YAML injection', () => {
     const yaml = renderCliConfig({
       tenantId: 't1',

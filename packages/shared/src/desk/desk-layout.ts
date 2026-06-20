@@ -25,15 +25,49 @@ export interface DeskGradient {
   id: string;
   label: string;
   css: string;
+  /** True when the gradient is dark enough that desk labels need light text. */
+  dark: boolean;
 }
 
 export const DESK_GRADIENTS: DeskGradient[] = [
-  { id: 'aurora', label: 'Aurore', css: 'linear-gradient(135deg,#1e3a8a 0%,#7e22ce 100%)' },
-  { id: 'sunset', label: 'Coucher', css: 'linear-gradient(135deg,#f1700f 0%,#be123c 100%)' },
-  { id: 'mint', label: 'Menthe', css: 'linear-gradient(135deg,#0f766e 0%,#22c55e 100%)' },
-  { id: 'slate', label: 'Ardoise', css: 'linear-gradient(135deg,#0f172a 0%,#334155 100%)' },
-  { id: 'sand', label: 'Sable', css: 'linear-gradient(135deg,#fdf2e9 0%,#e7d3b3 100%)' },
+  { id: 'aurora', label: 'Aurore', css: 'linear-gradient(135deg,#1e3a8a 0%,#7e22ce 100%)', dark: true },
+  { id: 'sunset', label: 'Coucher', css: 'linear-gradient(135deg,#f1700f 0%,#be123c 100%)', dark: true },
+  { id: 'mint', label: 'Menthe', css: 'linear-gradient(135deg,#0f766e 0%,#22c55e 100%)', dark: true },
+  { id: 'slate', label: 'Ardoise', css: 'linear-gradient(135deg,#0f172a 0%,#334155 100%)', dark: true },
+  { id: 'sand', label: 'Sable', css: 'linear-gradient(135deg,#fdf2e9 0%,#e7d3b3 100%)', dark: false },
 ];
+
+/**
+ * Relative luminance (0 = black, 1 = white) of a #rgb / #rrggbb color, or null
+ * if it can't be parsed. Used to pick legible desk label colors over a custom
+ * background.
+ */
+export function hexLuminance(hex: string): number | null {
+  if (typeof hex !== 'string') return null;
+  let h = hex.trim().replace(/^#/, '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return null;
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  // Perceived luminance (sRGB weights).
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** Whether a desk background needs light (white) labels for legibility. */
+export function deskBackgroundIsDark(
+  bg: DeskBackground | undefined,
+  gradients: DeskGradient[] = DESK_GRADIENTS,
+): boolean {
+  if (!bg) return false; // default light canvas
+  if (bg.type === 'color') {
+    const lum = hexLuminance(bg.value);
+    return lum !== null && lum < 0.5;
+  }
+  if (bg.type === 'gradient') return gradients.find((g) => g.id === bg.value)?.dark ?? true;
+  // Photos are unpredictable — pair light labels with a darkening scrim.
+  return true;
+}
 
 export function defaultPosition(index: number): DeskPosition {
   const col = index % DESK_COLS;
@@ -63,6 +97,18 @@ export interface DeskLayout {
 
 export const FRAMEWORK_FOLDER_ID = 'framework';
 
+/**
+ * The platform dashboard (`/dashboard`) has no business module, so the `dashboard`
+ * domain is excluded from the module tiles. We surface it explicitly as a first-class
+ * link tile so users still get a desk shortcut to the "Tableau de bord".
+ */
+export const DASHBOARD_HREF = '/dashboard';
+export const DASHBOARD_LINK: Extract<DeskItem, { type: 'link' }> = {
+  type: 'link',
+  href: DASHBOARD_HREF,
+  label: 'Tableau de bord',
+};
+
 export const FRAMEWORK_LINKS: DeskFolderChild[] = [
   { type: 'link', href: '/settings/appearance', label: 'Réglages' },
   { type: 'link', href: '/settings/modules', label: 'Modules' },
@@ -72,6 +118,7 @@ export const FRAMEWORK_LINKS: DeskFolderChild[] = [
 
 export function defaultDeskLayout(domains: { key: string }[]): DeskLayout {
   const base: DeskItem[] = [
+    { ...DASHBOARD_LINK },
     ...domains
       .filter((d) => d.key !== 'dashboard')
       .map((d): DeskItem => ({ type: 'module', moduleKey: d.key })),
@@ -163,22 +210,36 @@ export function reconcileDeskLayout(saved: unknown, domains: { key: string }[]):
   const savedMode = (s && typeof s === 'object') ? (s as { mode?: unknown }).mode : undefined;
   const mode: DeskMode = DESK_MODES.includes(savedMode as DeskMode) ? (savedMode as DeskMode) : 'auto';
 
-  // Re-inject the Framework folder if the saved layout lost it (symmetric to re-adding modules).
-  const hasFramework = positioned.some(
+  // Re-inject the Dashboard tile and the Framework folder if the saved layout lost
+  // them (symmetric to re-adding newly-visible modules). Appended at the end so we
+  // never overlap a user-positioned tile in 'free' mode.
+  let finalItems: DeskItem[] = positioned;
+
+  const hasDashboard = finalItems.some(
+    (it) => it.type === 'link' && it.href === DASHBOARD_HREF,
+  );
+  if (!hasDashboard) {
+    finalItems = [
+      ...finalItems,
+      { ...DASHBOARD_LINK, pos: defaultPosition(finalItems.length) },
+    ];
+  }
+
+  const hasFramework = finalItems.some(
     (it) => it.type === 'folder' && it.id === FRAMEWORK_FOLDER_ID,
   );
-  const finalItems = hasFramework
-    ? positioned
-    : [
-        ...positioned,
-        {
-          type: 'folder' as const,
-          id: FRAMEWORK_FOLDER_ID,
-          name: 'Framework',
-          items: [...FRAMEWORK_LINKS],
-          pos: defaultPosition(positioned.length),
-        },
-      ];
+  if (!hasFramework) {
+    finalItems = [
+      ...finalItems,
+      {
+        type: 'folder' as const,
+        id: FRAMEWORK_FOLDER_ID,
+        name: 'Framework',
+        items: [...FRAMEWORK_LINKS],
+        pos: defaultPosition(finalItems.length),
+      },
+    ];
+  }
 
   const tileSize: DeskTileSize | undefined =
     s.tileSize === 'sm' || s.tileSize === 'md' || s.tileSize === 'lg' ? s.tileSize : undefined;

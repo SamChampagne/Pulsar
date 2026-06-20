@@ -48,6 +48,12 @@ export interface AcpNewSession {
   mcpServers?: AcpMcpServer[];
 }
 
+/** A selectable model: `value` is the id `session/set_model` accepts, `label` is the display name. */
+export interface AcpModelOption {
+  value: string;
+  label: string;
+}
+
 export type AcpEvent =
   | { type: 'text'; text: string }
   | { type: 'tool_call'; name: string; args: unknown }
@@ -265,15 +271,41 @@ export class HermesAcpClient {
     // lives in the MCP layer (spike §6/§7).
   }
 
-  async newSession(cfg: AcpNewSession): Promise<{ sessionId: string }> {
+  async newSession(
+    cfg: AcpNewSession,
+  ): Promise<{ sessionId: string; models: AcpModelOption[] }> {
     const result = (await this.call(METHODS.sessionNew, {
       cwd: cfg.cwd,
       mcpServers: cfg.mcpServers ?? [],
-    })) as { sessionId: string };
+    })) as {
+      sessionId: string;
+      models?: { availableModels?: { modelId?: unknown; name?: unknown }[] };
+    };
     if (!result || typeof result.sessionId !== 'string') {
       throw new Error('session/new did not return a sessionId');
     }
-    return { sessionId: result.sessionId };
+    return { sessionId: result.sessionId, models: normalizeModels(result.models?.availableModels) };
+  }
+
+  /**
+   * Re-attach to a previously-created session by id (`session/resume`). Hermes
+   * loads it from its persistent store (replaying history into the agent's
+   * context) or creates a fresh one if the id is unknown — either way returning
+   * the effective sessionId. Used to keep a conversation alive across runtime
+   * restarts (the in-memory live session is gone, but the transcript persists).
+   */
+  async resumeSession(
+    cfg: AcpNewSession,
+    sessionId: string,
+  ): Promise<{ sessionId: string }> {
+    const result = (await this.call('session/resume', {
+      cwd: cfg.cwd,
+      sessionId,
+      mcpServers: cfg.mcpServers ?? [],
+    })) as { sessionId?: string };
+    // Per the ACP contract resume echoes the (possibly new) sessionId; fall back
+    // to the requested one if the agent omits it.
+    return { sessionId: typeof result?.sessionId === 'string' ? result.sessionId : sessionId };
   }
 
   async setModel(sessionId: string, modelId: string): Promise<void> {
@@ -381,24 +413,48 @@ function pickAllowOption(
 }
 
 /**
+ * Normalize `session/new`'s `models.availableModels` into clean {value,label}
+ * options. Drops the synthetic "current" entry Hermes re-qualifies with a doubled
+ * provider prefix (its `name` itself contains a ":"), and dedupes by value so the
+ * UI never offers a model id that would 404.
+ */
+function normalizeModels(raw: { modelId?: unknown; name?: unknown }[] | undefined): AcpModelOption[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AcpModelOption[] = [];
+  const seen = new Set<string>();
+  for (const m of raw) {
+    const value = typeof m?.modelId === 'string' ? m.modelId : '';
+    const label = typeof m?.name === 'string' && m.name ? m.name : value;
+    if (!value || label.includes(':') || seen.has(value)) continue;
+    seen.add(value);
+    out.push({ value, label });
+  }
+  return out;
+}
+
+/**
  * Map a single `session/update` notification's params to an AcpEvent (or null
  * to drop it). Discriminated by the `sessionUpdate` tag (spike §5).
+ *
+ * ACP wire shape is `SessionNotification = { sessionId, update: SessionUpdate }`:
+ * the `sessionUpdate` discriminator and its payload (`content`, `title`,
+ * `rawInput`, …) live UNDER `update`, not at the top level. We unwrap it here
+ * (tolerating a flat shape too, for older sidecars / the unit fake).
  */
 function mapUpdate(params: any): AcpEvent | null {
-  const tag = params?.sessionUpdate;
+  const u = params?.update ?? params;
+  const tag = u?.sessionUpdate;
   switch (tag) {
     case 'agent_message_chunk': {
-      const text = params?.content?.text;
+      const text = u?.content?.text;
       if (typeof text === 'string' && text.length) return { type: 'text', text };
       return null;
     }
     case 'tool_call': {
       // Tool call started. `title` is the human label; `rawInput` is the args.
       const name: string =
-        typeof params?.title === 'string' && params.title
-          ? params.title
-          : (params?.kind ?? 'tool_call');
-      return { type: 'tool_call', name, args: params?.rawInput };
+        typeof u?.title === 'string' && u.title ? u.title : (u?.kind ?? 'tool_call');
+      return { type: 'tool_call', name, args: u?.rawInput };
     }
     // tool_call_update (completed/failed), plan, thought, user echo: not
     // surfaced as discrete events at this layer.

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import * as path from 'node:path';
-import type { AgentRuntimeConfig } from '@pulsar/database';
+import type { AgentRuntimeConfig, Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { repoRoot } from './runtime-install';
@@ -11,6 +11,11 @@ export interface UpsertRuntimeInput {
   apiKey?: string | null;
   defaultModel?: string | null;
   baseUrl?: string | null;
+}
+
+export interface RuntimeModelOption {
+  value: string;
+  label: string;
 }
 
 /** Public projection of the runtime config — NEVER includes the encrypted key. */
@@ -24,6 +29,7 @@ export interface RuntimeConfigProjection {
   connectedAt?: Date | null;
   lastTestAt?: Date | null;
   lastTestOk?: boolean | null;
+  availableModels?: RuntimeModelOption[];
 }
 
 /**
@@ -55,6 +61,9 @@ export class RuntimeConfigService {
       connectedAt: config.connectedAt,
       lastTestAt: config.lastTestAt,
       lastTestOk: config.lastTestOk,
+      availableModels: Array.isArray(config.availableModels)
+        ? (config.availableModels as unknown as RuntimeModelOption[])
+        : [],
     };
   }
 
@@ -106,10 +115,21 @@ export class RuntimeConfigService {
     });
   }
 
-  async markTested(tenantId: string, ok: boolean): Promise<void> {
+  async markTested(
+    tenantId: string,
+    ok: boolean,
+    models?: RuntimeModelOption[],
+  ): Promise<void> {
     await this.prisma.agentRuntimeConfig.update({
       where: { tenantId },
-      data: { lastTestAt: new Date(), lastTestOk: ok },
+      data: {
+        lastTestAt: new Date(),
+        lastTestOk: ok,
+        // Only refresh the model cache on a successful probe with a non-empty list.
+        ...(ok && models && models.length > 0
+          ? { availableModels: models as unknown as Prisma.InputJsonValue }
+          : {}),
+      },
     });
   }
 

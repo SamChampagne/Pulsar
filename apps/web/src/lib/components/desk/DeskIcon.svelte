@@ -1,12 +1,12 @@
 <script lang="ts">
   import type { ComponentType } from 'svelte';
   let {
-    label, icon, accent = '#6f7480', editing = false, size = 96,
+    label, icon, accent = '#6f7480', editing = false, size = 96, onDark = false,
     onactivate = undefined as (() => void) | undefined,
     onremove = undefined as (() => void) | undefined,
     oncontext = undefined as ((e: MouseEvent) => void) | undefined,
   } = $props<{
-    label: string; icon: ComponentType; accent?: string; editing?: boolean; size?: number;
+    label: string; icon: ComponentType; accent?: string; editing?: boolean; size?: number; onDark?: boolean;
     onactivate?: () => void; onremove?: () => void; oncontext?: (e: MouseEvent) => void;
   }>();
   const Icon = $derived(icon);
@@ -33,5 +33,7 @@
     style={`width:${box}px;height:${box}px;background:${accent}`}>
     <Icon style={`width:${glyph}px;height:${glyph}px`} strokeWidth={2.15} />
   </span>
-  <span class="mt-3 line-clamp-2 text-sm font-semibold leading-tight text-ink group-hover:text-accent">{label}</span>
+  <span
+    class={`mt-3 line-clamp-2 text-sm font-semibold leading-tight ${onDark ? 'text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.55)]' : 'text-ink group-hover:text-accent'}`}
+  >{label}</span>
 </button>

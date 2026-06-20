@@ -13,6 +13,7 @@
     Field,
     Input,
     PageHeader,
+    Select,
     Skeleton,
     Textarea,
   } from '$lib/components/ui';
@@ -186,6 +187,10 @@
   let chatConversationId = $state<string | null>(null);
   let chatInitialMessages = $state<ConversationDetail['messages']>([]);
   let loadingConversation = $state(false);
+  // Auto-restore bookkeeping: the agent id we already restored a conversation for,
+  // and whether the user explicitly started a fresh one (suppresses auto-restore).
+  let autoRestoredFor = $state<string | null>(null);
+  let chatReset = $state(false);
 
   // Editable form fields — synced from agent on load.
   let fName = $state('');
@@ -198,6 +203,18 @@
   let fPermissions = $state<string[]>([]);
   let fMaxAmount = $state('');
   let fMaxRate = $state('');
+
+  // Real model list for the connected provider (cached at last connection test).
+  interface RuntimeModelOption { value: string; label: string }
+  let models = $state<RuntimeModelOption[]>([]);
+  async function loadModels() {
+    try {
+      const rt = await api<{ availableModels?: RuntimeModelOption[] }>('/agent-runtime');
+      models = rt.availableModels ?? [];
+    } catch {
+      models = [];
+    }
+  }
 
   function syncForm(a: AgentDetail) {
     fName = a.name;
@@ -233,6 +250,14 @@
     try {
       const data = await api<AgentActivity>(`/agents/${id}/activity`);
       activity = data;
+      // Auto-restore the most recent conversation once per agent, so leaving the
+      // page (e.g. to Agent actions) and coming back keeps the chat instead of
+      // dropping the user on a blank conversation. Skipped if the user already
+      // picked/started one, or explicitly hit "Nouvelle conversation".
+      if (autoRestoredFor !== id && chatConversationId === null && !chatReset && data.conversations.length > 0) {
+        autoRestoredFor = id;
+        void openConversation(data.conversations[0].id, false);
+      }
     } catch (e) {
       activityError = e instanceof ApiError ? e.message : 'Impossible de charger l\'activité';
     }
@@ -319,18 +344,20 @@
     }
   }
 
-  async function openConversation(convId: string) {
+  async function openConversation(convId: string, scroll = true) {
     loadingConversation = true;
     try {
       const data = await api<ConversationDetail>(`/agent-conversations/${convId}`);
       chatConversationId = data.id;
       chatInitialMessages = data.messages;
-      // Scroll to chat section
-      queueMicrotask(() => {
-        document.getElementById('chat')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
+      if (scroll) {
+        // Scroll to chat section
+        queueMicrotask(() => {
+          document.getElementById('chat')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Impossible de charger la conversation');
+      if (scroll) toast.error(e instanceof ApiError ? e.message : 'Impossible de charger la conversation');
     } finally {
       loadingConversation = false;
     }
@@ -395,6 +422,7 @@
     void loadTrust(agentId);
     void loadKpis(agentId);
     void loadTimeline(agentId);
+    void loadModels();
   });
 
   function actionStatusTone(status: string): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
@@ -494,7 +522,18 @@
               <Input bind:value={fRole} placeholder="ex. Répartiteur" />
             </Field>
             <Field label="Modèle">
-              <Input bind:value={fModel} placeholder="ex. anthropic:claude-sonnet-4-6" />
+              <Select bind:value={fModel}>
+                <option value="">Défaut du tenant</option>
+                {#if fModel && !models.some((m) => m.value === fModel)}
+                  <option value={fModel}>{fModel} (actuel)</option>
+                {/if}
+                {#each models as m (m.value)}
+                  <option value={m.value}>{m.label}</option>
+                {/each}
+              </Select>
+              {#if models.length === 0}
+                <p class="mt-1 text-xs text-ink-faint">Teste la connexion (Connexion du modèle) pour lister les modèles.</p>
+              {/if}
             </Field>
           </div>
 
@@ -907,7 +946,7 @@
             <span class="text-xs text-ink-muted">Conversation chargée depuis l'historique</span>
             <button
               class="text-xs text-accent hover:underline"
-              onclick={() => { chatConversationId = null; chatInitialMessages = []; }}
+              onclick={() => { chatConversationId = null; chatInitialMessages = []; chatReset = true; }}
             >
               Nouvelle conversation
             </button>

@@ -2,10 +2,29 @@
   import { AGENT_ROLE_PRESETS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
-  import { Button, Field, Input, Modal, Textarea } from '$lib/components/ui';
+  import { Button, Field, Input, Modal, Textarea, Select } from '$lib/components/ui';
 
   type AutonomyLevel = 'PROPOSE' | 'ACT_LOW' | 'AUTONOMOUS';
   interface AgentCreated { id: string; key: string; name: string }
+  interface RuntimeModelOption { value: string; label: string }
+
+  // Real model list for the connected provider (cached at last connection test).
+  // Empty until a successful test → the dropdown still offers the safe "tenant default".
+  let models = $state<RuntimeModelOption[]>([]);
+  let modelsLoaded = $state(false);
+  async function loadModels() {
+    if (modelsLoaded) return;
+    modelsLoaded = true;
+    try {
+      const rt = await api<{ availableModels?: RuntimeModelOption[] }>('/agent-runtime');
+      models = rt.availableModels ?? [];
+    } catch {
+      models = [];
+    }
+  }
+  $effect(() => {
+    if (open) void loadModels();
+  });
 
   let { open = $bindable(false), onCreated }: { open: boolean; onCreated?: (id?: string) => void } = $props();
 
@@ -174,7 +193,17 @@
         <details bind:open={showAdvanced}>
           <summary class="cursor-pointer text-xs font-semibold text-ink-muted">Options avancées</summary>
           <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Modèle (optionnel)"><Input bind:value={model} placeholder="par défaut du tenant" /></Field>
+            <Field label="Modèle">
+              <Select bind:value={model}>
+                <option value="">Défaut du tenant</option>
+                {#each models as m (m.value)}
+                  <option value={m.value}>{m.label}</option>
+                {/each}
+              </Select>
+              {#if models.length === 0}
+                <p class="mt-1 text-xs text-ink-faint">Teste la connexion (Connexion du modèle) pour lister les modèles disponibles.</p>
+              {/if}
+            </Field>
             <Field label="Plafond $ / action"><Input type="number" bind:value={maxAmountPerAction} placeholder="aucun" /></Field>
           </div>
         </details>

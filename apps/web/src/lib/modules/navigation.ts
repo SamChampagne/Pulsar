@@ -22,6 +22,7 @@ import {
   BarChart3,
   ClipboardList,
   FileText,
+  Palette,
 } from 'lucide-svelte';
 import type { ComponentType } from 'svelte';
 
@@ -110,7 +111,6 @@ export function navCatalogue(): NavDomain[] {
         '/customers',
         '/carriers',
         '/locations',
-        '/analytics',
       ],
       sections: [
         {
@@ -145,7 +145,6 @@ export function navCatalogue(): NavDomain[] {
             { href: '/locations', label: 'Lieux' },
           ],
         },
-        { label: 'Analyse', links: [{ href: '/analytics', label: 'Analytics' }] },
       ],
     },
 
@@ -299,17 +298,18 @@ export function navCatalogue(): NavDomain[] {
       key: 'analytics',
       label: 'Analytics',
       icon: BarChart3,
-      home: '/analytics/control-tower',
+      home: '/analytics',
       module: MODULE_KEYS.ANALYTICS,
       anyPerms: ['analytics.read'],
       prefixes: ['/analytics'],
       sections: [
         {
           links: [
+            { href: '/analytics', label: "Vue d'ensemble", perm: 'analytics.read' },
             { href: '/analytics/control-tower', label: 'Control Tower', perm: 'analytics.read' },
             { href: '/analytics/scorecards', label: 'Scorecards', perm: 'analytics.read' },
             {
-              href: '/analytics',
+              href: '/analytics/carriers',
               label: 'Scorecard transporteurs',
               perm: 'transportation.analytics.read',
             },
@@ -371,6 +371,21 @@ export function navCatalogue(): NavDomain[] {
             { href: '/settings/api-keys', label: 'Clés API' },
             { href: '/agents', label: 'MCP / agents', perm: PERMISSIONS.CORE.AGENTS_READ },
           ],
+        },
+      ],
+    },
+
+    // ── Personnalisation (bureau) ──────────────────────────────────────────
+    // Core domain, always visible — own page to theme/colour/background the desk.
+    {
+      key: 'personalize',
+      label: 'Personnaliser',
+      icon: Palette,
+      home: '/personalize',
+      prefixes: ['/personalize'],
+      sections: [
+        {
+          links: [{ href: '/personalize', label: 'Apparence du bureau' }],
         },
       ],
     },
