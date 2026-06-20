@@ -34,8 +34,10 @@ export const MODULE_SETTINGS_CATALOG: ModuleSettingsCatalog[] = [
           { value: 'BLOCK', label: 'Bloquer (refuser)' },
         ],
       },
-      { key: 'modeThresholdParcelMaxKg', label: 'Seuil PARCEL max (kg)', type: 'number', default: 30, min: 0, max: 100000 },
-      { key: 'modeThresholdLtlMaxKg', label: 'Seuil LTL max (kg)', type: 'number', default: 4000, min: 0, max: 100000 },
+      // NOTE: mode-threshold knobs (modeThresholdParcelMaxKg/LtlMaxKg) were intentionally
+      // NOT shipped here. `suggestMode` accepts thresholds, but its only callers are
+      // frontend pages using the hardcoded defaults — there is no API consumer yet, so a
+      // tenant setting would have no runtime effect. Re-add when a tenant-aware consumer exists.
       { key: 'autoTenderOnPlan', label: 'Auto-tender à la planification', type: 'boolean', default: true },
     ],
   },

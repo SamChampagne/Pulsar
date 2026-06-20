@@ -40,9 +40,11 @@ describe('resolveSettings', () => {
     const r = resolveSettings(proc, { evil: 'x' } as Record<string, unknown>);
     expect((r as Record<string, unknown>).evil).toBeUndefined();
   });
-  it('clamps/ignores out-of-range numbers', () => {
-    const tms = catalogFor('transportation')!;
-    expect(resolveSettings(tms, { modeThresholdParcelMaxKg: -5 }).modeThresholdParcelMaxKg).toBe(30);
+  it('ignores out-of-range numbers and falls back to default', () => {
+    const fleet = catalogFor('fleet')!;
+    expect(
+      resolveSettings(fleet, { complianceExpiringWindowDays: -5 }).complianceExpiringWindowDays,
+    ).toBe(30);
   });
 });
 
@@ -59,7 +61,7 @@ describe('validateSettings', () => {
     expect(validateSettings(proc, { bidUniqueness: 'NOPE' }).ok).toBe(false);
   });
   it('rejects a number below min', () => {
-    const tms = catalogFor('transportation')!;
-    expect(validateSettings(tms, { modeThresholdParcelMaxKg: -1 }).ok).toBe(false);
+    const fleet = catalogFor('fleet')!;
+    expect(validateSettings(fleet, { complianceExpiringWindowDays: 0 }).ok).toBe(false);
   });
 });
