@@ -201,13 +201,63 @@
     }
     return [...hrefs];
   });
+  // When set, the next pick from the AddLinkPicker drops INTO this folder instead
+  // of the top level.
+  let addTargetFolderId = $state<string | null>(null);
+  function openAddPicker(folderId: string | null = null) {
+    addTargetFolderId = folderId;
+    addLinkOpen = true;
+  }
+
   function addToDesk(pick: DeskAddPick) {
+    if (addTargetFolderId) {
+      const folderId = addTargetFolderId;
+      addTargetFolderId = null;
+      const child: DeskFolderChild =
+        pick.kind === 'module'
+          ? { type: 'module', moduleKey: pick.moduleKey }
+          : { type: 'link', href: pick.href, label: pick.label };
+      layout = {
+        ...layout,
+        items: layout.items.map((it: DeskItem) =>
+          it.type === 'folder' && it.id === folderId ? { ...it, items: [...it.items, child] } : it,
+        ),
+      };
+      commit();
+      return;
+    }
     const pos = defaultPosition(layout.items.length);
     const item: DeskItem =
       pick.kind === 'module'
         ? { type: 'module', moduleKey: pick.moduleKey, pos }
         : { type: 'link', href: pick.href, label: pick.label, pos };
     layout = { ...layout, items: [...layout.items, item] };
+    commit();
+  }
+
+  // Pull a child out of a folder and drop it back onto the desk (top level).
+  function removeFromFolder(folderId: string, index: number) {
+    const folder = layout.items.find(
+      (it: DeskItem): it is Extract<DeskItem, { type: 'folder' }> =>
+        it.type === 'folder' && it.id === folderId,
+    );
+    if (!folder) return;
+    const child = folder.items[index];
+    if (!child) return;
+    const remaining = folder.items.filter((_c: DeskFolderChild, i: number) => i !== index);
+    const restored: DeskItem =
+      child.type === 'module'
+        ? { type: 'module', moduleKey: child.moduleKey, pos: defaultPosition(layout.items.length) }
+        : { type: 'link', href: child.href, label: child.label, icon: child.icon, pos: defaultPosition(layout.items.length) };
+    layout = {
+      ...layout,
+      items: [
+        ...layout.items.map((it: DeskItem) =>
+          it.type === 'folder' && it.id === folderId ? { ...it, items: remaining } : it,
+        ),
+        restored,
+      ],
+    };
     commit();
   }
 
@@ -251,7 +301,7 @@
     menuX = e.clientX; menuY = e.clientY;
     const common = [
       { label: 'Nouveau dossier', run: () => makeEmptyFolder() },
-      { label: 'Ajouter au bureau', run: () => (addLinkOpen = true) },
+      { label: 'Ajouter au bureau', run: () => openAddPicker() },
     ];
     if (item.type === 'module') menuActions = [...common, { label: 'Retirer', run: () => removeItem(item) }];
     else menuActions = [...common, { label: 'Renommer', run: () => startRename(item) }, { label: 'Retirer', run: () => removeItem(item) }];
@@ -264,7 +314,7 @@
     menuX = e.clientX; menuY = e.clientY;
     menuActions = [
       { label: 'Nouveau dossier', run: () => makeEmptyFolder() },
-      { label: 'Ajouter au bureau', run: () => (addLinkOpen = true) },
+      { label: 'Ajouter au bureau', run: () => openAddPicker() },
     ];
     menuOpen = true;
   }
@@ -312,7 +362,7 @@
     {#if renamingItem === item}<input class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none" bind:value={renameValue} onblur={commitRename} onkeydown={onRenameKeydown} use:focusOnMount />{/if}
   {:else if item.type === 'folder'}
     <DeskFolderTile name={renamingItem === item ? renameValue : item.name} {editing} size={tilePx} onDark={bgIsDark}
-      onopen={() => { if (!suppressClick && !editing) openFolderById(item.id); }}
+      onopen={() => { if (!suppressClick) openFolderById(item.id); }}
       onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
     {#if renamingItem === item}<input class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none" bind:value={renameValue} onblur={commitRename} onkeydown={onRenameKeydown} use:focusOnMount />{/if}
   {/if}
@@ -333,7 +383,7 @@
       <button
         type="button"
         class="inline-flex items-center gap-1 rounded-full bg-accent px-3 py-1 text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
-        onclick={() => (addLinkOpen = true)}
+        onclick={() => openAddPicker()}
       >
         <Plus class="size-4" /> Ajouter
       </button>
@@ -383,10 +433,8 @@
   </div>
 </div>
 
-<AddLinkPicker bind:open={addLinkOpen} {domains} {presentModuleKeys} {presentLinkHrefs} onpick={addToDesk} />
-<DeskContextMenu bind:open={menuOpen} x={menuX} y={menuY} actions={menuActions} />
-
 {#if openFolder}
+  {@const folderId = openFolder.id}
   <FolderOverlay bind:open={folderIsOpen} name={openFolder.name} onclose={closeFolder}>
     {#each openFolder.items as child, ci (child.type === 'module' ? `m:${child.moduleKey}#${ci}` : `l:${child.href}#${ci}`)}
       {#if child.type === 'module'}
@@ -394,12 +442,36 @@
         {#if domain}
           {@const universe = MODULE_UNIVERSES[domain.key] ?? MODULE_UNIVERSES['dashboard']}
           <DeskIcon label={domain.label} icon={domain.icon} accent={universe.accent}
-            onactivate={() => { closeFolder(); goto(domain.home); }} />
+            editing={editing}
+            onactivate={() => { if (!editing) { closeFolder(); goto(domain.home); } }}
+            onremove={editing ? () => removeFromFolder(folderId, ci) : undefined} />
         {/if}
       {:else if child.type === 'link'}
         <DeskIcon label={child.label} icon={linkIcon(child.href)} accent={linkAccent(child.href)}
-          onactivate={() => { closeFolder(); goto(child.href); }} />
+          editing={editing}
+          onactivate={() => { if (!editing) { closeFolder(); goto(child.href); } }}
+          onremove={editing ? () => removeFromFolder(folderId, ci) : undefined} />
       {/if}
+    {:else}
+      <p class="col-span-full py-6 text-center text-sm text-ink-faint">
+        {editing ? 'Dossier vide — utilisez « Ajouter à ce dossier ».' : 'Dossier vide.'}
+      </p>
     {/each}
+    {#snippet footer()}
+      {#if editing}
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span class="text-xs text-ink-muted">× pour sortir un élément · ou glissez une tuile sur le dossier.</span>
+          <button type="button"
+            class="inline-flex items-center gap-1 rounded-full bg-accent px-3 py-1 text-sm font-semibold text-white transition hover:opacity-90"
+            onclick={() => openAddPicker(folderId)}>
+            <Plus class="size-4" /> Ajouter à ce dossier
+          </button>
+        </div>
+      {/if}
+    {/snippet}
   </FolderOverlay>
 {/if}
+
+<!-- Rendered last so the picker/menu stack above the folder overlay. -->
+<AddLinkPicker bind:open={addLinkOpen} {domains} {presentModuleKeys} {presentLinkHrefs} onpick={addToDesk} />
+<DeskContextMenu bind:open={menuOpen} x={menuX} y={menuY} actions={menuActions} />
