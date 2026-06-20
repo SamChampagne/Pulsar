@@ -17,6 +17,7 @@ interface CacheEntry {
 @Injectable()
 export class TenantModulesCacheService {
   private readonly cache = new Map<string, CacheEntry>();
+  private readonly settingsCache = new Map<string, { settings: Record<string, unknown>; expiresAt: number }>();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -33,7 +34,23 @@ export class TenantModulesCacheService {
     return keys;
   }
 
+  async getRawSettings(tenantId: string, moduleId: string): Promise<Record<string, unknown>> {
+    const ck = `${tenantId}:${moduleId}`;
+    const hit = this.settingsCache.get(ck);
+    if (hit && hit.expiresAt > Date.now()) return hit.settings;
+    const row = await this.prisma.tenantModule.findUnique({
+      where: { tenantId_moduleId: { tenantId, moduleId } },
+      select: { settings: true },
+    });
+    const settings = (row?.settings ?? {}) as Record<string, unknown>;
+    this.settingsCache.set(ck, { settings, expiresAt: Date.now() + TTL_MS });
+    return settings;
+  }
+
   invalidate(tenantId: string): void {
     this.cache.delete(tenantId);
+    for (const k of this.settingsCache.keys()) {
+      if (k.startsWith(`${tenantId}:`)) this.settingsCache.delete(k);
+    }
   }
 }
