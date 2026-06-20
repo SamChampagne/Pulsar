@@ -84,26 +84,51 @@ export class ProcurementService {
     const rfp = await this.prisma.rfp.findFirst({
       where: { id, tenantId },
       include: {
-        lanes: {
-          include: {
-            bids: true,
-            award: true,
-          },
-        },
+        lanes: { include: { award: true } },
         invites: {
-          select: {
-            id: true,
-            carrierId: true,
-            status: true,
-            sentAt: true,
-            respondedAt: true,
-          },
+          select: { id: true, carrierId: true, status: true, sentAt: true, respondedAt: true },
         },
         bids: true,
       },
     });
     if (!rfp) throw new NotFoundException('RFP not found');
-    return rfp;
+
+    // Bid/Award/RfpInvite carry only carrierId (no Prisma relation), and RfpLane
+    // only laneId — but the web detail page consumes nested `carrier`/`lane`
+    // objects on a flat shape. Enrich by batch-loading the referenced rows
+    // (tenant-scoped) and mapping client-side rather than adding schema relations.
+    const awards = rfp.lanes.flatMap((l) => (l.award ? [l.award] : []));
+    const carrierIds = [
+      ...new Set([
+        ...rfp.bids.map((b) => b.carrierId),
+        ...rfp.invites.map((i) => i.carrierId),
+        ...awards.map((a) => a.carrierId),
+      ]),
+    ];
+    const laneIds = [...new Set(rfp.lanes.map((l) => l.laneId))];
+    const [carriers, lanes] = await Promise.all([
+      this.prisma.carrier.findMany({
+        where: { tenantId, id: { in: carrierIds } },
+        select: { id: true, code: true, name: true },
+      }),
+      this.prisma.lane.findMany({
+        where: { tenantId, id: { in: laneIds } },
+        include: {
+          originLocation: { select: { id: true, code: true, name: true, city: true } },
+          destinationLocation: { select: { id: true, code: true, name: true, city: true } },
+        },
+      }),
+    ]);
+    const carrierMap = new Map(carriers.map((c) => [c.id, c]));
+    const laneMap = new Map(lanes.map((l) => [l.id, l]));
+
+    return {
+      ...rfp,
+      rfpLanes: rfp.lanes.map((l) => ({ ...l, lane: laneMap.get(l.laneId) ?? null })),
+      invites: rfp.invites.map((i) => ({ ...i, carrier: carrierMap.get(i.carrierId) ?? null })),
+      bids: rfp.bids.map((b) => ({ ...b, carrier: carrierMap.get(b.carrierId) ?? null })),
+      awards: awards.map((a) => ({ ...a, carrier: carrierMap.get(a.carrierId) ?? null })),
+    };
   }
 
   async createRfp(tenantId: string, userId: string, dto: CreateRfpDto) {
