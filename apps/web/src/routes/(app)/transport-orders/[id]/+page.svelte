@@ -7,6 +7,7 @@
   } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
+  import { fmtCustomValue } from '$lib/format';
   import { toast } from '$lib/stores/toast';
 
   interface CustomFieldDef {
@@ -66,14 +67,6 @@
   let shipmentFieldDefs = $state<CustomFieldDef[]>([]);
   let shipmentCustomData = $state<Record<string, unknown>>({});
   let orderFieldDefs = $state<CustomFieldDef[]>([]);
-
-  function fmtCustomValue(value: unknown, type?: string): string {
-    if (value === null || value === undefined) return '—';
-    if (type === 'BOOLEAN') return value ? 'Oui' : 'Non';
-    if (type === 'DATE' && typeof value === 'string')
-      return new Date(value).toLocaleDateString();
-    return String(value);
-  }
 
   async function submitPlan(event: SubmitEvent) {
     event.preventDefault();

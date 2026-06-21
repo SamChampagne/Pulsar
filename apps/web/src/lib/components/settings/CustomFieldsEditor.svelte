@@ -60,7 +60,10 @@
         type: d.type,
         required: d.required,
         showInList: d.showInList,
-        options: d.options ? d.options.map((o) => o.value).join(', ') : '',
+        // Encode as "value:label" when they differ, so a round-trip preserves labels.
+        options: d.options
+          ? d.options.map((o) => (o.label !== o.value ? `${o.value}:${o.label}` : o.value)).join(', ')
+          : '',
       }));
       if (rows.length === 0) rows = [emptyRow()];
     } catch (e) {
@@ -89,7 +92,14 @@
                   .split(',')
                   .map((s) => s.trim())
                   .filter(Boolean)
-                  .map((v) => ({ value: v, label: v }))
+                  .map((token) => {
+                    // Token format: "value:label" (when label≠value) or plain "value".
+                    const colonIdx = token.indexOf(':');
+                    if (colonIdx > 0) {
+                      return { value: token.slice(0, colonIdx), label: token.slice(colonIdx + 1) };
+                    }
+                    return { value: token, label: token };
+                  })
               : undefined,
         }));
       await api('/transportation/custom-fields', {
@@ -175,8 +185,8 @@
         </div>
         {#if row.type === 'SELECT'}
           <div class="ml-2 mb-2">
-            <Field label="Options (séparées par des virgules)">
-              <Input bind:value={row.options} placeholder="ex: URGENT, NORMAL, LOW" />
+            <Field label="Options (séparées par des virgules ; valeur:libellé si différents)">
+              <Input bind:value={row.options} placeholder="ex: URGENT:Urgent, NORMAL:Normal, LOW" />
             </Field>
           </div>
         {/if}

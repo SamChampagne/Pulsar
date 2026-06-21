@@ -22,6 +22,7 @@
   } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
+  import { fmtCustomValue } from '$lib/format';
 
   interface OrderRow {
     id: string;
@@ -37,15 +38,6 @@
     originLocation: { name: string; city: string };
     destinationLocation: { name: string; city: string };
     customData?: Record<string, unknown>;
-  }
-
-  // Custom field helpers
-  function fmtCustomValue(value: unknown, type?: string): string {
-    if (value === null || value === undefined) return '—';
-    if (type === 'BOOLEAN') return value ? 'Oui' : 'Non';
-    if (type === 'DATE' && typeof value === 'string')
-      return new Date(value).toLocaleDateString();
-    return String(value);
   }
 
   interface Option {

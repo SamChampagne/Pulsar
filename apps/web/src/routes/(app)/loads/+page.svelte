@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { fmtCustomValue } from '$lib/format';
   import { toast } from '$lib/stores/toast';
 
   interface CustomFieldDef {
@@ -13,13 +14,6 @@
     showInList?: boolean;
   }
 
-  function fmtCustomValue(value: unknown, type?: string): string {
-    if (value === null || value === undefined) return '—';
-    if (type === 'BOOLEAN') return value ? 'Oui' : 'Non';
-    if (type === 'DATE' && typeof value === 'string')
-      return new Date(value).toLocaleDateString();
-    return String(value);
-  }
   import {
     PageHeader,
     Button,

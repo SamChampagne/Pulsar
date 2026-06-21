@@ -22,7 +22,17 @@
     type ViewId,
   } from '$lib/components/ui';
   import OpsMap from '$lib/components/OpsMap.svelte';
+  import { fmtCustomValue } from '$lib/format';
   import { toast } from '$lib/stores/toast';
+
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    options?: { value: string; label: string }[];
+    required: boolean;
+    showInList?: boolean;
+  }
 
   interface ShipmentRow {
     id: string;
@@ -39,6 +49,7 @@
     totalWeightKg?: number | null;
     totalVolumeM3?: number | null;
     palletCount?: number | null;
+    customData?: Record<string, unknown>;
   }
 
   const fmtWindow = (early: string | null, late?: string | null) =>
@@ -72,6 +83,7 @@
   let statusFilter = $state('');
   let error = $state('');
   let selected = $state<ShipmentRow | null>(null);
+  let shipmentFieldDefs = $state<CustomFieldDef[]>([]);
 
   const canReply = $derived(
     $auth?.user.permissions.includes(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE) ?? false,
@@ -353,6 +365,13 @@
     else if (view === 'kanban') void loadKanban();
     else void loadMap();
   });
+
+  // Load SHIPMENT custom field definitions once on mount
+  $effect(() => {
+    api<CustomFieldDef[]>('/transportation/custom-fields', { query: { entityType: 'SHIPMENT' } })
+      .then((defs) => { shipmentFieldDefs = defs; })
+      .catch(() => {});
+  });
 </script>
 
 <PageHeader
@@ -615,6 +634,18 @@
         {/if}
       </div>
     </div>
+    {#if sel.customData && shipmentFieldDefs.length > 0}
+      {#each shipmentFieldDefs.filter((d) => d.showInList ?? true) as d (d.key)}
+        {#if sel.customData[d.key] !== undefined && sel.customData[d.key] !== null}
+          <div class="mb-3">
+            <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">
+              {d.label}
+            </div>
+            <div class="text-sm text-ink">{fmtCustomValue(sel.customData[d.key], d.type)}</div>
+          </div>
+        {/if}
+      {/each}
+    {/if}
 
     <!-- Assign / unassign controls in the panel -->
     <div class="mt-4 border-t border-edge pt-4">
