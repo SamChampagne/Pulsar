@@ -594,59 +594,91 @@ describe('TMS configurable (e2e)', () => {
   // Suite 8 — Tenant isolation: second tenant sees NO definitions
   // ===========================================================================
   describe('Tenant isolation — custom-field definitions', () => {
-    let secondToken = '';
+    let otherTenantId = '';
+    let foreignFieldId = '';
+    const otherSlug = `isolation-other-${Date.now()}`;
 
     beforeAll(async () => {
-      // Ensure TRANSPORTATION is enabled for a second demo tenant (if seeded).
-      // The seed creates an 'acme' tenant; look for a second seeded tenant.
-      // If there is none, create one via the platform admin flow or skip.
-      // We'll look for any tenant other than 'acme'.
-      const other = await sharedPrisma.tenant.findFirst({
-        where: { slug: { not: 'acme' } },
+      // Create a fabricated second tenant directly via Prisma — no login needed.
+      const otherTenant = await sharedPrisma.tenant.create({
+        data: { slug: otherSlug, name: `Isolation Other ${Date.now()}` },
       });
-      if (!other) {
-        // No second tenant seeded — skip the isolation test gracefully.
-        // Tests will still pass (the `it` blocks call expect() only with valid tokens).
-        return;
+      otherTenantId = otherTenant.id;
+
+      // Insert a CustomFieldDefinition belonging to the OTHER tenant.
+      const foreignDef = await sharedPrisma.customFieldDefinition.create({
+        data: {
+          tenantId: otherTenantId,
+          module: 'transportation',
+          entityType: 'TRANSPORT_ORDER',
+          key: 'foreignonly',
+          label: 'Foreign',
+          type: 'TEXT',
+          required: false,
+          showInList: false,
+          sortOrder: 0,
+        },
+      });
+      foreignFieldId = foreignDef.id;
+
+      // Ensure acme has at least one of its own TRANSPORT_ORDER definitions
+      // (suite 7's afterAll clears them; re-create one via Prisma for a clean assertion).
+      await sharedPrisma.customFieldDefinition.upsert({
+        where: {
+          tenantId_module_entityType_key: {
+            tenantId: sharedTenantId,
+            module: 'transportation',
+            entityType: 'TRANSPORT_ORDER',
+            key: 'svc-isolation',
+          },
+        },
+        update: {},
+        create: {
+          tenantId: sharedTenantId,
+          module: 'transportation',
+          entityType: 'TRANSPORT_ORDER',
+          key: 'svc-isolation',
+          label: 'Service (isolation test)',
+          type: 'TEXT',
+          required: false,
+          showInList: false,
+          sortOrder: 0,
+        },
+      });
+    });
+
+    afterAll(async () => {
+      // Clean up: remove the foreign definition, the acme test definition, and the
+      // fabricated tenant — scoped to IDs created by this suite only.
+      if (foreignFieldId) {
+        await sharedPrisma.customFieldDefinition
+          .deleteMany({ where: { id: foreignFieldId } })
+          .catch(() => undefined);
       }
-
-      // Find or create an admin user for the second tenant.
-      const otherUser = await sharedPrisma.user.findFirst({
-        where: { tenantId: other.id },
-        include: { roles: { include: { role: true } } },
-      });
-      if (!otherUser) return;
-
-      // Try logging in with known seed credentials for a second tenant.
-      // If the seed doesn't provide one we skip gracefully.
-      try {
-        const loginRes = await request(sharedHttp)
-          .post('/api/v1/auth/login')
-          .send({ email: otherUser.email, password: 'admin123', tenant: other.slug })
-          .expect(200);
-        secondToken = (loginRes.body as { accessToken: string }).accessToken;
-      } catch {
-        // Skip isolation check if we can't authenticate.
-        secondToken = '';
+      await sharedPrisma.customFieldDefinition
+        .deleteMany({
+          where: { tenantId: sharedTenantId, key: 'svc-isolation' },
+        })
+        .catch(() => undefined);
+      if (otherTenantId) {
+        await sharedPrisma.tenant
+          .deleteMany({ where: { id: otherTenantId } })
+          .catch(() => undefined);
       }
     });
 
-    it('second tenant GET /transportation/custom-fields returns [] (no bleed-over)', async () => {
-      if (!secondToken) {
-        // No second tenant available — pass trivially (isolation verified by
-        // the fact that acme's definitions are stored with tenantId scoping).
-        expect(true).toBe(true);
-        return;
-      }
-
+    it('acme GET /transportation/custom-fields does NOT see the foreign tenant definition', async () => {
       const res = await request(sharedHttp)
         .get('/api/v1/transportation/custom-fields?entityType=TRANSPORT_ORDER')
-        .set(auth(secondToken))
+        .set(auth(sharedToken))
         .expect(200);
 
-      // The second tenant should have no definitions set up by this suite.
-      const defs = res.body as unknown[];
-      expect(defs).toHaveLength(0);
+      const defs = res.body as { key: string }[];
+      // acme must see its own definition but NEVER the foreign tenant's key.
+      const keys = defs.map((d) => d.key);
+      expect(keys).not.toContain('foreignonly');
+      // Confirm acme sees at least its own definition (the assertion is meaningful both ways).
+      expect(keys).toContain('svc-isolation');
     });
   });
 });
