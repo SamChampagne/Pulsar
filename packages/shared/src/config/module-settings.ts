@@ -1,4 +1,4 @@
-export type SettingType = 'enum' | 'boolean' | 'number';
+export type SettingType = 'enum' | 'boolean' | 'number' | 'string';
 
 export interface SettingDescriptor {
   key: string;
@@ -9,6 +9,8 @@ export interface SettingDescriptor {
   options?: { value: string; label: string }[];
   min?: number;
   max?: number;
+  pattern?: string;
+  maxLength?: number;
 }
 
 export interface ModuleSettingsCatalog {
@@ -39,6 +41,34 @@ export const MODULE_SETTINGS_CATALOG: ModuleSettingsCatalog[] = [
       // frontend pages using the hardcoded defaults — there is no API consumer yet, so a
       // tenant setting would have no runtime effect. Re-add when a tenant-aware consumer exists.
       { key: 'autoTenderOnPlan', label: 'Auto-tender à la planification', type: 'boolean', default: true },
+      {
+        key: 'requireTendering',
+        label: 'Exigence de tendering',
+        help: 'OPTIONAL = libre (tender, auto-tender ou assignation directe). REQUIRED = un tender accepté est obligatoire avant le dispatch. DISABLED = assignation directe seulement.',
+        type: 'enum',
+        default: 'OPTIONAL',
+        options: [
+          { value: 'OPTIONAL', label: 'Optionnel (défaut)' },
+          { value: 'REQUIRED', label: 'Tender accepté obligatoire' },
+          { value: 'DISABLED', label: 'Désactivé (assignation directe)' },
+        ],
+      },
+      { key: 'podRequiredBeforeCompletion', label: 'POD requis avant complétion', type: 'boolean', default: false },
+      { key: 'bolRequiredBeforeDispatch', label: 'BOL requis avant dispatch', type: 'boolean', default: false },
+      {
+        key: 'windowCoherence',
+        label: 'Cohérence des fenêtres',
+        help: 'STRICT = rejette (400) les fenêtres incohérentes. LENIENT = avertit sans bloquer.',
+        type: 'enum',
+        default: 'STRICT',
+        options: [
+          { value: 'STRICT', label: 'Stricte (rejet)' },
+          { value: 'LENIENT', label: 'Souple (avertissement)' },
+        ],
+      },
+      { key: 'documentPrefixTransportOrder', label: 'Préfixe n° ordre', type: 'string', default: 'TO', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
+      { key: 'documentPrefixShipment', label: 'Préfixe n° shipment', type: 'string', default: 'SH', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
+      { key: 'documentPrefixLoad', label: 'Préfixe n° load', type: 'string', default: 'LD', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
     ],
   },
   {
@@ -105,6 +135,12 @@ function isValid(d: SettingDescriptor, v: unknown): boolean {
     if (typeof v !== 'number' || !Number.isFinite(v)) return false;
     if (d.min !== undefined && v < d.min) return false;
     if (d.max !== undefined && v > d.max) return false;
+    return true;
+  }
+  if (d.type === 'string') {
+    if (typeof v !== 'string') return false;
+    if (d.maxLength !== undefined && v.length > d.maxLength) return false;
+    if (d.pattern !== undefined && !new RegExp(d.pattern).test(v)) return false;
     return true;
   }
   // enum
