@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
+  CustomFieldEntity,
   LoadStatus,
   ShipmentStatus,
   TenderStatus,
@@ -21,6 +22,7 @@ import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { EmailService } from '../../../core/email/email.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
+import { CustomFieldsService } from '../custom-fields/custom-fields.service';
 import { LoadCostService } from './load-cost.service';
 import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
 import { shipmentWindowWarnings } from '../planning/window-warnings';
@@ -80,6 +82,7 @@ export class LoadsService {
     private readonly email: EmailService,
     private readonly config: ConfigService,
     private readonly moduleSettings: ModuleSettingsService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   async list(tenantId: string, query: ListQueryDto & { status?: LoadStatus }) {
@@ -188,11 +191,15 @@ export class LoadsService {
   }
 
   async create(tenantId: string, userId: string, dto: CreateLoadDto) {
+    const customData = await this.customFields.validateValues(
+      tenantId, CustomFieldEntity.LOAD, dto.customData, { partial: false },
+    );
     const load = await this.prisma.load.create({
       data: {
         tenantId,
         loadNumber: await this.sequences.nextNumber(tenantId, 'load'),
         notes: dto.notes,
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
       include: loadInclude,
     });

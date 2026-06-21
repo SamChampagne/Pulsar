@@ -48,6 +48,8 @@ import { RatingService } from './rating/rating.service';
 import { BolService } from './bol/bol.service';
 import { PlanningBoardController } from './planning-board/planning-board.controller';
 import { PlanningBoardService } from './planning-board/planning-board.service';
+import { CustomFieldsController } from './custom-fields/custom-fields.controller';
+import { CustomFieldsService } from './custom-fields/custom-fields.service';
 
 /**
  * Transportation Management module (TMS).
@@ -75,6 +77,7 @@ import { PlanningBoardService } from './planning-board/planning-board.service';
     FuelTablesController,
     PlanningBoardController,
     RatingController,
+    CustomFieldsController,
     // Public, token-authenticated endpoints (tender response, tracking, driver)
     PublicLinksController,
   ],
@@ -103,8 +106,10 @@ import { PlanningBoardService } from './planning-board/planning-board.service';
     BolService,
     DelayDetectionService,
     PlanningBoardService,
+    CustomFieldsService,
   ],
   exports: [
+    CustomFieldsService,
     RatingService,
     // Consumed by the AgentsModule tool-services adapter (core/agents).
     TransportOrdersService,
