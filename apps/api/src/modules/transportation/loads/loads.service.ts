@@ -440,6 +440,24 @@ export class LoadsService {
       }
     }
 
+    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+    if (tms['requireTendering'] === 'REQUIRED' && load.status !== LoadStatus.TENDERED) {
+      const accepted = await this.prisma.tender.findFirst({
+        where: { tenantId, loadId: id, status: TenderStatus.ACCEPTED },
+      });
+      if (!accepted) {
+        throw new BadRequestException('Tenant policy requires an accepted tender before dispatch');
+      }
+    }
+    if (tms['bolRequiredBeforeDispatch'] === true) {
+      const bol = await this.prisma.document.findFirst({
+        where: { tenantId, entityType: 'bill-of-lading', entityId: id },
+      });
+      if (!bol) {
+        throw new BadRequestException('Tenant policy requires a generated BOL before dispatch');
+      }
+    }
+
     const orderIds = [...new Set(load.shipments.map((s) => s.transportOrderId))];
     const [updated] = await this.prisma.$transaction([
       this.prisma.load.update({
@@ -505,6 +523,15 @@ export class LoadsService {
   async complete(tenantId: string, userId: string, id: string) {
     const load = await this.get(tenantId, id);
     this.assertTransition(load.status as LoadStatus, LoadStatus.COMPLETED);
+    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+    if (tms['podRequiredBeforeCompletion'] === true) {
+      const shipmentsWithoutPod = await this.prisma.shipment.count({
+        where: { tenantId, loadId: id, proofOfDelivery: null },
+      });
+      if (shipmentsWithoutPod > 0) {
+        throw new BadRequestException('Tenant policy requires a POD on every shipment before completion');
+      }
+    }
     const now = new Date();
 
     await this.prisma.$transaction([

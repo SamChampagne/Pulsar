@@ -12,6 +12,7 @@ import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import {
   CreateTransportOrderDto,
   PlanTransportOrderDto,
@@ -46,6 +47,7 @@ export class TransportOrdersService {
     private readonly sequences: SequencesService,
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
+    private readonly moduleSettings: ModuleSettingsService,
   ) {}
 
   private async assertReferences(tenantId: string, dto: UpdateTransportOrderDto) {
@@ -99,7 +101,10 @@ export class TransportOrdersService {
     const pickupLate = toDate(dto.requestedPickupLate);
     const deliveryEarly = toDate(dto.requestedDeliveryEarly);
     const deliveryLate = toDate(dto.requestedDeliveryLate);
-    assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
+    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+    if (tms['windowCoherence'] !== 'LENIENT') {
+      assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
+    }
     const order = await this.prisma.transportOrder.create({
       data: {
         tenantId,
@@ -134,7 +139,10 @@ export class TransportOrdersService {
     const pickupLate = dto.requestedPickupLate !== undefined ? toDate(dto.requestedPickupLate) : order.requestedPickupLate;
     const deliveryEarly = dto.requestedDeliveryEarly !== undefined ? toDate(dto.requestedDeliveryEarly) : order.requestedDeliveryEarly;
     const deliveryLate = dto.requestedDeliveryLate !== undefined ? toDate(dto.requestedDeliveryLate) : order.requestedDeliveryLate;
-    assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
+    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+    if (tms['windowCoherence'] !== 'LENIENT') {
+      assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
+    }
     return this.prisma.transportOrder.update({
       where: { id },
       data: {
@@ -179,8 +187,10 @@ export class TransportOrdersService {
       },
     ];
 
+    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+    const strict = tms['windowCoherence'] !== 'LENIENT';
     for (const split of splits) {
-      const windows = resolveSplitWindows(order, split);
+      const windows = resolveSplitWindows(order, split, strict);
       await this.prisma.shipment.create({
         data: {
           tenantId,
@@ -205,7 +215,8 @@ export class TransportOrdersService {
     if (order.status !== TransportOrderStatus.PLANNED) {
       throw new BadRequestException('Shipments can only be added to PLANNED orders');
     }
-    const windows = resolveSplitWindows(order, split);
+    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+    const windows = resolveSplitWindows(order, split, tms['windowCoherence'] !== 'LENIENT');
     const shipment = await this.prisma.shipment.create({
       data: {
         tenantId,
