@@ -740,6 +740,7 @@ model TransportOrder {
   totalVolumeM3         Float?
   palletCount           Int?
   notes                 String?
+  customData            Json?
   createdById           String?
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
@@ -833,6 +834,7 @@ model Shipment {
   plannedDeliveryLate   DateTime?
   actualPickupAt        DateTime?
   actualDeliveryAt      DateTime?
+  customData            Json?
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
@@ -903,6 +905,7 @@ model Load {
   dispatchedAt  DateTime?
   completedAt   DateTime?
   notes         String?
+  customData    Json?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
@@ -1871,6 +1874,44 @@ model ComplianceDocument {
   @@index([tenantId, subjectType, subjectId])
   @@index([tenantId, expiresAt])
   @@map("compliance_documents")
+}
+
+// ============================================================================
+// TRANSPORTATION — custom field definitions (mirror of @pulsar/shared)
+// ============================================================================
+
+enum CustomFieldEntity {
+  TRANSPORT_ORDER
+  SHIPMENT
+  LOAD
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+  SELECT
+}
+
+model CustomFieldDefinition {
+  id         String            @id @default(cuid())
+  tenantId   String
+  module     String
+  entityType CustomFieldEntity
+  key        String
+  label      String
+  type       CustomFieldType
+  options    Json?
+  required   Boolean           @default(false)
+  showInList Boolean           @default(false)
+  sortOrder  Int               @default(0)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@unique([tenantId, module, entityType, key])
+  @@index([tenantId, module, entityType])
+  @@map("custom_field_definitions")
 }
 
 enum StockMovementType {
