@@ -3,6 +3,23 @@
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    options?: { value: string; label: string }[];
+    required: boolean;
+    showInList?: boolean;
+  }
+
+  function fmtCustomValue(value: unknown, type?: string): string {
+    if (value === null || value === undefined) return '—';
+    if (type === 'BOOLEAN') return value ? 'Oui' : 'Non';
+    if (type === 'DATE' && typeof value === 'string')
+      return new Date(value).toLocaleDateString();
+    return String(value);
+  }
   import {
     PageHeader,
     Button,
@@ -31,12 +48,14 @@
     carrier: { name: string } | null;
     driver: { firstName: string; lastName: string } | null;
     shipments: { id: string }[];
+    customData?: Record<string, unknown>;
   }
 
   let view = $state<ViewId>('table');
   let statusFilter = $state('');
   let error = $state('');
   let selected = $state<LoadRow | null>(null);
+  let loadFieldDefs = $state<CustomFieldDef[]>([]);
 
   // — Table view (paginated) —
   let rows = $state<LoadRow[]>([]);
@@ -144,6 +163,13 @@
     if (view === 'table') void loadTable();
     else if (view === 'kanban') void loadKanban();
     else void loadMap();
+  });
+
+  // Load field defs once on mount
+  $effect(() => {
+    api<CustomFieldDef[]>('/transportation/custom-fields', { query: { entityType: 'LOAD' } })
+      .then((defs) => { loadFieldDefs = defs; })
+      .catch(() => {});
   });
 </script>
 
@@ -380,6 +406,18 @@
         <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Mode</div>
         <div class="text-sm text-ink">{sel.mode ?? 'Tous modes'}</div>
       </div>
+      {#if sel.customData && loadFieldDefs.length > 0}
+        {#each loadFieldDefs.filter((d) => d.showInList ?? true) as d (d.key)}
+          {#if sel.customData[d.key] !== undefined && sel.customData[d.key] !== null}
+            <div>
+              <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">
+                {d.label}
+              </div>
+              <div class="text-sm text-ink">{fmtCustomValue(sel.customData[d.key], d.type)}</div>
+            </div>
+          {/if}
+        {/each}
+      {/if}
     </div>
     {#snippet footer()}
       <Button variant="secondary" href={`/loads/${sel.id}`}>Ouvrir la page complète</Button>
