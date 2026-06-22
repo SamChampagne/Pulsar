@@ -8,13 +8,18 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   AuditAction,
+  CustomFieldEntity,
+  DOMAIN_EVENT_TYPES,
   DockAppointmentStatus,
   YardVisitStatus,
   computeDwell,
   canTransitionDockAppointment,
   canTransitionYardVisit,
 } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
+import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -35,7 +40,8 @@ const ACTIVE_STATUSES = [YardVisitStatus.CHECKED_IN, YardVisitStatus.ASSIGNED];
  * canTransitionYardVisit (rule 2) with conditional updateMany claims (TOCTOU-safe).
  * Spot occupancy is DERIVED — a spot is occupied iff an active visit (CHECKED_IN/
  * ASSIGNED) points to it (count, never denormalised); an occupied spot rejects a
- * new visit with 409. Every spotId change writes a YardMove in the SAME transaction
+ * new visit with 409 (BLOCK policy) or warns (WARN policy, rule 35/spotConflictPolicy).
+ * Every spotId change writes a YardMove in the SAME transaction
  * (mirrors InventoryService.postMovement). Numbers via SequencesService (YV-, rule 8);
  * tenant-scoped (rule 1); FKs checked (rule 9); audited (rule 6).
  */
@@ -49,6 +55,8 @@ export class VisitsService {
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
     private readonly domainEvents: DomainEventsService,
+    private readonly moduleSettings: ModuleSettingsService,
+    private readonly customFields?: CustomFieldsService,
   ) {}
 
   /**
@@ -104,8 +112,10 @@ export class VisitsService {
 
   /**
    * Assign a visit to a spot inside an existing transaction: guard the transition,
-   * derive occupancy (409 if another active visit holds the spot), write the
-   * YardMove, then flip the visit. Caller owns the tx (rule: same-tx move log).
+   * derive occupancy (409 if BLOCK policy; warning if WARN policy and another active
+   * visit holds the spot), write the YardMove, then flip the visit.
+   * Caller owns the tx (rule: same-tx move log).
+   * Returns spotWarnings (non-empty only when policy=WARN and spot is occupied).
    */
   private async assignToSpot(
     tx: any,
@@ -114,7 +124,7 @@ export class VisitsService {
     visit: { id: string; status: string; spotId: string | null },
     toSpotId: string,
     note?: string,
-  ) {
+  ): Promise<string[]> {
     if (!canTransitionYardVisit(visit.status as YardVisitStatus, YardVisitStatus.ASSIGNED)) {
       throw new BadRequestException(`Cannot assign a visit in status ${visit.status}`);
     }
@@ -126,7 +136,15 @@ export class VisitsService {
         id: { not: visit.id },
       },
     });
-    if (occ > 0) throw new ConflictException('Spot already occupied');
+
+    const settings = await this.moduleSettings.resolve(tenantId, 'yard');
+    const policy = (settings.spotConflictPolicy as 'BLOCK' | 'WARN') ?? 'BLOCK';
+    const spotWarnings: string[] = [];
+    if (occ > 0) {
+      if (policy === 'BLOCK') throw new ConflictException('Spot already occupied');
+      spotWarnings.push('Spot already occupied');
+    }
+
     await tx.yardMove.create({
       data: {
         tenantId,
@@ -141,6 +159,8 @@ export class VisitsService {
       where: { id: visit.id, tenantId },
       data: { spotId: toSpotId, status: YardVisitStatus.ASSIGNED },
     });
+
+    return spotWarnings;
   }
 
   async checkIn(tenantId: string, userId: string, dto: CheckInDto) {
@@ -167,6 +187,16 @@ export class VisitsService {
       if (!appt) throw new NotFoundException('Appointment not found');
     }
 
+    const customData = this.customFields
+      ? await this.customFields.validateValues(
+          'yard',
+          tenantId,
+          CustomFieldEntity.YARD_VISIT,
+          dto.customData,
+          { partial: false },
+        )
+      : undefined;
+
     const visitNumber = await this.sequences.nextNumber(tenantId, 'yard-visit');
 
     const created = await this.prisma.$transaction(async (tx) => {
@@ -185,6 +215,7 @@ export class VisitsService {
           checkInAt: new Date(),
           notes: dto.notes ?? null,
           createdById: userId,
+          ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
         },
       });
 
@@ -250,7 +281,7 @@ export class VisitsService {
 
   async assign(tenantId: string, userId: string, visitId: string, dto: AssignSpotDto) {
     const visit = await this.assertActiveVisit(tenantId, visitId);
-    await this.prisma.$transaction((tx) =>
+    const spotWarnings = await this.prisma.$transaction((tx) =>
       this.assignToSpot(tx, tenantId, userId, visit, dto.spotId, dto.note),
     );
     await this.audit.log({
@@ -262,7 +293,8 @@ export class VisitsService {
       before: { spotId: visit.spotId, status: visit.status },
       after: { spotId: dto.spotId, status: YardVisitStatus.ASSIGNED },
     });
-    return this.get(tenantId, visitId);
+    const result = await this.get(tenantId, visitId);
+    return { ...result, ...(spotWarnings.length ? { spotWarnings } : {}) };
   }
 
   /** Moving = assigning to a new spot; the from/to are captured in the YardMove. */
@@ -300,7 +332,15 @@ export class VisitsService {
       before: { status: visit.status, spotId: visit.spotId },
       after: { status: YardVisitStatus.DEPARTED, spotId: null },
     });
-    return this.get(tenantId, visitId);
+    const result = await this.get(tenantId, visitId);
+    // Best-effort domain event (rule 27).
+    await this.domainEvents.emit(
+      tenantId,
+      DOMAIN_EVENT_TYPES.YARD_VISIT_CHECKED_OUT,
+      { type: 'yard-visit', id: visitId },
+      { visitId, visitNumber: result.visitNumber },
+    );
+    return result;
   }
 
   async cancel(tenantId: string, userId: string, visitId: string) {

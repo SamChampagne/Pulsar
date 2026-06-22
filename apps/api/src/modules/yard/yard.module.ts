@@ -1,6 +1,9 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
+import { CustomFieldsModule } from '../../core/custom-fields/custom-fields.module';
+import { ModuleRegistryModule } from '../../core/module-registry/module-registry.module';
 import { OperatingModule } from '../../core/operating/operating.module';
+import { YardCustomFieldsController } from './custom-fields/custom-fields.controller';
 import { SpotsService } from './spots/spots.service';
 import { SpotsController } from './spots/spots.controller';
 import { VisitsService } from './visits/visits.service';
@@ -21,8 +24,8 @@ import { YardOverviewController } from './overview/yard-overview.controller';
  * AuditLogsModule (same pattern as WmsModule / FleetModule).
  */
 @Module({
-  imports: [AuditLogsModule, forwardRef(() => OperatingModule)],
-  controllers: [SpotsController, VisitsController, AppointmentsController, YardOverviewController],
+  imports: [AuditLogsModule, CustomFieldsModule, ModuleRegistryModule, forwardRef(() => OperatingModule)],
+  controllers: [YardCustomFieldsController, SpotsController, VisitsController, AppointmentsController, YardOverviewController],
   providers: [SpotsService, VisitsService, AppointmentsService, YardOverviewService],
   exports: [VisitsService, AppointmentsService, YardOverviewService],
 })

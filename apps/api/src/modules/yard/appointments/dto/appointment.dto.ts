@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsDate, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsDate, IsEnum, IsObject, IsOptional, IsString, MinLength } from 'class-validator';
 import { YardDirection } from '@pulsar/shared';
 
 export class CreateAppointmentDto {
@@ -11,6 +11,7 @@ export class CreateAppointmentDto {
   @Type(() => Date) @IsDate() windowEnd!: Date;
   @IsOptional() @IsString() reference?: string;
   @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsObject() customData?: Record<string, unknown>;
 }
 
 export class AppointmentListQueryDto {

@@ -6,8 +6,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { AuditAction, DockAppointmentStatus, canTransitionDockAppointment } from '@pulsar/shared';
+import { AuditAction, CustomFieldEntity, DockAppointmentStatus, canTransitionDockAppointment } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -31,6 +33,7 @@ export class AppointmentsService {
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
     private readonly domainEvents: DomainEventsService,
+    private readonly customFields?: CustomFieldsService,
   ) {}
 
   /**
@@ -117,6 +120,16 @@ export class AppointmentsService {
       if (!spot) throw new NotFoundException('Spot not found');
     }
 
+    const customData = this.customFields
+      ? await this.customFields.validateValues(
+          'yard',
+          tenantId,
+          CustomFieldEntity.DOCK_APPOINTMENT,
+          dto.customData,
+          { partial: false },
+        )
+      : undefined;
+
     const appointmentNumber = await this.sequences.nextNumber(tenantId, 'dock-appointment');
     const appt = await this.prisma.dockAppointment.create({
       data: {
@@ -132,6 +145,7 @@ export class AppointmentsService {
         notes: dto.notes ?? null,
         status: DockAppointmentStatus.SCHEDULED,
         createdById: userId,
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
     });
     await this.audit.log({
