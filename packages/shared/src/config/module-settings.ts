@@ -115,6 +115,15 @@ export const MODULE_SETTINGS_CATALOG: ModuleSettingsCatalog[] = [
     settings: [
       { key: 'tolerancePct', label: 'Tolérance rapprochement (%)', type: 'number', default: 2, min: 0, max: 100 },
       { key: 'toleranceAbsolute', label: 'Tolérance rapprochement (absolue)', type: 'number', default: 25, min: 0, max: 1000000 },
+      { key: 'autoSendOnApproval', label: 'Envoi auto du relevé à l\'approbation', type: 'boolean', default: false },
+      {
+        key: 'toleranceMode', label: 'Mode de tolérance', type: 'enum', default: 'MAX',
+        help: 'MAX = seuil = max(absolu, %). MIN = seuil = min (plus strict).',
+        options: [ { value: 'MAX', label: 'Max (défaut)' }, { value: 'MIN', label: 'Min (strict)' } ],
+      },
+      { key: 'invoiceNumberPrefix', label: 'Préfixe n° facture transporteur', type: 'string', default: 'INV', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
+      { key: 'customerInvoiceNumberPrefix', label: 'Préfixe n° relevé client', type: 'string', default: 'CINV', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
+      { key: 'defaultCurrency', label: 'Devise par défaut', type: 'string', default: 'CAD', pattern: '^[A-Z]{3}$', maxLength: 3 },
     ],
   },
   {
