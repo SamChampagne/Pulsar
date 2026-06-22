@@ -98,6 +98,11 @@ export interface ToolServices {
   wmsCycleCounts: {
     create(tenantId: string, userId: string, dto: { binId: string; note?: string }): Promise<unknown>;
   };
+  // ── Analytics / Flow ───────────────────────────────────────────────────────
+  flow: {
+    timeline(tenantId: string, opts: { days?: number; modules?: string[]; crossOnly?: boolean; limit?: number }): Promise<unknown>;
+    trace(tenantId: string, entityType: 'TRANSPORT_ORDER' | 'SHIPMENT' | 'LOAD', entityId: string): Promise<unknown>;
+  };
 }
 
 export interface ToolContext {
@@ -120,6 +125,7 @@ export interface ToolDef {
 }
 
 const T = PERMISSIONS.TRANSPORTATION;
+const A = PERMISSIONS.ANALYTICS;
 
 export const TOOL_REGISTRY: ToolDef[] = [
   {
@@ -639,6 +645,38 @@ export const TOOL_REGISTRY: ToolDef[] = [
         ctx.principal.user.tenantId,
         ctx.principal.user.id,
         { binId: args.binId as string, note: args.note as string | undefined },
+      ),
+  },
+  // ── Analytics / Flow ───────────────────────────────────────────────────────
+  {
+    name: 'get_flow_timeline',
+    description: 'Read the cross-module activity timeline with causality chains (event → task → agent action). Read-only.',
+    tier: RiskTier.READ,
+    permission: A.READ,
+    module: MODULE_KEYS.ANALYTICS,
+    inputSchema: z.object({
+      days: z.number().int().positive().optional(),
+      modules: z.array(z.string()).optional(),
+      crossOnly: z.boolean().optional(),
+      limit: z.number().int().positive().optional(),
+    }),
+    run: (args, ctx) => ctx.services.flow.timeline(ctx.principal.user.tenantId, args),
+  },
+  {
+    name: 'trace_entity',
+    description: 'Trace a transport order / shipment / load across modules (created → picked → dispatched → yard → delivered → billed). Read-only.',
+    tier: RiskTier.READ,
+    permission: A.READ,
+    module: MODULE_KEYS.ANALYTICS,
+    inputSchema: z.object({
+      entityType: z.enum(['TRANSPORT_ORDER', 'SHIPMENT', 'LOAD']),
+      entityId: z.string().min(1),
+    }),
+    run: (args, ctx) =>
+      ctx.services.flow.trace(
+        ctx.principal.user.tenantId,
+        args.entityType as 'TRANSPORT_ORDER' | 'SHIPMENT' | 'LOAD',
+        args.entityId as string,
       ),
   },
 ];

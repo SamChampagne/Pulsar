@@ -260,6 +260,16 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     comme valeur de repli (jamais forcé si la devise est explicitement fournie). `autoSendOnApproval`
     est best-effort dans `approve()` : un échec d'envoi laisse le relevé à APPROVED sans erreur.
 
+## Hard rules (continued, arc A — Control Tower de flux)
+
+37. (arc A — Control Tower de flux) Les 3 endpoints `GET /analytics/flow/{timeline,map,trace}` sont
+    **calculés à la lecture** depuis `DomainEvent`/`OperationalTask`/`ProposedAction` via les helpers
+    purs `buildFlowChains`/`buildFlowMap`/`buildEntityTrace` (`@pulsar/shared/analytics/flow`) —
+    **jamais de store de rollup, jamais de migration**. Les outils agent `get_flow_timeline` et
+    `trace_entity` sont READ (exécutés en direct, jamais mis en file). Tout endpoint flow est
+    `@RequireModule(ANALYTICS)` + `analytics.read`, tenant-scopé (règle 1). `moduleOfEventType`
+    (même package) est la seule source de vérité pour la correspondance type→module — ne pas
+    réimplémenter.
 ## Hard rules (continued, arc B — tressage automatique)
 
 38. (arc B — réactions déterministes `RUN_ACTION`) Les réactions cross-module ne s'exécutent

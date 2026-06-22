@@ -27,6 +27,8 @@ import { WmsModule } from '../../modules/wms/wms.module';
 import { WmsOverviewService } from '../../modules/wms/overview/wms-overview.service';
 import { PickingService } from '../../modules/wms/picking/picking.service';
 import { CycleCountsService } from '../../modules/wms/cycle-counts/cycle-counts.service';
+import { AnalyticsModule } from '../../modules/analytics/analytics.module';
+import { FlowService } from '../../modules/analytics/flow.service';
 import { AgentsController } from './agents.controller';
 import { AgentsService } from './agents.service';
 import { ProposedActionsController } from './proposed-actions.controller';
@@ -62,6 +64,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
     FleetModule,
     YardModule,
     WmsModule,
+    AnalyticsModule,
   ],
   controllers: [
     AgentsController,
@@ -98,6 +101,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         WmsOverviewService,
         PickingService,
         CycleCountsService,
+        FlowService,
       ],
       useFactory: (
         transportOrders: TransportOrdersService,
@@ -119,6 +123,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         wmsOverview: WmsOverviewService,
         picking: PickingService,
         cycleCounts: CycleCountsService,
+        flow: FlowService,
       ): ToolServices => ({
         transportOrders: {
           list: (tenantId, query) => transportOrders.list(tenantId, query as never),
@@ -196,6 +201,10 @@ import { RuntimeConfigController } from './runtime-config.controller';
         },
         wmsCycleCounts: {
           create: (tenantId, userId, dto) => cycleCounts.create(tenantId, userId, dto),
+        },
+        flow: {
+          timeline: (tenantId, opts) => flow.timeline(tenantId, { days: opts.days ?? 7, limit: opts.limit ?? 200, modules: opts.modules, crossOnly: opts.crossOnly }),
+          trace: (tenantId, entityType, entityId) => flow.trace(tenantId, entityType, entityId),
         },
       }),
     },

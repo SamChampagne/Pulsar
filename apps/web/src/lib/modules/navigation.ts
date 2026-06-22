@@ -338,6 +338,7 @@ export function navCatalogue(): NavDomain[] {
             { href: '/analytics', label: "Vue d'ensemble", perm: 'analytics.read' },
             { href: '/analytics/control-tower', label: 'Control Tower', perm: 'analytics.read' },
             { href: '/analytics/scorecards', label: 'Scorecards', perm: 'analytics.read' },
+            { href: '/analytics/flow', label: 'Flux', perm: PERMISSIONS.ANALYTICS.READ },
             {
               href: '/analytics/carriers',
               label: 'Scorecard transporteurs',
