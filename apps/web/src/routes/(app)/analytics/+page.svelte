@@ -3,7 +3,7 @@
   import { api, ApiError } from '$lib/api/client';
   import { auth } from '$lib/stores/auth';
   import { PageHeader, Card, Skeleton, ErrorNotice, Select } from '$lib/components/ui';
-  import { BarChart3, Gauge, Truck, ArrowRight } from 'lucide-svelte';
+  import { BarChart3, Gauge, Truck, Workflow, ArrowRight } from 'lucide-svelte';
 
   let data = $state<ControlTower | null>(null);
   let loading = $state(true);
@@ -54,6 +54,13 @@
       label: 'Scorecards',
       desc: 'Disponibilité flotte, congestion cour, préparation entrepôt, exceptions et ROI agents.',
       icon: BarChart3,
+      show: true,
+    },
+    {
+      href: '/analytics/flow',
+      label: 'Flux',
+      desc: 'Chaînes événement → tâches → actions cross-module — timeline, tracé entité et carte de flux.',
+      icon: Workflow,
       show: true,
     },
     {
