@@ -6,6 +6,7 @@ import { AgentWorkerService } from './agent-worker.service';
 import { DomainEventsService } from './domain-events.service';
 import { TaskAssignmentResolver } from './event-policies';
 import { CustomRuleResolver } from '../automation/custom-rule.resolver';
+import { ReactionExecutorService } from '../automation/reaction-executor.service';
 
 // Phase 13: DomainEventsService wakes the always-on worker on task creation.
 // Unit tests stub it out — worker behaviour is covered by agent-worker.service.spec.ts.
@@ -13,7 +14,9 @@ const workerStub = { enqueueTask: () => undefined } as unknown as AgentWorkerSer
 // SequencesService is best-effort in processPending; stub a number generator.
 const sequencesStub = { nextNumber: async () => 'EX-0001' } as unknown as SequencesService;
 // Module I: tenant automation rules layer — stub to no extra specs in these unit tests.
-const customRuleResolverStub = { resolve: async () => [] } as unknown as CustomRuleResolver;
+const customRuleResolverStub = { resolve: async () => ({ taskSpecs: [], reactionCommands: [] }) } as unknown as CustomRuleResolver;
+// ReactionExecutorService: stub for DI (execution tested separately).
+const reactionExecutorStub = { executeCommand: async () => undefined } as unknown as ReactionExecutorService;
 
 // Minimal in-memory prisma fake.
 function makePrismaFake() {
@@ -62,6 +65,7 @@ describe('DomainEventsService', () => {
         { provide: AgentWorkerService, useValue: workerStub },
         { provide: SequencesService, useValue: sequencesStub },
         { provide: CustomRuleResolver, useValue: customRuleResolverStub },
+        { provide: ReactionExecutorService, useValue: reactionExecutorStub },
       ],
     }).compile();
     const svc = moduleRef.get(DomainEventsService);
@@ -91,6 +95,7 @@ describe('DomainEventsService', () => {
         { provide: AgentWorkerService, useValue: workerStub },
         { provide: SequencesService, useValue: sequencesStub },
         { provide: CustomRuleResolver, useValue: customRuleResolverStub },
+        { provide: ReactionExecutorService, useValue: reactionExecutorStub },
       ],
     }).compile();
     await expect(moduleRef.get(DomainEventsService).emit('t', 'stop.delayed', null, {})).resolves.toBeUndefined();
@@ -107,6 +112,7 @@ describe('DomainEventsService', () => {
         { provide: AgentWorkerService, useValue: workerStub },
         { provide: SequencesService, useValue: sequencesStub },
         { provide: CustomRuleResolver, useValue: customRuleResolverStub },
+        { provide: ReactionExecutorService, useValue: reactionExecutorStub },
       ],
     }).compile();
     const svc = moduleRef.get(DomainEventsService);
