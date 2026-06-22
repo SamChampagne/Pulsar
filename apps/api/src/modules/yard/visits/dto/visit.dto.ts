@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEnum, IsObject, IsOptional, IsString, MinLength } from 'class-validator';
 import { YardDirection } from '@pulsar/shared';
 
 export class CheckInDto {
@@ -11,6 +11,7 @@ export class CheckInDto {
   @IsOptional() @IsString() spotId?: string; // optional immediate assignment
   @IsOptional() @IsString() appointmentId?: string; // optional fulfilled appointment
   @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsObject() customData?: Record<string, unknown>;
 }
 
 export class AssignSpotDto {
