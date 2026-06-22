@@ -3,13 +3,17 @@ import {
   buildFlowChains,
   buildFlowMap,
   buildEntityTrace,
+  deriveReactionKpis,
   moduleOfEventType,
+  moduleOfReaction,
   type FlowEvent,
   type FlowTask,
   type FlowAction,
+  type FlowReaction,
   type FlowMap,
   type EntityTrace,
   type FlowChain,
+  type ReactionKpis,
 } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -29,10 +33,10 @@ export class FlowService {
     return new Date(Date.now() - days * 86_400_000);
   }
 
-  async timeline(tenantId: string, opts: TimelineOpts): Promise<{ chains: FlowChain[] }> {
+  async timeline(tenantId: string, opts: TimelineOpts): Promise<{ chains: FlowChain[]; reactionKpis: ReactionKpis }> {
     const since = this.since(opts.days);
 
-    const [rawEvents, rawTasks, rawActions] = await Promise.all([
+    const [rawEvents, rawTasks, rawActions, rawReactions] = await Promise.all([
       this.prisma.domainEvent.findMany({
         where: {
           tenantId,
@@ -79,6 +83,12 @@ export class FlowService {
           proposedAt: true,
         },
       }),
+      this.prisma.reactionExecution.findMany({
+        where: { tenantId, createdAt: { gte: since } },
+        orderBy: { createdAt: 'desc' },
+        take: opts.limit,
+        select: { id: true, action: true, status: true, eventId: true, createdAt: true },
+      }),
     ]);
 
     const fEvents: FlowEvent[] = rawEvents.map((e) => ({
@@ -112,7 +122,16 @@ export class FlowService {
       at: a.proposedAt.toISOString(),
     }));
 
-    let chains = buildFlowChains(fEvents, fTasks, fActions);
+    const fReactions: FlowReaction[] = rawReactions.map((r) => ({
+      id: r.id,
+      action: r.action,
+      status: r.status,
+      module: moduleOfReaction(r.action),
+      eventId: r.eventId,
+      at: r.createdAt.toISOString(),
+    }));
+
+    let chains = buildFlowChains(fEvents, fTasks, fActions, fReactions);
 
     if (opts.crossOnly) {
       chains = chains.filter((c) => c.crossModule);
@@ -121,7 +140,7 @@ export class FlowService {
       chains = chains.filter((c) => c.modules.some((m) => opts.modules!.includes(m)));
     }
 
-    return { chains: chains.slice(0, opts.limit) };
+    return { chains: chains.slice(0, opts.limit), reactionKpis: deriveReactionKpis(fReactions) };
   }
 
   async map(tenantId: string, days: number): Promise<FlowMap> {

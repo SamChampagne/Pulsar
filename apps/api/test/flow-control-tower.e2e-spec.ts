@@ -114,6 +114,19 @@ describe('Flow Control Tower (e2e)', () => {
   let seedTaskDedupKey = '';
   const noPermUserId: string[] = [];
 
+  // IDs for scenario 6 (reaction visibility) fixture rows.
+  let rxCarrierId = '';
+  let rxOrderId = '';
+  let rxShipmentId = '';
+  let rxLoadId = '';
+  let rxRuleId = '';
+  const rxInvoiceIds: string[] = [];
+  const rxEventIds: string[] = [];
+
+  // IDs for scenario 6C (genuine zero-case isolated tenant).
+  let zeroTenantId = '';
+  let zeroToken = '';
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AgentRuntimeService)
@@ -160,6 +173,30 @@ describe('Flow Control Tower (e2e)', () => {
       where: { tenantId_moduleId: { tenantId, moduleId: tmsMod.id } },
       update: { enabled: true },
       create: { tenantId, moduleId: tmsMod.id, enabled: true, enabledAt: new Date() },
+    });
+
+    // --- Ensure BILLING module is enabled for acme (needed for draft_customer_invoice reaction). --
+    const billingMod = await prisma.moduleDefinition.findUniqueOrThrow({
+      where: { key: 'billing' },
+    });
+    await prisma.tenantModule.upsert({
+      where: { tenantId_moduleId: { tenantId, moduleId: billingMod.id } },
+      update: { enabled: true },
+      create: { tenantId, moduleId: billingMod.id, enabled: true, enabledAt: new Date() },
+    });
+
+    // --- Ensure the service-account exists (required by ReactionExecutorService). ---------------
+    await prisma.user.upsert({
+      where: { tenantId_email: { tenantId, email: 'service-account@pulsar.local' } },
+      update: {},
+      create: {
+        tenantId,
+        email: 'service-account@pulsar.local',
+        passwordHash: 'x',
+        firstName: 'Service',
+        lastName: 'Account',
+        status: 'DISABLED',
+      },
     });
 
     // --- Seed a customer + origin/dest + a minimal TransportOrder + Shipment for trace tests. --
@@ -266,6 +303,56 @@ describe('Flow Control Tower (e2e)', () => {
         await prisma.user
           .deleteMany({ where: { id: { in: noPermUserId } } })
           .catch(() => undefined);
+      }
+
+      // Scenario 6 reaction fixtures
+      if (rxInvoiceIds.length > 0) {
+        await prisma.customerInvoice
+          .deleteMany({ where: { id: { in: rxInvoiceIds } } })
+          .catch(() => undefined);
+      }
+      if (rxEventIds.length > 0) {
+        await prisma.reactionExecution
+          .deleteMany({ where: { tenantId, eventId: { in: rxEventIds } } })
+          .catch(() => undefined);
+        await prisma.domainEvent
+          .deleteMany({ where: { tenantId, id: { in: rxEventIds } } })
+          .catch(() => undefined);
+      }
+      if (rxLoadId) {
+        await prisma.shipmentLoadLeg
+          .deleteMany({ where: { shipmentId: rxShipmentId } })
+          .catch(() => undefined);
+        await prisma.shipment
+          .deleteMany({ where: { id: rxShipmentId } })
+          .catch(() => undefined);
+        await prisma.load
+          .deleteMany({ where: { id: rxLoadId } })
+          .catch(() => undefined);
+      }
+      if (rxOrderId) {
+        await prisma.transportOrder
+          .deleteMany({ where: { id: rxOrderId } })
+          .catch(() => undefined);
+      }
+      if (rxRuleId) {
+        await prisma.automationRule
+          .deleteMany({ where: { id: rxRuleId } })
+          .catch(() => undefined);
+      }
+      if (rxCarrierId) {
+        await prisma.carrier
+          .deleteMany({ where: { id: rxCarrierId } })
+          .catch(() => undefined);
+      }
+
+      // Scenario 6C — clean up the isolated zero-reaction tenant
+      if (zeroTenantId) {
+        await prisma.domainEvent.deleteMany({ where: { tenantId: zeroTenantId } }).catch(() => undefined);
+        await prisma.user.deleteMany({ where: { tenantId: zeroTenantId } }).catch(() => undefined);
+        await prisma.role.deleteMany({ where: { tenantId: zeroTenantId } }).catch(() => undefined);
+        await prisma.tenantModule.deleteMany({ where: { tenantId: zeroTenantId } }).catch(() => undefined);
+        await prisma.tenant.deleteMany({ where: { id: zeroTenantId } }).catch(() => undefined);
       }
     }
     await app.close();
@@ -457,6 +544,256 @@ describe('Flow Control Tower (e2e)', () => {
   // The happy-path succeeding in Scenarios 1-4 already confirms the module guard allows
   // the request when ANALYTICS is enabled. A dedicated isolation test belongs in a
   // test that controls its own tenant and does not share acme.
+
+  // =========================================================================
+  // Scenario 6 — Reaction visibility (timeline + map + KPI + back-compat)
+  // =========================================================================
+  describe('Scenario 6 — reaction visibility', () => {
+    /**
+     * Drive a complete load lifecycle (DRAFT→CONFIRMED→PLANNED→DISPATCHED→IN_TRANSIT→COMPLETED)
+     * so the `load.completed` DomainEvent is emitted and then processed by the reaction engine.
+     * Then assert:
+     *   A) Timeline: some chain's reactions[] contains the reaction with status EXECUTED;
+     *      reactionKpis.executed >= 1.
+     *   B) Map: edges contains at least one entry with kind = 'reaction'.
+     *   C) Back-compat: reactionKpis.executed is a number (0 ok) when no reactions exist in
+     *      a fresh window — asserted via the existing seedEventId chain which never triggers a
+     *      reaction (stop.delayed has no RUN_ACTION rule).
+     */
+
+    // Set up: create an automation rule + carrier + full order/load cycle.
+    beforeAll(async () => {
+      // Create the draft_customer_invoice rule for load.completed
+      const ruleRes = await request(http)
+        .post('/api/v1/automation/rules')
+        .set(auth())
+        .send({
+          name: `FCT Draft Invoice ${suffix}`,
+          eventType: 'load.completed',
+          match: 'ALL',
+          conditions: [],
+          action: { kind: 'RUN_ACTION', action: 'draft_customer_invoice', args: { loadId: '{loadId}' } },
+        })
+        .expect(201);
+      rxRuleId = (ruleRes.body as { id: string }).id;
+
+      // Create a carrier (needed to dispatch the load)
+      const carrierRes = await request(http)
+        .post('/api/v1/transportation/carriers')
+        .set(auth())
+        .send({ code: `FCT-CARR-${suffix}`, name: `FCT Carrier ${suffix}` })
+        .expect(201);
+      rxCarrierId = (carrierRes.body as { id: string }).id;
+
+      // Create transport order (reuse existing customerId/originId/destId from beforeAll)
+      const orderRes = await request(http)
+        .post('/api/v1/transportation/transport-orders')
+        .set(auth())
+        .send({ customerId, originLocationId: originId, destinationLocationId: destId, totalWeightKg: 100 })
+        .expect(201);
+      rxOrderId = (orderRes.body as { id: string }).id;
+
+      // Confirm the order
+      await request(http)
+        .post(`/api/v1/transportation/transport-orders/${rxOrderId}/confirm`)
+        .set(auth())
+        .expect(201);
+
+      // Plan the order (emits transport-order.planned; also creates shipment)
+      const planRes = await request(http)
+        .post(`/api/v1/transportation/transport-orders/${rxOrderId}/plan`)
+        .set(auth())
+        .expect(201);
+      rxShipmentId = (planRes.body as { shipments: Array<{ id: string }> }).shipments[0].id;
+
+      // Drain the transport-order.planned event so it doesn't interfere
+      await domainEvents.processPending(50);
+
+      // Create load
+      const loadRes = await request(http)
+        .post('/api/v1/transportation/loads')
+        .set(auth())
+        .send({})
+        .expect(201);
+      rxLoadId = (loadRes.body as { id: string }).id;
+
+      // Assign shipment to load
+      await request(http)
+        .post(`/api/v1/transportation/shipments/${rxShipmentId}/assign-load`)
+        .set(auth())
+        .send({ loadId: rxLoadId })
+        .expect(201);
+
+      // Assign carrier
+      await request(http)
+        .post(`/api/v1/transportation/loads/${rxLoadId}/assign`)
+        .set(auth())
+        .send({ carrierId: rxCarrierId })
+        .expect(201);
+
+      // Dispatch → start-transit → complete (emits load.completed)
+      await request(http)
+        .post(`/api/v1/transportation/loads/${rxLoadId}/dispatch`)
+        .set(auth())
+        .expect(201);
+      await request(http)
+        .post(`/api/v1/transportation/loads/${rxLoadId}/start-transit`)
+        .set(auth())
+        .expect(201);
+      await request(http)
+        .post(`/api/v1/transportation/loads/${rxLoadId}/complete`)
+        .set(auth())
+        .expect(201);
+
+      // Collect the load.completed DomainEvent id for cleanup
+      const completedEvent = await prisma.domainEvent.findFirst({
+        where: { tenantId, type: 'load.completed', payload: { path: ['loadId'], equals: rxLoadId } },
+        select: { id: true },
+      });
+      if (completedEvent) rxEventIds.push(completedEvent.id);
+
+      // Process reactions
+      await domainEvents.processPending(50);
+
+      // Collect any invoices created for cleanup
+      const invoices = await prisma.customerInvoice.findMany({
+        where: { tenantId, customerId },
+        select: { id: true },
+      });
+      rxInvoiceIds.push(...invoices.map((i) => i.id));
+    });
+
+    it('A) timeline: chain for load.completed has reactions[] with EXECUTED entry; reactionKpis.executed >= 1', async () => {
+      const res = await request(http)
+        .get('/api/v1/analytics/flow/timeline?days=7')
+        .set(auth())
+        .expect(200);
+
+      const body = res.body as {
+        chains: Array<{
+          event: { id: string; type: string } | null;
+          reactions: Array<{ id: string; action: string; status: string; eventId: string }>;
+        }>;
+        reactionKpis: { executed: number; failed: number };
+      };
+
+      // Find the chain for our load.completed event
+      const chain = body.chains.find((c) =>
+        c.event?.type === 'load.completed' && c.reactions.some((r) => r.action === 'draft_customer_invoice'),
+      );
+      expect(chain).toBeTruthy();
+
+      // The reaction entry MUST be EXECUTED (the beforeAll setup enables Billing + service-account
+      // to guarantee the draft_customer_invoice handler succeeds — not merely "EXECUTED or FAILED").
+      const reaction = chain!.reactions.find((r) => r.action === 'draft_customer_invoice');
+      expect(reaction).toBeTruthy();
+      expect(reaction!.status).toBe('EXECUTED');
+
+      // EXECUTED reactions count in the KPI — assert unconditionally.
+      expect(body.reactionKpis.executed).toBeGreaterThanOrEqual(1);
+    });
+
+    it('B) map: edges contains at least one entry with kind = "reaction"', async () => {
+      const res = await request(http)
+        .get('/api/v1/analytics/flow/map?days=7')
+        .set(auth())
+        .expect(200);
+
+      const body = res.body as {
+        nodes: Array<{ module: string; eventCount: number }>;
+        edges: Array<{ from: string; to: string; count: number; kind: string }>;
+      };
+
+      const reactionEdge = body.edges.find((e) => e.kind === 'reaction');
+      expect(reactionEdge).toBeTruthy();
+      // The reaction targets BILLING (draft_customer_invoice module).
+      // from is the source event's module (load.completed → CORE, since 'load' prefix maps to CORE).
+      expect(reactionEdge!.to).toBe('BILLING');
+    });
+
+    it('C) back-compat: a no-reaction tenant returns reactionKpis.executed===0 and no reaction edge', async () => {
+      // Set up a second isolated tenant with ANALYTICS enabled but NO automation rules
+      // and NO domain events — a genuine zero-reaction baseline.
+      const zeroSlug = `fct-zero-${suffix}`;
+      const zeroTenant = await prisma.tenant.create({
+        data: { slug: zeroSlug, name: `FCT Zero ${suffix}`, status: 'ACTIVE' },
+      });
+      zeroTenantId = zeroTenant.id;
+
+      // Enable ANALYTICS module for the zero tenant
+      const analyticsMod = await prisma.moduleDefinition.findUniqueOrThrow({ where: { key: 'analytics' } });
+      await prisma.tenantModule.create({
+        data: { tenantId: zeroTenantId, moduleId: analyticsMod.id, enabled: true, enabledAt: new Date() },
+      });
+
+      // Create a role with analytics.read permission
+      const analyticsReadPerm = await prisma.permission.findUniqueOrThrow({ where: { key: 'analytics.read' } });
+      const zeroRole = await prisma.role.create({
+        data: {
+          tenantId: zeroTenantId,
+          key: 'admin',
+          name: 'Admin',
+          isSystem: true,
+          permissions: { create: [{ permissionId: analyticsReadPerm.id }] },
+        },
+      });
+
+      // Create an admin user for the zero tenant (active with password so we can log in)
+      const { hashSync } = await import('bcryptjs');
+      const zeroUser = await prisma.user.create({
+        data: {
+          tenantId: zeroTenantId,
+          email: `fct-zero-admin-${suffix}@example.test`,
+          passwordHash: hashSync('Zero$123', 10),
+          firstName: 'Zero',
+          lastName: 'Admin',
+          status: 'ACTIVE',
+          roles: { create: [{ roleId: zeroRole.id }] },
+        },
+      });
+      void zeroUser;
+
+      // Log in as the zero tenant admin
+      const zeroLogin = await request(http)
+        .post('/api/v1/auth/login')
+        .send({ email: `fct-zero-admin-${suffix}@example.test`, password: 'Zero$123', tenant: zeroSlug })
+        .expect(200);
+      zeroToken = (zeroLogin.body as { accessToken: string }).accessToken;
+
+      // GET /analytics/flow/timeline for the zero tenant — must have executed === 0
+      const timelineRes = await request(http)
+        .get('/api/v1/analytics/flow/timeline?days=7')
+        .set({ Authorization: `Bearer ${zeroToken}` })
+        .expect(200);
+
+      const timelineBody = timelineRes.body as {
+        chains: unknown[];
+        reactionKpis: { executed: number; failed: number; byAction: unknown[] };
+      };
+
+      // The reactionKpis shape must always be present
+      expect(typeof timelineBody.reactionKpis).toBe('object');
+      expect(typeof timelineBody.reactionKpis.executed).toBe('number');
+      expect(typeof timelineBody.reactionKpis.failed).toBe('number');
+      expect(Array.isArray(timelineBody.reactionKpis.byAction)).toBe(true);
+      // Zero reactions for this tenant
+      expect(timelineBody.reactionKpis.executed).toBe(0);
+
+      // GET /analytics/flow/map for the zero tenant — must have NO reaction edge
+      const mapRes = await request(http)
+        .get('/api/v1/analytics/flow/map?days=7')
+        .set({ Authorization: `Bearer ${zeroToken}` })
+        .expect(200);
+
+      const mapBody = mapRes.body as {
+        nodes: unknown[];
+        edges: Array<{ from: string; to: string; count: number; kind?: string }>;
+      };
+
+      const reactionEdge = mapBody.edges.find((e) => e.kind === 'reaction');
+      expect(reactionEdge).toBeUndefined();
+    });
+  });
 
   // =========================================================================
   // Scenario 5 — Gating (permission)

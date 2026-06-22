@@ -13,6 +13,7 @@
     Tabs,
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
+  import { reactionByKey } from '@pulsar/shared';
 
   // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -47,14 +48,30 @@
     at: string;
   }
 
+  interface FlowReaction {
+    id: string;
+    action: string;
+    status: string;
+    module: string;
+    eventId: string;
+    at: string;
+  }
+
   interface FlowChain {
     event: FlowEvent | null;
     tasks: FlowTask[];
     actions: FlowAction[];
+    reactions: FlowReaction[];
     modules: string[];
     crossModule: boolean;
     startedAt: string;
     lastAt: string;
+  }
+
+  interface ReactionKpis {
+    executed: number;
+    failed: number;
+    byAction: { action: string; executed: number; failed: number }[];
   }
 
   interface FlowMapNode {
@@ -66,6 +83,7 @@
     from: string;
     to: string;
     count: number;
+    kind: 'event' | 'reaction';
   }
 
   interface FlowMapData {
@@ -95,6 +113,7 @@
 
   // Timeline
   let timelineData = $state<FlowChain[]>([]);
+  let reactionKpis = $state<ReactionKpis | null>(null);
   let timelineLoading = $state(false);
   let timelineError = $state('');
   let days = $state('7');
@@ -172,15 +191,20 @@
     timelineLoading = true;
     timelineError = '';
     try {
-      const res = await api<{ chains: FlowChain[] }>('/analytics/flow/timeline', {
+      const res = await api<{ chains: FlowChain[]; reactionKpis: ReactionKpis }>('/analytics/flow/timeline', {
         query: { days, crossOnly: crossOnly ? 'true' : 'false' },
       });
       timelineData = res.chains;
+      reactionKpis = res.reactionKpis ?? null;
     } catch (e) {
       timelineError = e instanceof ApiError ? e.message : 'Échec du chargement de la timeline';
     } finally {
       timelineLoading = false;
     }
+  }
+
+  function reactionLabel(action: string): string {
+    return reactionByKey(action)?.label ?? action;
   }
 
   async function loadMap(): Promise<void> {
@@ -280,6 +304,17 @@
 
       <ErrorNotice message={timelineError} onretry={loadTimeline} />
 
+      {#if reactionKpis}
+        <div class="mb-3 flex items-center gap-3 rounded-md border border-edge-soft px-3 py-2 text-sm">
+          <span class="font-bold text-ink">⚡ Réactions</span>
+          <span class="text-ok">{reactionKpis.executed} exécutées</span>
+          <span class="text-danger">{reactionKpis.failed} échouées</span>
+          {#if reactionKpis.byAction.length}
+            <span class="text-ink-muted">· top : {reactionKpis.byAction.slice(0, 3).map((a) => `${reactionLabel(a.action)} (${a.executed + a.failed})`).join(', ')}</span>
+          {/if}
+        </div>
+      {/if}
+
       {#if timelineLoading && timelineData.length === 0}
         <div class="flex flex-col gap-3">
           {#each Array(4) as _, i (i)}<Card><Skeleton rows={3} /></Card>{/each}
@@ -363,7 +398,7 @@
 
                   <!-- Actions -->
                   {#if chain.actions.length > 0}
-                    <div>
+                    <div class={chain.reactions?.length ? 'mb-3' : ''}>
                       <div class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Actions ({chain.actions.length})</div>
                       <div class="flex flex-col gap-1.5">
                         {#each chain.actions as action (action.id)}
@@ -378,6 +413,20 @@
                             {/if}
                             <span class="ml-auto text-xs text-ink-faint">{fmtAt(action.at)}</span>
                           </div>
+                        {/each}
+                      </div>
+                    </div>
+                  {/if}
+
+                  <!-- Reactions -->
+                  {#if chain.reactions?.length}
+                    <div>
+                      <div class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Réactions ({chain.reactions.length})</div>
+                      <div class="mt-1 flex flex-wrap gap-1">
+                        {#each chain.reactions as r (r.id)}
+                          <span class="rounded px-1.5 py-0.5 text-xs {r.status === 'EXECUTED' ? 'bg-ok/10 text-ok' : 'bg-danger/10 text-danger'}">
+                            ⚡ {reactionLabel(r.action)} → {r.module}{r.status === 'FAILED' ? ' (échec)' : ''}
+                          </span>
                         {/each}
                       </div>
                     </div>
@@ -496,18 +545,24 @@
 
           <!-- Edges -->
           <Card padded={false}>
-            <h2 class="border-b border-edge-soft px-4 py-3 text-sm font-bold text-ink">Flux entre modules</h2>
+            <div class="flex items-center justify-between border-b border-edge-soft px-4 py-3">
+              <h2 class="text-sm font-bold text-ink">Flux entre modules</h2>
+              <span class="text-[11px] text-ink-faint">⚡ = réaction cross-module</span>
+            </div>
             {#if mapData.edges.length === 0}
               <div class="px-4 py-4">
                 <EmptyState message="Aucun flux cross-module sur cette fenêtre." />
               </div>
             {:else}
               <ul class="divide-y divide-edge-soft">
-                {#each mapData.edges as edge (`${edge.from}→${edge.to}`)}
+                {#each mapData.edges as edge (`${edge.from}→${edge.to}→${edge.kind}`)}
                   <li class="flex items-center gap-3 px-4 py-2.5 text-sm">
                     <span class="rounded bg-surface-muted px-1.5 py-0.5 text-[11px] font-medium text-ink-muted uppercase">{edge.from}</span>
-                    <span class="text-ink-faint">→</span>
+                    <span class="{edge.kind === 'reaction' ? 'text-accent' : 'text-ink-faint'}">→</span>
                     <span class="rounded bg-surface-muted px-1.5 py-0.5 text-[11px] font-medium text-ink-muted uppercase">{edge.to}</span>
+                    {#if edge.kind === 'reaction'}
+                      <span class="text-accent text-xs">⚡ réaction</span>
+                    {/if}
                     <span class="ml-auto font-mono text-sm font-semibold text-ink">{edge.count}</span>
                   </li>
                 {/each}
