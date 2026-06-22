@@ -85,6 +85,17 @@ export class AgentRunsService {
       this.prisma.agentRun.findMany({ where, skip, take, orderBy: { createdAt: 'desc' }, select: runSelect }),
       this.prisma.agentRun.count({ where }),
     ]);
-    return paginated(items, total, page, pageSize);
+    // Attach a light summary of the handled task so the UI shows WHAT each run
+    // did (category, title, outcome, resolution note) instead of a raw task id.
+    const taskIds = [...new Set(items.map((r) => r.taskId).filter((x): x is string => !!x))];
+    const tasks = taskIds.length
+      ? await this.prisma.operationalTask.findMany({
+          where: { tenantId, id: { in: taskIds } },
+          select: { id: true, category: true, title: true, status: true, resolutionNote: true },
+        })
+      : [];
+    const byId = new Map(tasks.map((t) => [t.id, t]));
+    const enriched = items.map((r) => ({ ...r, task: r.taskId ? byId.get(r.taskId) ?? null : null }));
+    return paginated(enriched, total, page, pageSize);
   }
 }

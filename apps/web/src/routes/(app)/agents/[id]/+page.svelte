@@ -32,6 +32,8 @@
     maxAmountPerAction?: number;
     maxActionsPerMinute?: number;
     policies?: AgentPolicy[];
+    alwaysOn?: boolean;
+    handlesCategories?: string[];
   }
 
   interface AgentDetail {
@@ -74,6 +76,7 @@
     error: string | null;
     proposedActionCount: number;
     createdAt: string;
+    task: { id: string; category: string; title: string; status: string; resolutionNote: string | null } | null;
   }
 
   interface ConversationSummary {
@@ -487,6 +490,9 @@
           <Badge tone="ok">Actif</Badge>
         {/if}
         <Badge tone={autonomyTone(agent.autonomyLevel)}>{agent.autonomyLevel}</Badge>
+        {#if agent.caps?.alwaysOn}
+          <Badge tone="info">24/7 · {(agent.caps.handlesCategories ?? []).join(', ') || 'aucune catégorie'}</Badge>
+        {/if}
       </div>
     </div>
     <Button
@@ -826,16 +832,26 @@
             <li class="flex flex-wrap items-center gap-3 px-1 py-2.5">
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-sm font-medium text-ink">
-                  {run.trigger} · {run.taskId ?? '—'}
+                  {#if run.task}
+                    {run.task.title}
+                  {:else}
+                    {run.trigger} · {run.taskId ?? '—'}
+                  {/if}
                 </span>
                 <span class="text-xs text-ink-muted">
-                  Tentative {run.attempt} · {run.proposedActionCount} action{run.proposedActionCount !== 1 ? 's' : ''} · {formatDateTime(run.startedAt)}
+                  {#if run.task}<span class="font-medium text-ink-muted">{run.task.category}</span> · {/if}{run.trigger} · {run.proposedActionCount} action{run.proposedActionCount !== 1 ? 's' : ''} · {formatDateTime(run.startedAt)}
                 </span>
+                {#if run.task?.resolutionNote}
+                  <span class="mt-0.5 block truncate text-xs text-ink-muted" title={run.task.resolutionNote}>↳ {run.task.resolutionNote}</span>
+                {/if}
                 {#if run.error}
-                  <span class="mt-0.5 block truncate text-xs text-ink-muted">{run.error}</span>
+                  <span class="mt-0.5 block truncate text-xs text-danger">{run.error}</span>
                 {/if}
               </span>
-              <div class="shrink-0">
+              <div class="flex shrink-0 items-center gap-2">
+                {#if run.task}
+                  <Badge tone={run.task.status === 'RESOLVED' ? 'ok' : 'neutral'}>{run.task.status}</Badge>
+                {/if}
                 <Badge tone={runStatusTone(run.status)}>{run.status}</Badge>
               </div>
             </li>
