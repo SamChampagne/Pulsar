@@ -30,6 +30,11 @@
     { value: 'CUSTOMER_INVOICE', label: 'Facture client' },
   ];
 
+  const WMS_ENTITY_TYPES: EntityTypeDef[] = [
+    { value: 'RECEIPT', label: 'Réception' },
+    { value: 'PICK_ORDER', label: 'Pick order' },
+  ];
+
   const FIELD_TYPES: { value: FieldType; label: string }[] = [
     { value: 'TEXT', label: 'Texte' },
     { value: 'NUMBER', label: 'Nombre' },
@@ -42,7 +47,11 @@
   let { module: moduleProp = 'transportation' }: { module?: string } = $props();
 
   const entityTypes = $derived(
-    moduleProp === 'billing' ? BILLING_ENTITY_TYPES : TRANSPORTATION_ENTITY_TYPES,
+    moduleProp === 'billing'
+      ? BILLING_ENTITY_TYPES
+      : moduleProp === 'wms'
+        ? WMS_ENTITY_TYPES
+        : TRANSPORTATION_ENTITY_TYPES,
   );
   const apiBase = $derived(`/${moduleProp}/custom-fields`);
 

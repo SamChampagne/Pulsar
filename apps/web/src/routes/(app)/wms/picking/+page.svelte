@@ -20,6 +20,7 @@
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
 
   interface ShipmentRef {
     id: string;
@@ -55,6 +56,15 @@
     type: string;
   }
 
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    options?: { value: string; label: string }[];
+    required: boolean;
+    showInList?: boolean;
+  }
+
   let orders = $state<PickRow[]>([]);
   let warehouses = $state<LocationOption[]>([]);
   let loading = $state(true);
@@ -67,6 +77,8 @@
   let createReference = $state('');
   let createNote = $state('');
   let createSaving = $state(false);
+  let pickFieldDefs = $state<CustomFieldDef[]>([]);
+  let customData = $state<Record<string, unknown>>({});
 
   const KANBAN_COLS: { status: string; label: string }[] = [
     { status: 'OPEN', label: 'Ouvert' },
@@ -143,11 +155,15 @@
     void load();
   });
 
-  function openCreate() {
+  async function openCreate() {
     createLocationId = warehouses[0]?.id ?? '';
     createReference = '';
     createNote = '';
+    customData = {};
     createOpen = true;
+    pickFieldDefs = await api<CustomFieldDef[]>('/wms/custom-fields', {
+      query: { entityType: 'PICK_ORDER' },
+    }).catch(() => [] as CustomFieldDef[]);
   }
 
   async function submitCreate() {
@@ -163,6 +179,7 @@
           locationId: createLocationId,
           reference: createReference || undefined,
           note: createNote || undefined,
+          customData: Object.keys(customData).length > 0 ? customData : undefined,
         },
       });
       toast.success('Pick order créé');
@@ -304,6 +321,9 @@
     <Field label="Note">
       <Textarea bind:value={createNote} />
     </Field>
+    {#if pickFieldDefs.length > 0}
+      <CustomFieldInputs definitions={pickFieldDefs} bind:data={customData} />
+    {/if}
   </div>
   {#snippet footer()}
     <Button variant="secondary" onclick={() => { createOpen = false; }}>Annuler</Button>

@@ -19,6 +19,7 @@
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
 
   interface ReceiptRow {
     id: string;
@@ -48,6 +49,15 @@
     type: string;
   }
 
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    options?: { value: string; label: string }[];
+    required: boolean;
+    showInList?: boolean;
+  }
+
   let receipts = $state<ReceiptRow[]>([]);
   let warehouses = $state<LocationOption[]>([]);
   let loading = $state(true);
@@ -60,6 +70,8 @@
   let createReference = $state('');
   let createNote = $state('');
   let createSaving = $state(false);
+  let receiptFieldDefs = $state<CustomFieldDef[]>([]);
+  let customData = $state<Record<string, unknown>>({});
 
   const KANBAN_COLS: { status: string; label: string }[] = [
     { status: 'DRAFT', label: 'Brouillon' },
@@ -124,11 +136,15 @@
     void load();
   });
 
-  function openCreate() {
+  async function openCreate() {
     createLocationId = warehouses[0]?.id ?? '';
     createReference = '';
     createNote = '';
+    customData = {};
     createOpen = true;
+    receiptFieldDefs = await api<CustomFieldDef[]>('/wms/custom-fields', {
+      query: { entityType: 'RECEIPT' },
+    }).catch(() => [] as CustomFieldDef[]);
   }
 
   async function submitCreate() {
@@ -144,6 +160,7 @@
           locationId: createLocationId,
           reference: createReference || undefined,
           note: createNote || undefined,
+          customData: Object.keys(customData).length > 0 ? customData : undefined,
         },
       });
       toast.success('Réception créée');
@@ -270,6 +287,9 @@
     <Field label="Note">
       <Textarea bind:value={createNote} />
     </Field>
+    {#if receiptFieldDefs.length > 0}
+      <CustomFieldInputs definitions={receiptFieldDefs} bind:data={customData} />
+    {/if}
   </div>
   {#snippet footer()}
     <Button variant="secondary" onclick={() => { createOpen = false; }}>Annuler</Button>

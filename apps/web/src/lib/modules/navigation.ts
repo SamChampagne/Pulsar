@@ -189,6 +189,16 @@ export function navCatalogue(): NavDomain[] {
             { href: '/wms/bins', label: 'Emplacements' },
           ],
         },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/wms',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
+          ],
+        },
       ],
     },
 
