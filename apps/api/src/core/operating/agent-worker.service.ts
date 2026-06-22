@@ -7,6 +7,8 @@ import {
   AgentStatus,
   OperationalTaskStatus,
   classifyRunError,
+  buildWakePrompt,
+  type WakeAutonomy,
 } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AgentCaps } from '../agents/agent-principal';
@@ -226,8 +228,16 @@ export class AgentWorkerService {
     try {
       const agent = (await this.prisma.agent.findFirst({
         where: { id: agentId, tenantId },
-        select: { id: true, tenantId: true, model: true, persona: true, serviceUserId: true, status: true },
-      })) as (AgentRow & { status: AgentStatus }) | null;
+        select: {
+          id: true,
+          tenantId: true,
+          model: true,
+          persona: true,
+          serviceUserId: true,
+          status: true,
+          autonomyLevel: true,
+        },
+      })) as (AgentRow & { status: AgentStatus; autonomyLevel: WakeAutonomy }) | null;
 
       // Hot kill switch: refuse to start for a non-ACTIVE agent.
       if (!agent || agent.status !== AgentStatus.ACTIVE) {
@@ -250,7 +260,8 @@ export class AgentWorkerService {
       // Runtime reachable => heartbeat.
       await this.prisma.agent.update({ where: { id: agentId }, data: { lastSeenAt: new Date() } }).catch(() => undefined);
       try {
-        for await (const _ev of this.runtime.sendTurn(sessionId, this.buildPrompt(taskId))) void _ev;
+        const prompt = await this.buildPrompt(tenantId, taskId, agent.autonomyLevel);
+        for await (const _ev of this.runtime.sendTurn(sessionId, prompt)) void _ev;
       } finally {
         await this.runtime.closeSession(sessionId).catch(() => undefined);
       }
@@ -333,10 +344,40 @@ export class AgentWorkerService {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  private buildPrompt(taskId: string): string {
-    return (
-      `You are handling operational task id ${taskId}. ` +
-      `Review the situation and take or propose the appropriate action.`
+  /**
+   * Build the wake prompt for a task: full context + category playbook + an
+   * autonomy-aware directive (PROPOSE → propose only, don't close; ACT_LOW/
+   * AUTONOMOUS → act then resolve_task). Tenant-scoped read. Falls back to a
+   * minimal prompt if the task vanished between dispatch and execution.
+   */
+  private async buildPrompt(tenantId: string, taskId: string, autonomy: WakeAutonomy): Promise<string> {
+    const task = await this.prisma.operationalTask.findFirst({
+      where: { id: taskId, tenantId },
+      select: {
+        id: true,
+        category: true,
+        title: true,
+        severity: true,
+        subjectType: true,
+        subjectId: true,
+        slaDueAt: true,
+      },
+    });
+    if (!task) {
+      return `Tâche opérationnelle ${taskId} introuvable. Aucune action requise.`;
+    }
+    return buildWakePrompt(
+      {
+        id: task.id,
+        category: task.category,
+        title: task.title,
+        description: null,
+        severity: String(task.severity),
+        subjectType: task.subjectType,
+        subjectId: task.subjectId,
+        slaDueAt: task.slaDueAt == null ? null : task.slaDueAt.toISOString(),
+      },
+      autonomy,
     );
   }
 }
