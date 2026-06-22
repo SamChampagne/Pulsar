@@ -99,6 +99,10 @@ model Tenant {
   awards           Award[]
   orderTemplates   OrderTemplate[]
   automationRules  AutomationRule[]
+  crmCompanies     CrmCompany[]
+  crmContacts      CrmContact[]
+  crmDeals         CrmDeal[]
+  crmActivities    CrmActivity[]
 
   @@map("tenants")
 }
@@ -2530,6 +2534,120 @@ model Award {
 
   @@index([tenantId])
   @@map("awards")
+}
+
+// ============================================================================
+// CRM — companies, contacts, deals, activities
+// ============================================================================
+
+enum CrmCompanyStatus {
+  PROSPECT
+  ACTIVE
+  INACTIVE
+}
+
+enum CrmDealStage {
+  LEAD
+  QUALIFIED
+  PROPOSAL
+  WON
+  LOST
+}
+
+enum CrmActivityType {
+  NOTE
+  CALL
+  EMAIL
+  MEETING
+  TASK
+}
+
+model CrmCompany {
+  id           String           @id @default(cuid())
+  tenantId     String
+  name         String
+  domain       String?
+  industry     String?
+  status       CrmCompanyStatus @default(PROSPECT)
+  ownerUserId  String?
+  customerId   String?
+  carrierId    String?
+  customData   Json?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  tenant       Tenant           @relation(fields: [tenantId], references: [id])
+  contacts     CrmContact[]
+  deals        CrmDeal[]
+  activities   CrmActivity[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("crm_companies")
+}
+
+model CrmContact {
+  id          String      @id @default(cuid())
+  tenantId    String
+  name        String
+  companyId   String?
+  title       String?
+  email       String?
+  phone       String?
+  ownerUserId String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  company     CrmCompany? @relation(fields: [companyId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, companyId])
+  @@map("crm_contacts")
+}
+
+model CrmDeal {
+  id                  String       @id @default(cuid())
+  tenantId            String
+  title               String
+  companyId           String
+  stage               CrmDealStage @default(LEAD)
+  amount              Decimal?
+  currency            String       @default("CAD")
+  ownerUserId         String?
+  expectedCloseDate   DateTime?
+  lastActivityAt      DateTime?
+  convertedCustomerId String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  tenant              Tenant       @relation(fields: [tenantId], references: [id])
+  company             CrmCompany   @relation(fields: [companyId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, stage])
+  @@index([tenantId, lastActivityAt])
+  @@map("crm_deals")
+}
+
+model CrmActivity {
+  id              String          @id @default(cuid())
+  tenantId        String
+  type            CrmActivityType
+  companyId       String?
+  contactId       String?
+  dealId          String?
+  body            String
+  dueAt           DateTime?
+  doneAt          DateTime?
+  createdByUserId String?
+  agentId         String?
+  createdAt       DateTime        @default(now())
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  company         CrmCompany?     @relation(fields: [companyId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, dealId])
+  @@index([tenantId, companyId])
+  @@index([tenantId, type, doneAt])
+  @@map("crm_activities")
 }
 
 // ---------------------------------------------------------------------------
