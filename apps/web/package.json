@@ -8,7 +8,9 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+    "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
@@ -25,10 +27,13 @@
     "@tailwindcss/vite": "^4.3.0",
     "@types/leaflet": "^1.9.21",
     "@types/node": "^22.19.20",
+    "@vitest/coverage-v8": "^4.1.9",
+    "jsdom": "^29.1.1",
     "svelte": "^5.28.0",
     "svelte-check": "^4.1.7",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^3.2.6"
   }
 }
