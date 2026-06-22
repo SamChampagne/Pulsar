@@ -1746,6 +1746,7 @@ model DomainEvent {
 
   @@index([status, createdAt])
   @@index([tenantId, type, createdAt])
+  @@index([tenantId, subjectType, subjectId])
   @@map("domain_events")
 }
 
