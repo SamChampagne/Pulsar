@@ -1,12 +1,11 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { reactionByKey, type ReactionCommand, AuditAction } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
-import { PickingService } from '../../modules/wms/picking/picking.service';
-import { CustomerInvoicesService } from '../../modules/billing/customer-invoices.service';
 import { CreatePickOrderDto } from '../../modules/wms/picking/dto/pick.dto';
 
 const als = new AsyncLocalStorage<{ reactionRuleId: string }>();
@@ -14,6 +13,16 @@ const als = new AsyncLocalStorage<{ reactionRuleId: string }>();
 export function currentReactionRuleId(): string | null {
   return als.getStore()?.reactionRuleId ?? null;
 }
+
+/**
+ * Lazy token strings used for deferred service resolution via ModuleRef.
+ * These are the string tokens NestJS uses by default for class providers.
+ * We import the class type only for typing (not used in @Module imports),
+ * which avoids a circular JavaScript require chain:
+ *   OperatingModule → AutomationModule → WmsModule → OperatingModule.
+ */
+const PICKING_SERVICE_TOKEN = 'PickingService';
+const CUSTOMER_INVOICES_SERVICE_TOKEN = 'CustomerInvoicesService';
 
 @Injectable()
 export class ReactionExecutorService {
@@ -23,8 +32,7 @@ export class ReactionExecutorService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogsService,
     private readonly modules: TenantModulesCacheService,
-    private readonly picking: PickingService,
-    private readonly customerInvoices: CustomerInvoicesService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   runInReactionContext<T>(ruleId: string, fn: () => Promise<T>): Promise<T> {
@@ -113,6 +121,13 @@ export class ReactionExecutorService {
     orderId: string,
   ): Promise<void> {
     if (!orderId) return;
+
+    // Lazy-resolve PickingService to avoid a circular JS require chain in the
+    // module graph (AutomationModule → WmsModule → OperatingModule → AutomationModule).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { PickingService } = require('../../modules/wms/picking/picking.service') as typeof import('../../modules/wms/picking/picking.service');
+    const picking = this.moduleRef.get(PickingService, { strict: false });
+
     const shipments = await this.prisma.shipment.findMany({
       where: {
         tenantId,
@@ -130,7 +145,7 @@ export class ReactionExecutorService {
       const dto = new CreatePickOrderDto();
       dto.locationId = s.originLocationId;
       dto.shipmentId = s.id;
-      await this.picking.create(tenantId, userId, dto);
+      await picking.create(tenantId, userId, dto);
     }
   }
 
@@ -140,6 +155,12 @@ export class ReactionExecutorService {
     loadId: string,
   ): Promise<void> {
     if (!loadId) return;
+
+    // Lazy-resolve CustomerInvoicesService to avoid a circular JS require chain.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { CustomerInvoicesService } = require('../../modules/billing/customer-invoices.service') as typeof import('../../modules/billing/customer-invoices.service');
+    const customerInvoices = this.moduleRef.get(CustomerInvoicesService, { strict: false });
+
     const shipments = await this.prisma.shipment.findMany({
       where: { tenantId, loadId },
       select: { transportOrder: { select: { customerId: true } } },
@@ -147,7 +168,7 @@ export class ReactionExecutorService {
     const customerIds = [...new Set(shipments.map((s) => s.transportOrder.customerId))];
     for (const customerId of customerIds) {
       try {
-        await this.customerInvoices.createDrafts(tenantId, userId, customerId);
+        await customerInvoices.createDrafts(tenantId, userId, customerId);
       } catch (err) {
         // "No ratable delivered orders" is an expected no-op (anti-double-billing).
         // Swallow it and continue to the next customer; only unexpected errors propagate.

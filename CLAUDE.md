@@ -234,6 +234,19 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     coordonnées d'affichage (tenant-scopé, `yard.manage`) ; le glisser-déposer du plan appelle les endpoints
     existants `assign`/`move` (gardés).
 
+## Hard rules (continued, arc B — tressage automatique)
+
+35. (arc B — réactions déterministes `RUN_ACTION`) Les réactions cross-module ne s'exécutent
+    QUE via `ReactionExecutorService` (whitelist `REACTION_CATALOG` de `@pulsar/shared`) ; elles
+    sont idempotentes sur `(tenantId, eventId, ruleId)` (unique constraint `ReactionExecution`) ;
+    anti-boucle single-hop : un `DomainEvent` portant `reactionRuleId` n'est JAMAIS ré-évalué
+    par des règles `RUN_ACTION` dans `processPending`. Le chemin est best-effort (échec → statut
+    `FAILED`, jamais bloquant) et audité sous le service-account de l'agent (règle 13). Les
+    effets externes (appels vers des systèmes tiers, envoi d'email, etc.) restent gouvernés par
+    les agents (règles 22–29) — jamais dans un handler de réaction. `AutomationModule` n'importe
+    JAMAIS `WmsModule` ni `BillingModule` statiquement (cycle JS) ; `ReactionExecutorService`
+    résout `PickingService`/`CustomerInvoicesService` via `ModuleRef.get()` + lazy `require()`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
