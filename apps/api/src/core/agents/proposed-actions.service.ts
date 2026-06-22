@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditAction } from '@pulsar/shared';
 import {
+  AgentStatus,
   ProposalStatus,
   deriveIdempotencyKey,
   evaluateAmountCap,
@@ -249,14 +250,19 @@ export class ProposedActionsService {
     const def = TOOL_BY_NAME.get(proposal.tool);
     if (!def) throw new BadRequestException(`Unknown tool "${proposal.tool}"`);
 
+    // The agent must still be ACTIVE: if a human PAUSED (kill switch, rule 28) or
+    // REVOKED it between enqueue and approval, its queued actions must not execute.
+    const agent = await this.prisma.agent.findUniqueOrThrow({ where: { id: proposal.agentId } });
+    if (agent.status !== AgentStatus.ACTIVE) {
+      throw new BadRequestException(`Agent is ${agent.status}, cannot approve its actions`);
+    }
+
     // Race-safe claim: only one approver moves PENDING -> APPROVED.
     const claimed = await this.prisma.proposedAction.updateMany({
       where: { id, status: ProposalStatus.PENDING },
       data: { status: ProposalStatus.APPROVED, decidedById: approverId, decidedAt: new Date() },
     });
     if (claimed.count === 0) throw new BadRequestException('Proposal already decided');
-
-    const agent = await this.prisma.agent.findUniqueOrThrow({ where: { id: proposal.agentId } });
     const principal: AgentPrincipal = {
       agentId: agent.id,
       name: agent.name,
