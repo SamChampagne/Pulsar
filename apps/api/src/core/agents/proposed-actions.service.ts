@@ -233,9 +233,14 @@ export class ProposedActionsService {
   }
 
   async listPending(tenantId: string) {
+    // Bound the queue read: an AUTONOMOUS-heavy tenant could otherwise accumulate
+    // thousands of PENDING rows and return them all in one unbounded query. 200 is
+    // far beyond a realistic human-review backlog (oldest first, so nothing actionable
+    // is hidden); revisit with real pagination if a tenant ever legitimately exceeds it.
     const rows = await this.prisma.proposedAction.findMany({
       where: { tenantId, status: ProposalStatus.PENDING },
       orderBy: { proposedAt: 'asc' },
+      take: 200,
     });
     return rows.map((r) => this.project(r));
   }
