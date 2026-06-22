@@ -8,6 +8,7 @@ import {
 import {
   AuditAction,
   BidStatus,
+  CustomFieldEntity,
   InviteStatus,
   MODULE_KEYS,
   RateType,
@@ -15,8 +16,10 @@ import {
   canTransitionBid,
   canTransitionRfp,
 } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import { randomBytes } from 'node:crypto';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
+import { CustomFieldsService } from '../../core/custom-fields/custom-fields.service';
 import { EmailService } from '../../core/email/email.service';
 import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { OwnershipService } from '../../prisma/ownership.service';
@@ -49,6 +52,7 @@ export class ProcurementService {
     private readonly rates: RatesService,
     private readonly modulesCache: TenantModulesCacheService,
     private readonly moduleSettings: ModuleSettingsService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -134,6 +138,9 @@ export class ProcurementService {
   }
 
   async createRfp(tenantId: string, userId: string, dto: CreateRfpDto) {
+    const customData = await this.customFields.validateValues(
+      'procurement', tenantId, CustomFieldEntity.RFP, dto.customData, { partial: false },
+    );
     const rfpNumber = await this.sequences.nextNumber(tenantId, 'rfp');
     const rfp = await this.prisma.rfp.create({
       data: {
@@ -144,6 +151,7 @@ export class ProcurementService {
         deadline: dto.deadline ? new Date(dto.deadline) : null,
         status: RfpStatus.DRAFT,
         createdById: userId,
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
     });
     await this.audit.log({
@@ -159,12 +167,16 @@ export class ProcurementService {
 
   async updateRfp(tenantId: string, id: string, dto: UpdateRfpDto) {
     await this.assertRfpExists(tenantId, id);
+    const customData = await this.customFields.validateValues(
+      'procurement', tenantId, CustomFieldEntity.RFP, dto.customData, { partial: true },
+    );
     const data = {
       ...(dto.title !== undefined ? { title: dto.title } : {}),
       ...(dto.description !== undefined ? { description: dto.description } : {}),
       ...(dto.deadline !== undefined
         ? { deadline: dto.deadline ? new Date(dto.deadline) : null }
         : {}),
+      ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
     };
     await this.prisma.rfp.updateMany({ where: { id, tenantId }, data });
     return this.prisma.rfp.findFirst({ where: { id, tenantId } });

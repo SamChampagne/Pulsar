@@ -18,6 +18,15 @@
     toneFor,
     labelFor,
   } from '$lib/components/ui';
+  import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
+
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    required: boolean;
+    options?: { value: string; label: string }[];
+  }
 
   interface Rfp {
     id: string;
@@ -44,6 +53,8 @@
   let formTitle = $state('');
   let formDescription = $state('');
   let formDeadline = $state('');
+  let rfpFieldDefs = $state<CustomFieldDef[]>([]);
+  let customData = $state<Record<string, unknown>>({});
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
   function formatDate(val: string | null | undefined): string {
@@ -84,6 +95,7 @@
       const body: Record<string, unknown> = { title: formTitle.trim() };
       if (formDescription.trim()) body.description = formDescription.trim();
       if (formDeadline) body.deadline = formDeadline;
+      if (Object.keys(customData).length > 0) body.customData = customData;
       await api('/procurement/rfps', { method: 'POST', body });
       toast.success('Appel d\'offres créé');
       resetForm();
@@ -94,10 +106,20 @@
     }
   }
 
+  async function openCreateForm() {
+    formTitle = '';
+    formDescription = '';
+    formDeadline = '';
+    customData = {};
+    rfpFieldDefs = await api<CustomFieldDef[]>('/procurement/custom-fields', { query: { entityType: 'RFP' } }).catch(() => []);
+    showForm = true;
+  }
+
   function resetForm() {
     formTitle = '';
     formDescription = '';
     formDeadline = '';
+    customData = {};
     showForm = false;
   }
 
@@ -108,7 +130,7 @@
 
 <PageHeader title="Appels d'offres" count={total}>
   {#snippet actions()}
-    <Button onclick={() => { resetForm(); showForm = true; }}>Créer un RFP</Button>
+    <Button onclick={openCreateForm}>Créer un RFP</Button>
   {/snippet}
 </PageHeader>
 
@@ -120,7 +142,7 @@
   <Card>
     <EmptyState message="Aucun appel d'offres pour le moment.">
       {#snippet children()}
-        <Button onclick={() => { resetForm(); showForm = true; }}>Créer un RFP</Button>
+        <Button onclick={openCreateForm}>Créer un RFP</Button>
       {/snippet}
     </EmptyState>
   </Card>
@@ -162,6 +184,9 @@
       <Field label="Deadline (optionnel)">
         <Input type="date" bind:value={formDeadline} />
       </Field>
+      {#if rfpFieldDefs.length > 0}
+        <CustomFieldInputs definitions={rfpFieldDefs} bind:data={customData} />
+      {/if}
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
         <Button variant="secondary" onclick={resetForm}>Annuler</Button>
         <Button variant="primary" type="submit">Créer</Button>

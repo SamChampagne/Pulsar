@@ -86,6 +86,7 @@ export const MODULE_SETTINGS_CATALOG: ModuleSettingsCatalog[] = [
         ],
       },
       { key: 'awardCreatesRateByDefault', label: 'Attribution crée un tarif par défaut', type: 'boolean', default: false },
+      { key: 'documentPrefixRfp', label: 'Préfixe n° RFP', type: 'string', default: 'RFP', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
     ],
   },
   {

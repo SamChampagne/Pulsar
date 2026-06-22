@@ -30,6 +30,33 @@ export const REACTION_CATALOG: ReactionDescriptor[] = [
       'Crée un relevé client brouillon pour les clients des commandes livrées du load (anti-double-billing).',
     argKeys: ['loadId'],
   },
+  {
+    key: 'open_maintenance_order',
+    label: 'Ouvrir un ordre de maintenance',
+    module: 'fleet',
+    requiredModules: ['fleet'],
+    description:
+      'À l\'échéance d\'un entretien préventif, ouvre un ordre de maintenance pour l\'asset dû (s\'il n\'en a pas déjà un d\'ouvert).',
+    argKeys: ['assetKind', 'assetId', 'scheduleId', 'name'],
+  },
+  {
+    key: 'assign_dock_appointment',
+    label: 'Affecter au quai du rendez-vous',
+    module: 'yard',
+    requiredModules: ['yard'],
+    description:
+      'À l\'arrivée d\'une visite liée à un rendez-vous quai, l\'affecte automatiquement au spot du rendez-vous (si libre).',
+    argKeys: ['visitId'],
+  },
+  {
+    key: 'close_delivered_transport_order',
+    label: 'Fermer les ordres livrés',
+    module: 'transportation',
+    requiredModules: ['transportation'],
+    description:
+      'À la complétion d\'un load, ferme les ordres de transport entièrement livrés (COMPLETED → CLOSED).',
+    argKeys: ['loadId'],
+  },
 ];
 
 const BY_KEY = new Map(REACTION_CATALOG.map((r) => [r.key, r]));

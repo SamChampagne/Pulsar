@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
@@ -101,6 +101,12 @@ export class ReactionExecutorService {
         return this.createPicksForOrder(tenantId, sysUserId, command.args['orderId']);
       case 'draft_customer_invoice':
         return this.draftCustomerInvoice(tenantId, sysUserId, command.args['loadId']);
+      case 'open_maintenance_order':
+        return this.openMaintenanceOrder(tenantId, sysUserId, command.args);
+      case 'assign_dock_appointment':
+        return this.assignDockAppointment(tenantId, sysUserId, command.args['visitId']);
+      case 'close_delivered_transport_order':
+        return this.closeDeliveredTransportOrder(tenantId, sysUserId, command.args['loadId']);
       default:
         this.logger.warn(`No handler for reaction action "${command.action}"`);
     }
@@ -171,6 +177,96 @@ export class ReactionExecutorService {
         }
         throw err;
       }
+    }
+  }
+
+  private async openMaintenanceOrder(
+    tenantId: string,
+    userId: string,
+    args: Record<string, string>,
+  ): Promise<void> {
+    const assetKind = args['assetKind'];
+    const assetId = args['assetId'];
+    if (!assetId || (assetKind !== 'vehicle' && assetKind !== 'trailer')) return;
+
+    // Idempotent: skip if an open (non-terminal) WO already exists for this asset.
+    const open = await this.prisma.maintenanceOrder.findFirst({
+      where: {
+        tenantId,
+        ...(assetKind === 'vehicle' ? { vehicleId: assetId } : { trailerId: assetId }),
+        status: { notIn: ['COMPLETED', 'CANCELLED'] },
+      },
+      select: { id: true },
+    });
+    if (open) return;
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { MaintenanceService } = require('../../modules/fleet/maintenance/maintenance.service') as typeof import('../../modules/fleet/maintenance/maintenance.service');
+    const maintenance = this.moduleRef.get(MaintenanceService, { strict: false });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { CreateMaintenanceOrderDto } = require('../../modules/fleet/maintenance/dto/maintenance.dto') as typeof import('../../modules/fleet/maintenance/dto/maintenance.dto');
+    const { MaintenanceType } = require('@pulsar/shared') as typeof import('@pulsar/shared');
+
+    const dto = new CreateMaintenanceOrderDto();
+    if (assetKind === 'vehicle') dto.vehicleId = assetId;
+    else dto.trailerId = assetId;
+    dto.type = MaintenanceType.PREVENTIVE;
+    dto.description = args['name'] || 'Entretien préventif planifié';
+    await maintenance.create(tenantId, userId, dto);
+  }
+
+  private async assignDockAppointment(
+    tenantId: string,
+    userId: string,
+    visitId: string,
+  ): Promise<void> {
+    if (!visitId) return;
+    const visit = await this.prisma.yardVisit.findFirst({
+      where: { id: visitId, tenantId },
+      select: { id: true, spotId: true, appointmentId: true },
+    });
+    if (!visit || visit.spotId || !visit.appointmentId) return; // already placed or no appointment
+    const appt = await this.prisma.dockAppointment.findFirst({
+      where: { id: visit.appointmentId, tenantId },
+      select: { spotId: true },
+    });
+    if (!appt?.spotId) return;
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { VisitsService } = require('../../modules/yard/visits/visits.service') as typeof import('../../modules/yard/visits/visits.service');
+    const visits = this.moduleRef.get(VisitsService, { strict: false });
+    try {
+      await visits.assign(tenantId, userId, visitId, { spotId: appt.spotId } as never);
+    } catch (err) {
+      // Spot became occupied (spotConflictPolicy=BLOCK) → benign no-op for an auto-assign.
+      if (err instanceof ConflictException) return;
+      throw err;
+    }
+  }
+
+  private async closeDeliveredTransportOrder(
+    tenantId: string,
+    userId: string,
+    loadId: string,
+  ): Promise<void> {
+    if (!loadId) return;
+    const shipments = await this.prisma.shipment.findMany({
+      where: { tenantId, loadId },
+      select: { transportOrderId: true },
+    });
+    const orderIds = [...new Set(shipments.map((s) => s.transportOrderId).filter(Boolean))] as string[];
+    if (orderIds.length === 0) return;
+    const orders = await this.prisma.transportOrder.findMany({
+      where: { tenantId, id: { in: orderIds }, status: 'COMPLETED' },
+      select: { id: true },
+    });
+    if (orders.length === 0) return;
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { TransportOrdersService } = require('../../modules/transportation/transport-orders/transport-orders.service') as typeof import('../../modules/transportation/transport-orders/transport-orders.service');
+    const orderSvc = this.moduleRef.get(TransportOrdersService, { strict: false });
+    for (const o of orders) {
+      await orderSvc.close(tenantId, userId, o.id); // COMPLETED → CLOSED (canTransition)
     }
   }
 

@@ -49,6 +49,7 @@ const PREFIX_SETTING: Partial<Record<SequenceKey, { module: string; settingKey: 
   'pick-order': { module: 'wms', settingKey: 'documentPrefixPickOrder' },
   'yard-visit': { module: 'yard', settingKey: 'documentPrefixYardVisit' },
   'dock-appointment': { module: 'yard', settingKey: 'documentPrefixDockAppointment' },
+  rfp: { module: 'procurement', settingKey: 'documentPrefixRfp' },
 };
 
 /**

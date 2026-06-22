@@ -27,3 +27,15 @@ describe('produceRuleReaction', () => {
     expect(produceRuleReaction(taskRule, { type: 'transport-order.planned', payload: {} })).toBeNull();
   });
 });
+
+describe('arc E reactions in catalogue', () => {
+  it.each(['open_maintenance_order', 'assign_dock_appointment', 'close_delivered_transport_order'])(
+    'exposes %s with required module + argKeys',
+    (key) => {
+      const d = reactionByKey(key);
+      expect(d).toBeDefined();
+      expect(d!.requiredModules.length).toBeGreaterThan(0);
+      expect(d!.argKeys.length).toBeGreaterThan(0);
+    },
+  );
+});

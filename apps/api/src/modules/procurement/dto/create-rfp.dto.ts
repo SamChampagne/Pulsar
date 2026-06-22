@@ -1,4 +1,4 @@
-import { IsDateString, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsNotEmpty, IsObject, IsOptional, IsString } from 'class-validator';
 
 export class CreateRfpDto {
   @IsString()
@@ -12,4 +12,8 @@ export class CreateRfpDto {
   @IsOptional()
   @IsDateString()
   deadline?: string;
+
+  @IsOptional()
+  @IsObject()
+  customData?: Record<string, unknown>;
 }
