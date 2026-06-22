@@ -123,6 +123,10 @@ describe('Flow Control Tower (e2e)', () => {
   const rxInvoiceIds: string[] = [];
   const rxEventIds: string[] = [];
 
+  // IDs for scenario 6C (genuine zero-case isolated tenant).
+  let zeroTenantId = '';
+  let zeroToken = '';
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AgentRuntimeService)
@@ -340,6 +344,15 @@ describe('Flow Control Tower (e2e)', () => {
         await prisma.carrier
           .deleteMany({ where: { id: rxCarrierId } })
           .catch(() => undefined);
+      }
+
+      // Scenario 6C — clean up the isolated zero-reaction tenant
+      if (zeroTenantId) {
+        await prisma.domainEvent.deleteMany({ where: { tenantId: zeroTenantId } }).catch(() => undefined);
+        await prisma.user.deleteMany({ where: { tenantId: zeroTenantId } }).catch(() => undefined);
+        await prisma.role.deleteMany({ where: { tenantId: zeroTenantId } }).catch(() => undefined);
+        await prisma.tenantModule.deleteMany({ where: { tenantId: zeroTenantId } }).catch(() => undefined);
+        await prisma.tenant.deleteMany({ where: { id: zeroTenantId } }).catch(() => undefined);
       }
     }
     await app.close();
@@ -664,25 +677,20 @@ describe('Flow Control Tower (e2e)', () => {
         reactionKpis: { executed: number; failed: number };
       };
 
-      // reactionKpis must be present and executed >= 1
-      expect(typeof body.reactionKpis).toBe('object');
-      expect(body.reactionKpis.executed).toBeGreaterThanOrEqual(1);
-
       // Find the chain for our load.completed event
       const chain = body.chains.find((c) =>
         c.event?.type === 'load.completed' && c.reactions.some((r) => r.action === 'draft_customer_invoice'),
       );
       expect(chain).toBeTruthy();
 
-      // The reaction entry must be EXECUTED (or FAILED — best-effort, but rule must exist in ledger)
+      // The reaction entry MUST be EXECUTED (the beforeAll setup enables Billing + service-account
+      // to guarantee the draft_customer_invoice handler succeeds — not merely "EXECUTED or FAILED").
       const reaction = chain!.reactions.find((r) => r.action === 'draft_customer_invoice');
       expect(reaction).toBeTruthy();
-      expect(['EXECUTED', 'FAILED']).toContain(reaction!.status);
+      expect(reaction!.status).toBe('EXECUTED');
 
-      // If EXECUTED, it counts in the KPI
-      if (reaction!.status === 'EXECUTED') {
-        expect(body.reactionKpis.executed).toBeGreaterThanOrEqual(1);
-      }
+      // EXECUTED reactions count in the KPI — assert unconditionally.
+      expect(body.reactionKpis.executed).toBeGreaterThanOrEqual(1);
     });
 
     it('B) map: edges contains at least one entry with kind = "reaction"', async () => {
@@ -703,32 +711,87 @@ describe('Flow Control Tower (e2e)', () => {
       expect(reactionEdge!.to).toBe('BILLING');
     });
 
-    it('C) back-compat: chains without reactions have reactions=[] and reactionKpis shape is valid', async () => {
-      // The stop.delayed chain seeded in beforeAll has no automation rule → reactions=[].
-      const res = await request(http)
+    it('C) back-compat: a no-reaction tenant returns reactionKpis.executed===0 and no reaction edge', async () => {
+      // Set up a second isolated tenant with ANALYTICS enabled but NO automation rules
+      // and NO domain events — a genuine zero-reaction baseline.
+      const zeroSlug = `fct-zero-${suffix}`;
+      const zeroTenant = await prisma.tenant.create({
+        data: { slug: zeroSlug, name: `FCT Zero ${suffix}`, status: 'ACTIVE' },
+      });
+      zeroTenantId = zeroTenant.id;
+
+      // Enable ANALYTICS module for the zero tenant
+      const analyticsMod = await prisma.moduleDefinition.findUniqueOrThrow({ where: { key: 'analytics' } });
+      await prisma.tenantModule.create({
+        data: { tenantId: zeroTenantId, moduleId: analyticsMod.id, enabled: true, enabledAt: new Date() },
+      });
+
+      // Create a role with analytics.read permission
+      const analyticsReadPerm = await prisma.permission.findUniqueOrThrow({ where: { key: 'analytics.read' } });
+      const zeroRole = await prisma.role.create({
+        data: {
+          tenantId: zeroTenantId,
+          key: 'admin',
+          name: 'Admin',
+          isSystem: true,
+          permissions: { create: [{ permissionId: analyticsReadPerm.id }] },
+        },
+      });
+
+      // Create an admin user for the zero tenant (active with password so we can log in)
+      const { hashSync } = await import('bcryptjs');
+      const zeroUser = await prisma.user.create({
+        data: {
+          tenantId: zeroTenantId,
+          email: `fct-zero-admin-${suffix}@example.test`,
+          passwordHash: hashSync('Zero$123', 10),
+          firstName: 'Zero',
+          lastName: 'Admin',
+          status: 'ACTIVE',
+          roles: { create: [{ roleId: zeroRole.id }] },
+        },
+      });
+      void zeroUser;
+
+      // Log in as the zero tenant admin
+      const zeroLogin = await request(http)
+        .post('/api/v1/auth/login')
+        .send({ email: `fct-zero-admin-${suffix}@example.test`, password: 'Zero$123', tenant: zeroSlug })
+        .expect(200);
+      zeroToken = (zeroLogin.body as { accessToken: string }).accessToken;
+
+      // GET /analytics/flow/timeline for the zero tenant — must have executed === 0
+      const timelineRes = await request(http)
         .get('/api/v1/analytics/flow/timeline?days=7')
-        .set(auth())
+        .set({ Authorization: `Bearer ${zeroToken}` })
         .expect(200);
 
-      const body = res.body as {
-        chains: Array<{
-          event: { id: string } | null;
-          reactions: unknown[];
-        }>;
+      const timelineBody = timelineRes.body as {
+        chains: unknown[];
         reactionKpis: { executed: number; failed: number; byAction: unknown[] };
       };
 
-      // The stop.delayed chain must still exist and its reactions array must be an array
-      const stopChain = body.chains.find((c) => c.event?.id === seedEventId);
-      expect(stopChain).toBeTruthy();
-      expect(Array.isArray(stopChain!.reactions)).toBe(true);
-      // No reaction rule matches stop.delayed → reactions array is empty for that chain
-      expect(stopChain!.reactions).toHaveLength(0);
+      // The reactionKpis shape must always be present
+      expect(typeof timelineBody.reactionKpis).toBe('object');
+      expect(typeof timelineBody.reactionKpis.executed).toBe('number');
+      expect(typeof timelineBody.reactionKpis.failed).toBe('number');
+      expect(Array.isArray(timelineBody.reactionKpis.byAction)).toBe(true);
+      // Zero reactions for this tenant
+      expect(timelineBody.reactionKpis.executed).toBe(0);
 
-      // The reactionKpis shape is always present (even if executed = 0)
-      expect(typeof body.reactionKpis.executed).toBe('number');
-      expect(typeof body.reactionKpis.failed).toBe('number');
-      expect(Array.isArray(body.reactionKpis.byAction)).toBe(true);
+      // GET /analytics/flow/map for the zero tenant — must have NO reaction edge
+      const mapRes = await request(http)
+        .get('/api/v1/analytics/flow/map?days=7')
+        .set({ Authorization: `Bearer ${zeroToken}` })
+        .expect(200);
+
+      const mapBody = mapRes.body as {
+        nodes: unknown[];
+        edges: Array<{ from: string; to: string; count: number; kind?: string }>;
+      };
+
+      const reactionEdge = mapBody.edges.find((e) => e.kind === 'reaction');
+      expect(reactionEdge).toBeUndefined();
     });
   });
 
