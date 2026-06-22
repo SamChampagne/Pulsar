@@ -18,6 +18,7 @@
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
 
   interface ComplianceDoc {
     id: string;
@@ -77,6 +78,15 @@
     email: string;
   }
 
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    options?: { value: string; label: string }[];
+    required: boolean;
+    showInList?: boolean;
+  }
+
   const vehicleTypes = ['TRACTOR', 'STRAIGHT_TRUCK', 'VAN', 'OTHER'];
   const trailerTypes = ['DRY_VAN', 'REEFER', 'FLATBED', 'TANKER', 'OTHER'];
 
@@ -91,6 +101,8 @@
   let assetForm = $state<AssetForm>(emptyAssetForm('vehicle'));
   let showCreate = $state(false);
   let showSchedule = $state(false);
+  let assetFieldDefs = $state<CustomFieldDef[]>([]);
+  let assetCustomData = $state<Record<string, unknown>>({});
 
   function emptyAssetForm(kind: AssetKind): AssetForm {
     return {
@@ -320,14 +332,29 @@
     }
   }
 
+  async function fetchAssetFieldDefs(kind: AssetKind) {
+    if (kind === 'driver') {
+      assetFieldDefs = [];
+      assetCustomData = {};
+      return;
+    }
+    const entityType = kind === 'vehicle' ? 'VEHICLE' : 'TRAILER';
+    assetFieldDefs = await api<CustomFieldDef[]>('/fleet/custom-fields', {
+      query: { entityType },
+    }).catch(() => [] as CustomFieldDef[]);
+    assetCustomData = {};
+  }
+
   function setAssetKind(kind: AssetKind) {
     assetForm.kind = kind;
     assetForm.type = kind === 'vehicle' ? 'TRACTOR' : 'DRY_VAN';
     activeTab = kind === 'vehicle' ? 'vehicles' : kind === 'trailer' ? 'trailers' : 'drivers';
+    void fetchAssetFieldDefs(kind);
   }
 
   function resetAssetForm(kind: AssetKind = assetForm.kind) {
     assetForm = emptyAssetForm(kind);
+    assetCustomData = {};
   }
 
   function clean<T extends Record<string, unknown>>(payload: T): T {
@@ -361,6 +388,7 @@
             make: assetForm.make.trim(),
             model: assetForm.model.trim(),
             year: assetForm.year ? Number(assetForm.year) : undefined,
+            customData: Object.keys(assetCustomData).length > 0 ? assetCustomData : undefined,
           }),
         });
         activeTab = 'vehicles';
@@ -375,6 +403,7 @@
             capacityPallets: assetForm.capacityPallets
               ? Number(assetForm.capacityPallets)
               : undefined,
+            customData: Object.keys(assetCustomData).length > 0 ? assetCustomData : undefined,
           }),
         });
         activeTab = 'trailers';
@@ -419,7 +448,7 @@
 <PageHeader title="Fleet" subtitle="Actifs, conformité et maintenance.">
   {#snippet actions()}
     <Button onclick={() => { showSchedule = true; }} variant="secondary">Planifier un entretien</Button>
-    <Button onclick={() => { showCreate = true; }}>Ajouter</Button>
+    <Button onclick={() => { showCreate = true; void fetchAssetFieldDefs(assetForm.kind); }}>Ajouter</Button>
   {/snippet}
 </PageHeader>
 
@@ -550,6 +579,11 @@
             </label>
           {/if}
         </div>
+        {#if assetFieldDefs.length > 0}
+          <div class="mt-3">
+            <CustomFieldInputs definitions={assetFieldDefs} bind:data={assetCustomData} />
+          </div>
+        {/if}
       {/if}
     </form>
     {#snippet footer()}

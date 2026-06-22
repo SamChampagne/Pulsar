@@ -14,6 +14,7 @@
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
 
   // assetKind drives the asset endpoint, the WO create key (vehicleId|trailerId),
   // the WO list query key, and the compliance subjectType. Reused for vehicles + trailers.
@@ -23,6 +24,15 @@
   const assetEndpoint = $derived(isTrailer ? 'trailers' : 'vehicles');
   const woKey = $derived(isTrailer ? 'trailerId' : 'vehicleId');
   const backLabel = $derived(isTrailer ? 'remorque' : 'véhicule');
+
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    options?: { value: string; label: string }[];
+    required: boolean;
+    showInList?: boolean;
+  }
 
   interface Asset {
     id: string;
@@ -91,6 +101,8 @@
     vendor: '',
     dueDate: '',
   });
+  let woFieldDefs = $state<CustomFieldDef[]>([]);
+  let woCustomData = $state<Record<string, unknown>>({});
 
   // Complete work-order sub-form (per WO id)
   let completingId = $state<string | null>(null);
@@ -242,11 +254,14 @@
           odometerKm: woForm.odometerKm === '' ? undefined : Number(woForm.odometerKm),
           vendor: woForm.vendor.trim() || undefined,
           dueDate: woForm.dueDate ? new Date(woForm.dueDate).toISOString() : undefined,
+          customData: Object.keys(woCustomData).length > 0 ? woCustomData : undefined,
         },
       });
       toast.success('Work order créé');
       woFormOpen = false;
       woForm = { type: 'PREVENTIVE', description: '', odometerKm: '', vendor: '', dueDate: '' };
+      woFieldDefs = [];
+      woCustomData = {};
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Échec de la création');
@@ -410,7 +425,11 @@
         {#if !woFormOpen}
           <Button
             variant="secondary"
-            onclick={() => {
+            onclick={async () => {
+              woCustomData = {};
+              woFieldDefs = await api<CustomFieldDef[]>('/fleet/custom-fields', {
+                query: { entityType: 'MAINTENANCE_ORDER' },
+              }).catch(() => [] as CustomFieldDef[]);
               woFormOpen = true;
             }}>Nouveau work order</Button
           >
@@ -440,6 +459,9 @@
           <Field label="Échéance">
             <Input type="date" bind:value={woForm.dueDate} />
           </Field>
+          {#if woFieldDefs.length > 0}
+            <CustomFieldInputs definitions={woFieldDefs} bind:data={woCustomData} />
+          {/if}
           <div class="flex gap-2">
             <Button variant="primary" onclick={createWorkOrder}>Créer</Button>
             <Button

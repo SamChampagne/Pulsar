@@ -40,6 +40,12 @@
     { value: 'DOCK_APPOINTMENT', label: 'Rendez-vous quai' },
   ];
 
+  const FLEET_ENTITY_TYPES: EntityTypeDef[] = [
+    { value: 'VEHICLE', label: 'Véhicule' },
+    { value: 'TRAILER', label: 'Remorque' },
+    { value: 'MAINTENANCE_ORDER', label: 'Ordre de maintenance' },
+  ];
+
   const FIELD_TYPES: { value: FieldType; label: string }[] = [
     { value: 'TEXT', label: 'Texte' },
     { value: 'NUMBER', label: 'Nombre' },
@@ -58,7 +64,9 @@
         ? WMS_ENTITY_TYPES
         : moduleProp === 'yard'
           ? YARD_ENTITY_TYPES
-          : TRANSPORTATION_ENTITY_TYPES,
+          : moduleProp === 'fleet'
+            ? FLEET_ENTITY_TYPES
+            : TRANSPORTATION_ENTITY_TYPES,
   );
   const apiBase = $derived(`/${moduleProp}/custom-fields`);
 

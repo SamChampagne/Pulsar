@@ -25,4 +25,8 @@
   <div class="mt-6">
     <CustomFieldsEditor module="yard" />
   </div>
+{:else if key === 'fleet'}
+  <div class="mt-6">
+    <CustomFieldsEditor module="fleet" />
+  </div>
 {/if}
