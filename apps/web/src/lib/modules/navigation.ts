@@ -387,16 +387,6 @@ export function navCatalogue(): NavDomain[] {
             { href: '/crm/contacts', label: 'Contacts', perm: PERMISSIONS.CRM.READ },
           ],
         },
-        {
-          label: 'Administration',
-          links: [
-            {
-              href: '/settings/modules/crm',
-              label: 'Configuration',
-              perm: PERMISSIONS.CORE.MODULES_MANAGE,
-            },
-          ],
-        },
       ],
     },
 

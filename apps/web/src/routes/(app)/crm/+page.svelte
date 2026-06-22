@@ -53,7 +53,20 @@
     loading = true;
     error = '';
     try {
-      pipeline = await api<Pipeline>('/crm/pipeline');
+      // The API returns an array of { stage, deals } columns; the board is keyed
+      // by stage. Build the keyed map and coerce amount (Decimal → string over the
+      // wire) into a number so totals and display work.
+      const columns = await api<{ stage: string; deals: Array<Omit<Deal, 'amount'> & { amount: string | number | null }> }[]>(
+        '/crm/pipeline',
+      );
+      const next: Pipeline = { LEAD: [], QUALIFIED: [], PROPOSAL: [], WON: [], LOST: [] };
+      for (const col of columns) {
+        const key = col.stage as keyof Pipeline;
+        if (key in next) {
+          next[key] = col.deals.map((d) => ({ ...d, amount: d.amount == null ? null : Number(d.amount) }));
+        }
+      }
+      pipeline = next;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Impossible de charger le pipeline';
       toast.error(error);
