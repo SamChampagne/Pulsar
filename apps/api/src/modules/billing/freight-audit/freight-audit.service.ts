@@ -49,12 +49,14 @@ export class FreightAuditService {
   async create(tenantId: string, userId: string, dto: CreateIncomingInvoiceDto, sourceRef = 'manual') {
     await this.ownership.assertOwned('carrier', dto.carrierId, tenantId);
     const chargedTotal = round(dto.lines.reduce((a, l) => a + l.chargedAmount, 0));
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    const defaultCurrency = (s.defaultCurrency as string | undefined) ?? 'CAD';
     const created = await this.prisma.incomingCarrierInvoice.create({
       data: {
         tenantId,
         carrierId: dto.carrierId,
         carrierInvoiceNumber: dto.carrierInvoiceNumber,
-        currency: dto.currency ?? 'CAD',
+        currency: dto.currency ?? defaultCurrency,
         chargedTotal,
         sourceRef,
         createdById: userId,
@@ -67,10 +69,14 @@ export class FreightAuditService {
     return created;
   }
 
-  /** Tenant billing tolerances (defaults 2 % / 25) — same source as the buy-side reconcile. */
+  /** Tenant billing tolerances (defaults 2 % / 25 / MAX) — same source as the buy-side reconcile. */
   private async tolerances(tenantId: string) {
     const s = await this.moduleSettings.resolve(tenantId, 'billing');
-    return { tolerancePct: s.tolerancePct as number, toleranceAbsolute: s.toleranceAbsolute as number };
+    return {
+      tolerancePct: s.tolerancePct as number,
+      toleranceAbsolute: s.toleranceAbsolute as number,
+      mode: (s.toleranceMode ?? 'MAX') as 'MAX' | 'MIN',
+    };
   }
 
   /** Deterministic match: each line → Load by loadNumber (tenant + carrier scoped), variance vs frozen estimatedCost. */
@@ -97,7 +103,8 @@ export class FreightAuditService {
       matched.push({ expected, invoiced });
       lineWrites.push(this.prisma.incomingInvoiceLine.update({ where: { id: line.id }, data: { matchedLoadId: load.id, expectedAmount: expected, variance: round(invoiced - expected) } }));
     }
-    const outcome = evaluateReconciliation(matched, await this.tolerances(tenantId));
+    const tol = await this.tolerances(tenantId);
+    const outcome = evaluateReconciliation(matched, tol, tol.mode);
     const matchedTotal = round(matched.reduce((a, m) => a + m.expected, 0));
     const next = outcome.withinTolerance && unmatched === 0 ? FreightAuditStatus.MATCHED : FreightAuditStatus.FLAGGED;
     if (!canTransitionFreightAudit(invoice.status as FreightAuditStatus, next)) {

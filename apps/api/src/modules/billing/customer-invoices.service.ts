@@ -11,6 +11,7 @@ import { OwnershipService } from '../../prisma/ownership.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { EmailService } from '../../core/email/email.service';
+import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { RatingService } from '../transportation/rating/rating.service';
 
 const statementInclude = {
@@ -60,6 +61,7 @@ export class CustomerInvoicesService {
     private readonly sequences: SequencesService,
     private readonly audit: AuditLogsService,
     private readonly email: EmailService,
+    private readonly moduleSettings: ModuleSettingsService,
     private readonly rating: RatingService,
   ) {}
 
@@ -268,10 +270,15 @@ export class CustomerInvoicesService {
     return this.get(tenantId, id);
   }
 
-  approve(tenantId: string, userId: string, id: string) {
-    return this.transition(tenantId, userId, id, CustomerInvoiceStatus.DRAFT, CustomerInvoiceStatus.APPROVED, {
+  async approve(tenantId: string, userId: string, id: string) {
+    const result = await this.transition(tenantId, userId, id, CustomerInvoiceStatus.DRAFT, CustomerInvoiceStatus.APPROVED, {
       approvedAt: new Date(),
     });
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    if (s.autoSendOnApproval === true) {
+      try { await this.send(tenantId, userId, id); } catch { /* no email / send failed: stays APPROVED, best-effort */ }
+    }
+    return result;
   }
 
   /** Emails the statement summary to the customer contact; no email, no SENT. */
