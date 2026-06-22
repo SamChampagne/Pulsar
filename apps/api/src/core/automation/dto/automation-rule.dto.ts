@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsIn,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   ValidateNested,
@@ -39,26 +40,31 @@ export class RuleConditionDto {
 }
 
 export class RuleActionDto {
-  @ApiProperty({ enum: ['CREATE_TASK'] })
-  @IsIn(['CREATE_TASK'])
-  kind!: 'CREATE_TASK';
+  @ApiProperty({ enum: ['CREATE_TASK', 'RUN_ACTION'] })
+  @IsIn(['CREATE_TASK', 'RUN_ACTION'])
+  kind!: 'CREATE_TASK' | 'RUN_ACTION';
 
-  @ApiProperty()
+  // CREATE_TASK fields — required when kind==='CREATE_TASK', validated in service.
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  category!: string;
+  category?: string;
 
-  @ApiProperty({ enum: SEVERITIES })
+  @ApiPropertyOptional({ enum: SEVERITIES })
+  @IsOptional()
   @IsIn(SEVERITIES)
-  severity!: (typeof SEVERITIES)[number];
+  severity?: (typeof SEVERITIES)[number];
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  titleTemplate!: string;
+  titleTemplate?: string;
 
-  @ApiProperty({ enum: ASSIGN_HINTS })
+  @ApiPropertyOptional({ enum: ASSIGN_HINTS })
+  @IsOptional()
   @IsIn(ASSIGN_HINTS)
-  assignHint!: (typeof ASSIGN_HINTS)[number];
+  assignHint?: (typeof ASSIGN_HINTS)[number];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -69,6 +75,17 @@ export class RuleActionDto {
   @IsOptional()
   @IsString()
   subjectType?: string;
+
+  // RUN_ACTION fields — required when kind==='RUN_ACTION', validated in service.
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  action?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsObject()
+  args?: Record<string, string>;
 }
 
 export class CreateAutomationRuleDto {

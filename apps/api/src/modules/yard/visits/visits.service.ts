@@ -8,6 +8,7 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   AuditAction,
+  DOMAIN_EVENT_TYPES,
   DockAppointmentStatus,
   YardVisitStatus,
   computeDwell,
@@ -300,7 +301,15 @@ export class VisitsService {
       before: { status: visit.status, spotId: visit.spotId },
       after: { status: YardVisitStatus.DEPARTED, spotId: null },
     });
-    return this.get(tenantId, visitId);
+    const result = await this.get(tenantId, visitId);
+    // Best-effort domain event (rule 27).
+    await this.domainEvents.emit(
+      tenantId,
+      DOMAIN_EVENT_TYPES.YARD_VISIT_CHECKED_OUT,
+      { type: 'yard-visit', id: visitId },
+      { visitId, visitNumber: result.visitNumber },
+    );
+    return result;
   }
 
   async cancel(tenantId: string, userId: string, visitId: string) {

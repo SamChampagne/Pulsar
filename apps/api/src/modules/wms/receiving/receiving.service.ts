@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditAction, ReceiptStatus, StockMovementType, canTransitionReceipt } from '@pulsar/shared';
+import { AuditAction, DOMAIN_EVENT_TYPES, ReceiptStatus, StockMovementType, canTransitionReceipt } from '@pulsar/shared';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
@@ -23,6 +24,7 @@ export class ReceivingService {
     private readonly sequences: SequencesService,
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
 
   async list(tenantId: string, q: ReceiptListQueryDto) {
@@ -146,6 +148,13 @@ export class ReceivingService {
       before: { status: ReceiptStatus.DRAFT },
       after: { status: ReceiptStatus.POSTED, lines: receipt.lines.length },
     });
+    // Best-effort domain event (rule 27).
+    await this.domainEvents.emit(
+      tenantId,
+      DOMAIN_EVENT_TYPES.WMS_RECEIPT_POSTED,
+      { type: 'wms-receipt', id },
+      { receiptId: id, number: receipt.number },
+    );
     return this.get(tenantId, id);
   }
 

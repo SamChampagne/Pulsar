@@ -10,6 +10,7 @@ import {
   RULE_OPERATORS,
   SUGGESTED_TASK_CATEGORIES,
   type AutomationRuleLike,
+  type CreateTaskAction,
   type RuleCondition,
 } from './rules';
 
@@ -159,7 +160,7 @@ describe('produceRuleTaskSpec', () => {
   it('resolves subjectId via action.subjectField first', () => {
     const rule: AutomationRuleLike = {
       ...baseRule,
-      action: { ...baseRule.action, subjectField: 'stopId' },
+      action: { ...baseRule.action, subjectField: 'stopId' } as CreateTaskAction,
     };
     const event: DomainEventInput = {
       type: 'stop.delayed',
@@ -215,7 +216,7 @@ describe('produceRuleTaskSpec', () => {
 
     const rule: AutomationRuleLike = {
       ...baseRule,
-      action: { ...baseRule.action, subjectType: 'stop' },
+      action: { ...baseRule.action, subjectType: 'stop' } as CreateTaskAction,
     };
     expect(produceRuleTaskSpec(rule, event)!.subjectType).toBe('stop');
   });
@@ -228,10 +229,10 @@ describe('produceRuleTaskSpec', () => {
 });
 
 describe('catalog data', () => {
-  it('has one descriptor per DOMAIN_EVENT_TYPES value (14)', () => {
-    expect(AUTOMATION_EVENT_CATALOG).toHaveLength(14);
+  it('has one descriptor per DOMAIN_EVENT_TYPES value (19)', () => {
+    expect(AUTOMATION_EVENT_CATALOG).toHaveLength(19);
     const types = new Set(AUTOMATION_EVENT_CATALOG.map((e) => e.type));
-    expect(types.size).toBe(14);
+    expect(types.size).toBe(19);
   });
 
   it('every descriptor has fields and a defaultSubjectField', () => {

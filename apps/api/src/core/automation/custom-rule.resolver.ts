@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   evaluateRuleConditions,
+  produceRuleReaction,
   produceRuleTaskSpec,
   type AutomationRuleLike,
+  type ReactionCommand,
   type RuleAction,
   type RuleCondition,
   type RuleMatch,
@@ -10,10 +12,15 @@ import {
 } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 
+export interface ResolveResult {
+  taskSpecs: TaskSpec[];
+  reactionCommands: ReactionCommand[];
+}
+
 /**
  * Consults tenant-configured AutomationRules for a domain event and produces
- * TaskSpecs to be merged with the hard-coded policy specs at the single
- * integration point (DomainEventsService.processPending).
+ * TaskSpecs and ReactionCommands to be merged with the hard-coded policy specs
+ * at the single integration point (DomainEventsService.processPending).
  *
  * Best-effort by design (CLAUDE.md rule 24): a single bad rule must never drop
  * the others, and a top-level failure must never break built-in task creation.
@@ -28,8 +35,9 @@ export class CustomRuleResolver {
     tenantId: string,
     eventType: string,
     payload: Record<string, unknown>,
-  ): Promise<TaskSpec[]> {
-    const specs: TaskSpec[] = [];
+  ): Promise<ResolveResult> {
+    const taskSpecs: TaskSpec[] = [];
+    const reactionCommands: ReactionCommand[] = [];
     try {
       const rules = await this.prisma.automationRule.findMany({
         where: { tenantId, eventType, enabled: true },
@@ -50,8 +58,14 @@ export class CustomRuleResolver {
             conditions,
             action,
           };
-          const spec = produceRuleTaskSpec(ruleLike, { type: eventType, payload });
-          if (spec) specs.push(spec);
+
+          if (action.kind === 'CREATE_TASK') {
+            const spec = produceRuleTaskSpec(ruleLike, { type: eventType, payload });
+            if (spec) taskSpecs.push(spec);
+          } else if (action.kind === 'RUN_ACTION') {
+            const cmd = produceRuleReaction(ruleLike, { type: eventType, payload });
+            if (cmd) reactionCommands.push(cmd);
+          }
         } catch (err) {
           // One bad rule must not drop the others — log and continue.
           this.logger.error(
@@ -64,8 +78,8 @@ export class CustomRuleResolver {
       this.logger.error(
         `CustomRuleResolver.resolve(${eventType}) failed: ${err instanceof Error ? err.message : String(err)}`,
       );
-      return [];
+      return { taskSpecs: [], reactionCommands: [] };
     }
-    return specs;
+    return { taskSpecs, reactionCommands };
   }
 }

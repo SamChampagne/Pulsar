@@ -402,6 +402,49 @@ async function main() {
   });
 
   console.log('Sample TMS data ready.');
+
+  // --- Built-in cross-module automation rules ------------------------------------
+  // Phase 16: two reaction rules seeded for the demo tenant (idempotent: skip if
+  // a rule with the same name already exists for this tenant).
+  const autoPickRuleName = 'Auto-pick à la planification';
+  const existingAutoPickRule = await prisma.automationRule.findFirst({
+    where: { tenantId: tenant.id, name: autoPickRuleName },
+  });
+  if (!existingAutoPickRule) {
+    await prisma.automationRule.create({
+      data: {
+        tenantId: tenant.id,
+        name: autoPickRuleName,
+        eventType: 'transport-order.planned',
+        enabled: true,
+        match: 'ALL',
+        conditions: [],
+        action: { kind: 'RUN_ACTION', action: 'create_picks_for_order', args: { orderId: '{orderId}' } },
+        createdById: admin.id,
+      },
+    });
+  }
+
+  const draftInvoiceRuleName = 'Relevé client à la livraison';
+  const existingDraftInvoiceRule = await prisma.automationRule.findFirst({
+    where: { tenantId: tenant.id, name: draftInvoiceRuleName },
+  });
+  if (!existingDraftInvoiceRule) {
+    await prisma.automationRule.create({
+      data: {
+        tenantId: tenant.id,
+        name: draftInvoiceRuleName,
+        eventType: 'load.completed',
+        enabled: true,
+        match: 'ALL',
+        conditions: [],
+        action: { kind: 'RUN_ACTION', action: 'draft_customer_invoice', args: { loadId: '{loadId}' } },
+        createdById: admin.id,
+      },
+    });
+  }
+
+  console.log('Built-in automation rules ready.');
 }
 
 main()

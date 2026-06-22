@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
+  DOMAIN_EVENT_TYPES,
   CustomFieldEntity,
   LoadStatus,
   ShipmentStatus,
@@ -19,6 +20,7 @@ import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { EmailService } from '../../../core/email/email.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
@@ -82,6 +84,7 @@ export class LoadsService {
     private readonly email: EmailService,
     private readonly config: ConfigService,
     private readonly moduleSettings: ModuleSettingsService,
+    private readonly domainEvents: DomainEventsService,
     private readonly customFields: CustomFieldsService,
   ) {}
 
@@ -496,6 +499,13 @@ export class LoadsService {
       loadNumber: load.loadNumber,
       carrierId: load.carrierId,
     });
+    // Best-effort domain event (rule 27).
+    await this.domainEvents.emit(
+      tenantId,
+      DOMAIN_EVENT_TYPES.LOAD_DISPATCHED,
+      { type: 'load', id },
+      { loadId: id, loadNumber: load.loadNumber, carrierId: load.carrierId ?? null },
+    );
     return updated;
   }
 
@@ -584,6 +594,13 @@ export class LoadsService {
       loadNumber: load.loadNumber,
       carrierId: load.carrierId,
     });
+    // Best-effort domain event (rule 27).
+    await this.domainEvents.emit(
+      tenantId,
+      DOMAIN_EVENT_TYPES.LOAD_COMPLETED,
+      { type: 'load', id },
+      { loadId: id, loadNumber: load.loadNumber },
+    );
     await this.notifyCustomersDelivered(tenantId, id);
     return this.get(tenantId, id);
   }

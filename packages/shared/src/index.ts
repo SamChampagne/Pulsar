@@ -9,6 +9,7 @@ export * from './enums/operating';
 export * from './operating/policies';
 export * from './operating/playbooks';
 export * from './automation/rules';
+export * from './automation/reactions';
 export * from './workflows/transport-order.workflow';
 export * from './workflows/shipment.workflow';
 export * from './workflows/load.workflow';
