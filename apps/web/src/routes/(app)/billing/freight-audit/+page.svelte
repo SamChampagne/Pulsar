@@ -1,6 +1,8 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import { fmtCustomValue } from '$lib/format';
+  import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
   import {
     PageHeader,
     Button,
@@ -35,10 +37,20 @@
     recoveredAmount: string | null;
     carrier: { name: string };
     lines: InvoiceLine[];
+    customData?: Record<string, unknown>;
   }
   interface Savings {
     tenantTotal: string;
     byAgent: { agentId: string; recovered: string }[];
+  }
+
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    options?: { value: string; label: string }[];
+    required: boolean;
+    showInList: boolean;
   }
 
   // Freight-audit status → tone. (Distinct from the shared toneFor: MATCHED here
@@ -59,20 +71,26 @@
   let savings = $state<Savings | null>(null);
   let loading = $state(true);
   let error = $state('');
+  let customFieldDefs = $state<CustomFieldDef[]>([]);
 
   const flaggedCount = $derived(invoices.filter((i) => i.status === 'FLAGGED' || i.status === 'DISPUTED').length);
   const receivedCount = $derived(invoices.filter((i) => i.status === 'RECEIVED').length);
   const recoveredTotal = $derived(savings ? Number(savings.tenantTotal).toLocaleString() : '—');
+  const listCustomDefs = $derived(customFieldDefs.filter((d) => d.showInList));
 
   async function load() {
     loading = true;
     try {
-      const [inv, sav] = await Promise.all([
+      const [inv, sav, defs] = await Promise.all([
         api<IncomingInvoice[]>('/freight-audit/incoming-invoices'),
         api<Savings>('/freight-audit/savings', { query: { days: 30 } }),
+        api<CustomFieldDef[]>('/billing/custom-fields', {
+          query: { entityType: 'INCOMING_CARRIER_INVOICE' },
+        }),
       ]);
       invoices = inv;
       savings = sav;
+      customFieldDefs = defs;
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Échec du chargement des factures transporteur';
     } finally {
@@ -100,6 +118,7 @@
   let carrierInvoiceNumber = $state('');
   let currency = $state('');
   let lines = $state<LineDraft[]>([{ lineRef: '', chargedAmount: '' }]);
+  let customData = $state<Record<string, unknown>>({});
   let saving = $state(false);
 
   function resetForm() {
@@ -107,6 +126,7 @@
     carrierInvoiceNumber = '';
     currency = '';
     lines = [{ lineRef: '', chargedAmount: '' }];
+    customData = {};
   }
 
   function addLine() {
@@ -139,6 +159,7 @@
             lineRef: l.lineRef.trim(),
             chargedAmount: Number(l.chargedAmount),
           })),
+          ...(Object.keys(customData).length > 0 ? { customData } : {}),
         },
       });
       toast.success('Facture transporteur saisie');
@@ -177,6 +198,7 @@
     {#snippet head()}
       <th>Facture #</th><th>Transporteur</th><th class="text-right">Total facturé</th>
       <th>Statut</th><th class="text-right">Écart (brut)</th>
+      {#each listCustomDefs as def (def.key)}<th>{def.label}</th>{/each}
     {/snippet}
     {#snippet body()}
       {#each invoices as invoice (invoice.id)}
@@ -191,9 +213,12 @@
           <td class="text-right">{money(invoice.chargedTotal, invoice.currency)}</td>
           <td><Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge></td>
           <td class="text-right">{money(invoice.varianceGross, invoice.currency)}</td>
+          {#each listCustomDefs as def (def.key)}
+            <td>{fmtCustomValue(invoice.customData?.[def.key], def.type)}</td>
+          {/each}
         </tr>
       {:else}
-        <tr><td colspan="5"><EmptyState title="No carrier invoices yet" message="Enter a carrier invoice to compare charged lines against frozen load cost details and surface recoverable variances.">
+        <tr><td colspan={5 + listCustomDefs.length}><EmptyState title="No carrier invoices yet" message="Enter a carrier invoice to compare charged lines against frozen load cost details and surface recoverable variances.">
           {#snippet children()}<Button variant="secondary" href="/loads">Review loads</Button><Button onclick={() => { modalOpen = true; }}>Enter first invoice</Button>{/snippet}
         </EmptyState></td></tr>
       {/each}
@@ -245,6 +270,15 @@
           <Button variant="secondary" onclick={addLine}>Ajouter une ligne</Button>
         </div>
       </div>
+
+      {#if customFieldDefs.length > 0}
+        <div class="mt-4">
+          <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase">
+            Champs personnalisés
+          </span>
+          <CustomFieldInputs definitions={customFieldDefs} bind:data={customData} />
+        </div>
+      {/if}
 
       <div class="mt-4 flex justify-end gap-2 border-t border-edge pt-3">
         <Button variant="secondary" onclick={() => { modalOpen = false; }}>Annuler</Button>

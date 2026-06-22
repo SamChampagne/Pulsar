@@ -13,4 +13,8 @@
   <div class="mt-6">
     <CustomFieldsEditor />
   </div>
+{:else if key === 'billing'}
+  <div class="mt-6">
+    <CustomFieldsEditor module="billing" />
+  </div>
 {/if}

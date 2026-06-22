@@ -2,8 +2,12 @@
   import { api, ApiError } from '$lib/api/client';
   import { Field, Input, Select, Button, Card } from '$lib/components/ui';
 
-  type EntityType = 'TRANSPORT_ORDER' | 'SHIPMENT' | 'LOAD';
   type FieldType = 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+
+  interface EntityTypeDef {
+    value: string;
+    label: string;
+  }
 
   interface FieldRow {
     key: string;
@@ -14,10 +18,16 @@
     options: string; // comma-separated for SELECT
   }
 
-  const ENTITY_TYPES: { value: EntityType; label: string }[] = [
+  // Default entity types for transportation (back-compat).
+  const TRANSPORTATION_ENTITY_TYPES: EntityTypeDef[] = [
     { value: 'TRANSPORT_ORDER', label: 'Transport Order' },
     { value: 'SHIPMENT', label: 'Shipment' },
     { value: 'LOAD', label: 'Load' },
+  ];
+
+  const BILLING_ENTITY_TYPES: EntityTypeDef[] = [
+    { value: 'INCOMING_CARRIER_INVOICE', label: 'Facture transporteur entrante' },
+    { value: 'CUSTOMER_INVOICE', label: 'Facture client' },
   ];
 
   const FIELD_TYPES: { value: FieldType; label: string }[] = [
@@ -28,18 +38,34 @@
     { value: 'SELECT', label: 'Liste de choix' },
   ];
 
-  let entityType = $state<EntityType>('TRANSPORT_ORDER');
+  // Props: module defaults to 'transportation' for back-compat.
+  let { module: moduleProp = 'transportation' }: { module?: string } = $props();
+
+  const entityTypes = $derived(
+    moduleProp === 'billing' ? BILLING_ENTITY_TYPES : TRANSPORTATION_ENTITY_TYPES,
+  );
+  const apiBase = $derived(`/${moduleProp}/custom-fields`);
+
+  let entityType = $state<string>('');
   let rows = $state<FieldRow[]>([]);
   let loading = $state(false);
   let saving = $state(false);
   let error = $state('');
   let saved = $state(false);
 
+  // Initialize entityType when entityTypes changes (i.e. when module prop changes).
+  $effect(() => {
+    if (entityTypes.length > 0 && !entityTypes.find((et) => et.value === entityType)) {
+      entityType = entityTypes[0].value;
+    }
+  });
+
   function emptyRow(): FieldRow {
     return { key: '', label: '', type: 'TEXT', required: false, showInList: false, options: '' };
   }
 
-  async function load(et: EntityType) {
+  async function load(et: string) {
+    if (!et) return;
     loading = true;
     error = '';
     saved = false;
@@ -53,7 +79,7 @@
           showInList: boolean;
           options?: { value: string; label: string }[];
         }[]
-      >('/transportation/custom-fields', { query: { entityType: et } });
+      >(apiBase, { query: { entityType: et } });
       rows = defs.map((d) => ({
         key: d.key,
         label: d.label,
@@ -102,7 +128,7 @@
                   })
               : undefined,
         }));
-      await api('/transportation/custom-fields', {
+      await api(apiBase, {
         method: 'PUT',
         body: { entityType, definitions },
       });
@@ -126,7 +152,7 @@
   <div class="mb-4 w-48">
     <Field label="Entité">
       <Select bind:value={entityType}>
-        {#each ENTITY_TYPES as et (et.value)}
+        {#each entityTypes as et (et.value)}
           <option value={et.value}>{et.label}</option>
         {/each}
       </Select>
