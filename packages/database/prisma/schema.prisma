@@ -1422,6 +1422,7 @@ model CustomerInvoice {
   approvedAt    DateTime?
   sentAt        DateTime?
   paidAt        DateTime?
+  customData    Json?
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
 
@@ -1475,6 +1476,7 @@ model IncomingCarrierInvoice {
   sourceRef            String             @default("manual")
   disputedByAgentId    String?
   createdById          String?
+  customData           Json?
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
@@ -1884,6 +1886,8 @@ enum CustomFieldEntity {
   TRANSPORT_ORDER
   SHIPMENT
   LOAD
+  INCOMING_CARRIER_INVOICE
+  CUSTOMER_INVOICE
 }
 
 enum CustomFieldType {
