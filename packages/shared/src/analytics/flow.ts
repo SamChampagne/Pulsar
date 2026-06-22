@@ -1,4 +1,5 @@
 // Pure, browser-safe. No Node imports.
+import { reactionByKey } from '../automation/reactions';
 
 export type FlowModule =
   | 'TRANSPORTATION' | 'WMS' | 'YARD' | 'FLEET' | 'BILLING' | 'CUSTOMER_PORTAL' | 'CORE';
@@ -6,11 +7,13 @@ export type FlowModule =
 export interface FlowEvent { id: string; type: string; module: FlowModule; subjectType: string | null; subjectId: string | null; at: string; }
 export interface FlowTask { id: string; category: string; status: string; severity: string; subjectType: string | null; subjectId: string | null; sourceEventId: string | null; assigneeAgentId: string | null; at: string; }
 export interface FlowAction { id: string; tool: string; status: string; agentId: string; triggeredByRef: string | null; autoApproved: boolean; at: string; }
+export interface FlowReaction { id: string; action: string; status: string; module: FlowModule; eventId: string; at: string; }
 
 export interface FlowChain {
   event: FlowEvent | null;
   tasks: FlowTask[];
   actions: FlowAction[];
+  reactions: FlowReaction[];
   modules: FlowModule[];
   crossModule: boolean;
   startedAt: string;
@@ -18,7 +21,7 @@ export interface FlowChain {
 }
 
 export interface FlowMapNode { module: FlowModule; eventCount: number; }
-export interface FlowMapEdge { from: FlowModule; to: FlowModule; count: number; }
+export interface FlowMapEdge { from: FlowModule; to: FlowModule; count: number; kind: 'event' | 'reaction'; }
 export interface FlowMap { nodes: FlowMapNode[]; edges: FlowMapEdge[]; }
 
 export type EntityStageStatus = 'PENDING' | 'ACTIVE' | 'DONE' | 'BLOCKED';
@@ -62,11 +65,21 @@ export function moduleOfSubjectType(subjectType: string | null): FlowModule {
   return SUBJECT_MODULE[subjectType] ?? 'CORE';
 }
 
+const MODULE_KEY_TO_FLOW: Record<string, FlowModule> = {
+  transportation: 'TRANSPORTATION', wms: 'WMS', yard: 'YARD', fleet: 'FLEET',
+  billing: 'BILLING', 'customer-portal': 'CUSTOMER_PORTAL',
+};
+
+export function moduleOfReaction(action: string): FlowModule {
+  const m = reactionByKey(action)?.module;
+  return (m ? MODULE_KEY_TO_FLOW[m] : undefined) ?? 'CORE';
+}
+
 function uniq<T>(xs: T[]): T[] { return [...new Set(xs)]; }
 function minIso(xs: string[]): string { return xs.reduce((a, b) => (a < b ? a : b)); }
 function maxIso(xs: string[]): string { return xs.reduce((a, b) => (a > b ? a : b)); }
 
-export function buildFlowChains(events: FlowEvent[], tasks: FlowTask[], actions: FlowAction[]): FlowChain[] {
+export function buildFlowChains(events: FlowEvent[], tasks: FlowTask[], actions: FlowAction[], reactions: FlowReaction[] = []): FlowChain[] {
   const actionsByTask = new Map<string, FlowAction[]>();
   for (const a of actions) {
     const ref = a.triggeredByRef && a.triggeredByRef.startsWith('task:') ? a.triggeredByRef.slice('task:'.length) : null;
@@ -89,21 +102,32 @@ export function buildFlowChains(events: FlowEvent[], tasks: FlowTask[], actions:
     }
   }
 
+  const reactionsByEvent = new Map<string, FlowReaction[]>();
+  for (const r of reactions) {
+    const list = reactionsByEvent.get(r.eventId) ?? [];
+    list.push(r);
+    reactionsByEvent.set(r.eventId, list);
+  }
+
   const chainFrom = (event: FlowEvent | null, chainTasks: FlowTask[]): FlowChain => {
     const chainActions = chainTasks.flatMap((t) => actionsByTask.get(t.id) ?? []);
+    const chainReactions = event ? (reactionsByEvent.get(event.id) ?? []) : [];
     const modules = uniq<FlowModule>([
       ...(event ? [event.module] : []),
       ...chainTasks.map((t) => moduleOfSubjectType(t.subjectType)),
+      ...chainReactions.map((r) => r.module),
     ]);
     const times = [
       ...(event ? [event.at] : []),
       ...chainTasks.map((t) => t.at),
       ...chainActions.map((a) => a.at),
+      ...chainReactions.map((r) => r.at),
     ];
     return {
       event,
       tasks: chainTasks,
       actions: chainActions,
+      reactions: chainReactions,
       modules,
       crossModule: modules.length > 1,
       startedAt: times.length ? minIso(times) : (event?.at ?? ''),
@@ -126,8 +150,16 @@ export function buildFlowMap(chains: FlowChain[]): FlowMap {
     for (const t of c.tasks) {
       const to = moduleOfSubjectType(t.subjectType);
       if (to === from) continue; // self/intra → not an edge
-      const key = `${from}->${to}`;
-      const e = edgeCounts.get(key) ?? { from, to, count: 0 };
+      const key = `${from}->${to}:event`;
+      const e = edgeCounts.get(key) ?? { from, to, count: 0, kind: 'event' as const };
+      e.count += 1;
+      edgeCounts.set(key, e);
+    }
+    for (const r of c.reactions) {
+      const to = r.module;
+      if (to === from) continue;
+      const key = `${from}->${to}:reaction`;
+      const e = edgeCounts.get(key) ?? { from, to, count: 0, kind: 'reaction' as const };
       e.count += 1;
       edgeCounts.set(key, e);
     }
@@ -136,6 +168,24 @@ export function buildFlowMap(chains: FlowChain[]): FlowMap {
     nodes: [...nodeCounts.entries()].map(([module, eventCount]) => ({ module, eventCount })),
     edges: [...edgeCounts.values()],
   };
+}
+
+export interface ReactionKpis { executed: number; failed: number; byAction: { action: string; executed: number; failed: number }[]; }
+
+export function deriveReactionKpis(reactions: FlowReaction[]): ReactionKpis {
+  let executed = 0, failed = 0;
+  const by = new Map<string, { executed: number; failed: number }>();
+  for (const r of reactions) {
+    const ok = r.status === 'EXECUTED';
+    if (ok) executed++; else failed++;
+    const e = by.get(r.action) ?? { executed: 0, failed: 0 };
+    if (ok) e.executed++; else e.failed++;
+    by.set(r.action, e);
+  }
+  const byAction = [...by.entries()]
+    .map(([action, c]) => ({ action, ...c }))
+    .sort((a, b) => (b.executed + b.failed) - (a.executed + a.failed));
+  return { executed, failed, byAction };
 }
 
 export function buildEntityTrace(input: EntityTraceInput): EntityTrace {

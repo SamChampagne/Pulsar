@@ -5,9 +5,12 @@ import {
   buildFlowChains,
   buildFlowMap,
   buildEntityTrace,
+  deriveReactionKpis,
+  moduleOfReaction,
   type FlowEvent,
   type FlowTask,
   type FlowAction,
+  type FlowReaction,
 } from './flow';
 
 describe('moduleOfEventType', () => {
@@ -83,7 +86,38 @@ describe('buildFlowMap', () => {
     );
     const map = buildFlowMap(chains);
     expect(map.nodes.find((n) => n.module === 'WMS')?.eventCount).toBe(1);
-    expect(map.edges).toContainEqual({ from: 'WMS', to: 'TRANSPORTATION', count: 1 });
+    expect(map.edges).toContainEqual({ from: 'WMS', to: 'TRANSPORTATION', count: 1, kind: 'event' });
+  });
+});
+
+const ev = (id: string, type: string): FlowEvent => ({ id, type, module: 'TRANSPORTATION', subjectType: 'load', subjectId: 'L1', at: '2026-06-22T10:00:00.000Z' });
+const rx = (id: string, eventId: string, action: string, status = 'EXECUTED'): FlowReaction => ({ id, action, status, module: 'BILLING', eventId, at: '2026-06-22T10:00:01.000Z' });
+
+describe('flow reactions', () => {
+  it('attaches reactions to their event chain', () => {
+    const chains = buildFlowChains([ev('e1', 'load.completed')], [], [], [rx('r1', 'e1', 'draft_customer_invoice')]);
+    expect(chains[0].reactions).toHaveLength(1);
+    expect(chains[0].modules).toContain('BILLING');
+    expect(chains[0].crossModule).toBe(true);
+  });
+  it('back-compat: omitting reactions equals the 3-arg behavior', () => {
+    const a = buildFlowChains([ev('e1', 'load.completed')], [], []);
+    expect(a[0].reactions).toEqual([]);
+  });
+  it('buildFlowMap emits a reaction edge distinct from event edges', () => {
+    const chains = buildFlowChains([ev('e1', 'load.completed')], [], [], [rx('r1', 'e1', 'draft_customer_invoice')]);
+    const map = buildFlowMap(chains);
+    const redge = map.edges.find((e) => e.kind === 'reaction');
+    expect(redge).toMatchObject({ from: 'TRANSPORTATION', to: 'BILLING', kind: 'reaction' });
+  });
+  it('deriveReactionKpis counts executed/failed and sorts byAction', () => {
+    const k = deriveReactionKpis([rx('r1', 'e1', 'a'), rx('r2', 'e1', 'a'), rx('r3', 'e2', 'b', 'FAILED')]);
+    expect(k.executed).toBe(2); expect(k.failed).toBe(1);
+    expect(k.byAction[0]).toEqual({ action: 'a', executed: 2, failed: 0 });
+  });
+  it('moduleOfReaction maps a known reaction to its FlowModule', () => {
+    expect(moduleOfReaction('draft_customer_invoice')).toBe('BILLING');
+    expect(moduleOfReaction('nonexistent')).toBe('CORE');
   });
 });
 
