@@ -35,6 +35,7 @@ import { TenderExpiryService } from './tenders/tender-expiry.service';
 import { LanesController } from './lanes/lanes.controller';
 import { LanesService } from './lanes/lanes.service';
 import { LoadCostService } from './loads/load-cost.service';
+import { LoadNotificationsService } from './loads/load-notifications.service';
 import { PublicLinksController } from './public/public-links.controller';
 import { PublicLinksService } from './public/public-links.service';
 import { AnalyticsController } from './analytics/analytics.controller';
@@ -98,6 +99,7 @@ import { CustomFieldsController } from './custom-fields/custom-fields.controller
     TenderExpiryService,
     LanesService,
     LoadCostService,
+    LoadNotificationsService,
     RatingService,
     PublicLinksService,
     AnalyticsService,
