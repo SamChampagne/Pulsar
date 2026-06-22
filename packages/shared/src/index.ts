@@ -54,3 +54,4 @@ export * from './analytics/scorecards';
 export * from './analytics/flow';
 export * from './connect/connect';
 export * from './procurement/procurement.workflow';
+export * from './crm/crm.workflow';
