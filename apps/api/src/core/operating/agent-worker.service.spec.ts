@@ -5,8 +5,8 @@ function harness(
   overrides: Partial<{ openSession: () => Promise<string>; start: () => Promise<unknown> }> = {},
 ) {
   const calls: string[] = [];
-  const agent = { id: 'a1', tenantId: 't1', model: null, persona: null, serviceUserId: 'svc1', status: AgentStatus.ACTIVE, caps: { alwaysOn: true } };
-  const task = { id: 'task1', tenantId: 't1', status: OperationalTaskStatus.OPEN, assigneeAgentId: 'a1', title: 'late', category: 'DELAY', subjectType: 'stop', subjectId: 's1' };
+  const agent = { id: 'a1', tenantId: 't1', model: null, persona: null, serviceUserId: 'svc1', status: AgentStatus.ACTIVE, autonomyLevel: 'AUTONOMOUS', caps: { alwaysOn: true } };
+  const task = { id: 'task1', tenantId: 't1', status: OperationalTaskStatus.OPEN, assigneeAgentId: 'a1', title: 'late', category: 'DELAY', severity: 'WARNING', subjectType: 'stop', subjectId: 's1', slaDueAt: null };
   const runs: any[] = [];
   const revertCalls: any[] = [];
   const prisma = {
@@ -17,6 +17,7 @@ function harness(
       update: async () => agent,
     },
     operationalTask: {
+      findFirst: async () => task,
       findMany: async () => (task.status === OperationalTaskStatus.OPEN ? [task] : []),
       updateMany: async ({ where, data }: any) => {
         // A revert is an updateMany guarded on status IN_PROGRESS -> OPEN.

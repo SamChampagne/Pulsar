@@ -8,6 +8,7 @@ export * from './enums/billing';
 export * from './enums/operating';
 export * from './operating/policies';
 export * from './operating/playbooks';
+export * from './operating/wake-prompt';
 export * from './automation/rules';
 export * from './automation/reactions';
 export * from './workflows/transport-order.workflow';
