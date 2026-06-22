@@ -49,6 +49,9 @@ export class ActivitiesService {
     if (!dto.companyId && !dto.contactId && !dto.dealId) {
       throw new BadRequestException('At least one subject reference (companyId, contactId, or dealId) is required');
     }
+    if (!author.userId && !author.agentId) {
+      throw new BadRequestException('Activity must have at least one author (userId or agentId)');
+    }
 
     await this.assertSubjectsOwned(dto, tenantId);
 

@@ -1,4 +1,4 @@
-import { PartialType } from '@nestjs/swagger';
+import { OmitType, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsDate,
@@ -21,7 +21,8 @@ export class CreateDealDto {
   @IsOptional() @IsDate() @Type(() => Date) expectedCloseDate?: Date;
 }
 
-export class UpdateDealDto extends PartialType(CreateDealDto) {}
+// stage is intentionally excluded: stage changes must go through POST :id/advance (rule 2).
+export class UpdateDealDto extends PartialType(OmitType(CreateDealDto, ['stage'] as const)) {}
 
 export class AdvanceDealDto {
   @IsEnum(CrmDealStage) stage!: CrmDealStage;

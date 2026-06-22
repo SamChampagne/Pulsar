@@ -333,6 +333,34 @@ describe('CRM module (e2e)', () => {
   });
 
   // =========================================================================
+  // 14b — Re-convert is idempotent: same customerId, no second Customer created.
+  // =========================================================================
+  it('re-converting a WON deal is idempotent (same customerId, no duplicate Customer)', async () => {
+    // We know dealId is already converted from test 14
+    const firstRes = await request(http)
+      .get(`/api/v1/crm/deals/${dealId}`)
+      .set(auth())
+      .expect(200);
+    const firstCustomerId = (firstRes.body as Deal).convertedCustomerId!;
+    expect(firstCustomerId).toBeTruthy();
+
+    // Count customers before second convert
+    const beforeCount = await prisma.customer.count({ where: { tenantId } });
+
+    // Second convert call
+    const res = await request(http)
+      .post(`/api/v1/crm/deals/${dealId}/convert`)
+      .set(auth())
+      .expect(200);
+    const body = res.body as { dealId: string; customerId: string };
+    expect(body.customerId).toBe(firstCustomerId);
+
+    // No new Customer should have been created
+    const afterCount = await prisma.customer.count({ where: { tenantId } });
+    expect(afterCount).toBe(beforeCount);
+  });
+
+  // =========================================================================
   // 15 — Advance WON→LOST rejected (terminal stage).
   // =========================================================================
   it('rejects advancing a WON deal to LOST (terminal stage — 400)', async () => {

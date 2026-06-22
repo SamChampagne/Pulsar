@@ -98,7 +98,7 @@ export class DealsService {
       data: {
         ...(dto.title !== undefined ? { title: dto.title } : {}),
         ...(dto.companyId !== undefined ? { companyId: dto.companyId } : {}),
-        ...(dto.stage !== undefined ? { stage: dto.stage } : {}),
+        // stage is NOT writable here — use POST :id/advance (rule 2)
         ...(dto.amount !== undefined ? { amount: dto.amount } : {}),
         ...(dto.currency !== undefined ? { currency: dto.currency } : {}),
         ...(dto.ownerUserId !== undefined ? { ownerUserId: dto.ownerUserId } : {}),
@@ -138,7 +138,7 @@ export class DealsService {
     await this.audit.log({
       tenantId,
       userId,
-      action: 'ADVANCE' as AuditAction,
+      action: AuditAction.STATUS_CHANGE,
       entityType: 'crm-deal',
       entityId: id,
       before: { stage: deal.stage },
@@ -168,7 +168,7 @@ export class DealsService {
         });
         customerId = customer.id;
         await tx.crmCompany.update({
-          where: { id: deal.companyId },
+          where: { id: deal.companyId, tenantId },
           data: { customerId, status: 'ACTIVE' },
         });
       }
@@ -176,9 +176,10 @@ export class DealsService {
       await this.audit.log({
         tenantId,
         userId,
-        action: 'CONVERT' as AuditAction,
+        action: AuditAction.STATUS_CHANGE,
         entityType: 'crm-deal',
         entityId: id,
+        before: { stage: deal.stage },
         after: { convertedCustomerId: customerId },
       });
       return { dealId: id, customerId };
