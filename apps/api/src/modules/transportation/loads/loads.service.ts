@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
+  CustomFieldEntity,
   LoadStatus,
   ShipmentStatus,
   TenderStatus,
@@ -21,6 +22,7 @@ import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { EmailService } from '../../../core/email/email.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
+import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import { LoadCostService } from './load-cost.service';
 import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
 import { shipmentWindowWarnings } from '../planning/window-warnings';
@@ -80,6 +82,7 @@ export class LoadsService {
     private readonly email: EmailService,
     private readonly config: ConfigService,
     private readonly moduleSettings: ModuleSettingsService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   async list(tenantId: string, query: ListQueryDto & { status?: LoadStatus }) {
@@ -188,11 +191,15 @@ export class LoadsService {
   }
 
   async create(tenantId: string, userId: string, dto: CreateLoadDto) {
+    const customData = await this.customFields.validateValues(
+      'transportation', tenantId, CustomFieldEntity.LOAD, dto.customData, { partial: false },
+    );
     const load = await this.prisma.load.create({
       data: {
         tenantId,
         loadNumber: await this.sequences.nextNumber(tenantId, 'load'),
         notes: dto.notes,
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
       include: loadInclude,
     });
@@ -440,6 +447,24 @@ export class LoadsService {
       }
     }
 
+    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+    if (tms['requireTendering'] === 'REQUIRED' && load.status !== LoadStatus.TENDERED) {
+      const accepted = await this.prisma.tender.findFirst({
+        where: { tenantId, loadId: id, status: TenderStatus.ACCEPTED },
+      });
+      if (!accepted) {
+        throw new BadRequestException('Tenant policy requires an accepted tender before dispatch');
+      }
+    }
+    if (tms['bolRequiredBeforeDispatch'] === true) {
+      const bol = await this.prisma.document.findFirst({
+        where: { tenantId, entityType: 'bill-of-lading', entityId: id },
+      });
+      if (!bol) {
+        throw new BadRequestException('Tenant policy requires a generated BOL before dispatch');
+      }
+    }
+
     const orderIds = [...new Set(load.shipments.map((s) => s.transportOrderId))];
     const [updated] = await this.prisma.$transaction([
       this.prisma.load.update({
@@ -505,6 +530,15 @@ export class LoadsService {
   async complete(tenantId: string, userId: string, id: string) {
     const load = await this.get(tenantId, id);
     this.assertTransition(load.status as LoadStatus, LoadStatus.COMPLETED);
+    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+    if (tms['podRequiredBeforeCompletion'] === true) {
+      const shipmentsWithoutPod = await this.prisma.shipment.count({
+        where: { tenantId, loadId: id, proofOfDelivery: null },
+      });
+      if (shipmentsWithoutPod > 0) {
+        throw new BadRequestException('Tenant policy requires a POD on every shipment before completion');
+      }
+    }
     const now = new Date();
 
     await this.prisma.$transaction([

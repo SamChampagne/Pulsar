@@ -41,9 +41,10 @@ interface SplitWindowInput {
 
 /**
  * Resolves a split's planned windows: absent (undefined) fields inherit the order's
- * requested bound; an EXPLICIT null stays null (open bound). Validates coherence.
+ * requested bound; an EXPLICIT null stays null (open bound). Validates coherence
+ * unless `strict` is false (LENIENT mode — warnings surfaced on GET instead).
  */
-export function resolveSplitWindows(order: RequestedWindows, split: SplitWindowInput) {
+export function resolveSplitWindows(order: RequestedWindows, split: SplitWindowInput, strict = true) {
   const resolve = (value: string | null | undefined, fallback: Date | null) =>
     value !== undefined ? (value ? new Date(value) : null) : fallback;
   const windows = {
@@ -52,11 +53,13 @@ export function resolveSplitWindows(order: RequestedWindows, split: SplitWindowI
     plannedDeliveryEarly: resolve(split.plannedDeliveryEarly, order.requestedDeliveryEarly),
     plannedDeliveryLate: resolve(split.plannedDeliveryLate, order.requestedDeliveryLate),
   };
-  assertWindowCoherence({
-    pickupEarly: windows.plannedPickupEarly,
-    pickupLate: windows.plannedPickupLate,
-    deliveryEarly: windows.plannedDeliveryEarly,
-    deliveryLate: windows.plannedDeliveryLate,
-  });
+  if (strict) {
+    assertWindowCoherence({
+      pickupEarly: windows.plannedPickupEarly,
+      pickupLate: windows.plannedPickupLate,
+      deliveryEarly: windows.plannedDeliveryEarly,
+      deliveryLate: windows.plannedDeliveryLate,
+    });
+  }
   return windows;
 }

@@ -6,7 +6,18 @@
     toneFor, labelFor,
   } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
+  import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
+  import { fmtCustomValue } from '$lib/format';
   import { toast } from '$lib/stores/toast';
+
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    options?: { value: string; label: string }[];
+    required: boolean;
+    showInList?: boolean;
+  }
 
   interface WindowWarning {
     shipmentNumber: string;
@@ -36,6 +47,7 @@
     destinationLocation: { id: string; code: string; name: string; city: string };
     shipments: { id: string; shipmentNumber: string; status: string; loadId: string | null }[];
     windowWarnings?: WindowWarning[];
+    customData?: Record<string, unknown>;
   }
 
   const orderId = $derived(page.params.id);
@@ -51,11 +63,19 @@
     { weightKg: '', palletCount: '' },
   ]);
 
+  // Shipment custom fields
+  let shipmentFieldDefs = $state<CustomFieldDef[]>([]);
+  let shipmentCustomData = $state<Record<string, unknown>>({});
+  let orderFieldDefs = $state<CustomFieldDef[]>([]);
+
   async function submitPlan(event: SubmitEvent) {
     event.preventDefault();
+    const customDataPayload =
+      Object.keys(shipmentCustomData).length > 0 ? shipmentCustomData : undefined;
     const rows = splitRows.map((r) => ({
       weightKg: r.weightKg === '' ? undefined : Number(r.weightKg),
       palletCount: r.palletCount === '' ? undefined : Number(r.palletCount),
+      customData: customDataPayload,
     }));
     try {
       if (order?.status === 'PLANNED') {
@@ -75,6 +95,7 @@
       }
       showPlanForm = false;
       splitRows = [{ weightKg: '', palletCount: '' }];
+      shipmentCustomData = {};
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Failed to plan');
@@ -85,7 +106,12 @@
     error = '';
     let detail: OrderDetail;
     try {
-      detail = await api<OrderDetail>(`/transportation/transport-orders/${orderId}`);
+      [detail, orderFieldDefs] = await Promise.all([
+        api<OrderDetail>(`/transportation/transport-orders/${orderId}`),
+        api<CustomFieldDef[]>('/transportation/custom-fields', {
+          query: { entityType: 'TRANSPORT_ORDER' },
+        }).catch(() => [] as CustomFieldDef[]),
+      ]);
     } catch (e) {
       error = e instanceof ApiError ? e.message : `Failed to load order — ${String(e)}`;
       return;
@@ -131,6 +157,14 @@
     return `${w.shipmentNumber} — ${fieldLabel} planifié ${kindLabel} ${bound} (demandé ${fmtDate(w.requested)}, planifié ${fmtDate(w.planned)})`;
   }
 
+  async function openPlanForm() {
+    shipmentCustomData = {};
+    shipmentFieldDefs = await api<CustomFieldDef[]>('/transportation/custom-fields', {
+      query: { entityType: 'SHIPMENT' },
+    }).catch(() => [] as CustomFieldDef[]);
+    showPlanForm = !showPlanForm;
+  }
+
   $effect(() => {
     if (orderId) void load();
   });
@@ -150,10 +184,10 @@
         <Button variant="primary" onclick={() => { void action('confirm'); }}>Confirm</Button>
         <Button variant="danger" onclick={() => { void action('cancel'); }}>Cancel</Button>
       {:else if order!.status === 'CONFIRMED'}
-        <Button variant="primary" onclick={() => { showPlanForm = !showPlanForm; }}>Plan…</Button>
+        <Button variant="primary" onclick={() => { void openPlanForm(); }}>Plan…</Button>
         <Button variant="danger" onclick={() => { void action('cancel'); }}>Cancel</Button>
       {:else if order!.status === 'PLANNED'}
-        <Button variant="secondary" onclick={() => { showPlanForm = !showPlanForm; }}>Add shipment…</Button>
+        <Button variant="secondary" onclick={() => { void openPlanForm(); }}>Add shipment…</Button>
       {:else if order!.status === 'COMPLETED'}
         <Button variant="primary" onclick={() => { void action('close'); }}>Close</Button>
       {/if}
@@ -216,6 +250,11 @@
                 </div>
               {/each}
             </div>
+            {#if shipmentFieldDefs.length > 0}
+              <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1">
+                <CustomFieldInputs definitions={shipmentFieldDefs} bind:data={shipmentCustomData} />
+              </div>
+            {/if}
             <div class="mt-3 flex gap-2">
               <Button
                 variant="secondary"
@@ -339,6 +378,16 @@
             <dt class="text-ink-muted">Created</dt>
             <dd class="font-medium">{fmtDate(order.createdAt)}</dd>
           </div>
+          {#if order.customData && orderFieldDefs.length > 0}
+            {#each orderFieldDefs as d (d.key)}
+              {#if order.customData[d.key] !== undefined && order.customData[d.key] !== null}
+                <div class="flex items-center justify-between gap-2">
+                  <dt class="text-ink-muted">{d.label}</dt>
+                  <dd class="font-medium">{fmtCustomValue(order.customData[d.key], d.type)}</dd>
+                </div>
+              {/if}
+            {/each}
+          {/if}
         </dl>
       </Card>
 

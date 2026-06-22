@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
-  MODULE_SETTINGS_CATALOG,
   catalogFor,
   resolveSettings,
   validateSettings,
+  MODULE_SETTINGS_CATALOG,
+  type ModuleSettingsCatalog,
 } from './module-settings';
 
 const proc = catalogFor('procurement')!;
@@ -63,5 +64,50 @@ describe('validateSettings', () => {
   it('rejects a number below min', () => {
     const fleet = catalogFor('fleet')!;
     expect(validateSettings(fleet, { complianceExpiringWindowDays: 0 }).ok).toBe(false);
+  });
+});
+
+describe('string setting type', () => {
+  const cat: ModuleSettingsCatalog = {
+    module: 'test',
+    settings: [{ key: 'p', label: 'P', type: 'string', default: 'TO', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 }],
+  };
+
+  it('accepts a valid string and rejects pattern/length violations', () => {
+    expect(validateSettings(cat, { p: 'ORD' })).toEqual({ ok: true, value: { p: 'ORD' } });
+    expect(validateSettings(cat, { p: 'lower' }).ok).toBe(false);
+    expect(validateSettings(cat, { p: 'TOOLONG' }).ok).toBe(false);
+    expect(validateSettings(cat, { p: 42 }).ok).toBe(false);
+  });
+
+  it('falls back to default for an invalid stored string', () => {
+    expect(resolveSettings(cat, { p: 'bad value' })).toEqual({ p: 'TO' });
+  });
+});
+
+describe('transportation process descriptors', () => {
+  it('defaults equal current hardcoded behavior', () => {
+    const cat = catalogFor('transportation')!;
+    const d = resolveSettings(cat, {});
+    expect(d.requireTendering).toBe('OPTIONAL');
+    expect(d.podRequiredBeforeCompletion).toBe(false);
+    expect(d.bolRequiredBeforeDispatch).toBe(false);
+    expect(d.windowCoherence).toBe('STRICT');
+    expect(d.documentPrefixTransportOrder).toBe('TO');
+    expect(d.documentPrefixShipment).toBe('SH');
+    expect(d.documentPrefixLoad).toBe('LD');
+  });
+});
+
+describe('billing process descriptors', () => {
+  it('defaults equal current behavior', () => {
+    const d = resolveSettings(catalogFor('billing')!, {});
+    expect(d.tolerancePct).toBe(2);
+    expect(d.toleranceAbsolute).toBe(25);
+    expect(d.autoSendOnApproval).toBe(false);
+    expect(d.toleranceMode).toBe('MAX');
+    expect(d.invoiceNumberPrefix).toBe('INV');
+    expect(d.customerInvoiceNumberPrefix).toBe('CINV');
+    expect(d.defaultCurrency).toBe('CAD');
   });
 });

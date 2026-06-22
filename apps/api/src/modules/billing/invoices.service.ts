@@ -85,12 +85,14 @@ export class InvoicesService {
     }
 
     const total = loads.reduce((acc, load) => acc + Number(load.estimatedCost), 0);
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    const defaultCurrency = (s.defaultCurrency as string | undefined) ?? 'CAD';
     const invoice = await this.prisma.invoice.create({
       data: {
         tenantId,
         invoiceNumber: await this.sequences.nextNumber(tenantId, 'invoice'),
         carrierId,
-        currency: loads[0].costCurrency ?? 'CAD',
+        currency: loads[0].costCurrency ?? defaultCurrency,
         totalAmount: Math.round(total * 100) / 100,
         lines: {
           create: loads.map((load) => ({
@@ -136,10 +138,14 @@ export class InvoicesService {
     return this.get(tenantId, id);
   }
 
-  /** Tenant tolerances from the billing module settings (defaults: 2 % / 25). */
+  /** Tenant tolerances from the billing module settings (defaults: 2 % / 25 / MAX). */
   private async tolerances(tenantId: string) {
     const s = await this.moduleSettings.resolve(tenantId, 'billing');
-    return { tolerancePct: s.tolerancePct as number, toleranceAbsolute: s.toleranceAbsolute as number };
+    return {
+      tolerancePct: s.tolerancePct as number,
+      toleranceAbsolute: s.toleranceAbsolute as number,
+      mode: (s.toleranceMode ?? 'MAX') as 'MAX' | 'MIN',
+    };
   }
 
   /**
@@ -170,7 +176,8 @@ export class InvoicesService {
         variance: Math.round((invoiced - expected) * 100) / 100,
       };
     });
-    const outcome = evaluateReconciliation(computed, await this.tolerances(tenantId));
+    const tol = await this.tolerances(tenantId);
+    const outcome = evaluateReconciliation(computed, tol, tol.mode);
     const next = outcome.withinTolerance ? InvoiceStatus.APPROVED : InvoiceStatus.DISPUTED;
     if (next !== invoice.status && !canTransitionInvoice(invoice.status as InvoiceStatus, next)) {
       throw new BadRequestException(`Cannot move invoice from ${invoice.status} to ${next}`);

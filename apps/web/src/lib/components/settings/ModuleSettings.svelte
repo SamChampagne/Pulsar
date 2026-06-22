@@ -13,11 +13,13 @@
     key: string;
     label: string;
     help?: string;
-    type: 'enum' | 'boolean' | 'number';
+    type: 'enum' | 'boolean' | 'number' | 'string';
     default: string | number | boolean;
     options?: SettingOption[];
     min?: number;
     max?: number;
+    pattern?: string;
+    maxLength?: number;
   }
 
   let descriptors = $state<SettingDescriptor[]>([]);
@@ -100,6 +102,8 @@
             />
             {d.label}
           </label>
+        {:else if d.type === 'string'}
+          <Input type="text" bind:value={values[d.key] as string} maxlength={d.maxLength} />
         {:else}
           <Input
             type="number"
