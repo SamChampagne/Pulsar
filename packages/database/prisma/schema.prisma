@@ -625,6 +625,7 @@ model Vehicle {
   vin        String?
   plate      String?
   status     AssetStatus @default(AVAILABLE)
+  customData Json?
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
@@ -658,6 +659,7 @@ model Trailer {
   capacityPallets  Int?
   plate            String?
   status           AssetStatus @default(AVAILABLE)
+  customData       Json?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
@@ -1812,6 +1814,7 @@ model MaintenanceOrder {
   openedAt      DateTime               @default(now())
   completedAt   DateTime?
   createdById   String?
+  customData    Json?
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
 
@@ -1889,6 +1892,13 @@ enum CustomFieldEntity {
   LOAD
   INCOMING_CARRIER_INVOICE
   CUSTOMER_INVOICE
+  RECEIPT
+  PICK_ORDER
+  YARD_VISIT
+  DOCK_APPOINTMENT
+  VEHICLE
+  TRAILER
+  MAINTENANCE_ORDER
 }
 
 enum CustomFieldType {
@@ -2098,6 +2108,7 @@ model Receipt {
   note        String?
   postedAt    DateTime?
   createdById String?
+  customData  Json?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -2137,6 +2148,7 @@ model PickOrder {
   note        String?
   completedAt DateTime?
   createdById String?
+  customData  Json?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
@@ -2235,6 +2247,7 @@ model YardVisit {
   checkOutAt    DateTime?
   notes         String?
   createdById   String?
+  customData    Json?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
@@ -2285,6 +2298,7 @@ model DockAppointment {
   status            DockAppointmentStatus @default(SCHEDULED)
   notes             String?
   createdById       String?
+  customData        Json?
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
 
