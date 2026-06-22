@@ -48,6 +48,8 @@ import { RatingService } from './rating/rating.service';
 import { BolService } from './bol/bol.service';
 import { PlanningBoardController } from './planning-board/planning-board.controller';
 import { PlanningBoardService } from './planning-board/planning-board.service';
+import { CustomFieldsModule } from '../../core/custom-fields/custom-fields.module';
+import { CustomFieldsController } from './custom-fields/custom-fields.controller';
 
 /**
  * Transportation Management module (TMS).
@@ -55,7 +57,7 @@ import { PlanningBoardService } from './planning-board/planning-board.service';
  * tenants without the module enabled get a 403 from ModulesGuard.
  */
 @Module({
-  imports: [AuditLogsModule, DocumentsModule, IntegrationsModule, ModuleRegistryModule, NotificationsModule, OperatingModule],
+  imports: [AuditLogsModule, CustomFieldsModule, DocumentsModule, IntegrationsModule, ModuleRegistryModule, NotificationsModule, OperatingModule],
   controllers: [
     CustomersController,
     LocationsController,
@@ -75,6 +77,7 @@ import { PlanningBoardService } from './planning-board/planning-board.service';
     FuelTablesController,
     PlanningBoardController,
     RatingController,
+    CustomFieldsController,
     // Public, token-authenticated endpoints (tender response, tracking, driver)
     PublicLinksController,
   ],
@@ -105,6 +108,7 @@ import { PlanningBoardService } from './planning-board/planning-board.service';
     PlanningBoardService,
   ],
   exports: [
+    CustomFieldsModule,
     RatingService,
     // Consumed by the AgentsModule tool-services adapter (core/agents).
     TransportOrdersService,

@@ -58,6 +58,10 @@ export class TendersService {
     if (load.status !== LoadStatus.PLANNED) {
       throw new BadRequestException('Only PLANNED loads can be tendered');
     }
+    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+    if (tms['requireTendering'] === 'DISABLED') {
+      throw new BadRequestException('Tendering is disabled by tenant policy (direct assignment only)');
+    }
     const carrierId = input.carrierId ?? load.carrierId;
     if (!carrierId) {
       throw new BadRequestException('Provide a carrierId (none assigned to the load)');

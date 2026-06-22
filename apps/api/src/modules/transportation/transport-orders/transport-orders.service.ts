@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import {
   AuditAction,
   DOMAIN_EVENT_TYPES,
+  CustomFieldEntity,
   ShipmentStatus,
   TransportOrderStatus,
   canTransitionTransportOrder,
@@ -14,6 +15,8 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
+import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
+import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import {
   CreateTransportOrderDto,
   PlanTransportOrderDto,
@@ -49,6 +52,8 @@ export class TransportOrdersService {
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
     private readonly domainEvents: DomainEventsService,
+    private readonly moduleSettings: ModuleSettingsService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   private async assertReferences(tenantId: string, dto: UpdateTransportOrderDto) {
@@ -102,17 +107,25 @@ export class TransportOrdersService {
     const pickupLate = toDate(dto.requestedPickupLate);
     const deliveryEarly = toDate(dto.requestedDeliveryEarly);
     const deliveryLate = toDate(dto.requestedDeliveryLate);
-    assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
+    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+    if (tms['windowCoherence'] !== 'LENIENT') {
+      assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
+    }
+    const customData = await this.customFields.validateValues(
+      'transportation', tenantId, CustomFieldEntity.TRANSPORT_ORDER, dto.customData, { partial: false },
+    );
+    const { customData: _cd, ...dtoWithout } = dto;
     const order = await this.prisma.transportOrder.create({
       data: {
         tenantId,
         orderNumber: await this.sequences.nextNumber(tenantId, 'transport-order'),
         createdById: userId,
-        ...dto,
+        ...dtoWithout,
         requestedPickupEarly: pickupEarly,
         requestedPickupLate: pickupLate,
         requestedDeliveryEarly: deliveryEarly,
         requestedDeliveryLate: deliveryLate,
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
       include: orderInclude,
     });
@@ -137,15 +150,23 @@ export class TransportOrdersService {
     const pickupLate = dto.requestedPickupLate !== undefined ? toDate(dto.requestedPickupLate) : order.requestedPickupLate;
     const deliveryEarly = dto.requestedDeliveryEarly !== undefined ? toDate(dto.requestedDeliveryEarly) : order.requestedDeliveryEarly;
     const deliveryLate = dto.requestedDeliveryLate !== undefined ? toDate(dto.requestedDeliveryLate) : order.requestedDeliveryLate;
-    assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
+    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+    if (tms['windowCoherence'] !== 'LENIENT') {
+      assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
+    }
+    const customData = await this.customFields.validateValues(
+      'transportation', tenantId, CustomFieldEntity.TRANSPORT_ORDER, dto.customData, { partial: true },
+    );
+    const { customData: _cd, ...dtoWithout } = dto;
     return this.prisma.transportOrder.update({
       where: { id },
       data: {
-        ...dto,
+        ...dtoWithout,
         requestedPickupEarly: pickupEarly,
         requestedPickupLate: pickupLate,
         requestedDeliveryEarly: deliveryEarly,
         requestedDeliveryLate: deliveryLate,
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
       include: orderInclude,
     });
@@ -182,8 +203,13 @@ export class TransportOrdersService {
       },
     ];
 
+    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+    const strict = tms['windowCoherence'] !== 'LENIENT';
     for (const split of splits) {
-      const windows = resolveSplitWindows(order, split);
+      const windows = resolveSplitWindows(order, split, strict);
+      const shipmentCustomData = await this.customFields.validateValues(
+        'transportation', tenantId, CustomFieldEntity.SHIPMENT, split.customData, { partial: false },
+      );
       await this.prisma.shipment.create({
         data: {
           tenantId,
@@ -196,6 +222,7 @@ export class TransportOrdersService {
           volumeM3: split.volumeM3,
           palletCount: split.palletCount,
           ...windows,
+          ...(shipmentCustomData !== undefined ? { customData: shipmentCustomData as Prisma.InputJsonValue } : {}),
         },
       });
     }
@@ -216,7 +243,11 @@ export class TransportOrdersService {
     if (order.status !== TransportOrderStatus.PLANNED) {
       throw new BadRequestException('Shipments can only be added to PLANNED orders');
     }
-    const windows = resolveSplitWindows(order, split);
+    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+    const windows = resolveSplitWindows(order, split, tms['windowCoherence'] !== 'LENIENT');
+    const shipmentCustomData = await this.customFields.validateValues(
+      'transportation', tenantId, CustomFieldEntity.SHIPMENT, split.customData, { partial: false },
+    );
     const shipment = await this.prisma.shipment.create({
       data: {
         tenantId,
@@ -229,6 +260,7 @@ export class TransportOrdersService {
         volumeM3: split.volumeM3,
         palletCount: split.palletCount,
         ...windows,
+        ...(shipmentCustomData !== undefined ? { customData: shipmentCustomData as Prisma.InputJsonValue } : {}),
       },
     });
     await this.audit.log({

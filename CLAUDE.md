@@ -234,9 +234,35 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     coordonnées d'affichage (tenant-scopé, `yard.manage`) ; le glisser-déposer du plan appelle les endpoints
     existants `assign`/`move` (gardés).
 
+## Hard rules (continued, TMS configurable)
+
+35. (TMS configurable v1) Les valeurs `customData` passent TOUJOURS par `validateCustomFields`
+    (`@pulsar/shared`) avant persistance — jamais écrites sans validation (ni sur create, ni sur
+    update). Les définitions vivent dans la table dédiée `CustomFieldDefinition` (tenant-scopée,
+    `@@unique([tenantId, module, entityType, key])`) ; les valeurs sont tenant-scopées dans la
+    colonne `customData Json?` de chaque entité TMS. Les *réglages de processus* (eux) restent dans
+    `TenantModule.settings` via le framework de config. Le compteur de séquence est indexé
+    sur la **clé** (`SequenceKey`), jamais sur le préfixe — changer `documentPrefixTransportOrder`
+    ne remet pas le compteur à zéro.
+
+## Hard rules (continued, Billing configurable)
+
+36. (Billing configurable v1 — gabarit arc C) `CustomFieldsService` (`core/custom-fields`) est
+    générique : il est paramétré par `module` (string) et délègue toute persistance à
+    `CustomFieldDefinition` (`tenantId_module_entityType_key` unique). Chaque module branche son
+    propre contrôleur `<module>/custom-fields` gated `@RequireModule` + permission `<module>.manage`.
+    Les valeurs `customData` sont validées par `validateValues('billing', …)` à l'intake —
+    jamais écrites sans validation (règle 35 généralisée). Les préfixes de numéros de documents
+    billing (`invoiceNumberPrefix`, `customerInvoiceNumberPrefix`) sont stockés dans
+    `TenantModule.settings` et résolus par `SequencesService` — le compteur est indexé sur la
+    **clé de séquence**, jamais sur le préfixe (changer le préfixe ne remet pas le compteur à
+    zéro). `defaultCurrency` est lu par `FreightAuditService.create` et `InvoicesService.createDraft`
+    comme valeur de repli (jamais forcé si la devise est explicitement fournie). `autoSendOnApproval`
+    est best-effort dans `approve()` : un échec d'envoi laisse le relevé à APPROVED sans erreur.
+
 ## Hard rules (continued, arc B — tressage automatique)
 
-35. (arc B — réactions déterministes `RUN_ACTION`) Les réactions cross-module ne s'exécutent
+38. (arc B — réactions déterministes `RUN_ACTION`) Les réactions cross-module ne s'exécutent
     QUE via `ReactionExecutorService` (whitelist `REACTION_CATALOG` de `@pulsar/shared`) ; elles
     sont idempotentes sur `(tenantId, eventId, ruleId)` (unique constraint `ReactionExecution`) ;
     anti-boucle single-hop : un `DomainEvent` portant `reactionRuleId` n'est JAMAIS ré-évalué
