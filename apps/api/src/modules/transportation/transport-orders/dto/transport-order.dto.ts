@@ -8,6 +8,7 @@ import {
   IsEnum,
   IsInt,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Min,
@@ -66,6 +67,10 @@ export class CreateTransportOrderDto {
   @IsOptional()
   @IsEnum(TransportMode)
   mode?: TransportMode;
+
+  @IsOptional()
+  @IsObject()
+  customData?: Record<string, unknown>;
 }
 
 export class UpdateTransportOrderDto extends PartialType(CreateTransportOrderDto) {}
@@ -101,6 +106,10 @@ export class ShipmentSplitDto {
   @IsOptional()
   @IsDateString()
   plannedDeliveryLate?: string;
+
+  @IsOptional()
+  @IsObject()
+  customData?: Record<string, unknown>;
 }
 
 export class PlanTransportOrderDto {

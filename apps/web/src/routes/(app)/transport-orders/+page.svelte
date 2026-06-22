@@ -21,6 +21,8 @@
     type ViewId,
   } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
+  import { fmtCustomValue } from '$lib/format';
 
   interface OrderRow {
     id: string;
@@ -35,6 +37,7 @@
     customer: { id: string; name: string };
     originLocation: { name: string; city: string };
     destinationLocation: { name: string; city: string };
+    customData?: Record<string, unknown>;
   }
 
   interface Option {
@@ -70,6 +73,18 @@
   let kanbanTotal = $state(0);
   let loadingKanban = $state(false);
   const byStatus = $derived((s: string) => kanbanRows.filter((r) => r.status === s));
+
+  // Custom fields
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    options?: { value: string; label: string }[];
+    required: boolean;
+    showInList?: boolean;
+  }
+  let orderFieldDefs = $state<CustomFieldDef[]>([]);
+  let customData = $state<Record<string, unknown>>({});
 
   // Create form state
   let customers = $state<Option[]>([]);
@@ -145,12 +160,17 @@
 
   async function openForm() {
     showForm = true;
-    const [customersResult, locationsResult] = await Promise.all([
+    customData = {};
+    const [customersResult, locationsResult, fieldDefs] = await Promise.all([
       api<Paginated<Option>>('/transportation/customers', { query: { pageSize: 100 } }),
       api<Paginated<Option>>('/transportation/locations', { query: { pageSize: 100 } }),
+      api<CustomFieldDef[]>('/transportation/custom-fields', {
+        query: { entityType: 'TRANSPORT_ORDER' },
+      }).catch(() => [] as CustomFieldDef[]),
     ]);
     customers = customersResult.items;
     locations = locationsResult.items;
+    orderFieldDefs = fieldDefs;
   }
 
   async function createOrder(event: SubmitEvent) {
@@ -179,9 +199,11 @@
           totalWeightKg: form.totalWeightKg ? Number(form.totalWeightKg) : undefined,
           palletCount: form.palletCount ? Number(form.palletCount) : undefined,
           mode: form.mode,
+          customData: Object.keys(customData).length > 0 ? customData : undefined,
         },
       });
       showForm = false;
+      customData = {};
       await refresh();
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Échec de la création de la commande';
@@ -431,6 +453,18 @@
         <div class="text-sm text-ink">{sel.customerReference}</div>
       </div>
     {/if}
+    {#if sel.customData && orderFieldDefs.length > 0}
+      {#each orderFieldDefs.filter((d) => d.showInList ?? true) as d (d.key)}
+        {#if sel.customData[d.key] !== undefined && sel.customData[d.key] !== null}
+          <div class="mb-3">
+            <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">
+              {d.label}
+            </div>
+            <div class="text-sm text-ink">{fmtCustomValue(sel.customData[d.key], d.type)}</div>
+          </div>
+        {/if}
+      {/each}
+    {/if}
     {#snippet footer()}
       {#if sel.status === 'DRAFT'}
         <Button
@@ -525,6 +559,11 @@
           </Field>
         </div>
       </div>
+      {#if orderFieldDefs.length > 0}
+        <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
+          <CustomFieldInputs definitions={orderFieldDefs} bind:data={customData} />
+        </div>
+      {/if}
       <div class="mt-4 flex justify-end gap-2 border-t border-edge pt-3">
         <Button
           variant="secondary"

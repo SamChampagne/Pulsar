@@ -234,6 +234,17 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     coordonnées d'affichage (tenant-scopé, `yard.manage`) ; le glisser-déposer du plan appelle les endpoints
     existants `assign`/`move` (gardés).
 
+## Hard rules (continued, TMS configurable)
+
+35. (TMS configurable v1) Les valeurs `customData` passent TOUJOURS par `validateCustomFields`
+    (`@pulsar/shared`) avant persistance — jamais écrites sans validation (ni sur create, ni sur
+    update). Les définitions vivent dans la table dédiée `CustomFieldDefinition` (tenant-scopée,
+    `@@unique([tenantId, module, entityType, key])`) ; les valeurs sont tenant-scopées dans la
+    colonne `customData Json?` de chaque entité TMS. Les *réglages de processus* (eux) restent dans
+    `TenantModule.settings` via le framework de config. Le compteur de séquence est indexé
+    sur la **clé** (`SequenceKey`), jamais sur le préfixe — changer `documentPrefixTransportOrder`
+    ne remet pas le compteur à zéro.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
