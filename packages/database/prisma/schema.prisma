@@ -1742,12 +1742,13 @@ model DomainEvent {
   type        String
   subjectType String?
   subjectId   String?
-  payload     Json
-  status      DomainEventStatus @default(PENDING)
-  attempts    Int               @default(0)
-  lastError   String?
-  processedAt DateTime?
-  createdAt   DateTime          @default(now())
+  payload         Json
+  status          DomainEventStatus @default(PENDING)
+  attempts        Int               @default(0)
+  lastError       String?
+  processedAt     DateTime?
+  reactionRuleId  String?
+  createdAt       DateTime          @default(now())
 
   @@index([status, createdAt])
   @@index([tenantId, type, createdAt])
@@ -2512,4 +2513,25 @@ model Award {
 
   @@index([tenantId])
   @@map("awards")
+}
+
+// ---------------------------------------------------------------------------
+// Cross-module automation — reaction execution ledger
+// ---------------------------------------------------------------------------
+
+/// Idempotency ledger: one row per (tenant, event, rule) pair.
+/// Prevents double-execution when an event is reprocessed.
+model ReactionExecution {
+  id        String   @id @default(cuid())
+  tenantId  String
+  eventId   String
+  ruleId    String
+  action    String
+  status    String   // 'EXECUTED' | 'FAILED'
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, eventId, ruleId])
+  @@index([tenantId, createdAt])
+  @@map("reaction_executions")
 }

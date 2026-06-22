@@ -31,7 +31,8 @@ function harness() {
   const sequences = { nextNumber: async () => 'RC-0001' } as any;
   const ownership = { assertOwnedIfSet: async () => undefined } as any;
   const audit = { log: async () => undefined } as any;
-  return { svc: new ReceivingService(client, inventory, sequences, ownership, audit), receipt, posted };
+  const domainEvents = { emit: async () => undefined } as any;
+  return { svc: new ReceivingService(client, inventory, sequences, ownership, audit, domainEvents), receipt, posted };
 }
 
 describe('ReceivingService.post', () => {

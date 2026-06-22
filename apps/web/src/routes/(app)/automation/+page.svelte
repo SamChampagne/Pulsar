@@ -1,8 +1,10 @@
 <script lang="ts">
   import {
     AUTOMATION_EVENT_CATALOG,
+    REACTION_CATALOG,
     RULE_OPERATORS,
     SUGGESTED_TASK_CATEGORIES,
+    type ReactionDescriptor,
     type RuleCondition,
     type RuleAction,
     type RuleMatch,
@@ -42,21 +44,25 @@
   // Form-local condition: value is always a string for binding; coerced at save time.
   type FormCondition = { field: string; operator: RuleOperator; value: string };
 
+  type FormActionKind = 'CREATE_TASK' | 'RUN_ACTION';
+
   type FormState = {
     name: string;
     eventType: string;
     enabled: boolean;
     match: RuleMatch;
     conditions: FormCondition[];
-    action: {
-      kind: 'CREATE_TASK';
-      category: string;
-      severity: RuleAction['severity'];
-      titleTemplate: string;
-      assignHint: RuleAction['assignHint'];
-      subjectField: string;
-      subjectType: string;
-    };
+    actionKind: FormActionKind;
+    // CREATE_TASK fields
+    taskCategory: string;
+    taskSeverity: 'INFO' | 'WARNING' | 'CRITICAL';
+    taskTitleTemplate: string;
+    taskAssignHint: 'AUTO' | 'UNASSIGNED';
+    taskSubjectField: string;
+    taskSubjectType: string;
+    // RUN_ACTION fields
+    reactionKey: string;
+    reactionArgs: Record<string, string>;
   };
 
   const SEVERITIES = ['INFO', 'WARNING', 'CRITICAL'] as const;
@@ -80,20 +86,30 @@
       enabled: true,
       match: 'ALL',
       conditions: [],
-      action: {
-        kind: 'CREATE_TASK',
-        category: '',
-        severity: 'WARNING',
-        titleTemplate: '',
-        assignHint: 'AUTO',
-        subjectField: '',
-        subjectType: '',
-      },
+      actionKind: 'CREATE_TASK',
+      taskCategory: '',
+      taskSeverity: 'WARNING',
+      taskTitleTemplate: '',
+      taskAssignHint: 'AUTO',
+      taskSubjectField: '',
+      taskSubjectType: '',
+      reactionKey: REACTION_CATALOG[0]?.key ?? '',
+      reactionArgs: defaultArgsFor(REACTION_CATALOG[0]?.key ?? ''),
     };
+  }
+
+  function defaultArgsFor(key: string): Record<string, string> {
+    const descriptor = REACTION_CATALOG.find((r) => r.key === key);
+    if (!descriptor) return {};
+    return Object.fromEntries(descriptor.argKeys.map((k) => [k, `{${k}}`]));
   }
 
   function eventLabel(type: string): string {
     return AUTOMATION_EVENT_CATALOG.find((e) => e.type === type)?.label ?? type;
+  }
+
+  function reactionLabel(key: string): string {
+    return REACTION_CATALOG.find((r) => r.key === key)?.label ?? key;
   }
 
   // Descriptor for the event currently selected in the form (drives field dropdowns + helper text).
@@ -101,7 +117,15 @@
     AUTOMATION_EVENT_CATALOG.find((e) => e.type === form.eventType),
   );
 
+  // Descriptor for the reaction currently selected in the form.
+  const selectedReaction = $derived<ReactionDescriptor | undefined>(
+    REACTION_CATALOG.find((r) => r.key === form.reactionKey),
+  );
+
   function actionSummary(rule: AutomationRule): string {
+    if (rule.action.kind === 'RUN_ACTION') {
+      return `→ Réaction : ${reactionLabel(rule.action.action)}`;
+    }
     return `→ Tâche ${rule.action.category} (${rule.action.severity})`;
   }
 
@@ -124,7 +148,7 @@
 
   function openEdit(rule: AutomationRule) {
     editingId = rule.id;
-    form = {
+    const baseFields = {
       name: rule.name,
       eventType: rule.eventType,
       enabled: rule.enabled,
@@ -135,16 +159,35 @@
         operator: c.operator,
         value: c.value === undefined || c.value === null ? '' : String(c.value),
       })),
-      action: {
-        kind: 'CREATE_TASK',
-        category: rule.action.category,
-        severity: rule.action.severity,
-        titleTemplate: rule.action.titleTemplate,
-        assignHint: rule.action.assignHint,
-        subjectField: rule.action.subjectField ?? '',
-        subjectType: rule.action.subjectType ?? '',
-      },
     };
+
+    if (rule.action.kind === 'RUN_ACTION') {
+      form = {
+        ...baseFields,
+        actionKind: 'RUN_ACTION',
+        taskCategory: '',
+        taskSeverity: 'WARNING',
+        taskTitleTemplate: '',
+        taskAssignHint: 'AUTO',
+        taskSubjectField: '',
+        taskSubjectType: '',
+        reactionKey: rule.action.action,
+        reactionArgs: { ...rule.action.args },
+      };
+    } else {
+      form = {
+        ...baseFields,
+        actionKind: 'CREATE_TASK',
+        taskCategory: rule.action.category,
+        taskSeverity: rule.action.severity,
+        taskTitleTemplate: rule.action.titleTemplate,
+        taskAssignHint: rule.action.assignHint,
+        taskSubjectField: rule.action.subjectField ?? '',
+        taskSubjectType: rule.action.subjectType ?? '',
+        reactionKey: REACTION_CATALOG[0]?.key ?? '',
+        reactionArgs: defaultArgsFor(REACTION_CATALOG[0]?.key ?? ''),
+      };
+    }
     error = '';
     showForm = true;
   }
@@ -154,9 +197,16 @@
   function onEventChange(e: Event & { currentTarget: HTMLSelectElement }) {
     form.eventType = e.currentTarget.value;
     const ev = AUTOMATION_EVENT_CATALOG.find((evt) => evt.type === form.eventType);
-    if (ev && !form.action.subjectField) {
-      form.action.subjectField = ev.defaultSubjectField;
+    if (ev && !form.taskSubjectField) {
+      form.taskSubjectField = ev.defaultSubjectField;
     }
+  }
+
+  // When the reaction changes, reset args to defaults for the new reaction.
+  function onReactionChange(e: Event & { currentTarget: HTMLSelectElement }) {
+    const key = e.currentTarget.value;
+    form.reactionKey = key;
+    form.reactionArgs = defaultArgsFor(key);
   }
 
   function addCondition() {
@@ -208,13 +258,21 @@
       error = "L'événement est requis.";
       return;
     }
-    if (!form.action.category.trim()) {
-      error = 'La catégorie de tâche est requise.';
-      return;
-    }
-    if (!form.action.titleTemplate.trim()) {
-      error = 'Le gabarit de titre est requis.';
-      return;
+
+    if (form.actionKind === 'CREATE_TASK') {
+      if (!form.taskCategory.trim()) {
+        error = 'La catégorie de tâche est requise.';
+        return;
+      }
+      if (!form.taskTitleTemplate.trim()) {
+        error = 'Le gabarit de titre est requis.';
+        return;
+      }
+    } else {
+      if (!form.reactionKey) {
+        error = 'La réaction est requise.';
+        return;
+      }
     }
 
     // Drop the value for valueless operators; trim empty optional action fields.
@@ -227,15 +285,25 @@
           : { field: c.field.trim(), operator: c.operator, value: c.value },
       );
 
-    const action: RuleAction = {
-      kind: 'CREATE_TASK',
-      category: form.action.category.trim(),
-      severity: form.action.severity,
-      titleTemplate: form.action.titleTemplate,
-      assignHint: form.action.assignHint,
-    };
-    if (form.action.subjectField?.trim()) action.subjectField = form.action.subjectField.trim();
-    if (form.action.subjectType?.trim()) action.subjectType = form.action.subjectType.trim();
+    let action: RuleAction;
+    if (form.actionKind === 'RUN_ACTION') {
+      action = {
+        kind: 'RUN_ACTION',
+        action: form.reactionKey,
+        args: { ...form.reactionArgs },
+      };
+    } else {
+      const taskAction: RuleAction = {
+        kind: 'CREATE_TASK',
+        category: form.taskCategory.trim(),
+        severity: form.taskSeverity,
+        titleTemplate: form.taskTitleTemplate,
+        assignHint: form.taskAssignHint,
+      };
+      if (form.taskSubjectField?.trim()) taskAction.subjectField = form.taskSubjectField.trim();
+      if (form.taskSubjectType?.trim()) taskAction.subjectType = form.taskSubjectType.trim();
+      action = taskAction;
+    }
 
     const body = {
       name: form.name.trim(),
@@ -311,7 +379,17 @@
           <td>
             <Badge tone="neutral">{rule.match === 'ALL' ? 'Toutes' : 'Au moins une'}</Badge>
           </td>
-          <td class="text-ink-muted">{actionSummary(rule)}</td>
+          <td>
+            <div class="flex flex-wrap items-center gap-1.5">
+              {#if rule.action.kind === 'RUN_ACTION'}
+                <Badge tone="info">Réaction</Badge>
+                <span class="text-sm text-ink-muted">{reactionLabel(rule.action.action)}</span>
+              {:else}
+                <Badge tone="neutral">Tâche</Badge>
+                <span class="text-sm text-ink-muted">{actionSummary(rule)}</span>
+              {/if}
+            </div>
+          </td>
           <td>
             <button
               type="button"
@@ -414,81 +492,135 @@
         {/if}
       </div>
 
-      <!-- Alors : action (CREATE_TASK) -->
+      <!-- Alors : action kind selector -->
       <div class="rounded-card border border-edge-soft p-3">
-        <span class="mb-2 block text-xs font-semibold tracking-wide text-ink-muted uppercase">
-          Alors — créer une tâche
-        </span>
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Catégorie">
-            <Input
-              bind:value={form.action.category}
-              placeholder="DELAY, FREIGHT_AUDIT, …"
-              required
-            />
-          </Field>
-          <Field label="Suggestions de catégorie">
-            <Select
-              value=""
-              onchange={(e: Event) => {
-                const v = (e.currentTarget as HTMLSelectElement).value;
-                if (v) form.action.category = v;
-              }}
-            >
-              <option value="">Choisir une catégorie suggérée…</option>
-              {#each SUGGESTED_TASK_CATEGORIES as cat (cat)}
-                <option value={cat}>{cat}</option>
-              {/each}
-            </Select>
-          </Field>
-          <Field label="Sévérité">
-            <Select bind:value={form.action.severity}>
-              {#each SEVERITIES as sev (sev)}
-                <option value={sev}>{sev}</option>
-              {/each}
-            </Select>
-          </Field>
-          <Field label="Assignation">
-            <Select bind:value={form.action.assignHint}>
-              {#each ASSIGN_HINTS as hint (hint)}
-                <option value={hint}>{hint === 'AUTO' ? 'Automatique (AUTO)' : 'Non assignée (UNASSIGNED)'}</option>
-              {/each}
-            </Select>
-          </Field>
+        <div class="mb-3">
+          <span class="mb-2 block text-xs font-semibold tracking-wide text-ink-muted uppercase">
+            Alors — type d'action
+          </span>
+          <div class="flex gap-3">
+            <label class="flex cursor-pointer items-center gap-1.5 text-sm text-ink">
+              <input type="radio" bind:group={form.actionKind} value="CREATE_TASK" />
+              Créer une tâche
+            </label>
+            <label class="flex cursor-pointer items-center gap-1.5 text-sm text-ink">
+              <input type="radio" bind:group={form.actionKind} value="RUN_ACTION" />
+              Déclencher une réaction
+            </label>
+          </div>
         </div>
 
-        <div class="mt-3">
-          <Field label="Gabarit de titre">
-            <Input
-              bind:value={form.action.titleTemplate}
-              placeholder="Ex. Stop {'{stopId}'} en retard de {'{minutesLate}'} min"
-              required
-            />
-          </Field>
-          <p class="mt-1 text-xs text-ink-faint">
-            Utilisez <code class="font-mono">{'{chemin}'}</code> pour insérer une valeur du payload.
-            {#if selectedEvent && selectedEvent.fields.length > 0}
-              Champs disponibles :
-              {#each selectedEvent.fields as fld, idx (fld.path)}<code
-                  class="font-mono">{'{' + fld.path + '}'}</code>{#if idx < selectedEvent.fields.length - 1}<span>, </span>{/if}{/each}.
-            {/if}
-          </p>
-        </div>
+        {#if form.actionKind === 'CREATE_TASK'}
+          <!-- CREATE_TASK fields (unchanged behaviour) -->
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Catégorie">
+              <Input
+                bind:value={form.taskCategory}
+                placeholder="DELAY, FREIGHT_AUDIT, …"
+                required
+              />
+            </Field>
+            <Field label="Suggestions de catégorie">
+              <Select
+                value=""
+                onchange={(e: Event) => {
+                  const v = (e.currentTarget as HTMLSelectElement).value;
+                  if (v) form.taskCategory = v;
+                }}
+              >
+                <option value="">Choisir une catégorie suggérée…</option>
+                {#each SUGGESTED_TASK_CATEGORIES as cat (cat)}
+                  <option value={cat}>{cat}</option>
+                {/each}
+              </Select>
+            </Field>
+            <Field label="Sévérité">
+              <Select bind:value={form.taskSeverity}>
+                {#each SEVERITIES as sev (sev)}
+                  <option value={sev}>{sev}</option>
+                {/each}
+              </Select>
+            </Field>
+            <Field label="Assignation">
+              <Select bind:value={form.taskAssignHint}>
+                {#each ASSIGN_HINTS as hint (hint)}
+                  <option value={hint}>{hint === 'AUTO' ? 'Automatique (AUTO)' : 'Non assignée (UNASSIGNED)'}</option>
+                {/each}
+              </Select>
+            </Field>
+          </div>
 
-        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Champ du sujet (subjectField, optionnel)">
-            <Input
-              bind:value={form.action.subjectField}
-              placeholder={selectedEvent?.defaultSubjectField ?? 'subjectId'}
-            />
+          <div class="mt-3">
+            <Field label="Gabarit de titre">
+              <Input
+                bind:value={form.taskTitleTemplate}
+                placeholder="Ex. Stop {'{stopId}'} en retard de {'{minutesLate}'} min"
+                required
+              />
+            </Field>
+            <p class="mt-1 text-xs text-ink-faint">
+              Utilisez <code class="font-mono">{'{chemin}'}</code> pour insérer une valeur du payload.
+              {#if selectedEvent && selectedEvent.fields.length > 0}
+                Champs disponibles :
+                {#each selectedEvent.fields as fld, idx (fld.path)}<code
+                    class="font-mono">{'{' + fld.path + '}'}</code>{#if idx < selectedEvent.fields.length - 1}<span>, </span>{/if}{/each}.
+              {/if}
+            </p>
+          </div>
+
+          <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Champ du sujet (subjectField, optionnel)">
+              <Input
+                bind:value={form.taskSubjectField}
+                placeholder={selectedEvent?.defaultSubjectField ?? 'subjectId'}
+              />
+            </Field>
+            <Field label="Type de sujet (subjectType, optionnel)">
+              <Input
+                bind:value={form.taskSubjectType}
+                placeholder={form.eventType || 'type'}
+              />
+            </Field>
+          </div>
+        {:else}
+          <!-- RUN_ACTION fields -->
+          <Field label="Réaction">
+            <Select bind:value={form.reactionKey} onchange={onReactionChange}>
+              {#each REACTION_CATALOG as reaction (reaction.key)}
+                <option value={reaction.key}>{reaction.label}</option>
+              {/each}
+            </Select>
           </Field>
-          <Field label="Type de sujet (subjectType, optionnel)">
-            <Input
-              bind:value={form.action.subjectType}
-              placeholder={form.eventType || 'type'}
-            />
-          </Field>
-        </div>
+          {#if selectedReaction}
+            <p class="mt-1 text-xs text-ink-muted">{selectedReaction.description}</p>
+            <p class="mt-0.5 text-xs text-ink-faint">
+              Module : <span class="font-mono">{selectedReaction.module}</span>
+            </p>
+          {/if}
+
+          {#if selectedReaction && selectedReaction.argKeys.length > 0}
+            <div class="mt-3 space-y-2">
+              <span class="text-xs font-semibold text-ink-muted">Arguments (gabarits de payload)</span>
+              {#each selectedReaction.argKeys as argKey (argKey)}
+                <Field label={argKey}>
+                  <Input
+                    value={form.reactionArgs[argKey] ?? `{${argKey}}`}
+                    oninput={(e: Event) => {
+                      form.reactionArgs = {
+                        ...form.reactionArgs,
+                        [argKey]: (e.currentTarget as HTMLInputElement).value,
+                      };
+                    }}
+                    placeholder={`{${argKey}}`}
+                  />
+                </Field>
+              {/each}
+              <p class="text-xs text-ink-faint">
+                Utilisez <code class="font-mono">{'{chemin}'}</code> pour insérer une valeur du payload événement.
+              </p>
+            </div>
+          {/if}
+        {/if}
       </div>
 
       <label class="flex cursor-pointer items-center gap-2 text-sm text-ink">

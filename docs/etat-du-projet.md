@@ -103,6 +103,20 @@ drag/drop = workbench v2).
 | Démarrage local | [getting-started.md](./getting-started.md) |
 | Connexion d'un agent IA (MCP) / Hermes | [agents.md](./agents.md) |
 
+## Session — Tressage automatique v1 (arc B) (2026-06-21)
+
+Branche `cross-module-automation`. **Arc B complet** : 8 tâches livrées — moteur de réactions
+déterministes (`RUN_ACTION`) branché sur l'outbox `DomainEvent` (phase 12) ; règles de réaction
+stockées + éditeur UI ; 2 réactions built-in seedées (planification order → auto-pick WMS ;
+livraison load → relevé client Billing) ; `ReactionExecution` ledger (unique sur
+`(tenantId, eventId, ruleId)`, idempotent) ; anti-boucle single-hop (`DomainEvent.reactionRuleId`
+⇒ RUN_ACTION non ré-évalué) ; gating module/règle best-effort jamais bloquant. Fix de cycle
+JS circulaire dans `AutomationModule` (`ReactionExecutorService` résout `PickingService`/
+`CustomerInvoicesService` via `ModuleRef` + lazy `require()` au lieu d'imports statiques qui
+créaient le cycle `operating→automation→wms→operating`). Suite e2e
+`cross-module-automation.e2e-spec.ts` 10/10. Suite complète 228/230 (1 flake cross-suite
+phase16 S6.2 — passe en isolation 16/16 ; 1 skip phase13 timing connu).
+
 ## Session de stabilisation + framework de config (2026-06-20)
 
 Branche `test-stabilisation` (depuis `main` post-merge PR#38). Deux blocs : (1) **stabilisation** —

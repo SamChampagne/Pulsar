@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   AuditAction,
+  DOMAIN_EVENT_TYPES,
   CustomFieldEntity,
   ShipmentStatus,
   TransportOrderStatus,
@@ -13,6 +14,7 @@ import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import {
@@ -49,6 +51,7 @@ export class TransportOrdersService {
     private readonly sequences: SequencesService,
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
+    private readonly domainEvents: DomainEventsService,
     private readonly moduleSettings: ModuleSettingsService,
     private readonly customFields: CustomFieldsService,
   ) {}
@@ -223,7 +226,15 @@ export class TransportOrdersService {
         },
       });
     }
-    return this.transition(tenantId, userId, id, TransportOrderStatus.PLANNED);
+    const planned = await this.transition(tenantId, userId, id, TransportOrderStatus.PLANNED);
+    // Best-effort: emit after state change succeeds (never blocking — rule 27).
+    await this.domainEvents.emit(
+      tenantId,
+      DOMAIN_EVENT_TYPES.TRANSPORT_ORDER_PLANNED,
+      { type: 'transport-order', id: order.id },
+      { orderId: order.id, orderNumber: order.orderNumber, shipmentCount: splits.length },
+    );
+    return planned;
   }
 
   /** Post-planning re-split: appends one more PENDING shipment to a PLANNED order. */
