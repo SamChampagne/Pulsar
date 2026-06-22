@@ -17,4 +17,31 @@ describe('AGENT_ROLE_PRESETS', () => {
     const ids = AGENT_ROLE_PRESETS.map((p) => p.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  it('always-on presets carry categories + operating.tasks read|manage + a cap', () => {
+    const alwaysOn = AGENT_ROLE_PRESETS.filter((p) => p.alwaysOn);
+    expect(alwaysOn.length).toBeGreaterThanOrEqual(3);
+    for (const p of alwaysOn) {
+      expect(p.handlesCategories && p.handlesCategories.length).toBeTruthy();
+      // Must be able to read AND resolve its own tasks.
+      expect(p.suggestedPermissions).toContain('core.operating.tasks.read');
+      expect(p.suggestedPermissions).toContain('core.operating.tasks.manage');
+      // A 24/7 worker that acts needs a hard amount cap suggested.
+      expect(typeof p.suggestedMaxAmountPerAction).toBe('number');
+      expect(p.suggestedMaxAmountPerAction as number).toBeGreaterThan(0);
+    }
+  });
+
+  it('exposes the expected always-on roles', () => {
+    const ids = new Set(AGENT_ROLE_PRESETS.filter((p) => p.alwaysOn).map((p) => p.id));
+    expect(ids).toContain('tender-desk');
+    expect(ids).toContain('freight-auditor');
+    expect(ids).toContain('fleet-maintenance');
+  });
+
+  it('non-always-on presets do not declare categories', () => {
+    for (const p of AGENT_ROLE_PRESETS.filter((p) => !p.alwaysOn)) {
+      expect(p.handlesCategories).toBeUndefined();
+    }
+  });
 });

@@ -6,6 +6,17 @@ export interface AgentRolePreset {
   persona: string;
   suggestedPermissions: string[];
   suggestedAutonomy: AgentAutonomy;
+  /**
+   * When true, this preset configures an always-on (24/7) employee: the Workbench
+   * dispatcher wakes it on matching OperationalTasks (no human chat). Requires
+   * `handlesCategories` and the `core.operating.tasks.read|manage` permissions so
+   * the agent can read and resolve its tasks.
+   */
+  alwaysOn?: boolean;
+  /** OperationalTask categories this always-on employee picks up (e.g. ['TENDER_FAILURE']). */
+  handlesCategories?: string[];
+  /** Suggested hard per-action amount cap (caps.maxAmountPerAction) for autonomous presets. */
+  suggestedMaxAmountPerAction?: number;
 }
 
 /**
@@ -59,5 +70,62 @@ export const AGENT_ROLE_PRESETS: AgentRolePreset[] = [
       'transportation.analytics.read',
     ],
     suggestedAutonomy: AgentAutonomy.PROPOSE,
+  },
+  // --- Always-on (24/7) exception-handling employees ------------------------
+  // These pick up OperationalTasks via the Workbench dispatcher and act + close
+  // them autonomously (bounded by the hard amount cap). They always include the
+  // core.operating.tasks.read|manage permissions so they can read and resolve
+  // their tasks (resolve_task), plus the action permissions for their category.
+  {
+    id: 'tender-desk',
+    label: 'Agent de retender (24/7)',
+    persona:
+      "Je suis l'agent de retender 24/7. Quand un transporteur refuse ou laisse expirer une soumission, je reprends le chargement et lance une nouvelle soumission vers un transporteur alternatif, puis je clôture l'exception.",
+    suggestedPermissions: [
+      'transportation.orders.read',
+      'transportation.planning.read',
+      'transportation.planning.manage',
+      'transportation.analytics.read',
+      'core.operating.tasks.read',
+      'core.operating.tasks.manage',
+    ],
+    suggestedAutonomy: AgentAutonomy.AUTONOMOUS,
+    alwaysOn: true,
+    handlesCategories: ['TENDER_FAILURE'],
+    suggestedMaxAmountPerAction: 2500,
+  },
+  {
+    id: 'freight-auditor',
+    label: 'Auditeur de factures (24/7)',
+    persona:
+      "Je suis l'auditeur de factures transporteur 24/7. Je compare chaque facture entrante au coût figé du chargement, j'ouvre un litige pour toute variance hors tolérance, puis je clôture l'exception.",
+    suggestedPermissions: [
+      'billing.freight-audit.read',
+      'billing.freight-audit.manage',
+      'transportation.orders.read',
+      'transportation.planning.read',
+      'core.operating.tasks.read',
+      'core.operating.tasks.manage',
+    ],
+    suggestedAutonomy: AgentAutonomy.AUTONOMOUS,
+    alwaysOn: true,
+    handlesCategories: ['FREIGHT_AUDIT'],
+    suggestedMaxAmountPerAction: 1000,
+  },
+  {
+    id: 'fleet-maintenance',
+    label: 'Agent de maintenance flotte (24/7)',
+    persona:
+      "Je suis l'agent de maintenance flotte 24/7. Quand un véhicule ou une remorque entre en maintenance ou approche d'un entretien préventif, j'ouvre l'ordre de travail nécessaire et je clôture l'exception.",
+    suggestedPermissions: [
+      'fleet.read',
+      'fleet.manage',
+      'core.operating.tasks.read',
+      'core.operating.tasks.manage',
+    ],
+    suggestedAutonomy: AgentAutonomy.AUTONOMOUS,
+    alwaysOn: true,
+    handlesCategories: ['FLEET_MAINTENANCE', 'FLEET_PM_DUE'],
+    suggestedMaxAmountPerAction: 1500,
   },
 ];

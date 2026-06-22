@@ -42,9 +42,23 @@
   ];
 
   // Templates: presets + a blank "from scratch" card.
+  const PRESET_EMOJI: Record<string, string> = {
+    dispatcher: '🚚', 'billing-clerk': '🧾', analyst: '📊',
+    'tender-desk': '🔁', 'freight-auditor': '🔍', 'fleet-maintenance': '🔧',
+  };
   const TEMPLATES = [
-    ...AGENT_ROLE_PRESETS.map((p) => ({ id: p.id, label: p.label, persona: p.persona, autonomy: p.suggestedAutonomy as AutonomyLevel, keys: p.suggestedPermissions, emoji: p.id === 'dispatcher' ? '🚚' : p.id === 'billing-clerk' ? '🧾' : '📊' })),
-    { id: 'custom', label: 'Personnalisé', persona: '', autonomy: 'PROPOSE' as AutonomyLevel, keys: [] as string[], emoji: '🤖' },
+    ...AGENT_ROLE_PRESETS.map((p) => ({
+      id: p.id,
+      label: p.label,
+      persona: p.persona,
+      autonomy: p.suggestedAutonomy as AutonomyLevel,
+      keys: p.suggestedPermissions,
+      emoji: PRESET_EMOJI[p.id] ?? '🤖',
+      alwaysOn: p.alwaysOn ?? false,
+      categories: p.handlesCategories ?? [],
+      cap: p.suggestedMaxAmountPerAction,
+    })),
+    { id: 'custom', label: 'Personnalisé', persona: '', autonomy: 'PROPOSE' as AutonomyLevel, keys: [] as string[], emoji: '🤖', alwaysOn: false, categories: [] as string[], cap: undefined as number | undefined },
   ];
 
   let step = $state<'template' | 'form'>('template');
@@ -54,6 +68,9 @@
   let autonomyLevel = $state<AutonomyLevel>('PROPOSE');
   let permissions = $state<string[]>([]);
   let role = $state('');
+  // Always-on (24/7) employee config, set from a preset.
+  let alwaysOn = $state(false);
+  let handlesCategories = $state<string[]>([]);
   // advanced
   let showAdvanced = $state(false);
   let model = $state('');
@@ -68,6 +85,9 @@
     autonomyLevel = t.autonomy;
     permissions = [...t.keys];
     emoji = t.emoji;
+    alwaysOn = t.alwaysOn;
+    handlesCategories = [...t.categories];
+    maxAmountPerAction = t.cap != null ? String(t.cap) : '';
     step = 'form';
   }
 
@@ -82,15 +102,20 @@
   function reset() {
     step = 'template'; name = ''; emoji = '🤖'; persona = ''; autonomyLevel = 'PROPOSE';
     permissions = []; role = ''; showAdvanced = false; model = ''; maxAmountPerAction = '';
+    alwaysOn = false; handlesCategories = [];
   }
 
   async function create(event: SubmitEvent) {
     event.preventDefault();
     saving = true;
     try {
-      const caps: { maxAmountPerAction?: number } = {};
+      const caps: { maxAmountPerAction?: number; alwaysOn?: boolean; handlesCategories?: string[] } = {};
       const amount = Number(maxAmountPerAction);
       if (maxAmountPerAction.trim() !== '' && amount > 0) caps.maxAmountPerAction = amount;
+      if (alwaysOn) {
+        caps.alwaysOn = true;
+        caps.handlesCategories = handlesCategories;
+      }
       const created = await api<AgentCreated>('/agents', {
         method: 'POST',
         body: {
@@ -136,8 +161,13 @@
         {#each TEMPLATES as t (t.id)}
           <button type="button" onclick={() => pickTemplate(t)} class="flex items-start gap-3 rounded-card border border-edge-soft p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-accent hover:shadow-card">
             <span class="text-2xl">{t.emoji}</span>
-            <span>
-              <span class="block text-sm font-semibold text-ink">{t.label}</span>
+            <span class="min-w-0">
+              <span class="flex items-center gap-1.5">
+                <span class="block text-sm font-semibold text-ink">{t.label}</span>
+                {#if t.alwaysOn}
+                  <span class="rounded-full bg-info-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-info">24/7</span>
+                {/if}
+              </span>
               <span class="mt-0.5 block text-xs text-ink-muted">{t.id === 'custom' ? 'Partir de zéro.' : t.persona.slice(0, 70) + '…'}</span>
             </span>
           </button>
