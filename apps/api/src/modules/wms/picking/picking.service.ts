@@ -6,11 +6,14 @@ import {
 } from '@nestjs/common';
 import {
   AuditAction,
+  CustomFieldEntity,
   PickOrderStatus,
   StockMovementType,
   canTransitionPickOrder,
 } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
@@ -37,6 +40,7 @@ export class PickingService {
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
     private readonly domainEvents: DomainEventsService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   async list(tenantId: string, q: PickListQueryDto) {
@@ -95,6 +99,9 @@ export class PickingService {
       }
     }
 
+    const customData = await this.customFields.validateValues(
+      'wms', tenantId, CustomFieldEntity.PICK_ORDER, dto.customData, { partial: false },
+    );
     const number = await this.sequences.nextNumber(tenantId, 'pick-order');
     const order = await this.prisma.pickOrder.create({
       data: {
@@ -106,6 +113,7 @@ export class PickingService {
         note: dto.note ?? null,
         status: PickOrderStatus.OPEN,
         createdById: userId,
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
     });
     await this.audit.log({

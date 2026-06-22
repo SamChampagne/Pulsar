@@ -1,12 +1,14 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditAction, DOMAIN_EVENT_TYPES, ReceiptStatus, StockMovementType, canTransitionReceipt } from '@pulsar/shared';
+import { AuditAction, CustomFieldEntity, DOMAIN_EVENT_TYPES, ReceiptStatus, StockMovementType, canTransitionReceipt } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { InventoryService } from '../inventory/inventory.service';
-import { AddReceiptLineDto, CreateReceiptDto, ReceiptListQueryDto } from './dto/receipt.dto';
+import { AddReceiptLineDto, CreateReceiptDto, ReceiptListQueryDto, UpdateReceiptDto } from './dto/receipt.dto';
 
 /**
  * Inbound receipts. A DRAFT receipt accumulates lines; posting it turns each
@@ -25,6 +27,7 @@ export class ReceivingService {
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
     private readonly domainEvents: DomainEventsService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   async list(tenantId: string, q: ReceiptListQueryDto) {
@@ -64,6 +67,9 @@ export class ReceivingService {
     if (!loc) throw new NotFoundException('Location not found');
     if (loc.type !== 'WAREHOUSE') throw new BadRequestException('Receipt requires a WAREHOUSE location');
 
+    const customData = await this.customFields.validateValues(
+      'wms', tenantId, CustomFieldEntity.RECEIPT, dto.customData, { partial: false },
+    );
     const number = await this.sequences.nextNumber(tenantId, 'receipt');
     const receipt = await this.prisma.receipt.create({
       data: {
@@ -74,6 +80,7 @@ export class ReceivingService {
         note: dto.note ?? null,
         status: ReceiptStatus.DRAFT,
         createdById: userId,
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
     });
     await this.audit.log({
@@ -85,6 +92,33 @@ export class ReceivingService {
       after: { number: receipt.number, locationId: receipt.locationId },
     });
     return receipt;
+  }
+
+  async update(tenantId: string, userId: string, id: string, dto: UpdateReceiptDto) {
+    const receipt = await this.prisma.receipt.findFirst({ where: { id, tenantId }, select: { id: true, status: true } });
+    if (!receipt) throw new NotFoundException('Receipt not found');
+    if (receipt.status !== ReceiptStatus.DRAFT) throw new BadRequestException('Receipt is not editable');
+
+    const customData = await this.customFields.validateValues(
+      'wms', tenantId, CustomFieldEntity.RECEIPT, dto.customData, { partial: true },
+    );
+    const updated = await this.prisma.receipt.update({
+      where: { id },
+      data: {
+        ...(dto.reference !== undefined ? { reference: dto.reference } : {}),
+        ...(dto.note !== undefined ? { note: dto.note } : {}),
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
+      },
+    });
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'wms-receipt',
+      entityId: id,
+      after: { reference: updated.reference, note: updated.note },
+    });
+    return this.get(tenantId, id);
   }
 
   async addLine(tenantId: string, id: string, dto: AddReceiptLineDto) {
