@@ -24,11 +24,15 @@
  *
  * Prerequisites: reachable PostgreSQL with the seed applied.
  */
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, Injectable, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { CrmExceptionsService } from '../src/modules/crm/crm-exceptions.service';
+import { DomainEventsService } from '../src/core/operating/domain-events.service';
+import { AgentRuntimeService } from '../src/core/agents/agent-runtime.service';
+import { AgentsService } from '../src/core/agents/agents.service';
 
 const ADMIN = { email: 'admin@pulsar.dev', password: 'admin123', tenant: 'acme' };
 
@@ -417,5 +421,247 @@ describe('CRM module (e2e)', () => {
     // Each deal entry has required fields
     const ourDeal = wonBucket!.deals.find((d) => d.id === dealId)!;
     expect(ourDeal.companyName).toBeTruthy();
+  });
+});
+
+// =============================================================================
+// Task 9 — Autonomous exception loop: stale deal → task auto-assigned to agent
+// =============================================================================
+
+/**
+ * Minimal no-op stub so the app boots without a real Hermes process.
+ * The worker dispatch is fire-and-forget (best-effort, never throws into the
+ * caller); stubbing AgentRuntimeService ensures it fails fast (SKIPPED run)
+ * rather than actually spawning a child process during the e2e suite.
+ */
+@Injectable()
+class FakeAgentRuntimeService {
+  constructor(private readonly _agents: AgentsService) {}
+  async openSession(): Promise<string> {
+    return 'fake-session';
+  }
+  async *sendTurn(): AsyncGenerator<never> {
+    /* no turns in this suite */
+  }
+  async closeSession(): Promise<void> {
+    /* no-op */
+  }
+  async killAgentSessions(): Promise<void> {
+    /* no-op */
+  }
+}
+
+describe('CRM autonomous exception loop (e2e)', () => {
+  let app: INestApplication;
+  let http: ReturnType<INestApplication['getHttpServer']>;
+  let prisma: PrismaService;
+  let crmExceptions: CrmExceptionsService;
+  let domainEvents: DomainEventsService;
+  let token = '';
+  let tenantId = '';
+
+  const suffix = `loop-${Date.now()}`;
+  const auth = () => ({ Authorization: `Bearer ${token}` });
+
+  // IDs to clean up after the suite
+  let loopAgentId = '';
+  let loopCompanyId = '';
+  let loopDealId = '';
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(AgentRuntimeService)
+      .useClass(FakeAgentRuntimeService)
+      .compile();
+
+    app = moduleRef.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
+    );
+    await app.listen(0);
+    http = app.getHttpServer();
+
+    prisma = app.get(PrismaService);
+    crmExceptions = app.get(CrmExceptionsService);
+    domainEvents = app.get(DomainEventsService);
+
+    const login = await request(http).post('/api/v1/auth/login').send(ADMIN).expect(200);
+    token = (login.body as { accessToken: string }).accessToken;
+
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: 'acme' } });
+    tenantId = tenant.id;
+
+    // Ensure CRM module is enabled for acme.
+    const mod = await prisma.moduleDefinition.findUniqueOrThrow({ where: { key: 'crm' } });
+    await prisma.tenantModule.upsert({
+      where: { tenantId_moduleId: { tenantId, moduleId: mod.id } },
+      update: { enabled: true },
+      create: { tenantId, moduleId: mod.id, enabled: true, enabledAt: new Date() },
+    });
+  });
+
+  afterAll(async () => {
+    if (prisma) {
+      // Remove the stale task(s) created by our deal so dedup doesn't bleed into other runs.
+      if (loopDealId) {
+        await prisma.operationalTask.deleteMany({
+          where: { tenantId, dedupKey: `CRM_STALE_DEAL:${loopDealId}` },
+        }).catch(() => undefined);
+        await prisma.crmDeal.deleteMany({ where: { id: loopDealId } }).catch(() => undefined);
+      }
+      if (loopCompanyId) {
+        await prisma.crmCompany.deleteMany({ where: { id: loopCompanyId } }).catch(() => undefined);
+      }
+      if (loopAgentId) {
+        await prisma.agent.deleteMany({ where: { id: loopAgentId } }).catch(() => undefined);
+      }
+    }
+    await app.close();
+  });
+
+  // =========================================================================
+  // Step 1 — Register a crm-sdr–style always-on AUTONOMOUS agent.
+  // =========================================================================
+  it('creates an always-on CRM SDR agent (AUTONOMOUS, handlesCategories CRM_STALE_DEAL)', async () => {
+    const res = await request(http)
+      .post('/api/v1/agents')
+      .set(auth())
+      .send({
+        name: `crm-sdr-${suffix}`,
+        persona: "Je suis l'agent commercial 24/7. Je relance les deals en stagnation.",
+        role: 'crm-sdr',
+        model: 'anthropic:claude-sonnet-4-6',
+        autonomyLevel: 'AUTONOMOUS',
+        permissions: ['crm.read', 'crm.manage', 'core.operating.tasks.read', 'core.operating.tasks.manage'],
+        caps: {
+          alwaysOn: true,
+          handlesCategories: ['CRM_STALE_DEAL', 'CRM_FOLLOWUP_DUE'],
+          maxAmountPerAction: 1000,
+        },
+      })
+      .expect(201);
+
+    const body = res.body as { id: string; autonomyLevel: string; name: string };
+    loopAgentId = body.id;
+    expect(loopAgentId).toBeTruthy();
+    expect(body.autonomyLevel).toBe('AUTONOMOUS');
+    expect(body.name).toBe(`crm-sdr-${suffix}`);
+  });
+
+  // =========================================================================
+  // Step 2 — Create a company + a LEAD deal, then back-date lastActivityAt
+  //          to 10 days ago (via direct Prisma update) to make it stale.
+  // =========================================================================
+  it('creates a stale deal (lastActivityAt 10 days ago) via Prisma direct update', async () => {
+    // Create the company.
+    const companyRes = await request(http)
+      .post('/api/v1/crm/companies')
+      .set(auth())
+      .send({ name: `Loop Company ${suffix}` })
+      .expect(201);
+    loopCompanyId = (companyRes.body as { id: string }).id;
+    expect(loopCompanyId).toBeTruthy();
+
+    // Create the deal (default stage = LEAD).
+    const dealRes = await request(http)
+      .post('/api/v1/crm/deals')
+      .set(auth())
+      .send({ title: `Stale Deal ${suffix}`, companyId: loopCompanyId, amount: 25000, currency: 'CAD' })
+      .expect(201);
+    loopDealId = (dealRes.body as { id: string }).id;
+    expect(loopDealId).toBeTruthy();
+
+    // Back-date lastActivityAt by 10 days so tick() considers it stale (threshold = 7 days).
+    const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+    await prisma.crmDeal.update({
+      where: { id: loopDealId },
+      data: { lastActivityAt: tenDaysAgo },
+    });
+
+    // Verify the deal is now stale in the DB.
+    const deal = await prisma.crmDeal.findUniqueOrThrow({ where: { id: loopDealId } });
+    expect(deal.lastActivityAt!.getTime()).toBeLessThan(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  });
+
+  // =========================================================================
+  // Step 3 — Run CrmExceptionsService.tick(now) to emit the domain events,
+  //          then DomainEventsService.processPending() to create the tasks.
+  // =========================================================================
+  it('tick() detects the stale deal and emits a crm.deal.stale domain event', async () => {
+    const now = new Date();
+    const [staleCount] = await crmExceptions.tick(now);
+    // At least our deal must have been detected (there may be others in the DB).
+    expect(staleCount).toBeGreaterThanOrEqual(1);
+
+    // Confirm the PENDING event for our specific deal was written.
+    const event = await prisma.domainEvent.findFirst({
+      where: {
+        tenantId,
+        type: 'crm.deal.stale',
+        subjectId: loopDealId,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(event).not.toBeNull();
+    expect(event!.status).toBe('PENDING');
+  });
+
+  it('processPending() creates a CRM_STALE_DEAL task auto-assigned to the crm-sdr agent', async () => {
+    const processed = await domainEvents.processPending(50);
+    expect(processed).toBeGreaterThanOrEqual(1);
+
+    // Assert the task was created for our deal and auto-assigned to our agent.
+    const task = await prisma.operationalTask.findFirst({
+      where: {
+        tenantId,
+        category: 'CRM_STALE_DEAL',
+        subjectId: loopDealId,
+        subjectType: 'deal',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    expect(task).not.toBeNull();
+    expect(task!.category).toBe('CRM_STALE_DEAL');
+    expect(task!.subjectId).toBe(loopDealId);
+    expect(task!.assigneeType).toBe('AGENT');
+    expect(task!.assigneeAgentId).toBe(loopAgentId);
+    expect(task!.tenantId).toBe(tenantId);
+    // Verify the dedupKey matches the expected format.
+    expect(task!.dedupKey).toBe(`CRM_STALE_DEAL:${loopDealId}`);
+  });
+
+  // =========================================================================
+  // Step 4 — Idempotency: re-running tick + processPending must NOT create
+  //          a duplicate task (dedupKey unique constraint).
+  // =========================================================================
+  it('re-running tick + processPending is idempotent — no duplicate task created', async () => {
+    const before = await prisma.operationalTask.count({
+      where: { tenantId, dedupKey: `CRM_STALE_DEAL:${loopDealId}` },
+    });
+    expect(before).toBe(1);
+
+    await crmExceptions.tick(new Date());
+    await domainEvents.processPending(50);
+
+    const after = await prisma.operationalTask.count({
+      where: { tenantId, dedupKey: `CRM_STALE_DEAL:${loopDealId}` },
+    });
+    expect(after).toBe(1);
+  });
+
+  // =========================================================================
+  // Step 5 — Tenant isolation: the task's tenantId is acme's and the assigned
+  //          agent belongs to the same tenant.
+  // =========================================================================
+  it('tenant isolation: task tenantId matches acme and assigned agent belongs to same tenant', async () => {
+    const task = await prisma.operationalTask.findFirst({
+      where: { tenantId, dedupKey: `CRM_STALE_DEAL:${loopDealId}` },
+    });
+    expect(task!.tenantId).toBe(tenantId);
+
+    const agent = await prisma.agent.findUnique({ where: { id: loopAgentId } });
+    expect(agent!.tenantId).toBe(tenantId);
   });
 });
