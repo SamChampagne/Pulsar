@@ -15,6 +15,10 @@ import { SequencesService } from '../../prisma/sequences.service';
 import { AgentWorkerService } from './agent-worker.service';
 import { TaskAssignmentResolver } from './event-policies';
 import { CustomRuleResolver } from '../automation/custom-rule.resolver';
+import {
+  currentReactionRuleId,
+  ReactionExecutorService,
+} from '../automation/reaction-executor.service';
 
 const SEVERITY_TO_LEVEL: Record<Severity, NotificationLevel> = {
   INFO: NotificationLevel.INFO,
@@ -35,6 +39,7 @@ export class DomainEventsService {
     private readonly worker: AgentWorkerService,
     private readonly sequences: SequencesService,
     private readonly customRuleResolver: CustomRuleResolver,
+    private readonly reactionExecutor: ReactionExecutorService,
   ) {}
 
   /** Persist a domain event. Best-effort: a failure is logged, never thrown into the caller. */
@@ -53,6 +58,7 @@ export class DomainEventsService {
           subjectId: subject?.id ?? null,
           payload: payload as Prisma.InputJsonValue,
           status: DomainEventStatus.PENDING,
+          reactionRuleId: currentReactionRuleId(),
         },
       });
     } catch (err) {
@@ -71,6 +77,14 @@ export class DomainEventsService {
       where: { status: DomainEventStatus.PENDING },
       orderBy: { createdAt: 'asc' },
       take: limit,
+      select: {
+        id: true,
+        tenantId: true,
+        type: true,
+        payload: true,
+        status: true,
+        reactionRuleId: true,
+      },
     });
 
     let handled = 0;
@@ -87,9 +101,12 @@ export class DomainEventsService {
 
         // Additive layer: consult tenant-configured automation rules. Best-effort
         // (rule 24) — a failure here must never break built-in task creation.
-        let customSpecs: typeof specs = [];
+        let customSpecs: ReturnType<typeof resolvePolicies> = [];
+        let reactionCommands: Awaited<ReturnType<CustomRuleResolver['resolve']>>['reactionCommands'] = [];
         try {
-          customSpecs = await this.customRuleResolver.resolve(event.tenantId, event.type, payload);
+          const customResult = await this.customRuleResolver.resolve(event.tenantId, event.type, payload);
+          customSpecs = customResult.taskSpecs;
+          reactionCommands = customResult.reactionCommands;
         } catch (ruleErr) {
           this.logger.error(
             `customRuleResolver failed for event ${event.id} (${event.type}): ${ruleErr instanceof Error ? ruleErr.message : String(ruleErr)}`,
@@ -140,6 +157,21 @@ export class DomainEventsService {
             if (!(err && typeof err === 'object' && (err as { code?: string }).code === 'P2002')) throw err;
           }
         }
+        // Reactions: skip entirely for reaction-originated events (anti-loop, single hop).
+        // CREATE_TASK rules above still ran for tagged events — only RUN_ACTION execution is skipped.
+        if (!event.reactionRuleId) {
+          try {
+            for (const command of reactionCommands) {
+              // executeCommand is idempotent and never throws — defensive guard anyway.
+              await this.reactionExecutor.executeCommand(event.tenantId, event.id, command);
+            }
+          } catch (rxErr) {
+            this.logger.error(
+              `reaction loop failed for event ${event.id}: ${rxErr instanceof Error ? rxErr.message : String(rxErr)}`,
+            );
+          }
+        }
+
         handled++;
       } catch (err) {
         // Failures are terminal — this is a best-effort outbox (no retry budget).
