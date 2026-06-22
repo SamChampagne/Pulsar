@@ -32,15 +32,16 @@ const round = (n: number) => Math.round(n * 100) / 100;
 export function evaluateReconciliation(
   lines: ReconciliationLine[],
   tolerance: ReconciliationTolerance,
+  mode: 'MAX' | 'MIN' = 'MAX',
 ): ReconciliationOutcome {
   const invoicedTotal = round(lines.reduce((acc, l) => acc + l.invoiced, 0));
   const varianceTotal = round(lines.reduce((acc, l) => acc + (l.invoiced - l.expected), 0));
   const varianceGross = round(
     lines.reduce((acc, l) => acc + Math.abs(l.invoiced - l.expected), 0),
   );
-  const threshold = Math.max(
-    tolerance.toleranceAbsolute,
-    (invoicedTotal * tolerance.tolerancePct) / 100,
-  );
+  const pct = (invoicedTotal * tolerance.tolerancePct) / 100;
+  const threshold = mode === 'MIN'
+    ? Math.min(tolerance.toleranceAbsolute, pct)
+    : Math.max(tolerance.toleranceAbsolute, pct);
   return { invoicedTotal, varianceTotal, varianceGross, withinTolerance: varianceGross <= threshold };
 }

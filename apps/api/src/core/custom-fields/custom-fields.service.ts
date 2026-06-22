@@ -8,18 +8,15 @@ import {
   type CustomFieldValues,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
-import { PrismaService } from '../../../prisma/prisma.service';
-
-
-const MODULE = 'transportation';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class CustomFieldsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listDefinitions(tenantId: string, entityType: CustomFieldEntity): Promise<CustomFieldDefinition[]> {
+  async listDefinitions(module: string, tenantId: string, entityType: CustomFieldEntity): Promise<CustomFieldDefinition[]> {
     const rows = await this.prisma.customFieldDefinition.findMany({
-      where: { tenantId, module: MODULE, entityType },
+      where: { tenantId, module, entityType },
       orderBy: { sortOrder: 'asc' },
     });
     return rows.map((r) => ({
@@ -34,6 +31,7 @@ export class CustomFieldsService {
   }
 
   async replaceDefinitions(
+    module: string,
     tenantId: string,
     entityType: CustomFieldEntity,
     defs: CustomFieldDefinition[],
@@ -41,11 +39,11 @@ export class CustomFieldsService {
     const check = validateDefinitions(defs);
     if (!check.ok) throw new BadRequestException(check.errors.join('; '));
     await this.prisma.$transaction([
-      this.prisma.customFieldDefinition.deleteMany({ where: { tenantId, module: MODULE, entityType } }),
+      this.prisma.customFieldDefinition.deleteMany({ where: { tenantId, module, entityType } }),
       this.prisma.customFieldDefinition.createMany({
         data: defs.map((d, i) => ({
           tenantId,
-          module: MODULE,
+          module,
           entityType,
           key: d.key,
           label: d.label,
@@ -57,17 +55,18 @@ export class CustomFieldsService {
         })),
       }),
     ]);
-    return this.listDefinitions(tenantId, entityType);
+    return this.listDefinitions(module, tenantId, entityType);
   }
 
   /** Validates a values payload; throws 400 on any error. Returns the cleaned values (or undefined if no data). */
   async validateValues(
+    module: string,
     tenantId: string,
     entityType: CustomFieldEntity,
     data: unknown,
     opts: { partial?: boolean } = {},
   ): Promise<CustomFieldValues | undefined> {
-    const defs = await this.listDefinitions(tenantId, entityType);
+    const defs = await this.listDefinitions(module, tenantId, entityType);
     if (defs.length === 0 && (data === undefined || data === null)) return undefined;
     const res = validateCustomFields(defs, data ?? {}, opts);
     if (!res.ok) throw new BadRequestException(res.errors.join('; '));

@@ -6,7 +6,7 @@ import { Audit } from '../../../common/decorators/audit.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
-import { CustomFieldsService } from './custom-fields.service';
+import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import { ReplaceCustomFieldsDto } from './dto/custom-field.dto';
 
 @ApiTags('transportation/custom-fields')
@@ -19,13 +19,13 @@ export class CustomFieldsController {
   @Get()
   @RequirePermissions(PERMISSIONS.CORE.MODULES_READ)
   list(@CurrentUser() user: AuthUser, @Query('entityType') entityType: CustomFieldEntity) {
-    return this.service.listDefinitions(user.tenantId, entityType);
+    return this.service.listDefinitions('transportation', user.tenantId, entityType);
   }
 
   @Put()
   @Audit('custom-field-definition', AuditAction.UPDATE)
   @RequirePermissions(PERMISSIONS.CORE.MODULES_MANAGE)
   replace(@CurrentUser() user: AuthUser, @Body() dto: ReplaceCustomFieldsDto) {
-    return this.service.replaceDefinitions(user.tenantId, dto.entityType, dto.definitions as never);
+    return this.service.replaceDefinitions('transportation', user.tenantId, dto.entityType, dto.definitions as never);
   }
 }

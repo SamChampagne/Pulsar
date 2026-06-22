@@ -98,3 +98,16 @@ describe('transportation process descriptors', () => {
     expect(d.documentPrefixLoad).toBe('LD');
   });
 });
+
+describe('billing process descriptors', () => {
+  it('defaults equal current behavior', () => {
+    const d = resolveSettings(catalogFor('billing')!, {});
+    expect(d.tolerancePct).toBe(2);
+    expect(d.toleranceAbsolute).toBe(25);
+    expect(d.autoSendOnApproval).toBe(false);
+    expect(d.toleranceMode).toBe('MAX');
+    expect(d.invoiceNumberPrefix).toBe('INV');
+    expect(d.customerInvoiceNumberPrefix).toBe('CINV');
+    expect(d.defaultCurrency).toBe('CAD');
+  });
+});
