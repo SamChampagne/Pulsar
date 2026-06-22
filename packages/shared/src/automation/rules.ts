@@ -33,7 +33,7 @@ export interface RuleCondition {
   value?: string | number | boolean;
 }
 
-export interface RuleAction {
+export interface CreateTaskAction {
   kind: 'CREATE_TASK';
   /** OperationalTask category (reuse the existing ones or a custom string). */
   category: string;
@@ -45,6 +45,22 @@ export interface RuleAction {
   subjectField?: string;
   /** Defaults to the eventType. */
   subjectType?: string;
+}
+
+export interface RunActionAction {
+  kind: 'RUN_ACTION';
+  /** A REACTION_CATALOG key. */
+  action: string;
+  /** Arg templates interpolated from the event payload, e.g. { orderId: '{orderId}' }. */
+  args: Record<string, string>;
+}
+
+export type RuleAction = CreateTaskAction | RunActionAction;
+
+export interface ReactionCommand {
+  ruleId: string;
+  action: string;
+  args: Record<string, string>;
 }
 
 export interface AutomationRuleLike {
@@ -136,10 +152,10 @@ export function interpolateTemplate(tpl: string, payload: Record<string, unknown
  * Resolves the subjectId following the fallback chain:
  * action.subjectField → payload.subjectId → payload.id → event-level subjectId.
  */
-function resolveSubjectId(rule: AutomationRuleLike, event: DomainEventInput): string | null {
+function resolveSubjectId(action: CreateTaskAction, rule: AutomationRuleLike, event: DomainEventInput): string | null {
   const payload = event.payload ?? {};
   const candidates: unknown[] = [];
-  if (rule.action.subjectField) candidates.push(getByPath(payload, rule.action.subjectField));
+  if (action.subjectField) candidates.push(getByPath(payload, action.subjectField));
   candidates.push(payload.subjectId);
   candidates.push(payload.id);
   candidates.push((event as { subjectId?: unknown }).subjectId);
@@ -159,10 +175,11 @@ export function produceRuleTaskSpec(
   rule: AutomationRuleLike,
   event: DomainEventInput,
 ): TaskSpec | null {
-  const subjectId = resolveSubjectId(rule, event);
+  if (rule.action.kind !== 'CREATE_TASK') return null;
+  const action = rule.action;
+  const subjectId = resolveSubjectId(action, rule, event);
   if (!subjectId) return null;
   const payload = event.payload ?? {};
-  const action = rule.action;
   return {
     type: OperationalTaskType.EXCEPTION,
     category: action.category,
@@ -174,6 +191,20 @@ export function produceRuleTaskSpec(
     details: { ...payload },
     assignHint: action.assignHint,
   };
+}
+
+/** Produces a ReactionCommand for a RUN_ACTION rule (args interpolated), or null otherwise. */
+export function produceRuleReaction(
+  rule: AutomationRuleLike,
+  event: DomainEventInput,
+): ReactionCommand | null {
+  if (rule.action.kind !== 'RUN_ACTION') return null;
+  const payload = event.payload ?? {};
+  const args: Record<string, string> = {};
+  for (const [k, tpl] of Object.entries(rule.action.args)) {
+    args[k] = interpolateTemplate(tpl, payload);
+  }
+  return { ruleId: rule.id, action: rule.action.action, args };
 }
 
 export interface AutomationEventField {
@@ -364,6 +395,41 @@ export const AUTOMATION_EVENT_CATALOG: AutomationEventDescriptor[] = [
       f('bucket', 'Tranche temporelle'),
     ],
     defaultSubjectField: 'subject.id',
+  },
+  {
+    type: DOMAIN_EVENT_TYPES.TRANSPORT_ORDER_PLANNED,
+    label: 'Commande planifiée',
+    description: 'Une commande a été planifiée (ses shipments existent).',
+    fields: [f('orderId', 'ID commande'), f('orderNumber', 'N° commande'), f('shipmentCount', 'Nb shipments', 'number')],
+    defaultSubjectField: 'orderId',
+  },
+  {
+    type: DOMAIN_EVENT_TYPES.LOAD_DISPATCHED,
+    label: 'Load dispatché',
+    description: 'Un load est passé en dispatché.',
+    fields: [f('loadId', 'ID load'), f('loadNumber', 'N° load'), f('carrierId', 'ID transporteur')],
+    defaultSubjectField: 'loadId',
+  },
+  {
+    type: DOMAIN_EVENT_TYPES.LOAD_COMPLETED,
+    label: 'Load livré',
+    description: 'Un load est livré/complété.',
+    fields: [f('loadId', 'ID load'), f('loadNumber', 'N° load')],
+    defaultSubjectField: 'loadId',
+  },
+  {
+    type: DOMAIN_EVENT_TYPES.YARD_VISIT_CHECKED_OUT,
+    label: 'Départ de cour',
+    description: 'Une visite de cour a été clôturée (check-out).',
+    fields: [f('visitId', 'ID visite'), f('visitNumber', 'N° visite')],
+    defaultSubjectField: 'visitId',
+  },
+  {
+    type: DOMAIN_EVENT_TYPES.WMS_RECEIPT_POSTED,
+    label: 'Réception postée',
+    description: 'Une réception entrepôt a été postée (stock disponible).',
+    fields: [f('receiptId', 'ID réception'), f('number', 'N° réception')],
+    defaultSubjectField: 'receiptId',
   },
 ];
 

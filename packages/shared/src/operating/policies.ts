@@ -17,6 +17,12 @@ export const DOMAIN_EVENT_TYPES = {
   YARD_APPOINTMENT_LATE: 'yard.appointment.late',
   DRIVER_EXCEPTION: 'driver.exception',
   PORTAL_CHANGE_REQUEST: 'portal.change-request',
+  // Phase 16: cross-module automation events.
+  TRANSPORT_ORDER_PLANNED: 'transport-order.planned',
+  LOAD_DISPATCHED: 'load.dispatched',
+  LOAD_COMPLETED: 'load.completed',
+  YARD_VISIT_CHECKED_OUT: 'yard.visit.checked-out',
+  WMS_RECEIPT_POSTED: 'wms.receipt.posted',
 } as const;
 
 export interface DomainEventInput {
