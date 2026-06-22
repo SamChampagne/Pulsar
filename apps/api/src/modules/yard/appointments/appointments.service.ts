@@ -33,7 +33,7 @@ export class AppointmentsService {
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
     private readonly domainEvents: DomainEventsService,
-    private readonly customFields?: CustomFieldsService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   /**
@@ -120,15 +120,13 @@ export class AppointmentsService {
       if (!spot) throw new NotFoundException('Spot not found');
     }
 
-    const customData = this.customFields
-      ? await this.customFields.validateValues(
-          'yard',
-          tenantId,
-          CustomFieldEntity.DOCK_APPOINTMENT,
-          dto.customData,
-          { partial: false },
-        )
-      : undefined;
+    const customData = await this.customFields.validateValues(
+      'yard',
+      tenantId,
+      CustomFieldEntity.DOCK_APPOINTMENT,
+      dto.customData,
+      { partial: false },
+    );
 
     const appointmentNumber = await this.sequences.nextNumber(tenantId, 'dock-appointment');
     const appt = await this.prisma.dockAppointment.create({

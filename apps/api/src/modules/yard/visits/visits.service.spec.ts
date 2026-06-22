@@ -36,8 +36,9 @@ function harness(opts: { occupied?: boolean; spotConflictPolicy?: 'BLOCK' | 'WAR
   const moduleSettings = {
     resolve: async () => ({ spotConflictPolicy: opts.spotConflictPolicy ?? 'BLOCK' }),
   } as any;
+  const customFields = { validateValues: async () => undefined } as any;
   return {
-    svc: new VisitsService(client, sequences, ownership, audit, domainEvents, moduleSettings),
+    svc: new VisitsService(client, sequences, ownership, audit, domainEvents, moduleSettings, customFields),
     visit,
     moves,
   };
@@ -73,7 +74,7 @@ describe('VisitsService.spotConflictPolicy', () => {
   it('WARN policy: occupied spot resolves (no throw) with spotWarnings', async () => {
     const h = harness({ occupied: true, spotConflictPolicy: 'WARN' });
     const result = await h.svc.assign('t1', 'u1', 'v1', { spotId: 'door1' } as any);
-    expect(result).toBeDefined();
+    expect((result as any).spotWarnings).toEqual(['Spot already occupied']);
   });
 
   it('BLOCK policy: occupied spot throws ConflictException', async () => {

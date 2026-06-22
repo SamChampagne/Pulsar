@@ -56,7 +56,7 @@ export class VisitsService {
     private readonly audit: AuditLogsService,
     private readonly domainEvents: DomainEventsService,
     private readonly moduleSettings: ModuleSettingsService,
-    private readonly customFields?: CustomFieldsService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   /**
@@ -187,15 +187,13 @@ export class VisitsService {
       if (!appt) throw new NotFoundException('Appointment not found');
     }
 
-    const customData = this.customFields
-      ? await this.customFields.validateValues(
-          'yard',
-          tenantId,
-          CustomFieldEntity.YARD_VISIT,
-          dto.customData,
-          { partial: false },
-        )
-      : undefined;
+    const customData = await this.customFields.validateValues(
+      'yard',
+      tenantId,
+      CustomFieldEntity.YARD_VISIT,
+      dto.customData,
+      { partial: false },
+    );
 
     const visitNumber = await this.sequences.nextNumber(tenantId, 'yard-visit');
 
