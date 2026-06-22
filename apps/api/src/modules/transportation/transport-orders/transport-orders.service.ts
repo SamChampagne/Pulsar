@@ -14,7 +14,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
-import { CustomFieldsService } from '../custom-fields/custom-fields.service';
+import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import {
   CreateTransportOrderDto,
   PlanTransportOrderDto,
@@ -109,7 +109,7 @@ export class TransportOrdersService {
       assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
     }
     const customData = await this.customFields.validateValues(
-      tenantId, CustomFieldEntity.TRANSPORT_ORDER, dto.customData, { partial: false },
+      'transportation', tenantId, CustomFieldEntity.TRANSPORT_ORDER, dto.customData, { partial: false },
     );
     const { customData: _cd, ...dtoWithout } = dto;
     const order = await this.prisma.transportOrder.create({
@@ -152,7 +152,7 @@ export class TransportOrdersService {
       assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
     }
     const customData = await this.customFields.validateValues(
-      tenantId, CustomFieldEntity.TRANSPORT_ORDER, dto.customData, { partial: true },
+      'transportation', tenantId, CustomFieldEntity.TRANSPORT_ORDER, dto.customData, { partial: true },
     );
     const { customData: _cd, ...dtoWithout } = dto;
     return this.prisma.transportOrder.update({
@@ -205,7 +205,7 @@ export class TransportOrdersService {
     for (const split of splits) {
       const windows = resolveSplitWindows(order, split, strict);
       const shipmentCustomData = await this.customFields.validateValues(
-        tenantId, CustomFieldEntity.SHIPMENT, split.customData, { partial: false },
+        'transportation', tenantId, CustomFieldEntity.SHIPMENT, split.customData, { partial: false },
       );
       await this.prisma.shipment.create({
         data: {
@@ -235,7 +235,7 @@ export class TransportOrdersService {
     const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
     const windows = resolveSplitWindows(order, split, tms['windowCoherence'] !== 'LENIENT');
     const shipmentCustomData = await this.customFields.validateValues(
-      tenantId, CustomFieldEntity.SHIPMENT, split.customData, { partial: false },
+      'transportation', tenantId, CustomFieldEntity.SHIPMENT, split.customData, { partial: false },
     );
     const shipment = await this.prisma.shipment.create({
       data: {
