@@ -3,9 +3,10 @@
  * setup-agents.mjs — provision the vendored Hermes agent runtime (turnkey).
  *
  * Creates a Python virtualenv at hermes-agent/.venv and installs the vendored
- * `hermes-agent` package with the `acp` extra (agent-client-protocol), so that
- * Pulsar's AgentRuntimeService can spawn the ACP adapter
- * (`<venv-python> -m acp_adapter`).
+ * `hermes-agent` package with the `acp` + `mcp` extras (agent-client-protocol
+ * adapter + the MCP client SDK), so that Pulsar's AgentRuntimeService can spawn
+ * the ACP adapter (`<venv-python> -m acp_adapter`) AND the agent can connect to
+ * Pulsar's governed MCP server (without `mcp`, no Pulsar tools reach the agent).
  *
  * Hermes pins `requires-python = ">=3.11,<3.14"` (Rust-backed transitives like
  * pydantic-core have no cp314 wheels yet, so the project deliberately refuses
@@ -22,7 +23,7 @@
  *      or `pipx` if missing — 3.14 can RUN uv even though it can't HOST Hermes),
  *   2. `uv python install 3.12`,
  *   3. `uv venv hermes-agent/.venv --python 3.12`,
- *   4. `uv pip install --python hermes-agent/.venv -e "./hermes-agent[acp]"`.
+ *   4. `uv pip install --python hermes-agent/.venv -e "./hermes-agent[acp,mcp]"`.
  *
  * Fallback (only if uv truly can't be obtained): a system 3.11/3.12 already on
  * PATH via the classic `python -m venv` + `pip` flow.
@@ -213,7 +214,11 @@ function installViaUv() {
   // 4. Install the vendored package with the acp extra INTO the 3.12 venv.
   // uv pip install --python <venv> respects the venv's interpreter, so the
   // <3.14 cap is satisfied even though the host shell may be on 3.14.
-  const editableSpec = `${'.' + path.sep}${path.relative(repoRoot, hermesDir)}[acp]`;
+  // `acp` provides the agent-client-protocol adapter; `mcp` provides the MCP
+  // *client* SDK Hermes uses to connect to Pulsar's governed MCP server. Without
+  // the `mcp` extra, `tools.mcp_tool._MCP_AVAILABLE` is False and Pulsar tools
+  // never reach the agent (register_mcp_servers returns [] instantly).
+  const editableSpec = `${'.' + path.sep}${path.relative(repoRoot, hermesDir)}[acp,mcp]`;
   console.log(`[setup-agents] Installing ${editableSpec} into the venv (this can take several minutes) ...`);
   const pipInstall = run(
     'uv',
@@ -258,7 +263,11 @@ function installViaSystemPython(py) {
     fail(`pip upgrade failed (exit ${pipUp.status}).`);
   }
 
-  const editableSpec = `${'.' + path.sep}${path.relative(repoRoot, hermesDir)}[acp]`;
+  // `acp` provides the agent-client-protocol adapter; `mcp` provides the MCP
+  // *client* SDK Hermes uses to connect to Pulsar's governed MCP server. Without
+  // the `mcp` extra, `tools.mcp_tool._MCP_AVAILABLE` is False and Pulsar tools
+  // never reach the agent (register_mcp_servers returns [] instantly).
+  const editableSpec = `${'.' + path.sep}${path.relative(repoRoot, hermesDir)}[acp,mcp]`;
   console.log(`[setup-agents] Installing ${editableSpec} (this can take several minutes) ...`);
   const pipInstall = run(venvPython, ['-m', 'pip', 'install', '-e', editableSpec], { cwd: repoRoot });
   if (pipInstall.status !== 0) {
