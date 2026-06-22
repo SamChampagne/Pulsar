@@ -29,4 +29,8 @@
   <div class="mt-6">
     <CustomFieldsEditor module="fleet" />
   </div>
+{:else if key === 'procurement'}
+  <div class="mt-6">
+    <CustomFieldsEditor module="procurement" />
+  </div>
 {/if}
