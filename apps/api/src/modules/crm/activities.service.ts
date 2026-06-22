@@ -15,6 +15,8 @@ export class ActivitiesService {
 
   async list(tenantId: string, query: ActivityListQueryDto) {
     const { page, pageSize, skip, take } = paginationArgs(query);
+    const isOverdue = query.overdue === 'true';
+    const isPending = query.pending === 'true';
     const where = {
       tenantId,
       ...(query.companyId ? { companyId: query.companyId } : {}),
@@ -23,6 +25,16 @@ export class ActivitiesService {
       ...(query.search
         ? { body: { contains: query.search, mode: 'insensitive' as const } }
         : {}),
+      // type filter (explicit or forced to TASK for overdue)
+      ...(isOverdue
+        ? { type: CrmActivityType.TASK }
+        : query.type
+          ? { type: query.type }
+          : {}),
+      // doneAt: null when pending or overdue
+      ...(isPending || isOverdue ? { doneAt: null } : {}),
+      // dueAt <= now when overdue
+      ...(isOverdue ? { dueAt: { lte: new Date() } } : {}),
     };
     const [items, total] = await Promise.all([
       this.prisma.crmActivity.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take }),

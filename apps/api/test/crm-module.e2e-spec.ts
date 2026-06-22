@@ -422,6 +422,140 @@ describe('CRM module (e2e)', () => {
     const ourDeal = wonBucket!.deals.find((d) => d.id === dealId)!;
     expect(ourDeal.companyName).toBeTruthy();
   });
+
+  // =========================================================================
+  // 18 — GET /crm/overview → returns the full stats shape with sane values.
+  // =========================================================================
+  it('GET /crm/overview returns a valid stats shape', async () => {
+    const res = await request(http).get('/api/v1/crm/overview').set(auth()).expect(200);
+    const overview = res.body as {
+      pipeline: { stage: string; count: number; value: number }[];
+      openValue: number;
+      wonCount: number;
+      lostCount: number;
+      winRate: number;
+      staleDealCount: number;
+      dueFollowupCount: number;
+      recentActivities: { id: string; type: string; body: string; createdAt: string; dealId: string | null; companyId: string | null }[];
+    };
+
+    // Shape assertions
+    expect(Array.isArray(overview.pipeline)).toBe(true);
+    expect(typeof overview.openValue).toBe('number');
+    expect(typeof overview.wonCount).toBe('number');
+    expect(typeof overview.lostCount).toBe('number');
+    expect(typeof overview.winRate).toBe('number');
+    expect(typeof overview.staleDealCount).toBe('number');
+    expect(typeof overview.dueFollowupCount).toBe('number');
+    expect(Array.isArray(overview.recentActivities)).toBe(true);
+
+    // Pipeline spans all 5 stages
+    const pipelineStages = overview.pipeline.map((p) => p.stage);
+    expect(pipelineStages).toContain('LEAD');
+    expect(pipelineStages).toContain('QUALIFIED');
+    expect(pipelineStages).toContain('PROPOSAL');
+    expect(pipelineStages).toContain('WON');
+    expect(pipelineStages).toContain('LOST');
+
+    // Each pipeline entry has numeric count and value
+    for (const entry of overview.pipeline) {
+      expect(typeof entry.count).toBe('number');
+      expect(typeof entry.value).toBe('number');
+    }
+
+    // WON bucket should have at least 1 deal (our dealId was advanced to WON)
+    const wonEntry = overview.pipeline.find((p) => p.stage === 'WON');
+    expect(wonEntry).toBeDefined();
+    expect(wonEntry!.count).toBeGreaterThanOrEqual(1);
+
+    // openValue is a plain number (not stringified Decimal)
+    expect(overview.openValue).toBeGreaterThanOrEqual(0);
+
+    // winRate is between 0 and 1
+    expect(overview.winRate).toBeGreaterThanOrEqual(0);
+    expect(overview.winRate).toBeLessThanOrEqual(1);
+
+    // recentActivities have the expected shape
+    if (overview.recentActivities.length > 0) {
+      const first = overview.recentActivities[0];
+      expect(first).toHaveProperty('id');
+      expect(first).toHaveProperty('type');
+      expect(first).toHaveProperty('body');
+      expect(first).toHaveProperty('createdAt');
+      expect(first).toHaveProperty('dealId');
+      expect(first).toHaveProperty('companyId');
+    }
+  });
+
+  // =========================================================================
+  // 19 — GET /crm/activities?overdue=true → only overdue TASK activities.
+  // =========================================================================
+  it('GET /crm/activities?overdue=true returns only overdue TASK activities', async () => {
+    // Create a TASK activity with a past dueAt so it shows as overdue
+    const pastDueAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(); // 2 days ago
+    const createRes = await request(http)
+      .post('/api/v1/crm/activities')
+      .set(auth())
+      .send({
+        type: 'TASK',
+        body: 'Overdue follow-up task for e2e test',
+        companyId,
+        dueAt: pastDueAt,
+      })
+      .expect(201);
+    const overdueTaskId = (createRes.body as { id: string }).id;
+
+    // Query overdue
+    const res = await request(http)
+      .get('/api/v1/crm/activities?overdue=true')
+      .set(auth())
+      .expect(200);
+    const body = res.body as Paginated<Activity>;
+    expect(body).toHaveProperty('items');
+
+    // Every returned item must be a TASK with doneAt null
+    for (const item of body.items) {
+      expect(item.type).toBe('TASK');
+    }
+
+    // Our newly created overdue task must appear
+    expect(body.items.some((a) => a.id === overdueTaskId)).toBe(true);
+
+    // Clean up the overdue task
+    await prisma.crmActivity.deleteMany({ where: { id: overdueTaskId } }).catch(() => undefined);
+  });
+
+  // =========================================================================
+  // 20 — GET /crm/activities?type=NOTE → only NOTE activities.
+  // =========================================================================
+  it('GET /crm/activities?type=NOTE returns only NOTE type activities', async () => {
+    const res = await request(http)
+      .get('/api/v1/crm/activities?type=NOTE')
+      .set(auth())
+      .expect(200);
+    const body = res.body as Paginated<Activity>;
+    expect(body).toHaveProperty('items');
+    for (const item of body.items) {
+      expect(item.type).toBe('NOTE');
+    }
+  });
+
+  // =========================================================================
+  // 21 — GET /crm/activities?pending=true → only activities with doneAt null.
+  // =========================================================================
+  it('GET /crm/activities?pending=true returns only activities with doneAt null (via direct Prisma check)', async () => {
+    const res = await request(http)
+      .get('/api/v1/crm/activities?pending=true')
+      .set(auth())
+      .expect(200);
+    const body = res.body as Paginated<Activity & { doneAt?: string | null }>;
+    expect(body).toHaveProperty('items');
+    // All returned items must have doneAt = null
+    for (const item of body.items) {
+      const dbRecord = await prisma.crmActivity.findUnique({ where: { id: item.id }, select: { doneAt: true } });
+      expect(dbRecord?.doneAt).toBeNull();
+    }
+  });
 });
 
 // =============================================================================

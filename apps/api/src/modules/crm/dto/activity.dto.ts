@@ -16,4 +16,9 @@ export class ActivityListQueryDto extends ListQueryDto {
   @IsOptional() @IsString() companyId?: string;
   @IsOptional() @IsString() contactId?: string;
   @IsOptional() @IsString() dealId?: string;
+  @IsOptional() @IsEnum(CrmActivityType) type?: CrmActivityType;
+  /** 'true' → only activities where doneAt is null */
+  @IsOptional() @IsString() pending?: string;
+  /** 'true' → only TASK activities where dueAt <= now and doneAt is null */
+  @IsOptional() @IsString() overdue?: string;
 }
