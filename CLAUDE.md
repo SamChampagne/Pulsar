@@ -245,6 +245,21 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     sur la **clé** (`SequenceKey`), jamais sur le préfixe — changer `documentPrefixTransportOrder`
     ne remet pas le compteur à zéro.
 
+## Hard rules (continued, Billing configurable)
+
+36. (Billing configurable v1 — gabarit arc C) `CustomFieldsService` (`core/custom-fields`) est
+    générique : il est paramétré par `module` (string) et délègue toute persistance à
+    `CustomFieldDefinition` (`tenantId_module_entityType_key` unique). Chaque module branche son
+    propre contrôleur `<module>/custom-fields` gated `@RequireModule` + permission `<module>.manage`.
+    Les valeurs `customData` sont validées par `validateValues('billing', …)` à l'intake —
+    jamais écrites sans validation (règle 35 généralisée). Les préfixes de numéros de documents
+    billing (`invoiceNumberPrefix`, `customerInvoiceNumberPrefix`) sont stockés dans
+    `TenantModule.settings` et résolus par `SequencesService` — le compteur est indexé sur la
+    **clé de séquence**, jamais sur le préfixe (inchanger le préfixe ne remet pas le compteur à
+    zéro). `defaultCurrency` est lu par `FreightAuditService.create` et `InvoicesService.createDraft`
+    comme valeur de repli (jamais forcé si la devise est explicitement fournie). `autoSendOnApproval`
+    est best-effort dans `approve()` : un échec d'envoi laisse le relevé à APPROVED sans erreur.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
