@@ -43,8 +43,8 @@ n'importe jamais statiquement les modules métier).
 
 | Clé | Déclencheur (event) | argKeys | Effet (déterministe, idempotent) | Service réutilisé |
 | --- | --- | --- | --- | --- |
-| `open_maintenance_order` | `fleet.maintenance-due` | `assetType`, `assetId`, `scheduleId` | Ouvre un `MaintenanceOrder` PREVENTIVE pour l'asset dû **si aucun WO ouvert (non COMPLETED/CANCELLED) n'existe déjà pour cet asset+schedule**. Passe par le workflow d'ouverture existant (asset → MAINTENANCE via `canTransitionAsset`, règle 32). | `MaintenanceService` (module `fleet`) |
-| `assign_dock_appointment` | `yard.visit-checked-in` | `visitId` | Si la visite a un `appointmentId` dont le `DockAppointment.spotId` est renseigné, et que la visite n'a **pas encore** de `spotId`, affecte la visite à ce spot via `assignToSpot` (écrit `YardMove` dans la même tx, règle 34) ; **no-op si la visite a déjà un spot, si l'appointment n'a pas de spot, ou si le spot est occupé** (respecte `spotConflictPolicy`). Lien concret : `YardVisit.appointmentId → DockAppointment.spotId`. | `VisitsService` (module `yard`) |
+| `open_maintenance_order` | `fleet.maintenance.due` | `assetKind` (`'vehicle'`\|`'trailer'`), `assetId`, `scheduleId`, `name` | Ouvre un `MaintenanceOrder` PREVENTIVE pour l'asset dû **si aucun WO ouvert (statut ∉ {COMPLETED, CANCELLED}) n'existe déjà pour cet asset** (le `CreateMaintenanceOrderDto` n'accepte pas `scheduleId` → dédup sur asset+statut-ouvert). `description` = `name` du schedule. Passe par `MaintenanceService.create` (asset → MAINTENANCE via `canTransitionAsset`, règle 32). | `MaintenanceService.create(tenantId, userId, dto)` (module `fleet`) |
+| `assign_dock_appointment` | `yard.visit-checked-in` | `visitId` | Si la visite a un `appointmentId` dont le `DockAppointment.spotId` est renseigné, et que la visite n'a **pas encore** de `spotId`, affecte la visite à ce spot via la méthode **publique** `VisitsService.assign(tenantId, userId, visitId, { spotId })` (qui enveloppe `assignToSpot` privé dans une tx + écrit `YardMove`, règle 34) ; **no-op si la visite a déjà un spot, si l'appointment n'a pas de spot, ou si le spot est occupé** (respecte `spotConflictPolicy`). Lien concret : `YardVisit.appointmentId → DockAppointment.spotId`. | `VisitsService.assign` (module `yard`) |
 | `close_delivered_transport_order` | `load.completed` | `loadId` | Pour chaque `TransportOrder` du load dont **tous** les shipments sont `DELIVERED`, transitionne l'ordre vers `CLOSED` via `canTransitionTransportOrder` (règle 2) ; **no-op si déjà CLOSED ou shipments non tous livrés**. | `TransportOrdersService` (module `transportation`) |
 
 ### 1.1 Émetteurs des déclencheurs
@@ -75,18 +75,22 @@ des règles `RUN_ACTION`.
 
 ## Partie 2 — Procurement configurable
 
-### 2.1 Champs personnalisés
+### 2.1 Champs personnalisés — RFP seulement (découverte de scope)
 
-`CustomFieldEntity` (`@pulsar/shared`, miroir `schema.prisma` règle 3) += `RFP`, `BID`, `AWARD`.
-Colonne `customData Json?` sur `Rfp`, `Bid`, `Award`. Contrôleur `procurement/custom-fields`
-(copie du patron, `@RequireModule(MODULE_KEYS.PROCUREMENT)` + `core.modules.read|manage` +
-`@Audit('custom-field-definition', UPDATE)`). Les DTO create/update de RFP, Bid, Award acceptent
-`customData?` validé via `validateValues('procurement', tenantId, <Entity>, data, { partial })`
-avant persist (règle 35). Projections GET incluent `customData`.
+**Recadrage** : à l'inspection du code, seul le **RFP** possède un formulaire interne de
+création/édition (`POST /procurement/rfps`, `PATCH /procurement/rfps/:id`). Les **Bid** sont créés
+**exclusivement via le portail public** transporteur (`POST /public/rfp-invites/:token/bids`) et les
+**Award** sont **générés** par l'action `POST /rfps/:id/award` — aucun des deux n'a de formulaire
+interne où saisir des champs perso. Y attacher des définitions de champs serait un knob **sans
+surface de saisie** (anti-pattern « no consumer »). Donc **v1 = champs perso sur `RFP` uniquement** ;
+Bid/Award reportés (réintroductibles quand/si un point de saisie interne existe).
 
-> Note Bid : un Bid peut être soumis via le **portail public** transporteur (`/public/rfp-invites`).
-> Les champs perso ne s'appliquent qu'à la **saisie interne** (admin) v1 ; le payload public reste
-> inchangé (pas de customData exposé/accepté côté public — règle 10). À documenter dans le plan.
+`CustomFieldEntity` (`@pulsar/shared`, miroir `schema.prisma` règle 3) += `RFP`. Colonne
+`customData Json?` sur `Rfp`. Contrôleur `procurement/custom-fields` (copie du patron,
+`@RequireModule(MODULE_KEYS.PROCUREMENT)` + `core.modules.read|manage` +
+`@Audit('custom-field-definition', UPDATE)`). `createRfp`/`updateRfp` acceptent `customData?`
+validé via `validateValues('procurement', tenantId, CustomFieldEntity.RFP, data, { partial })`
+avant persist (règle 35). Projections GET du RFP incluent `customData`.
 
 ### 2.2 Règle de processus — préfixe RFP
 
@@ -98,13 +102,12 @@ actuelle, aucun changement observable).
 
 ### 2.3 Web
 
-- `CustomFieldsEditor` : branche `procurement` → entités RFP / Bid / Award (libellés FR).
+- `CustomFieldsEditor` : branche `procurement` → entité RFP (une seule, libellé FR « RFP »).
 - Page config `/settings/modules/procurement` (route `[key]` générique déjà existante) : la section
   `ModuleSettings` rend automatiquement le préfixe ; ajouter la branche `{:else if key==='procurement'}`
   pour `CustomFieldsEditor`. Le lien nav « Configuration » procurement existe déjà (`navigation.ts`).
-- `CustomFieldInputs` inséré sur les formulaires create/edit RFP (et Bid/Award internes) — patron
-  `transport-orders` (fetch `/procurement/custom-fields?entityType=`, `.catch(()=>[])`, `{#if>0}`,
-  customData omis si vide).
+- `CustomFieldInputs` inséré sur le formulaire create/edit RFP — patron `transport-orders`
+  (fetch `/procurement/custom-fields?entityType=RFP`, `.catch(()=>[])`, `{#if>0}`, customData omis si vide).
 
 ### 2.4 Tests Partie 2
 
@@ -116,8 +119,8 @@ actuelle, aucun changement observable).
 
 ## 3. Migration & permissions
 
-- **1 migration** : 3 valeurs d'enum `CustomFieldEntity` (RFP/BID/AWARD) + 3 colonnes
-  `customData Json?` (`Rfp`, `Bid`, `Award`). Aucun nouveau statut (règle 2).
+- **1 migration** : 1 valeur d'enum `CustomFieldEntity` (`RFP`) + 1 colonne `customData Json?`
+  (`Rfp`). Aucun nouveau statut (règle 2).
 - **Aucune nouvelle permission** : réactions = aucune (catalogue + executor) ; config procurement
   sous `core.modules.read|manage` + `procurement.*` existants.
 
@@ -125,12 +128,13 @@ actuelle, aucun changement observable).
 
 ## 4. Découpage d'implémentation (aperçu — détaillé dans le plan)
 
-1. `@pulsar/shared` : 3 réactions au catalogue + tests ; `CustomFieldEntity` += RFP/BID/AWARD ;
+1. `@pulsar/shared` : 3 réactions au catalogue + tests ; `CustomFieldEntity` += `RFP` ;
    `documentPrefixRfp` au catalogue procurement. Rebuild shared.
-2. `packages/database` : 1 migration (enum + 3 colonnes customData), regen.
-3. API réactions : 3 handlers dans `ReactionExecutorService` (résolution lazy via ModuleRef) +
-   enrichir l'emit `fleet.maintenance-due` si payload incomplet + `OVERRIDABLE rfp`.
-4. API procurement : contrôleur `procurement/custom-fields` + customData sur Rfp/Bid/Award
-   (create+update internes) + projections.
-5. Web : branche éditeur procurement + `CustomFieldInputs` sur les formulaires RFP/Bid/Award.
+2. `packages/database` : 1 migration (enum `RFP` + colonne `customData` sur `Rfp`), regen.
+3. API réactions : 3 handlers dans `ReactionExecutorService` (résolution lazy via ModuleRef) ;
+   le payload `fleet.maintenance.due` porte déjà `assetKind`/`assetId`/`scheduleId`/`name` ;
+   `OVERRIDABLE rfp → { procurement, documentPrefixRfp }`.
+4. API procurement : contrôleur `procurement/custom-fields` + customData sur `createRfp`/`updateRfp`
+   + projection GET RFP.
+5. Web : branche éditeur procurement (RFP) + `CustomFieldInputs` sur le formulaire RFP.
 6. e2e : 3 réactions (effet + idempotence) + procurement configurable ; + vérif navigateur.
