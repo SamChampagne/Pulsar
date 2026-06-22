@@ -442,19 +442,23 @@
     {:else if tab === 'trace'}
       <div class="mb-4 flex flex-wrap items-end gap-3">
         <div class="w-56">
-          <label class="mb-1 block text-xs font-medium text-ink-muted">Type d'entité</label>
-          <Select bind:value={traceEntityType}>
-            <option value="TRANSPORT_ORDER">Ordre de transport</option>
-            <option value="SHIPMENT">Shipment</option>
-            <option value="LOAD">Load</option>
-          </Select>
+          <label class="block">
+            <span class="mb-1 block text-xs font-medium text-ink-muted">Type d'entité</span>
+            <Select bind:value={traceEntityType}>
+              <option value="TRANSPORT_ORDER">Ordre de transport</option>
+              <option value="SHIPMENT">Shipment</option>
+              <option value="LOAD">Load</option>
+            </Select>
+          </label>
         </div>
         <div class="flex-1" style="min-width:180px;max-width:320px">
-          <label class="mb-1 block text-xs font-medium text-ink-muted">ID</label>
-          <Input
-            bind:value={traceEntityId}
-            placeholder="ID de l'entité…"
-          />
+          <label class="block">
+            <span class="mb-1 block text-xs font-medium text-ink-muted">ID</span>
+            <Input
+              bind:value={traceEntityId}
+              placeholder="ID de l'entité…"
+            />
+          </label>
         </div>
         <Button onclick={() => void runTrace()} disabled={!traceEntityId.trim() || traceLoading}>
           {traceLoading ? 'Chargement…' : 'Tracer'}

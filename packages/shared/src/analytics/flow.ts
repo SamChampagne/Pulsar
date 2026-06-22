@@ -44,7 +44,10 @@ export interface EntityTraceInput {
 const EVENT_PREFIX_MODULE: Record<string, FlowModule> = {
   wms: 'WMS', yard: 'YARD', fleet: 'FLEET',
   tender: 'TRANSPORTATION', stop: 'TRANSPORTATION', driver: 'TRANSPORTATION',
-  'carrier-invoice': 'BILLING', portal: 'CUSTOMER_PORTAL',
+  // TMS lifecycle events (load.completed, load.dispatched, transport-order.planned, shipment.*)
+  // — previously fell through to CORE, so flow chains/edges mis-attributed them.
+  load: 'TRANSPORTATION', shipment: 'TRANSPORTATION', 'transport-order': 'TRANSPORTATION',
+  'carrier-invoice': 'BILLING', invoice: 'BILLING', portal: 'CUSTOMER_PORTAL',
 };
 
 export function moduleOfEventType(type: string): FlowModule {

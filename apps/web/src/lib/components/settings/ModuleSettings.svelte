@@ -79,20 +79,22 @@
   <div class="space-y-5">
     {#each descriptors as d (d.key)}
       <div class="space-y-1">
-        {#if d.type !== 'boolean'}
-          <label class="block text-sm font-medium text-ink">{d.label}</label>
-        {/if}
-        {#if d.help}
-          <p class="text-xs text-ink-muted">{d.help}</p>
-        {/if}
-
         {#if d.type === 'enum'}
-          <Select bind:value={values[d.key] as string}>
-            {#each d.options ?? [] as o (o.value)}
-              <option value={o.value}>{o.label}</option>
-            {/each}
-          </Select>
+          <label class="block">
+            <span class="block text-sm font-medium text-ink">{d.label}</span>
+            {#if d.help}
+              <span class="mb-1 block text-xs text-ink-muted">{d.help}</span>
+            {/if}
+            <Select bind:value={values[d.key] as string}>
+              {#each d.options ?? [] as o (o.value)}
+                <option value={o.value}>{o.label}</option>
+              {/each}
+            </Select>
+          </label>
         {:else if d.type === 'boolean'}
+          {#if d.help}
+            <p class="text-xs text-ink-muted">{d.help}</p>
+          {/if}
           <label class="flex cursor-pointer items-center gap-2 text-sm text-ink" for="setting-bool-{d.key}">
             <input
               id="setting-bool-{d.key}"
@@ -103,14 +105,26 @@
             {d.label}
           </label>
         {:else if d.type === 'string'}
-          <Input type="text" bind:value={values[d.key] as string} maxlength={d.maxLength} />
+          <label class="block">
+            <span class="block text-sm font-medium text-ink">{d.label}</span>
+            {#if d.help}
+              <span class="mb-1 block text-xs text-ink-muted">{d.help}</span>
+            {/if}
+            <Input type="text" bind:value={values[d.key] as string} maxlength={d.maxLength} />
+          </label>
         {:else}
-          <Input
-            type="number"
-            bind:value={values[d.key] as string | number}
-            min={d.min}
-            max={d.max}
-          />
+          <label class="block">
+            <span class="block text-sm font-medium text-ink">{d.label}</span>
+            {#if d.help}
+              <span class="mb-1 block text-xs text-ink-muted">{d.help}</span>
+            {/if}
+            <Input
+              type="number"
+              bind:value={values[d.key] as string | number}
+              min={d.min}
+              max={d.max}
+            />
+          </label>
         {/if}
       </div>
     {/each}
