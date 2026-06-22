@@ -255,7 +255,7 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     jamais écrites sans validation (règle 35 généralisée). Les préfixes de numéros de documents
     billing (`invoiceNumberPrefix`, `customerInvoiceNumberPrefix`) sont stockés dans
     `TenantModule.settings` et résolus par `SequencesService` — le compteur est indexé sur la
-    **clé de séquence**, jamais sur le préfixe (inchanger le préfixe ne remet pas le compteur à
+    **clé de séquence**, jamais sur le préfixe (changer le préfixe ne remet pas le compteur à
     zéro). `defaultCurrency` est lu par `FreightAuditService.create` et `InvoicesService.createDraft`
     comme valeur de repli (jamais forcé si la devise est explicitement fournie). `autoSendOnApproval`
     est best-effort dans `approve()` : un échec d'envoi laisse le relevé à APPROVED sans erreur.

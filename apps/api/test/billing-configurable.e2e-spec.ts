@@ -266,6 +266,9 @@ describe('Billing configurable (e2e)', () => {
     const LOAD_COST = 1000;
     const CHARGED_AMOUNT = 1022; // variance = 22, between min(20) and max(25) threshold
     let loadId = '';
+    // Hoisted to suite scope so afterAll cleans up even on mid-test failure.
+    let load2Id = '';
+    let invoiceId2 = '';
 
     beforeAll(async () => {
       await putBillingSettings({ toleranceMode: 'MIN' });
@@ -282,13 +285,30 @@ describe('Billing configurable (e2e)', () => {
         },
       });
       loadId = load.id;
+
+      // Pre-create load2 here so afterAll can always clean it up regardless of test outcome.
+      const load2 = await prisma.load.create({
+        data: {
+          tenantId,
+          loadNumber: `BCFG-LD-TOL2-${suffix}`,
+          status: 'COMPLETED',
+          carrierId,
+          estimatedCost: LOAD_COST,
+          costCurrency: 'CAD',
+        },
+      });
+      load2Id = load2.id;
     });
 
     afterAll(async () => {
       await prisma.incomingCarrierInvoice
         .deleteMany({ where: { carrierId, carrierInvoiceNumber: { startsWith: `BCFG-TOL-${suffix}` } } })
         .catch(() => undefined);
-      await prisma.load.deleteMany({ where: { id: loadId } }).catch(() => undefined);
+      // Also clean up the invoice from the sanity test if it was created.
+      if (invoiceId2) {
+        await prisma.incomingCarrierInvoice.deleteMany({ where: { id: invoiceId2 } }).catch(() => undefined);
+      }
+      await prisma.load.deleteMany({ where: { id: { in: [loadId, load2Id].filter(Boolean) } } }).catch(() => undefined);
       await resetBillingSettings();
     });
 
@@ -323,19 +343,9 @@ describe('Billing configurable (e2e)', () => {
 
     it('sanity: same variance is MATCHED under MAX (default)', async () => {
       // Temporarily switch to MAX, intake a fresh invoice with the same amounts,
-      // audit it, confirm MATCHED.
+      // audit it, confirm MATCHED. load2 is pre-created in beforeAll and cleaned
+      // up in afterAll so a mid-test failure cannot leave a leaked COMPLETED load.
       await putBillingSettings({ toleranceMode: 'MAX' });
-
-      const load2 = await prisma.load.create({
-        data: {
-          tenantId,
-          loadNumber: `BCFG-LD-TOL2-${suffix}`,
-          status: 'COMPLETED',
-          carrierId,
-          estimatedCost: LOAD_COST,
-          costCurrency: 'CAD',
-        },
-      });
 
       const intakeRes = await request(http)
         .post('/api/v1/freight-audit/incoming-invoices')
@@ -346,18 +356,16 @@ describe('Billing configurable (e2e)', () => {
           lines: [{ lineRef: `BCFG-LD-TOL2-${suffix}`, chargedAmount: CHARGED_AMOUNT }],
         })
         .expect(201);
-      const invoiceId = (intakeRes.body as { id: string }).id;
+      invoiceId2 = (intakeRes.body as { id: string }).id;
 
       const auditRes = await request(http)
-        .post(`/api/v1/freight-audit/incoming-invoices/${invoiceId}/audit`)
+        .post(`/api/v1/freight-audit/incoming-invoices/${invoiceId2}/audit`)
         .set(auth())
         .expect((r) => expect([200, 201]).toContain(r.status));
 
       expect((auditRes.body as { status: string }).status).toBe('MATCHED');
 
-      // Cleanup and restore MIN for consistency.
-      await prisma.incomingCarrierInvoice.deleteMany({ where: { id: invoiceId } }).catch(() => undefined);
-      await prisma.load.deleteMany({ where: { id: load2.id } }).catch(() => undefined);
+      // Restore MIN for consistency with the suite's intended state.
       await putBillingSettings({ toleranceMode: 'MIN' });
     });
   });
@@ -435,52 +443,201 @@ describe('Billing configurable (e2e)', () => {
   });
 
   describe('Prefix — customerInvoiceNumberPrefix', () => {
+    // Infrastructure for the real round-trip: we need a ratable, delivered order.
+    let relCarrierId = '';
+    let relCustomerId = '';
+    let relOriginId = '';
+    let relDestId = '';
+    let relRateId = '';
+    let relInvoiceId = '';
+
+    beforeAll(async () => {
+      // Carrier for load assignment.
+      const carr = await request(http)
+        .post('/api/v1/transportation/carriers')
+        .set(auth())
+        .send({ code: `BCFG-REL-CARR-${suffix}`, name: `REL Carrier ${suffix}` })
+        .expect(201);
+      relCarrierId = (carr.body as { id: string }).id;
+
+      // Customer with email (needed for later approve path if any).
+      const cust = await request(http)
+        .post('/api/v1/transportation/customers')
+        .set(auth())
+        .send({
+          code: `BCFG-REL-CUST-${suffix}`,
+          name: `REL Customer ${suffix}`,
+          email: `bcfg-rel-${suffix}@example.com`,
+        })
+        .expect(201);
+      relCustomerId = (cust.body as { id: string }).id;
+
+      // Two locations for a city lane.
+      const ori = await request(http)
+        .post('/api/v1/transportation/locations')
+        .set(auth())
+        .send({
+          code: `BCFG-REL-ORI-${suffix}`,
+          name: `REL Origin ${suffix}`,
+          type: 'WAREHOUSE',
+          addressLine1: '1 REL St',
+          city: `RelCityA-${suffix}`,
+          state: 'QC',
+          country: 'CA',
+        })
+        .expect(201);
+      relOriginId = (ori.body as { id: string }).id;
+
+      const dst = await request(http)
+        .post('/api/v1/transportation/locations')
+        .set(auth())
+        .send({
+          code: `BCFG-REL-DST-${suffix}`,
+          name: `REL Destination ${suffix}`,
+          type: 'WAREHOUSE',
+          addressLine1: '2 REL St',
+          city: `RelCityB-${suffix}`,
+          state: 'QC',
+          country: 'CA',
+        })
+        .expect(201);
+      relDestId = (dst.body as { id: string }).id;
+
+      // Lane for the rate.
+      const lane = await request(http)
+        .post('/api/v1/transportation/lanes')
+        .set(auth())
+        .send({
+          name: `BCFG REL lane ${suffix}`,
+          originType: 'CITY',
+          origin: { city: `RelCityA-${suffix}`, state: 'QC', country: 'CA' },
+          destinationType: 'CITY',
+          destination: { city: `RelCityB-${suffix}`, state: 'QC', country: 'CA' },
+        })
+        .expect(201);
+      const laneId = (lane.body as { id: string }).id;
+
+      // Active customer rate (FLAT 300 CAD) — makes the order ratable.
+      const rate = await request(http)
+        .post('/api/v1/transportation/rates')
+        .set(auth())
+        .send({
+          name: `BCFG REL rate ${suffix}`,
+          rateType: 'FLAT',
+          baseAmount: 300,
+          currency: 'CAD',
+          customerId: relCustomerId,
+          laneId,
+        })
+        .expect(201);
+      relRateId = (rate.body as { id: string }).id;
+      await request(http)
+        .patch(`/api/v1/transportation/rates/${relRateId}`)
+        .set(auth())
+        .send({ status: 'ACTIVE' })
+        .expect(200);
+    });
+
     afterAll(async () => {
+      // Clean up the customer invoice draft (if created).
+      if (relInvoiceId) {
+        await prisma.customerInvoice.deleteMany({ where: { id: relInvoiceId } }).catch(() => undefined);
+      }
+      // Clean up any remaining customer invoice lines for this customer.
+      await prisma.customerInvoice.deleteMany({ where: { customerId: relCustomerId } }).catch(() => undefined);
+      await prisma.rate.deleteMany({ where: { id: relRateId } }).catch(() => undefined);
+      await prisma.customer.deleteMany({ where: { id: relCustomerId } }).catch(() => undefined);
+      await prisma.carrier.deleteMany({ where: { id: relCarrierId } }).catch(() => undefined);
+      await prisma.location.deleteMany({ where: { id: { in: [relOriginId, relDestId] } } }).catch(() => undefined);
       await putBillingSettings({ customerInvoiceNumberPrefix: 'CINV' });
     });
 
-    it('setting customerInvoiceNumberPrefix=REL is persisted and readable from GET settings', async () => {
+    /**
+     * Helper: runs a transport order all the way to COMPLETED (DELIVERED) using
+     * the relCarrierId/relOriginId/relDestId seeded in beforeAll, so it becomes
+     * billable for createDrafts. Returns the orderId.
+     */
+    async function deliverOrderForRel(): Promise<string> {
+      const order = await request(http)
+        .post('/api/v1/transportation/transport-orders')
+        .set(auth())
+        .send({ customerId: relCustomerId, originLocationId: relOriginId, destinationLocationId: relDestId })
+        .expect(201);
+      const orderId = (order.body as { id: string }).id;
+
+      await request(http)
+        .post(`/api/v1/transportation/transport-orders/${orderId}/confirm`)
+        .set(auth())
+        .expect(201);
+
+      const planned = await request(http)
+        .post(`/api/v1/transportation/transport-orders/${orderId}/plan`)
+        .set(auth())
+        .send({})
+        .expect(201);
+      const shipmentId = (planned.body as { shipments: { id: string }[] }).shipments[0].id;
+
+      const loadRes = await request(http)
+        .post('/api/v1/transportation/loads')
+        .set(auth())
+        .send({})
+        .expect(201);
+      const loadId = (loadRes.body as { id: string }).id;
+
+      await request(http)
+        .post(`/api/v1/transportation/shipments/${shipmentId}/assign-load`)
+        .set(auth())
+        .send({ loadId })
+        .expect(201);
+
+      await request(http)
+        .post(`/api/v1/transportation/loads/${loadId}/assign`)
+        .set(auth())
+        .send({ carrierId: relCarrierId })
+        .expect(201);
+
+      for (const verb of ['dispatch', 'start-transit', 'complete']) {
+        await request(http)
+          .post(`/api/v1/transportation/loads/${loadId}/${verb}`)
+          .set(auth())
+          .expect(201);
+      }
+
+      return orderId;
+    }
+
+    it('after setting customerInvoiceNumberPrefix=REL, real draft invoice number starts with REL-', async () => {
+      // Set the prefix BEFORE generating any invoice for this customer.
       await putBillingSettings({ customerInvoiceNumberPrefix: 'REL' });
 
-      const settingsRes = await request(http)
-        .get('/api/v1/modules/billing/settings')
+      // Deliver an order so the customer has at least one ratable, billable order.
+      await deliverOrderForRel();
+
+      // Create draft via the real HTTP endpoint — this is what exercises SequencesService
+      // with the REL prefix read from ModuleSettingsService.
+      const draftRes = await request(http)
+        .post('/api/v1/billing/customer-invoices')
+        .set(auth())
+        .send({ customerId: relCustomerId })
+        .expect(201);
+
+      // createDrafts returns { invoices: [...], unratable: [...] }
+      const body = draftRes.body as { invoices: { id: string; invoiceNumber: string }[]; unratable: unknown[] };
+      expect(body.invoices).toBeDefined();
+      expect(body.invoices.length).toBeGreaterThan(0);
+
+      const inv = body.invoices[0];
+      relInvoiceId = inv.id;
+
+      // The core assertion: the real service-generated invoice number must use the REL prefix.
+      expect(inv.invoiceNumber).toMatch(/^REL-/);
+
+      // Cross-check by GET.
+      const getRes = await request(http)
+        .get(`/api/v1/billing/customer-invoices/${inv.id}`)
         .set(auth())
         .expect(200);
-      const body = settingsRes.body as { values: Record<string, unknown> };
-      expect(body.values['customerInvoiceNumberPrefix']).toBe('REL');
-    });
-
-    it('after setting prefix=REL, SequencesService uses the new prefix for the next customer-invoice number', async () => {
-      // The SequencesService reads the prefix from ModuleSettingsService, keyed by
-      // 'customer-invoice' → billing.customerInvoiceNumberPrefix. We insert a CustomerInvoice
-      // via Prisma using a raw nextval so the sequence is exercised, then verify the prefix
-      // was applied by the service. Since creating drafts via the HTTP endpoint requires
-      // rated completed orders, we verify by calling nextval directly.
-      await putBillingSettings({ customerInvoiceNumberPrefix: 'REL' });
-
-      // Use raw SQL to get the next sequence value that the SequencesService would use.
-      const seqName = `seq_${tenantId}_customer-invoice`;
-      const rows = await prisma.$queryRawUnsafe<{ next_val: bigint }[]>(
-        `SELECT nextval('"${seqName}"') AS next_val`,
-      ).catch(() => null);
-
-      if (rows && rows.length > 0) {
-        // Build the expected invoice number string the same way SequencesService does.
-        const counter = Number(rows[0].next_val);
-        const padded = String(counter).padStart(6, '0');
-        const expectedNumber = `REL-${padded}`;
-        expect(expectedNumber).toMatch(/^REL-/);
-        expect(counter).toBeGreaterThan(0);
-      } else {
-        // Sequence row may not exist if no customer-invoice was ever created for this tenant.
-        // Verify the setting is correctly stored — the prefix will be applied when sequences
-        // are first used (nextNumber lazy-creates the sequence on first call).
-        const res = await request(http)
-          .get('/api/v1/modules/billing/settings')
-          .set(auth())
-          .expect(200);
-        expect((res.body as { values: Record<string, unknown> }).values['customerInvoiceNumberPrefix']).toBe('REL');
-      }
+      expect((getRes.body as { invoiceNumber: string }).invoiceNumber).toMatch(/^REL-/);
     });
   });
 
