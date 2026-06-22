@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { NotificationLevel } from '../enums/core';
 import {
   PLAYBOOKS,
   DEFAULT_PLAYBOOK,
@@ -30,10 +31,26 @@ describe('getPlaybook', () => {
       'YARD_ARRIVAL',
       'YARD_DETENTION',
       'YARD_APPOINTMENT_LATE',
+      'CRM_STALE_DEAL',
+      'CRM_FOLLOWUP_DUE',
     ];
     for (const key of required) {
       expect(PLAYBOOKS[key], `PLAYBOOKS.${key} should exist`).toBeDefined();
     }
+  });
+
+  it('CRM_STALE_DEAL playbook has a non-empty checklist and 1440 min SLA', () => {
+    const pb = getPlaybook('CRM_STALE_DEAL');
+    expect(pb.checklist.length).toBeGreaterThan(0);
+    expect(pb.slaMinutes).toBe(1440);
+    expect(pb.priority).toBe(NotificationLevel.WARNING);
+  });
+
+  it('CRM_FOLLOWUP_DUE playbook has a non-empty checklist and 240 min SLA', () => {
+    const pb = getPlaybook('CRM_FOLLOWUP_DUE');
+    expect(pb.checklist.length).toBeGreaterThan(0);
+    expect(pb.slaMinutes).toBe(240);
+    expect(pb.priority).toBe(NotificationLevel.WARNING);
   });
 });
 
