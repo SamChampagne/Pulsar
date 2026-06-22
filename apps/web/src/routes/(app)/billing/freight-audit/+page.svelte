@@ -226,7 +226,7 @@
   </Table>
 {/if}
 
-<Modal bind:open={modalOpen} title="Saisir une facture transporteur">
+<Modal bind:open={modalOpen} title="Saisir une facture transporteur" onclose={resetForm}>
   {#snippet children()}
     <form onsubmit={create}>
       <Field label="Carrier ID">
@@ -281,7 +281,7 @@
       {/if}
 
       <div class="mt-4 flex justify-end gap-2 border-t border-edge pt-3">
-        <Button variant="secondary" onclick={() => { modalOpen = false; }}>Annuler</Button>
+        <Button variant="secondary" onclick={() => { resetForm(); modalOpen = false; }}>Annuler</Button>
         <Button variant="primary" type="submit" loading={saving} disabled={!canSubmit || saving}>
           Saisir
         </Button>
