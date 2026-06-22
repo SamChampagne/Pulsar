@@ -234,6 +234,17 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     coordonnées d'affichage (tenant-scopé, `yard.manage`) ; le glisser-déposer du plan appelle les endpoints
     existants `assign`/`move` (gardés).
 
+## Hard rules (continued, arc A — Control Tower de flux)
+
+35. (arc A — Control Tower de flux) Les 3 endpoints `GET /analytics/flow/{timeline,map,trace}` sont
+    **calculés à la lecture** depuis `DomainEvent`/`OperationalTask`/`ProposedAction` via les helpers
+    purs `buildFlowChains`/`buildFlowMap`/`buildEntityTrace` (`@pulsar/shared/analytics/flow`) —
+    **jamais de store de rollup, jamais de migration**. Les outils agent `get_flow_timeline` et
+    `trace_entity` sont READ (exécutés en direct, jamais mis en file). Tout endpoint flow est
+    `@RequireModule(ANALYTICS)` + `analytics.read`, tenant-scopé (règle 1). `moduleOfEventType`
+    (même package) est la seule source de vérité pour la correspondance type→module — ne pas
+    réimplémenter.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
