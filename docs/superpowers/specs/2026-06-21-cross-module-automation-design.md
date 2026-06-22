@@ -52,7 +52,7 @@ jamais bloquant ») :
 
 | Événement | Émis dans | Sert à (déclencheur de) |
 | --- | --- | --- |
-| `transport-order.confirmed` | `transport-orders.service` (confirm) | création auto des picks WMS |
+| `transport-order.planned` | `transport-orders.service.plan` (après création des shipments) | création auto des picks WMS (les shipments existent à ce stade — pas à la confirmation) |
 | `load.dispatched` | `loads.service.dispatch` | (futur) préparation cour |
 | `load.completed` | `loads.service.complete` | relevé client brouillon (Billing) |
 | `yard.visit.checked-out` | `visits.service.checkOut` | (futur) avance load IN_TRANSIT |
@@ -93,7 +93,7 @@ en plus de `CREATE_TASK`. Helper pur `produceRuleReaction(rule, event)` → `Rea
 
 ### 3.4 Tressages built-in (clé en main)
 Livrés comme `AutomationRule` par défaut (au **seed**, marquées `builtin`/system) :
-1. `transport-order.confirmed` → `create_picks_for_order` *(si WMS activé)*.
+1. `transport-order.planned` → `create_picks_for_order` *(si WMS activé)*.
 2. `load.completed` → `draft_customer_invoice` *(si BILLING activé)*.
 
 Désactivables par le tenant comme n'importe quelle règle.
@@ -103,16 +103,17 @@ Page d'admin **Automatisations** (sous Réglages ou un domaine dédié) : liste 
 custom), création/édition guidée — `eventType` (select des `DOMAIN_EVENT_TYPES`), conditions
 (field/operator/value, match ALL/ANY), action = `CREATE_TASK` (catégorie/sévérité/titre) **ou**
 `RUN_ACTION` (select d'une réaction du catalogue + mapping d'arguments depuis le payload),
-`enabled` on/off. CRUD via le `AutomationRulesService` existant (étendu pour valider `RUN_ACTION`
-contre le catalogue). Gated par **nouvelles permissions `core.automation.read|manage`** (catalogue
-`permissions.ts` + seed) — surface d'admin distincte, justifie ses propres clés.
+`enabled` on/off. **La page d'admin Automatisations EXISTE DÉJÀ** (`/automation`, `AutomationRulesService`
+CRUD, permissions `core.automation.rules.read|manage`) pour les règles `CREATE_TASK` — l'arc B
+l'**étend** pour l'action `RUN_ACTION` (toggle de type d'action + select du catalogue de réactions +
+mapping d'arguments). Aucune nouvelle permission ; réutilise `core.automation.rules.read|manage`.
 
 ## 4. Migration & permissions
 
 - **Migration** : table `ReactionExecution { id, tenantId, eventId, ruleId, action, status
   (EXECUTED|FAILED), error?, createdAt, @@unique([tenantId, eventId, ruleId]) }` + colonne
   `DomainEvent.reactionRuleId String?` (tag anti-boucle). `AutomationRule` existe déjà.
-- **Permission** : nouvelles clés `core.automation.read|manage` (catalogue `permissions.ts` + seed).
+- **Permission** : aucune nouvelle — réutilise `core.automation.rules.read|manage` (existantes).
 - Aucun nouveau statut métier, aucune state machine modifiée (règle 2).
 
 ## 5. Conformité CLAUDE.md
@@ -125,8 +126,8 @@ worker reste best-effort/race-safe (claim conditionnel) — règle 27.
 - **Unit `@pulsar/shared`** : `produceRuleReaction` (interpolation d'args, match conditions),
   variante `RUN_ACTION` de `RuleAction`, validation catalogue.
 - **e2e `cross-module-automation`** (DB seedée) :
-  - Émission : confirmer une commande émet `transport-order.confirmed` ; compléter un load émet `load.completed`.
-  - Built-in WMS : commande confirmée (origine entrepôt) → pick order créé automatiquement.
+  - Émission : planifier une commande émet `transport-order.planned` ; compléter un load émet `load.completed`.
+  - Built-in WMS : commande planifiée (shipment origine entrepôt) → pick order créé automatiquement.
   - Built-in Billing : load livré → relevé client **brouillon** créé.
   - Idempotence : re-traiter le même événement ne crée pas de doublon (ledger).
   - Anti-boucle : une réaction n'en déclenche pas une autre (event tagué `reactionRuleId` ⇒ skip RUN_ACTION).
