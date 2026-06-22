@@ -110,6 +110,15 @@
     if (dealIdx === -1) return;
     const deal = fromCol[dealIdx];
 
+    // Snapshot BEFORE the optimistic write so we can fully restore on error
+    const snapshot: Pipeline = {
+      LEAD: [...pipeline.LEAD],
+      QUALIFIED: [...pipeline.QUALIFIED],
+      PROPOSAL: [...pipeline.PROPOSAL],
+      WON: [...pipeline.WON],
+      LOST: [...pipeline.LOST],
+    };
+
     // Optimistic update: remove from source, append to target
     pipeline = {
       ...pipeline,
@@ -123,12 +132,8 @@
         body: { stage: toStage },
       });
     } catch (e) {
-      // Revert optimistic update
-      pipeline = {
-        ...pipeline,
-        [toStage]: pipeline[toStage as keyof Pipeline].filter((d) => d.id !== payload.dealId),
-        [payload.fromStage]: [...pipeline[payload.fromStage as keyof Pipeline], deal],
-      };
+      // Restore pre-optimistic snapshot so the revert is always correct
+      pipeline = snapshot;
       const msg = e instanceof ApiError ? e.message : 'Transition impossible';
       toast.error(msg);
     }
