@@ -88,9 +88,13 @@ export class AgentRuntimeService {
     const { config, decryptedKey } = await this.runtimeConfig.resolveForSpawn(tenantId);
     const { env, homeDir } = buildRuntimeEnv(config, decryptedKey, this.runtimeConfig.hermesHomeRoot());
 
-    // Provision the managed HERMES_HOME with a pinned cli-config.yaml.
+    // Provision the managed HERMES_HOME with the provider/model config. The Hermes
+    // adapter reads HERMES_HOME/config.yaml (hermes_cli.config.load_config →
+    // get_config_path() = HERMES_HOME/"config.yaml"). Writing "cli-config.yaml" here
+    // meant the per-tenant provider/model was NEVER loaded, so the agent ran with no
+    // model and produced no tool calls. Schema is identical (model.provider/default/base_url).
     fs.mkdirSync(homeDir, { recursive: true });
-    fs.writeFileSync(path.join(homeDir, 'cli-config.yaml'), renderCliConfig(config));
+    fs.writeFileSync(path.join(homeDir, 'config.yaml'), renderCliConfig(config));
 
     let child: ChildProcessWithoutNullStreams;
     try {
