@@ -11,6 +11,7 @@ export enum CustomFieldEntity {
   VEHICLE = 'VEHICLE',
   TRAILER = 'TRAILER',
   MAINTENANCE_ORDER = 'MAINTENANCE_ORDER',
+  RFP = 'RFP',
 }
 
 export enum CustomFieldType {
