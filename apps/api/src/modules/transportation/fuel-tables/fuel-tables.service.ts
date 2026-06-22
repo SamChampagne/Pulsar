@@ -79,8 +79,8 @@ export class FuelTablesService {
             }),
           ]
         : []),
-      this.prisma.fuelSurchargeTable.update({
-        where: { id },
+      this.prisma.fuelSurchargeTable.updateMany({
+        where: { id, tenantId },
         data: { name: dto.name },
       }),
     ]);
@@ -95,7 +95,7 @@ export class FuelTablesService {
       throw new ConflictException(`Fuel table is referenced by ${rates} rate(s) — detach them first`);
     }
     try {
-      await this.prisma.fuelSurchargeTable.delete({ where: { id } });
+      await this.prisma.fuelSurchargeTable.deleteMany({ where: { id, tenantId } });
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
         throw new ConflictException('Fuel table is still referenced by rates');

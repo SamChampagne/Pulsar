@@ -106,6 +106,16 @@ export class PortalService {
     return customer;
   }
 
+  /** Resolves an opaque location code (exposed in the public payload) to its internal PK. */
+  private async resolveLocationCode(tenantId: string, code: string): Promise<string> {
+    const loc = await this.prisma.location.findFirst({
+      where: { tenantId, code },
+      select: { id: true },
+    });
+    if (!loc) throw new NotFoundException(`Location not found: ${code}`);
+    return loc.id;
+  }
+
   /**
    * Portal v2: the customer submits a transport request, landing as a DRAFT
    * order for the shipper's customer service to confirm (or cancel).
@@ -113,7 +123,15 @@ export class PortalService {
   async createOrder(token: string, input: PortalOrderInput) {
     const customer = await this.customerByToken(token);
 
-    let mergedInput = { ...input };
+    // Resolve opaque location codes (from the public payload) to internal PKs before merging.
+    const resolvedOriginId = input.originLocationId
+      ? await this.resolveLocationCode(customer.tenantId, input.originLocationId)
+      : undefined;
+    const resolvedDestinationId = input.destinationLocationId
+      ? await this.resolveLocationCode(customer.tenantId, input.destinationLocationId)
+      : undefined;
+
+    let mergedInput = { ...input, originLocationId: resolvedOriginId, destinationLocationId: resolvedDestinationId };
     if (input.templateId) {
       const tpl = await this.prisma.orderTemplate.findFirst({
         where: { id: input.templateId, tenantId: customer.tenantId, customerId: customer.id },
@@ -121,8 +139,8 @@ export class PortalService {
       if (!tpl) throw new NotFoundException('Template not found');
       mergedInput = {
         ...mergedInput,
-        originLocationId: input.originLocationId ?? tpl.originLocationId ?? undefined,
-        destinationLocationId: input.destinationLocationId ?? tpl.destinationLocationId ?? undefined,
+        originLocationId: resolvedOriginId ?? tpl.originLocationId ?? undefined,
+        destinationLocationId: resolvedDestinationId ?? tpl.destinationLocationId ?? undefined,
         mode: input.mode ?? (tpl.mode as TransportMode | undefined) ?? undefined,
         totalWeightKg: input.totalWeightKg ?? tpl.totalWeightKg ?? undefined,
         palletCount: input.palletCount ?? tpl.palletCount ?? undefined,
@@ -238,13 +256,12 @@ export class PortalService {
       },
     });
 
-    // Locations are exposed minimally (id/name/city) so the customer can place
-    // requests — the only internal references a portal needs.
+    // Locations are exposed minimally (code/name/city) — opaque code instead of PK (rule 10).
     const locations = await this.prisma.location.findMany({
       where: { tenantId: customer.tenantId, isActive: true },
       orderBy: { name: 'asc' },
       take: 100,
-      select: { id: true, name: true, city: true },
+      select: { code: true, name: true, city: true },
     });
 
     const branding = ((customer.tenant.settings as Record<string, unknown>)?.branding as Record<string, unknown>) ?? {};
@@ -338,12 +355,19 @@ export class PortalService {
 
   async createTemplate(token: string, dto: CreateOrderTemplateInput) {
     const customer = await this.customerByToken(token);
+    // Resolve opaque codes → PKs before ownership check and persistence.
+    const originId = dto.originLocationId
+      ? await this.resolveLocationCode(customer.tenantId, dto.originLocationId)
+      : undefined;
+    const destinationId = dto.destinationLocationId
+      ? await this.resolveLocationCode(customer.tenantId, dto.destinationLocationId)
+      : undefined;
     await Promise.all([
-      dto.originLocationId
-        ? this.ownership.assertOwned('location', dto.originLocationId, customer.tenantId)
+      originId
+        ? this.ownership.assertOwned('location', originId, customer.tenantId)
         : Promise.resolve(),
-      dto.destinationLocationId
-        ? this.ownership.assertOwned('location', dto.destinationLocationId, customer.tenantId)
+      destinationId
+        ? this.ownership.assertOwned('location', destinationId, customer.tenantId)
         : Promise.resolve(),
     ]);
     const template = await this.prisma.orderTemplate.create({
@@ -351,8 +375,8 @@ export class PortalService {
         tenantId: customer.tenantId,
         customerId: customer.id,
         name: dto.name,
-        originLocationId: dto.originLocationId,
-        destinationLocationId: dto.destinationLocationId,
+        originLocationId: originId,
+        destinationLocationId: destinationId,
         mode: dto.mode,
         totalWeightKg: dto.totalWeightKg,
         totalVolumeM3: dto.totalVolumeM3,

@@ -268,8 +268,8 @@ export class PublicLinksService {
       select: { id: true },
     });
     if (existing) {
-      await this.prisma.proofOfDelivery.update({
-        where: { shipmentId },
+      await this.prisma.proofOfDelivery.updateMany({
+        where: { shipmentId, tenantId: load.tenantId },
         data: { signatureDocumentId: doc.id },
       });
     } else {

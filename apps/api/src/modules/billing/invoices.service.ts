@@ -187,8 +187,10 @@ export class InvoicesService {
     // the header updateMany below is the authoritative gate for concurrent-state detection.
     const txResults = await this.prisma.$transaction([
       ...computed.map((c) =>
-        this.prisma.invoiceLine.update({
-          where: { id: c.id },
+        this.prisma.invoiceLine.updateMany({
+          // InvoiceLine has no tenantId; scope to the parent invoice (id), which the
+          // header updateMany below gates by tenantId — a foreign line id can't match.
+          where: { id: c.id, invoiceId: id },
           data: { invoicedAmount: c.invoiced, variance: c.variance },
         }),
       ),

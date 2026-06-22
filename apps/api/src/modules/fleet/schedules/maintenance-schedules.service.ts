@@ -173,8 +173,8 @@ export class MaintenanceSchedulesService {
   async update(tenantId: string, userId: string, id: string, dto: UpdateMaintenanceScheduleDto) {
     const existing = await this.prisma.maintenanceSchedule.findFirst({ where: { id, tenantId } });
     if (!existing) throw new NotFoundException('Maintenance schedule not found');
-    const updated = await this.prisma.maintenanceSchedule.update({
-      where: { id },
+    const res = await this.prisma.maintenanceSchedule.updateMany({
+      where: { id, tenantId },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.type !== undefined ? { type: dto.type } : {}),
@@ -185,6 +185,8 @@ export class MaintenanceSchedulesService {
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
     });
+    if (res.count === 0) throw new NotFoundException('Maintenance schedule not found');
+    const updated = await this.prisma.maintenanceSchedule.findFirstOrThrow({ where: { id, tenantId } });
     await this.audit.log({
       tenantId,
       userId,
@@ -200,7 +202,7 @@ export class MaintenanceSchedulesService {
   async remove(tenantId: string, userId: string, id: string) {
     const existing = await this.prisma.maintenanceSchedule.findFirst({ where: { id, tenantId } });
     if (!existing) throw new NotFoundException('Maintenance schedule not found');
-    await this.prisma.maintenanceSchedule.delete({ where: { id } });
+    await this.prisma.maintenanceSchedule.deleteMany({ where: { id, tenantId } });
     await this.audit.log({
       tenantId,
       userId,

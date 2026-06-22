@@ -102,14 +102,16 @@ export class ReceivingService {
     const customData = await this.customFields.validateValues(
       'wms', tenantId, CustomFieldEntity.RECEIPT, dto.customData, { partial: true },
     );
-    const updated = await this.prisma.receipt.update({
-      where: { id },
+    const updateRes = await this.prisma.receipt.updateMany({
+      where: { id, tenantId },
       data: {
         ...(dto.reference !== undefined ? { reference: dto.reference } : {}),
         ...(dto.note !== undefined ? { note: dto.note } : {}),
         ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
     });
+    if (updateRes.count === 0) throw new NotFoundException('Receipt not found');
+    const updated = await this.prisma.receipt.findFirstOrThrow({ where: { id, tenantId } });
     await this.audit.log({
       tenantId,
       userId,

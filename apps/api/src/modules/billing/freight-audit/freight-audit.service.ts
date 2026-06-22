@@ -100,13 +100,13 @@ export class FreightAuditService {
       });
       if (!load || load.estimatedCost === null) {
         unmatched++;
-        lineWrites.push(this.prisma.incomingInvoiceLine.update({ where: { id: line.id }, data: { matchedLoadId: null, expectedAmount: null, variance: null } }));
+        lineWrites.push(this.prisma.incomingInvoiceLine.updateMany({ where: { id: line.id, invoiceId: invoice.id }, data: { matchedLoadId: null, expectedAmount: null, variance: null } }));
         continue;
       }
       const expected = Number(load.estimatedCost);
       const invoiced = Number(line.chargedAmount);
       matched.push({ expected, invoiced });
-      lineWrites.push(this.prisma.incomingInvoiceLine.update({ where: { id: line.id }, data: { matchedLoadId: load.id, expectedAmount: expected, variance: round(invoiced - expected) } }));
+      lineWrites.push(this.prisma.incomingInvoiceLine.updateMany({ where: { id: line.id, invoiceId: invoice.id }, data: { matchedLoadId: load.id, expectedAmount: expected, variance: round(invoiced - expected) } }));
     }
     const tol = await this.tolerances(tenantId);
     const outcome = evaluateReconciliation(matched, tol, tol.mode);

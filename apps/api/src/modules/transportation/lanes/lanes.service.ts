@@ -132,7 +132,9 @@ export class LanesService {
    */
   async update(tenantId: string, id: string, dto: UpdateLaneDto) {
     await this.get(tenantId, id);
-    return this.prisma.lane.update({ where: { id }, data: { name: dto.name }, include: laneInclude });
+    const res = await this.prisma.lane.updateMany({ where: { id, tenantId }, data: { name: dto.name } });
+    if (res.count === 0) throw new NotFoundException('Lane not found');
+    return this.prisma.lane.findFirstOrThrow({ where: { id, tenantId }, include: laneInclude });
   }
 
   /** Restrict policy: refuse deletion while rates or preferences reference the lane. */
@@ -148,7 +150,7 @@ export class LanesService {
       );
     }
     try {
-      await this.prisma.lane.delete({ where: { id } });
+      await this.prisma.lane.deleteMany({ where: { id, tenantId } });
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
         throw new ConflictException('Lane is still referenced by rates or carrier preferences');

@@ -97,8 +97,9 @@ describe('Phase 5 (e2e)', () => {
     const created = await request(http)
       .post(`/api/v1/public/portal/${portalToken}/orders`)
       .send({
-        originLocationId: ids.origin,
-        destinationLocationId: ids.destination,
+        // Public portal addresses locations by their opaque CODE (no internal PK exposed).
+        originLocationId: `${suffix}-ORI`,
+        destinationLocationId: `${suffix}-DST`,
         customerReference: 'PORTAL-PO-1',
         palletCount: 4,
       })
