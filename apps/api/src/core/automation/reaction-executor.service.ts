@@ -14,16 +14,6 @@ export function currentReactionRuleId(): string | null {
   return als.getStore()?.reactionRuleId ?? null;
 }
 
-/**
- * Lazy token strings used for deferred service resolution via ModuleRef.
- * These are the string tokens NestJS uses by default for class providers.
- * We import the class type only for typing (not used in @Module imports),
- * which avoids a circular JavaScript require chain:
- *   OperatingModule → AutomationModule → WmsModule → OperatingModule.
- */
-const PICKING_SERVICE_TOKEN = 'PickingService';
-const CUSTOMER_INVOICES_SERVICE_TOKEN = 'CustomerInvoicesService';
-
 @Injectable()
 export class ReactionExecutorService {
   private readonly logger = new Logger(ReactionExecutorService.name);

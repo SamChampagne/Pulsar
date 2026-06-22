@@ -84,6 +84,7 @@ describe('Cross-module automation (e2e)', () => {
   const cleanupPickOrderIds: string[] = [];
   const cleanupInvoiceIds: string[] = [];
   const cleanupRuleIds: string[] = [];
+  const cleanupEventIds: string[] = [];
 
   // ---------------------------------------------------------------------------
   // Setup: boot the app with no-op stubs, seed master data
@@ -222,6 +223,26 @@ describe('Cross-module automation (e2e)', () => {
 
   afterAll(async () => {
     if (prisma) {
+      // Collect the domain event IDs this suite owns (transport-order.planned by orderId
+      // and load.completed by loadId) so cleanup is scoped to this suite only.
+      if (cleanupOrderIds.length > 0 || cleanupLoadIds.length > 0) {
+        const ownedEvents = await prisma.domainEvent.findMany({
+          where: {
+            tenantId,
+            OR: [
+              ...(cleanupOrderIds.length > 0
+                ? [{ type: 'transport-order.planned' as const, payload: { path: ['orderId'], string_contains: suffix } }]
+                : []),
+              ...(cleanupLoadIds.length > 0
+                ? [{ type: 'load.completed' as const, payload: { path: ['loadId'], string_contains: suffix } }]
+                : []),
+            ],
+          },
+          select: { id: true },
+        }).catch(() => [] as { id: string }[]);
+        cleanupEventIds.push(...ownedEvents.map((e) => e.id));
+      }
+
       // Clean up in dependency order
       await prisma.customerInvoice.deleteMany({
         where: { id: { in: cleanupInvoiceIds } },
@@ -233,10 +254,10 @@ describe('Cross-module automation (e2e)', () => {
         where: { id: { in: cleanupPickOrderIds } },
       }).catch(() => undefined);
       await prisma.reactionExecution.deleteMany({
-        where: { tenantId },
+        where: { tenantId, eventId: { in: cleanupEventIds } },
       }).catch(() => undefined);
       await prisma.domainEvent.deleteMany({
-        where: { tenantId, payload: { path: ['orderId'], string_contains: suffix } },
+        where: { tenantId, id: { in: cleanupEventIds } },
       }).catch(() => undefined);
       await prisma.shipmentLoadLeg.deleteMany({
         where: { shipmentId: { in: cleanupShipmentIds } },
