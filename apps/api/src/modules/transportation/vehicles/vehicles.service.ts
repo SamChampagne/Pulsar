@@ -1,7 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@pulsar/database';
+import { CustomFieldEntity } from '@pulsar/shared';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
+import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle.dto';
@@ -11,6 +13,7 @@ export class VehiclesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ownership: OwnershipService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   async list(tenantId: string, query: ListQueryDto) {
@@ -46,13 +49,32 @@ export class VehiclesService {
     });
     if (existing) throw new ConflictException(`Vehicle "${dto.unitNumber}" already exists`);
     await this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId);
-    return this.prisma.vehicle.create({ data: { ...dto, tenantId } });
+    const customData = await this.customFields.validateValues(
+      'fleet', tenantId, CustomFieldEntity.VEHICLE, dto.customData, { partial: false },
+    );
+    const { customData: _cd, ...dtoWithout } = dto;
+    return this.prisma.vehicle.create({
+      data: {
+        ...dtoWithout,
+        tenantId,
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
+      },
+    });
   }
 
   async update(tenantId: string, id: string, dto: UpdateVehicleDto) {
     await this.get(tenantId, id);
     await this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId);
-    const { unitNumber: _unit, ...data } = dto;
-    return this.prisma.vehicle.update({ where: { id }, data });
+    const customData = await this.customFields.validateValues(
+      'fleet', tenantId, CustomFieldEntity.VEHICLE, dto.customData, { partial: true },
+    );
+    const { unitNumber: _unit, customData: _cd, ...data } = dto;
+    return this.prisma.vehicle.update({
+      where: { id },
+      data: {
+        ...data,
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
+      },
+    });
   }
 }

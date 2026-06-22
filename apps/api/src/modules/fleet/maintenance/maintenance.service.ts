@@ -1,13 +1,16 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   AuditAction,
+  CustomFieldEntity,
   MaintenanceOrderStatus,
   canTransitionAsset,
   canTransitionMaintenanceOrder,
 } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import {
   CompleteMaintenanceOrderDto,
@@ -29,6 +32,7 @@ export class MaintenanceService {
     private readonly prisma: PrismaService,
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
+    private readonly customFields: CustomFieldsService,
     private readonly domainEvents: DomainEventsService,
   ) {}
 
@@ -63,20 +67,26 @@ export class MaintenanceService {
     await this.ownership.assertOwnedIfSet('vehicle', dto.vehicleId, tenantId);
     await this.ownership.assertOwnedIfSet('trailer', dto.trailerId, tenantId);
 
+    const customData = await this.customFields.validateValues(
+      'fleet', tenantId, CustomFieldEntity.MAINTENANCE_ORDER, dto.customData, { partial: false },
+    );
+    const { customData: _cd, ...dtoWithout } = dto;
+
     const wo = await this.prisma.maintenanceOrder.create({
       data: {
         tenantId,
-        vehicleId: dto.vehicleId ?? null,
-        trailerId: dto.trailerId ?? null,
-        type: dto.type,
+        vehicleId: dtoWithout.vehicleId ?? null,
+        trailerId: dtoWithout.trailerId ?? null,
+        type: dtoWithout.type,
         status: MaintenanceOrderStatus.OPEN,
-        description: dto.description,
-        odometerKm: dto.odometerKm ?? null,
-        vendor: dto.vendor ?? null,
-        dueDate: dto.dueDate ?? null,
-        dueOdometerKm: dto.dueOdometerKm ?? null,
+        description: dtoWithout.description,
+        odometerKm: dtoWithout.odometerKm ?? null,
+        vendor: dtoWithout.vendor ?? null,
+        dueDate: dtoWithout.dueDate ?? null,
+        dueOdometerKm: dtoWithout.dueOdometerKm ?? null,
         scheduleId: scheduleId ?? null,
         openedAt: new Date(),
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
     });
 
