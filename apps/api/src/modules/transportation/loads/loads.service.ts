@@ -2,7 +2,6 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
-  DOMAIN_EVENT_TYPES,
   CustomFieldEntity,
   LoadStatus,
   ShipmentStatus,
@@ -20,12 +19,10 @@ import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
-import { DomainEventsService } from '../../../core/operating/domain-events.service';
-import { EmailService } from '../../../core/email/email.service';
-import { WebhooksService } from '../../../core/integrations/webhooks.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import { LoadCostService } from './load-cost.service';
+import { LoadNotificationsService } from './load-notifications.service';
 import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
 import { shipmentWindowWarnings } from '../planning/window-warnings';
 import { isLate } from '../exceptions/delay-detection.service';
@@ -80,12 +77,10 @@ export class LoadsService {
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
     private readonly cost: LoadCostService,
-    private readonly webhooks: WebhooksService,
-    private readonly email: EmailService,
     private readonly config: ConfigService,
     private readonly moduleSettings: ModuleSettingsService,
-    private readonly domainEvents: DomainEventsService,
     private readonly customFields: CustomFieldsService,
+    private readonly notifications: LoadNotificationsService,
   ) {}
 
   async list(tenantId: string, query: ListQueryDto & { status?: LoadStatus }) {
@@ -494,18 +489,7 @@ export class LoadsService {
       }),
     ]);
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.DISPATCHED);
-    await this.webhooks.emit(tenantId, 'load.dispatched', {
-      loadId: id,
-      loadNumber: load.loadNumber,
-      carrierId: load.carrierId,
-    });
-    // Best-effort domain event (rule 27).
-    await this.domainEvents.emit(
-      tenantId,
-      DOMAIN_EVENT_TYPES.LOAD_DISPATCHED,
-      { type: 'load', id },
-      { loadId: id, loadNumber: load.loadNumber, carrierId: load.carrierId ?? null },
-    );
+    await this.notifications.onDispatched(tenantId, { id, loadNumber: load.loadNumber, carrierId: load.carrierId });
     return updated;
   }
 
@@ -589,60 +573,8 @@ export class LoadsService {
     }
 
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.COMPLETED);
-    await this.webhooks.emit(tenantId, 'load.completed', {
-      loadId: id,
-      loadNumber: load.loadNumber,
-      carrierId: load.carrierId,
-    });
-    // Best-effort domain event (rule 27).
-    await this.domainEvents.emit(
-      tenantId,
-      DOMAIN_EVENT_TYPES.LOAD_COMPLETED,
-      { type: 'load', id },
-      { loadId: id, loadNumber: load.loadNumber },
-    );
-    await this.notifyCustomersDelivered(tenantId, id);
+    await this.notifications.onCompleted(tenantId, { id, loadNumber: load.loadNumber, carrierId: load.carrierId });
     return this.get(tenantId, id);
-  }
-
-  /** Emails each order's customer contact that their shipment was delivered (best-effort). */
-  private async notifyCustomersDelivered(tenantId: string, loadId: string): Promise<void> {
-    const shipments = await this.prisma.shipment.findMany({
-      where: { tenantId, loadId },
-      select: {
-        shipmentNumber: true,
-        trackingToken: true,
-        actualDeliveryAt: true,
-        transportOrder: {
-          select: {
-            orderNumber: true,
-            customerReference: true,
-            customer: { select: { email: true, name: true } },
-          },
-        },
-      },
-    });
-    const webUrl = this.config.get('WEB_URL', 'http://localhost:5173');
-    for (const shipment of shipments) {
-      const to = shipment.transportOrder.customer.email;
-      if (!to) continue;
-      const trackLine = shipment.trackingToken
-        ? `<p><a href="${webUrl}/track/${shipment.trackingToken}">Track this shipment</a></p>`
-        : '';
-      await this.email.send({
-        to,
-        subject: `Delivered — ${shipment.shipmentNumber} (order ${shipment.transportOrder.orderNumber})`,
-        html: [
-          `<p>Your shipment <strong>${shipment.shipmentNumber}</strong>`,
-          shipment.transportOrder.customerReference
-            ? ` (ref ${shipment.transportOrder.customerReference})`
-            : '',
-          ` was delivered on ${shipment.actualDeliveryAt?.toUTCString() ?? 'today'}.</p>`,
-          trackLine,
-        ].join(''),
-        text: `Your shipment ${shipment.shipmentNumber} was delivered.`,
-      });
-    }
   }
 
   async cancel(tenantId: string, userId: string, id: string) {

@@ -25,6 +25,9 @@
 
   let accessorials = $state<Accessorial[]>([]);
   let total = $state(0);
+  let page = $state(1);
+  const pageSize = 25;
+  const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
   let error = $state('');
   let showForm = $state(false);
   let loading = $state(true);
@@ -37,9 +40,10 @@
   let unit = $state<'FLAT' | 'PER_HOUR' | 'PER_UNIT'>('FLAT');
 
   async function load() {
+    loading = true;
     try {
       const result = await api<Paginated<Accessorial>>('/transportation/accessorials', {
-        query: { pageSize: 100 },
+        query: { page, pageSize },
       });
       accessorials = result.items;
       total = result.total;
@@ -158,6 +162,33 @@
       {/each}
     {/snippet}
   </Table>
+{/if}
+
+{#if total > pageSize}
+  <div class="mt-3 flex items-center justify-between text-sm text-ink-muted">
+    <span class="font-mono text-xs"
+      >{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} sur {total}</span
+    >
+    <div class="flex items-center gap-2">
+      <Button
+        variant="secondary"
+        disabled={page <= 1}
+        onclick={() => {
+          page = Math.max(1, page - 1);
+          void load();
+        }}>Précédent</Button
+      >
+      <span class="font-mono text-xs">Page {page} / {totalPages}</span>
+      <Button
+        variant="secondary"
+        disabled={page >= totalPages}
+        onclick={() => {
+          page = Math.min(totalPages, page + 1);
+          void load();
+        }}>Suivant</Button
+      >
+    </div>
+  </div>
 {/if}
 
 <Modal bind:open={showForm} title={editingId ? 'Modifier accessoriel' : 'Nouvel accessoriel'} size="md">

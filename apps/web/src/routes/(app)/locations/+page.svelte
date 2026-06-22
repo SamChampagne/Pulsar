@@ -65,6 +65,9 @@
 
   let locations = $state<Location[]>([]);
   let total = $state(0);
+  let page = $state(1);
+  const pageSize = 25;
+  const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
   let search = $state('');
   let loading = $state(true);
   let saving = $state(false);
@@ -104,7 +107,7 @@
     error = '';
     try {
       const result = await api<Paginated<Location>>('/transportation/locations', {
-        query: { search, pageSize: 100 },
+        query: { search, page, pageSize },
       });
       locations = result.items;
       total = result.total;
@@ -183,6 +186,12 @@
   function addressLine(l: Location): string {
     return [l.city, l.state, l.postalCode].filter(Boolean).join(', ');
   }
+
+  // Reset to page 1 whenever search changes.
+  $effect(() => {
+    search;
+    page = 1;
+  });
 
   $effect(() => {
     void load();
@@ -284,6 +293,33 @@
       {/each}
     {/snippet}
   </Table>
+{/if}
+
+{#if total > pageSize}
+  <div class="mt-3 flex items-center justify-between text-sm text-ink-muted">
+    <span class="font-mono text-xs"
+      >{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} sur {total}</span
+    >
+    <div class="flex items-center gap-2">
+      <Button
+        variant="secondary"
+        disabled={page <= 1}
+        onclick={() => {
+          page = Math.max(1, page - 1);
+          void load();
+        }}>Précédent</Button
+      >
+      <span class="font-mono text-xs">Page {page} / {totalPages}</span>
+      <Button
+        variant="secondary"
+        disabled={page >= totalPages}
+        onclick={() => {
+          page = Math.min(totalPages, page + 1);
+          void load();
+        }}>Suivant</Button
+      >
+    </div>
+  </div>
 {/if}
 
 <Modal bind:open={showForm} title={editing ? `Éditer ${editing.code}` : 'Nouveau lieu'} size="md">

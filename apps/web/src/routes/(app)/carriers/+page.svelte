@@ -32,6 +32,9 @@
 
   let carriers = $state<CarrierRow[]>([]);
   let total = $state(0);
+  let page = $state(1);
+  const pageSize = 25;
+  const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
   let search = $state('');
   let error = $state('');
   let showForm = $state(false);
@@ -51,9 +54,10 @@
   let portalLoading = $state(false);
 
   async function load() {
+    loading = true;
     try {
       const result = await api<Paginated<CarrierRow>>('/transportation/carriers', {
-        query: { search, pageSize: 50 },
+        query: { search, page, pageSize },
       });
       carriers = result.items;
       total = result.total;
@@ -142,6 +146,12 @@
     toast.success('Lien copié');
   }
 
+  // Reset to page 1 whenever search changes.
+  $effect(() => {
+    search;
+    page = 1;
+  });
+
   $effect(() => {
     void load();
   });
@@ -186,7 +196,7 @@
       {#each carriers as carrier (carrier.id)}
         <tr>
           <td class="font-mono font-semibold text-ink">{carrier.code}</td>
-          <td>{carrier.name}</td>
+          <td><a href={`/carriers/${carrier.id}`} class="hover:underline text-accent font-medium">{carrier.name}</a></td>
           <td class="font-mono text-ink-muted">{carrier.scacCode ?? '—'}</td>
           <td>{carrier.contactName ?? '—'}</td>
           <td class="font-mono text-ink-muted">{carrier.phone ?? '—'}</td>
@@ -200,6 +210,33 @@
       {/each}
     {/snippet}
   </Table>
+{/if}
+
+{#if total > pageSize}
+  <div class="mt-3 flex items-center justify-between text-sm text-ink-muted">
+    <span class="font-mono text-xs"
+      >{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} sur {total}</span
+    >
+    <div class="flex items-center gap-2">
+      <Button
+        variant="secondary"
+        disabled={page <= 1}
+        onclick={() => {
+          page = Math.max(1, page - 1);
+          void load();
+        }}>Précédent</Button
+      >
+      <span class="font-mono text-xs">Page {page} / {totalPages}</span>
+      <Button
+        variant="secondary"
+        disabled={page >= totalPages}
+        onclick={() => {
+          page = Math.min(totalPages, page + 1);
+          void load();
+        }}>Suivant</Button
+      >
+    </div>
+  </div>
 {/if}
 
 <Modal bind:open={showForm} title="Nouveau transporteur" size="md">

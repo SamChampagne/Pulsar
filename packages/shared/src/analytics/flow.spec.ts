@@ -23,6 +23,11 @@ describe('moduleOfEventType', () => {
     expect(moduleOfEventType('driver.exception')).toBe('TRANSPORTATION');
     expect(moduleOfEventType('carrier-invoice.received')).toBe('BILLING');
     expect(moduleOfEventType('portal.change-request')).toBe('CUSTOMER_PORTAL');
+    // TMS lifecycle events attribute to TRANSPORTATION (not CORE).
+    expect(moduleOfEventType('load.completed')).toBe('TRANSPORTATION');
+    expect(moduleOfEventType('load.dispatched')).toBe('TRANSPORTATION');
+    expect(moduleOfEventType('transport-order.planned')).toBe('TRANSPORTATION');
+    expect(moduleOfEventType('invoice.approved')).toBe('BILLING');
     expect(moduleOfEventType('something.unknown')).toBe('CORE');
   });
 });
