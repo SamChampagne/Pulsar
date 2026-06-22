@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomBytes } from 'node:crypto';
 import { reactionByKey, type ReactionCommand, AuditAction } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -173,12 +174,31 @@ export class ReactionExecutorService {
     }
   }
 
+  /**
+   * The tenant's hidden service-account user, created lazily if absent (mirrors
+   * ApiKeysService.ensureServiceUser). A tenant can wire automation reactions
+   * before ever minting an API key or agent, so we must not assume the account
+   * already exists. DISABLED → can never sign in; gives reaction writes a real
+   * user id for audit/FK attribution (rule 13).
+   */
   private async serviceAccountUserId(tenantId: string): Promise<string> {
-    const user = await this.prisma.user.findFirst({
-      where: { tenantId, email: 'service-account@pulsar.local' },
+    const email = 'service-account@pulsar.local';
+    const existing = await this.prisma.user.findUnique({
+      where: { tenantId_email: { tenantId, email } },
       select: { id: true },
     });
-    if (!user) throw new Error(`service-account user missing for tenant ${tenantId}`);
-    return user.id;
+    if (existing) return existing.id;
+    const created = await this.prisma.user.create({
+      data: {
+        tenantId,
+        email,
+        passwordHash: randomBytes(48).toString('hex'),
+        firstName: 'Service',
+        lastName: 'Account',
+        status: 'DISABLED',
+      },
+      select: { id: true },
+    });
+    return created.id;
   }
 }
