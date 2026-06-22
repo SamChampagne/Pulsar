@@ -16,6 +16,7 @@
     ErrorNotice,
     type Tone,
   } from '$lib/components/ui';
+  import { untrack } from 'svelte';
   import ActivityTimeline from '$lib/components/crm/ActivityTimeline.svelte';
   import type { Activity } from '$lib/components/crm/ActivityTimeline.svelte';
   import LogActivity from '$lib/components/crm/LogActivity.svelte';
@@ -185,15 +186,15 @@
   }
 
   // ── Reactive load ─────────────────────────────────────────────────────────────
-
+  // Single effect: tracks filters, resets to page 1, fires exactly one load.
+  // Pagination buttons call load() directly and are not tracked here.
   $effect(() => {
-    search;
-    statusFilter;
-    page = 1;
-  });
-
-  $effect(() => {
-    void load();
+    const _s = search;
+    const _sf = statusFilter;
+    untrack(() => {
+      page = 1;
+      void load();
+    });
   });
 </script>
 
