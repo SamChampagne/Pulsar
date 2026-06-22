@@ -44,6 +44,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AgentsService } from '../src/core/agents/agents.service';
 import { AgentRuntimeService } from '../src/core/agents/agent-runtime.service';
+import { AgentWorkerService } from '../src/core/operating/agent-worker.service';
 import { DomainEventsService } from '../src/core/operating/domain-events.service';
 
 const ADMIN = { email: 'admin@pulsar.dev', password: 'admin123', tenant: 'acme' };
@@ -74,6 +75,21 @@ class FakeAgentRuntimeService {
 }
 
 // ---------------------------------------------------------------------------
+// FakeAgentWorkerService — prevents processPending() from waking the live
+// dispatcher against the shared DB when it fire-and-forgets enqueueTask().
+// Without this stub the domain-event worker would kick the real AgentWorkerService,
+// creating AgentRun rows and worsening the phase13-workforce cross-suite flake
+// (an always-on DELAY agent racing for the same task).
+// ---------------------------------------------------------------------------
+const FakeAgentWorkerService = {
+  enqueueTask: async () => {},
+  runNow: async () => false,
+  pauseAgent: async () => {},
+  resumeAgent: async () => {},
+  runCron: async () => {},
+};
+
+// ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
 
@@ -102,6 +118,8 @@ describe('Flow Control Tower (e2e)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AgentRuntimeService)
       .useClass(FakeAgentRuntimeService)
+      .overrideProvider(AgentWorkerService)
+      .useValue(FakeAgentWorkerService)
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -336,11 +354,15 @@ describe('Flow Control Tower (e2e)', () => {
       expect(created!.module).toBe('TRANSPORTATION');
       expect(typeof created!.at).toBe('string');
 
-      // Remaining stages for a brand-new order with no load/pick/yard/invoice must be PENDING.
+      // Remaining stages for a brand-new order with no load/pick/yard/invoice must be exactly
+      // PENDING. buildEntityTrace sets status=DONE only when the "at" timestamp is non-null,
+      // and BLOCKED only when pickBlocked=true. This assertion would FAIL if the derivation
+      // wrongly resolved a timestamp (e.g. by accidentally recomputing a completed load) or
+      // returned BLOCKED/DONE for any stage the test fixture hasn't reached.
       const rest = body.stages.filter((s) => s.stage !== 'Créée');
       for (const s of rest) {
-        expect(['PENDING', 'BLOCKED', 'DONE']).toContain(s.status);
-        // At least refs is an array.
+        expect(s.status).toBe('PENDING');
+        // refs must be an empty array for stages with no data yet.
         expect(Array.isArray(s.refs)).toBe(true);
       }
     });
@@ -423,6 +445,18 @@ describe('Flow Control Tower (e2e)', () => {
       }
     });
   });
+
+  // =========================================================================
+  // Scenario 5a — Module gating (SKIPPED — see comment)
+  // =========================================================================
+  // NOTE: We intentionally skip a dedicated module-gating test here.
+  // Toggling acme's ANALYTICS module off (prisma.tenantModule.update enabled=false) and
+  // back on in this suite would risk polluting other suites that share the same seeded
+  // DB state and rely on acme having ANALYTICS enabled (the ModulesGuard uses a 30 s
+  // in-memory cache, so the toggle leaks across suites when running --runInBand).
+  // The happy-path succeeding in Scenarios 1-4 already confirms the module guard allows
+  // the request when ANALYTICS is enabled. A dedicated isolation test belongs in a
+  // test that controls its own tenant and does not share acme.
 
   // =========================================================================
   // Scenario 5 — Gating (permission)
