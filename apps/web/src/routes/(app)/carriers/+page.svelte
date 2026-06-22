@@ -196,7 +196,7 @@
       {#each carriers as carrier (carrier.id)}
         <tr>
           <td class="font-mono font-semibold text-ink">{carrier.code}</td>
-          <td>{carrier.name}</td>
+          <td><a href={`/carriers/${carrier.id}`} class="hover:underline text-accent font-medium">{carrier.name}</a></td>
           <td class="font-mono text-ink-muted">{carrier.scacCode ?? '—'}</td>
           <td>{carrier.contactName ?? '—'}</td>
           <td class="font-mono text-ink-muted">{carrier.phone ?? '—'}</td>

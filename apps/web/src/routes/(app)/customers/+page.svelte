@@ -188,7 +188,7 @@
       {#each customers as customer (customer.id)}
         <tr>
           <td class="font-mono font-semibold text-ink">{customer.code}</td>
-          <td>{customer.name}</td>
+          <td><a href={`/customers/${customer.id}`} class="hover:underline text-accent font-medium">{customer.name}</a></td>
           <td>{customer.contactName ?? '—'}</td>
           <td class="text-ink-muted">{customer.email ?? '—'}</td>
           <td>
