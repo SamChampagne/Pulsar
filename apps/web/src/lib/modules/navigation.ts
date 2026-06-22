@@ -382,9 +382,12 @@ export function navCatalogue(): NavDomain[] {
       sections: [
         {
           links: [
-            { href: '/crm', label: 'Pipeline', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm', label: 'Tableau de bord', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/pipeline', label: 'Pipeline', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/deals', label: 'Deals', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/companies', label: 'Sociétés', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/contacts', label: 'Contacts', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/activities', label: 'Activités', perm: PERMISSIONS.CRM.READ },
           ],
         },
       ],
