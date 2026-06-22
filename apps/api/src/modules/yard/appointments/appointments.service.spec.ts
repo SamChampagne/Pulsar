@@ -21,7 +21,8 @@ function harness(status = DockAppointmentStatus.SCHEDULED) {
   const ownership = { assertOwnedIfSet: async () => undefined } as any;
   const audit = { log: async () => undefined } as any;
   const domainEvents = { emit: async () => undefined } as any;
-  return { svc: new AppointmentsService(prisma, sequences, ownership, audit, domainEvents), appt };
+  const customFields = { validateValues: async () => undefined } as any;
+  return { svc: new AppointmentsService(prisma, sequences, ownership, audit, domainEvents, customFields), appt };
 }
 
 describe('AppointmentsService transitions', () => {

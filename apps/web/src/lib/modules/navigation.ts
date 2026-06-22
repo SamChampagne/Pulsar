@@ -189,6 +189,16 @@ export function navCatalogue(): NavDomain[] {
             { href: '/wms/bins', label: 'Emplacements' },
           ],
         },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/wms',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
+          ],
+        },
       ],
     },
 
@@ -207,6 +217,16 @@ export function navCatalogue(): NavDomain[] {
             { href: '/yard/gate', label: 'Gate' },
             { href: '/yard/appointments', label: 'Rendez-vous' },
             { href: '/yard/spots', label: 'Emplacements' },
+          ],
+        },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/yard',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
           ],
         },
       ],

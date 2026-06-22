@@ -45,6 +45,10 @@ const PREFIX_SETTING: Partial<Record<SequenceKey, { module: string; settingKey: 
   load: { module: 'transportation', settingKey: 'documentPrefixLoad' },
   invoice: { module: 'billing', settingKey: 'invoiceNumberPrefix' },
   'customer-invoice': { module: 'billing', settingKey: 'customerInvoiceNumberPrefix' },
+  receipt: { module: 'wms', settingKey: 'documentPrefixReceipt' },
+  'pick-order': { module: 'wms', settingKey: 'documentPrefixPickOrder' },
+  'yard-visit': { module: 'yard', settingKey: 'documentPrefixYardVisit' },
+  'dock-appointment': { module: 'yard', settingKey: 'documentPrefixDockAppointment' },
 };
 
 /**

@@ -32,7 +32,8 @@ function harness() {
   const ownership = { assertOwnedIfSet: async () => undefined } as any;
   const audit = { log: async () => undefined } as any;
   const domainEvents = { emit: async () => undefined } as any;
-  return { svc: new ReceivingService(client, inventory, sequences, ownership, audit, domainEvents), receipt, posted };
+  const customFields = { validateValues: async () => undefined } as any;
+  return { svc: new ReceivingService(client, inventory, sequences, ownership, audit, domainEvents, customFields), receipt, posted };
 }
 
 describe('ReceivingService.post', () => {

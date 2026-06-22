@@ -1,11 +1,12 @@
 import { Type } from 'class-transformer';
-import { IsNumber, IsOptional, IsPositive, IsString, MinLength } from 'class-validator';
+import { IsNumber, IsObject, IsOptional, IsPositive, IsString, MinLength } from 'class-validator';
 
 export class CreatePickOrderDto {
   @IsString() @MinLength(1) locationId!: string;
   @IsOptional() @IsString() shipmentId?: string;
   @IsOptional() @IsString() reference?: string;
   @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsObject() customData?: Record<string, unknown>;
 }
 
 export class AddPickLineDto {

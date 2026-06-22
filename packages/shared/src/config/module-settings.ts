@@ -132,6 +132,31 @@ export const MODULE_SETTINGS_CATALOG: ModuleSettingsCatalog[] = [
       { key: 'complianceExpiringWindowDays', label: 'Fenêtre « expire bientôt » (jours)', type: 'number', default: 30, min: 1, max: 365 },
     ],
   },
+  {
+    module: 'wms',
+    settings: [
+      { key: 'documentPrefixReceipt', label: 'Préfixe n° réception', type: 'string', default: 'RC', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
+      { key: 'documentPrefixPickOrder', label: 'Préfixe n° pick order', type: 'string', default: 'PK', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
+    ],
+  },
+  {
+    module: 'yard',
+    settings: [
+      { key: 'documentPrefixYardVisit', label: 'Préfixe n° visite cour', type: 'string', default: 'YV', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
+      { key: 'documentPrefixDockAppointment', label: 'Préfixe n° rendez-vous quai', type: 'string', default: 'DA', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
+      {
+        key: 'spotConflictPolicy',
+        label: 'Conflit d\'emplacement de cour',
+        help: 'BLOCK = refuse (409) une 2ᵉ visite active sur un spot occupé. WARN = laisse passer avec un avertissement.',
+        type: 'enum',
+        default: 'BLOCK',
+        options: [
+          { value: 'BLOCK', label: 'Bloquer (refuser)' },
+          { value: 'WARN', label: 'Avertir (laisser passer)' },
+        ],
+      },
+    ],
+  },
 ];
 
 export function catalogFor(moduleKey: string): ModuleSettingsCatalog | undefined {

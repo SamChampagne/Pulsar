@@ -18,6 +18,7 @@
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
 
   interface LocationOption {
     id: string;
@@ -51,6 +52,15 @@
     carrier: { name: string } | null;
   }
 
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    options?: { value: string; label: string }[];
+    required: boolean;
+    showInList?: boolean;
+  }
+
   const DIRECTIONS = [YardDirection.INBOUND, YardDirection.OUTBOUND, YardDirection.OTHER];
 
   let appointments = $state<Appointment[]>([]);
@@ -79,6 +89,8 @@
   let formWindowEnd = $state('');
   let formReference = $state('');
   let saving = $state(false);
+  let apptFieldDefs = $state<CustomFieldDef[]>([]);
+  let customData = $state<Record<string, unknown>>({});
 
   function statusTone(status: string): Tone {
     switch (status) {
@@ -160,7 +172,7 @@
     void load();
   });
 
-  function openCreate() {
+  async function openCreate() {
     formLocationId = locations.find((l) => l.type === 'WAREHOUSE')?.id ?? locations[0]?.id ?? '';
     formSpotId = '';
     formCarrierId = '';
@@ -168,7 +180,11 @@
     formWindowStart = '';
     formWindowEnd = '';
     formReference = '';
+    customData = {};
     createOpen = true;
+    apptFieldDefs = await api<CustomFieldDef[]>('/yard/custom-fields', {
+      query: { entityType: 'DOCK_APPOINTMENT' },
+    }).catch(() => [] as CustomFieldDef[]);
   }
 
   async function submitCreate() {
@@ -202,10 +218,12 @@
           windowStart: start.toISOString(),
           windowEnd: end.toISOString(),
           reference: formReference.trim() || undefined,
+          customData: Object.keys(customData).length > 0 ? customData : undefined,
         },
       });
       toast.success('Rendez-vous créé');
       createOpen = false;
+      customData = {};
       await loadAppointments();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Échec de la création');
@@ -480,6 +498,9 @@
     <Field label="Référence">
       <Input bind:value={formReference} placeholder="PO / référence" />
     </Field>
+    {#if apptFieldDefs.length > 0}
+      <CustomFieldInputs definitions={apptFieldDefs} bind:data={customData} />
+    {/if}
   </div>
   {#snippet footer()}
     <Button

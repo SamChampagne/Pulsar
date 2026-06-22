@@ -5,6 +5,7 @@
   import { Badge, Button, Card, EmptyState, Field, Input, PageHeader, Select, Skeleton, ViewToggle, type ViewId } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
 
   interface LocationOption {
     id: string;
@@ -41,6 +42,15 @@
     windowStart: string;
     locationId?: string;
     location?: { id: string } | null;
+  }
+
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    options?: { value: string; label: string }[];
+    required: boolean;
+    showInList?: boolean;
   }
 
   interface Visit {
@@ -85,6 +95,9 @@
   let formSpotId = $state('');
   let formAppointmentId = $state('');
   let saving = $state(false);
+  let visitFieldDefs = $state<CustomFieldDef[]>([]);
+  let customData = $state<Record<string, unknown>>({});
+  let spotWarnings = $state<string[]>([]);
 
   function statusTone(status: string): Tone {
     switch (status) {
@@ -140,18 +153,20 @@
   );
 
   async function loadStatic() {
-    const [locs, trls, crs, spts, appts] = await Promise.all([
+    const [locs, trls, crs, spts, appts, defs] = await Promise.all([
       api<Paginated<LocationOption>>('/transportation/locations', { query: { pageSize: 100 } }),
       api<Paginated<TrailerOption>>('/transportation/trailers', { query: { pageSize: 100 } }),
       api<Paginated<CarrierOption>>('/transportation/carriers', { query: { pageSize: 100 } }),
       api<SpotOption[]>('/yard/spots'),
       api<AppointmentOption[]>('/yard/appointments', { query: { status: 'SCHEDULED' } }),
+      api<CustomFieldDef[]>('/yard/custom-fields', { query: { entityType: 'YARD_VISIT' } }).catch(() => [] as CustomFieldDef[]),
     ]);
     locations = locs.items;
     trailers = trls.items;
     carriers = crs.items;
     spots = spts;
     appointments = appts;
+    visitFieldDefs = defs;
     if (!formLocationId) {
       const dc = locations.find((l) => l.type === 'WAREHOUSE') ?? locations[0];
       formLocationId = dc?.id ?? '';
@@ -190,8 +205,9 @@
       return;
     }
     saving = true;
+    spotWarnings = [];
     try {
-      const body = {
+      const body: Record<string, unknown> = {
         locationId: formLocationId,
         trailerId: formTrailerId || undefined,
         trailerRef: formTrailerId ? undefined : formTrailerRef.trim() || undefined,
@@ -200,8 +216,12 @@
         direction: formDirection,
         spotId: formSpotId || undefined,
         appointmentId: formAppointmentId || undefined,
+        customData: Object.keys(customData).length > 0 ? customData : undefined,
       };
-      await api('/yard/visits', { method: 'POST', body });
+      const result = await api<{ spotWarnings?: string[] }>('/yard/visits', { method: 'POST', body });
+      if (result?.spotWarnings && result.spotWarnings.length > 0) {
+        spotWarnings = result.spotWarnings;
+      }
       toast.success('Check-in effectué');
       formTrailerId = '';
       formTrailerRef = '';
@@ -209,6 +229,7 @@
       formDriverName = '';
       formSpotId = '';
       formAppointmentId = '';
+      customData = {};
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Échec du check-in');
@@ -305,6 +326,16 @@
             {/each}
           </Select>
         </Field>
+        {#if visitFieldDefs.length > 0}
+          <CustomFieldInputs definitions={visitFieldDefs} bind:data={customData} />
+        {/if}
+        {#if spotWarnings.length > 0}
+          <div class="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn">
+            {#each spotWarnings as w (w)}
+              <p>{w}</p>
+            {/each}
+          </div>
+        {/if}
         <div>
           <Button loading={saving} onclick={submitCheckIn}>Check-in</Button>
         </div>

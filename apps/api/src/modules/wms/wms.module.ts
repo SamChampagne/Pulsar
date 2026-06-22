@@ -1,6 +1,8 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
+import { CustomFieldsModule } from '../../core/custom-fields/custom-fields.module';
 import { OperatingModule } from '../../core/operating/operating.module';
+import { CustomFieldsController } from './custom-fields/custom-fields.controller';
 import { ItemsService } from './items/items.service';
 import { ItemsController } from './items/items.controller';
 import { BinsService } from './bins/bins.service';
@@ -31,8 +33,9 @@ import { CycleCountsController } from './cycle-counts/cycle-counts.controller';
  * so it resolves from providers.
  */
 @Module({
-  imports: [AuditLogsModule, forwardRef(() => OperatingModule)],
+  imports: [AuditLogsModule, CustomFieldsModule, forwardRef(() => OperatingModule)],
   controllers: [
+    CustomFieldsController,
     ItemsController,
     BinsController,
     InventoryController,

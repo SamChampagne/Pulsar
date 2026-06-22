@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { AuditAction, MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
@@ -6,7 +6,7 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Audit } from '../../../common/decorators/audit.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
-import { AddReceiptLineDto, CreateReceiptDto, ReceiptListQueryDto } from './dto/receipt.dto';
+import { AddReceiptLineDto, CreateReceiptDto, ReceiptListQueryDto, UpdateReceiptDto } from './dto/receipt.dto';
 import { ReceivingService } from './receiving.service';
 
 @ApiTags('wms/receiving')
@@ -33,6 +33,13 @@ export class ReceivingController {
   @RequirePermissions(PERMISSIONS.WMS.MANAGE)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateReceiptDto) {
     return this.receiving.create(user.tenantId, user.id, dto);
+  }
+
+  @Patch(':id')
+  @Audit('wms-receipt', AuditAction.UPDATE)
+  @RequirePermissions(PERMISSIONS.WMS.MANAGE)
+  update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateReceiptDto) {
+    return this.receiving.update(user.tenantId, user.id, id, dto);
   }
 
   @Post(':id/lines')

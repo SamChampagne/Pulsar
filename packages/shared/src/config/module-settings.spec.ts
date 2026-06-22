@@ -111,3 +111,24 @@ describe('billing process descriptors', () => {
     expect(d.defaultCurrency).toBe('CAD');
   });
 });
+
+describe('wms/yard configurable catalogs', () => {
+  it('wms prefixes default to RC/PK', () => {
+    const cat = catalogFor('wms')!;
+    const r = resolveSettings(cat, {});
+    expect(r.documentPrefixReceipt).toBe('RC');
+    expect(r.documentPrefixPickOrder).toBe('PK');
+  });
+  it('yard defaults preserve current behavior (YV/DA, BLOCK)', () => {
+    const cat = catalogFor('yard')!;
+    const r = resolveSettings(cat, {});
+    expect(r.documentPrefixYardVisit).toBe('YV');
+    expect(r.documentPrefixDockAppointment).toBe('DA');
+    expect(r.spotConflictPolicy).toBe('BLOCK');
+  });
+  it('spotConflictPolicy rejects unknown values, falls back to default', () => {
+    const cat = catalogFor('yard')!;
+    expect(resolveSettings(cat, { spotConflictPolicy: 'NOPE' }).spotConflictPolicy).toBe('BLOCK');
+    expect(resolveSettings(cat, { spotConflictPolicy: 'WARN' }).spotConflictPolicy).toBe('WARN');
+  });
+});

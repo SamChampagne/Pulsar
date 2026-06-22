@@ -1,6 +1,6 @@
 import { PartialType } from '@nestjs/swagger';
 import { AssetStatus, VehicleType } from '@pulsar/shared';
-import { IsEnum, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsInt, IsObject, IsOptional, IsString } from 'class-validator';
 
 export class CreateVehicleDto {
   @IsString()
@@ -32,6 +32,10 @@ export class CreateVehicleDto {
   @IsOptional()
   @IsString()
   plate?: string;
+
+  @IsOptional()
+  @IsObject()
+  customData?: Record<string, unknown>;
 }
 
 export class UpdateVehicleDto extends PartialType(CreateVehicleDto) {
