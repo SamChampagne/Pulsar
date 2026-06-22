@@ -65,20 +65,24 @@ export class ReactionExecutorService {
     // Execute the handler inside the anti-loop context.
     try {
       await this.runInReactionContext(command.ruleId, () => this.dispatch(tenantId, command));
-      await this.audit.log({
-        tenantId,
-        action: AuditAction.UPDATE,
-        entityType: 'reaction',
-        entityId: `${command.ruleId}:${eventId}`,
-        after: { action: command.action, args: command.args, status: 'EXECUTED' },
-      });
+      await this.audit
+        .log({
+          tenantId,
+          action: AuditAction.UPDATE,
+          entityType: 'reaction',
+          entityId: `${command.ruleId}:${eventId}`,
+          after: { action: command.action, args: command.args, status: 'EXECUTED' },
+        })
+        .catch(() => undefined);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`reaction ${command.action} (rule ${command.ruleId}) failed: ${msg}`);
-      await this.prisma.reactionExecution.updateMany({
-        where: { tenantId, eventId, ruleId: command.ruleId },
-        data: { status: 'FAILED', error: msg.slice(0, 500) },
-      });
+      await this.prisma.reactionExecution
+        .updateMany({
+          where: { tenantId, eventId, ruleId: command.ruleId },
+          data: { status: 'FAILED', error: msg.slice(0, 500) },
+        })
+        .catch(() => undefined);
       await this.audit
         .log({
           tenantId,
