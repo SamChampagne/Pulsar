@@ -45,6 +45,7 @@
   const PRESET_EMOJI: Record<string, string> = {
     dispatcher: '🚚', 'billing-clerk': '🧾', analyst: '📊',
     'tender-desk': '🔁', 'freight-auditor': '🔍', 'fleet-maintenance': '🔧',
+    'crm-sdr': '🤝',
   };
   const TEMPLATES = [
     ...AGENT_ROLE_PRESETS.map((p) => ({

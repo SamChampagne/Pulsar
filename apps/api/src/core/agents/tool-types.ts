@@ -103,6 +103,15 @@ export interface ToolServices {
     timeline(tenantId: string, opts: { days?: number; modules?: string[]; crossOnly?: boolean; limit?: number }): Promise<unknown>;
     trace(tenantId: string, entityType: 'TRANSPORT_ORDER' | 'SHIPMENT' | 'LOAD', entityId: string): Promise<unknown>;
   };
+  // ── CRM ────────────────────────────────────────────────────────────────────
+  crm: {
+    listDeals(tenantId: string, query: object): Promise<unknown>;
+    getCompany(tenantId: string, id: string): Promise<unknown>;
+    listActivities(tenantId: string, query: object): Promise<unknown>;
+    logActivity(tenantId: string, input: object, author: { agentId?: string; userId?: string }): Promise<unknown>;
+    advanceDeal(tenantId: string, id: string, userId: string, stage: string): Promise<unknown>;
+    createFollowup(tenantId: string, input: object, author: { agentId?: string }): Promise<unknown>;
+  };
 }
 
 export interface ToolContext {
