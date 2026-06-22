@@ -742,6 +742,27 @@ describe('CRM autonomous exception loop (e2e)', () => {
   });
 
   it('processPending() creates a CRM_STALE_DEAL task auto-assigned to the crm-sdr agent', async () => {
+    // Neutralize any other ACTIVE always-on agents eligible for CRM_STALE_DEAL so the
+    // test's own agent is guaranteed to be the sole assignee (deterministic vs DB leftovers).
+    const allActiveAgents = await prisma.agent.findMany({
+      where: { tenantId, status: 'ACTIVE' },
+      select: { id: true, caps: true },
+    });
+    const competitorIds = allActiveAgents
+      .filter((a) => {
+        const caps = (a.caps ?? {}) as { alwaysOn?: boolean; handlesCategories?: string[] };
+        return caps.alwaysOn === true
+          && (caps.handlesCategories ?? []).includes('CRM_STALE_DEAL')
+          && a.id !== loopAgentId;
+      })
+      .map((a) => a.id);
+    if (competitorIds.length > 0) {
+      await prisma.agent.updateMany({
+        where: { id: { in: competitorIds } },
+        data: { status: 'REVOKED' },
+      });
+    }
+
     const processed = await domainEvents.processPending(50);
     expect(processed).toBeGreaterThanOrEqual(1);
 
