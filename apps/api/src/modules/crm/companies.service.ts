@@ -77,12 +77,11 @@ export class CompaniesService {
   }
 
   async update(tenantId: string, userId: string, id: string, dto: UpdateCompanyDto) {
-    await this.get(tenantId, id); // 404 if not found
     await this.ownership.assertOwnedIfSet('customer', dto.customerId, tenantId);
     await this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId);
 
-    const company = await this.prisma.crmCompany.update({
-      where: { id },
+    const { count } = await this.prisma.crmCompany.updateMany({
+      where: { id, tenantId },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.domain !== undefined ? { domain: dto.domain } : {}),
@@ -93,6 +92,9 @@ export class CompaniesService {
         ...(dto.carrierId !== undefined ? { carrierId: dto.carrierId } : {}),
       },
     });
+    if (count === 0) throw new NotFoundException('CRM company not found');
+
+    const company = await this.get(tenantId, id);
 
     await this.audit.log({
       tenantId,

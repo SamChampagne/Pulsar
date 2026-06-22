@@ -67,11 +67,10 @@ export class ContactsService {
   }
 
   async update(tenantId: string, userId: string, id: string, dto: UpdateContactDto) {
-    await this.get(tenantId, id); // 404 if not found
     await this.assertCompanyOwned(dto.companyId, tenantId);
 
-    const contact = await this.prisma.crmContact.update({
-      where: { id },
+    const { count } = await this.prisma.crmContact.updateMany({
+      where: { id, tenantId },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.companyId !== undefined ? { companyId: dto.companyId } : {}),
@@ -81,6 +80,9 @@ export class ContactsService {
         ...(dto.ownerUserId !== undefined ? { ownerUserId: dto.ownerUserId } : {}),
       },
     });
+    if (count === 0) throw new NotFoundException('CRM contact not found');
+
+    const contact = await this.get(tenantId, id);
 
     await this.audit.log({
       tenantId,
