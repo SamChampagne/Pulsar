@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
+import { CustomFieldsModule } from '../../core/custom-fields/custom-fields.module';
 import { ModuleRegistryModule } from '../../core/module-registry/module-registry.module';
 import { RatesService } from '../transportation/rates/rates.service';
+import { CustomFieldsController } from './custom-fields/custom-fields.controller';
 import { PublicBidsController } from './public-bids.controller';
 import { ProcurementService } from './procurement.service';
 import { RfpsController } from './rfps.controller';
@@ -19,8 +21,8 @@ import { RfpsController } from './rfps.controller';
  * ModuleSettingsService comes from the imported ModuleRegistryModule.
  */
 @Module({
-  imports: [AuditLogsModule, ModuleRegistryModule],
-  controllers: [RfpsController, PublicBidsController],
+  imports: [AuditLogsModule, CustomFieldsModule, ModuleRegistryModule],
+  controllers: [RfpsController, PublicBidsController, CustomFieldsController],
   providers: [ProcurementService, RatesService],
   exports: [ProcurementService],
 })
