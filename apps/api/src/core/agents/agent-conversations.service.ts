@@ -38,8 +38,9 @@ export class AgentConversationsService {
   }
 
   /** Repoint a conversation at a freshly (re)opened Hermes session. */
-  updateHermesSession(id: string, hermesSessionId: string) {
-    return this.prisma.agentConversation.update({ where: { id }, data: { hermesSessionId } });
+  async updateHermesSession(tenantId: string, id: string, hermesSessionId: string) {
+    const res = await this.prisma.agentConversation.updateMany({ where: { id, tenantId }, data: { hermesSessionId } });
+    if (res.count === 0) throw new NotFoundException('Conversation not found');
   }
 
   /** Tenant-scoped guard used before streaming a turn. Returns the conversation. */

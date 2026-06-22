@@ -49,6 +49,8 @@ export class CustomersService {
   async update(tenantId: string, id: string, dto: UpdateCustomerDto) {
     await this.get(tenantId, id);
     const { code: _code, ...data } = dto; // code is immutable once created
-    return this.prisma.customer.update({ where: { id }, data });
+    const res = await this.prisma.customer.updateMany({ where: { id, tenantId }, data });
+    if (res.count === 0) throw new NotFoundException('Customer not found');
+    return this.prisma.customer.findFirstOrThrow({ where: { id, tenantId } });
   }
 }

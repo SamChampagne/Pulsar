@@ -205,7 +205,7 @@ export class ProcurementService {
       where: { id: rfpLaneId, rfpId, tenantId },
     });
     if (!lane) throw new NotFoundException('RFP lane not found');
-    await this.prisma.rfpLane.delete({ where: { id: rfpLaneId } });
+    await this.prisma.rfpLane.deleteMany({ where: { id: rfpLaneId, tenantId } });
     return { removed: true };
   }
 

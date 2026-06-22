@@ -87,7 +87,7 @@ export class AgentConversationsController {
           existingSessionId: conv.hermesSessionId,
         });
         if (sessionId !== conv.hermesSessionId) {
-          await this.conversations.updateHermesSession(conv.id, sessionId);
+          await this.conversations.updateHermesSession(user.tenantId, conv.id, sessionId);
         }
       }
       if (!sessionId) {

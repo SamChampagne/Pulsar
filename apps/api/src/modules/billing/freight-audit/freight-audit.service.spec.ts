@@ -19,7 +19,7 @@ function makeService(loads: Record<string, { id: string; estimatedCost: number |
         return { count: 0 };
       },
     },
-    incomingInvoiceLine: { update: async () => ({}) },
+    incomingInvoiceLine: { updateMany: async () => ({ count: 1 }) },
     load: { findFirst: async ({ where }: any) => loads[where.loadNumber] ?? null },
     tenantModule: { findFirst: async () => ({ settings: {} }) },
     $transaction: async (ops: any[]) => Promise.all(ops),

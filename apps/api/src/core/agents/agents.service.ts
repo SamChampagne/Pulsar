@@ -471,7 +471,10 @@ export class AgentsService {
     const agent = parsed
       ? await this.prisma.agent.findUnique({ where: { id: parsed.agentId } })
       : await this.prisma.agent.findUnique({ where: { secretHash: sha256(rawKey) } });
-    if (!agent || agent.status === AgentStatus.REVOKED) {
+    // Only ACTIVE agents may act. PAUSED is the hot kill switch (rule 28) and
+    // REVOKED is permanent — neither must validate, or a stale/replayed session
+    // token could still drive MCP tool calls after the human pulled the switch.
+    if (!agent || agent.status !== AgentStatus.ACTIVE) {
       throw new UnauthorizedException('Invalid agent key');
     }
     void this.prisma.agent

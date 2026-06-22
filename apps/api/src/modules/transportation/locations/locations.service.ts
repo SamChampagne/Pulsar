@@ -90,6 +90,8 @@ export class LocationsService {
         if (merged.longitude == null) Object.assign(data, { longitude: geo.lng });
       }
     }
-    return this.prisma.location.update({ where: { id }, data });
+    const res = await this.prisma.location.updateMany({ where: { id, tenantId }, data });
+    if (res.count === 0) throw new NotFoundException('Location not found');
+    return this.prisma.location.findFirstOrThrow({ where: { id, tenantId } });
   }
 }

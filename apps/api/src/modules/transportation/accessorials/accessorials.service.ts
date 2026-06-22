@@ -49,7 +49,9 @@ export class AccessorialsService {
   async update(tenantId: string, id: string, dto: UpdateAccessorialDto) {
     await this.get(tenantId, id);
     try {
-      return await this.prisma.accessorial.update({ where: { id }, data: dto });
+      const res = await this.prisma.accessorial.updateMany({ where: { id, tenantId }, data: dto });
+      if (res.count === 0) throw new NotFoundException('Accessorial not found');
+      return await this.prisma.accessorial.findFirstOrThrow({ where: { id, tenantId } });
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException(`Accessorial code "${dto.code}" already exists`);
@@ -71,7 +73,7 @@ export class AccessorialsService {
       );
     }
     try {
-      await this.prisma.accessorial.delete({ where: { id } });
+      await this.prisma.accessorial.deleteMany({ where: { id, tenantId } });
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
         throw new ConflictException('Accessorial is still referenced by rates or loads');

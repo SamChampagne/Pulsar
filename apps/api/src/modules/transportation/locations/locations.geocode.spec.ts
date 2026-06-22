@@ -6,12 +6,19 @@ import type { CreateLocationDto } from './dto/location.dto';
 import { LocationType } from '@pulsar/shared';
 
 function build(geocodeResult: { lat: number; lng: number } | null) {
+  // The tenant-scoped update path is updateMany({id,tenantId}) + findFirstOrThrow;
+  // capture the written data so findFirstOrThrow can echo it back as the "updated" row.
+  let written: Record<string, unknown> = {};
   const prisma = {
     location: {
       findUnique: jest.fn().mockResolvedValue(null),
       findFirst: jest.fn(),
       create: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)),
-      update: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)),
+      updateMany: jest.fn().mockImplementation(({ data }) => {
+        written = data;
+        return Promise.resolve({ count: 1 });
+      }),
+      findFirstOrThrow: jest.fn().mockImplementation(() => Promise.resolve({ id: 'l1', tenantId: 't1', ...written })),
     },
   } as unknown as PrismaService;
   const ownership = { assertOwnedIfSet: jest.fn() } as unknown as OwnershipService;
@@ -88,7 +95,7 @@ describe('LocationsService geocoding', () => {
       addressLine1: '1 Main St', city: 'Montréal', state: 'QC', postalCode: null, country: 'CA',
     });
     await service.update('t1', 'l1', { name: 'Renamed' });
-    const data = (prisma.location.update as jest.Mock).mock.calls[0][0].data;
+    const data = (prisma.location.updateMany as jest.Mock).mock.calls[0][0].data;
     expect(data.latitude).toBe(9); // filled
     expect(data.longitude).toBeUndefined(); // existing -73.1 left untouched (not in update payload)
   });

@@ -11,7 +11,7 @@
     shipper: string;
     customer: string;
     branding: { logoUrl?: string; accentColor?: string };
-    locations: { id: string; name: string; city: string }[];
+    locations: { code: string; name: string; city: string }[];
     orders: {
       id: string;
       orderNumber: string;
@@ -470,16 +470,16 @@
                 <Field label="Origine">
                   <Select bind:value={request.originLocationId} required>
                     <option value="" disabled>Sélectionner…</option>
-                    {#each view.locations as l (l.id)}
-                      <option value={l.id}>{l.name} ({l.city})</option>
+                    {#each view.locations as l (l.code)}
+                      <option value={l.code}>{l.name} ({l.city})</option>
                     {/each}
                   </Select>
                 </Field>
                 <Field label="Destination">
                   <Select bind:value={request.destinationLocationId} required>
                     <option value="" disabled>Sélectionner…</option>
-                    {#each view.locations as l (l.id)}
-                      <option value={l.id}>{l.name} ({l.city})</option>
+                    {#each view.locations as l (l.code)}
+                      <option value={l.code}>{l.name} ({l.city})</option>
                     {/each}
                   </Select>
                 </Field>

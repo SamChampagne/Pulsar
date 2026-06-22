@@ -56,6 +56,8 @@ export class DriversService {
   async update(tenantId: string, id: string, dto: UpdateDriverDto) {
     await this.get(tenantId, id);
     await this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId);
-    return this.prisma.driver.update({ where: { id }, data: dto });
+    const res = await this.prisma.driver.updateMany({ where: { id, tenantId }, data: dto });
+    if (res.count === 0) throw new NotFoundException('Driver not found');
+    return this.prisma.driver.findFirstOrThrow({ where: { id, tenantId } });
   }
 }
