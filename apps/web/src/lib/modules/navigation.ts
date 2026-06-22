@@ -219,6 +219,16 @@ export function navCatalogue(): NavDomain[] {
             { href: '/yard/spots', label: 'Emplacements' },
           ],
         },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/settings/modules/yard',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
+          ],
+        },
       ],
     },
 

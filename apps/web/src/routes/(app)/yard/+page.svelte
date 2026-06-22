@@ -64,6 +64,7 @@
   let drawerVisitId = $state<string | null>(null);
   let loading = $state(true);
   let error = $state('');
+  let spotWarnings = $state<string[]>([]);
 
   async function loadLocations() {
     const res = await api<Paginated<LocationOption>>('/transportation/locations', {
@@ -133,8 +134,12 @@
   const allUnplaced = $derived(board.spots.length > 0 && board.spots.every((s) => s.posX == null));
 
   async function assign(visitId: string, spotId: string) {
+    spotWarnings = [];
     try {
-      await api(`/yard/visits/${visitId}/assign`, { method: 'POST', body: { spotId } });
+      const result = await api<{ spotWarnings?: string[] }>(`/yard/visits/${visitId}/assign`, { method: 'POST', body: { spotId } });
+      if (result?.spotWarnings && result.spotWarnings.length > 0) {
+        spotWarnings = result.spotWarnings;
+      }
       toast.success('Visite affectée');
       await load();
     } catch (e) {
@@ -261,6 +266,14 @@
           {overview.lateAppointments}
         </div>
       </Card>
+    </div>
+  {/if}
+
+  {#if spotWarnings.length > 0}
+    <div class="mb-4 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-warn">
+      {#each spotWarnings as w (w)}
+        <p>{w}</p>
+      {/each}
     </div>
   {/if}
 

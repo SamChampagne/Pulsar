@@ -35,6 +35,11 @@
     { value: 'PICK_ORDER', label: 'Pick order' },
   ];
 
+  const YARD_ENTITY_TYPES: EntityTypeDef[] = [
+    { value: 'YARD_VISIT', label: 'Visite de cour' },
+    { value: 'DOCK_APPOINTMENT', label: 'Rendez-vous quai' },
+  ];
+
   const FIELD_TYPES: { value: FieldType; label: string }[] = [
     { value: 'TEXT', label: 'Texte' },
     { value: 'NUMBER', label: 'Nombre' },
@@ -51,7 +56,9 @@
       ? BILLING_ENTITY_TYPES
       : moduleProp === 'wms'
         ? WMS_ENTITY_TYPES
-        : TRANSPORTATION_ENTITY_TYPES,
+        : moduleProp === 'yard'
+          ? YARD_ENTITY_TYPES
+          : TRANSPORTATION_ENTITY_TYPES,
   );
   const apiBase = $derived(`/${moduleProp}/custom-fields`);
 

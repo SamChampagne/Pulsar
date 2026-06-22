@@ -21,4 +21,8 @@
   <div class="mt-6">
     <CustomFieldsEditor module="wms" />
   </div>
+{:else if key === 'yard'}
+  <div class="mt-6">
+    <CustomFieldsEditor module="yard" />
+  </div>
 {/if}
