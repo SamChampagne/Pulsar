@@ -11,6 +11,15 @@
 
   let { definitions, data = $bindable() }: { definitions: Def[]; data: Record<string, unknown> } =
     $props();
+
+  // Seed a defined default for every field BEFORE the inputs render. Binding
+  // `bind:value={data[key]}` to `undefined` throws in Svelte 5 (props_invalid_value)
+  // because the underlying Input/Select declares a `$bindable('')` fallback. The
+  // script body runs once at init, ahead of the first render, so the bindings
+  // always see a defined value. Empty strings are stripped by the caller on submit.
+  for (const d of definitions) {
+    if (data[d.key] === undefined) data[d.key] = d.type === 'BOOLEAN' ? false : '';
+  }
 </script>
 
 {#each definitions as d (d.key)}
