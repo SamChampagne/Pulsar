@@ -1,6 +1,8 @@
 /**
- * E2E CRM module (Task 3) — proves the CRM module end-to-end over real Postgres
- * with the admin Bearer token (tenant acme): companies + contacts CRUD.
+ * E2E CRM module — proves the CRM module end-to-end over real Postgres
+ * with the admin Bearer token (tenant acme):
+ *   Task 3: companies + contacts CRUD.
+ *   Task 4: deals (advance/convert) + activities + pipeline.
  *
  *   1. Enable the CRM module on the acme tenant.
  *   2. Create a company (PROSPECT → verified in response).
@@ -11,6 +13,14 @@
  *   7. GET the company again — contacts array now includes our contact.
  *   8. PATCH the company (name update) — response reflects the change.
  *   9. Tenant isolation: all returned company ids belong to acme (no cross-tenant leak).
+ *  10. Create a deal (LEAD stage).
+ *  11. Advance deal LEAD→QUALIFIED→PROPOSAL (ok).
+ *  12. Advance deal PROPOSAL→LEAD (ok — active stages move freely).
+ *  13. Advance to WON.
+ *  14. Convert deal → assert Customer created + convertedCustomerId set.
+ *  15. Advance WON→LOST rejected (400 — terminal stage).
+ *  16. Create activity on the deal → assert lastActivityAt set.
+ *  17. GET /crm/pipeline → grouped by stage.
  *
  * Prerequisites: reachable PostgreSQL with the seed applied.
  */
@@ -36,6 +46,26 @@ interface Contact {
   companyId: string | null;
 }
 
+interface Deal {
+  id: string;
+  title: string;
+  stage: string;
+  lastActivityAt?: string | null;
+  convertedCustomerId?: string | null;
+}
+
+interface Activity {
+  id: string;
+  type: string;
+  body: string;
+  dealId: string | null;
+}
+
+interface PipelineEntry {
+  stage: string;
+  deals: Array<{ id: string; title: string; companyName: string }>;
+}
+
 interface Paginated<T> {
   items: T[];
   total: number;
@@ -55,6 +85,8 @@ describe('CRM module (e2e)', () => {
 
   let companyId = '';
   let contactId = '';
+  let dealId = '';
+  let activityId = '';
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -88,8 +120,11 @@ describe('CRM module (e2e)', () => {
 
   afterAll(async () => {
     if (prisma) {
-      await prisma.crmContact.deleteMany({ where: { id: contactId } }).catch(() => undefined);
-      await prisma.crmCompany.deleteMany({ where: { id: companyId } }).catch(() => undefined);
+      // Clean up in reverse dependency order
+      if (activityId) await prisma.crmActivity.deleteMany({ where: { id: activityId } }).catch(() => undefined);
+      if (dealId) await prisma.crmDeal.deleteMany({ where: { id: dealId } }).catch(() => undefined);
+      if (contactId) await prisma.crmContact.deleteMany({ where: { id: contactId } }).catch(() => undefined);
+      if (companyId) await prisma.crmCompany.deleteMany({ where: { id: companyId } }).catch(() => undefined);
     }
     await app.close();
   });
@@ -210,5 +245,149 @@ describe('CRM module (e2e)', () => {
       where: { id: { in: ids }, tenantId: { not: tenantId } },
     });
     expect(leaked).toBe(0);
+  });
+
+  // =========================================================================
+  // 10 — Create a deal (LEAD stage).
+  // =========================================================================
+  it('creates a deal linked to the company (default stage LEAD)', async () => {
+    const res = await request(http)
+      .post('/api/v1/crm/deals')
+      .set(auth())
+      .send({ title: `Deal ${suffix}`, companyId, amount: 50000, currency: 'CAD' })
+      .expect(201);
+    const deal = res.body as Deal;
+    expect(deal.title).toBe(`Deal ${suffix}`);
+    expect(deal.stage).toBe('LEAD');
+    dealId = deal.id;
+  });
+
+  // =========================================================================
+  // 11 — Advance deal: LEAD→QUALIFIED→PROPOSAL (should succeed).
+  // =========================================================================
+  it('advances deal LEAD→QUALIFIED and QUALIFIED→PROPOSAL successfully', async () => {
+    const q = await request(http)
+      .post(`/api/v1/crm/deals/${dealId}/advance`)
+      .set(auth())
+      .send({ stage: 'QUALIFIED' })
+      .expect(200);
+    expect((q.body as Deal).stage).toBe('QUALIFIED');
+
+    const p = await request(http)
+      .post(`/api/v1/crm/deals/${dealId}/advance`)
+      .set(auth())
+      .send({ stage: 'PROPOSAL' })
+      .expect(200);
+    expect((p.body as Deal).stage).toBe('PROPOSAL');
+  });
+
+  // =========================================================================
+  // 12 — Advance PROPOSAL→LEAD (active stages move freely — should succeed).
+  // =========================================================================
+  it('advances deal PROPOSAL→LEAD (active stages are freely reversible)', async () => {
+    const res = await request(http)
+      .post(`/api/v1/crm/deals/${dealId}/advance`)
+      .set(auth())
+      .send({ stage: 'LEAD' })
+      .expect(200);
+    expect((res.body as Deal).stage).toBe('LEAD');
+  });
+
+  // =========================================================================
+  // 13 — Advance to WON.
+  // =========================================================================
+  it('advances deal LEAD→WON', async () => {
+    const res = await request(http)
+      .post(`/api/v1/crm/deals/${dealId}/advance`)
+      .set(auth())
+      .send({ stage: 'WON' })
+      .expect(200);
+    expect((res.body as Deal).stage).toBe('WON');
+  });
+
+  // =========================================================================
+  // 14 — Convert deal: assert Customer created + convertedCustomerId set.
+  // =========================================================================
+  it('converts a WON deal to a Customer and records convertedCustomerId', async () => {
+    const res = await request(http)
+      .post(`/api/v1/crm/deals/${dealId}/convert`)
+      .set(auth())
+      .expect(200);
+    const body = res.body as { dealId: string; customerId: string };
+    expect(body.dealId).toBe(dealId);
+    expect(body.customerId).toBeTruthy();
+
+    // Verify the deal has convertedCustomerId set
+    const dealRes = await request(http)
+      .get(`/api/v1/crm/deals/${dealId}`)
+      .set(auth())
+      .expect(200);
+    const deal = dealRes.body as Deal;
+    expect(deal.convertedCustomerId).toBe(body.customerId);
+
+    // Verify Customer exists in the DB with the right tenant
+    const customer = await prisma.customer.findUnique({ where: { id: body.customerId } });
+    expect(customer).not.toBeNull();
+    expect(customer!.tenantId).toBe(tenantId);
+    expect(customer!.code).toMatch(/^CUST-/);
+  });
+
+  // =========================================================================
+  // 15 — Advance WON→LOST rejected (terminal stage).
+  // =========================================================================
+  it('rejects advancing a WON deal to LOST (terminal stage — 400)', async () => {
+    await request(http)
+      .post(`/api/v1/crm/deals/${dealId}/advance`)
+      .set(auth())
+      .send({ stage: 'LOST' })
+      .expect(400);
+  });
+
+  // =========================================================================
+  // 16 — Create activity on the deal → assert lastActivityAt set.
+  // =========================================================================
+  it('creates an activity linked to the deal and bumps deal.lastActivityAt', async () => {
+    const res = await request(http)
+      .post('/api/v1/crm/activities')
+      .set(auth())
+      .send({ type: 'NOTE', body: 'Followed up with customer.', dealId })
+      .expect(201);
+    const activity = res.body as Activity;
+    expect(activity.type).toBe('NOTE');
+    expect(activity.dealId).toBe(dealId);
+    activityId = activity.id;
+
+    // Verify lastActivityAt was updated on the deal
+    const dealRes = await request(http)
+      .get(`/api/v1/crm/deals/${dealId}`)
+      .set(auth())
+      .expect(200);
+    const deal = dealRes.body as Deal;
+    expect(deal.lastActivityAt).not.toBeNull();
+  });
+
+  // =========================================================================
+  // 17 — GET /crm/pipeline → returns deals grouped by stage.
+  // =========================================================================
+  it('GET /crm/pipeline returns deals grouped by stage', async () => {
+    const res = await request(http).get('/api/v1/crm/pipeline').set(auth()).expect(200);
+    const pipeline = res.body as PipelineEntry[];
+    expect(Array.isArray(pipeline)).toBe(true);
+    // Should have 5 stages (LEAD, QUALIFIED, PROPOSAL, WON, LOST)
+    const stages = pipeline.map((p) => p.stage);
+    expect(stages).toContain('LEAD');
+    expect(stages).toContain('QUALIFIED');
+    expect(stages).toContain('PROPOSAL');
+    expect(stages).toContain('WON');
+    expect(stages).toContain('LOST');
+
+    // Our WON deal should appear in the WON bucket
+    const wonBucket = pipeline.find((p) => p.stage === 'WON');
+    expect(wonBucket).toBeDefined();
+    expect(wonBucket!.deals.some((d) => d.id === dealId)).toBe(true);
+
+    // Each deal entry has required fields
+    const ourDeal = wonBucket!.deals.find((d) => d.id === dealId)!;
+    expect(ourDeal.companyName).toBeTruthy();
   });
 });

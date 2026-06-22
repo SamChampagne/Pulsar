@@ -1,0 +1,229 @@
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { AuditAction, canTransitionDeal, CrmDealStage } from '@pulsar/shared';
+import { PrismaService } from '../../prisma/prisma.service';
+import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
+import { SequencesService } from '../../prisma/sequences.service';
+import { paginationArgs, paginated } from '../../common/pagination';
+import { CreateDealDto, DealListQueryDto, UpdateDealDto } from './dto/deal.dto';
+
+/**
+ * CRM deals service. All operations are tenant-scoped (rule 1).
+ * Stage transitions use canTransitionDeal from @pulsar/shared (rule 2).
+ * Claim-safe updates via updateMany with optimistic stage lock (TOCTOU).
+ */
+@Injectable()
+export class DealsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditLogsService,
+    private readonly sequences: SequencesService,
+  ) {}
+
+  async list(tenantId: string, query: DealListQueryDto) {
+    const { page, pageSize, skip, take } = paginationArgs(query);
+    const where = {
+      tenantId,
+      ...(query.stage ? { stage: query.stage } : {}),
+      ...(query.companyId ? { companyId: query.companyId } : {}),
+      ...(query.search
+        ? { title: { contains: query.search, mode: 'insensitive' as const } }
+        : {}),
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.crmDeal.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        include: { company: { select: { id: true, name: true } } },
+      }),
+      this.prisma.crmDeal.count({ where }),
+    ]);
+    return paginated(items, total, page, pageSize);
+  }
+
+  async get(tenantId: string, id: string) {
+    const deal = await this.prisma.crmDeal.findFirst({
+      where: { id, tenantId },
+      include: { company: { select: { id: true, name: true } } },
+    });
+    if (!deal) throw new NotFoundException('CRM deal not found');
+    return deal;
+  }
+
+  async create(tenantId: string, userId: string, dto: CreateDealDto) {
+    // Validate companyId is owned by this tenant (rule 9 — inline check like contacts)
+    const company = await this.prisma.crmCompany.findFirst({
+      where: { id: dto.companyId, tenantId },
+      select: { id: true },
+    });
+    if (!company) throw new BadRequestException(`Unknown crm-company "${dto.companyId}"`);
+
+    const deal = await this.prisma.crmDeal.create({
+      data: {
+        tenantId,
+        title: dto.title,
+        companyId: dto.companyId,
+        stage: dto.stage ?? CrmDealStage.LEAD,
+        amount: dto.amount ?? null,
+        currency: dto.currency ?? 'CAD',
+        ownerUserId: dto.ownerUserId ?? null,
+        expectedCloseDate: dto.expectedCloseDate ?? null,
+      },
+    });
+
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.CREATE,
+      entityType: 'crm-deal',
+      entityId: deal.id,
+      after: { title: deal.title, stage: deal.stage, companyId: deal.companyId },
+    });
+
+    return this.get(tenantId, deal.id);
+  }
+
+  async update(tenantId: string, userId: string, id: string, dto: UpdateDealDto) {
+    if (dto.companyId) {
+      const company = await this.prisma.crmCompany.findFirst({
+        where: { id: dto.companyId, tenantId },
+        select: { id: true },
+      });
+      if (!company) throw new BadRequestException(`Unknown crm-company "${dto.companyId}"`);
+    }
+
+    const { count } = await this.prisma.crmDeal.updateMany({
+      where: { id, tenantId },
+      data: {
+        ...(dto.title !== undefined ? { title: dto.title } : {}),
+        ...(dto.companyId !== undefined ? { companyId: dto.companyId } : {}),
+        ...(dto.stage !== undefined ? { stage: dto.stage } : {}),
+        ...(dto.amount !== undefined ? { amount: dto.amount } : {}),
+        ...(dto.currency !== undefined ? { currency: dto.currency } : {}),
+        ...(dto.ownerUserId !== undefined ? { ownerUserId: dto.ownerUserId } : {}),
+        ...(dto.expectedCloseDate !== undefined ? { expectedCloseDate: dto.expectedCloseDate } : {}),
+      },
+    });
+    if (count === 0) throw new NotFoundException('CRM deal not found');
+
+    const deal = await this.get(tenantId, id);
+
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'crm-deal',
+      entityId: id,
+      after: { title: deal.title, stage: deal.stage },
+    });
+
+    return deal;
+  }
+
+  /**
+   * Advance a deal's stage. Guards with canTransitionDeal (rule 2).
+   * Claim-safe: optimistic lock on current stage (TOCTOU).
+   */
+  async advance(tenantId: string, id: string, userId: string, toStage: CrmDealStage) {
+    const deal = await this.prisma.crmDeal.findFirstOrThrow({ where: { id, tenantId } });
+    if (!canTransitionDeal(deal.stage as CrmDealStage, toStage)) {
+      throw new BadRequestException(`Cannot move deal from ${deal.stage} to ${toStage}`);
+    }
+    const res = await this.prisma.crmDeal.updateMany({
+      where: { id, tenantId, stage: deal.stage }, // TOCTOU claim
+      data: { stage: toStage },
+    });
+    if (res.count === 0) throw new BadRequestException('Deal changed concurrently; retry');
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: 'ADVANCE' as AuditAction,
+      entityType: 'crm-deal',
+      entityId: id,
+      before: { stage: deal.stage },
+      after: { stage: toStage },
+    });
+    return this.get(tenantId, id);
+  }
+
+  /**
+   * Convert a WON deal into a Customer. Creates or links the Customer record,
+   * sets company.customerId + company.status=ACTIVE, records convertedCustomerId.
+   */
+  async convert(tenantId: string, id: string, userId: string) {
+    const deal = await this.prisma.crmDeal.findFirstOrThrow({
+      where: { id, tenantId },
+      include: { company: true },
+    });
+    if (deal.stage !== CrmDealStage.WON) {
+      throw new BadRequestException('Only WON deals can be converted');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      let customerId = deal.company.customerId;
+      if (!customerId) {
+        const code = await this.sequences.nextNumber(tenantId, 'customer');
+        const customer = await tx.customer.create({
+          data: { tenantId, code, name: deal.company.name },
+        });
+        customerId = customer.id;
+        await tx.crmCompany.update({
+          where: { id: deal.companyId },
+          data: { customerId, status: 'ACTIVE' },
+        });
+      }
+      await tx.crmDeal.update({ where: { id }, data: { convertedCustomerId: customerId } });
+      await this.audit.log({
+        tenantId,
+        userId,
+        action: 'CONVERT' as AuditAction,
+        entityType: 'crm-deal',
+        entityId: id,
+        after: { convertedCustomerId: customerId },
+      });
+      return { dealId: id, customerId };
+    });
+  }
+
+  /**
+   * Pipeline view: deals grouped by stage, each with company name + amount + owner.
+   */
+  async pipeline(tenantId: string) {
+    const deals = await this.prisma.crmDeal.findMany({
+      where: { tenantId },
+      orderBy: [{ stage: 'asc' }, { createdAt: 'desc' }],
+      include: { company: { select: { id: true, name: true } } },
+    });
+
+    const stageOrder = [
+      CrmDealStage.LEAD,
+      CrmDealStage.QUALIFIED,
+      CrmDealStage.PROPOSAL,
+      CrmDealStage.WON,
+      CrmDealStage.LOST,
+    ];
+
+    const byStage = new Map<CrmDealStage, typeof deals>();
+    for (const stage of stageOrder) {
+      byStage.set(stage, []);
+    }
+    for (const deal of deals) {
+      const bucket = byStage.get(deal.stage as CrmDealStage);
+      if (bucket) bucket.push(deal);
+    }
+
+    return stageOrder.map((stage) => ({
+      stage,
+      deals: (byStage.get(stage) ?? []).map((d) => ({
+        id: d.id,
+        title: d.title,
+        companyName: d.company.name,
+        amount: d.amount,
+        currency: d.currency,
+        ownerUserId: d.ownerUserId,
+        lastActivityAt: d.lastActivityAt,
+        expectedCloseDate: d.expectedCloseDate,
+      })),
+    }));
+  }
+}

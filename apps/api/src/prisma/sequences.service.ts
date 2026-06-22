@@ -18,7 +18,8 @@ export type SequenceKey =
   | 'exception-case'
   | 'import-batch'
   | 'inbound-message'
-  | 'rfp';
+  | 'rfp'
+  | 'customer';
 
 const PREFIXES: Record<SequenceKey, string> = {
   'transport-order': 'TO',
@@ -36,6 +37,7 @@ const PREFIXES: Record<SequenceKey, string> = {
   'import-batch': 'IB',
   'inbound-message': 'IN',
   rfp: 'RFP',
+  customer: 'CUST',
 };
 
 /** Sequence keys whose prefix is overridable by a module tenant setting. */
