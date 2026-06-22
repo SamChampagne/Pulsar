@@ -48,5 +48,6 @@ export * from './desk/desk-layout';
 export * from './appearance/appearance';
 export * from './analytics/control-tower';
 export * from './analytics/scorecards';
+export * from './analytics/flow';
 export * from './connect/connect';
 export * from './procurement/procurement.workflow';
