@@ -624,6 +624,59 @@ async function main() {
   });
 
   console.log('CRM demo data ready (2 companies, 2 contacts, 3 deals, 1 overdue task).');
+
+  // --- CRM Lists & Campaigns (idempotent, acme tenant) --------------------------
+  const crmList = await prisma.crmList.upsert({
+    where: {
+      id: (
+        (await prisma.crmList.findFirst({ where: { tenantId: tenant.id, name: 'Prospects Québec' } })) ?? {
+          id: 'crm-list-prospects-qc',
+        }
+      ).id,
+    },
+    update: {},
+    create: {
+      id: 'crm-list-prospects-qc',
+      tenantId: tenant.id,
+      name: 'Prospects Québec',
+      description: 'Prospects basés au Québec',
+    },
+  });
+
+  // Add the 2 seeded contacts as members (upsert via unique [listId, contactId])
+  for (const contactId of ['crm-contact-marie', 'crm-contact-pierre']) {
+    const existing = await prisma.crmListMember.findUnique({
+      where: { listId_contactId: { listId: crmList.id, contactId } },
+    });
+    if (!existing) {
+      await prisma.crmListMember.create({
+        data: { tenantId: tenant.id, listId: crmList.id, contactId },
+      });
+    }
+  }
+
+  await prisma.crmCampaign.upsert({
+    where: {
+      id: (
+        (await prisma.crmCampaign.findFirst({ where: { tenantId: tenant.id, name: 'Newsletter T3' } })) ?? {
+          id: 'crm-campaign-newsletter-t3',
+        }
+      ).id,
+    },
+    update: {},
+    create: {
+      id: 'crm-campaign-newsletter-t3',
+      tenantId: tenant.id,
+      name: 'Newsletter T3',
+      listId: crmList.id,
+      subject: 'Bonjour {name}',
+      html: '<p>Bonjour {name} de {company}</p>',
+      status: 'DRAFT',
+    },
+  });
+
+  console.log('CRM lists & campaigns ready (1 list "Prospects Québec", 2 members, 1 DRAFT campaign).');
+
   // --- Email templates (idempotent, acme tenant) --------------------------------
   await prisma.emailTemplate.upsert({
     where: { tenantId_key: { tenantId: tenant.id, key: 'welcome' } },
