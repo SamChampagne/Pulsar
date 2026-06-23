@@ -33,6 +33,9 @@ export const PERMISSIONS = {
     CONNECT_MANAGE: 'core.connect.manage',
     AUTOMATION_RULES_READ: 'core.automation.rules.read',
     AUTOMATION_RULES_MANAGE: 'core.automation.rules.manage',
+    EMAIL_READ: 'core.email.read',
+    EMAIL_SEND: 'core.email.send',
+    EMAIL_MANAGE: 'core.email.manage',
   },
   TRANSPORTATION: {
     MASTER_DATA_READ: 'transportation.master-data.read',
@@ -93,6 +96,11 @@ export const PERMISSIONS = {
     READ: 'crm.read',
     MANAGE: 'crm.manage',
   },
+  EMAIL: {
+    READ: 'core.email.read',
+    SEND: 'core.email.send',
+    MANAGE: 'core.email.manage',
+  },
 } as const;
 
 export type PermissionKey =
@@ -106,7 +114,8 @@ export type PermissionKey =
   | (typeof PERMISSIONS.ANALYTICS)[keyof typeof PERMISSIONS.ANALYTICS]
   | (typeof PERMISSIONS.PROCUREMENT)[keyof typeof PERMISSIONS.PROCUREMENT]
   | (typeof PERMISSIONS.CARRIER_PORTAL)[keyof typeof PERMISSIONS.CARRIER_PORTAL]
-  | (typeof PERMISSIONS.CRM)[keyof typeof PERMISSIONS.CRM];
+  | (typeof PERMISSIONS.CRM)[keyof typeof PERMISSIONS.CRM]
+  | (typeof PERMISSIONS.EMAIL)[keyof typeof PERMISSIONS.EMAIL];
 
 export interface PermissionDescriptor {
   key: PermissionKey;
@@ -197,6 +206,9 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.CONNECT_MANAGE, 'Run imports and manage inbound messages'),
   core(PERMISSIONS.CORE.AUTOMATION_RULES_READ, 'View tenant automation rules'),
   core(PERMISSIONS.CORE.AUTOMATION_RULES_MANAGE, 'Create, update and delete automation rules'),
+  core(PERMISSIONS.CORE.EMAIL_READ, 'View sent emails and templates'),
+  core(PERMISSIONS.CORE.EMAIL_SEND, 'Compose and send emails'),
+  core(PERMISSIONS.CORE.EMAIL_MANAGE, 'Manage email templates and tenant email configuration'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ, 'View customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_MANAGE, 'Manage customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.ORDERS_READ, 'View transport orders'),

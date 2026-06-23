@@ -24,6 +24,7 @@ import {
   FileText,
   Palette,
   Handshake,
+  Mail,
 } from 'lucide-svelte';
 import type { ComponentType } from 'svelte';
 
@@ -481,6 +482,26 @@ export function navCatalogue(): NavDomain[] {
       sections: [
         {
           links: [{ href: '/personalize', label: 'Apparence du bureau' }],
+        },
+      ],
+    },
+
+    // ── Courriels ──────────────────────────────────────────────────────────
+    // Core domain (no module gate); visible when the user can read emails.
+    {
+      key: 'emails',
+      label: 'Courriels',
+      icon: Mail,
+      home: '/emails',
+      prefixes: ['/emails', '/email-config'],
+      anyPerms: [PERMISSIONS.EMAIL.READ],
+      sections: [
+        {
+          links: [
+            { href: '/emails', label: 'Historique', perm: PERMISSIONS.EMAIL.READ },
+            { href: '/emails/templates', label: 'Gabarits', perm: PERMISSIONS.EMAIL.MANAGE },
+            { href: '/emails/config', label: 'Configuration', perm: PERMISSIONS.EMAIL.MANAGE },
+          ],
         },
       ],
     },

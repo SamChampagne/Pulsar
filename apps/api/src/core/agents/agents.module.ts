@@ -1,6 +1,8 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { CryptoModule } from '../crypto/crypto.module';
+import { AiDraftService } from '../email/ai-draft.service';
+import { MailService } from '../email/mail.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { OperatingModule } from '../operating/operating.module';
 import { TransportationModule } from '../../modules/transportation/transportation.module';
@@ -110,6 +112,8 @@ import { RuntimeConfigController } from './runtime-config.controller';
         CompaniesService,
         DealsService,
         ActivitiesService,
+        AiDraftService,
+        MailService,
       ],
       useFactory: (
         transportOrders: TransportOrdersService,
@@ -135,6 +139,8 @@ import { RuntimeConfigController } from './runtime-config.controller';
         companies: CompaniesService,
         deals: DealsService,
         activities: ActivitiesService,
+        aiDraft: AiDraftService,
+        mail: MailService,
       ): ToolServices => ({
         transportOrders: {
           list: (tenantId, query) => transportOrders.list(tenantId, query as never),
@@ -227,6 +233,11 @@ import { RuntimeConfigController } from './runtime-config.controller';
             deals.advance(tenantId, id, userId, stage as never),
           createFollowup: (tenantId, input, author) =>
             activities.create(tenantId, { ...(input as object), type: 'TASK' } as never, author),
+        },
+        email: {
+          draft: (tenantId, input) => aiDraft.draft(tenantId, input),
+          send: (tenantId, input, author) =>
+            mail.queue(tenantId, { ...input, agentId: author.agentId }),
         },
       }),
     },

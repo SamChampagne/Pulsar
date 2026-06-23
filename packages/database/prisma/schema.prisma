@@ -12,8 +12,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
 }
 
 // ============================================================================
@@ -103,6 +103,9 @@ model Tenant {
   crmContacts      CrmContact[]
   crmDeals         CrmDeal[]
   crmActivities    CrmActivity[]
+  emailConfig      TenantEmailConfig?
+  emailMessages    EmailMessage[]
+  emailTemplates   EmailTemplate[]
 
   @@map("tenants")
 }
@@ -2648,6 +2651,112 @@ model CrmActivity {
   @@index([tenantId, companyId])
   @@index([tenantId, type, doneAt])
   @@map("crm_activities")
+}
+
+// ============================================================================
+// EMAIL — per-tenant email config, outbox, templates (core email pipeline)
+// ============================================================================
+
+// Mirrors EmailDriver / EmailStatus from @pulsar/shared/email (rule 3).
+enum EmailDriver {
+  SMTP
+}
+
+enum EmailStatus {
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+}
+
+/// Per-tenant SMTP configuration. Password encrypted via CryptoService (never returned in clear).
+model TenantEmailConfig {
+  id           String      @id @default(cuid())
+  tenantId     String      @unique
+  driver       EmailDriver @default(SMTP)
+  host         String?
+  port         Int?
+  secure       Boolean     @default(false)
+  username     String?
+  passwordEnc  String?
+  fromName     String?
+  fromEmail    String?
+  replyTo      String?
+  active       Boolean     @default(true)
+  lastTestAt   DateTime?
+  lastTestOk   Boolean?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("tenant_email_configs")
+}
+
+/// Durable outbox + history for every email sent by the platform.
+model EmailMessage {
+  id              String      @id @default(cuid())
+  tenantId        String
+  toAddresses     String[]
+  cc              String[]    @default([])
+  subject         String
+  html            String
+  text            String?
+  status          EmailStatus @default(QUEUED)
+  attempts        Int         @default(0)
+  lastError       String?
+  provider        String?
+  relatedType     String?
+  relatedId       String?
+  templateKey     String?
+  createdByUserId String?
+  agentId         String?
+  sentAt          DateTime?
+  nextAttemptAt   DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id])
+  attachments EmailAttachment[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([status, nextAttemptAt])
+  @@map("email_messages")
+}
+
+/// Email attachment: soft FK to Document (no Prisma relation — documentId is stored as a string).
+model EmailAttachment {
+  id             String @id @default(cuid())
+  tenantId       String
+  emailMessageId String
+  documentId     String
+  filename       String
+
+  emailMessage EmailMessage @relation(fields: [emailMessageId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, emailMessageId])
+  @@map("email_attachments")
+}
+
+/// Reusable email templates with Handlebars-style {{variable}} placeholders.
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  tenantId  String
+  key       String
+  name      String
+  subject   String
+  html      String
+  category  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("email_templates")
 }
 
 // ---------------------------------------------------------------------------

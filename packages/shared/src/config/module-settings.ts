@@ -117,6 +117,7 @@ export const MODULE_SETTINGS_CATALOG: ModuleSettingsCatalog[] = [
       { key: 'tolerancePct', label: 'Tolérance rapprochement (%)', type: 'number', default: 2, min: 0, max: 100 },
       { key: 'toleranceAbsolute', label: 'Tolérance rapprochement (absolue)', type: 'number', default: 25, min: 0, max: 1000000 },
       { key: 'autoSendOnApproval', label: 'Envoi auto du relevé à l\'approbation', type: 'boolean', default: false },
+      { key: 'autoEmailInvoicePdf', label: 'Envoi auto du PDF du relevé par email à l\'approbation', type: 'boolean', default: false },
       {
         key: 'toleranceMode', label: 'Mode de tolérance', type: 'enum', default: 'MAX',
         help: 'MAX = seuil = max(absolu, %). MIN = seuil = min (plus strict).',

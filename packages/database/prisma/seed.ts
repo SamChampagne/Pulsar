@@ -624,6 +624,58 @@ async function main() {
   });
 
   console.log('CRM demo data ready (2 companies, 2 contacts, 3 deals, 1 overdue task).');
+  // --- Email templates (idempotent, acme tenant) --------------------------------
+  await prisma.emailTemplate.upsert({
+    where: { tenantId_key: { tenantId: tenant.id, key: 'welcome' } },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      key: 'welcome',
+      name: 'Bienvenue',
+      subject: 'Bienvenue sur Pulsar',
+      html: '<p>Bonjour <strong>{{customerName}}</strong>,</p><p>Bienvenue sur la plateforme Pulsar. Nous sommes ravis de vous accueillir.</p><p>Cordialement,<br/>L\'équipe Pulsar</p>',
+      category: 'onboarding',
+    },
+  });
+
+  await prisma.emailTemplate.upsert({
+    where: { tenantId_key: { tenantId: tenant.id, key: 'invoice' } },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      key: 'invoice',
+      name: 'Facture client',
+      subject: 'Facture {{invoiceNumber}}',
+      html: '<p>Bonjour <strong>{{customerName}}</strong>,</p><p>Veuillez trouver ci-joint votre facture <strong>{{invoiceNumber}}</strong>.</p><p>Cordialement,<br/>L\'équipe Pulsar</p>',
+      category: 'billing',
+    },
+  });
+
+  // --- Sample email message (SENT, idempotent via relatedId) -------------------
+  const existingSampleEmail = await prisma.emailMessage.findFirst({
+    where: { tenantId: tenant.id, relatedType: 'seed-sample', relatedId: 'welcome-email-001' },
+  });
+  if (!existingSampleEmail) {
+    await prisma.emailMessage.create({
+      data: {
+        tenantId: tenant.id,
+        toAddresses: ['logistics@northernretail.example'],
+        cc: [],
+        subject: 'Bienvenue sur Pulsar',
+        html: '<p>Bonjour <strong>Northern Retail Group</strong>,</p><p>Bienvenue sur la plateforme Pulsar.</p>',
+        status: 'SENT',
+        attempts: 1,
+        provider: 'log',
+        templateKey: 'welcome',
+        relatedType: 'seed-sample',
+        relatedId: 'welcome-email-001',
+        sentAt: new Date(),
+        createdByUserId: admin.id,
+      },
+    });
+  }
+
+  console.log('Email templates and sample message ready.');
 }
 
 main()

@@ -112,6 +112,22 @@ export interface ToolServices {
     advanceDeal(tenantId: string, id: string, userId: string, stage: string): Promise<unknown>;
     createFollowup(tenantId: string, input: object, author: { agentId?: string }): Promise<unknown>;
   };
+  // ── Email (core) ───────────────────────────────────────────────────────────
+  email: {
+    draft(tenantId: string, input: { prompt: string; context?: string }): Promise<unknown>;
+    send(
+      tenantId: string,
+      input: {
+        toAddresses: string[];
+        subject: string;
+        html: string;
+        relatedType?: string;
+        relatedId?: string;
+        attachments?: { documentId: string; filename: string }[];
+      },
+      author: { agentId: string },
+    ): Promise<unknown>;
+  };
 }
 
 export interface ToolContext {

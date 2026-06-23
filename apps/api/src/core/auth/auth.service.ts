@@ -45,6 +45,9 @@ export class AuthService {
         },
       });
       const url = `${this.config.get('WEB_URL', 'http://localhost:5173')}/reset-password/${token}`;
+      // Intentionally uses low-level EmailService (not MailService outbox): password
+      // reset is a pre-auth, platform-level email — tenantId may be unknown (multi-tenant
+      // email address lookup) and there is no tenant context to record it under.
       await this.email.send({
         to: user.email,
         subject: 'Pulsar — password reset',
