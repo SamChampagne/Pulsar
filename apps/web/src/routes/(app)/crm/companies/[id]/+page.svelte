@@ -16,6 +16,7 @@
   import ActivityTimeline from '$lib/components/crm/ActivityTimeline.svelte';
   import type { Activity } from '$lib/components/crm/ActivityTimeline.svelte';
   import LogActivity from '$lib/components/crm/LogActivity.svelte';
+  import RecordEmails from '$lib/components/crm/RecordEmails.svelte';
 
   // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -327,7 +328,7 @@
       </Card>
     </div>
 
-    <!-- ── Right column: activity timeline + log ── -->
+    <!-- ── Right column: activity timeline + log + emails ── -->
     <div class="space-y-6">
       <Card>
         <h2 class="mb-3 text-sm font-semibold text-ink">Activités</h2>
@@ -341,6 +342,12 @@
           onLogged={() => void refresh()}
         />
       </Card>
+
+      <RecordEmails
+        relatedType="crm-company"
+        relatedId={company.id}
+        defaultTo={company.contacts[0]?.email ?? undefined}
+      />
     </div>
   </div>
 {/if}
