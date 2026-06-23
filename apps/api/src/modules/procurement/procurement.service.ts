@@ -20,7 +20,7 @@ import { Prisma } from '@pulsar/database';
 import { randomBytes } from 'node:crypto';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { CustomFieldsService } from '../../core/custom-fields/custom-fields.service';
-import { EmailService } from '../../core/email/email.service';
+import { MailService } from '../../core/email/mail.service';
 import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -48,7 +48,7 @@ export class ProcurementService {
     private readonly sequences: SequencesService,
     private readonly ownership: OwnershipService,
     private readonly audit: AuditLogsService,
-    private readonly email: EmailService,
+    private readonly mail: MailService,
     private readonly rates: RatesService,
     private readonly modulesCache: TenantModulesCacheService,
     private readonly moduleSettings: ModuleSettingsService,
@@ -235,9 +235,10 @@ export class ProcurementService {
     });
     if (carrier?.email) {
       const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
-      this.email
-        .send({
-          to: carrier.email,
+      // Route through the durable outbox — recorded in the tenant's email history.
+      void this.mail
+        .queue(tenantId, {
+          toAddresses: [carrier.email],
           subject: `Invitation to bid — RFP ${rfp.rfpNumber ?? rfp.id} — ${tenant.name}`,
           html: [
             `<p>${tenant.name} has invited you to submit a bid for RFP <strong>${rfp.title}</strong>.</p>`,
@@ -245,6 +246,8 @@ export class ProcurementService {
             `<p>Use your unique bid link to submit your offer.</p>`,
           ].join('\n'),
           text: `${tenant.name} has invited you to bid on RFP ${rfp.title}.`,
+          relatedType: 'rfp',
+          relatedId: rfp.id,
         })
         .catch((err: unknown) => {
           this.logger.warn(

@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
-import { EmailService } from '../../../core/email/email.service';
+import { MailService } from '../../../core/email/mail.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
@@ -33,7 +33,7 @@ export class TendersService {
     private readonly config: ConfigService,
     private readonly audit: AuditLogsService,
     private readonly webhooks: WebhooksService,
-    private readonly email: EmailService,
+    private readonly mail: MailService,
     private readonly lanes: LanesService,
     private readonly domainEvents: DomainEventsService,
     private readonly moduleSettings: ModuleSettingsService,
@@ -109,8 +109,9 @@ export class TendersService {
     if (tender.carrier.email) {
       const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
       const url = this.link(tender.token);
-      const sent = await this.email.send({
-        to: tender.carrier.email,
+      // Route through the durable outbox — recorded in the tenant's email history.
+      await this.mail.queue(tenantId, {
+        toAddresses: [tender.carrier.email],
         subject: `Transport offer ${load.loadNumber} — ${tenant.name}`,
         html: [
           `<p>${tenant.name} is offering you load <strong>${load.loadNumber}</strong>.</p>`,
@@ -119,8 +120,10 @@ export class TendersService {
           `<p>This offer expires on ${tender.expiresAt.toUTCString()}.</p>`,
         ].join('\n'),
         text: `${tenant.name} is offering you load ${load.loadNumber}. Respond here: ${url}`,
+        relatedType: 'tender',
+        relatedId: tender.id,
       });
-      emailedTo = sent ? tender.carrier.email : null;
+      emailedTo = tender.carrier.email;
     }
 
     return { ...tender, responseUrl: this.link(tender.token), emailedTo };

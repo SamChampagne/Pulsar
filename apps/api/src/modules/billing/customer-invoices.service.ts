@@ -10,7 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
-import { EmailService } from '../../core/email/email.service';
+import { MailService } from '../../core/email/mail.service';
 import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { RatingService } from '../transportation/rating/rating.service';
 
@@ -60,7 +60,7 @@ export class CustomerInvoicesService {
     private readonly ownership: OwnershipService,
     private readonly sequences: SequencesService,
     private readonly audit: AuditLogsService,
-    private readonly email: EmailService,
+    private readonly mail: MailService,
     private readonly moduleSettings: ModuleSettingsService,
     private readonly rating: RatingService,
   ) {}
@@ -278,7 +278,54 @@ export class CustomerInvoicesService {
     if (s.autoSendOnApproval === true) {
       try { await this.send(tenantId, userId, id); } catch { /* no email / send failed: stays APPROVED, best-effort */ }
     }
+    // autoEmailInvoicePdf: queue an email with the invoice summary (and any existing
+    // PDF Document attached to this invoice) to the customer — best-effort, non-blocking.
+    if (s.autoEmailInvoicePdf === true) {
+      void this.queueInvoicePdfEmail(tenantId, userId, id).catch(() => undefined);
+    }
     return result;
+  }
+
+  /**
+   * Best-effort: sends the invoice summary (HTML) to the customer with any
+   * attached PDF Document found for this invoice. Called when autoEmailInvoicePdf=true.
+   * Does NOT change invoice status — it is purely a notification side-effect.
+   */
+  private async queueInvoicePdfEmail(tenantId: string, userId: string, id: string): Promise<void> {
+    const statement = await this.get(tenantId, id);
+    if (!statement.customer.email) return; // no recipient → skip silently
+
+    const rows = statement.lines
+      .map(
+        (l) =>
+          `<tr><td>${l.transportOrder.orderNumber}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
+      )
+      .join('');
+
+    // Look for any PDF Document already uploaded for this invoice.
+    const pdfDocs = await this.prisma.document.findMany({
+      where: { tenantId, entityType: 'customer-invoice', entityId: id, mimeType: 'application/pdf' },
+      orderBy: { createdAt: 'desc' },
+      take: 1,
+      select: { id: true, fileName: true },
+    });
+
+    const attachments = pdfDocs.map((d) => ({ documentId: d.id, filename: d.fileName }));
+
+    await this.mail.queue(tenantId, {
+      toAddresses: [statement.customer.email],
+      subject: `Invoice ${statement.invoiceNumber} — ${statement.totalAmount} ${statement.currency}`,
+      html: [
+        `<p>Please find your invoice <strong>${statement.invoiceNumber}</strong> attached${attachments.length ? ' (PDF)' : ' below'}.</p>`,
+        `<table><tr><th>Order</th><th>Description</th><th>Amount</th></tr>${rows}</table>`,
+        `<p><strong>Total: ${statement.totalAmount} ${statement.currency}</strong></p>`,
+      ].join('\n'),
+      text: `Invoice ${statement.invoiceNumber} — total ${statement.totalAmount} ${statement.currency}`,
+      relatedType: 'customer-invoice',
+      relatedId: id,
+      createdByUserId: userId,
+      ...(attachments.length > 0 ? { attachments } : {}),
+    });
   }
 
   /** Emails the statement summary to the customer contact; no email, no SENT. */
@@ -296,8 +343,9 @@ export class CustomerInvoicesService {
           `<tr><td>${l.transportOrder.orderNumber}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
       )
       .join('');
-    const sent = await this.email.send({
-      to: statement.customer.email,
+    // Route through the durable outbox — recorded in email history with relatedType/Id.
+    await this.mail.queue(tenantId, {
+      toAddresses: [statement.customer.email],
       subject: `Billing statement ${statement.invoiceNumber}`,
       html: [
         `<p>Please find below your billing statement <strong>${statement.invoiceNumber}</strong>.</p>`,
@@ -305,10 +353,10 @@ export class CustomerInvoicesService {
         `<p><strong>Total: ${statement.totalAmount} ${statement.currency}</strong></p>`,
       ].join('\n'),
       text: `Billing statement ${statement.invoiceNumber} — total ${statement.totalAmount} ${statement.currency}`,
+      relatedType: 'customer-invoice',
+      relatedId: id,
+      createdByUserId: userId,
     });
-    if (!sent) {
-      throw new BadRequestException('Email could not be sent — statement not marked SENT');
-    }
     return this.transition(tenantId, userId, id, CustomerInvoiceStatus.APPROVED, CustomerInvoiceStatus.SENT, {
       sentAt: new Date(),
     });

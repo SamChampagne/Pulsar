@@ -9,7 +9,7 @@ import { AuditAction, MODULE_CATALOG, MODULE_KEYS } from '@pulsar/shared';
 import { hash } from 'bcryptjs';
 import { createHash, randomBytes } from 'node:crypto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { EmailService } from '../email/email.service';
+import { MailService } from '../email/mail.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePlatformTenantDto } from './dto/create-platform-tenant.dto';
 
@@ -20,7 +20,7 @@ export class PlatformTenantsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    private readonly email: EmailService,
+    private readonly mail: MailService,
     private readonly audit: AuditLogsService,
   ) {}
 
@@ -136,12 +136,14 @@ export class PlatformTenantsService {
     // The raw invite link is also returned to the (authenticated platform)
     // caller below as the fallback delivery path — it is never logged.
     const inviteUrl = `${this.config.get('WEB_URL', 'http://localhost:5173')}/reset-password/${inviteToken}`;
-    await this.email.send({
-      to: dto.admin.email,
+    // Route through the durable outbox — recorded in the tenant's email history.
+    // tenant.id is now available from the committed transaction above.
+    void this.mail.queue(tenant.id, {
+      toAddresses: [dto.admin.email],
       subject: `Your ${dto.name} workspace on Pulsar is ready`,
       html: `<p>Set your password to activate your administrator account: <a href="${inviteUrl}">${inviteUrl}</a></p><p>This link expires in 72 hours.</p>`,
       text: `Activate your Pulsar administrator account: ${inviteUrl} (expires in 72 hours)`,
-    });
+    }).catch(() => undefined);
     await this.audit.log({
       tenantId: tenant.id,
       userId: undefined,
