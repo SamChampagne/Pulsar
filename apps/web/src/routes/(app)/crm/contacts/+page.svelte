@@ -239,11 +239,11 @@
             <div>
               <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Société</div>
               <a
-                href="/crm/companies"
-                class="font-mono text-accent text-xs hover:underline"
-                title={selected.companyId}
+                href="/crm/companies/{selected.companyId}"
+                class="text-accent text-xs hover:underline"
+                title="Voir la fiche complète de la société"
               >
-                {selected.companyId.slice(0, 8)}…
+                Voir la société
               </a>
             </div>
           {/if}

@@ -290,11 +290,20 @@
             <h2 class="truncate text-base font-bold text-ink">{selected.name}</h2>
             <Badge tone={statusTone(selected.status)}>{statusLabel(selected.status)}</Badge>
           </div>
-          <button
-            class="shrink-0 rounded p-1 text-ink-faint hover:bg-surface-muted hover:text-ink"
-            onclick={() => { selected = null; }}
-            aria-label="Fermer"
-          >✕</button>
+          <div class="flex shrink-0 items-center gap-1">
+            <a
+              href="/crm/companies/{selected.id}"
+              class="rounded px-2 py-1 text-xs font-medium text-accent hover:bg-surface-muted hover:underline"
+              title="Ouvrir la fiche complète"
+            >
+              Ouvrir la fiche
+            </a>
+            <button
+              class="rounded p-1 text-ink-faint hover:bg-surface-muted hover:text-ink"
+              onclick={() => { selected = null; }}
+              aria-label="Fermer"
+            >✕</button>
+          </div>
         </div>
 
         <!-- Company fields -->
