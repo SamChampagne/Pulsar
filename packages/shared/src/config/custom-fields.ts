@@ -12,6 +12,9 @@ export enum CustomFieldEntity {
   TRAILER = 'TRAILER',
   MAINTENANCE_ORDER = 'MAINTENANCE_ORDER',
   RFP = 'RFP',
+  CRM_COMPANY = 'CRM_COMPANY',
+  CRM_CONTACT = 'CRM_CONTACT',
+  CRM_DEAL = 'CRM_DEAL',
 }
 
 export enum CustomFieldType {

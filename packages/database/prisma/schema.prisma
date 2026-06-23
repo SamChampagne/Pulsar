@@ -1908,6 +1908,9 @@ enum CustomFieldEntity {
   TRAILER
   MAINTENANCE_ORDER
   RFP
+  CRM_COMPANY
+  CRM_CONTACT
+  CRM_DEAL
 }
 
 enum CustomFieldType {
@@ -2597,6 +2600,7 @@ model CrmContact {
   email       String?
   phone       String?
   ownerUserId String?
+  customData  Json?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   tenant      Tenant      @relation(fields: [tenantId], references: [id])
@@ -2619,6 +2623,7 @@ model CrmDeal {
   expectedCloseDate   DateTime?
   lastActivityAt      DateTime?
   convertedCustomerId String?
+  customData          Json?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
   tenant              Tenant       @relation(fields: [tenantId], references: [id])

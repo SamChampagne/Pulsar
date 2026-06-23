@@ -14,14 +14,26 @@
     Card,
     Skeleton,
     ErrorNotice,
+    Modal,
+    Field,
+    Input,
     type Tone,
   } from '$lib/components/ui';
   import { untrack } from 'svelte';
   import ActivityTimeline from '$lib/components/crm/ActivityTimeline.svelte';
   import type { Activity } from '$lib/components/crm/ActivityTimeline.svelte';
   import LogActivity from '$lib/components/crm/LogActivity.svelte';
+  import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
 
   // ── Types ───────────────────────────────────────────────────────────────────
+
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    options?: { value: string; label: string }[];
+    required: boolean;
+  }
 
   interface CompanyRow {
     id: string;
@@ -75,6 +87,17 @@
   let detailLoading = $state(false);
   let converting = $state<string | null>(null); // dealId being converted
 
+  // ── State — create modal ─────────────────────────────────────────────────────
+
+  let createOpen = $state(false);
+  let createName = $state('');
+  let createDomain = $state('');
+  let createIndustry = $state('');
+  let createStatus = $state('PROSPECT');
+  let createSaving = $state(false);
+  let companyFieldDefs = $state<CustomFieldDef[]>([]);
+  let createCustomData = $state<Record<string, unknown>>({});
+
   // ── Data loading ─────────────────────────────────────────────────────────────
 
   async function load() {
@@ -113,6 +136,47 @@
       selected = full;
     } catch {
       // non-blocking refresh
+    }
+  }
+
+  // ── Create company ────────────────────────────────────────────────────────────
+
+  async function openCreate() {
+    createName = '';
+    createDomain = '';
+    createIndustry = '';
+    createStatus = 'PROSPECT';
+    createCustomData = {};
+    createOpen = true;
+    companyFieldDefs = await api<CustomFieldDef[]>('/crm/custom-fields', {
+      query: { entityType: 'CRM_COMPANY' },
+    }).catch(() => [] as CustomFieldDef[]);
+  }
+
+  async function submitCreate() {
+    if (!createName.trim()) {
+      toast.error('Le nom est obligatoire');
+      return;
+    }
+    createSaving = true;
+    try {
+      await api<CompanyRow>('/crm/companies', {
+        method: 'POST',
+        body: {
+          name: createName.trim(),
+          domain: createDomain.trim() || undefined,
+          industry: createIndustry.trim() || undefined,
+          status: createStatus,
+          customData: Object.keys(createCustomData).length > 0 ? createCustomData : undefined,
+        },
+      });
+      toast.success('Société créée');
+      createOpen = false;
+      void load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Échec de la création');
+    } finally {
+      createSaving = false;
     }
   }
 
@@ -198,7 +262,11 @@
   });
 </script>
 
-<PageHeader title="Sociétés" subtitle="Gérez vos prospects et clients CRM." count={total} />
+<PageHeader title="Sociétés" subtitle="Gérez vos prospects et clients CRM." count={total}>
+  {#snippet actions()}
+    <Button onclick={openCreate}>Nouvelle société</Button>
+  {/snippet}
+</PageHeader>
 
 <ErrorNotice message={error} onretry={load} />
 
@@ -418,3 +486,32 @@
     </div>
   {/if}
 </div>
+
+<!-- Create company modal -->
+<Modal bind:open={createOpen} title="Nouvelle société">
+  <div class="flex flex-col gap-4">
+    <Field label="Nom *">
+      <Input bind:value={createName} placeholder="Acme Inc." />
+    </Field>
+    <Field label="Domaine">
+      <Input bind:value={createDomain} placeholder="acme.com" />
+    </Field>
+    <Field label="Secteur">
+      <Input bind:value={createIndustry} placeholder="Logistique" />
+    </Field>
+    <Field label="Statut">
+      <Select bind:value={createStatus}>
+        <option value="PROSPECT">Prospect</option>
+        <option value="ACTIVE">Actif</option>
+        <option value="INACTIVE">Inactif</option>
+      </Select>
+    </Field>
+    {#if companyFieldDefs.length > 0}
+      <CustomFieldInputs definitions={companyFieldDefs} bind:data={createCustomData} />
+    {/if}
+  </div>
+  {#snippet footer()}
+    <Button variant="secondary" onclick={() => { createOpen = false; }}>Annuler</Button>
+    <Button loading={createSaving} onclick={submitCreate}>Créer</Button>
+  {/snippet}
+</Modal>

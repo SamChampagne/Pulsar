@@ -1,11 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { CustomFieldType, validateCustomFields, type CustomFieldDefinition } from './custom-fields';
+import { CustomFieldEntity, CustomFieldType, validateCustomFields, type CustomFieldDefinition } from './custom-fields';
 
 const defs: CustomFieldDefinition[] = [
   { key: 'poRef', label: 'PO', type: CustomFieldType.TEXT, required: true, showInList: true, sortOrder: 0 },
   { key: 'temp', label: 'Temp', type: CustomFieldType.NUMBER, required: false, showInList: false, sortOrder: 1 },
   { key: 'svc', label: 'Service', type: CustomFieldType.SELECT, options: [{ value: 'STD', label: 'Std' }], required: false, showInList: false, sortOrder: 2 },
 ];
+
+describe('CustomFieldEntity', () => {
+  it('includes CRM entity types', () => {
+    expect(CustomFieldEntity.CRM_COMPANY).toBe('CRM_COMPANY');
+    expect(CustomFieldEntity.CRM_CONTACT).toBe('CRM_CONTACT');
+    expect(CustomFieldEntity.CRM_DEAL).toBe('CRM_DEAL');
+  });
+});
 
 describe('validateCustomFields', () => {
   it('accepts valid values', () => {

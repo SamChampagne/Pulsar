@@ -4,6 +4,7 @@ import {
   IsDate,
   IsEnum,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   MinLength,
@@ -19,6 +20,7 @@ export class CreateDealDto {
   @IsOptional() @IsString() currency?: string;
   @IsOptional() @IsString() ownerUserId?: string;
   @IsOptional() @IsDate() @Type(() => Date) expectedCloseDate?: Date;
+  @IsOptional() @IsObject() customData?: Record<string, unknown>;
 }
 
 // stage is intentionally excluded: stage changes must go through POST :id/advance (rule 2).

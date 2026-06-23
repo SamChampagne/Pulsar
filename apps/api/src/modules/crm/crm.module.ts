@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
+import { CustomFieldsModule } from '../../core/custom-fields/custom-fields.module';
 import { OperatingModule } from '../../core/operating/operating.module';
+import { CrmCustomFieldsController } from './custom-fields/crm-custom-fields.controller';
 import { CompaniesController } from './companies.controller';
 import { CompaniesService } from './companies.service';
 import { ContactsController } from './contacts.controller';
@@ -20,10 +22,12 @@ import { OverviewService } from './overview.service';
  * PrismaService + OwnershipService + SequencesService come from the @Global() PrismaModule.
  * AuditLogsService comes from AuditLogsModule (same pattern as FleetModule).
  * OperatingModule is imported to expose DomainEventsService (needed by CrmExceptionsService).
+ * CustomFieldsModule is imported to support crm/custom-fields and intake validation.
  */
 @Module({
-  imports: [AuditLogsModule, OperatingModule],
+  imports: [AuditLogsModule, CustomFieldsModule, OperatingModule],
   controllers: [
+    CrmCustomFieldsController,
     CompaniesController,
     ContactsController,
     DealsController,

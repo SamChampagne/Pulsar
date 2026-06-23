@@ -48,6 +48,12 @@
 
   const PROCUREMENT_ENTITY_TYPES: EntityTypeDef[] = [{ value: 'RFP', label: 'RFP' }];
 
+  const CRM_ENTITY_TYPES: EntityTypeDef[] = [
+    { value: 'CRM_COMPANY', label: 'Sociétés' },
+    { value: 'CRM_CONTACT', label: 'Contacts' },
+    { value: 'CRM_DEAL', label: 'Deals' },
+  ];
+
   const FIELD_TYPES: { value: FieldType; label: string }[] = [
     { value: 'TEXT', label: 'Texte' },
     { value: 'NUMBER', label: 'Nombre' },
@@ -70,7 +76,9 @@
             ? FLEET_ENTITY_TYPES
             : moduleProp === 'procurement'
               ? PROCUREMENT_ENTITY_TYPES
-              : TRANSPORTATION_ENTITY_TYPES,
+              : moduleProp === 'crm'
+                ? CRM_ENTITY_TYPES
+                : TRANSPORTATION_ENTITY_TYPES,
   );
   const apiBase = $derived(`/${moduleProp}/custom-fields`);
 

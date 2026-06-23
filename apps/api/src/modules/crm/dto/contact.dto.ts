@@ -1,5 +1,5 @@
 import { PartialType } from '@nestjs/swagger';
-import { IsOptional, IsString, MinLength } from 'class-validator';
+import { IsObject, IsOptional, IsString, MinLength } from 'class-validator';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 
 export class CreateContactDto {
@@ -9,6 +9,7 @@ export class CreateContactDto {
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsString() ownerUserId?: string;
+  @IsOptional() @IsObject() customData?: Record<string, unknown>;
 }
 
 export class UpdateContactDto extends PartialType(CreateContactDto) {}
