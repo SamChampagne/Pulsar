@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditAction } from '@pulsar/shared';
+import { AuditAction, CustomFieldEntity } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
+import { CustomFieldsService } from '../../core/custom-fields/custom-fields.service';
 import { paginationArgs, paginated } from '../../common/pagination';
 import { ContactListQueryDto, CreateContactDto, UpdateContactDto } from './dto/contact.dto';
 
@@ -9,12 +11,14 @@ import { ContactListQueryDto, CreateContactDto, UpdateContactDto } from './dto/c
  * CRM contacts service. All operations are tenant-scoped (rule 1).
  * companyId FK is validated inline (CrmCompany is not in OwnershipService's OwnedEntity
  * union, so we check directly — rule 9 pattern).
+ * customData is validated via CustomFieldsService before persisting (rule 35).
  */
 @Injectable()
 export class ContactsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogsService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   async list(tenantId: string, query: ContactListQueryDto) {
@@ -42,6 +46,10 @@ export class ContactsService {
   async create(tenantId: string, userId: string, dto: CreateContactDto) {
     await this.assertCompanyOwned(dto.companyId, tenantId);
 
+    const customData = await this.customFields.validateValues(
+      'crm', tenantId, CustomFieldEntity.CRM_CONTACT, dto.customData, { partial: false },
+    );
+
     const contact = await this.prisma.crmContact.create({
       data: {
         tenantId,
@@ -51,6 +59,7 @@ export class ContactsService {
         email: dto.email ?? null,
         phone: dto.phone ?? null,
         ownerUserId: dto.ownerUserId ?? null,
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
     });
 
@@ -69,6 +78,10 @@ export class ContactsService {
   async update(tenantId: string, userId: string, id: string, dto: UpdateContactDto) {
     await this.assertCompanyOwned(dto.companyId, tenantId);
 
+    const customData = await this.customFields.validateValues(
+      'crm', tenantId, CustomFieldEntity.CRM_CONTACT, dto.customData, { partial: true },
+    );
+
     const { count } = await this.prisma.crmContact.updateMany({
       where: { id, tenantId },
       data: {
@@ -78,6 +91,7 @@ export class ContactsService {
         ...(dto.email !== undefined ? { email: dto.email } : {}),
         ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
         ...(dto.ownerUserId !== undefined ? { ownerUserId: dto.ownerUserId } : {}),
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
     });
     if (count === 0) throw new NotFoundException('CRM contact not found');

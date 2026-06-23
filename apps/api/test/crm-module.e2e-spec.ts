@@ -556,6 +556,68 @@ describe('CRM module (e2e)', () => {
       expect(dbRecord?.doneAt).toBeNull();
     }
   });
+
+  // =========================================================================
+  // 22 — crm/custom-fields: PUT a CRM_DEAL definition, create deal with valid
+  //      customData → persisted; create with unknown field → 400.
+  // =========================================================================
+  it('PUT crm/custom-fields defines a TEXT field "priority" for CRM_DEAL', async () => {
+    await request(http)
+      .put('/api/v1/crm/custom-fields')
+      .set(auth())
+      .send({
+        entityType: 'CRM_DEAL',
+        definitions: [
+          {
+            key: 'priority',
+            label: 'Priority',
+            type: 'TEXT',
+            required: false,
+            showInList: false,
+            sortOrder: 0,
+          },
+        ],
+      })
+      .expect(200);
+  });
+
+  it('creates a deal with valid customData { priority: "high" } → customData is persisted', async () => {
+    const res = await request(http)
+      .post('/api/v1/crm/deals')
+      .set(auth())
+      .send({
+        title: `CF Deal ${suffix}`,
+        companyId,
+        customData: { priority: 'high' },
+      })
+      .expect(201);
+    const created = res.body as Deal & { customData?: Record<string, unknown> };
+    expect(created.id).toBeTruthy();
+
+    // GET the deal and verify customData is persisted
+    const getRes = await request(http)
+      .get(`/api/v1/crm/deals/${created.id}`)
+      .set(auth())
+      .expect(200);
+    const fetched = getRes.body as Deal & { customData?: Record<string, unknown> };
+    expect(fetched.customData).toBeDefined();
+    expect((fetched.customData as Record<string, unknown>)['priority']).toBe('high');
+
+    // Clean up
+    await prisma.crmDeal.deleteMany({ where: { id: created.id } }).catch(() => undefined);
+  });
+
+  it('creating a deal with an UNKNOWN customData field is rejected (400)', async () => {
+    await request(http)
+      .post('/api/v1/crm/deals')
+      .set(auth())
+      .send({
+        title: `CF Deal Bad ${suffix}`,
+        companyId,
+        customData: { bogus: 'x' },
+      })
+      .expect(400);
+  });
 });
 
 // =============================================================================

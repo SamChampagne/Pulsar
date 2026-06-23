@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditAction, canTransitionDeal, CrmDealStage } from '@pulsar/shared';
+import { AuditAction, canTransitionDeal, CrmDealStage, CustomFieldEntity } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
+import { CustomFieldsService } from '../../core/custom-fields/custom-fields.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { paginationArgs, paginated } from '../../common/pagination';
 import { CreateDealDto, DealListQueryDto, UpdateDealDto } from './dto/deal.dto';
@@ -10,6 +12,7 @@ import { CreateDealDto, DealListQueryDto, UpdateDealDto } from './dto/deal.dto';
  * CRM deals service. All operations are tenant-scoped (rule 1).
  * Stage transitions use canTransitionDeal from @pulsar/shared (rule 2).
  * Claim-safe updates via updateMany with optimistic stage lock (TOCTOU).
+ * customData is validated via CustomFieldsService before persisting (rule 35).
  */
 @Injectable()
 export class DealsService {
@@ -17,6 +20,7 @@ export class DealsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogsService,
     private readonly sequences: SequencesService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   async list(tenantId: string, query: DealListQueryDto) {
@@ -59,6 +63,10 @@ export class DealsService {
     });
     if (!company) throw new BadRequestException(`Unknown crm-company "${dto.companyId}"`);
 
+    const customData = await this.customFields.validateValues(
+      'crm', tenantId, CustomFieldEntity.CRM_DEAL, dto.customData, { partial: false },
+    );
+
     const deal = await this.prisma.crmDeal.create({
       data: {
         tenantId,
@@ -69,6 +77,7 @@ export class DealsService {
         currency: dto.currency ?? 'CAD',
         ownerUserId: dto.ownerUserId ?? null,
         expectedCloseDate: dto.expectedCloseDate ?? null,
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
     });
 
@@ -93,6 +102,10 @@ export class DealsService {
       if (!company) throw new BadRequestException(`Unknown crm-company "${dto.companyId}"`);
     }
 
+    const customData = await this.customFields.validateValues(
+      'crm', tenantId, CustomFieldEntity.CRM_DEAL, dto.customData, { partial: true },
+    );
+
     const { count } = await this.prisma.crmDeal.updateMany({
       where: { id, tenantId },
       data: {
@@ -103,6 +116,7 @@ export class DealsService {
         ...(dto.currency !== undefined ? { currency: dto.currency } : {}),
         ...(dto.ownerUserId !== undefined ? { ownerUserId: dto.ownerUserId } : {}),
         ...(dto.expectedCloseDate !== undefined ? { expectedCloseDate: dto.expectedCloseDate } : {}),
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
       },
     });
     if (count === 0) throw new NotFoundException('CRM deal not found');

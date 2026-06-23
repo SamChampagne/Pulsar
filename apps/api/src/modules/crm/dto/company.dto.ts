@@ -1,6 +1,7 @@
 import { PartialType } from '@nestjs/swagger';
 import {
   IsEnum,
+  IsObject,
   IsOptional,
   IsString,
   MinLength,
@@ -16,6 +17,7 @@ export class CreateCompanyDto {
   @IsOptional() @IsString() ownerUserId?: string;
   @IsOptional() @IsString() customerId?: string;
   @IsOptional() @IsString() carrierId?: string;
+  @IsOptional() @IsObject() customData?: Record<string, unknown>;
 }
 
 export class UpdateCompanyDto extends PartialType(CreateCompanyDto) {}

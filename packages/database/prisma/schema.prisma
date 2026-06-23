@@ -1908,6 +1908,9 @@ enum CustomFieldEntity {
   TRAILER
   MAINTENANCE_ORDER
   RFP
+  CRM_COMPANY
+  CRM_CONTACT
+  CRM_DEAL
 }
 
 enum CustomFieldType {
