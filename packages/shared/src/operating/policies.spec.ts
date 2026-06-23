@@ -222,6 +222,39 @@ describe('driver.exception policy', () => {
   });
 });
 
+describe('CRM policies', () => {
+  it('maps crm.deal.stale to a CRM_STALE_DEAL task with stable dedupKey', () => {
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.CRM_DEAL_STALE,
+      payload: { dealId: 'd1', companyId: 'co1', stage: 'PROPOSAL', daysSinceActivity: 10 },
+    });
+    expect(specs).toHaveLength(1);
+    expect(specs[0].type).toBe(OperationalTaskType.EXCEPTION);
+    expect(specs[0].category).toBe('CRM_STALE_DEAL');
+    expect(specs[0].severity).toBe('WARNING');
+    expect(specs[0].subjectType).toBe('deal');
+    expect(specs[0].subjectId).toBe('d1');
+    expect(specs[0].dedupKey).toBe('CRM_STALE_DEAL:d1');
+    expect(specs[0].assignHint).toBe('AUTO');
+    expect(specs[0].title).toContain('10');
+  });
+
+  it('maps crm.followup.due to a CRM_FOLLOWUP_DUE task with stable dedupKey', () => {
+    const specs = resolvePolicies({
+      type: DOMAIN_EVENT_TYPES.CRM_FOLLOWUP_DUE,
+      payload: { activityId: 'act1', dealId: 'd1', companyId: 'co1', dueAt: '2026-06-15T09:00:00.000Z' },
+    });
+    expect(specs).toHaveLength(1);
+    expect(specs[0].type).toBe(OperationalTaskType.EXCEPTION);
+    expect(specs[0].category).toBe('CRM_FOLLOWUP_DUE');
+    expect(specs[0].severity).toBe('WARNING');
+    expect(specs[0].subjectType).toBe('crm-activity');
+    expect(specs[0].subjectId).toBe('act1');
+    expect(specs[0].dedupKey).toBe('CRM_FOLLOWUP_DUE:act1');
+    expect(specs[0].assignHint).toBe('AUTO');
+  });
+});
+
 describe('PORTAL_CHANGE_REQUEST policy', () => {
   const orderId = 'to-abc';
   const bucket = '2026-06-18T15:00';

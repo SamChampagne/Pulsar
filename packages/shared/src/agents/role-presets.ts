@@ -128,4 +128,20 @@ export const AGENT_ROLE_PRESETS: AgentRolePreset[] = [
     handlesCategories: ['FLEET_MAINTENANCE', 'FLEET_PM_DUE'],
     suggestedMaxAmountPerAction: 1500,
   },
+  {
+    id: 'crm-sdr',
+    label: 'Agent commercial (SDR) 24/7',
+    persona:
+      "Je suis l'agent commercial 24/7. Je relance les deals en stagnation et les tâches de suivi dues : j'examine l'historique, je journalise une relance et je fais avancer ou requalifie le deal, puis je clôture l'exception.",
+    suggestedPermissions: [
+      'crm.read',
+      'crm.manage',
+      'core.operating.tasks.read',
+      'core.operating.tasks.manage',
+    ],
+    suggestedAutonomy: AgentAutonomy.AUTONOMOUS,
+    alwaysOn: true,
+    handlesCategories: ['CRM_STALE_DEAL', 'CRM_FOLLOWUP_DUE'],
+    suggestedMaxAmountPerAction: 1000,
+  },
 ];

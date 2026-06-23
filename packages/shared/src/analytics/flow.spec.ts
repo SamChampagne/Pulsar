@@ -126,6 +126,29 @@ describe('flow reactions', () => {
   });
 });
 
+describe('CRM flow mappings', () => {
+  it('maps crm.* event prefix to CRM module', () => {
+    expect(moduleOfEventType('crm.deal.stale')).toBe('CRM');
+    expect(moduleOfEventType('crm.followup.due')).toBe('CRM');
+  });
+
+  it('maps CRM subject types to CRM module', () => {
+    expect(moduleOfSubjectType('deal')).toBe('CRM');
+    expect(moduleOfSubjectType('company')).toBe('CRM');
+    expect(moduleOfSubjectType('contact')).toBe('CRM');
+    expect(moduleOfSubjectType('crm-activity')).toBe('CRM');
+  });
+
+  it('includes CRM in a flow chain when event type is crm.*', () => {
+    const crmEvent: FlowEvent = {
+      id: 'e-crm', type: 'crm.deal.stale', module: 'CRM',
+      subjectType: 'deal', subjectId: 'd1', at: '2026-06-22T10:00:00.000Z',
+    };
+    const chains = buildFlowChains([crmEvent], [], []);
+    expect(chains[0].modules).toContain('CRM');
+  });
+});
+
 describe('buildEntityTrace', () => {
   it('derives stage statuses with a blocked pick', () => {
     const trace = buildEntityTrace({

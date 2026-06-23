@@ -23,6 +23,7 @@ import {
   ClipboardList,
   FileText,
   Palette,
+  Handshake,
   Mail,
 } from 'lucide-svelte';
 import type { ComponentType } from 'svelte';
@@ -365,6 +366,29 @@ export function navCatalogue(): NavDomain[] {
               label: 'Scorecard transporteurs',
               perm: 'transportation.analytics.read',
             },
+          ],
+        },
+      ],
+    },
+
+    // ── CRM ───────────────────────────────────────────────────────────────
+    {
+      key: 'crm',
+      label: 'CRM',
+      icon: Handshake,
+      home: '/crm',
+      module: MODULE_KEYS.CRM,
+      prefixes: ['/crm'],
+      anyPerms: [PERMISSIONS.CRM.READ],
+      sections: [
+        {
+          links: [
+            { href: '/crm', label: 'Tableau de bord', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/pipeline', label: 'Pipeline', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/deals', label: 'Deals', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/companies', label: 'Sociétés', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/contacts', label: 'Contacts', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/activities', label: 'Activités', perm: PERMISSIONS.CRM.READ },
           ],
         },
       ],

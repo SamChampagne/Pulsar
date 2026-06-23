@@ -23,6 +23,9 @@ export const DOMAIN_EVENT_TYPES = {
   LOAD_COMPLETED: 'load.completed',
   YARD_VISIT_CHECKED_OUT: 'yard.visit.checked-out',
   WMS_RECEIPT_POSTED: 'wms.receipt.posted',
+  // CRM operating integration.
+  CRM_DEAL_STALE: 'crm.deal.stale',
+  CRM_FOLLOWUP_DUE: 'crm.followup.due',
 } as const;
 
 export interface DomainEventInput {
@@ -330,6 +333,52 @@ const POLICIES: Policy[] = [
           dedupKey: `portal-change:${str(subject.id)}:${kind}:${bucket}`,
           details: { ...e.payload },
           assignHint: 'UNASSIGNED' as AssignHint,
+        },
+      ];
+    },
+  },
+  {
+    // CRM: an open deal has had no activity for 7+ days — risk of deal going cold.
+    eventType: DOMAIN_EVENT_TYPES.CRM_DEAL_STALE,
+    produce: (e) => {
+      const dealId = str(e.payload.dealId);
+      const companyId = str(e.payload.companyId);
+      const stage = str(e.payload.stage);
+      const daysSinceActivity = num(e.payload.daysSinceActivity);
+      return [
+        {
+          type: OperationalTaskType.EXCEPTION,
+          category: 'CRM_STALE_DEAL',
+          severity: 'WARNING' as const,
+          title: `Deal inactif depuis ${daysSinceActivity} jour(s) — ${stage}`,
+          subjectType: 'deal',
+          subjectId: dealId,
+          dedupKey: `CRM_STALE_DEAL:${dealId}`,
+          details: { ...e.payload, companyId },
+          assignHint: 'AUTO' as const,
+        },
+      ];
+    },
+  },
+  {
+    // CRM: a follow-up task is past its due date and not yet marked done.
+    eventType: DOMAIN_EVENT_TYPES.CRM_FOLLOWUP_DUE,
+    produce: (e) => {
+      const activityId = str(e.payload.activityId);
+      const dealId = str(e.payload.dealId);
+      const companyId = str(e.payload.companyId);
+      const dueAt = str(e.payload.dueAt);
+      return [
+        {
+          type: OperationalTaskType.EXCEPTION,
+          category: 'CRM_FOLLOWUP_DUE',
+          severity: 'WARNING' as const,
+          title: `Relance en retard — échéance ${dueAt ? dueAt.slice(0, 10) : 'passée'}`,
+          subjectType: 'crm-activity',
+          subjectId: activityId,
+          dedupKey: `CRM_FOLLOWUP_DUE:${activityId}`,
+          details: { ...e.payload, dealId, companyId },
+          assignHint: 'AUTO' as const,
         },
       ];
     },

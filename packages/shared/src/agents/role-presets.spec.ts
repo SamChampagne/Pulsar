@@ -37,6 +37,7 @@ describe('AGENT_ROLE_PRESETS', () => {
     expect(ids).toContain('tender-desk');
     expect(ids).toContain('freight-auditor');
     expect(ids).toContain('fleet-maintenance');
+    expect(ids).toContain('crm-sdr');
   });
 
   it('non-always-on presets do not declare categories', () => {

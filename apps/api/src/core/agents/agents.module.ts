@@ -31,6 +31,10 @@ import { PickingService } from '../../modules/wms/picking/picking.service';
 import { CycleCountsService } from '../../modules/wms/cycle-counts/cycle-counts.service';
 import { AnalyticsModule } from '../../modules/analytics/analytics.module';
 import { FlowService } from '../../modules/analytics/flow.service';
+import { CrmModule } from '../../modules/crm/crm.module';
+import { CompaniesService } from '../../modules/crm/companies.service';
+import { DealsService } from '../../modules/crm/deals.service';
+import { ActivitiesService } from '../../modules/crm/activities.service';
 import { AgentsController } from './agents.controller';
 import { AgentsService } from './agents.service';
 import { ProposedActionsController } from './proposed-actions.controller';
@@ -67,6 +71,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
     YardModule,
     WmsModule,
     AnalyticsModule,
+    CrmModule,
   ],
   controllers: [
     AgentsController,
@@ -104,6 +109,9 @@ import { RuntimeConfigController } from './runtime-config.controller';
         PickingService,
         CycleCountsService,
         FlowService,
+        CompaniesService,
+        DealsService,
+        ActivitiesService,
         AiDraftService,
         MailService,
       ],
@@ -128,6 +136,9 @@ import { RuntimeConfigController } from './runtime-config.controller';
         picking: PickingService,
         cycleCounts: CycleCountsService,
         flow: FlowService,
+        companies: CompaniesService,
+        deals: DealsService,
+        activities: ActivitiesService,
         aiDraft: AiDraftService,
         mail: MailService,
       ): ToolServices => ({
@@ -211,6 +222,17 @@ import { RuntimeConfigController } from './runtime-config.controller';
         flow: {
           timeline: (tenantId, opts) => flow.timeline(tenantId, { days: opts.days ?? 7, limit: opts.limit ?? 200, modules: opts.modules, crossOnly: opts.crossOnly }),
           trace: (tenantId, entityType, entityId) => flow.trace(tenantId, entityType, entityId),
+        },
+        crm: {
+          listDeals: (tenantId, query) => deals.list(tenantId, query as never),
+          getCompany: (tenantId, id) => companies.get(tenantId, id),
+          listActivities: (tenantId, query) => activities.list(tenantId, query as never),
+          logActivity: (tenantId, input, author) =>
+            activities.create(tenantId, input as never, author),
+          advanceDeal: (tenantId, id, userId, stage) =>
+            deals.advance(tenantId, id, userId, stage as never),
+          createFollowup: (tenantId, input, author) =>
+            activities.create(tenantId, { ...(input as object), type: 'TASK' } as never, author),
         },
         email: {
           draft: (tenantId, input) => aiDraft.draft(tenantId, input),

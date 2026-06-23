@@ -117,6 +117,26 @@ export const PLAYBOOKS: Record<string, Playbook> = {
       'Mettre à jour le rendez-vous si reprogrammé',
     ],
   },
+  CRM_STALE_DEAL: {
+    slaMinutes: 1440,
+    priority: NotificationLevel.WARNING,
+    checklist: [
+      "Examiner l'historique du deal et de la société",
+      'Journaliser une relance (appel/email) appropriée',
+      'Faire avancer ou requalifier le deal selon la réponse attendue',
+      'Planifier la prochaine étape si nécessaire',
+    ],
+  },
+  CRM_FOLLOWUP_DUE: {
+    slaMinutes: 240,
+    priority: NotificationLevel.WARNING,
+    checklist: [
+      'Relire la tâche de relance et son contexte',
+      "Exécuter la relance (journaliser l'activité)",
+      'Marquer la relance comme effectuée',
+      'Créer la prochaine relance si le cycle continue',
+    ],
+  },
 };
 
 export const DEFAULT_PLAYBOOK: Playbook = {

@@ -446,6 +446,184 @@ async function main() {
 
   console.log('Built-in automation rules ready.');
 
+  // --- CRM demo data (acme tenant) -------------------------------------------
+  // Two companies: one ACTIVE linked to the existing CUST-001 customer, one PROSPECT.
+  const crmCompanyActive = await prisma.crmCompany.upsert({
+    where: {
+      // No natural unique key; use a stable name+tenant lookup pattern via findFirst then upsert by id trick.
+      // Instead, we rely on a findFirst + create-or-skip pattern to stay idempotent.
+      id: (
+        (await prisma.crmCompany.findFirst({ where: { tenantId: tenant.id, name: 'Northern Retail Group' } })) ?? {
+          id: 'crm-company-northern-retail',
+        }
+      ).id,
+    },
+    update: {},
+    create: {
+      id: 'crm-company-northern-retail',
+      tenantId: tenant.id,
+      name: 'Northern Retail Group',
+      domain: 'northernretail.example',
+      industry: 'Retail',
+      status: 'ACTIVE',
+      customerId: customer.id,
+    },
+  });
+
+  const crmCompanyProspect = await prisma.crmCompany.upsert({
+    where: {
+      id: (
+        (await prisma.crmCompany.findFirst({ where: { tenantId: tenant.id, name: 'Boréal Logistics Inc.' } })) ?? {
+          id: 'crm-company-boreal-logistics',
+        }
+      ).id,
+    },
+    update: {},
+    create: {
+      id: 'crm-company-boreal-logistics',
+      tenantId: tenant.id,
+      name: 'Boréal Logistics Inc.',
+      domain: 'boreal-logistics.example',
+      industry: 'Third-Party Logistics',
+      status: 'PROSPECT',
+    },
+  });
+
+  // Two contacts
+  await prisma.crmContact.upsert({
+    where: {
+      id: (
+        (await prisma.crmContact.findFirst({ where: { tenantId: tenant.id, email: 'marie.tremblay@northernretail.example' } })) ?? {
+          id: 'crm-contact-marie',
+        }
+      ).id,
+    },
+    update: {},
+    create: {
+      id: 'crm-contact-marie',
+      tenantId: tenant.id,
+      name: 'Marie Tremblay',
+      companyId: crmCompanyActive.id,
+      title: 'Logistics Manager',
+      email: 'marie.tremblay@northernretail.example',
+      phone: '+1-514-555-0200',
+    },
+  });
+
+  await prisma.crmContact.upsert({
+    where: {
+      id: (
+        (await prisma.crmContact.findFirst({ where: { tenantId: tenant.id, email: 'pierre.cote@boreal-logistics.example' } })) ?? {
+          id: 'crm-contact-pierre',
+        }
+      ).id,
+    },
+    update: {},
+    create: {
+      id: 'crm-contact-pierre',
+      tenantId: tenant.id,
+      name: 'Pierre Côté',
+      companyId: crmCompanyProspect.id,
+      title: 'VP Operations',
+      email: 'pierre.cote@boreal-logistics.example',
+      phone: '+1-418-555-0333',
+    },
+  });
+
+  // Three deals: one PROPOSAL stale (lastActivityAt 10 days ago), one QUALIFIED recent, one WON
+  const tenDaysAgo = new Date(Date.now() - 10 * 24 * 3600 * 1000);
+  const yesterday = new Date(Date.now() - 1 * 24 * 3600 * 1000);
+
+  await prisma.crmDeal.upsert({
+    where: {
+      id: (
+        (await prisma.crmDeal.findFirst({ where: { tenantId: tenant.id, title: 'Renouvellement contrat transport 2027' } })) ?? {
+          id: 'crm-deal-renewal-stale',
+        }
+      ).id,
+    },
+    update: {},
+    create: {
+      id: 'crm-deal-renewal-stale',
+      tenantId: tenant.id,
+      title: 'Renouvellement contrat transport 2027',
+      companyId: crmCompanyActive.id,
+      stage: 'PROPOSAL',
+      amount: 180000,
+      currency: 'CAD',
+      expectedCloseDate: new Date('2026-09-30'),
+      lastActivityAt: tenDaysAgo,
+    },
+  });
+
+  await prisma.crmDeal.upsert({
+    where: {
+      id: (
+        (await prisma.crmDeal.findFirst({ where: { tenantId: tenant.id, title: 'Nouveau corridor Québec–Ontario' } })) ?? {
+          id: 'crm-deal-qc-on-qualified',
+        }
+      ).id,
+    },
+    update: {},
+    create: {
+      id: 'crm-deal-qc-on-qualified',
+      tenantId: tenant.id,
+      title: 'Nouveau corridor Québec–Ontario',
+      companyId: crmCompanyProspect.id,
+      stage: 'QUALIFIED',
+      amount: 95000,
+      currency: 'CAD',
+      expectedCloseDate: new Date('2026-10-15'),
+      lastActivityAt: yesterday,
+    },
+  });
+
+  await prisma.crmDeal.upsert({
+    where: {
+      id: (
+        (await prisma.crmDeal.findFirst({ where: { tenantId: tenant.id, title: 'Contrat spot été 2026' } })) ?? {
+          id: 'crm-deal-spot-won',
+        }
+      ).id,
+    },
+    update: {},
+    create: {
+      id: 'crm-deal-spot-won',
+      tenantId: tenant.id,
+      title: 'Contrat spot été 2026',
+      companyId: crmCompanyActive.id,
+      stage: 'WON',
+      amount: 42000,
+      currency: 'CAD',
+      convertedCustomerId: customer.id,
+      lastActivityAt: new Date('2026-06-01'),
+    },
+  });
+
+  // One overdue TASK activity (dueAt in the past, doneAt null)
+  await prisma.crmActivity.upsert({
+    where: {
+      id: (
+        (await prisma.crmActivity.findFirst({ where: { tenantId: tenant.id, body: 'Envoyer la proposition de renouvellement révisée' } })) ?? {
+          id: 'crm-activity-task-overdue',
+        }
+      ).id,
+    },
+    update: {},
+    create: {
+      id: 'crm-activity-task-overdue',
+      tenantId: tenant.id,
+      type: 'TASK',
+      companyId: crmCompanyActive.id,
+      dealId: 'crm-deal-renewal-stale',
+      body: 'Envoyer la proposition de renouvellement révisée',
+      dueAt: tenDaysAgo,
+      doneAt: null,
+      createdByUserId: admin.id,
+    },
+  });
+
+  console.log('CRM demo data ready (2 companies, 2 contacts, 3 deals, 1 overdue task).');
   // --- Email templates (idempotent, acme tenant) --------------------------------
   await prisma.emailTemplate.upsert({
     where: { tenantId_key: { tenantId: tenant.id, key: 'welcome' } },

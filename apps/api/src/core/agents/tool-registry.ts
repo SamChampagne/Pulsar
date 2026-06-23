@@ -17,6 +17,7 @@ import { fleetTools } from './tools/fleet.tools';
 import { yardTools } from './tools/yard.tools';
 import { wmsTools } from './tools/wms.tools';
 import { analyticsTools } from './tools/analytics.tools';
+import { crmTools } from './tools/crm.tools';
 import { emailTools } from './tools/email.tools';
 
 /** All agent tools, in their canonical order (preserved from the original monolithic registry). */
@@ -28,6 +29,7 @@ export const TOOL_REGISTRY: ToolDef[] = [
   ...yardTools,
   ...wmsTools,
   ...analyticsTools,
+  ...crmTools,
   ...emailTools,
 ];
 

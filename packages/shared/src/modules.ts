@@ -15,6 +15,7 @@ export const MODULE_KEYS = {
   BILLING: 'billing',
   PROCUREMENT: 'procurement',
   CARRIER_PORTAL: 'carrier-portal',
+  CRM: 'crm',
 } as const;
 
 export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS];
@@ -96,6 +97,13 @@ export const MODULE_CATALOG: ModuleDescriptor[] = [
     key: MODULE_KEYS.CARRIER_PORTAL,
     name: 'Carrier Portal',
     description: 'Carrier-facing portal: tenders, loads, POD/invoice upload, payment status.',
+    isCore: false,
+    available: true,
+  },
+  {
+    key: MODULE_KEYS.CRM,
+    name: 'CRM',
+    description: 'Commercial relationships: companies, contacts, deals pipeline and activity timeline, worked by an AI commercial agent.',
     isCore: false,
     available: true,
   },
