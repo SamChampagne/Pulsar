@@ -100,6 +100,7 @@ export function navCatalogue(): NavDomain[] {
       home: '/dispatch',
       module: MODULE_KEYS.TRANSPORTATION,
       prefixes: [
+        '/transportation',
         '/dispatch',
         '/planning',
         '/transport-orders',
@@ -151,7 +152,7 @@ export function navCatalogue(): NavDomain[] {
           label: 'Administration',
           links: [
             {
-              href: '/settings/modules/transportation',
+              href: '/transportation/config',
               label: 'Configuration',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
@@ -195,7 +196,7 @@ export function navCatalogue(): NavDomain[] {
           label: 'Administration',
           links: [
             {
-              href: '/settings/modules/wms',
+              href: '/wms/config',
               label: 'Configuration',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
@@ -225,7 +226,7 @@ export function navCatalogue(): NavDomain[] {
           label: 'Administration',
           links: [
             {
-              href: '/settings/modules/yard',
+              href: '/yard/config',
               label: 'Configuration',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
@@ -253,7 +254,7 @@ export function navCatalogue(): NavDomain[] {
           label: 'Administration',
           links: [
             {
-              href: '/settings/modules/fleet',
+              href: '/fleet/config',
               label: 'Configuration',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
@@ -282,7 +283,7 @@ export function navCatalogue(): NavDomain[] {
           label: 'Administration',
           links: [
             {
-              href: '/settings/modules/billing',
+              href: '/billing/config',
               label: 'Configuration',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
@@ -414,7 +415,7 @@ export function navCatalogue(): NavDomain[] {
           label: 'Administration',
           links: [
             {
-              href: '/settings/modules/procurement',
+              href: '/procurement/config',
               label: 'Configuration',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
@@ -462,7 +463,7 @@ export function navCatalogue(): NavDomain[] {
           label: 'Administration',
           links: [
             {
-              href: '/settings/modules/connect',
+              href: '/connect/config',
               label: 'Configuration',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
