@@ -7,7 +7,7 @@ import { ListQueryDto } from '../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../common/pagination';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { EmailService } from '../email/email.service';
+import { MailService } from '../email/mail.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 
 const userSelect = {
@@ -27,7 +27,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly ownership: OwnershipService,
     private readonly config: ConfigService,
-    private readonly email: EmailService,
+    private readonly mail: MailService,
   ) {}
 
   private async assertRolesOwned(tenantId: string, roleIds: string[] | undefined) {
@@ -104,12 +104,15 @@ export class UsersService {
       },
     });
     const inviteUrl = `${this.config.get('WEB_URL', 'http://localhost:5173')}/reset-password/${token}`;
-    await this.email.send({
-      to: email,
+    // Route through the durable outbox so the invitation email is recorded
+    // in the tenant's email history.
+    void this.mail.queue(tenantId, {
+      toAddresses: [email],
       subject: 'You have been invited to Pulsar',
       html: `<p>Set your password to activate your Pulsar account: <a href="${inviteUrl}">${inviteUrl}</a></p><p>This link expires in 72 hours.</p>`,
       text: `Activate your Pulsar account: ${inviteUrl} (expires in 72 hours)`,
-    });
+      createdByUserId: undefined,
+    }).catch(() => undefined);
     return { ...user, inviteUrl };
   }
 

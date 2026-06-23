@@ -1,6 +1,8 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { CryptoModule } from '../crypto/crypto.module';
+import { AiDraftService } from '../email/ai-draft.service';
+import { MailService } from '../email/mail.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { OperatingModule } from '../operating/operating.module';
 import { TransportationModule } from '../../modules/transportation/transportation.module';
@@ -102,6 +104,8 @@ import { RuntimeConfigController } from './runtime-config.controller';
         PickingService,
         CycleCountsService,
         FlowService,
+        AiDraftService,
+        MailService,
       ],
       useFactory: (
         transportOrders: TransportOrdersService,
@@ -124,6 +128,8 @@ import { RuntimeConfigController } from './runtime-config.controller';
         picking: PickingService,
         cycleCounts: CycleCountsService,
         flow: FlowService,
+        aiDraft: AiDraftService,
+        mail: MailService,
       ): ToolServices => ({
         transportOrders: {
           list: (tenantId, query) => transportOrders.list(tenantId, query as never),
@@ -205,6 +211,11 @@ import { RuntimeConfigController } from './runtime-config.controller';
         flow: {
           timeline: (tenantId, opts) => flow.timeline(tenantId, { days: opts.days ?? 7, limit: opts.limit ?? 200, modules: opts.modules, crossOnly: opts.crossOnly }),
           trace: (tenantId, entityType, entityId) => flow.trace(tenantId, entityType, entityId),
+        },
+        email: {
+          draft: (tenantId, input) => aiDraft.draft(tenantId, input),
+          send: (tenantId, input, author) =>
+            mail.queue(tenantId, { ...input, agentId: author.agentId }),
         },
       }),
     },

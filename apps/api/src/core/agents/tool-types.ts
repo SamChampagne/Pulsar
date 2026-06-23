@@ -103,6 +103,22 @@ export interface ToolServices {
     timeline(tenantId: string, opts: { days?: number; modules?: string[]; crossOnly?: boolean; limit?: number }): Promise<unknown>;
     trace(tenantId: string, entityType: 'TRANSPORT_ORDER' | 'SHIPMENT' | 'LOAD', entityId: string): Promise<unknown>;
   };
+  // ── Email (core) ───────────────────────────────────────────────────────────
+  email: {
+    draft(tenantId: string, input: { prompt: string; context?: string }): Promise<unknown>;
+    send(
+      tenantId: string,
+      input: {
+        toAddresses: string[];
+        subject: string;
+        html: string;
+        relatedType?: string;
+        relatedId?: string;
+        attachments?: { documentId: string; filename: string }[];
+      },
+      author: { agentId: string },
+    ): Promise<unknown>;
+  };
 }
 
 export interface ToolContext {

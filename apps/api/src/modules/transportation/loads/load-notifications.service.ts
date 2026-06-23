@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DOMAIN_EVENT_TYPES } from '@pulsar/shared';
-import { EmailService } from '../../../core/email/email.service';
+import { MailService } from '../../../core/email/mail.service';
 import { WebhooksService } from '../../../core/integrations/webhooks.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -26,7 +26,7 @@ export class LoadNotificationsService {
     private readonly prisma: PrismaService,
     private readonly webhooks: WebhooksService,
     private readonly domainEvents: DomainEventsService,
-    private readonly email: EmailService,
+    private readonly mail: MailService,
     private readonly config: ConfigService,
   ) {}
 
@@ -90,8 +90,9 @@ export class LoadNotificationsService {
       const trackLine = shipment.trackingToken
         ? `<p><a href="${webUrl}/track/${shipment.trackingToken}">Track this shipment</a></p>`
         : '';
-      await this.email.send({
-        to,
+      // Route through the durable outbox — recorded in the tenant's email history.
+      await this.mail.queue(tenantId, {
+        toAddresses: [to],
         subject: `Delivered — ${shipment.shipmentNumber} (order ${shipment.transportOrder.orderNumber})`,
         html: [
           `<p>Your shipment <strong>${shipment.shipmentNumber}</strong>`,
@@ -102,6 +103,8 @@ export class LoadNotificationsService {
           trackLine,
         ].join(''),
         text: `Your shipment ${shipment.shipmentNumber} was delivered.`,
+        relatedType: 'load',
+        relatedId: loadId,
       });
     }
   }
