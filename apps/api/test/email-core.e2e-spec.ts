@@ -12,6 +12,8 @@
  *   - MailService.queue persists EmailMessage (QUEUED) + EmailAttachment rows.
  *   - MailService.deliver (EMAIL_DRIVER=log) → status SENT + sentAt set.
  *   - MailService.processQueue picks up stuck QUEUED messages.
+ *   - Agent tools: draft_email (LOW) runs live; send_email (SENSITIVE) is enqueued as
+ *     a ProposedAction (PENDING) and does NOT send directly.
  *
  * Prerequisites: running, seeded PostgreSQL (pnpm db:seed).
  */
@@ -23,6 +25,12 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { EmailService } from '../src/core/email/email.service';
 import { MailService } from '../src/core/email/mail.service';
 import { DocumentsService } from '../src/core/documents/documents.service';
+import { TOOL_BY_NAME } from '../src/core/agents/tool-registry';
+import { ProposedActionsService } from '../src/core/agents/proposed-actions.service';
+import { AiDraftService } from '../src/core/email/ai-draft.service';
+import { RiskTier, AgentAutonomy } from '@pulsar/shared';
+import type { AgentPrincipal } from '../src/core/agents/agent-principal';
+import type { ToolServices } from '../src/core/agents/tool-types';
 
 const ADMIN = { email: 'admin@pulsar.dev', password: 'admin123', tenant: 'acme' };
 const SMTP_PASSWORD = 'super-secret-smtp-password';
@@ -579,5 +587,194 @@ describe('Email core — AiDraftService guard (e2e)', () => {
     const body = res.body as Record<string, unknown>;
     expect(typeof body.message).toBe('string');
     expect((body.message as string).toLowerCase()).toContain('llm');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Agent tools — draft_email (LOW) + send_email (SENSITIVE) governance
+// ---------------------------------------------------------------------------
+describe('Email core — agent tools governance (e2e)', () => {
+  let app: INestApplication;
+  let http: ReturnType<INestApplication['getHttpServer']>;
+  let prisma: PrismaService;
+  let mailService: MailService;
+  let proposedActionsService: ProposedActionsService;
+  let tenantId = '';
+  let token = '';
+  let agentId = '';
+
+  /** Resolved principal built from the registered agent row. */
+  let principal: AgentPrincipal;
+
+  /** Minimal ToolServices stub — only the email delegate needs to be real. */
+  let services: ToolServices;
+
+  const auth = () => ({ Authorization: `Bearer ${token}` });
+
+  beforeAll(async () => {
+    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = ref.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
+    );
+    await app.init();
+    http = app.getHttpServer();
+
+    prisma = app.get(PrismaService);
+    mailService = app.get(MailService);
+    proposedActionsService = app.get(ProposedActionsService);
+    const aiDraftService = app.get(AiDraftService);
+
+    const loginRes = await request(http).post('/api/v1/auth/login').send(ADMIN).expect(200);
+    token = (loginRes.body as { accessToken: string }).accessToken;
+
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: 'acme' } });
+    tenantId = tenant.id;
+
+    // Register the agent via the real HTTP endpoint — handles prefix/secretHash/serviceUserId.
+    const agentRes = await request(http)
+      .post('/api/v1/agents')
+      .set(auth())
+      .send({
+        name: `[e2e] email-tools-${Date.now()}`,
+        role: 'email_tester',
+        model: 'test',
+        autonomyLevel: 'PROPOSE',
+        permissions: ['core.email.send'],
+      })
+      .expect(201);
+
+    agentId = (agentRes.body as { id: string }).id;
+
+    // Load the agent's service user so we can build a valid principal.
+    const agentRow = await prisma.agent.findUniqueOrThrow({
+      where: { id: agentId },
+      select: { serviceUserId: true, name: true },
+    });
+    const serviceUser = await prisma.user.findUniqueOrThrow({
+      where: { id: agentRow.serviceUserId },
+      select: { id: true, email: true, firstName: true, lastName: true },
+    });
+
+    principal = {
+      agentId,
+      name: agentRow.name,
+      caps: {},
+      autonomyLevel: AgentAutonomy.PROPOSE,
+      user: {
+        id: serviceUser.id,
+        tenantId,
+        email: serviceUser.email,
+        firstName: serviceUser.firstName,
+        lastName: serviceUser.lastName,
+        permissions: ['core.email.send' as const],
+      } as AgentPrincipal['user'],
+    };
+
+    // Wire only the email delegate; the rest are stubs (never called in these tests).
+    services = {
+      email: {
+        draft: (tid: string, input: { prompt: string; context?: string }) =>
+          aiDraftService.draft(tid, input),
+        send: (tid: string, input: Parameters<MailService['queue']>[1], author: { agentId: string }) =>
+          mailService.queue(tid, { ...input, agentId: author.agentId }),
+      },
+    } as unknown as ToolServices;
+
+    // Clean up residual proposals from any previous interrupted run.
+    await prisma.proposedAction.deleteMany({ where: { agentId } });
+  });
+
+  afterAll(async () => {
+    if (agentId) {
+      await prisma.proposedAction.deleteMany({ where: { agentId } }).catch(() => undefined);
+      await request(http).delete(`/api/v1/agents/${agentId}`).set(auth()).catch(() => undefined);
+    }
+    await app.close();
+  });
+
+  // ── Registry contract ────────────────────────────────────────────────────
+
+  it('draft_email is in TOOL_REGISTRY with tier LOW', () => {
+    const def = TOOL_BY_NAME.get('draft_email');
+    expect(def).toBeDefined();
+    expect(def!.tier).toBe(RiskTier.LOW);
+    expect(def!.permission).toBe('core.email.send');
+    expect(def!.module).toBeUndefined();
+  });
+
+  it('send_email is in TOOL_REGISTRY with tier SENSITIVE', () => {
+    const def = TOOL_BY_NAME.get('send_email');
+    expect(def).toBeDefined();
+    expect(def!.tier).toBe(RiskTier.SENSITIVE);
+    expect(def!.permission).toBe('core.email.send');
+    expect(def!.module).toBeUndefined();
+  });
+
+  // ── send_email → governance gate enqueues ProposedAction ─────────────────
+
+  it('send_email: handleMutatingTool enqueues a PENDING ProposedAction and does NOT queue an EmailMessage', async () => {
+    // Stub deliver to avoid fire-and-forget noise; we assert no message is created.
+    const deliverSpy = jest.spyOn(mailService, 'deliver').mockResolvedValue(undefined);
+
+    const def = TOOL_BY_NAME.get('send_email')!;
+    const args = {
+      to: 'recipient@example.com',
+      subject: '[e2e-agent-tool] send_email governance',
+      html: '<p>From agent governance test</p>',
+    };
+
+    const decision = await proposedActionsService.handleMutatingTool(
+      principal,
+      def,
+      args,
+      services,
+    );
+
+    deliverSpy.mockRestore();
+
+    // Must be PROPOSE (agent is base-PROPOSE autonomy).
+    expect(decision.effect).toBe('PROPOSE');
+    expect(decision.proposalId).toBeTruthy();
+
+    // DB: ProposedAction exists and is PENDING.
+    const row = await prisma.proposedAction.findUniqueOrThrow({
+      where: { id: decision.proposalId },
+    });
+    expect(row.status).toBe('PENDING');
+    expect(row.tool).toBe('send_email');
+    expect(row.riskTier).toBe(RiskTier.SENSITIVE);
+
+    // No EmailMessage was created — the action was only proposed, not executed.
+    const messages = await prisma.emailMessage.findMany({
+      where: { tenantId, subject: '[e2e-agent-tool] send_email governance' },
+    });
+    expect(messages).toHaveLength(0);
+  });
+
+  // ── services.email.send wires to MailService.queue ───────────────────────
+
+  it('services.email.send (direct) queues an EmailMessage with agentId set', async () => {
+    const deliverSpy = jest.spyOn(mailService, 'deliver').mockResolvedValue(undefined);
+
+    const msg = await services.email.send(
+      tenantId,
+      {
+        toAddresses: ['direct-test@example.com'],
+        subject: '[e2e-agent-tool] direct send wire',
+        html: '<p>Direct wire test</p>',
+      },
+      { agentId: principal.agentId },
+    ) as { id: string; status: string; agentId: string | null };
+
+    deliverSpy.mockRestore();
+
+    expect(msg.id).toBeTruthy();
+    expect(msg.status).toBe('QUEUED');
+    expect(msg.agentId).toBe(principal.agentId);
+
+    // Clean up.
+    await prisma.emailMessage.delete({ where: { id: msg.id } }).catch(() => undefined);
   });
 });
