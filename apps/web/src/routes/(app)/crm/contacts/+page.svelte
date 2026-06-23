@@ -12,13 +12,26 @@
     Card,
     Skeleton,
     ErrorNotice,
+    Modal,
+    Field,
+    Input,
+    Select,
   } from '$lib/components/ui';
   import { untrack } from 'svelte';
   import ActivityTimeline from '$lib/components/crm/ActivityTimeline.svelte';
   import type { Activity } from '$lib/components/crm/ActivityTimeline.svelte';
   import LogActivity from '$lib/components/crm/LogActivity.svelte';
+  import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
 
   // ── Types ───────────────────────────────────────────────────────────────────
+
+  interface CustomFieldDef {
+    key: string;
+    label: string;
+    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
+    options?: { value: string; label: string }[];
+    required: boolean;
+  }
 
   interface ContactRow {
     id: string;
@@ -51,6 +64,18 @@
   let selected = $state<ContactDetail | null>(null);
   let selectedActivities = $state<Activity[]>([]);
   let detailLoading = $state(false);
+
+  // ── State — create modal ─────────────────────────────────────────────────────
+
+  let createOpen = $state(false);
+  let createName = $state('');
+  let createTitle = $state('');
+  let createEmail = $state('');
+  let createPhone = $state('');
+  let createCompanyId = $state('');
+  let createSaving = $state(false);
+  let contactFieldDefs = $state<CustomFieldDef[]>([]);
+  let createCustomData = $state<Record<string, unknown>>({});
 
   // ── Data loading ─────────────────────────────────────────────────────────────
 
@@ -107,6 +132,49 @@
     }
   }
 
+  // ── Create contact ───────────────────────────────────────────────────────────
+
+  async function openCreate() {
+    createName = '';
+    createTitle = '';
+    createEmail = '';
+    createPhone = '';
+    createCompanyId = '';
+    createCustomData = {};
+    createOpen = true;
+    contactFieldDefs = await api<CustomFieldDef[]>('/crm/custom-fields', {
+      query: { entityType: 'CRM_CONTACT' },
+    }).catch(() => [] as CustomFieldDef[]);
+  }
+
+  async function submitCreate() {
+    if (!createName.trim()) {
+      toast.error('Le nom est obligatoire');
+      return;
+    }
+    createSaving = true;
+    try {
+      await api<ContactRow>('/crm/contacts', {
+        method: 'POST',
+        body: {
+          name: createName.trim(),
+          title: createTitle.trim() || undefined,
+          email: createEmail.trim() || undefined,
+          phone: createPhone.trim() || undefined,
+          companyId: createCompanyId.trim() || undefined,
+          customData: Object.keys(createCustomData).length > 0 ? createCustomData : undefined,
+        },
+      });
+      toast.success('Contact créé');
+      createOpen = false;
+      void load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Échec de la création');
+    } finally {
+      createSaving = false;
+    }
+  }
+
   // ── Reactive load ─────────────────────────────────────────────────────────────
   // Single effect: tracks filters, resets to page 1, fires exactly one load.
   // Pagination buttons call load() directly and are not tracked here.
@@ -120,7 +188,11 @@
   });
 </script>
 
-<PageHeader title="Contacts" subtitle="Personnes associées à vos sociétés CRM." count={total} />
+<PageHeader title="Contacts" subtitle="Personnes associées à vos sociétés CRM." count={total}>
+  {#snippet actions()}
+    <Button onclick={openCreate}>Nouveau contact</Button>
+  {/snippet}
+</PageHeader>
 
 <ErrorNotice message={error} onretry={load} />
 
@@ -275,3 +347,31 @@
     </div>
   {/if}
 </div>
+
+<!-- Create contact modal -->
+<Modal bind:open={createOpen} title="Nouveau contact">
+  <div class="flex flex-col gap-4">
+    <Field label="Nom *">
+      <Input bind:value={createName} placeholder="Jean Dupont" />
+    </Field>
+    <Field label="Titre">
+      <Input bind:value={createTitle} placeholder="Directeur logistique" />
+    </Field>
+    <Field label="Courriel">
+      <Input type="email" bind:value={createEmail} placeholder="jean@exemple.com" />
+    </Field>
+    <Field label="Téléphone">
+      <Input bind:value={createPhone} placeholder="+1 514 555 0000" />
+    </Field>
+    <Field label="ID Société (optionnel)">
+      <Input bind:value={createCompanyId} placeholder="cuid de la société" />
+    </Field>
+    {#if contactFieldDefs.length > 0}
+      <CustomFieldInputs definitions={contactFieldDefs} bind:data={createCustomData} />
+    {/if}
+  </div>
+  {#snippet footer()}
+    <Button variant="secondary" onclick={() => { createOpen = false; }}>Annuler</Button>
+    <Button loading={createSaving} onclick={submitCreate}>Créer</Button>
+  {/snippet}
+</Modal>
