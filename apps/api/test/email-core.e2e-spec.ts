@@ -9,6 +9,9 @@
  *   - POST /email-config/test returns { ok: true } (EMAIL_DRIVER=log, no config).
  *   - POST /email-config/test with a stored config passes a defined transport to
  *     EmailService.send regardless of EMAIL_DRIVER (review fix).
+ *   - MailService.queue persists EmailMessage (QUEUED) + EmailAttachment rows.
+ *   - MailService.deliver (EMAIL_DRIVER=log) → status SENT + sentAt set.
+ *   - MailService.processQueue picks up stuck QUEUED messages.
  *
  * Prerequisites: running, seeded PostgreSQL (pnpm db:seed).
  */
@@ -18,6 +21,8 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { EmailService } from '../src/core/email/email.service';
+import { MailService } from '../src/core/email/mail.service';
+import { DocumentsService } from '../src/core/documents/documents.service';
 
 const ADMIN = { email: 'admin@pulsar.dev', password: 'admin123', tenant: 'acme' };
 const SMTP_PASSWORD = 'super-secret-smtp-password';
@@ -180,5 +185,155 @@ describe('Email core — per-tenant SMTP config (e2e)', () => {
     const config = await prisma.tenantEmailConfig.findUnique({ where: { tenantId } });
     expect(config?.lastTestAt).toBeTruthy();
     expect(config?.lastTestOk).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MailService outbox + delivery worker
+// ---------------------------------------------------------------------------
+describe('Email core — MailService outbox + delivery worker (e2e)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let mailService: MailService;
+  let documentsService: DocumentsService;
+  let tenantId = '';
+
+  beforeAll(async () => {
+    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = ref.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
+    );
+    await app.init();
+    prisma = app.get(PrismaService);
+    mailService = app.get(MailService);
+    documentsService = app.get(DocumentsService);
+
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: 'acme' } });
+    tenantId = tenant.id;
+
+    // Clean up any leftover email messages from this test suite.
+    await prisma.emailMessage.deleteMany({
+      where: { tenantId, subject: { startsWith: '[test-mail]' } },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.emailMessage.deleteMany({
+      where: { tenantId, subject: { startsWith: '[test-mail]' } },
+    }).catch(() => undefined);
+    await app.close();
+  });
+
+  it('queue() creates EmailMessage with status QUEUED (message object) and persists to DB', async () => {
+    // Stub deliver so the fire-and-forget doesn't race with our DB read.
+    const deliverSpy = jest.spyOn(mailService, 'deliver').mockResolvedValue(undefined);
+
+    const msg = await mailService.queue(tenantId, {
+      toAddresses: ['recipient@example.com'],
+      subject: '[test-mail] basic queue',
+      html: '<p>Hello world</p>',
+    });
+
+    deliverSpy.mockRestore();
+
+    // The returned message object was created with QUEUED status.
+    expect(msg.id).toBeTruthy();
+    expect(msg.status).toBe('QUEUED');
+    expect(msg.toAddresses).toEqual(['recipient@example.com']);
+
+    // Verify it's actually in the DB — row exists (status may be QUEUED or advanced by the stub).
+    const row = await prisma.emailMessage.findUnique({ where: { id: msg.id } });
+    expect(row).toBeTruthy();
+  });
+
+  it('deliver() with EMAIL_DRIVER=log → status SENT + sentAt set', async () => {
+    // Insert a QUEUED message directly to avoid the queue() fire-and-forget race.
+    const inserted = await prisma.emailMessage.create({
+      data: {
+        tenantId,
+        toAddresses: ['recipient@example.com'],
+        subject: '[test-mail] deliver direct',
+        html: '<p>Test deliver</p>',
+        status: 'QUEUED',
+      },
+    });
+
+    await mailService.deliver(inserted.id);
+
+    const row = await prisma.emailMessage.findUnique({ where: { id: inserted.id } });
+    expect(row!.status).toBe('SENT');
+    expect(row!.sentAt).toBeTruthy();
+  });
+
+  it('queue() with attachment creates EmailAttachment row and deliver() does not throw', async () => {
+    // Create a real Document in the tenant's name so the FK lookup passes.
+    const doc = await documentsService.upload(tenantId, {
+      entityType: 'email-test',
+      entityId: 'test-entity-1',
+      fileName: 'test.txt',
+      mimeType: 'text/plain',
+      body: Buffer.from('attachment content'),
+    });
+
+    // Stub deliver on queue() to avoid the fire-and-forget race.
+    const deliverSpy = jest.spyOn(mailService, 'deliver').mockResolvedValue(undefined);
+
+    const msg = await mailService.queue(tenantId, {
+      toAddresses: ['recipient@example.com'],
+      subject: '[test-mail] with attachment',
+      html: '<p>See attachment</p>',
+      attachments: [{ documentId: doc.id, filename: 'test.txt' }],
+    });
+
+    deliverSpy.mockRestore();
+
+    // Verify EmailAttachment row was created.
+    const attachments = await prisma.emailAttachment.findMany({
+      where: { emailMessageId: msg.id },
+    });
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0].documentId).toBe(doc.id);
+    expect(attachments[0].filename).toBe('test.txt');
+
+    // Now deliver for real (message is still QUEUED since we stubbed the first attempt).
+    await expect(mailService.deliver(msg.id)).resolves.toBeUndefined();
+
+    const row = await prisma.emailMessage.findUnique({ where: { id: msg.id } });
+    expect(row!.status).toBe('SENT');
+
+    // Clean up the uploaded document.
+    await documentsService.remove(tenantId, doc.id).catch(() => undefined);
+  });
+
+  it('processQueue() delivers stuck QUEUED messages', async () => {
+    // Insert a QUEUED message backdated so processQueue picks it up.
+    const stuck = await prisma.emailMessage.create({
+      data: {
+        tenantId,
+        toAddresses: ['stuck@example.com'],
+        subject: '[test-mail] stuck queued',
+        html: '<p>Stuck</p>',
+        status: 'QUEUED',
+        createdAt: new Date(Date.now() - 2 * 60_000), // 2 minutes ago
+      },
+    });
+
+    await mailService.processQueue();
+
+    const row = await prisma.emailMessage.findUnique({ where: { id: stuck.id } });
+    expect(row!.status).toBe('SENT');
+  });
+
+  it('queue() rejects an attachment documentId not owned by the tenant', async () => {
+    await expect(
+      mailService.queue(tenantId, {
+        toAddresses: ['recipient@example.com'],
+        subject: '[test-mail] bad attachment',
+        html: '<p>Bad</p>',
+        attachments: [{ documentId: 'nonexistent-document-id', filename: 'bad.pdf' }],
+      }),
+    ).rejects.toThrow();
   });
 });
