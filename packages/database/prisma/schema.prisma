@@ -103,6 +103,8 @@ model Tenant {
   crmContacts      CrmContact[]
   crmDeals         CrmDeal[]
   crmActivities    CrmActivity[]
+  crmLists         CrmList[]
+  crmCampaigns     CrmCampaign[]
   emailConfig      TenantEmailConfig?
   emailMessages    EmailMessage[]
   emailTemplates   EmailTemplate[]
@@ -2603,8 +2605,9 @@ model CrmContact {
   customData  Json?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
-  tenant      Tenant      @relation(fields: [tenantId], references: [id])
-  company     CrmCompany? @relation(fields: [companyId], references: [id])
+  tenant      Tenant          @relation(fields: [tenantId], references: [id])
+  company     CrmCompany?     @relation(fields: [companyId], references: [id])
+  listMembers CrmListMember[]
 
   @@index([tenantId])
   @@index([tenantId, companyId])
@@ -2656,6 +2659,70 @@ model CrmActivity {
   @@index([tenantId, companyId])
   @@index([tenantId, type, doneAt])
   @@map("crm_activities")
+}
+
+// ============================================================================
+// CRM LISTS & CAMPAIGNS
+// ============================================================================
+
+enum CrmCampaignStatus {
+  DRAFT
+  SENDING
+  SENT
+}
+
+model CrmList {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  ownerUserId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id])
+  members   CrmListMember[]
+  campaigns CrmCampaign[]
+
+  @@index([tenantId])
+  @@map("crm_lists")
+}
+
+model CrmListMember {
+  id        String   @id @default(cuid())
+  tenantId  String
+  listId    String
+  contactId String
+  createdAt DateTime @default(now())
+
+  list    CrmList    @relation(fields: [listId], references: [id], onDelete: Cascade)
+  contact CrmContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, contactId])
+  @@index([tenantId, listId])
+  @@map("crm_list_members")
+}
+
+model CrmCampaign {
+  id          String            @id @default(cuid())
+  tenantId    String
+  name        String
+  listId      String
+  subject     String
+  html        String
+  templateKey String?
+  status      CrmCampaignStatus @default(DRAFT)
+  ownerUserId String?
+  sentAt      DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id])
+  list   CrmList @relation(fields: [listId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("crm_campaigns")
 }
 
 // ============================================================================

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CrmDealStage, canTransitionDeal, isDealOpen } from './crm.workflow';
+import { CrmCampaignStatus, CrmDealStage, canTransitionDeal, isDealOpen } from './crm.workflow';
 
 describe('canTransitionDeal', () => {
   it('moves freely among active stages', () => {
@@ -25,5 +25,13 @@ describe('isDealOpen', () => {
     expect(isDealOpen(CrmDealStage.LEAD)).toBe(true);
     expect(isDealOpen(CrmDealStage.WON)).toBe(false);
     expect(isDealOpen(CrmDealStage.LOST)).toBe(false);
+  });
+});
+
+describe('CrmCampaignStatus', () => {
+  it('has DRAFT, SENDING, SENT values', () => {
+    expect(CrmCampaignStatus.DRAFT).toBe('DRAFT');
+    expect(CrmCampaignStatus.SENDING).toBe('SENDING');
+    expect(CrmCampaignStatus.SENT).toBe('SENT');
   });
 });

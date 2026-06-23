@@ -27,6 +27,12 @@ export function isDealOpen(stage: CrmDealStage): boolean {
   return ACTIVE_STAGES.includes(stage);
 }
 
+export enum CrmCampaignStatus {
+  DRAFT = 'DRAFT',
+  SENDING = 'SENDING',
+  SENT = 'SENT',
+}
+
 /** Active stages move freely among themselves and can close to WON/LOST. Terminal stages never transition. */
 export function canTransitionDeal(from: CrmDealStage, to: CrmDealStage): boolean {
   if (from === to) return false;
