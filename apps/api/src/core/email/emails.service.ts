@@ -14,6 +14,7 @@ export class EmailsService {
       tenantId,
       ...(query.status ? { status: query.status } : {}),
       ...(query.relatedType ? { relatedType: query.relatedType } : {}),
+      ...(query.relatedId ? { relatedId: query.relatedId } : {}),
       ...(query.search
         ? {
             OR: [
