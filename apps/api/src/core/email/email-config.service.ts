@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import type { TenantEmailConfig } from '@pulsar/database';
 import { AuditAction } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -29,17 +28,12 @@ export interface EmailConfigProjection {
 
 @Injectable()
 export class EmailConfigService {
-  private readonly driver: string;
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
     private readonly audit: AuditLogsService,
     private readonly email: EmailService,
-    private readonly config: ConfigService,
-  ) {
-    this.driver = config.get<string>('EMAIL_DRIVER', 'log');
-  }
+  ) {}
 
   /**
    * Public, password-free projection for API responses.
@@ -152,15 +146,13 @@ export class EmailConfigService {
   }
 
   /**
-   * Sends a test email via the tenant SMTP config (or the env driver when
-   * EMAIL_DRIVER=log — log mode is dev/CI safe and always returns ok).
-   * Updates `lastTestAt` and `lastTestOk` regardless of outcome.
+   * Sends a test email via the tenant SMTP config when one is configured, or
+   * falls back to the env-level driver (e.g. log in dev/CI) when the tenant
+   * has no active config. Updates `lastTestAt` and `lastTestOk` regardless of
+   * outcome.
    */
   async sendTest(tenantId: string, to: string): Promise<{ ok: boolean }> {
-    // When the env-level driver is "log", always use it — a real SMTP connection
-    // would fail against example/dummy hosts in dev/CI. The log driver is safe
-    // and intentional; this matches the EMAIL_DRIVER=log contract.
-    const transport = this.driver === 'log' ? undefined : await this.resolve(tenantId);
+    const transport = await this.resolve(tenantId);
     const ok = await this.email.send(
       {
         to,
