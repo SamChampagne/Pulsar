@@ -7,6 +7,19 @@ export interface OutgoingEmail {
   subject: string;
   html: string;
   text?: string;
+  cc?: string[];
+  replyTo?: string;
+  from?: string;
+  attachments?: { filename: string; content: Buffer }[];
+}
+
+export interface SmtpTransportOptions {
+  host: string;
+  port: number;
+  secure: boolean;
+  user?: string;
+  pass?: string;
+  from?: string;
 }
 
 /**
@@ -15,6 +28,11 @@ export interface OutgoingEmail {
  *  - "smtp": real delivery through nodemailer (SMTP_* variables).
  * Callers treat sending as best-effort: a mail failure must never break the
  * business operation (same philosophy as audit logging).
+ *
+ * An optional per-call `transport` can be supplied (e.g. from a tenant's stored
+ * SMTP config). When given, a one-off transporter is built and used for that
+ * single send; otherwise the env-level transporter / log driver is used.
+ * Existing single-arg callers are unaffected.
  */
 @Injectable()
 export class EmailService {
@@ -39,10 +57,20 @@ export class EmailService {
   }
 
   /** Returns true when the email was handed to the driver successfully. */
-  async send(email: OutgoingEmail): Promise<boolean> {
+  async send(email: OutgoingEmail, transport?: SmtpTransportOptions): Promise<boolean> {
     try {
-      if (this.transporter) {
-        await this.transporter.sendMail({ from: this.from, ...email });
+      if (transport) {
+        // Per-call one-off transporter (e.g. tenant SMTP config).
+        const oneOff = createTransport({
+          host: transport.host,
+          port: transport.port,
+          secure: transport.secure,
+          auth: transport.user ? { user: transport.user, pass: transport.pass } : undefined,
+        });
+        const from = email.from ?? transport.from ?? this.from;
+        await oneOff.sendMail({ from, ...email });
+      } else if (this.transporter) {
+        await this.transporter.sendMail({ from: email.from ?? this.from, ...email });
       } else {
         this.logger.log(`[email:log] to=${email.to} subject="${email.subject}"`);
       }
