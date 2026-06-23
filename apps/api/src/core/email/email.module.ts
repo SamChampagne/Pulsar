@@ -6,12 +6,24 @@ import { EmailService } from './email.service';
 import { EmailConfigService } from './email-config.service';
 import { EmailConfigController } from './email-config.controller';
 import { MailService } from './mail.service';
+import { EmailTemplatesService } from './email-templates.service';
+import { TemplatesController } from './templates.controller';
+import { AiDraftService } from './ai-draft.service';
+import { EmailsService } from './emails.service';
+import { EmailsController } from './emails.controller';
 
 @Global()
 @Module({
   imports: [CryptoModule, AuditLogsModule, DocumentsModule],
-  controllers: [EmailConfigController],
-  providers: [EmailService, EmailConfigService, MailService],
-  exports: [EmailService, EmailConfigService, MailService],
+  controllers: [EmailConfigController, TemplatesController, EmailsController],
+  providers: [
+    EmailService,
+    EmailConfigService,
+    MailService,
+    EmailTemplatesService,
+    AiDraftService,
+    EmailsService,
+  ],
+  exports: [EmailService, EmailConfigService, MailService, EmailTemplatesService, AiDraftService, EmailsService],
 })
 export class EmailModule {}

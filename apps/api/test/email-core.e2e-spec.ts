@@ -337,3 +337,247 @@ describe('Email core — MailService outbox + delivery worker (e2e)', () => {
     ).rejects.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// EmailTemplatesService — CRUD + render with {variable} interpolation
+// ---------------------------------------------------------------------------
+describe('Email core — EmailTemplatesService CRUD + render (e2e)', () => {
+  let app: INestApplication;
+  let http: ReturnType<INestApplication['getHttpServer']>;
+  let prisma: PrismaService;
+  let token = '';
+  let tenantId = '';
+  let createdTemplateId = '';
+
+  const auth = () => ({ Authorization: `Bearer ${token}` });
+  const UNIQUE_KEY = `test-tmpl-${Date.now()}`;
+
+  beforeAll(async () => {
+    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = ref.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
+    );
+    await app.init();
+    http = app.getHttpServer();
+    prisma = app.get(PrismaService);
+
+    const login = await request(http).post('/api/v1/auth/login').send(ADMIN).expect(200);
+    token = (login.body as { accessToken: string }).accessToken;
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: 'acme' } });
+    tenantId = tenant.id;
+  });
+
+  afterAll(async () => {
+    // Clean up test templates.
+    await prisma.emailTemplate
+      .deleteMany({ where: { tenantId, key: { startsWith: 'test-tmpl-' } } })
+      .catch(() => undefined);
+    await app.close();
+  });
+
+  it('POST /emails/templates — creates a template', async () => {
+    const res = await request(http)
+      .post('/api/v1/emails/templates')
+      .set(auth())
+      .send({
+        key: UNIQUE_KEY,
+        name: 'Test Template',
+        subject: 'Hello {name}',
+        html: '<p>Dear {name}, your order {orderId} is ready.</p>',
+        category: 'transactional',
+      })
+      .expect(201);
+
+    const body = res.body as Record<string, unknown>;
+    expect(body.id).toBeTruthy();
+    expect(body.key).toBe(UNIQUE_KEY);
+    expect(body.subject).toBe('Hello {name}');
+    createdTemplateId = body.id as string;
+  });
+
+  it('GET /emails/templates — lists templates including the created one', async () => {
+    const res = await request(http).get('/api/v1/emails/templates').set(auth()).expect(200);
+    const items = res.body as Array<Record<string, unknown>>;
+    const found = items.find((t) => t.id === createdTemplateId);
+    expect(found).toBeTruthy();
+  });
+
+  it('GET /emails/templates/:id — fetches by id', async () => {
+    const res = await request(http)
+      .get(`/api/v1/emails/templates/${createdTemplateId}`)
+      .set(auth())
+      .expect(200);
+    expect((res.body as Record<string, unknown>).key).toBe(UNIQUE_KEY);
+  });
+
+  it('render interpolates {variable} tokens from payload via EmailTemplatesService', async () => {
+    // Use service directly to test render.
+    const { EmailTemplatesService: TemplatesService } = await import('../src/core/email/email-templates.service');
+    const svc = app.get(TemplatesService);
+
+    const { subject, html } = await svc.render(tenantId, UNIQUE_KEY, {
+      name: 'Alice',
+      orderId: 'ORD-001',
+    });
+
+    expect(subject).toBe('Hello Alice');
+    expect(html).toBe('<p>Dear Alice, your order ORD-001 is ready.</p>');
+  });
+
+  it('PUT /emails/templates/:id — updates a template', async () => {
+    const res = await request(http)
+      .put(`/api/v1/emails/templates/${createdTemplateId}`)
+      .set(auth())
+      .send({ name: 'Updated Name' })
+      .expect(200);
+    expect((res.body as Record<string, unknown>).name).toBe('Updated Name');
+  });
+
+  it('DELETE /emails/templates/:id — removes a template', async () => {
+    await request(http)
+      .delete(`/api/v1/emails/templates/${createdTemplateId}`)
+      .set(auth())
+      .expect(204);
+
+    const gone = await prisma.emailTemplate.findUnique({ where: { id: createdTemplateId } });
+    expect(gone).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EmailsController — POST /emails (compose) + GET /emails
+// ---------------------------------------------------------------------------
+describe('Email core — EmailsController compose + list (e2e)', () => {
+  let app: INestApplication;
+  let http: ReturnType<INestApplication['getHttpServer']>;
+  let prisma: PrismaService;
+  let token = '';
+  let tenantId = '';
+  let composedMessageId = '';
+
+  const auth = () => ({ Authorization: `Bearer ${token}` });
+
+  beforeAll(async () => {
+    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = ref.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
+    );
+    await app.init();
+    http = app.getHttpServer();
+    prisma = app.get(PrismaService);
+
+    const login = await request(http).post('/api/v1/auth/login').send(ADMIN).expect(200);
+    token = (login.body as { accessToken: string }).accessToken;
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: 'acme' } });
+    tenantId = tenant.id;
+
+    // Clean any residual test messages.
+    await prisma.emailMessage.deleteMany({
+      where: { tenantId, subject: { startsWith: '[e2e-compose]' } },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.emailMessage
+      .deleteMany({ where: { tenantId, subject: { startsWith: '[e2e-compose]' } } })
+      .catch(() => undefined);
+    await app.close();
+  });
+
+  it('POST /emails — compose queues an EmailMessage with status QUEUED', async () => {
+    const { MailService: MS } = await import('../src/core/email/mail.service');
+    const mailSvc = app.get(MS);
+    // Stub deliver to avoid the fire-and-forget race.
+    const deliverSpy = jest.spyOn(mailSvc, 'deliver').mockResolvedValue(undefined);
+
+    const res = await request(http)
+      .post('/api/v1/emails')
+      .set(auth())
+      .send({
+        to: ['test-recipient@example.com'],
+        subject: '[e2e-compose] basic compose',
+        html: '<p>Hello from e2e</p>',
+      })
+      .expect(201);
+
+    deliverSpy.mockRestore();
+
+    const body = res.body as Record<string, unknown>;
+    expect(body.id).toBeTruthy();
+    expect(body.status).toBe('QUEUED');
+    expect(body.subject).toBe('[e2e-compose] basic compose');
+    composedMessageId = body.id as string;
+  });
+
+  it('GET /emails — lists messages including the composed one', async () => {
+    const res = await request(http).get('/api/v1/emails').set(auth()).expect(200);
+    const body = res.body as { items: Array<Record<string, unknown>>; total: number };
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(typeof body.total).toBe('number');
+    const found = body.items.find((m) => m.id === composedMessageId);
+    expect(found).toBeTruthy();
+  });
+
+  it('GET /emails/:id — fetches by id with attachments', async () => {
+    const res = await request(http)
+      .get(`/api/v1/emails/${composedMessageId}`)
+      .set(auth())
+      .expect(200);
+    const body = res.body as Record<string, unknown>;
+    expect(body.id).toBe(composedMessageId);
+    expect(Array.isArray(body.attachments)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AiDraftService — POST /emails/draft returns 400 when no LLM configured
+// ---------------------------------------------------------------------------
+describe('Email core — AiDraftService guard (e2e)', () => {
+  let app: INestApplication;
+  let http: ReturnType<INestApplication['getHttpServer']>;
+  let prisma: PrismaService;
+  let token = '';
+  let tenantId = '';
+
+  const auth = () => ({ Authorization: `Bearer ${token}` });
+
+  beforeAll(async () => {
+    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = ref.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
+    );
+    await app.init();
+    http = app.getHttpServer();
+    prisma = app.get(PrismaService);
+
+    const login = await request(http).post('/api/v1/auth/login').send(ADMIN).expect(200);
+    token = (login.body as { accessToken: string }).accessToken;
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: 'acme' } });
+    tenantId = tenant.id;
+
+    // Ensure no AgentRuntimeConfig exists for this tenant during the test.
+    await prisma.agentRuntimeConfig.deleteMany({ where: { tenantId } });
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('POST /emails/draft returns 400 when tenant has no AgentRuntimeConfig', async () => {
+    const res = await request(http)
+      .post('/api/v1/emails/draft')
+      .set(auth())
+      .send({ prompt: 'Write a welcome email for a new customer' })
+      .expect(400);
+
+    const body = res.body as Record<string, unknown>;
+    expect(typeof body.message).toBe('string');
+    expect((body.message as string).toLowerCase()).toContain('llm');
+  });
+});
