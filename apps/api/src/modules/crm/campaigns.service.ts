@@ -169,8 +169,8 @@ export class CampaignsService {
     }
 
     // Mark campaign as SENT regardless of individual recipient failures.
-    await this.prisma.crmCampaign.update({
-      where: { id },
+    await this.prisma.crmCampaign.updateMany({
+      where: { id, tenantId },
       data: { status: 'SENT', sentAt: new Date() },
     });
 

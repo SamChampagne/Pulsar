@@ -109,7 +109,7 @@ export class ListsService {
     if (!listExists) throw new NotFoundException('CRM list not found');
 
     const { count } = await this.prisma.crmListMember.deleteMany({
-      where: { listId, contactId },
+      where: { listId, contactId, tenantId },
     });
     if (count === 0) throw new NotFoundException('Member not found in list');
     return { deleted: true };
@@ -124,21 +124,8 @@ export class ListsService {
     if (!listExists) throw new NotFoundException('CRM list not found');
 
     return this.prisma.crmListMember.findMany({
-      where: { listId },
+      where: { listId, tenantId },
       orderBy: { createdAt: 'asc' },
-      include: {
-        list: false,
-      },
-    });
-  }
-
-  /**
-   * List members with full contact details (for campaign send and member view).
-   * Only returns contacts with a non-null, non-empty email when emailRequired = true.
-   */
-  async membersWithContacts(tenantId: string, listId: string) {
-    return this.prisma.crmListMember.findMany({
-      where: { listId, list: { tenantId } },
       include: {
         list: false,
       },
@@ -168,11 +155,14 @@ export class ListsService {
         companyId: dto.companyId,
         email: { not: null },
       },
-      select: { id: true },
+      select: { id: true, email: true },
     });
 
+    // Exclude empty-string emails so added/total counts are accurate.
+    const eligible = contacts.filter((c) => c.email && c.email.trim().length > 0);
+
     let added = 0;
-    for (const c of contacts) {
+    for (const c of eligible) {
       try {
         await this.prisma.crmListMember.create({
           data: { tenantId, listId, contactId: c.id },
@@ -183,6 +173,6 @@ export class ListsService {
         throw err;
       }
     }
-    return { added, total: contacts.length };
+    return { added, total: eligible.length };
   }
 }
