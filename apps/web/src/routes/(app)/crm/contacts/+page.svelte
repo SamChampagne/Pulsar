@@ -22,6 +22,7 @@
   import type { Activity } from '$lib/components/crm/ActivityTimeline.svelte';
   import LogActivity from '$lib/components/crm/LogActivity.svelte';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
+  import RecordEmails from '$lib/components/crm/RecordEmails.svelte';
 
   // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -344,6 +345,13 @@
           />
         </div>
       </Card>
+
+      <!-- Emails panel -->
+      <RecordEmails
+        relatedType="crm-contact"
+        relatedId={selected.id}
+        defaultTo={selected.email ?? undefined}
+      />
     </div>
   {/if}
 </div>

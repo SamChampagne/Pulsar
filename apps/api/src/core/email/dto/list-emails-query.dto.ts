@@ -12,4 +12,9 @@ export class ListEmailsQueryDto extends ListQueryDto {
   @IsString()
   @MaxLength(100)
   relatedType?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  relatedId?: string;
 }

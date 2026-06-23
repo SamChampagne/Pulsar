@@ -778,3 +778,103 @@ describe('Email core — agent tools governance (e2e)', () => {
     await prisma.emailMessage.delete({ where: { id: msg.id } }).catch(() => undefined);
   });
 });
+
+// ---------------------------------------------------------------------------
+// GET /emails — relatedId filter
+// ---------------------------------------------------------------------------
+describe('Email core — GET /emails relatedId filter (e2e)', () => {
+  let app: INestApplication;
+  let http: ReturnType<INestApplication['getHttpServer']>;
+  let prisma: PrismaService;
+  let token = '';
+  let tenantId = '';
+
+  const auth = () => ({ Authorization: `Bearer ${token}` });
+  const SUBJECT_PREFIX = '[e2e-related-id]';
+
+  beforeAll(async () => {
+    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = ref.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
+    );
+    await app.init();
+    http = app.getHttpServer();
+    prisma = app.get(PrismaService);
+
+    const login = await request(http).post('/api/v1/auth/login').send(ADMIN).expect(200);
+    token = (login.body as { accessToken: string }).accessToken;
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: 'acme' } });
+    tenantId = tenant.id;
+
+    // Clean up any residual test messages from a previous interrupted run.
+    await prisma.emailMessage.deleteMany({
+      where: { tenantId, subject: { startsWith: SUBJECT_PREFIX } },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.emailMessage
+      .deleteMany({ where: { tenantId, subject: { startsWith: SUBJECT_PREFIX } } })
+      .catch(() => undefined);
+    await app.close();
+  });
+
+  it('GET /emails?relatedType=crm-company&relatedId=recX returns only the 2 emails tagged recX, not recY', async () => {
+    // Insert 2 messages with relatedId='recX' and 1 with relatedId='recY' directly in the DB.
+    await prisma.emailMessage.createMany({
+      data: [
+        {
+          tenantId,
+          toAddresses: ['a@example.com'],
+          subject: `${SUBJECT_PREFIX} recX first`,
+          html: '<p>x1</p>',
+          status: 'QUEUED',
+          relatedType: 'crm-company',
+          relatedId: 'recX',
+        },
+        {
+          tenantId,
+          toAddresses: ['b@example.com'],
+          subject: `${SUBJECT_PREFIX} recX second`,
+          html: '<p>x2</p>',
+          status: 'QUEUED',
+          relatedType: 'crm-company',
+          relatedId: 'recX',
+        },
+        {
+          tenantId,
+          toAddresses: ['c@example.com'],
+          subject: `${SUBJECT_PREFIX} recY`,
+          html: '<p>y1</p>',
+          status: 'QUEUED',
+          relatedType: 'crm-company',
+          relatedId: 'recY',
+        },
+      ],
+    });
+
+    const res = await request(http)
+      .get('/api/v1/emails')
+      .query({ relatedType: 'crm-company', relatedId: 'recX' })
+      .set(auth())
+      .expect(200);
+
+    const body = res.body as { items: Array<Record<string, unknown>>; total: number };
+    expect(Array.isArray(body.items)).toBe(true);
+
+    // Filter to only this test's emails (avoids noise from other tests).
+    const testItems = body.items.filter(
+      (m) => typeof m.subject === 'string' && m.subject.startsWith(SUBJECT_PREFIX),
+    );
+
+    expect(testItems).toHaveLength(2);
+    expect(testItems.every((m) => m.relatedId === 'recX')).toBe(true);
+    expect(testItems.every((m) => m.relatedType === 'crm-company')).toBe(true);
+
+    // Confirm recY is absent.
+    const recYItems = body.items.filter((m) => m.relatedId === 'recY');
+    expect(recYItems).toHaveLength(0);
+  });
+});
