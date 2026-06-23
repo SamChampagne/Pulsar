@@ -882,3 +882,298 @@ describe('CRM autonomous exception loop (e2e)', () => {
     expect(agent!.tenantId).toBe(tenantId);
   });
 });
+
+// =============================================================================
+// CRM Lists + Campaigns (e2e)
+// =============================================================================
+
+interface CrmList {
+  id: string;
+  name: string;
+  tenantId?: string;
+  _count?: { members: number };
+}
+
+interface CrmCampaign {
+  id: string;
+  name: string;
+  status: string;
+  sentAt?: string | null;
+}
+
+interface CampaignSendResult {
+  queued: number;
+}
+
+interface CampaignStats {
+  total: number;
+  sent: number;
+  failed: number;
+  queued: number;
+}
+
+interface EmailMessageRecord {
+  id: string;
+  relatedType: string | null;
+  relatedId: string | null;
+  subject: string;
+  status: string;
+}
+
+describe('CRM Lists + Campaigns (e2e)', () => {
+  let app: INestApplication;
+  let http: ReturnType<INestApplication['getHttpServer']>;
+  let prisma: PrismaService;
+  let token = '';
+  let tenantId = '';
+
+  const suffix = `camp-${Date.now()}`;
+  const auth = () => ({ Authorization: `Bearer ${token}` });
+
+  // IDs created during the suite (cleaned up in afterAll)
+  let listId = '';
+  let contact1Id = '';
+  let contact2Id = '';
+  let companyId = '';
+  let campaignId = '';
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
+    );
+    await app.listen(0);
+    http = app.getHttpServer();
+    prisma = app.get(PrismaService);
+
+    const login = await request(http).post('/api/v1/auth/login').send(ADMIN).expect(200);
+    token = (login.body as { accessToken: string }).accessToken;
+
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: 'acme' } });
+    tenantId = tenant.id;
+
+    // Ensure CRM module is enabled.
+    const mod = await prisma.moduleDefinition.findUniqueOrThrow({ where: { key: 'crm' } });
+    await prisma.tenantModule.upsert({
+      where: { tenantId_moduleId: { tenantId, moduleId: mod.id } },
+      update: { enabled: true },
+      create: { tenantId, moduleId: mod.id, enabled: true, enabledAt: new Date() },
+    });
+  });
+
+  afterAll(async () => {
+    if (prisma) {
+      // Clean up campaign emails first (relatedId references campaignId).
+      if (campaignId) {
+        await prisma.emailMessage.deleteMany({ where: { tenantId, relatedType: 'crm-campaign', relatedId: campaignId } }).catch(() => undefined);
+        await prisma.crmCampaign.deleteMany({ where: { id: campaignId } }).catch(() => undefined);
+      }
+      if (listId) await prisma.crmList.deleteMany({ where: { id: listId } }).catch(() => undefined);
+      if (contact1Id) await prisma.crmContact.deleteMany({ where: { id: contact1Id } }).catch(() => undefined);
+      if (contact2Id) await prisma.crmContact.deleteMany({ where: { id: contact2Id } }).catch(() => undefined);
+      if (companyId) await prisma.crmCompany.deleteMany({ where: { id: companyId } }).catch(() => undefined);
+    }
+    await app.close();
+  });
+
+  // ── Lists CRUD ─────────────────────────────────────────────────────────────
+
+  it('creates a CRM company + 2 contacts with emails', async () => {
+    const compRes = await request(http)
+      .post('/api/v1/crm/companies')
+      .set(auth())
+      .send({ name: `Camp Corp ${suffix}` })
+      .expect(201);
+    companyId = (compRes.body as { id: string }).id;
+    expect(companyId).toBeTruthy();
+
+    const c1 = await request(http)
+      .post('/api/v1/crm/contacts')
+      .set(auth())
+      .send({ name: `Alice Camp ${suffix}`, email: `alice-${suffix}@example.com`, companyId })
+      .expect(201);
+    contact1Id = (c1.body as { id: string }).id;
+
+    const c2 = await request(http)
+      .post('/api/v1/crm/contacts')
+      .set(auth())
+      .send({ name: `Bob Camp ${suffix}`, email: `bob-${suffix}@example.com`, companyId })
+      .expect(201);
+    contact2Id = (c2.body as { id: string }).id;
+
+    expect(contact1Id).toBeTruthy();
+    expect(contact2Id).toBeTruthy();
+  });
+
+  it('creates a CRM list', async () => {
+    const res = await request(http)
+      .post('/api/v1/crm/lists')
+      .set(auth())
+      .send({ name: `Newsletter ${suffix}`, description: 'E2E test list' })
+      .expect(201);
+    const list = res.body as CrmList;
+    expect(list.name).toBe(`Newsletter ${suffix}`);
+    listId = list.id;
+    expect(listId).toBeTruthy();
+  });
+
+  it('lists CRM lists — our list is present in paginated response', async () => {
+    const res = await request(http).get('/api/v1/crm/lists').set(auth()).expect(200);
+    const body = res.body as Paginated<CrmList>;
+    expect(body).toHaveProperty('items');
+    expect(body.items.some((l) => l.id === listId)).toBe(true);
+  });
+
+  it('adds both contacts as members to the list', async () => {
+    await request(http)
+      .post(`/api/v1/crm/lists/${listId}/members`)
+      .set(auth())
+      .send({ contactId: contact1Id })
+      .expect(201);
+
+    await request(http)
+      .post(`/api/v1/crm/lists/${listId}/members`)
+      .set(auth())
+      .send({ contactId: contact2Id })
+      .expect(201);
+
+    // Idempotent: adding the same contact again must not throw.
+    await request(http)
+      .post(`/api/v1/crm/lists/${listId}/members`)
+      .set(auth())
+      .send({ contactId: contact1Id })
+      .expect(201);
+  });
+
+  it('GET /crm/lists/:id/members returns both contacts', async () => {
+    const res = await request(http)
+      .get(`/api/v1/crm/lists/${listId}/members`)
+      .set(auth())
+      .expect(200);
+    const members = res.body as Array<{ contactId: string }>;
+    expect(Array.isArray(members)).toBe(true);
+    const contactIds = members.map((m) => m.contactId);
+    expect(contactIds).toContain(contact1Id);
+    expect(contactIds).toContain(contact2Id);
+  });
+
+  it('POST /crm/lists/:id/add-company-contacts adds all company contacts with email', async () => {
+    // Create a second list and add via company.
+    const listRes = await request(http)
+      .post('/api/v1/crm/lists')
+      .set(auth())
+      .send({ name: `CompanyList ${suffix}` })
+      .expect(201);
+    const secondListId = (listRes.body as CrmList).id;
+
+    const addRes = await request(http)
+      .post(`/api/v1/crm/lists/${secondListId}/add-company-contacts`)
+      .set(auth())
+      .send({ companyId })
+      .expect(200);
+    const body = addRes.body as { added: number; total: number };
+    expect(body.added).toBeGreaterThanOrEqual(2); // both contacts have email
+
+    // Clean up second list.
+    await prisma.crmList.deleteMany({ where: { id: secondListId } }).catch(() => undefined);
+  });
+
+  // ── Campaigns CRUD ─────────────────────────────────────────────────────────
+
+  it('creates a campaign in DRAFT status', async () => {
+    const res = await request(http)
+      .post('/api/v1/crm/campaigns')
+      .set(auth())
+      .send({
+        name: `Newsletter Campaign ${suffix}`,
+        listId,
+        subject: 'Bonjour {name}',
+        html: '<p>{name} chez {company}</p>',
+      })
+      .expect(201);
+    const campaign = res.body as CrmCampaign;
+    expect(campaign.status).toBe('DRAFT');
+    campaignId = campaign.id;
+    expect(campaignId).toBeTruthy();
+  });
+
+  it('lists campaigns — our campaign appears', async () => {
+    const res = await request(http).get('/api/v1/crm/campaigns').set(auth()).expect(200);
+    const body = res.body as Paginated<CrmCampaign>;
+    expect(body.items.some((c) => c.id === campaignId)).toBe(true);
+  });
+
+  // ── Campaign send ──────────────────────────────────────────────────────────
+
+  it('POST /crm/campaigns/:id/send → queued≥1, campaign status SENT', async () => {
+    const res = await request(http)
+      .post(`/api/v1/crm/campaigns/${campaignId}/send`)
+      .set(auth())
+      .expect(200);
+    const body = res.body as CampaignSendResult;
+    expect(body.queued).toBeGreaterThanOrEqual(1);
+
+    // Campaign must now be SENT.
+    const campaignRes = await request(http)
+      .get(`/api/v1/crm/campaigns/${campaignId}`)
+      .set(auth())
+      .expect(200);
+    const campaign = campaignRes.body as CrmCampaign;
+    expect(campaign.status).toBe('SENT');
+    expect(campaign.sentAt).toBeTruthy();
+  });
+
+  it('EmailMessages exist with relatedType=crm-campaign and rendered subject (merge worked)', async () => {
+    const emails = await prisma.emailMessage.findMany({
+      where: { tenantId, relatedType: 'crm-campaign', relatedId: campaignId },
+    });
+    expect(emails.length).toBeGreaterThanOrEqual(1);
+
+    // Every email must have relatedType and relatedId set correctly.
+    for (const email of emails) {
+      expect(email.relatedType).toBe('crm-campaign');
+      expect(email.relatedId).toBe(campaignId);
+    }
+
+    // At least one subject must contain a contact name (not literal '{name}').
+    const contactNames = [
+      `Alice Camp ${suffix}`,
+      `Bob Camp ${suffix}`,
+    ];
+    const subjects = emails.map((e) => e.subject);
+    const hasRenderedName = subjects.some((s) =>
+      contactNames.some((name) => s.includes(name)),
+    );
+    expect(hasRenderedName).toBe(true);
+    // None of the subjects should contain the literal placeholder.
+    for (const s of subjects) {
+      expect(s).not.toContain('{name}');
+    }
+  });
+
+  it('GET /crm/campaigns/:id/stats total matches the number of emails', async () => {
+    const emailCount = await prisma.emailMessage.count({
+      where: { tenantId, relatedType: 'crm-campaign', relatedId: campaignId },
+    });
+
+    const res = await request(http)
+      .get(`/api/v1/crm/campaigns/${campaignId}/stats`)
+      .set(auth())
+      .expect(200);
+    const stats = res.body as CampaignStats;
+    expect(stats.total).toBe(emailCount);
+    expect(stats.total).toBeGreaterThanOrEqual(1);
+    expect(typeof stats.sent).toBe('number');
+    expect(typeof stats.failed).toBe('number');
+    expect(typeof stats.queued).toBe('number');
+  });
+
+  it('re-sending a SENT campaign returns 400', async () => {
+    await request(http)
+      .post(`/api/v1/crm/campaigns/${campaignId}/send`)
+      .set(auth())
+      .expect(400);
+  });
+});
