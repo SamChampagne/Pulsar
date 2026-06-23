@@ -23,7 +23,7 @@
 
   // ── Types ───────────────────────────────────────────────────────────────────
 
-  type CampaignStatus = 'DRAFT' | 'SENDING' | 'SENT' | 'FAILED';
+  type CampaignStatus = 'DRAFT' | 'SENDING' | 'SENT';
 
   interface CampaignRow {
     id: string;
@@ -269,7 +269,6 @@
       case 'DRAFT':    return 'neutral';
       case 'SENDING':  return 'warn';
       case 'SENT':     return 'ok';
-      case 'FAILED':   return 'danger';
       default:         return 'neutral';
     }
   }
@@ -279,7 +278,6 @@
       case 'DRAFT':    return 'Brouillon';
       case 'SENDING':  return 'En cours';
       case 'SENT':     return 'Envoyée';
-      case 'FAILED':   return 'Échec';
       default:         return status;
     }
   }
@@ -347,13 +345,13 @@
           <Button
             variant="secondary"
             disabled={page <= 1}
-            onclick={() => { page = Math.max(1, page - 1); void load(); }}
+            onclick={() => { page = Math.max(1, page - 1); }}
           >Précédent</Button>
           <span class="font-mono text-xs">Page {page} / {totalPages}</span>
           <Button
             variant="secondary"
             disabled={page >= totalPages}
-            onclick={() => { page = Math.min(totalPages, page + 1); void load(); }}
+            onclick={() => { page = Math.min(totalPages, page + 1); }}
           >Suivant</Button>
         </div>
       </div>

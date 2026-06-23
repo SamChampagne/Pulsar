@@ -1047,16 +1047,61 @@ describe('CRM Lists + Campaigns (e2e)', () => {
       .expect(201);
   });
 
-  it('GET /crm/lists/:id/members returns both contacts', async () => {
+  it('GET /crm/lists/:id/members returns Paginated shape with joined contact fields', async () => {
     const res = await request(http)
       .get(`/api/v1/crm/lists/${listId}/members`)
       .set(auth())
       .expect(200);
-    const members = res.body as Array<{ contactId: string }>;
-    expect(Array.isArray(members)).toBe(true);
-    const contactIds = members.map((m) => m.contactId);
+    const body = res.body as Paginated<{ id: string; contactId: string; name: string; email: string | null }>;
+    // Must be a Paginated response, not a raw array.
+    expect(body).toHaveProperty('items');
+    expect(body).toHaveProperty('total');
+    expect(body).toHaveProperty('page');
+    expect(body).toHaveProperty('pageSize');
+    expect(Array.isArray(body.items)).toBe(true);
+
+    // Both contacts must appear.
+    const contactIds = body.items.map((m) => m.contactId);
     expect(contactIds).toContain(contact1Id);
     expect(contactIds).toContain(contact2Id);
+
+    // Each row must carry the joined contact fields.
+    for (const m of body.items) {
+      expect(m).toHaveProperty('contactId');
+      expect(m).toHaveProperty('name');
+      expect(m).toHaveProperty('email');
+      expect(typeof m.name).toBe('string');
+      expect(m.name.length).toBeGreaterThan(0);
+    }
+
+    // At least one row has a real email (the contacts were created with emails).
+    expect(body.items.some((m) => m.email && m.email.includes('@'))).toBe(true);
+  });
+
+  it('DELETE /crm/lists/:id/members/:contactId removes the member (subsequent GET has one fewer)', async () => {
+    // Count before removal.
+    const before = await request(http)
+      .get(`/api/v1/crm/lists/${listId}/members`)
+      .set(auth())
+      .expect(200);
+    const beforeBody = before.body as Paginated<{ contactId: string }>;
+    const beforeCount = beforeBody.total;
+    expect(beforeCount).toBeGreaterThanOrEqual(2);
+
+    // Remove contact2 by contactId.
+    await request(http)
+      .delete(`/api/v1/crm/lists/${listId}/members/${contact2Id}`)
+      .set(auth())
+      .expect(200);
+
+    // Subsequent GET must have one fewer member and contact2 must be gone.
+    const after = await request(http)
+      .get(`/api/v1/crm/lists/${listId}/members`)
+      .set(auth())
+      .expect(200);
+    const afterBody = after.body as Paginated<{ contactId: string }>;
+    expect(afterBody.total).toBe(beforeCount - 1);
+    expect(afterBody.items.some((m) => m.contactId === contact2Id)).toBe(false);
   });
 
   it('POST /crm/lists/:id/add-company-contacts adds all company contacts with email', async () => {

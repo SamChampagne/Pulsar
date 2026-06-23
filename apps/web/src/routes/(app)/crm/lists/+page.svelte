@@ -37,6 +37,14 @@
     title: string | null;
   }
 
+  interface MemberRow {
+    id: string;
+    contactId: string;
+    name: string;
+    email: string | null;
+    title: string | null;
+  }
+
   interface CompanyRow {
     id: string;
     name: string;
@@ -55,7 +63,7 @@
   // ── State — selected list / members panel ─────────────────────────────────
 
   let selected = $state<ContactList | null>(null);
-  let members = $state<ContactRow[]>([]);
+  let members = $state<MemberRow[]>([]);
   let membersLoading = $state(false);
 
   // ── State — create list modal ─────────────────────────────────────────────
@@ -107,7 +115,7 @@
     membersLoading = true;
     members = [];
     try {
-      const result = await api<Paginated<ContactRow>>(`/crm/lists/${listId}/members`, {
+      const result = await api<Paginated<MemberRow>>(`/crm/lists/${listId}/members`, {
         query: { pageSize: 100 },
       });
       members = result.items;
@@ -233,7 +241,7 @@
     try {
       await api(`/crm/lists/${selected.id}/members/${contactId}`, { method: 'DELETE' });
       toast.success('Membre retiré');
-      members = members.filter((m) => m.id !== contactId);
+      members = members.filter((m) => m.contactId !== contactId);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Impossible de retirer le membre');
     } finally {
@@ -323,13 +331,13 @@
           <Button
             variant="secondary"
             disabled={page <= 1}
-            onclick={() => { page = Math.max(1, page - 1); void load(); }}
+            onclick={() => { page = Math.max(1, page - 1); }}
           >Précédent</Button>
           <span class="font-mono text-xs">Page {page} / {totalPages}</span>
           <Button
             variant="secondary"
             disabled={page >= totalPages}
-            onclick={() => { page = Math.min(totalPages, page + 1); void load(); }}
+            onclick={() => { page = Math.min(totalPages, page + 1); }}
           >Suivant</Button>
         </div>
       </div>
@@ -385,8 +393,8 @@
                 </div>
                 <Button
                   variant="secondary"
-                  loading={removingMemberId === member.id}
-                  onclick={() => void removeMember(member.id)}
+                  loading={removingMemberId === member.contactId}
+                  onclick={() => void removeMember(member.contactId)}
                 >Retirer</Button>
               </li>
             {/each}

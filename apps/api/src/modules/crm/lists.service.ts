@@ -115,21 +115,38 @@ export class ListsService {
     return { deleted: true };
   }
 
-  /** List all members (joined contacts) for a list. */
-  async members(tenantId: string, listId: string) {
+  /** List all members (joined contacts) for a list. Returns a Paginated flat shape. */
+  async members(tenantId: string, listId: string, query?: ListListQueryDto) {
     const listExists = await this.prisma.crmList.findFirst({
       where: { id: listId, tenantId },
       select: { id: true },
     });
     if (!listExists) throw new NotFoundException('CRM list not found');
 
-    return this.prisma.crmListMember.findMany({
-      where: { listId, tenantId },
-      orderBy: { createdAt: 'asc' },
-      include: {
-        list: false,
-      },
-    });
+    const { page, pageSize, skip, take } = paginationArgs(query ?? {});
+    const where = { listId, tenantId };
+    const [rows, total] = await Promise.all([
+      this.prisma.crmListMember.findMany({
+        where,
+        orderBy: { createdAt: 'asc' },
+        skip,
+        take,
+        include: {
+          contact: { select: { id: true, name: true, email: true, title: true } },
+        },
+      }),
+      this.prisma.crmListMember.count({ where }),
+    ]);
+
+    const items = rows.map((m) => ({
+      id: m.id,
+      contactId: m.contactId,
+      name: m.contact.name,
+      email: m.contact.email,
+      title: m.contact.title,
+    }));
+
+    return paginated(items, total, page, pageSize);
   }
 
   /**

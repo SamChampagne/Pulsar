@@ -56,8 +56,8 @@ export class ListsController {
 
   @Get(':id/members')
   @RequirePermissions(PERMISSIONS.CRM.READ)
-  members(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.lists.members(user.tenantId, id);
+  members(@CurrentUser() user: AuthUser, @Param('id') id: string, @Query() query: ListListQueryDto) {
+    return this.lists.members(user.tenantId, id, query);
   }
 
   @Post(':id/members')

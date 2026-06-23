@@ -2605,8 +2605,9 @@ model CrmContact {
   customData  Json?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
-  tenant      Tenant      @relation(fields: [tenantId], references: [id])
-  company     CrmCompany? @relation(fields: [companyId], references: [id])
+  tenant      Tenant          @relation(fields: [tenantId], references: [id])
+  company     CrmCompany?     @relation(fields: [companyId], references: [id])
+  listMembers CrmListMember[]
 
   @@index([tenantId])
   @@index([tenantId, companyId])
@@ -2694,7 +2695,8 @@ model CrmListMember {
   contactId String
   createdAt DateTime @default(now())
 
-  list CrmList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  list    CrmList    @relation(fields: [listId], references: [id], onDelete: Cascade)
+  contact CrmContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@unique([listId, contactId])
   @@index([tenantId, listId])
