@@ -46,3 +46,17 @@ describe('AGENT_ROLE_PRESETS', () => {
     }
   });
 });
+
+describe('deal-coach preset', () => {
+  const coach = AGENT_ROLE_PRESETS.find((p) => p.id === 'deal-coach');
+
+  it('exists with CRM permissions and is interactive (not always-on, PROPOSE)', () => {
+    expect(coach).toBeDefined();
+    expect(coach!.suggestedPermissions).toEqual(
+      expect.arrayContaining(['crm.read', 'crm.manage']),
+    );
+    expect(coach!.alwaysOn ?? false).toBe(false);
+    expect(coach!.suggestedAutonomy).toBe(AgentAutonomy.PROPOSE);
+    expect(coach!.persona.length).toBeGreaterThan(20);
+  });
+});
