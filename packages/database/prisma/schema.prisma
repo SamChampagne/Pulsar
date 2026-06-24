@@ -106,6 +106,7 @@ model Tenant {
   crmLists         CrmList[]
   crmCampaigns     CrmCampaign[]
   crmProducts      CrmProduct[]
+  salesOrders      SalesOrder[]
   emailConfig      TenantEmailConfig?
   emailMessages    EmailMessage[]
   emailTemplates   EmailTemplate[]
@@ -2589,6 +2590,7 @@ model CrmCompany {
   contacts     CrmContact[]
   deals        CrmDeal[]
   activities   CrmActivity[]
+  salesOrders  SalesOrder[]
 
   @@index([tenantId])
   @@index([tenantId, status])
@@ -2656,6 +2658,7 @@ model CrmProduct {
 
   tenant    Tenant            @relation(fields: [tenantId], references: [id])
   lineItems CrmDealLineItem[]
+  salesOrderLineItems SalesOrderLineItem[]
 
   @@index([tenantId, active])
   @@map("crm_products")
@@ -2702,6 +2705,60 @@ model CrmActivity {
   @@index([tenantId, companyId])
   @@index([tenantId, type, doneAt])
   @@map("crm_activities")
+}
+
+// ============================================================================
+// CRM SALES ORDERS
+// ============================================================================
+
+enum SalesOrderStatus {
+  DRAFT
+  CONFIRMED
+  FULFILLED
+  INVOICED
+  CANCELLED
+}
+
+model SalesOrder {
+  id           String           @id @default(cuid())
+  tenantId     String
+  number       String                       // SO-xxxx via SequencesService
+  status       SalesOrderStatus @default(DRAFT)
+  companyId    String                        // CRM company (source commerciale)
+  customerId   String?                       // Customer lié (si converti)
+  dealId       String?                       // deal d'origine
+  ownerUserId  String?
+  currency     String           @default("CAD")
+  totalAmount  Decimal          @default(0)  // recalculé depuis les lignes
+  notes        String?
+  customData   Json?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  tenant   Tenant       @relation(fields: [tenantId], references: [id])
+  company  CrmCompany   @relation(fields: [companyId], references: [id])
+  lineItems SalesOrderLineItem[]
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@index([tenantId, companyId])
+  @@map("sales_orders")
+}
+
+model SalesOrderLineItem {
+  id           String   @id @default(cuid())
+  tenantId     String
+  salesOrderId String
+  productId    String?
+  name         String
+  quantity     Decimal  @default(1)
+  unitPrice    Decimal  @default(0)
+  discountPct  Decimal  @default(0)
+  currency     String   @default("CAD")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  salesOrder SalesOrder  @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  product    CrmProduct? @relation(fields: [productId], references: [id])
+  @@index([tenantId, salesOrderId])
+  @@map("sales_order_line_items")
 }
 
 // ============================================================================
