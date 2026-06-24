@@ -74,6 +74,10 @@
 
   let deletingId = $state<string | null>(null);
 
+  // Create sales order state
+  let creatingOrder = $state(false);
+  let createOrderError = $state('');
+
   // ── Data loading ─────────────────────────────────────────────────────────────
 
   async function loadDeal() {
@@ -209,6 +213,24 @@
       toast.error(e instanceof ApiError ? e.message : 'Erreur lors de la suppression');
     } finally {
       deletingId = null;
+    }
+  }
+
+  // ── Create sales order ────────────────────────────────────────────────────────
+
+  async function createSalesOrder() {
+    if (!deal) return;
+    creatingOrder = true;
+    createOrderError = '';
+    try {
+      const created = await api<{ id: string }>(`/crm/deals/${deal.id}/create-sales-order`, {
+        method: 'POST',
+      });
+      await goto(`/crm/sales-orders/${created.id}`);
+    } catch (e) {
+      createOrderError = e instanceof ApiError ? e.message : 'Erreur lors de la création de la commande';
+    } finally {
+      creatingOrder = false;
     }
   }
 
@@ -625,6 +647,19 @@
             >
               🏢 Voir la société
             </a>
+          {/if}
+          {#if deal.stage === 'WON'}
+            <Button
+              variant="primary"
+              loading={creatingOrder}
+              onclick={() => void createSalesOrder()}
+              class="w-full"
+            >
+              Créer une commande
+            </Button>
+            {#if createOrderError}
+              <p class="text-xs text-danger">{createOrderError}</p>
+            {/if}
           {/if}
           <a
             href="/crm/pipeline"
