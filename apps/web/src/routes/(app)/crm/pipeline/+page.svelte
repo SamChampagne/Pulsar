@@ -148,6 +148,7 @@
         method: 'POST',
         body: { stage: toStage },
       });
+      error = '';
     } catch (e) {
       // Revert to pre-optimistic state on error (e.g. terminal stage 400)
       columns = snapshot;

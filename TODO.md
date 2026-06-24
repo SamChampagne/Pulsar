@@ -498,3 +498,7 @@ config, an activity view, and a dedicated chat surface.
       has the runtime — today it's local/untracked.
 - [ ] **`HERMES_ENABLED` real smoke test** (carried from R1): install + configure a real provider,
       confirm `/test` lists models and a chat turn yields a real reply + proposed action.
+
+## CRM — Dette backlog
+
+- [ ] Unifier `CrmExceptionsService.detectStaleDeals` sur le helper partagé `isDealStale`/`DEFAULT_STALE_DAYS` (`@pulsar/shared`) — actuellement une 3e copie inline du seuil 7j (équivalente mais divergence latente). Aussi: enrichir `GET /crm/pipeline` avec `ownerName` (kanban affiche l'UUID brut) ; totaux kanban multi-devise = devise du 1er deal.

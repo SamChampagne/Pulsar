@@ -391,7 +391,7 @@ export function navCatalogue(): NavDomain[] {
             { href: '/crm/contacts', label: 'Contacts', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/activities', label: 'Activités', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/inbox', label: 'Boîte de réception', perm: PERMISSIONS.CRM.READ },
-            { href: '/crm/coach', label: 'Coach', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/coach', label: 'Coach', perm: PERMISSIONS.CORE.AGENTS_CHAT },
           ],
         },
         {
