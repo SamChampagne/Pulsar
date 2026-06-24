@@ -102,7 +102,7 @@
     <p class="text-sm text-danger">{error}</p>
   {:else if site}
     <LandingPageRender blocks={site.blocks}>
-      {#snippet formBlock(block)}
+      {#snippet formBlock(block, i)}
         {#if submitted}
           <div class="rounded-card border border-ok-soft bg-ok-soft px-4 py-4 text-sm text-ok text-center">
             Merci, nous vous recontacterons.
@@ -122,11 +122,11 @@
 
             {#each block.fields ?? [] as field (field)}
               <div class="flex flex-col gap-1">
-                <label for={`field-${field}`} class="text-sm font-medium text-ink">
+                <label for={`field-${i}-${field}`} class="text-sm font-medium text-ink">
                   {labelForField(field)}
                 </label>
                 <input
-                  id={`field-${field}`}
+                  id={`field-${i}-${field}`}
                   type={inputTypeForField(field)}
                   bind:value={fieldValues[field]}
                   class="rounded-card border border-edge bg-canvas px-3 py-2 text-sm text-ink placeholder-ink-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"

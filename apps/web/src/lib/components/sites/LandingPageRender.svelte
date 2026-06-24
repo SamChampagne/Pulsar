@@ -21,7 +21,7 @@
     const labels: Record<string, string> = {
       name: 'Nom',
       email: 'Courriel',
-      company: 'Société',
+      company: 'Entreprise',
       phone: 'Téléphone',
       message: 'Message',
     };
@@ -50,7 +50,7 @@
     <div class="mb-4">
       <img src={block.url} alt="" class="max-w-full rounded-card" />
     </div>
-  {:else if block.type === 'form'}
+  {:else if block.type === 'form' && block.fields?.length}
     {#if formBlock}
       {@render formBlock(block, i)}
     {:else}

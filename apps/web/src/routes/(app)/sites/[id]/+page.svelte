@@ -284,6 +284,7 @@
       return;
     }
     scheduleSave();
+    return () => { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; } };
   });
 
   // ── Publish / Unpublish ──────────────────────────────────────────────────────
