@@ -444,6 +444,25 @@ async function main() {
     });
   }
 
+  const draftInvoiceFromSalesOrderRuleName = 'Facture brouillon sur commande facturée';
+  const existingDraftInvoiceFromSalesOrderRule = await prisma.automationRule.findFirst({
+    where: { tenantId: tenant.id, name: draftInvoiceFromSalesOrderRuleName },
+  });
+  if (!existingDraftInvoiceFromSalesOrderRule) {
+    await prisma.automationRule.create({
+      data: {
+        tenantId: tenant.id,
+        name: draftInvoiceFromSalesOrderRuleName,
+        eventType: 'crm.sales_order.invoiced',
+        enabled: true,
+        match: 'ALL',
+        conditions: [],
+        action: { kind: 'RUN_ACTION', action: 'draft_invoice_from_sales_order', args: { salesOrderId: '{salesOrderId}' } },
+        createdById: admin.id,
+      },
+    });
+  }
+
   console.log('Built-in automation rules ready.');
 
   // --- CRM demo data (acme tenant) -------------------------------------------
