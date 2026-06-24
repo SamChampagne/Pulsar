@@ -17,6 +17,7 @@
     ErrorNotice,
     type Tone,
   } from '$lib/components/ui';
+  import LandingPageRender from '$lib/components/sites/LandingPageRender.svelte';
 
   // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,10 +67,18 @@
 
   // Block editor state
   let blocks = $state<LandingBlock[]>([]);
-  let savingBlocks = $state(false);
   let blocksError = $state('');
   let addBlockType = $state<LandingBlockType>('heading');
   let showAddBlock = $state(false);
+
+  // Autosave state
+  type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
+  let saveState = $state<SaveState>('idle');
+  let lastSavedAt = $state<Date | null>(null);
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Skip-first-run guard: prevent autosave on initial hydration
+  let initialBlocksLoaded = false;
 
   // Publish state
   let publishing = $state(false);
@@ -222,23 +231,55 @@
     });
   }
 
-  async function saveBlocks() {
+  // ── Autosave (blocks only) ───────────────────────────────────────────────────
+
+  async function persistBlocks() {
     if (!sitePage) return;
-    savingBlocks = true;
+    // Clear any pending debounce timer
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    saveState = 'saving';
     blocksError = '';
     try {
       await api(`/sites/pages/${sitePage.id}`, {
         method: 'PATCH',
         body: { content: blocks },
       });
-      toast.success('Blocs sauvegardés');
-      await reload();
+      // Do NOT reload() — keep local blocks as source of truth (preserves edit/focus).
+      // Keep in-memory sitePage.content in sync so publish-guard/counts stay correct:
+      if (sitePage) sitePage = { ...sitePage, content: blocks };
+      saveState = 'saved';
+      lastSavedAt = new Date();
     } catch (e) {
-      blocksError = e instanceof ApiError ? e.message : 'Erreur lors de la sauvegarde des blocs';
-    } finally {
-      savingBlocks = false;
+      saveState = 'error';
+      blocksError = e instanceof ApiError ? e.message : 'Échec de la sauvegarde automatique';
     }
   }
+
+  function scheduleSave() {
+    saveState = 'dirty';
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      void persistBlocks();
+    }, 800);
+  }
+
+  // Autosave effect: react to blocks changes after the first (hydration) run.
+  // The skip-first-run pattern uses a plain mutable flag (not $state) so flipping
+  // it inside the effect does NOT schedule a re-run. On the very first execution
+  // (triggered by the initial blocks = [...] assignment in syncFormState), the flag
+  // is still false → we flip it and return without scheduling a save. Every
+  // subsequent run (user edits) proceeds to scheduleSave().
+  $effect(() => {
+    void blocks; // touch blocks so Svelte tracks it as a dependency
+    if (!initialBlocksLoaded) {
+      initialBlocksLoaded = true;
+      return;
+    }
+    scheduleSave();
+  });
 
   // ── Publish / Unpublish ──────────────────────────────────────────────────────
 
@@ -271,6 +312,15 @@
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
+
+  function formatRelativeTime(date: Date): string {
+    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (seconds < 5) return "à l'instant";
+    if (seconds < 60) return `il y a ${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `il y a ${minutes}min`;
+    return formatDate(date.toISOString());
+  }
 
   function statusTone(status: string): Tone {
     if (status === 'PUBLISHED') return 'ok';
@@ -381,153 +431,204 @@
     </div>
   </div>
 
+  <!-- ── Main content: editor (left) + settings (right) ───────────────────── -->
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
     <!-- ── Left column (2/3) ── -->
     <div class="space-y-6 lg:col-span-2">
 
-      <!-- ── Block editor ─────────────────────────────────────────────────── -->
-      <Card>
-        <div class="mb-3 flex items-center justify-between gap-2">
-          <h2 class="text-sm font-semibold text-ink">Blocs ({blocks.length})</h2>
-          {#if !showAddBlock}
-            <Button variant="primary" onclick={() => { showAddBlock = true; }}>
-              + Ajouter un bloc
-            </Button>
-          {/if}
-        </div>
+      <!-- ── Block editor + live preview (split view) ─────────────────── -->
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 
-        <!-- Add block form -->
-        {#if showAddBlock}
-          <div class="mb-4 flex items-end gap-2 rounded-md border border-edge bg-surface-muted/40 p-3">
-            <div class="flex-1">
-              <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                Type de bloc
-              </label>
-              <select
-                bind:value={addBlockType}
-                class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                {#each LANDING_BLOCK_TYPES as t (t)}
-                  <option value={t}>{blockTypeLabel(t)}</option>
-                {/each}
-              </select>
+        <!-- Block editor (left pane) -->
+        <Card>
+          <!-- Header row: title + save-state indicator + add button -->
+          <div class="mb-1 flex items-center justify-between gap-2">
+            <div class="flex min-w-0 items-center gap-2">
+              <h2 class="shrink-0 text-sm font-semibold text-ink">Blocs ({blocks.length})</h2>
+              <!-- Save state indicator -->
+              {#if saveState === 'dirty'}
+                <span class="text-[11px] text-ink-faint">Modifié…</span>
+              {:else if saveState === 'saving'}
+                <span class="text-[11px] text-ink-muted">Enregistrement…</span>
+              {:else if saveState === 'saved'}
+                <span class="text-[11px] text-ok">
+                  Enregistré ✓{#if lastSavedAt}&nbsp;{formatRelativeTime(lastSavedAt)}{/if}
+                </span>
+              {:else if saveState === 'error'}
+                <span class="flex items-center gap-1 text-[11px] text-danger">
+                  Échec —
+                  <button
+                    class="underline hover:no-underline"
+                    onclick={() => void persistBlocks()}
+                  >réessayer</button>
+                </span>
+              {/if}
             </div>
-            <Button variant="primary" onclick={addBlock}>Ajouter</Button>
-            <Button variant="secondary" onclick={() => { showAddBlock = false; }}>Annuler</Button>
+            {#if !showAddBlock}
+              <Button variant="primary" onclick={() => { showAddBlock = true; }}>
+                + Ajouter un bloc
+              </Button>
+            {/if}
           </div>
-        {/if}
 
-        <!-- Blocks list -->
-        {#if blocks.length === 0}
-          <p class="text-xs text-ink-faint">Aucun bloc. Ajoutez-en un pour commencer.</p>
-        {:else}
-          <div class="space-y-2">
-            {#each blocks as block, i (i)}
-              <div class="rounded-md border border-edge bg-surface p-3">
-                <!-- Block header -->
-                <div class="mb-2 flex items-center justify-between gap-2">
-                  <span class="rounded bg-surface-muted px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                    {blockTypeLabel(block.type)}
-                  </span>
-                  <div class="flex items-center gap-1">
-                    <button
-                      disabled={i === 0}
-                      onclick={() => moveBlockUp(i)}
-                      class="rounded p-1 text-ink-faint transition-colors hover:bg-surface-muted hover:text-ink disabled:opacity-30"
-                      title="Monter"
-                    >↑</button>
-                    <button
-                      disabled={i === blocks.length - 1}
-                      onclick={() => moveBlockDown(i)}
-                      class="rounded p-1 text-ink-faint transition-colors hover:bg-surface-muted hover:text-ink disabled:opacity-30"
-                      title="Descendre"
-                    >↓</button>
-                    <button
-                      onclick={() => removeBlock(i)}
-                      class="rounded p-1 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
-                      title="Supprimer"
-                    >✕</button>
-                  </div>
-                </div>
+          <!-- Inline help -->
+          <p class="mb-3 text-[11px] text-ink-faint">
+            Ajoutez des blocs à gauche, voyez le résultat à droite. Vos changements sont enregistrés automatiquement.
+          </p>
 
-                <!-- Block content editor -->
-                {#if block.type === 'heading'}
-                  <div>
-                    <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                      Texte du titre
-                    </label>
-                    <input
-                      type="text"
-                      value={block.text ?? ''}
-                      oninput={(e) => updateBlockText(i, (e.target as HTMLInputElement).value)}
-                      placeholder="Titre de la section…"
-                      class="w-full rounded-md border border-edge bg-surface-muted/40 px-2 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                    />
-                  </div>
+          <!-- Add block form -->
+          {#if showAddBlock}
+            <div class="mb-4 flex items-end gap-2 rounded-md border border-edge bg-surface-muted/40 p-3">
+              <div class="flex-1">
+                <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                  Type de bloc
+                </label>
+                <select
+                  bind:value={addBlockType}
+                  class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                >
+                  {#each LANDING_BLOCK_TYPES as t (t)}
+                    <option value={t}>{blockTypeLabel(t)}</option>
+                  {/each}
+                </select>
+              </div>
+              <Button variant="primary" onclick={addBlock}>Ajouter</Button>
+              <Button variant="secondary" onclick={() => { showAddBlock = false; }}>Annuler</Button>
+            </div>
+          {/if}
 
-                {:else if block.type === 'text'}
-                  <div>
-                    <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                      Contenu
-                    </label>
-                    <textarea
-                      rows="3"
-                      value={block.text ?? ''}
-                      oninput={(e) => updateBlockText(i, (e.target as HTMLTextAreaElement).value)}
-                      placeholder="Votre texte…"
-                      class="w-full resize-y rounded-md border border-edge bg-surface-muted/40 px-2 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                    ></textarea>
-                  </div>
-
-                {:else if block.type === 'image'}
-                  <div>
-                    <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                      URL de l'image
-                    </label>
-                    <input
-                      type="url"
-                      value={block.url ?? ''}
-                      oninput={(e) => updateBlockUrl(i, (e.target as HTMLInputElement).value)}
-                      placeholder="https://…"
-                      class="w-full rounded-md border border-edge bg-surface-muted/40 px-2 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                    />
-                  </div>
-
-                {:else if block.type === 'form'}
-                  <div>
-                    <label class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                      Champs du formulaire
-                    </label>
-                    <div class="flex flex-wrap gap-x-4 gap-y-1.5">
-                      {#each LANDING_FORM_FIELDS as f (f)}
-                        <label class="flex cursor-pointer items-center gap-1.5 text-xs text-ink">
-                          <input
-                            type="checkbox"
-                            checked={block.fields?.includes(f) ?? false}
-                            onchange={() => toggleFormField(i, f)}
-                            class="rounded border-edge accent-accent"
-                          />
-                          {fieldLabel(f)}
-                        </label>
-                      {/each}
+          <!-- Blocks list -->
+          {#if blocks.length === 0}
+            <p class="text-xs text-ink-faint">
+              Aucun bloc. Cliquez « + Ajouter un bloc » pour commencer — un titre, du texte, une image ou un formulaire de contact.
+            </p>
+          {:else}
+            <div class="space-y-2">
+              {#each blocks as block, i (i)}
+                <div class="rounded-md border border-edge bg-surface p-3">
+                  <!-- Block header -->
+                  <div class="mb-2 flex items-center justify-between gap-2">
+                    <span class="rounded bg-surface-muted px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                      {blockTypeLabel(block.type)}
+                    </span>
+                    <div class="flex items-center gap-1">
+                      <button
+                        disabled={i === 0}
+                        onclick={() => moveBlockUp(i)}
+                        class="rounded p-1 text-ink-faint transition-colors hover:bg-surface-muted hover:text-ink disabled:opacity-30"
+                        title="Monter"
+                      >↑</button>
+                      <button
+                        disabled={i === blocks.length - 1}
+                        onclick={() => moveBlockDown(i)}
+                        class="rounded p-1 text-ink-faint transition-colors hover:bg-surface-muted hover:text-ink disabled:opacity-30"
+                        title="Descendre"
+                      >↓</button>
+                      <button
+                        onclick={() => removeBlock(i)}
+                        class="rounded p-1 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
+                        title="Supprimer"
+                      >✕</button>
                     </div>
                   </div>
-                {/if}
-              </div>
-            {/each}
+
+                  <!-- Block content editor -->
+                  {#if block.type === 'heading'}
+                    <div>
+                      <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                        Texte du titre
+                      </label>
+                      <input
+                        type="text"
+                        value={block.text ?? ''}
+                        oninput={(e) => updateBlockText(i, (e.target as HTMLInputElement).value)}
+                        placeholder="Titre de la section…"
+                        class="w-full rounded-md border border-edge bg-surface-muted/40 px-2 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                      />
+                    </div>
+
+                  {:else if block.type === 'text'}
+                    <div>
+                      <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                        Contenu
+                      </label>
+                      <textarea
+                        rows="3"
+                        value={block.text ?? ''}
+                        oninput={(e) => updateBlockText(i, (e.target as HTMLTextAreaElement).value)}
+                        placeholder="Votre texte…"
+                        class="w-full resize-y rounded-md border border-edge bg-surface-muted/40 px-2 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                      ></textarea>
+                    </div>
+
+                  {:else if block.type === 'image'}
+                    <div>
+                      <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                        URL de l'image
+                      </label>
+                      <input
+                        type="url"
+                        value={block.url ?? ''}
+                        oninput={(e) => updateBlockUrl(i, (e.target as HTMLInputElement).value)}
+                        placeholder="https://…"
+                        class="w-full rounded-md border border-edge bg-surface-muted/40 px-2 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                      />
+                    </div>
+
+                  {:else if block.type === 'form'}
+                    <div>
+                      <label class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                        Champs du formulaire
+                      </label>
+                      <div class="flex flex-wrap gap-x-4 gap-y-1.5">
+                        {#each LANDING_FORM_FIELDS as f (f)}
+                          <label class="flex cursor-pointer items-center gap-1.5 text-xs text-ink">
+                            <input
+                              type="checkbox"
+                              checked={block.fields?.includes(f) ?? false}
+                              onchange={() => toggleFormField(i, f)}
+                              class="rounded border-edge accent-accent"
+                            />
+                            {fieldLabel(f)}
+                          </label>
+                        {/each}
+                      </div>
+                    </div>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
+
+          {#if blocksError}
+            <p class="mt-2 text-xs text-danger">{blocksError}</p>
+          {/if}
+
+          <!-- Manual save button (immediate, clears debounce) -->
+          <div class="mt-4 flex gap-2">
+            <Button
+              loading={saveState === 'saving'}
+              onclick={() => void persistBlocks()}
+            >
+              Sauvegarder les blocs
+            </Button>
           </div>
-        {/if}
+        </Card>
 
-        {#if blocksError}
-          <p class="mt-2 text-xs text-danger">{blocksError}</p>
-        {/if}
-
-        <div class="mt-4 flex gap-2">
-          <Button loading={savingBlocks} onclick={() => void saveBlocks()}>
-            Sauvegarder les blocs
-          </Button>
+        <!-- Live preview (right pane) — sticky on lg -->
+        <div class="lg:sticky lg:top-4 lg:self-start">
+          <Card>
+            <h2 class="mb-3 text-sm font-semibold text-ink">Aperçu</h2>
+            {#if blocks.length === 0}
+              <p class="text-xs text-ink-faint">L'aperçu s'affichera ici une fois que vous aurez ajouté des blocs.</p>
+            {:else}
+              <div class="rounded-md border border-edge bg-canvas p-4">
+                <LandingPageRender blocks={blocks} />
+              </div>
+            {/if}
+          </Card>
         </div>
-      </Card>
+      </div>
 
       <!-- ── Submissions ─────────────────────────────────────────────────── -->
       <Card>
