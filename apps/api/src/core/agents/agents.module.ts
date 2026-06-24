@@ -35,6 +35,7 @@ import { CrmModule } from '../../modules/crm/crm.module';
 import { CompaniesService } from '../../modules/crm/companies.service';
 import { DealsService } from '../../modules/crm/deals.service';
 import { ActivitiesService } from '../../modules/crm/activities.service';
+import { ThreadsService } from '../../modules/crm/threads.service';
 import { AgentsController } from './agents.controller';
 import { AgentsService } from './agents.service';
 import { ProposedActionsController } from './proposed-actions.controller';
@@ -112,6 +113,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         CompaniesService,
         DealsService,
         ActivitiesService,
+        ThreadsService,
         AiDraftService,
         MailService,
       ],
@@ -139,6 +141,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         companies: CompaniesService,
         deals: DealsService,
         activities: ActivitiesService,
+        threads: ThreadsService,
         aiDraft: AiDraftService,
         mail: MailService,
       ): ToolServices => ({
@@ -233,6 +236,10 @@ import { RuntimeConfigController } from './runtime-config.controller';
             deals.advance(tenantId, id, userId, stage as never),
           createFollowup: (tenantId, input, author) =>
             activities.create(tenantId, { ...(input as object), type: 'TASK' } as never, author),
+          listThreads: (tenantId, query) => threads.list(tenantId, query as never),
+          getThread: (tenantId, id) => threads.get(tenantId, id),
+          replyThread: (tenantId, id, dto, author) => threads.reply(tenantId, id, dto, author),
+          linkThread: (tenantId, id, dto, userId) => threads.link(tenantId, id, dto as never, userId),
         },
         email: {
           draft: (tenantId, input) => aiDraft.draft(tenantId, input),

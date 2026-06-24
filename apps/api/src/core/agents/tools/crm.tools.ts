@@ -94,4 +94,56 @@ export const crmTools: ToolDef[] = [
         agentId: ctx.principal.agentId,
       }),
   },
+  // ── CRM threads (email) ─────────────────────────────────────────────────────
+  {
+    name: 'crm_list_threads',
+    description: 'List CRM email threads (optionally by status UNLINKED/LINKED or contactId).',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.CRM.READ,
+    module: MODULE_KEYS.CRM,
+    inputSchema: z.object({ status: z.string().optional(), contactId: z.string().optional() }),
+    run: (args, ctx) => ctx.services.crm.listThreads(ctx.principal.user.tenantId, args),
+  },
+  {
+    name: 'crm_get_thread',
+    description: 'Get a CRM email thread with its messages.',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.CRM.READ,
+    module: MODULE_KEYS.CRM,
+    inputSchema: z.object({ threadId: z.string().min(1) }),
+    run: (args, ctx) => ctx.services.crm.getThread(ctx.principal.user.tenantId, args.threadId as string),
+  },
+  {
+    name: 'crm_reply_thread',
+    description: 'Reply to a CRM email thread. PROPOSED — requires human approval before sending.',
+    tier: RiskTier.SENSITIVE,
+    permission: PERMISSIONS.CRM.MANAGE,
+    module: MODULE_KEYS.CRM,
+    inputSchema: z.object({ threadId: z.string().min(1), html: z.string().min(1), subject: z.string().optional() }),
+    run: (args, ctx) =>
+      ctx.services.crm.replyThread(
+        ctx.principal.user.tenantId,
+        args.threadId as string,
+        { html: args.html as string, subject: args.subject as string | undefined },
+        { agentId: ctx.principal.agentId, userId: ctx.principal.user.id },
+      ),
+  },
+  {
+    name: 'crm_link_thread',
+    description: 'Link a CRM email thread to a contact/company/deal (or create a contact). PROPOSED — requires human approval.',
+    tier: RiskTier.MUTATING,
+    permission: PERMISSIONS.CRM.MANAGE,
+    module: MODULE_KEYS.CRM,
+    inputSchema: z.object({
+      threadId: z.string().min(1),
+      contactId: z.string().optional(),
+      companyId: z.string().optional(),
+      dealId: z.string().optional(),
+      createContact: z.object({ name: z.string(), email: z.string() }).optional(),
+    }),
+    run: (args, ctx) => {
+      const { threadId, ...rest } = args;
+      return ctx.services.crm.linkThread(ctx.principal.user.tenantId, threadId as string, rest, ctx.principal.user.id);
+    },
+  },
 ];
