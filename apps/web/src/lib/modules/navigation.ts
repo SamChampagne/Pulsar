@@ -402,6 +402,12 @@ export function navCatalogue(): NavDomain[] {
           ],
         },
         {
+          label: 'Catalogue',
+          links: [
+            { href: '/crm/products', label: 'Produits', perm: PERMISSIONS.CRM.READ },
+          ],
+        },
+        {
           label: 'Administration',
           links: [
             {
