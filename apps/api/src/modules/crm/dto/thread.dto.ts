@@ -17,6 +17,11 @@ export class ThreadListQueryDto extends ListQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  companyId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   dealId?: string;
 
   @ApiPropertyOptional()

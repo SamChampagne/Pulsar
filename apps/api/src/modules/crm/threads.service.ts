@@ -26,6 +26,7 @@ export class ThreadsService {
       tenantId,
       ...(query.status ? { status: query.status as EmailThreadStatus } : {}),
       ...(query.contactId ? { contactId: query.contactId } : {}),
+      ...(query.companyId ? { companyId: query.companyId } : {}),
       ...(query.dealId ? { dealId: query.dealId } : {}),
       ...(query.search
         ? { subject: { contains: query.search, mode: 'insensitive' as const } }
