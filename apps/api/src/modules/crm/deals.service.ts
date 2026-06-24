@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditAction, canTransitionDeal, CrmDealStage, CustomFieldEntity } from '@pulsar/shared';
+import { AuditAction, canTransitionDeal, CrmDealStage, CustomFieldEntity, dealAgeDays, isDealStale } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
@@ -227,6 +227,7 @@ export class DealsService {
       if (bucket) bucket.push(deal);
     }
 
+    const now = new Date();
     return stageOrder.map((stage) => ({
       stage,
       deals: (byStage.get(stage) ?? []).map((d) => ({
@@ -238,6 +239,13 @@ export class DealsService {
         ownerUserId: d.ownerUserId,
         lastActivityAt: d.lastActivityAt,
         expectedCloseDate: d.expectedCloseDate,
+        ageDays: dealAgeDays(d.createdAt, now),
+        stale: isDealStale({
+          stage: d.stage as CrmDealStage,
+          lastActivityAt: d.lastActivityAt,
+          createdAt: d.createdAt,
+          now,
+        }),
       })),
     }));
   }
