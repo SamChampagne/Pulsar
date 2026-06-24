@@ -37,6 +37,7 @@ import { DealsService } from '../../modules/crm/deals.service';
 import { ActivitiesService } from '../../modules/crm/activities.service';
 import { ThreadsService } from '../../modules/crm/threads.service';
 import { ProductsService } from '../../modules/crm/products.service';
+import { SalesOrdersService } from '../../modules/crm/sales-orders.service';
 import { AgentsController } from './agents.controller';
 import { AgentsService } from './agents.service';
 import { ProposedActionsController } from './proposed-actions.controller';
@@ -116,6 +117,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         ActivitiesService,
         ThreadsService,
         ProductsService,
+        SalesOrdersService,
         AiDraftService,
         MailService,
       ],
@@ -145,6 +147,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         activities: ActivitiesService,
         threads: ThreadsService,
         products: ProductsService,
+        salesOrders: SalesOrdersService,
         aiDraft: AiDraftService,
         mail: MailService,
       ): ToolServices => ({
@@ -245,6 +248,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
           replyThread: (tenantId, id, dto, author) => threads.reply(tenantId, id, dto, author),
           linkThread: (tenantId, id, dto, userId) => threads.link(tenantId, id, dto as never, userId),
           listProducts: (tenantId, query) => products.list(tenantId, query as never),
+          listSalesOrders: (tenantId, query) => salesOrders.list(tenantId, query as never),
         },
         email: {
           draft: (tenantId, input) => aiDraft.draft(tenantId, input),

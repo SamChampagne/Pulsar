@@ -112,6 +112,16 @@ export const crmTools: ToolDef[] = [
     inputSchema: z.object({ search: z.string().optional() }),
     run: (args, ctx) => ctx.services.crm.listProducts(ctx.principal.user.tenantId, { ...args, active: 'true' }),
   },
+  {
+    name: 'crm_list_sales_orders',
+    description: 'List CRM sales orders (optionally filtered by status).',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.CRM.READ,
+    module: MODULE_KEYS.CRM,
+    inputSchema: z.object({ status: z.string().optional() }),
+    run: (args, ctx) =>
+      ctx.services.crm.listSalesOrders(ctx.principal.user.tenantId, args),
+  },
   // ── CRM threads (email) ─────────────────────────────────────────────────────
   {
     name: 'crm_list_threads',

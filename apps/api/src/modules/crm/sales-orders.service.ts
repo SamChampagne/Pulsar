@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditAction, canTransitionSalesOrder, SalesOrderStatus } from '@pulsar/shared';
+import { AuditAction, canTransitionSalesOrder, CrmDealStage, SalesOrderStatus, sumLineItems } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { SequencesService } from '../../prisma/sequences.service';
@@ -134,6 +134,85 @@ export class SalesOrdersService {
     });
 
     return order;
+  }
+
+  /**
+   * Convert a WON deal into a DRAFT SalesOrder, copying all deal line items as a snapshot.
+   * Guards: deal must be WON (mirrors DealsService.convert) and have ≥1 line item.
+   */
+  async createFromDeal(tenantId: string, userId: string, dealId: string) {
+    const deal = await this.prisma.crmDeal.findFirst({
+      where: { id: dealId, tenantId },
+      include: { company: true },
+    });
+    if (!deal) throw new NotFoundException('CRM deal not found');
+    if (deal.stage !== CrmDealStage.WON) {
+      throw new BadRequestException('Only WON deals can be converted to a sales order');
+    }
+
+    const dealLines = await this.prisma.crmDealLineItem.findMany({
+      where: { tenantId, dealId },
+    });
+    if (dealLines.length === 0) {
+      throw new BadRequestException('Deal must have at least one line item to create a sales order');
+    }
+
+    const order = await this.prisma.$transaction(async (tx) => {
+      const number = await this.sequences.nextNumber(tenantId, 'sales-order');
+
+      const so = await tx.salesOrder.create({
+        data: {
+          tenantId,
+          number,
+          status: SalesOrderStatus.DRAFT,
+          companyId: deal.companyId,
+          customerId: deal.convertedCustomerId ?? null,
+          dealId: deal.id,
+          currency: deal.currency,
+          totalAmount: 0,
+        },
+      });
+
+      // Snapshot deal line items
+      await tx.salesOrderLineItem.createMany({
+        data: dealLines.map((l) => ({
+          tenantId,
+          salesOrderId: so.id,
+          productId: l.productId ?? null,
+          name: l.name,
+          quantity: Number(l.quantity),
+          unitPrice: Number(l.unitPrice),
+          discountPct: Number(l.discountPct),
+          currency: l.currency ?? deal.currency,
+        })),
+      });
+
+      // Recompute totalAmount from the just-copied lines
+      const total = sumLineItems(
+        dealLines.map((l) => ({
+          quantity: Number(l.quantity),
+          unitPrice: Number(l.unitPrice),
+          discountPct: Number(l.discountPct),
+        })),
+      );
+      await tx.salesOrder.updateMany({
+        where: { id: so.id, tenantId },
+        data: { totalAmount: total },
+      });
+
+      return so;
+    });
+
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.CREATE,
+      entityType: 'crm-sales-order',
+      entityId: order.id,
+      after: { number: order.number, status: order.status, fromDeal: dealId },
+    });
+
+    return this.get(tenantId, order.id);
   }
 
   /**
