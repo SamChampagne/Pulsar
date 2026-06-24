@@ -105,6 +105,7 @@ model Tenant {
   crmActivities    CrmActivity[]
   crmLists         CrmList[]
   crmCampaigns     CrmCampaign[]
+  crmProducts      CrmProduct[]
   emailConfig      TenantEmailConfig?
   emailMessages    EmailMessage[]
   emailTemplates   EmailTemplate[]
@@ -2632,11 +2633,52 @@ model CrmDeal {
   updatedAt           DateTime     @updatedAt
   tenant              Tenant       @relation(fields: [tenantId], references: [id])
   company             CrmCompany   @relation(fields: [companyId], references: [id])
+  lineItems           CrmDealLineItem[]
 
   @@index([tenantId])
   @@index([tenantId, stage])
   @@index([tenantId, lastActivityAt])
   @@map("crm_deals")
+}
+
+model CrmProduct {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  sku         String?
+  description String?
+  unitPrice   Decimal  @default(0)
+  currency    String   @default("CAD")
+  active      Boolean  @default(true)
+  customData  Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id])
+  lineItems CrmDealLineItem[]
+
+  @@index([tenantId, active])
+  @@map("crm_products")
+}
+
+model CrmDealLineItem {
+  id          String   @id @default(cuid())
+  tenantId    String
+  dealId      String
+  productId   String?
+  name        String
+  quantity    Decimal  @default(1)
+  unitPrice   Decimal  @default(0)
+  discountPct Decimal  @default(0)
+  currency    String   @default("CAD")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  deal    CrmDeal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  product CrmProduct? @relation(fields: [productId], references: [id])
+
+  @@index([tenantId, dealId])
+  @@map("crm_deal_line_items")
 }
 
 model CrmActivity {
