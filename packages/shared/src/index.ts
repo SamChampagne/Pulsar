@@ -58,4 +58,5 @@ export * from './crm/crm.workflow';
 export * from './crm/email-thread';
 export * from './crm/deal-signals';
 export * from './crm/line-items';
+export * from './crm/sales-order.workflow';
 export * from './email/email.enums';
