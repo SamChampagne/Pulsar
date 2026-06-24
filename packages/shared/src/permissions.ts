@@ -96,6 +96,10 @@ export const PERMISSIONS = {
     READ: 'crm.read',
     MANAGE: 'crm.manage',
   },
+  SITES: {
+    READ: 'sites.read',
+    MANAGE: 'sites.manage',
+  },
   EMAIL: {
     READ: 'core.email.read',
     SEND: 'core.email.send',
@@ -115,6 +119,7 @@ export type PermissionKey =
   | (typeof PERMISSIONS.PROCUREMENT)[keyof typeof PERMISSIONS.PROCUREMENT]
   | (typeof PERMISSIONS.CARRIER_PORTAL)[keyof typeof PERMISSIONS.CARRIER_PORTAL]
   | (typeof PERMISSIONS.CRM)[keyof typeof PERMISSIONS.CRM]
+  | (typeof PERMISSIONS.SITES)[keyof typeof PERMISSIONS.SITES]
   | (typeof PERMISSIONS.EMAIL)[keyof typeof PERMISSIONS.EMAIL];
 
 export interface PermissionDescriptor {
@@ -176,6 +181,11 @@ const carrierPortal = (key: PermissionKey, description: string): PermissionDescr
 const crm = (key: PermissionKey, description: string): PermissionDescriptor => ({
   key,
   module: MODULE_KEYS.CRM,
+  description,
+});
+const sites = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.SITES,
   description,
 });
 
@@ -249,6 +259,9 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   // CRM
   crm(PERMISSIONS.CRM.READ, 'View CRM companies, contacts, deals and activities'),
   crm(PERMISSIONS.CRM.MANAGE, 'Create and manage CRM records, advance and convert deals'),
+  // Sites
+  sites(PERMISSIONS.SITES.READ, 'View sites & landing pages'),
+  sites(PERMISSIONS.SITES.MANAGE, 'Create and manage sites & landing pages'),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);
