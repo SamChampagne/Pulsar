@@ -3,6 +3,7 @@ import { AuditAction, EmailThreadStatus } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../../core/email/mail.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
+import { DocumentsService } from '../../core/documents/documents.service';
 import { paginationArgs, paginated } from '../../common/pagination';
 import { LinkThreadDto, ReplyThreadDto, ThreadListQueryDto } from './dto/thread.dto';
 
@@ -18,6 +19,7 @@ export class ThreadsService {
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
     private readonly audit: AuditLogsService,
+    private readonly documentsService: DocumentsService,
   ) {}
 
   async list(tenantId: string, query: ThreadListQueryDto) {
@@ -75,7 +77,26 @@ export class ThreadsService {
       orderBy: { createdAt: 'asc' },
       include: { attachments: true },
     });
-    return { ...thread, messages };
+
+    // Enrich each attachment with a presigned download URL (best-effort: missing doc → null).
+    const enrichedMessages = await Promise.all(
+      messages.map(async (msg) => {
+        const attachments = await Promise.all(
+          msg.attachments.map(async (att) => {
+            if (!att.documentId) return { ...att, downloadUrl: null };
+            try {
+              const { url } = await this.documentsService.downloadUrl(tenantId, att.documentId);
+              return { ...att, downloadUrl: url };
+            } catch {
+              return { ...att, downloadUrl: null };
+            }
+          }),
+        );
+        return { ...msg, attachments };
+      }),
+    );
+
+    return { ...thread, messages: enrichedMessages };
   }
 
   /** Queue an outbound reply, chained to the latest INBOUND message of the thread. */

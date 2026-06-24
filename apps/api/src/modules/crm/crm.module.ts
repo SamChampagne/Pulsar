@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { CustomFieldsModule } from '../../core/custom-fields/custom-fields.module';
+import { DocumentsModule } from '../../core/documents/documents.module';
 import { OperatingModule } from '../../core/operating/operating.module';
 import { CrmCustomFieldsController } from './custom-fields/crm-custom-fields.controller';
 import { CompaniesController } from './companies.controller';
@@ -29,10 +30,11 @@ import { ThreadsService } from './threads.service';
  * AuditLogsService comes from AuditLogsModule (same pattern as FleetModule).
  * OperatingModule is imported to expose DomainEventsService (needed by CrmExceptionsService).
  * CustomFieldsModule is imported to support crm/custom-fields and intake validation.
+ * DocumentsModule is imported to allow ThreadsService to resolve presigned attachment URLs.
  * MailService comes from the @Global() EmailModule (no explicit import needed).
  */
 @Module({
-  imports: [AuditLogsModule, CustomFieldsModule, OperatingModule],
+  imports: [AuditLogsModule, CustomFieldsModule, DocumentsModule, OperatingModule],
   controllers: [
     CrmCustomFieldsController,
     CompaniesController,

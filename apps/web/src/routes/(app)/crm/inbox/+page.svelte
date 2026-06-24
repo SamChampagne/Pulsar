@@ -15,6 +15,15 @@
     Textarea,
   } from '$lib/components/ui';
   import { untrack } from 'svelte';
+  import DOMPurify from 'dompurify';
+
+  // Sanitize inbound email HTML before {@html} render — inbound bodies are
+  // attacker-controlled (stored verbatim from external senders) and must be
+  // cleaned to prevent stored XSS. DOMPurify is safe here: ssr=false SPA,
+  // window always exists at render time.
+  function safeHtml(html: string | null): string {
+    return DOMPurify.sanitize(html ?? '', { USE_PROFILES: { html: true } });
+  }
 
   // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -367,8 +376,8 @@
                       {msg.fromAddress}
                     </div>
                   {/if}
-                          <!-- Using innerHTML is safe here — the HTML comes from our own email pipeline -->
-                  <div class="prose-xs leading-snug [&_p]:mb-1 [&_a]:underline">{@html msg.html || '(contenu vide)'}</div>
+                  <!-- Inbound HTML is attacker-controlled; sanitized via DOMPurify before render. -->
+                  <div class="prose-xs leading-snug [&_p]:mb-1 [&_a]:underline">{@html msg.html ? safeHtml(msg.html) : '(contenu vide)'}</div>
                   <div class={`mt-2 text-[10px] ${msg.direction === 'OUTBOUND' ? 'text-white/60' : 'text-ink-faint'}`}>
                     {relativeTime(msg.createdAt)}
                   </div>
