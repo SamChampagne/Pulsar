@@ -280,7 +280,7 @@
     DRAFT: 'neutral',
     CONFIRMED: 'info',
     FULFILLED: 'ok',
-    INVOICED: 'purple',
+    INVOICED: 'info',
     CANCELLED: 'danger',
   };
 
@@ -671,14 +671,15 @@
           {/if}
           <div class="space-y-2">
             {#each allowedActions(order.status) as action (action.verb)}
-              <Button
-                variant={action.variant === 'danger' ? 'secondary' : action.variant}
-                loading={transitioning}
-                onclick={() => void doTransition(action.verb)}
-                class={action.variant === 'danger' ? 'w-full border-danger/40 text-danger hover:bg-danger/10' : 'w-full'}
-              >
-                {action.label}
-              </Button>
+              <div class={action.variant === 'danger' ? 'w-full border-danger/40 text-danger hover:bg-danger/10' : 'w-full'}>
+                <Button
+                  variant={action.variant === 'danger' ? 'secondary' : action.variant}
+                  loading={transitioning}
+                  onclick={() => void doTransition(action.verb)}
+                >
+                  {action.label}
+                </Button>
+              </div>
             {/each}
           </div>
         </Card>

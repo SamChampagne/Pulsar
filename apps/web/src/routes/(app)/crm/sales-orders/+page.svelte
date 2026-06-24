@@ -81,7 +81,7 @@
     DRAFT: 'neutral',
     CONFIRMED: 'info',
     FULFILLED: 'ok',
-    INVOICED: 'purple',
+    INVOICED: 'info',
     CANCELLED: 'danger',
   };
 

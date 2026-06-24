@@ -649,14 +649,15 @@
             </a>
           {/if}
           {#if deal.stage === 'WON'}
-            <Button
-              variant="primary"
-              loading={creatingOrder}
-              onclick={() => void createSalesOrder()}
-              class="w-full"
-            >
-              Créer une commande
-            </Button>
+            <div class="w-full">
+              <Button
+                variant="primary"
+                loading={creatingOrder}
+                onclick={() => void createSalesOrder()}
+              >
+                Créer une commande
+              </Button>
+            </div>
             {#if createOrderError}
               <p class="text-xs text-danger">{createOrderError}</p>
             {/if}
