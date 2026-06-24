@@ -236,6 +236,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
             deals.advance(tenantId, id, userId, stage as never),
           createFollowup: (tenantId, input, author) =>
             activities.create(tenantId, { ...(input as object), type: 'TASK' } as never, author),
+          getDeal: (tenantId, id) => deals.getWithContext(tenantId, id),
           listThreads: (tenantId, query) => threads.list(tenantId, query as never),
           getThread: (tenantId, id) => threads.get(tenantId, id),
           replyThread: (tenantId, id, dto, author) => threads.reply(tenantId, id, dto, author),

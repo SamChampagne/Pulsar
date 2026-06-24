@@ -201,6 +201,30 @@ export class DealsService {
   }
 
   /**
+   * Full context for a single deal — used by the coach agent (crm_get_deal).
+   * Returns the deal, its company, the company's contacts, and the deal's recent activities.
+   */
+  async getWithContext(tenantId: string, id: string) {
+    const deal = await this.prisma.crmDeal.findFirst({
+      where: { id, tenantId },
+      include: { company: { select: { id: true, name: true, domain: true, industry: true, status: true } } },
+    });
+    if (!deal) throw new NotFoundException('CRM deal not found');
+    const [contacts, activities] = await Promise.all([
+      this.prisma.crmContact.findMany({
+        where: { tenantId, companyId: deal.companyId },
+        select: { id: true, name: true, title: true, email: true, phone: true },
+      }),
+      this.prisma.crmActivity.findMany({
+        where: { tenantId, dealId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+      }),
+    ]);
+    return { deal, company: deal.company, contacts, activities };
+  }
+
+  /**
    * Pipeline view: deals grouped by stage, each with company name + amount + owner.
    */
   async pipeline(tenantId: string) {

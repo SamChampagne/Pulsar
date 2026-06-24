@@ -111,6 +111,7 @@ export interface ToolServices {
     logActivity(tenantId: string, input: object, author: { agentId?: string; userId?: string }): Promise<unknown>;
     advanceDeal(tenantId: string, id: string, userId: string, stage: string): Promise<unknown>;
     createFollowup(tenantId: string, input: object, author: { agentId?: string }): Promise<unknown>;
+    getDeal(tenantId: string, id: string): Promise<unknown>;
     listThreads(tenantId: string, query: object): Promise<unknown>;
     getThread(tenantId: string, id: string): Promise<unknown>;
     replyThread(tenantId: string, id: string, dto: { html: string; subject?: string }, author: { agentId?: string; userId?: string }): Promise<unknown>;

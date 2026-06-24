@@ -25,6 +25,15 @@ export const crmTools: ToolDef[] = [
       ctx.services.crm.getCompany(ctx.principal.user.tenantId, args.companyId as string),
   },
   {
+    name: 'crm_get_deal',
+    description: 'Get a single CRM deal with its company, contacts and recent activities — for deal analysis.',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.CRM.READ,
+    module: MODULE_KEYS.CRM,
+    inputSchema: z.object({ dealId: z.string().min(1) }),
+    run: (args, ctx) => ctx.services.crm.getDeal(ctx.principal.user.tenantId, args.dealId as string),
+  },
+  {
     name: 'crm_list_activities',
     description: 'List activities for a deal or company.',
     tier: RiskTier.READ,
