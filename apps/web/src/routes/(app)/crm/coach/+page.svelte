@@ -210,7 +210,11 @@
       const result = await api<ProposedAction[]>('/agent-actions');
       pendingActions = result.filter((a) => a.status === 'PENDING');
     } catch (e) {
-      actionsError = e instanceof ApiError ? e.message : 'Impossible de charger les actions';
+      if (e instanceof ApiError && e.statusCode === 403) {
+        pendingActions = [];
+      } else {
+        actionsError = e instanceof ApiError ? e.message : 'Impossible de charger les actions';
+      }
     } finally {
       loadingActions = false;
     }
