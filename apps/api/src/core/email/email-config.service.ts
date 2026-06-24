@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { TenantEmailConfig } from '@pulsar/database';
 import { AuditAction } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -6,6 +6,7 @@ import { CryptoService } from '../crypto/crypto.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { EmailService, type SmtpTransportOptions } from './email.service';
 import type { UpsertEmailConfigDto } from './dto/email-config.dto';
+import { INBOUND_EMAIL_DRIVER, type InboundEmailDriver } from './inbound/inbound-driver';
 
 export interface ImapConfig {
   host: string;
@@ -49,6 +50,7 @@ export class EmailConfigService {
     private readonly crypto: CryptoService,
     private readonly audit: AuditLogsService,
     private readonly email: EmailService,
+    @Inject(INBOUND_EMAIL_DRIVER) private readonly inboundDriver: InboundEmailDriver,
   ) {}
 
   /**
@@ -199,9 +201,15 @@ export class EmailConfigService {
     };
   }
 
-  /** Wired to ImapPollDriver.testConnection in Task 6. */
-  async testInbound(_tenantId: string): Promise<{ ok: boolean; error?: string }> {
-    return { ok: false, error: 'inbound driver not wired yet' };
+  /** Calls the active inbound driver's testConnection. Updates lastPollAt/lastPollOk. */
+  async testInbound(tenantId: string): Promise<{ ok: boolean; error?: string }> {
+    const config = await this.resolveInbound(tenantId);
+    if (!config) return { ok: false, error: 'no active inbound config' };
+    const result = await this.inboundDriver.testConnection(config);
+    await this.prisma.tenantEmailConfig
+      .update({ where: { tenantId }, data: { lastPollAt: new Date(), lastPollOk: result.ok } })
+      .catch(() => undefined);
+    return result;
   }
 
   /**
