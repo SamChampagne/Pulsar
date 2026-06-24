@@ -19,9 +19,11 @@ import { ListsController } from './lists.controller';
 import { ListsService } from './lists.service';
 import { CampaignsController } from './campaigns.controller';
 import { CampaignsService } from './campaigns.service';
+import { ThreadsController } from './threads.controller';
+import { ThreadsService } from './threads.service';
 
 /**
- * CRM module (companies, contacts, deals, activities, pipeline, overview, lists, campaigns).
+ * CRM module (companies, contacts, deals, activities, pipeline, overview, lists, campaigns, threads).
  * Every controller is gated by @RequireModule(MODULE_KEYS.CRM).
  * PrismaService + OwnershipService + SequencesService come from the @Global() PrismaModule.
  * AuditLogsService comes from AuditLogsModule (same pattern as FleetModule).
@@ -41,8 +43,9 @@ import { CampaignsService } from './campaigns.service';
     OverviewController,
     ListsController,
     CampaignsController,
+    ThreadsController,
   ],
-  providers: [CompaniesService, ContactsService, DealsService, ActivitiesService, CrmExceptionsService, OverviewService, ListsService, CampaignsService],
-  exports: [CompaniesService, ContactsService, DealsService, ActivitiesService, OverviewService, ListsService, CampaignsService],
+  providers: [CompaniesService, ContactsService, DealsService, ActivitiesService, CrmExceptionsService, OverviewService, ListsService, CampaignsService, ThreadsService],
+  exports: [CompaniesService, ContactsService, DealsService, ActivitiesService, OverviewService, ListsService, CampaignsService, ThreadsService],
 })
 export class CrmModule {}
