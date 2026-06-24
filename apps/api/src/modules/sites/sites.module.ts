@@ -1,18 +1,22 @@
 import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
+import { OperatingModule } from '../../core/operating/operating.module';
 import { PagesController } from './pages.controller';
 import { SitesService } from './sites.service';
+import { SitesPublicController } from './sites.public.controller';
+import { SitesPublicService } from './sites.public.service';
 
 /**
- * Sites module — landing pages (admin CRUD + publish + submissions).
- * Public controller/service come in Task 5 — the module is structured to accept them.
- * PrismaService comes from the @Global() PrismaModule (no explicit import needed).
- * No static CrmModule import: captureListId ownership uses PrismaService directly (cycle avoidance).
+ * Sites module — landing pages (admin CRUD + publish + submissions + public API).
+ * PrismaService + TenantModulesCacheService come from the @Global() PrismaModule.
+ * OperatingModule provides DomainEventsService (best-effort lead event).
+ * No static CrmModule import: contact dedup/create via direct PrismaService;
+ * list-add via ModuleRef.get(ListsService, { strict: false }) inside try/catch.
  */
 @Module({
-  imports: [AuditLogsModule],
-  controllers: [PagesController],
-  providers: [SitesService],
+  imports: [AuditLogsModule, OperatingModule],
+  controllers: [PagesController, SitesPublicController],
+  providers: [SitesService, SitesPublicService],
   exports: [SitesService],
 })
 export class SitesModule {}
