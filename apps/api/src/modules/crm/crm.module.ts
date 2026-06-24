@@ -26,6 +26,8 @@ import { ProductsController } from './products.controller';
 import { ProductsService } from './products.service';
 import { LineItemsController } from './line-items.controller';
 import { LineItemsService } from './line-items.service';
+import { SalesOrdersController } from './sales-orders.controller';
+import { SalesOrdersService } from './sales-orders.service';
 
 /**
  * CRM module (companies, contacts, deals, activities, pipeline, overview, lists, campaigns, threads).
@@ -52,8 +54,9 @@ import { LineItemsService } from './line-items.service';
     ThreadsController,
     ProductsController,
     LineItemsController,
+    SalesOrdersController,
   ],
-  providers: [CompaniesService, ContactsService, DealsService, ActivitiesService, CrmExceptionsService, OverviewService, ListsService, CampaignsService, ThreadsService, ProductsService, LineItemsService],
-  exports: [CompaniesService, ContactsService, DealsService, ActivitiesService, OverviewService, ListsService, CampaignsService, ThreadsService, ProductsService, LineItemsService],
+  providers: [CompaniesService, ContactsService, DealsService, ActivitiesService, CrmExceptionsService, OverviewService, ListsService, CampaignsService, ThreadsService, ProductsService, LineItemsService, SalesOrdersService],
+  exports: [CompaniesService, ContactsService, DealsService, ActivitiesService, OverviewService, ListsService, CampaignsService, ThreadsService, ProductsService, LineItemsService, SalesOrdersService],
 })
 export class CrmModule {}
