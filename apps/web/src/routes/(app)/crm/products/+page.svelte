@@ -184,13 +184,13 @@
     return active ? 'ok' : 'neutral';
   }
 
-  function formatPrice(unitPrice: number, currency: string): string {
+  function formatPrice(unitPrice: number | string, currency: string): string {
     return new Intl.NumberFormat('fr-CA', {
       style: 'currency',
       currency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(unitPrice);
+    }).format(Number(unitPrice));
   }
 
   // ── Reactive load ─────────────────────────────────────────────────────────────

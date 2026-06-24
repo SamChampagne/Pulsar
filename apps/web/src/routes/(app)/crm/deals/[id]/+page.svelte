@@ -4,6 +4,7 @@
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import { formatDate } from '$lib/format';
+  import { computeLineTotal } from '@pulsar/shared';
   import {
     PageHeader,
     Button,
@@ -34,7 +35,6 @@
     quantity: number;
     unitPrice: string | number;
     discountPct: string | number;
-    lineTotal: string | number;
     productId: string | null;
   }
 
@@ -247,7 +247,11 @@
   }
 
   function lineTotal(line: LineItem): string {
-    const total = Number(line.lineTotal);
+    const total = computeLineTotal({
+      quantity: Number(line.quantity),
+      unitPrice: Number(line.unitPrice),
+      discountPct: Number(line.discountPct),
+    });
     if (isNaN(total)) return '—';
     return new Intl.NumberFormat('fr-CA', {
       style: 'currency',
