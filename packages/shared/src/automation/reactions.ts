@@ -57,6 +57,15 @@ export const REACTION_CATALOG: ReactionDescriptor[] = [
       'À la complétion d\'un load, ferme les ordres de transport entièrement livrés (COMPLETED → CLOSED).',
     argKeys: ['loadId'],
   },
+  {
+    key: 'draft_invoice_from_sales_order',
+    label: 'Créer un relevé client brouillon depuis la commande',
+    module: 'billing',
+    requiredModules: ['billing'],
+    description:
+      "À la facturation d'une commande de vente (sales order INVOICED), crée un relevé client brouillon à partir des lignes de la commande (anti-double-billing).",
+    argKeys: ['salesOrderId'],
+  },
 ];
 
 const BY_KEY = new Map(REACTION_CATALOG.map((r) => [r.key, r]));

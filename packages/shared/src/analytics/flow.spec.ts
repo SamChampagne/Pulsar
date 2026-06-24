@@ -30,6 +30,11 @@ describe('moduleOfEventType', () => {
     expect(moduleOfEventType('invoice.approved')).toBe('BILLING');
     expect(moduleOfEventType('something.unknown')).toBe('CORE');
   });
+
+  it('maps crm.* events to CRM', () => {
+    expect(moduleOfEventType('crm.sales_order.invoiced')).toBe('CRM');
+    expect(moduleOfEventType('crm.deal.won')).toBe('CRM');
+  });
 });
 
 describe('moduleOfSubjectType', () => {
