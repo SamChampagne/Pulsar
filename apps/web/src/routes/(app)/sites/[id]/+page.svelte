@@ -117,6 +117,11 @@
     editTitle = sitePage.title;
     editSlug = sitePage.slug;
     editCaptureListId = sitePage.captureListId ?? '';
+    // Cancel any pending autosave and treat the upcoming blocks assignment as
+    // a fresh hydration (not a user edit) so it does NOT trigger an autosave.
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    saveState = 'idle';
+    initialBlocksLoaded = false;
     // Deep clone so block editor is independent from the loaded data
     blocks = sitePage.content.map((b) => ({ ...b, fields: b.fields ? [...b.fields] : undefined }));
   }
