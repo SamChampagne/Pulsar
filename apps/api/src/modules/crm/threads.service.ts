@@ -40,7 +40,30 @@ export class ThreadsService {
       }),
       this.prisma.emailThread.count({ where }),
     ]);
-    return paginated(items, total, page, pageSize);
+
+    // Resolve contact/company display names in two bulk queries (no N+1).
+    const contactIds = [...new Set(items.map((t) => t.contactId).filter((id): id is string => id != null))];
+    const companyIds = [...new Set(items.map((t) => t.companyId).filter((id): id is string => id != null))];
+
+    const [contacts, companies] = await Promise.all([
+      contactIds.length
+        ? this.prisma.crmContact.findMany({ where: { tenantId, id: { in: contactIds } }, select: { id: true, name: true } })
+        : Promise.resolve([]),
+      companyIds.length
+        ? this.prisma.crmCompany.findMany({ where: { tenantId, id: { in: companyIds } }, select: { id: true, name: true } })
+        : Promise.resolve([]),
+    ]);
+
+    const contactMap = new Map(contacts.map((c) => [c.id, c.name]));
+    const companyMap = new Map(companies.map((c) => [c.id, c.name]));
+
+    const enriched = items.map((t) => ({
+      ...t,
+      contactName: t.contactId ? (contactMap.get(t.contactId) ?? null) : null,
+      companyName: t.companyId ? (companyMap.get(t.companyId) ?? null) : null,
+    }));
+
+    return paginated(enriched, total, page, pageSize);
   }
 
   async get(tenantId: string, id: string) {
