@@ -29,7 +29,6 @@ describe('InboundIngestService', () => {
   });
 
   it('creates an UNLINKED thread for an unknown sender', async () => {
-    const created: any = {};
     const tx: any = {
       emailThread: { create: jest.fn().mockResolvedValue({ id: 'thr1' }), update: jest.fn() },
       emailMessage: { create: jest.fn().mockResolvedValue({ id: 'msg1' }) },

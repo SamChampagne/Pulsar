@@ -155,23 +155,26 @@ export class InboundIngestService {
       }
     }
 
-    // 5. Audit (rule 6) — AuditLogsService.log is already fire-and-forget internally,
+    // 5. Audit (rule 6) — only when a new thread was actually created (CREATE is misleading
+    //    on a reused thread). AuditLogsService.log is already fire-and-forget internally,
     //    but we still await so failures are silently swallowed at the call site too.
-    try {
-      await this.audit.log({
-        tenantId,
-        action: AuditAction.CREATE,
-        entityType: 'email-thread',
-        entityId: result.threadId,
-        after: {
-          direction: 'INBOUND',
-          from: raw.from,
-          subject: raw.subject,
-          newThread: result.newThread,
-        },
-      });
-    } catch {
-      // best-effort
+    if (result.newThread) {
+      try {
+        await this.audit.log({
+          tenantId,
+          action: AuditAction.CREATE,
+          entityType: 'email-thread',
+          entityId: result.threadId,
+          after: {
+            direction: 'INBOUND',
+            from: raw.from,
+            subject: raw.subject,
+            newThread: true,
+          },
+        });
+      } catch {
+        // best-effort
+      }
     }
 
     // 6. Domain event — best-effort.
