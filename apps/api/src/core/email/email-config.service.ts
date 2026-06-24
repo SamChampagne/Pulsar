@@ -7,7 +7,15 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { EmailService, type SmtpTransportOptions } from './email.service';
 import type { UpsertEmailConfigDto } from './dto/email-config.dto';
 
-/** Public projection — NEVER includes passwordEnc. */
+export interface ImapConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user?: string;
+  pass?: string;
+}
+
+/** Public projection — NEVER includes passwordEnc or imapPasswordEnc. */
 export interface EmailConfigProjection {
   id: string;
   tenantId: string;
@@ -24,6 +32,14 @@ export interface EmailConfigProjection {
   lastTestOk: boolean | null;
   createdAt: Date;
   updatedAt: Date;
+  imapHost: string | null;
+  imapPort: number | null;
+  imapSecure: boolean;
+  imapUsername: string | null;
+  hasImapPassword: boolean;
+  inboundActive: boolean;
+  lastPollAt: Date | null;
+  lastPollOk: boolean | null;
 }
 
 @Injectable()
@@ -56,6 +72,14 @@ export class EmailConfigService {
       lastTestOk: config.lastTestOk,
       createdAt: config.createdAt,
       updatedAt: config.updatedAt,
+      imapHost: config.imapHost,
+      imapPort: config.imapPort,
+      imapSecure: config.imapSecure,
+      imapUsername: config.imapUsername,
+      hasImapPassword: !!config.imapPasswordEnc,
+      inboundActive: config.inboundActive,
+      lastPollAt: config.lastPollAt,
+      lastPollOk: config.lastPollOk,
     };
   }
 
@@ -76,6 +100,11 @@ export class EmailConfigService {
     const hasPassword = typeof dto.password === 'string' && dto.password.length > 0;
     const passwordEnc = hasPassword ? this.crypto.encryptString(dto.password as string) : undefined;
 
+    const hasImapPassword = typeof dto.imapPassword === 'string' && dto.imapPassword.length > 0;
+    const imapPasswordEnc = hasImapPassword
+      ? this.crypto.encryptString(dto.imapPassword as string)
+      : undefined;
+
     const config = await this.prisma.tenantEmailConfig.upsert({
       where: { tenantId },
       create: {
@@ -89,6 +118,12 @@ export class EmailConfigService {
         ...(dto.replyTo !== undefined ? { replyTo: dto.replyTo } : {}),
         // Only set passwordEnc when a new password was supplied.
         ...(passwordEnc !== undefined ? { passwordEnc } : {}),
+        ...(dto.imapHost !== undefined ? { imapHost: dto.imapHost } : {}),
+        ...(dto.imapPort !== undefined ? { imapPort: dto.imapPort } : {}),
+        ...(dto.imapSecure !== undefined ? { imapSecure: dto.imapSecure } : {}),
+        ...(dto.imapUsername !== undefined ? { imapUsername: dto.imapUsername } : {}),
+        ...(dto.inboundActive !== undefined ? { inboundActive: dto.inboundActive } : {}),
+        ...(imapPasswordEnc !== undefined ? { imapPasswordEnc } : {}),
       },
       update: {
         ...(dto.host !== undefined ? { host: dto.host } : {}),
@@ -100,6 +135,12 @@ export class EmailConfigService {
         ...(dto.replyTo !== undefined ? { replyTo: dto.replyTo } : {}),
         // Preserve existing passwordEnc when no new password is supplied.
         ...(passwordEnc !== undefined ? { passwordEnc } : {}),
+        ...(dto.imapHost !== undefined ? { imapHost: dto.imapHost } : {}),
+        ...(dto.imapPort !== undefined ? { imapPort: dto.imapPort } : {}),
+        ...(dto.imapSecure !== undefined ? { imapSecure: dto.imapSecure } : {}),
+        ...(dto.imapUsername !== undefined ? { imapUsername: dto.imapUsername } : {}),
+        ...(dto.inboundActive !== undefined ? { inboundActive: dto.inboundActive } : {}),
+        ...(imapPasswordEnc !== undefined ? { imapPasswordEnc } : {}),
       },
     });
 
@@ -143,6 +184,24 @@ export class EmailConfigService {
       pass,
       from: fromParts || undefined,
     };
+  }
+
+  /** Imap connection options for the inbound poller, or null when not configured/active. */
+  async resolveInbound(tenantId: string): Promise<ImapConfig | null> {
+    const config = await this.prisma.tenantEmailConfig.findUnique({ where: { tenantId } });
+    if (!config || !config.inboundActive || !config.imapHost) return null;
+    return {
+      host: config.imapHost,
+      port: config.imapPort ?? 993,
+      secure: config.imapSecure,
+      user: config.imapUsername ?? undefined,
+      pass: config.imapPasswordEnc ? this.crypto.decryptString(config.imapPasswordEnc) : undefined,
+    };
+  }
+
+  /** Wired to ImapPollDriver.testConnection in Task 6. */
+  async testInbound(_tenantId: string): Promise<{ ok: boolean; error?: string }> {
+    return { ok: false, error: 'inbound driver not wired yet' };
   }
 
   /**
