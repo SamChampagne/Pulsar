@@ -308,8 +308,9 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     de formulaire (`POST /public/sites/:slug/submit`) crée un lead CRM **uniquement si le module
     CRM est actif** — résolu via `ModuleRef.get(ContactsService)` (jamais d'import statique de
     `CrmModule` — règle 38 pattern). Le champ anti-spam `_hp` (honeypot) renvoyé non vide est
-    silencieusement rejeté (200 sans création). Le slug est **globalement unique** au niveau
-    tenant (`@@unique([tenantId, slug])`) ; `slugify` de `@pulsar/shared` est la seule source de
+    silencieusement rejeté (200 sans création). Le slug est **globalement unique**
+    (`@@unique([slug])`) — la route publique résout le tenant depuis le slug, donc il ne peut
+    pas être scopé par tenant ; `slugify` de `@pulsar/shared` est la seule source de
     normalisation — ne pas réimplémenter.
 
 ## Adding a business module (the recipe)

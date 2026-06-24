@@ -55,6 +55,9 @@ export class SitesPublicService {
         };
       }
       // Other blocks: pass through as-is (they contain only display data)
+      // R10 invariant: non-form block types must contain ONLY display data. A future block type
+      // that carries an internal ref MUST be explicitly sanitized here before it can leak in
+      // the public payload.
       return block;
     });
   }
