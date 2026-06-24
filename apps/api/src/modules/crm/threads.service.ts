@@ -99,8 +99,8 @@ export class ThreadsService {
       agentId: author.agentId,
     });
 
-    await this.prisma.emailThread.update({
-      where: { id },
+    await this.prisma.emailThread.updateMany({
+      where: { id, tenantId },
       data: { lastMessageAt: new Date(), messageCount: { increment: 1 } },
     });
 

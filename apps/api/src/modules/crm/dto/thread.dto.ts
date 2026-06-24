@@ -18,6 +18,9 @@ export class ThreadListQueryDto extends ListQueryDto {
   @IsOptional()
   @IsString()
   dealId?: string;
+
+  @ApiPropertyOptional()
+  declare search?: string;
 }
 
 export class ReplyThreadDto {
