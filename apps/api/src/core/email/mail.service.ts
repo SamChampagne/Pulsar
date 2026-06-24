@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DocumentsService } from '../documents/documents.service';
@@ -24,6 +25,10 @@ export interface QueueEmailInput {
   createdByUserId?: string;
   agentId?: string;
   attachments?: { documentId: string; filename: string }[];
+  /** Thread chaining (optional — existing callers unaffected) */
+  threadId?: string;
+  inReplyTo?: string;
+  references?: string;
 }
 
 /**
@@ -76,6 +81,11 @@ export class MailService {
           templateKey: rest.templateKey,
           createdByUserId: rest.createdByUserId,
           agentId: rest.agentId,
+          messageId: `<${randomUUID()}@pulsar.local>`,
+          direction: 'OUTBOUND',
+          threadId: rest.threadId,
+          inReplyTo: rest.inReplyTo,
+          references: rest.references,
         },
       });
 
@@ -146,6 +156,10 @@ export class MailService {
           text: msg.text ?? undefined,
           from: transport?.from,
           attachments: attachments.length > 0 ? attachments : undefined,
+          messageId: msg.messageId ?? undefined,
+          headers: msg.inReplyTo
+            ? { 'In-Reply-To': msg.inReplyTo, References: msg.references ?? msg.inReplyTo }
+            : undefined,
         },
         transport ?? undefined,
       );

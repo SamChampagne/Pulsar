@@ -11,6 +11,9 @@ export interface OutgoingEmail {
   replyTo?: string;
   from?: string;
   attachments?: { filename: string; content: Buffer }[];
+  /** Nodemailer reads these keys directly when spread into sendMail. */
+  messageId?: string;
+  headers?: Record<string, string>;
 }
 
 export interface SmtpTransportOptions {
