@@ -283,6 +283,22 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     JAMAIS `WmsModule` ni `BillingModule` statiquement (cycle JS) ; `ReactionExecutorService`
     résout `PickingService`/`CustomerInvoicesService` via `ModuleRef.get()` + lazy `require()`.
 
+## Hard rules (continued, courriel bidirectionnel)
+
+39. (courriel bidirectionnel + threads CRM) La réception passe TOUJOURS par un
+    `InboundEmailDriver` (core/email/inbound — `log` en dev/CI, `imap` quand
+    `EMAIL_DRIVER=smtp`) ; l'ingestion (`InboundIngestService`) est idempotente sur
+    `messageId`, threade via headers RFC puis match `CrmContact.email` (décisions PURES
+    `resolveThreadDecision`/`normalizeSubject` de `@pulsar/shared` — ne pas réimplémenter),
+    et est best-effort/isolée par tenant (le cron ne throw JAMAIS, un tenant en échec
+    n'affecte pas les autres). Les pièces jointes entrantes passent par `DocumentsService`
+    (règle 12) ; le secret IMAP est chiffré via `CryptoService` et jamais renvoyé en clair
+    (règle 25, projection `hasImapPassword`). `EmailMessage` est réutilisé (`direction`
+    INBOUND/OUTBOUND) ; tout endpoint threads est `@RequireModule(CRM)` + `crm.read|manage`,
+    tenant-scopé (règle 1), FK vérifiées (règle 9). Les réponses agent passent TOUJOURS par
+    la file `ProposedAction` (`crm_reply_thread` SENSITIVE, `crm_link_thread` MUTATING —
+    règles 22/29).
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
