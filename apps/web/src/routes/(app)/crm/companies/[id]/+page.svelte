@@ -160,10 +160,74 @@
     return deals.filter((d) => d.stage === 'WON' && !d.convertedCustomerId);
   }
 
+  // ── Threads (conversations) ──────────────────────────────────────────────────
+
+  interface ThreadRow {
+    id: string;
+    subject: string;
+    status: string;
+    lastMessageAt: string;
+    messageCount: number;
+  }
+
+  let threads = $state<ThreadRow[]>([]);
+  let threadsLoading = $state(false);
+  let threadsError = $state('');
+
+  async function loadThreads(companyId: string) {
+    threadsLoading = true;
+    threadsError = '';
+    try {
+      const result = await api<{ items: ThreadRow[] }>('/crm/threads', {
+        query: { companyId },
+      });
+      threads = result.items;
+    } catch (e) {
+      threadsError = e instanceof ApiError ? e.message : 'Impossible de charger les conversations';
+    } finally {
+      threadsLoading = false;
+    }
+  }
+
+  function threadStatusTone(status: string): Tone {
+    switch (status) {
+      case 'UNLINKED': return 'warn';
+      case 'LINKED':   return 'ok';
+      case 'ARCHIVED': return 'neutral';
+      default:         return 'neutral';
+    }
+  }
+
+  function threadStatusLabel(status: string): string {
+    switch (status) {
+      case 'UNLINKED': return 'À trier';
+      case 'LINKED':   return 'Rattaché';
+      case 'ARCHIVED': return 'Archivé';
+      default:         return status;
+    }
+  }
+
+  function relativeTime(iso: string): string {
+    const d = new Date(iso);
+    const diffMs = Date.now() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60_000);
+    if (diffMin < 1) return "À l'instant";
+    if (diffMin < 60) return `Il y a ${diffMin}m`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24) return `Il y a ${diffH}h`;
+    const diffD = Math.floor(diffH / 24);
+    if (diffD < 7) return `Il y a ${diffD}j`;
+    return d.toLocaleDateString('fr-CA');
+  }
+
   // ── Init ─────────────────────────────────────────────────────────────────────
 
   $effect(() => {
     void load();
+  });
+
+  $effect(() => {
+    if (company) void loadThreads(company.id);
   });
 </script>
 
@@ -321,6 +385,39 @@
                   {/if}
                 </div>
                 <Badge tone={stageTone(deal.stage)}>{stageLabel(deal.stage)}</Badge>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </Card>
+      <!-- Conversations -->
+      <Card>
+        <div class="mb-3 flex items-center justify-between gap-2">
+          <h2 class="text-sm font-semibold text-ink">Conversations</h2>
+          <a href="/crm/inbox" class="text-xs text-accent hover:underline">Voir la boîte →</a>
+        </div>
+        {#if threadsLoading}
+          <Skeleton rows={3} />
+        {:else if threadsError}
+          <p class="text-xs text-danger">{threadsError}</p>
+        {:else if threads.length === 0}
+          <p class="text-xs text-ink-faint">Aucune conversation rattachée.</p>
+        {:else}
+          <ul class="space-y-2">
+            {#each threads as thread (thread.id)}
+              <li class="rounded-md border border-edge bg-surface-muted px-3 py-2.5 text-xs">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0 flex-1">
+                    <div class="truncate font-semibold text-ink">{thread.subject || '(sans objet)'}</div>
+                    <div class="mt-0.5 text-ink-faint">{relativeTime(thread.lastMessageAt)}</div>
+                  </div>
+                  <div class="flex shrink-0 flex-col items-end gap-1">
+                    {#if thread.messageCount > 1}
+                      <span class="rounded-full bg-surface px-1.5 py-0.5 font-mono text-[10px] font-semibold text-ink-muted">{thread.messageCount}</span>
+                    {/if}
+                    <Badge tone={threadStatusTone(thread.status)}>{threadStatusLabel(thread.status)}</Badge>
+                  </div>
+                </div>
               </li>
             {/each}
           </ul>
