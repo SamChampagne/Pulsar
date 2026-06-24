@@ -25,6 +25,7 @@ import {
   Palette,
   Handshake,
   Mail,
+  Globe,
 } from 'lucide-svelte';
 import type { ComponentType } from 'svelte';
 
@@ -413,6 +414,34 @@ export function navCatalogue(): NavDomain[] {
           links: [
             {
               href: '/crm/config',
+              label: 'Configuration',
+              perm: PERMISSIONS.CORE.MODULES_MANAGE,
+            },
+          ],
+        },
+      ],
+    },
+
+    // ── Sites & Pages ─────────────────────────────────────────────────────
+    {
+      key: 'sites',
+      label: 'Sites',
+      icon: Globe,
+      home: '/sites',
+      module: MODULE_KEYS.SITES,
+      prefixes: ['/sites'],
+      anyPerms: [PERMISSIONS.SITES.READ],
+      sections: [
+        {
+          links: [
+            { href: '/sites', label: 'Pages', perm: PERMISSIONS.SITES.READ },
+          ],
+        },
+        {
+          label: 'Administration',
+          links: [
+            {
+              href: '/sites/config',
               label: 'Configuration',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
