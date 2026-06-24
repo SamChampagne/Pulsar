@@ -437,16 +437,6 @@ export function navCatalogue(): NavDomain[] {
             { href: '/sites', label: 'Pages', perm: PERMISSIONS.SITES.READ },
           ],
         },
-        {
-          label: 'Administration',
-          links: [
-            {
-              href: '/sites/config',
-              label: 'Configuration',
-              perm: PERMISSIONS.CORE.MODULES_MANAGE,
-            },
-          ],
-        },
       ],
     },
 
