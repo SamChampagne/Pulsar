@@ -55,4 +55,5 @@ export * from './analytics/flow';
 export * from './connect/connect';
 export * from './procurement/procurement.workflow';
 export * from './crm/crm.workflow';
+export * from './crm/email-thread';
 export * from './email/email.enums';
