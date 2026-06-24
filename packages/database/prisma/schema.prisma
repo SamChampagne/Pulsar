@@ -108,6 +108,7 @@ model Tenant {
   emailConfig      TenantEmailConfig?
   emailMessages    EmailMessage[]
   emailTemplates   EmailTemplate[]
+  emailThreads     EmailThread[]
 
   @@map("tenants")
 }
@@ -2741,6 +2742,17 @@ enum EmailStatus {
   FAILED
 }
 
+enum EmailThreadStatus {
+  UNLINKED
+  LINKED
+  ARCHIVED
+}
+
+enum EmailDirection {
+  INBOUND
+  OUTBOUND
+}
+
 /// Per-tenant SMTP configuration. Password encrypted via CryptoService (never returned in clear).
 model TenantEmailConfig {
   id           String      @id @default(cuid())
@@ -2754,6 +2766,15 @@ model TenantEmailConfig {
   fromName     String?
   fromEmail    String?
   replyTo      String?
+  // Inbound (IMAP) — password encrypted via CryptoService, never returned in clear.
+  imapHost        String?
+  imapPort        Int?
+  imapSecure      Boolean   @default(true)
+  imapUsername    String?
+  imapPasswordEnc String?
+  inboundActive   Boolean   @default(false)
+  lastPollAt      DateTime?
+  lastPollOk      Boolean?
   active       Boolean     @default(true)
   lastTestAt   DateTime?
   lastTestOk   Boolean?
@@ -2783,6 +2804,12 @@ model EmailMessage {
   templateKey     String?
   createdByUserId String?
   agentId         String?
+  threadId    String?
+  direction   EmailDirection @default(OUTBOUND)
+  messageId   String?
+  inReplyTo   String?
+  references  String?
+  fromAddress String?
   sentAt          DateTime?
   nextAttemptAt   DateTime?
   createdAt       DateTime    @default(now())
@@ -2795,7 +2822,32 @@ model EmailMessage {
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
   @@index([status, nextAttemptAt])
+  @@index([tenantId, threadId])
+  @@index([tenantId, messageId])
   @@map("email_messages")
+}
+
+/// Conversation thread grouping inbound + outbound EmailMessage rows, linked to CRM entities.
+model EmailThread {
+  id            String            @id @default(cuid())
+  tenantId      String
+  subject       String
+  subjectNorm   String
+  contactId     String?
+  companyId     String?
+  dealId        String?
+  status        EmailThreadStatus @default(UNLINKED)
+  lastMessageAt DateTime
+  messageCount  Int               @default(0)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status, lastMessageAt])
+  @@index([tenantId, contactId])
+  @@index([tenantId, dealId])
+  @@map("email_threads")
 }
 
 /// Email attachment: soft FK to Document (no Prisma relation — documentId is stored as a string).
