@@ -620,7 +620,7 @@
               </tbody>
               <tfoot>
                 <tr class="border-t border-edge">
-                  <td colspan={isDraft ? 4 : 4} class="py-2 pr-3 text-right text-[11px] uppercase tracking-wide font-semibold text-ink-muted">
+                  <td colspan={4} class="py-2 pr-3 text-right text-[11px] uppercase tracking-wide font-semibold text-ink-muted">
                     Total commande
                   </td>
                   <td class="py-2 pl-3 text-right text-sm font-bold text-accent">
@@ -645,11 +645,11 @@
         <div class="space-y-1.5">
           {#each (
             [
-              { key: 'DRAFT',     label: 'Brouillon', tone: 'neutral'  as Tone },
-              { key: 'CONFIRMED', label: 'Confirmée', tone: 'info'     as Tone },
-              { key: 'FULFILLED', label: 'Exécutée',  tone: 'ok'       as Tone },
-              { key: 'INVOICED',  label: 'Facturée',  tone: 'purple'   as Tone },
-              { key: 'CANCELLED', label: 'Annulée',   tone: 'danger'   as Tone },
+              { key: 'DRAFT',     label: 'Brouillon', tone: 'neutral' as Tone },
+              { key: 'CONFIRMED', label: 'Confirmée', tone: 'info'    as Tone },
+              { key: 'FULFILLED', label: 'Exécutée',  tone: 'ok'      as Tone },
+              { key: 'INVOICED',  label: 'Facturée',  tone: 'info'    as Tone },
+              { key: 'CANCELLED', label: 'Annulée',   tone: 'danger'  as Tone },
             ] as const
           ) as s (s.key)}
             <div class={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs ${order.status === s.key ? 'bg-surface-muted font-semibold' : 'text-ink-faint'}`}>
