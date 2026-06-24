@@ -390,6 +390,7 @@ export function navCatalogue(): NavDomain[] {
             { href: '/crm/companies', label: 'Sociétés', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/contacts', label: 'Contacts', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/activities', label: 'Activités', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/inbox', label: 'Boîte de réception', perm: PERMISSIONS.CRM.READ },
           ],
         },
         {
