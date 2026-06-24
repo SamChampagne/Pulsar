@@ -2,6 +2,7 @@
   import { page } from '$app/state';
   import { api, ApiError } from '$lib/api/client';
   import PublicShell from '$lib/components/PublicShell.svelte';
+  import LandingPageRender from '$lib/components/sites/LandingPageRender.svelte';
 
   interface Block {
     type: 'heading' | 'text' | 'image' | 'form';
@@ -100,16 +101,8 @@
   {:else if error}
     <p class="text-sm text-danger">{error}</p>
   {:else if site}
-    {#each site.blocks as block, i (i)}
-      {#if block.type === 'heading'}
-        <h1 class="text-2xl font-bold text-ink mb-4">{block.text}</h1>
-      {:else if block.type === 'text'}
-        <p class="text-ink mb-4 leading-relaxed">{block.text}</p>
-      {:else if block.type === 'image'}
-        <div class="mb-4">
-          <img src={block.url} alt="" class="max-w-full rounded-card" />
-        </div>
-      {:else if block.type === 'form' && block.fields}
+    <LandingPageRender blocks={site.blocks}>
+      {#snippet formBlock(block)}
         {#if submitted}
           <div class="rounded-card border border-ok-soft bg-ok-soft px-4 py-4 text-sm text-ok text-center">
             Merci, nous vous recontacterons.
@@ -127,7 +120,7 @@
               aria-hidden="true"
             />
 
-            {#each block.fields as field (field)}
+            {#each block.fields ?? [] as field (field)}
               <div class="flex flex-col gap-1">
                 <label for={`field-${field}`} class="text-sm font-medium text-ink">
                   {labelForField(field)}
@@ -155,8 +148,8 @@
             </button>
           </form>
         {/if}
-      {/if}
-    {/each}
+      {/snippet}
+    </LandingPageRender>
 
     <p class="mt-6 text-center text-xs text-ink-faint">Propulsé par Pulsar</p>
   {:else}
