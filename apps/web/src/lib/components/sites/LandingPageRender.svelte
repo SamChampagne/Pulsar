@@ -21,7 +21,7 @@
     const labels: Record<string, string> = {
       name: 'Nom',
       email: 'Courriel',
-      company: 'Entreprise',
+      company: 'Société',
       phone: 'Téléphone',
       message: 'Message',
     };
@@ -46,7 +46,7 @@
     {/if}
   {:else if block.type === 'text'}
     <p class="text-ink mb-4 leading-relaxed">{block.text}</p>
-  {:else if block.type === 'image'}
+  {:else if block.type === 'image' && block.url}
     <div class="mb-4">
       <img src={block.url} alt="" class="max-w-full rounded-card" />
     </div>
