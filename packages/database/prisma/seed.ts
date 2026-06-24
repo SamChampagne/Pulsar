@@ -760,6 +760,28 @@ async function main() {
   }
 
   console.log('Email templates and sample message ready.');
+
+  // --- Sites demo data (acme tenant) ------------------------------------------
+  // The sites module is enabled via the available-module loop above.
+  await prisma.landingPage.upsert({
+    where: { id: 'sites-page-bienvenue' },
+    update: {},
+    create: {
+      id: 'sites-page-bienvenue',
+      tenantId: tenant.id,
+      slug: 'bienvenue',
+      title: 'Bienvenue chez Acme',
+      status: 'PUBLISHED',
+      publishedAt: new Date(),
+      content: [
+        { type: 'heading', text: 'Bienvenue chez Acme' },
+        { type: 'text', text: 'Acme Manufacturing est votre partenaire logistique de confiance au Québec.' },
+        { type: 'form', fields: ['name', 'email', 'company'] },
+      ],
+    },
+  });
+
+  console.log('Sites demo data ready (1 PUBLISHED landing page, slug: bienvenue).');
 }
 
 main()

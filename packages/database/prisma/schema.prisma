@@ -111,6 +111,7 @@ model Tenant {
   emailMessages    EmailMessage[]
   emailTemplates   EmailTemplate[]
   emailThreads     EmailThread[]
+  landingPages     LandingPage[]
 
   @@map("tenants")
 }
@@ -3001,4 +3002,48 @@ model ReactionExecution {
   @@unique([tenantId, eventId, ruleId])
   @@index([tenantId, createdAt])
   @@map("reaction_executions")
+}
+
+// ============================================================================
+// SITES — landing pages + lead capture (module: sites)
+// ============================================================================
+
+// Mirrors LandingPageStatus from @pulsar/shared/sites (rule 3).
+enum LandingPageStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model LandingPage {
+  id            String            @id @default(cuid())
+  tenantId      String
+  slug          String                          // public id, globally unique
+  title         String
+  status        LandingPageStatus @default(DRAFT)
+  content       Json                            // ordered blocks
+  captureListId String?                         // optional CrmList to add leads to
+  publishedAt   DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  tenant      Tenant                  @relation(fields: [tenantId], references: [id])
+  submissions LandingPageSubmission[]
+
+  @@unique([slug])
+  @@index([tenantId, status])
+  @@map("landing_pages")
+}
+
+model LandingPageSubmission {
+  id            String   @id @default(cuid())
+  tenantId      String
+  landingPageId String
+  data          Json                            // raw submitted fields
+  contactId     String?                         // matched/created CrmContact (if CRM active)
+  createdAt     DateTime @default(now())
+
+  page LandingPage @relation(fields: [landingPageId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, landingPageId])
+  @@map("landing_page_submissions")
 }
