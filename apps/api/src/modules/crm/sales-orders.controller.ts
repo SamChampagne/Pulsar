@@ -53,6 +53,13 @@ export class SalesOrdersController {
     return this.service.transition(user.tenantId, user.id, id, SalesOrderStatus.FULFILLED);
   }
 
+  @Post(':id/invoice')
+  @HttpCode(200)
+  @RequirePermissions(PERMISSIONS.CRM.MANAGE)
+  invoice(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.transition(user.tenantId, user.id, id, SalesOrderStatus.INVOICED);
+  }
+
   @Post(':id/cancel')
   @HttpCode(200)
   @RequirePermissions(PERMISSIONS.CRM.MANAGE)

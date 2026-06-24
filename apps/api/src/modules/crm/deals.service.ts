@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { CustomFieldsService } from '../../core/custom-fields/custom-fields.service';
 import { SequencesService } from '../../prisma/sequences.service';
+import { DomainEventsService } from '../../core/operating/domain-events.service';
 import { paginationArgs, paginated } from '../../common/pagination';
 import { CreateDealDto, DealListQueryDto, UpdateDealDto } from './dto/deal.dto';
 
@@ -21,6 +22,7 @@ export class DealsService {
     private readonly audit: AuditLogsService,
     private readonly sequences: SequencesService,
     private readonly customFields: CustomFieldsService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
 
   async list(tenantId: string, query: DealListQueryDto) {
@@ -140,7 +142,10 @@ export class DealsService {
    * Claim-safe: optimistic lock on current stage (TOCTOU).
    */
   async advance(tenantId: string, id: string, userId: string, toStage: CrmDealStage) {
-    const deal = await this.prisma.crmDeal.findFirstOrThrow({ where: { id, tenantId } });
+    const deal = await this.prisma.crmDeal.findFirstOrThrow({
+      where: { id, tenantId },
+      select: { id: true, stage: true, companyId: true },
+    });
     if (!canTransitionDeal(deal.stage as CrmDealStage, toStage)) {
       throw new BadRequestException(`Cannot move deal from ${deal.stage} to ${toStage}`);
     }
@@ -158,6 +163,14 @@ export class DealsService {
       before: { stage: deal.stage },
       after: { stage: toStage },
     });
+    if (toStage === CrmDealStage.WON) {
+      await this.domainEvents.emit(
+        tenantId,
+        'crm.deal.won',
+        { type: 'deal', id },
+        { dealId: id, companyId: deal.companyId },
+      );
+    }
     return this.get(tenantId, id);
   }
 

@@ -3,6 +3,7 @@ import { AuditAction, canTransitionSalesOrder, CrmDealStage, SalesOrderStatus, s
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { SequencesService } from '../../prisma/sequences.service';
+import { DomainEventsService } from '../../core/operating/domain-events.service';
 import { paginationArgs, paginated } from '../../common/pagination';
 import { CreateSalesOrderDto, SalesOrderListQueryDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
 
@@ -17,6 +18,7 @@ export class SalesOrdersService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogsService,
     private readonly sequences: SequencesService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
 
   async list(tenantId: string, query: SalesOrderListQueryDto) {
@@ -220,7 +222,10 @@ export class SalesOrdersService {
    * Claim-safe: optimistic lock on current status (TOCTOU).
    */
   async transition(tenantId: string, userId: string, id: string, to: SalesOrderStatus) {
-    const order = await this.prisma.salesOrder.findFirst({ where: { id, tenantId } });
+    const order = await this.prisma.salesOrder.findFirst({
+      where: { id, tenantId },
+      select: { id: true, status: true, companyId: true, customerId: true },
+    });
     if (!order) throw new NotFoundException('Sales order not found');
 
     if (!canTransitionSalesOrder(order.status as SalesOrderStatus, to)) {
@@ -242,6 +247,22 @@ export class SalesOrdersService {
       before: { status: order.status },
       after: { status: to },
     });
+
+    if (to === SalesOrderStatus.CONFIRMED) {
+      await this.domainEvents.emit(
+        tenantId,
+        'crm.sales_order.confirmed',
+        { type: 'sales-order', id },
+        { salesOrderId: id, companyId: order.companyId, customerId: order.customerId },
+      );
+    } else if (to === SalesOrderStatus.INVOICED) {
+      await this.domainEvents.emit(
+        tenantId,
+        'crm.sales_order.invoiced',
+        { type: 'sales-order', id },
+        { salesOrderId: id, companyId: order.companyId, customerId: order.customerId },
+      );
+    }
 
     return this.get(tenantId, id);
   }
