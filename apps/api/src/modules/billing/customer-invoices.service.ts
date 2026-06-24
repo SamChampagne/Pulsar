@@ -1,9 +1,11 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   AuditAction,
   CustomerInvoiceStatus,
   TransportOrderStatus,
   canTransitionCustomerInvoice,
+  computeLineTotal,
+  sumLineItems,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -55,6 +57,8 @@ export function groupByCurrency(rated: RatedOrder[]): Map<string, RatedOrder[]> 
  */
 @Injectable()
 export class CustomerInvoicesService {
+  private readonly logger = new Logger(CustomerInvoicesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ownership: OwnershipService,
@@ -366,5 +370,128 @@ export class CustomerInvoicesService {
     return this.transition(tenantId, userId, id, CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.PAID, {
       paidAt: paidAt ? new Date(paidAt) : new Date(),
     });
+  }
+
+  /**
+   * Creates a DRAFT customer invoice from a CRM sales order's line items.
+   *
+   * MODELLING NOTE — structural gap:
+   *   `CustomerInvoiceLine` has a NOT-NULL @unique FK `transportOrderId` (TransportOrder).
+   *   CRM sales-order lines have no associated transport orders. Therefore this method
+   *   creates the `CustomerInvoice` record (with totalAmount + currency) but stores
+   *   the line-item snapshot in `customData.soLines` instead of creating
+   *   `CustomerInvoiceLine` rows. The invoice will show `lines: []` via `statementInclude`
+   *   until the schema is extended with a free-form line type. Fabricating TransportOrder
+   *   FKs is explicitly ruled out.
+   *
+   * IDEMPOTENCE:
+   *   The `salesOrderId` is stored in `customData.salesOrderId`. On every call we query
+   *   `{ tenantId, customerId, customData: { path: ['salesOrderId'], equals: salesOrderId } }`
+   *   (Prisma JSON-path filter on Postgres). If a DRAFT or later invoice already exists
+   *   for this SO, we return `{ created: false }` without creating a duplicate.
+   */
+  async createDraftFromSalesOrder(
+    tenantId: string,
+    userId: string,
+    salesOrderId: string,
+  ): Promise<{ created: boolean; invoiceId?: string }> {
+    // 1. Load the SO with its line items, tenant-scoped.
+    const order = await this.prisma.salesOrder.findFirst({
+      where: { id: salesOrderId, tenantId },
+      include: { lineItems: true },
+    });
+    if (!order) {
+      this.logger.log(
+        `createDraftFromSalesOrder: sales order ${salesOrderId} not found for tenant ${tenantId} — skipping`,
+      );
+      return { created: false };
+    }
+
+    // 2. A Billing Customer link is required.
+    if (!order.customerId) {
+      this.logger.log(
+        `createDraftFromSalesOrder: sales order ${salesOrderId} has no customer — skipping`,
+      );
+      return { created: false };
+    }
+
+    // 3. Idempotence: check whether a draft (or later) invoice already links this SO.
+    const existing = await this.prisma.customerInvoice.findFirst({
+      where: {
+        tenantId,
+        customerId: order.customerId,
+        customData: { path: ['salesOrderId'], equals: salesOrderId },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      return { created: false };
+    }
+
+    // 4. Resolve currency and compute total from SO lines (Decimal → Number at boundary).
+    const soLines = order.lineItems.map((li) => ({
+      id: li.id,
+      name: li.name,
+      quantity: Number(li.quantity),
+      unitPrice: Number(li.unitPrice),
+      discountPct: Number(li.discountPct),
+      lineTotal: computeLineTotal({
+        quantity: Number(li.quantity),
+        unitPrice: Number(li.unitPrice),
+        discountPct: Number(li.discountPct),
+      }),
+    }));
+    const totalAmount = sumLineItems(
+      order.lineItems.map((li) => ({
+        quantity: Number(li.quantity),
+        unitPrice: Number(li.unitPrice),
+        discountPct: Number(li.discountPct),
+      })),
+    );
+
+    // 5. Resolve currency: prefer SO currency, fall back to billing defaultCurrency (règle 36).
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    const defaultCurrency = (s.defaultCurrency as string | undefined) ?? 'CAD';
+    const currency = order.currency ?? defaultCurrency;
+
+    // 6. Mint the invoice number (same sequence key as createDrafts).
+    const invoiceNumber = await this.sequences.nextNumber(tenantId, 'customer-invoice');
+
+    // 7. Create the DRAFT invoice. Lines are stored in customData.soLines (see modelling note).
+    const invoice = await this.prisma.customerInvoice.create({
+      data: {
+        tenantId,
+        invoiceNumber,
+        customerId: order.customerId,
+        currency,
+        totalAmount,
+        // Idempotence anchor + frozen SO snapshot (règle 16 — never recomputed).
+        customData: {
+          salesOrderId,
+          salesOrderNumber: order.number,
+          soLines,
+        },
+      },
+    });
+
+    // 8. Audit (règle 6).
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.CREATE,
+      entityType: 'customer-invoice',
+      entityId: invoice.id,
+      after: {
+        invoiceNumber: invoice.invoiceNumber,
+        customerId: order.customerId,
+        currency: invoice.currency,
+        totalAmount,
+        source: 'sales-order',
+        salesOrderId,
+        salesOrderNumber: order.number,
+      },
+    });
+
+    return { created: true, invoiceId: invoice.id };
   }
 }
