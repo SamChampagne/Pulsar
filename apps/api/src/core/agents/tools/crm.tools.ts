@@ -103,6 +103,15 @@ export const crmTools: ToolDef[] = [
         agentId: ctx.principal.agentId,
       }),
   },
+  {
+    name: 'crm_list_products',
+    description: 'List the CRM product catalog (active products) for quoting/analysis.',
+    tier: RiskTier.READ,
+    permission: PERMISSIONS.CRM.READ,
+    module: MODULE_KEYS.CRM,
+    inputSchema: z.object({ search: z.string().optional() }),
+    run: (args, ctx) => ctx.services.crm.listProducts(ctx.principal.user.tenantId, { ...args, active: 'true' }),
+  },
   // ── CRM threads (email) ─────────────────────────────────────────────────────
   {
     name: 'crm_list_threads',

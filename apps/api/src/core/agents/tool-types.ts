@@ -116,6 +116,7 @@ export interface ToolServices {
     getThread(tenantId: string, id: string): Promise<unknown>;
     replyThread(tenantId: string, id: string, dto: { html: string; subject?: string }, author: { agentId?: string; userId?: string }): Promise<unknown>;
     linkThread(tenantId: string, id: string, dto: object, userId: string): Promise<unknown>;
+    listProducts(tenantId: string, query: object): Promise<unknown>;
   };
   // ── Email (core) ───────────────────────────────────────────────────────────
   email: {
