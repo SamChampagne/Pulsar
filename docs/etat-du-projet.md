@@ -108,6 +108,10 @@ drag/drop = workbench v2).
 | Démarrage local | [getting-started.md](./getting-started.md) |
 | Connexion d'un agent IA (MCP) / Hermes | [agents.md](./agents.md) |
 
+## Sites — pages de destination & formulaires (module CRM-marketing)
+
+Module `SITES` livré : `LandingPage` (slug unique par tenant, statut DRAFT/PUBLISHED/ARCHIVED via `canTransitionLandingPage`, contenu structuré validé par `validateLandingContent`) + soumissions de formulaire créant un lead CRM (`CrmContact`) quand le module CRM est actif (résolution `ModuleRef`, pas d'import statique) ; honeypot `_hp` silencieux ; payload public projection stricte sans `tenantId` (règle 40) ; pages web `/sites` (liste) + `/sites/[id]` (éditeur) + `/p/[slug]` (rendu public) ; e2e `sites.e2e-spec.ts` ; 30ᵉ migration.
+
 ## Session — Tressage automatique v1 (arc B) (2026-06-21)
 
 Branche `cross-module-automation`. **Arc B complet** : 8 tâches livrées — moteur de réactions

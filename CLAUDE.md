@@ -299,6 +299,19 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     la file `ProposedAction` (`crm_reply_thread` SENSITIVE, `crm_link_thread` MUTATING —
     règles 22/29).
 
+## Hard rules (continued, module Sites)
+
+40. (module Sites — pages de destination publiques) Le payload public `GET /public/sites/:slug`
+    est une **projection explicite** (jamais `tenantId` ni référence interne — règle 10) ; le
+    service public re-vérifie l'activation du module SITES **et** le statut `PUBLISHED` de la page
+    avant de répondre (règle 15 — la route `/public/**` bypass le `ModulesGuard`). La soumission
+    de formulaire (`POST /public/sites/:slug/submit`) crée un lead CRM **uniquement si le module
+    CRM est actif** — résolu via `ModuleRef.get(ContactsService)` (jamais d'import statique de
+    `CrmModule` — règle 38 pattern). Le champ anti-spam `_hp` (honeypot) renvoyé non vide est
+    silencieusement rejeté (200 sans création). Le slug est **globalement unique** au niveau
+    tenant (`@@unique([tenantId, slug])`) ; `slugify` de `@pulsar/shared` est la seule source de
+    normalisation — ne pas réimplémenter.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
