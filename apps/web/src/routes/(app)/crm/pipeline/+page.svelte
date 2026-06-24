@@ -255,8 +255,8 @@
                   draggable={!isTerminal}
                   ondragstart={(e) => onDragStart(e, deal, stage.key)}
                   ondragend={onDragEnd}
-                  onclick={() => void goto('/crm/deals')}
-                  onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') void goto('/crm/deals'); }}
+                  onclick={() => void goto(`/crm/deals/${deal.id}`)}
+                  onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') void goto(`/crm/deals/${deal.id}`); }}
                   role="button"
                   tabindex="0"
                   class={`px-3 pt-2.5 pb-2 ${

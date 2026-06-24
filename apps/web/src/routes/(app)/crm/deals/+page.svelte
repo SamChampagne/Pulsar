@@ -153,7 +153,7 @@
         <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
         <tr
           class="cursor-pointer transition-colors hover:bg-surface-muted"
-          onclick={() => void goto(`/crm/companies/${deal.company.id}`)}
+          onclick={() => void goto(`/crm/deals/${deal.id}`)}
         >
           <td class="font-semibold text-ink">{deal.title}</td>
           <td class="text-ink-muted">{deal.company.name}</td>
