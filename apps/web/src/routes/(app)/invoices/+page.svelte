@@ -282,12 +282,29 @@
     priceDetail: PriceDetail | null;
     transportOrder: { id: string; orderNumber: string; customerReference: string | null } | null;
   }
+  interface TaxDetailLine {
+    description: string;
+    rate: number;
+    accountCode: string;
+    amount: number;
+  }
+  interface TaxDetail {
+    taxAmount: number;
+    lines: TaxDetailLine[];
+  }
+  interface TaxTemplateOption {
+    id: string;
+    name: string;
+  }
   interface StatementRow {
     id: string;
     invoiceNumber: string;
     status: 'DRAFT' | 'APPROVED' | 'SENT' | 'PAID';
     currency: string;
     totalAmount: string;
+    taxAmount: string;
+    taxDetail: TaxDetail | null;
+    taxTemplateId: string | null;
     approvedAt: string | null;
     sentAt: string | null;
     paidAt: string | null;
@@ -462,12 +479,42 @@
     }
   }
 
+  // Tax template selector state (for DRAFT statements)
+  let taxTemplates = $state<TaxTemplateOption[]>([]);
+  let taxTemplatesLoaded = $state(false);
+
+  async function loadTaxTemplates() {
+    if (taxTemplatesLoaded) return;
+    try {
+      const result = await api<TaxTemplateOption[]>('/billing/tax-templates', {
+        query: { type: 'SALES' },
+      });
+      taxTemplates = result;
+      taxTemplatesLoaded = true;
+    } catch {
+      // non-blocking — selector just stays empty
+    }
+  }
+
+  async function applyTax(stmt: StatementRow, taxTemplateId: string | null) {
+    try {
+      await api(`/billing/customer-invoices/${stmt.id}/tax`, {
+        method: 'PATCH',
+        body: { taxTemplateId },
+      });
+      await loadCustomerData();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to apply tax template');
+    }
+  }
+
   // Load customer tab data when switching to it (once)
   let customerDataLoaded = $state(false);
   $effect(() => {
     if (activeTab === 'customer' && !customerDataLoaded) {
       customerDataLoaded = true;
       void loadCustomerData();
+      void loadTaxTemplates();
     }
   });
 
@@ -878,6 +925,57 @@
                         {/each}
                       {/snippet}
                     </Table>
+
+                    <!-- Tax breakdown / totals -->
+                    {#if Number(stmt.taxAmount) > 0 && stmt.taxDetail}
+                      {@const taxAmt = Number(stmt.taxAmount)}
+                      {@const total = Number(stmt.totalAmount)}
+                      {@const net = total - taxAmt}
+                      <div class="rounded-md border border-edge bg-surface p-3 space-y-1 text-sm">
+                        <div class="flex justify-between text-ink-muted">
+                          <span>Net</span>
+                          <span>{net.toLocaleString()} {stmt.currency}</span>
+                        </div>
+                        {#each stmt.taxDetail.lines as tl (tl.description)}
+                          <div class="flex justify-between text-ink-muted">
+                            <span>{tl.description} ({tl.rate}%)</span>
+                            <span>{Number(tl.amount).toLocaleString()} {stmt.currency}</span>
+                          </div>
+                        {/each}
+                        <div class="flex justify-between font-semibold border-t border-edge pt-1 text-ink">
+                          <span>Total</span>
+                          <span>{total.toLocaleString()} {stmt.currency}</span>
+                        </div>
+                      </div>
+                    {:else}
+                      <div class="rounded-md border border-edge bg-surface p-3 text-sm">
+                        <div class="flex justify-between font-semibold text-ink">
+                          <span>Total</span>
+                          <span>{Number(stmt.totalAmount).toLocaleString()} {stmt.currency}</span>
+                        </div>
+                      </div>
+                    {/if}
+
+                    <!-- Tax template selector (DRAFT only) -->
+                    {#if stmt.status === 'DRAFT'}
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-xs text-ink-muted">Tax template:</span>
+                        <div class="w-56">
+                          <Select
+                            value={stmt.taxTemplateId ?? ''}
+                            onchange={(e) => {
+                              const val = (e.target as HTMLSelectElement).value;
+                              void applyTax(stmt, val === '' ? null : val);
+                            }}
+                          >
+                            <option value="">Aucune taxe</option>
+                            {#each taxTemplates as t (t.id)}
+                              <option value={t.id}>{t.name}</option>
+                            {/each}
+                          </Select>
+                        </div>
+                      </div>
+                    {/if}
                   </div>
                 </td>
               </tr>
