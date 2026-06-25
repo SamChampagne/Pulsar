@@ -30,9 +30,12 @@ export const DEFAULT_CHART: { code: string; name: string; type: AccountType }[] 
   { code: '1010', name: 'Banque', type: AccountType.ASSET },
   { code: '1100', name: 'Comptes clients', type: AccountType.ASSET },
   { code: '1150', name: 'Taxes à recouvrer', type: AccountType.ASSET },
+  { code: '1500', name: 'Immobilisations', type: AccountType.ASSET },
+  { code: '1590', name: 'Amortissement cumulé', type: AccountType.ASSET },
   { code: '2000', name: 'Comptes fournisseurs', type: AccountType.LIABILITY },
   { code: '2100', name: 'Taxes à payer', type: AccountType.LIABILITY },
   { code: '3000', name: 'Capital', type: AccountType.EQUITY },
   { code: '4000', name: 'Revenus de transport', type: AccountType.REVENUE },
   { code: '5000', name: 'Charges transporteurs', type: AccountType.EXPENSE },
+  { code: '5100', name: 'Dotation aux amortissements', type: AccountType.EXPENSE },
 ];
