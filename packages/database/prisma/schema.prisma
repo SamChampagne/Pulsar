@@ -114,6 +114,8 @@ model Tenant {
   landingPages     LandingPage[]
   chartOfAccounts  ChartOfAccount[]
   journalEntries   JournalEntry[]
+  payments        Payment[]
+  modesOfPayment  ModeOfPayment[]
 
   @@map("tenants")
 }
@@ -1376,6 +1378,7 @@ model Invoice {
   status        InvoiceStatus @default(DRAFT)
   currency      String        @default("CAD")
   totalAmount   Decimal       @db.Decimal(12, 2)
+  amountPaid    Decimal       @default(0) @db.Decimal(12, 2)
   approvedAt    DateTime?
 
   // --- Reconciliation against the carrier's actual invoice -------------------
@@ -1436,6 +1439,7 @@ model CustomerInvoice {
   status        CustomerInvoiceStatus @default(DRAFT)
   currency      String                @default("CAD")
   totalAmount   Decimal               @db.Decimal(12, 2)
+  amountPaid    Decimal               @default(0) @db.Decimal(12, 2)
   approvedAt    DateTime?
   sentAt        DateTime?
   paidAt        DateTime?
@@ -3069,6 +3073,27 @@ enum AccountType {
   EXPENSE
 }
 
+enum PaymentType {
+  RECEIVE
+  PAY
+}
+
+enum PaymentStatus {
+  DRAFT
+  SUBMITTED
+  CANCELLED
+}
+
+enum PaymentPartyType {
+  CUSTOMER
+  CARRIER
+}
+
+enum PaymentTargetType {
+  CUSTOMER_INVOICE
+  CARRIER_INVOICE
+}
+
 model ChartOfAccount {
   id        String      @id @default(cuid())
   tenantId  String
@@ -3120,4 +3145,64 @@ model JournalLine {
   @@index([tenantId, accountId])
   @@index([tenantId, journalEntryId])
   @@map("journal_lines")
+}
+
+// ============================================================================
+// BILLING — Payments (receive from customers / pay to carriers)
+// ============================================================================
+
+model ModeOfPayment {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  accountCode String
+  isDefault   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  payments    Payment[]
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("modes_of_payment")
+}
+
+model Payment {
+  id              String              @id @default(cuid())
+  tenantId        String
+  paymentNumber   String
+  type            PaymentType
+  status          PaymentStatus       @default(DRAFT)
+  partyType       PaymentPartyType
+  partyId         String
+  modeOfPaymentId String
+  date            DateTime
+  currency        String              @default("CAD")
+  totalAmount     Decimal             @db.Decimal(12, 2)
+  reference       String?
+  note            String?
+  submittedAt     DateTime?
+  cancelledAt     DateTime?
+  createdById     String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  tenant          Tenant              @relation(fields: [tenantId], references: [id])
+  modeOfPayment   ModeOfPayment       @relation(fields: [modeOfPaymentId], references: [id])
+  allocations     PaymentAllocation[]
+  @@unique([tenantId, paymentNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, partyType, partyId])
+  @@map("payments")
+}
+
+model PaymentAllocation {
+  id         String            @id @default(cuid())
+  tenantId   String
+  paymentId  String
+  targetType PaymentTargetType
+  targetId   String
+  amount     Decimal           @db.Decimal(12, 2)
+  payment    Payment           @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  @@index([tenantId, targetType, targetId])
+  @@index([tenantId, paymentId])
+  @@map("payment_allocations")
 }
