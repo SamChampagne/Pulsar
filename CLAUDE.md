@@ -363,6 +363,22 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     du tenant (400 sinon). Tout endpoint taxes est `@RequireModule(BILLING)` +
     `billing.taxes.read|manage`, tenant-scopé (règle 1).
 
+## Hard rules (continued, Financial Reports)
+
+44. (Financial Reports — états financiers lecture seule) Les états financiers (P&L, bilan,
+    flux de trésorerie, vieillissement AR/AP) sont **calculés à la lecture** depuis `JournalLine`
+    (+ `CustomerInvoice`/`IncomingCarrierInvoice` à statut `APPROVED`/`SENT`/`PAID` pour le
+    vieillissement) via les helpers purs `buildProfitAndLoss`/`buildBalanceSheet`/`buildAging`
+    (`@pulsar/shared/billing/reports`) — **aucun store de rollup, aucune migration**.
+    `naturalBalance` (alias de `normalBalance`, `@pulsar/shared`) dérive le solde normal d'un
+    compte depuis son `AccountType` — jamais persisté. Les endpoints `GET /billing/reports/*`
+    sont gated `@RequireModule(BILLING)` + `billing.ledger.read` (aucune nouvelle permission) et
+    sont tenant-scopés (règle 1). La plage de dates (`from`/`to`/`asOf`) est fournie en
+    paramètre de requête ; le cumul depuis l'origine est retourné si `from` est absent.
+    Le vieillissement est calculé par tranches (0-30, 31-60, 61-90, 91+ jours) sur le `dueDate`
+    des factures non entièrement acquittées — `paidAt` absent = dû en totalité ; `paidAt` présent
+    = sorti du vieillissement.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
