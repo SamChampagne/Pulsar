@@ -3,8 +3,10 @@ import {
   AuditAction,
   CustomerInvoiceStatus,
   TransportOrderStatus,
+  TaxTemplateType,
   canTransitionCustomerInvoice,
   computeLineTotal,
+  computeTax,
   sumLineItems,
   PaymentPartyType,
   PaymentTargetType,
@@ -20,6 +22,9 @@ import { ModuleSettingsService } from '../../core/module-registry/module-setting
 import { RatingService } from '../transportation/rating/rating.service';
 import { LedgerService } from './ledger/ledger.service';
 import { PaymentsService } from './payments.service';
+import { TaxTemplatesService } from './tax-templates.service';
+
+const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 
 const statementInclude = {
   customer: { select: { id: true, code: true, name: true, email: true } },
@@ -74,6 +79,7 @@ export class CustomerInvoicesService {
     private readonly rating: RatingService,
     private readonly ledger: LedgerService,
     private readonly payments: PaymentsService,
+    private readonly taxTemplates: TaxTemplatesService,
   ) {}
 
   private async defaultModeId(tenantId: string): Promise<string> {
@@ -260,6 +266,68 @@ export class CustomerInvoicesService {
     return { deleted: true };
   }
 
+  /** Applies (or clears) a tax template on a DRAFT invoice. */
+  async applyTax(tenantId: string, userId: string, id: string, taxTemplateId: string | null) {
+    const invoice = await this.get(tenantId, id);
+    if (invoice.status !== CustomerInvoiceStatus.DRAFT) {
+      throw new BadRequestException('Tax can only be applied to DRAFT invoices');
+    }
+
+    const net = round2(Number(invoice.totalAmount) - Number(invoice.taxAmount));
+
+    let newTaxAmount: number;
+    let newTaxDetail: Prisma.InputJsonValue | null;
+    let newTemplateId: string | null;
+    let newTotal: number;
+
+    if (taxTemplateId === null) {
+      // Clear tax
+      newTaxAmount = 0;
+      newTaxDetail = null;
+      newTemplateId = null;
+      newTotal = round2(net);
+    } else {
+      const template = await this.taxTemplates.get(tenantId, taxTemplateId); // 404 if not owned — rule 9
+      if (template.type !== TaxTemplateType.SALES) {
+        throw new BadRequestException('Tax template must be of type SALES for customer invoices');
+      }
+      const computation = computeTax(
+        net,
+        template.lines.map((l) => ({
+          description: l.description,
+          rate: Number(l.rate),
+          accountCode: l.accountCode,
+        })),
+      );
+      newTaxAmount = computation.taxAmount;
+      newTaxDetail = computation as unknown as Prisma.InputJsonValue;
+      newTemplateId = taxTemplateId;
+      newTotal = round2(net + computation.taxAmount);
+    }
+
+    await this.prisma.customerInvoice.updateMany({
+      where: { id, tenantId, status: CustomerInvoiceStatus.DRAFT },
+      data: {
+        taxTemplateId: newTemplateId,
+        taxAmount: newTaxAmount,
+        taxDetail: newTaxDetail ?? Prisma.JsonNull,
+        totalAmount: newTotal,
+      },
+    });
+
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'customer-invoice',
+      entityId: id,
+      before: { taxTemplateId: invoice.taxTemplateId, taxAmount: Number(invoice.taxAmount), totalAmount: Number(invoice.totalAmount) },
+      after: { taxTemplateId: newTemplateId, taxAmount: newTaxAmount, totalAmount: newTotal },
+    });
+
+    return this.get(tenantId, id);
+  }
+
   /** Conditional-update transition (anti-TOCTOU): the WHERE carries the expected status. */
   private async transition(
     tenantId: string,
@@ -296,12 +364,22 @@ export class CustomerInvoicesService {
       approvedAt: new Date(),
     });
     const s = await this.moduleSettings.resolve(tenantId, 'billing');
-    // Auto-post ledger entry: DR AR / CR Revenue (best-effort, never breaks the transition).
+    // Auto-post ledger entry: DR AR = gross / CR Revenue = net / CR <taxAccount> per tax line.
+    // When taxAmount is 0 / no taxDetail, reduces to DR AR / CR Revenue (unchanged behaviour).
     if (s.ledgerAutoPost === true) {
-      const amount = Number(result.totalAmount);
+      const totalAmount = Number(result.totalAmount);
+      const taxAmount = Number(result.taxAmount);
+      const netAmount = round2(totalAmount - taxAmount);
       const arCode = (s.arAccountCode as string | undefined) ?? '1100';
       const revCode = (s.revenueAccountCode as string | undefined) ?? '4000';
       try {
+        // Build the credit lines: revenue net + one line per tax breakdown line.
+        const taxDetail = result.taxDetail as { lines?: Array<{ accountCode: string; amount: number }> } | null;
+        const taxCreditLines: Array<{ accountCode: string; credit: number }> =
+          taxDetail && Array.isArray(taxDetail.lines) && taxDetail.lines.length > 0
+            ? taxDetail.lines.map((l) => ({ accountCode: l.accountCode, credit: l.amount }))
+            : [];
+
         await this.ledger.post(
           tenantId,
           {
@@ -310,8 +388,9 @@ export class CustomerInvoicesService {
             sourceId: id,
             sourceKind: 'approved',
             lines: [
-              { accountCode: arCode, debit: amount },
-              { accountCode: revCode, credit: amount },
+              { accountCode: arCode, debit: totalAmount },
+              { accountCode: revCode, credit: netAmount },
+              ...taxCreditLines,
             ],
           },
           userId,
