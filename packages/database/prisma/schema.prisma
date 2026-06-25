@@ -118,6 +118,7 @@ model Tenant {
   modesOfPayment  ModeOfPayment[]
   taxTemplates    TaxTemplate[]
   bankAccounts    BankAccount[]
+  budgets         Budget[]
 
   @@map("tenants")
 }
@@ -3297,4 +3298,34 @@ model BankTransaction {
   bankAccount      BankAccount   @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
   @@index([tenantId, bankAccountId, status])
   @@map("bank_transactions")
+}
+
+// ============================================================================
+// BILLING — Budgets (annual per-account budget + variance vs GL)
+// ============================================================================
+
+model Budget {
+  id         String   @id @default(cuid())
+  tenantId   String
+  name       String
+  fiscalYear Int
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  lines      BudgetLine[]
+  @@unique([tenantId, name, fiscalYear])
+  @@index([tenantId, fiscalYear])
+  @@map("budgets")
+}
+
+model BudgetLine {
+  id          String  @id @default(cuid())
+  tenantId    String
+  budgetId    String
+  accountCode String
+  amount      Decimal @db.Decimal(12, 2)
+  budget      Budget  @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  @@index([tenantId, budgetId])
+  @@map("budget_lines")
 }
