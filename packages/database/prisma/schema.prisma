@@ -116,6 +116,7 @@ model Tenant {
   journalEntries   JournalEntry[]
   payments        Payment[]
   modesOfPayment  ModeOfPayment[]
+  taxTemplates    TaxTemplate[]
 
   @@map("tenants")
 }
@@ -1350,6 +1351,11 @@ enum InvoiceStatus {
   PAID
 }
 
+enum TaxTemplateType {
+  SALES
+  PURCHASE
+}
+
 enum DisputeReasonCode {
   RATE_MISMATCH
   QUANTITY_MISMATCH
@@ -1379,6 +1385,9 @@ model Invoice {
   currency      String        @default("CAD")
   totalAmount   Decimal       @db.Decimal(12, 2)
   amountPaid    Decimal       @default(0) @db.Decimal(12, 2)
+  taxAmount     Decimal       @default(0) @db.Decimal(12, 2)
+  taxTemplateId String?
+  taxDetail     Json?
   approvedAt    DateTime?
 
   // --- Reconciliation against the carrier's actual invoice -------------------
@@ -1440,6 +1449,9 @@ model CustomerInvoice {
   currency      String                @default("CAD")
   totalAmount   Decimal               @db.Decimal(12, 2)
   amountPaid    Decimal               @default(0) @db.Decimal(12, 2)
+  taxAmount     Decimal               @default(0) @db.Decimal(12, 2)
+  taxTemplateId String?
+  taxDetail     Json?
   approvedAt    DateTime?
   sentAt        DateTime?
   paidAt        DateTime?
@@ -3205,4 +3217,40 @@ model PaymentAllocation {
   @@index([tenantId, targetType, targetId])
   @@index([tenantId, paymentId])
   @@map("payment_allocations")
+}
+
+// ============================================================================
+// BILLING — Tax Templates (multi-rate tax models, SALES + PURCHASE)
+// ============================================================================
+
+model TaxTemplate {
+  id        String          @id @default(cuid())
+  tenantId  String
+  name      String
+  type      TaxTemplateType
+  isDefault Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  tenant Tenant            @relation(fields: [tenantId], references: [id])
+  lines  TaxTemplateLine[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, type])
+  @@map("tax_templates")
+}
+
+model TaxTemplateLine {
+  id          String  @id @default(cuid())
+  tenantId    String
+  templateId  String
+  description String
+  rate        Decimal @db.Decimal(7, 4)
+  accountCode String
+  sortOrder   Int     @default(0)
+
+  template TaxTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, templateId])
+  @@map("tax_template_lines")
 }
