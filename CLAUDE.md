@@ -427,7 +427,10 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     les deux comptes sont inclus dans `DEFAULT_CHART` et seedés pour chaque tenant. **Pas d'écriture
     GL à l'acquisition ni à la cession en v1** — le registre porte le coût d'acquisition ; la
     cession (`dispose`) est statut-only. Tout endpoint est `@RequireModule(BILLING)` +
-    `billing.assets.read|manage`, tenant-scopé (règle 1).
+    `billing.assets.read|manage`, tenant-scopé (règle 1). Les comptes 1500/1590/5100 sont
+    inclus dans `DEFAULT_CHART` mais `ensureChart` ne backfille pas un plan non-vide : un tenant
+    seedé avant leur ajout doit relancer `pnpm db:seed` (upsert idempotent) pour les obtenir —
+    sinon `depreciate` retourne un 400 propre ("Unknown account code: 5100") sans corruption.
 
 ## Adding a business module (the recipe)
 

@@ -236,10 +236,11 @@ export class FixedAssetsService {
 
       entryId = entry.id;
 
-      // 2. Increment accumulatedDepreciation on the asset
+      // 2. Atomically increment accumulatedDepreciation on the asset (prevents lost-update
+      //    across concurrent distinct-period calls that both read before the transaction)
       await tx.fixedAsset.updateMany({
         where: { id, tenantId },
-        data: { accumulatedDepreciation: new Prisma.Decimal(round2(accumulated + amount)) },
+        data: { accumulatedDepreciation: { increment: new Prisma.Decimal(amount) } },
       });
 
       // 3. Post GL: Dr depreciationExpenseAccountCode / Cr accumulatedDepreciationAccountCode
