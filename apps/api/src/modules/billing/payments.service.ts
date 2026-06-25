@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   AuditAction,
   CustomerInvoiceStatus,
@@ -294,10 +294,14 @@ export class PaymentsService {
         if (a.targetType === PaymentTargetType.CUSTOMER_INVOICE) {
           const inv = await tx.customerInvoice.findFirst({
             where: { id: a.targetId, tenantId },
-            select: { totalAmount: true, amountPaid: true, status: true },
+            select: { totalAmount: true, amountPaid: true, status: true, currency: true },
           });
           if (!inv) throw new BadRequestException('Allocated customer invoice not found');
-          const newPaid = Number(inv.amountPaid) + Number(a.amount);
+          // Finding 2: allocation-currency coherence check.
+          if (inv.currency !== payment.currency)
+            throw new BadRequestException('Allocation currency does not match payment currency');
+          const priorPaid = inv.amountPaid;
+          const newPaid = Number(priorPaid) + Number(a.amount);
           if (newPaid > Number(inv.totalAmount) + 1e-9)
             throw new BadRequestException('Allocation exceeds invoice outstanding');
           const willBePaid = newPaid >= Number(inv.totalAmount) - 1e-9;
@@ -313,13 +317,16 @@ export class PaymentsService {
               );
             }
           }
-          await tx.customerInvoice.update({
-            where: { id: a.targetId },
+          // Finding 1: conditional-claim (TOCTOU guard) on amountPaid increment.
+          const claimed = await tx.customerInvoice.updateMany({
+            where: { id: a.targetId, tenantId, amountPaid: priorPaid },
             data: {
               amountPaid: new Prisma.Decimal(newPaid),
               ...(willBePaid ? { status: CustomerInvoiceStatus.PAID, paidAt: new Date() } : {}),
             },
           });
+          if (claimed.count === 0)
+            throw new ConflictException('Invoice changed concurrently, retry the payment');
           if (willBePaid) {
             invoiceStatusChanges.push({
               entityType: 'customer-invoice',
@@ -331,10 +338,14 @@ export class PaymentsService {
         } else {
           const inv = await tx.invoice.findFirst({
             where: { id: a.targetId, tenantId },
-            select: { totalAmount: true, amountPaid: true, status: true },
+            select: { totalAmount: true, amountPaid: true, status: true, currency: true },
           });
           if (!inv) throw new BadRequestException('Allocated carrier invoice not found');
-          const newPaid = Number(inv.amountPaid) + Number(a.amount);
+          // Finding 2: allocation-currency coherence check.
+          if (inv.currency !== payment.currency)
+            throw new BadRequestException('Allocation currency does not match payment currency');
+          const priorPaid = inv.amountPaid;
+          const newPaid = Number(priorPaid) + Number(a.amount);
           if (newPaid > Number(inv.totalAmount) + 1e-9)
             throw new BadRequestException('Allocation exceeds invoice outstanding');
           const willBePaid = newPaid >= Number(inv.totalAmount) - 1e-9;
@@ -345,13 +356,16 @@ export class PaymentsService {
               );
             }
           }
-          await tx.invoice.update({
-            where: { id: a.targetId },
+          // Finding 1: conditional-claim (TOCTOU guard) on amountPaid increment.
+          const claimed = await tx.invoice.updateMany({
+            where: { id: a.targetId, tenantId, amountPaid: priorPaid },
             data: {
               amountPaid: new Prisma.Decimal(newPaid),
               ...(willBePaid ? { status: InvoiceStatus.PAID, paidAt: new Date() } : {}),
             },
           });
+          if (claimed.count === 0)
+            throw new ConflictException('Invoice changed concurrently, retry the payment');
           if (willBePaid) {
             invoiceStatusChanges.push({
               entityType: 'carrier-invoice',
@@ -448,7 +462,8 @@ export class PaymentsService {
               select: { totalAmount: true, amountPaid: true, status: true, sentAt: true },
             });
             if (!inv) continue;
-            const newPaid = Math.max(0, Number(inv.amountPaid) - Number(a.amount));
+            const priorPaid = inv.amountPaid;
+            const newPaid = Math.max(0, Number(priorPaid) - Number(a.amount));
             const willRevert =
               inv.status === CustomerInvoiceStatus.PAID && newPaid < Number(inv.totalAmount);
             const revertTarget = willRevert
@@ -468,8 +483,9 @@ export class PaymentsService {
                 );
               }
             }
-            await tx.customerInvoice.update({
-              where: { id: a.targetId },
+            // Finding 1 (cancel): conditional-claim (TOCTOU guard) on amountPaid decrement.
+            const claimed = await tx.customerInvoice.updateMany({
+              where: { id: a.targetId, tenantId, amountPaid: priorPaid },
               data: {
                 amountPaid: new Prisma.Decimal(newPaid),
                 ...(willRevert && revertTarget
@@ -477,6 +493,8 @@ export class PaymentsService {
                   : {}),
               },
             });
+            if (claimed.count === 0)
+              throw new ConflictException('Invoice changed concurrently, retry the cancellation');
             if (willRevert && revertTarget) {
               cancelInvoiceRevertChanges.push({
                 entityType: 'customer-invoice',
@@ -491,7 +509,8 @@ export class PaymentsService {
               select: { totalAmount: true, amountPaid: true, status: true },
             });
             if (!inv) continue;
-            const newPaid = Math.max(0, Number(inv.amountPaid) - Number(a.amount));
+            const priorPaid = inv.amountPaid;
+            const newPaid = Math.max(0, Number(priorPaid) - Number(a.amount));
             const willRevert =
               inv.status === InvoiceStatus.PAID && newPaid < Number(inv.totalAmount);
             const revertTarget = InvoiceStatus.APPROVED;
@@ -502,13 +521,16 @@ export class PaymentsService {
                 );
               }
             }
-            await tx.invoice.update({
-              where: { id: a.targetId },
+            // Finding 1 (cancel): conditional-claim (TOCTOU guard) on amountPaid decrement.
+            const claimed = await tx.invoice.updateMany({
+              where: { id: a.targetId, tenantId, amountPaid: priorPaid },
               data: {
                 amountPaid: new Prisma.Decimal(newPaid),
                 ...(willRevert ? { status: revertTarget, paidAt: null } : {}),
               },
             });
+            if (claimed.count === 0)
+              throw new ConflictException('Invoice changed concurrently, retry the cancellation');
             if (willRevert) {
               cancelInvoiceRevertChanges.push({
                 entityType: 'carrier-invoice',

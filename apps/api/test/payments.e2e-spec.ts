@@ -1,5 +1,5 @@
 /**
- * E2E: Payments — partial/full/cancel/isolation/over-allocation
+ * E2E: Payments — partial/full/cancel/isolation/over-allocation/currency-mismatch
  *
  * Covers:
  *   1. Customer statement (APPROVED): partial RECEIVE payment (40/100) → submit →
@@ -12,6 +12,14 @@
  *   6. Tenant isolation: second tenant token gets 404 on GET /billing/payments/:id of
  *      the first tenant's payment.
  *   7. Over-allocation: allocating 150 against a 100 statement → 400.
+ *   8. Currency mismatch: payment in USD allocating a CAD invoice → 400 at submit.
+ *      (Finding 2 guard — submit-time coherence check.)
+ *
+ * Note (Finding 1 — concurrent over-pay): the `submit` and `cancel` paths use a
+ * conditional-claim updateMany({ where: { amountPaid: <prior> } }) to guard against
+ * concurrent writes racing through READ COMMITTED. A deterministic parallel e2e test
+ * would be flaky; correctness is enforced in payments.service.ts and covered by case 7
+ * (over-allocation still rejected via the newPaid > totalAmount guard on the freshly-read value).
  *
  * Prerequisites: running Postgres, db:migrate + db:seed applied.
  */
@@ -615,6 +623,60 @@ describe('Payments (e2e)', () => {
       // Submit must reject because the invoice totalAmount is only 100.
       await request(http)
         .post(`/api/v1/billing/payments/${overPaymentId}/submit`)
+        .set(auth())
+        .expect(400);
+    });
+  });
+
+  // ===========================================================================
+  // Suite 5 — Currency mismatch: payment in USD allocating a CAD invoice → 400
+  // (Finding 2: allocation-currency coherence guard added to submit)
+  // ===========================================================================
+  describe('Currency mismatch rejected', () => {
+    let cadInvoiceId = '';
+
+    beforeAll(async () => {
+      // Create a CAD customer invoice.
+      const inv = await prisma.customerInvoice.create({
+        data: {
+          tenantId,
+          invoiceNumber: `PAY-CUR-${suffix}`,
+          customerId,
+          currency: 'CAD',
+          totalAmount: 80,
+          status: 'APPROVED',
+          approvedAt: new Date(),
+        },
+      });
+      cadInvoiceId = inv.id;
+      customerInvoiceIds.push(cadInvoiceId);
+    });
+
+    it('8. Submit a USD payment allocated to a CAD invoice → 400 (currency mismatch)', async () => {
+      // Create a payment explicitly in USD.
+      const createRes = await request(http)
+        .post('/api/v1/billing/payments')
+        .set(auth())
+        .send({
+          type: 'RECEIVE',
+          partyType: 'CUSTOMER',
+          partyId: customerId,
+          modeOfPaymentId,
+          date: new Date().toISOString(),
+          currency: 'USD',
+          totalAmount: 80,
+          allocations: [
+            { targetType: 'CUSTOMER_INVOICE', targetId: cadInvoiceId, amount: 80 },
+          ],
+        })
+        .expect(201);
+
+      const mismatchPaymentId = (createRes.body as { id: string }).id;
+      paymentIds.push(mismatchPaymentId);
+
+      // Submit must reject: payment is USD but invoice is CAD.
+      await request(http)
+        .post(`/api/v1/billing/payments/${mismatchPaymentId}/submit`)
         .set(auth())
         .expect(400);
     });
