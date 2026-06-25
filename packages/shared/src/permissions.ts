@@ -74,6 +74,8 @@ export const PERMISSIONS = {
     CUSTOMER_INVOICES_PAY: 'billing.customer-invoices.pay',
     LEDGER_READ: 'billing.ledger.read',
     LEDGER_MANAGE: 'billing.ledger.manage',
+    PAYMENTS_READ: 'billing.payments.read',
+    PAYMENTS_MANAGE: 'billing.payments.manage',
   },
   FLEET: {
     READ: 'fleet.read',
@@ -249,6 +251,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_PAY, 'Mark customer billing statements as paid'),
   billing(PERMISSIONS.BILLING.LEDGER_READ, 'View the general ledger'),
   billing(PERMISSIONS.BILLING.LEDGER_MANAGE, 'Manage the general ledger (manual journal entries, chart of accounts)'),
+  billing(PERMISSIONS.BILLING.PAYMENTS_READ, 'View payments'),
+  billing(PERMISSIONS.BILLING.PAYMENTS_MANAGE, 'Record and submit payments'),
   fleet(PERMISSIONS.FLEET.READ, 'View fleet assets, maintenance and compliance'),
   fleet(PERMISSIONS.FLEET.MANAGE, 'Manage maintenance orders and compliance documents'),
   wms(PERMISSIONS.WMS.READ, 'View warehouse inventory, receipts and pick orders'),
