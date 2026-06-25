@@ -27,7 +27,9 @@ export function isBalanced(lines: { debit: number; credit: number }[]): boolean 
 
 export const DEFAULT_CHART: { code: string; name: string; type: AccountType }[] = [
   { code: '1000', name: 'Encaisse', type: AccountType.ASSET },
+  { code: '1010', name: 'Banque', type: AccountType.ASSET },
   { code: '1100', name: 'Comptes clients', type: AccountType.ASSET },
+  { code: '1150', name: 'Taxes à recouvrer', type: AccountType.ASSET },
   { code: '2000', name: 'Comptes fournisseurs', type: AccountType.LIABILITY },
   { code: '2100', name: 'Taxes à payer', type: AccountType.LIABILITY },
   { code: '3000', name: 'Capital', type: AccountType.EQUITY },
