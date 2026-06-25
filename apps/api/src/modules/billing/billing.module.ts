@@ -14,6 +14,8 @@ import { InvoicesController } from './invoices.controller';
 import { InvoicesService } from './invoices.service';
 import { LedgerController } from './ledger/ledger.controller';
 import { LedgerService } from './ledger/ledger.service';
+import { ModesOfPaymentController } from './modes-of-payment.controller';
+import { ModesOfPaymentService } from './modes-of-payment.service';
 
 /**
  * Billing — third business module, activable per tenant.
@@ -23,8 +25,8 @@ import { LedgerService } from './ledger/ledger.service';
  */
 @Module({
   imports: [AuditLogsModule, CustomFieldsModule, EmailModule, ModuleRegistryModule, TransportationModule, forwardRef(() => OperatingModule)],
-  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController, BillingCustomFieldsController, LedgerController],
-  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService, LedgerService],
-  exports: [FreightAuditService, CustomerInvoicesService, LedgerService],
+  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController, BillingCustomFieldsController, LedgerController, ModesOfPaymentController],
+  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService, LedgerService, ModesOfPaymentService],
+  exports: [FreightAuditService, CustomerInvoicesService, LedgerService, ModesOfPaymentService],
 })
 export class BillingModule {}

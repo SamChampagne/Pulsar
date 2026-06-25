@@ -812,6 +812,19 @@ async function main() {
     });
   }
   console.log(`Billing chart of accounts ready (${DEFAULT_CHART.length} accounts seeded for acme).`);
+
+  // --- Billing: default modes of payment (acme tenant) --------------------------
+  for (const m of [
+    { name: 'Espèces', accountCode: '1000', isDefault: true },
+    { name: 'Banque', accountCode: '1010', isDefault: false },
+  ]) {
+    await prisma.modeOfPayment.upsert({
+      where: { tenantId_name: { tenantId: tenant.id, name: m.name } },
+      update: { accountCode: m.accountCode, isDefault: m.isDefault },
+      create: { tenantId: tenant.id, ...m },
+    });
+  }
+  console.log('Billing modes of payment ready (Espèces, Banque).');
 }
 
 main()
