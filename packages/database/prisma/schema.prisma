@@ -120,6 +120,7 @@ model Tenant {
   bankAccounts    BankAccount[]
   budgets         Budget[]
   fixedAssets     FixedAsset[]
+  subscriptions   Subscription[]
 
   @@map("tenants")
 }
@@ -498,6 +499,7 @@ model Customer {
   rates            Rate[]
   customerInvoices CustomerInvoice[]
   orderTemplates   OrderTemplate[]
+  subscriptions    Subscription[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -3091,6 +3093,18 @@ enum FixedAssetStatus {
   DISPOSED
 }
 
+enum SubscriptionStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+}
+
+enum SubscriptionInterval {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
 enum AccountType {
   ASSET
   LIABILITY
@@ -3382,4 +3396,52 @@ model DepreciationEntry {
   @@unique([tenantId, assetId, period])
   @@index([tenantId, assetId])
   @@map("depreciation_entries")
+}
+
+// ============================================================================
+// BILLING — Subscriptions (recurring billing, module: billing)
+// ============================================================================
+
+model Subscription {
+  id          String               @id @default(cuid())
+  tenantId    String
+  name        String
+  customerId  String
+  status      SubscriptionStatus   @default(ACTIVE)
+  interval    SubscriptionInterval @default(MONTHLY)
+  startDate   DateTime
+  nextRunDate DateTime
+  currency    String               @default("CAD")
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  tenant      Tenant               @relation(fields: [tenantId], references: [id])
+  customer    Customer             @relation(fields: [customerId], references: [id])
+  lines       SubscriptionLine[]
+  generated   SubscriptionInvoice[]
+  @@index([tenantId, status, nextRunDate])
+  @@map("subscriptions")
+}
+
+model SubscriptionLine {
+  id             String       @id @default(cuid())
+  tenantId       String
+  subscriptionId String
+  description    String
+  amount         Decimal      @db.Decimal(12, 2)
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  @@index([tenantId, subscriptionId])
+  @@map("subscription_lines")
+}
+
+model SubscriptionInvoice {
+  id                String       @id @default(cuid())
+  tenantId          String
+  subscriptionId    String
+  periodStart       DateTime
+  customerInvoiceId String
+  createdAt         DateTime     @default(now())
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, subscriptionId, periodStart])
+  @@index([tenantId, subscriptionId])
+  @@map("subscription_invoices")
 }
