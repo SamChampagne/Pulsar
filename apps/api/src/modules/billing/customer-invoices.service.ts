@@ -413,8 +413,8 @@ export class CustomerInvoicesService {
       select: { id: true, status: true, totalAmount: true, amountPaid: true, customerId: true, currency: true },
     });
     if (!inv) throw new NotFoundException('Statement not found');
-    if (inv.status !== 'APPROVED' && inv.status !== 'SENT')
-      throw new BadRequestException('Only APPROVED/SENT statements can be paid');
+    if (inv.status !== 'SENT')
+      throw new BadRequestException('Only SENT statements can be marked paid via this endpoint');
     const outstanding = Number(inv.totalAmount) - Number(inv.amountPaid);
     if (outstanding <= 0) throw new BadRequestException('Statement already settled');
     const payment = await this.payments.create(tenantId, userId, {
@@ -427,7 +427,8 @@ export class CustomerInvoicesService {
       totalAmount: outstanding,
       allocations: [{ targetType: PaymentTargetType.CUSTOMER_INVOICE, targetId: inv.id, amount: outstanding }],
     });
-    return this.payments.submit(tenantId, userId, payment.id);
+    await this.payments.submit(tenantId, userId, payment.id);
+    return this.get(tenantId, id);
   }
 
   /**

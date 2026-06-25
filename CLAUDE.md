@@ -329,6 +329,21 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     — jamais persisté. Le plan comptable par défaut est seedé idempotement pour le tenant acme
     (upsert sur `(tenantId, code)`).
 
+## Hard rules (continued, Billing Payments)
+
+42. (Billing Payments — paiement comme entrée unique) `Payment`/`PaymentAllocation`/`ModeOfPayment`
+    sont la seule voie de paiement billing. Tout paiement passe par `PaymentsService.submit` qui
+    poste le GL **transactionnellement** via `LedgerService.postTx` (`sourceType='payment'`,
+    `sourceId=payment.id`, `sourceKind=undefined`) ; l'annulation poste une écriture inversée
+    (`sourceKind='reversal'`) dans la même transaction. Les statuts `Payment` ne changent QUE via
+    `canTransitionPayment` (`@pulsar/shared`). Le mark-paid des relevés clients (`POST
+    customer-invoices/:id/pay`) exige le statut `SENT` (pas `APPROVED`) et retourne le relevé
+    mis à jour. Le mark-paid des factures transporteur (`POST invoices/:id/mark-paid`) retourne
+    la facture mise à jour. Les deux endpoints créent et soumettent un `Payment` en coulisse —
+    jamais de GL direct. `ModeOfPayment.accountCode` désigne le compte caisse/banque ; les
+    comptes AR/AP viennent des réglages billing (`arAccountCode`/`apAccountCode`). Le plan
+    comptable est seedé via `ensureChart` (idempotent) avant toute transaction GL.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

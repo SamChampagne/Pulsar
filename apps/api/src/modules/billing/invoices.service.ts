@@ -374,7 +374,8 @@ export class InvoicesService {
       totalAmount: outstanding,
       allocations: [{ targetType: PaymentTargetType.CARRIER_INVOICE, targetId: inv.id, amount: outstanding }],
     });
-    return this.payments.submit(tenantId, userId, payment.id);
+    await this.payments.submit(tenantId, userId, payment.id);
+    return this.get(tenantId, id);
   }
 
   /** Filtered list as CSV (expected/invoiced/variance per invoice).
