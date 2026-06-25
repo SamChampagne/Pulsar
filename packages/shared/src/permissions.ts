@@ -72,6 +72,8 @@ export const PERMISSIONS = {
     CUSTOMER_INVOICES_MANAGE: 'billing.customer-invoices.manage',
     CUSTOMER_INVOICES_SEND: 'billing.customer-invoices.send',
     CUSTOMER_INVOICES_PAY: 'billing.customer-invoices.pay',
+    LEDGER_READ: 'billing.ledger.read',
+    LEDGER_MANAGE: 'billing.ledger.manage',
   },
   FLEET: {
     READ: 'fleet.read',
@@ -245,6 +247,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_MANAGE, 'Draft, approve and delete customer billing statements'),
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_SEND, 'Send customer billing statements'),
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_PAY, 'Mark customer billing statements as paid'),
+  billing(PERMISSIONS.BILLING.LEDGER_READ, 'View the general ledger'),
+  billing(PERMISSIONS.BILLING.LEDGER_MANAGE, 'Manage the general ledger (manual journal entries, chart of accounts)'),
   fleet(PERMISSIONS.FLEET.READ, 'View fleet assets, maintenance and compliance'),
   fleet(PERMISSIONS.FLEET.MANAGE, 'Manage maintenance orders and compliance documents'),
   wms(PERMISSIONS.WMS.READ, 'View warehouse inventory, receipts and pick orders'),
