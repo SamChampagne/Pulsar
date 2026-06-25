@@ -281,6 +281,7 @@ export function navCatalogue(): NavDomain[] {
             { href: '/billing/freight-audit', label: 'Freight audit' },
             { href: '/billing/ledger', label: 'Grand livre', perm: PERMISSIONS.BILLING.LEDGER_READ },
             { href: '/billing/reports', label: 'Rapports financiers', perm: PERMISSIONS.BILLING.LEDGER_READ },
+            { href: '/billing/banking', label: 'Banque', perm: PERMISSIONS.BILLING.LEDGER_READ },
             { href: '/billing/payments', label: 'Paiements', perm: PERMISSIONS.BILLING.PAYMENTS_READ },
           ],
         },
