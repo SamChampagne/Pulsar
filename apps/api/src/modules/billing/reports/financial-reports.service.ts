@@ -96,8 +96,8 @@ export class FinancialReportsService {
     to?: Date,
   ): Promise<{ accounts: ReportLine[]; netChange: number }> {
     const settings = await this.moduleSettings.resolve(tenantId, 'billing');
-    const cashCode: string | undefined = (settings as any).cashAccountCode;
-    const bankCode: string | undefined = (settings as any).bankAccountCode;
+    const cashCode = settings['cashAccountCode'] as string | undefined;
+    const bankCode = settings['bankAccountCode'] as string | undefined;
 
     const rows = await this.aggregateByAccount(tenantId, { from, to });
 
@@ -105,9 +105,12 @@ export class FinancialReportsService {
     if (cashCode) cashCodes.add(cashCode);
     if (bankCode) cashCodes.add(bankCode);
 
-    const accounts: ReportLine[] = rows
-      .filter((r) => cashCodes.size === 0 || cashCodes.has(r.code))
-      .map((r) => ({ code: r.code, name: r.name, amount: naturalBalance(r) }));
+    const accounts: ReportLine[] =
+      cashCodes.size === 0
+        ? []
+        : rows
+            .filter((r) => cashCodes.has(r.code))
+            .map((r) => ({ code: r.code, name: r.name, amount: naturalBalance(r) }));
 
     const netChange = round2(accounts.reduce((s, a) => s + a.amount, 0));
 
