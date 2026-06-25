@@ -14,6 +14,8 @@ import { BudgetsService } from './budgets/budgets.service';
 import { FixedAssetsController } from './assets/fixed-assets.controller';
 import { FixedAssetsService } from './assets/fixed-assets.service';
 import { BillingCustomFieldsController } from './custom-fields/billing-custom-fields.controller';
+import { SubscriptionsController } from './subscriptions/subscriptions.controller';
+import { SubscriptionsService } from './subscriptions/subscriptions.service';
 import { CustomerInvoicesController } from './customer-invoices.controller';
 import { CustomerInvoicesService } from './customer-invoices.service';
 import { FreightAuditController } from './freight-audit/freight-audit.controller';
@@ -39,8 +41,8 @@ import { TaxTemplatesService } from './tax-templates.service';
  */
 @Module({
   imports: [AuditLogsModule, CustomFieldsModule, EmailModule, ModuleRegistryModule, TransportationModule, forwardRef(() => OperatingModule)],
-  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController, BillingCustomFieldsController, LedgerController, ModesOfPaymentController, PaymentsController, TaxTemplatesController, ReportsController, BankAccountsController, BankTransactionsController, BudgetsController, FixedAssetsController],
-  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService, FinancialReportsService, BankAccountsService, BankTransactionsService, BudgetsService, FixedAssetsService],
+  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController, BillingCustomFieldsController, LedgerController, ModesOfPaymentController, PaymentsController, TaxTemplatesController, ReportsController, BankAccountsController, BankTransactionsController, BudgetsController, FixedAssetsController, SubscriptionsController],
+  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService, FinancialReportsService, BankAccountsService, BankTransactionsService, BudgetsService, FixedAssetsService, SubscriptionsService],
   exports: [FreightAuditService, CustomerInvoicesService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService, BankAccountsService, BankTransactionsService],
 })
 export class BillingModule {}
