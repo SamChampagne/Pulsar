@@ -3101,7 +3101,7 @@ model JournalEntry {
   lines  JournalLine[]
 
   @@index([tenantId, date])
-  @@index([tenantId, sourceType, sourceId, sourceKind])
+  @@unique([tenantId, sourceType, sourceId, sourceKind])
   @@map("journal_entries")
 }
 

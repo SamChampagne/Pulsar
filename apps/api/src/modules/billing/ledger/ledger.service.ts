@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { AuditAction, DEFAULT_CHART, isBalanced } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { paginated, paginationArgs } from '../../../common/pagination';
@@ -100,31 +101,44 @@ export class LedgerService {
     }
 
     // Step 5: persist entry + lines in a transaction
-    const entry = await (this.prisma.$transaction as (fn: (tx: any) => Promise<any>) => Promise<any>)(
-      async (tx: any) => {
-        return tx.journalEntry.create({
-          data: {
-            tenantId,
-            date: input.date ?? new Date(),
-            memo: input.memo,
-            sourceType: input.sourceType,
-            sourceId: input.sourceId,
-            sourceKind: input.sourceKind,
-            createdById: userId,
-            lines: {
-              create: input.lines.map((l) => ({
-                tenantId,
-                accountId: codeToId.get(l.accountCode)!,
-                debit: l.debit ?? 0,
-                credit: l.credit ?? 0,
-                memo: l.memo,
-              })),
+    // Wrap in try/catch: a concurrent call may have raced past the findFirst check
+    // and already inserted the same (tenantId, sourceType, sourceId, sourceKind)
+    // tuple. The DB unique constraint (@@unique) will surface this as P2002; we
+    // treat it as a successful idempotent no-op rather than an error.
+    let entry: { id: string };
+    try {
+      entry = await (this.prisma.$transaction as (fn: (tx: any) => Promise<any>) => Promise<any>)(
+        async (tx: any) => {
+          return tx.journalEntry.create({
+            data: {
+              tenantId,
+              date: input.date ?? new Date(),
+              memo: input.memo,
+              sourceType: input.sourceType,
+              sourceId: input.sourceId,
+              sourceKind: input.sourceKind,
+              createdById: userId,
+              lines: {
+                create: input.lines.map((l) => ({
+                  tenantId,
+                  accountId: codeToId.get(l.accountCode)!,
+                  debit: l.debit ?? 0,
+                  credit: l.credit ?? 0,
+                  memo: l.memo,
+                })),
+              },
             },
-          },
-          select: { id: true },
-        });
-      },
-    );
+            select: { id: true },
+          });
+        },
+      );
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        // Concurrent post of the same source tuple — already posted.
+        return { posted: false };
+      }
+      throw err;
+    }
 
     // Step 6: audit (règle 6)
     await this.audit.log({
@@ -166,14 +180,22 @@ export class LedgerService {
     totalDebit: number;
     totalCredit: number;
   }> {
+    // Normalize asOf to end of that calendar day so entries posted at any time
+    // during that day are included (e.g. 2024-06-01T23:59:59.999Z).
+    let asOfEnd: Date | undefined;
+    if (asOf) {
+      asOfEnd = new Date(asOf);
+      asOfEnd.setHours(23, 59, 59, 999);
+    }
+
     // Fetch all lines (tenant-scoped) with entry date filter if asOf provided
     const lines = await this.prisma.journalLine.findMany({
       where: {
         tenantId,
-        ...(asOf
+        ...(asOfEnd
           ? {
               entry: {
-                date: { lte: asOf },
+                date: { lte: asOfEnd },
               },
             }
           : {}),
