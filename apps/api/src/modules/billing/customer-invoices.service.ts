@@ -6,6 +6,9 @@ import {
   canTransitionCustomerInvoice,
   computeLineTotal,
   sumLineItems,
+  PaymentPartyType,
+  PaymentTargetType,
+  PaymentType,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -16,6 +19,7 @@ import { MailService } from '../../core/email/mail.service';
 import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { RatingService } from '../transportation/rating/rating.service';
 import { LedgerService } from './ledger/ledger.service';
+import { PaymentsService } from './payments.service';
 
 const statementInclude = {
   customer: { select: { id: true, code: true, name: true, email: true } },
@@ -69,7 +73,18 @@ export class CustomerInvoicesService {
     private readonly moduleSettings: ModuleSettingsService,
     private readonly rating: RatingService,
     private readonly ledger: LedgerService,
+    private readonly payments: PaymentsService,
   ) {}
+
+  private async defaultModeId(tenantId: string): Promise<string> {
+    const mode = await this.prisma.modeOfPayment.findFirst({
+      where: { tenantId },
+      orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+      select: { id: true },
+    });
+    if (!mode) throw new BadRequestException('No mode of payment configured');
+    return mode.id;
+  }
 
   list(tenantId: string, status?: CustomerInvoiceStatus, customerId?: string) {
     return this.prisma.customerInvoice.findMany({
@@ -393,35 +408,26 @@ export class CustomerInvoicesService {
   }
 
   async markPaid(tenantId: string, userId: string, id: string, paidAt?: string) {
-    const result = await this.transition(tenantId, userId, id, CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.PAID, {
-      paidAt: paidAt ? new Date(paidAt) : new Date(),
+    const inv = await this.prisma.customerInvoice.findFirst({
+      where: { id, tenantId },
+      select: { id: true, status: true, totalAmount: true, amountPaid: true, customerId: true, currency: true },
     });
-    const s = await this.moduleSettings.resolve(tenantId, 'billing');
-    // Auto-post ledger entry: DR Cash / CR AR (best-effort, never breaks the transition).
-    if (s.ledgerAutoPost === true) {
-      const amount = Number(result.totalAmount);
-      const cashCode = (s.cashAccountCode as string | undefined) ?? '1000';
-      const arCode = (s.arAccountCode as string | undefined) ?? '1100';
-      try {
-        await this.ledger.post(
-          tenantId,
-          {
-            memo: `Facture client ${result.invoiceNumber} payée`,
-            sourceType: 'customer-invoice',
-            sourceId: id,
-            sourceKind: 'paid',
-            lines: [
-              { accountCode: cashCode, debit: amount },
-              { accountCode: arCode, credit: amount },
-            ],
-          },
-          userId,
-        );
-      } catch (err) {
-        this.logger.warn(`Ledger auto-post failed for customer-invoice ${id} (paid): ${(err as Error).message}`);
-      }
-    }
-    return result;
+    if (!inv) throw new NotFoundException('Statement not found');
+    if (inv.status !== 'APPROVED' && inv.status !== 'SENT')
+      throw new BadRequestException('Only APPROVED/SENT statements can be paid');
+    const outstanding = Number(inv.totalAmount) - Number(inv.amountPaid);
+    if (outstanding <= 0) throw new BadRequestException('Statement already settled');
+    const payment = await this.payments.create(tenantId, userId, {
+      type: PaymentType.RECEIVE,
+      partyType: PaymentPartyType.CUSTOMER,
+      partyId: inv.customerId,
+      modeOfPaymentId: await this.defaultModeId(tenantId),
+      date: paidAt ?? new Date().toISOString(),
+      currency: inv.currency,
+      totalAmount: outstanding,
+      allocations: [{ targetType: PaymentTargetType.CUSTOMER_INVOICE, targetId: inv.id, amount: outstanding }],
+    });
+    return this.payments.submit(tenantId, userId, payment.id);
   }
 
   /**

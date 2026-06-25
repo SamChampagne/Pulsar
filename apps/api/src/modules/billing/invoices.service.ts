@@ -5,6 +5,9 @@ import {
   evaluateReconciliation,
   InvoiceStatus,
   LoadStatus,
+  PaymentPartyType,
+  PaymentTargetType,
+  PaymentType,
 } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OwnershipService } from '../../prisma/ownership.service';
@@ -14,6 +17,7 @@ import { ModuleSettingsService } from '../../core/module-registry/module-setting
 import { ReconcileInvoiceDto, ResolveDisputeDto } from './dto/reconcile.dto';
 import { csvSafe } from '../../common/csv';
 import { LedgerService } from './ledger/ledger.service';
+import { PaymentsService } from './payments.service';
 
 const invoiceInclude = {
   carrier: { select: { id: true, code: true, name: true } },
@@ -40,7 +44,18 @@ export class InvoicesService {
     private readonly audit: AuditLogsService,
     private readonly moduleSettings: ModuleSettingsService,
     private readonly ledger: LedgerService,
+    private readonly payments: PaymentsService,
   ) {}
+
+  private async defaultModeId(tenantId: string): Promise<string> {
+    const mode = await this.prisma.modeOfPayment.findFirst({
+      where: { tenantId },
+      orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+      select: { id: true },
+    });
+    if (!mode) throw new BadRequestException('No mode of payment configured');
+    return mode.id;
+  }
 
   list(tenantId: string, status?: InvoiceStatus) {
     return this.prisma.invoice.findMany({
@@ -341,53 +356,25 @@ export class InvoicesService {
   }
 
   async markPaid(tenantId: string, userId: string, id: string, paidAt?: string) {
-    // Initial get for 404; the write is conditional on APPROVED status to close
-    // the TOCTOU window between the read and the update.
-    await this.get(tenantId, id);
-    const resolvedPaidAt = paidAt ? new Date(paidAt) : new Date();
-    const { count } = await this.prisma.invoice.updateMany({
-      where: { id, tenantId, status: InvoiceStatus.APPROVED },
-      data: { status: InvoiceStatus.PAID, paidAt: resolvedPaidAt },
+    const inv = await this.prisma.invoice.findFirst({
+      where: { id, tenantId },
+      select: { id: true, status: true, totalAmount: true, amountPaid: true, carrierId: true, currency: true },
     });
-    if (count === 0) {
-      throw new BadRequestException('Only APPROVED invoices can be marked paid');
-    }
-    await this.audit.log({
-      tenantId,
-      userId,
-      action: AuditAction.STATUS_CHANGE,
-      entityType: 'invoice',
-      entityId: id,
-      before: { status: InvoiceStatus.APPROVED },
-      after: { status: InvoiceStatus.PAID, paidAt: resolvedPaidAt },
+    if (!inv) throw new NotFoundException('Invoice not found');
+    if (inv.status !== 'APPROVED') throw new BadRequestException('Only APPROVED invoices can be paid');
+    const outstanding = Number(inv.totalAmount) - Number(inv.amountPaid);
+    if (outstanding <= 0) throw new BadRequestException('Invoice already settled');
+    const payment = await this.payments.create(tenantId, userId, {
+      type: PaymentType.PAY,
+      partyType: PaymentPartyType.CARRIER,
+      partyId: inv.carrierId,
+      modeOfPaymentId: await this.defaultModeId(tenantId),
+      date: paidAt ?? new Date().toISOString(),
+      currency: inv.currency,
+      totalAmount: outstanding,
+      allocations: [{ targetType: PaymentTargetType.CARRIER_INVOICE, targetId: inv.id, amount: outstanding }],
     });
-    const result = await this.get(tenantId, id);
-    const s = await this.moduleSettings.resolve(tenantId, 'billing');
-    // Auto-post ledger entry: DR AP / CR Cash (best-effort, never breaks the transition).
-    if (s.ledgerAutoPost === true) {
-      const amount = Number(result.totalAmount);
-      const apCode = (s.apAccountCode as string | undefined) ?? '2000';
-      const cashCode = (s.cashAccountCode as string | undefined) ?? '1000';
-      try {
-        await this.ledger.post(
-          tenantId,
-          {
-            memo: `Facture transporteur ${result.invoiceNumber} payée`,
-            sourceType: 'invoice',
-            sourceId: id,
-            sourceKind: 'paid',
-            lines: [
-              { accountCode: apCode, debit: amount },
-              { accountCode: cashCode, credit: amount },
-            ],
-          },
-          userId,
-        );
-      } catch (err) {
-        this.logger.warn(`Ledger auto-post failed for invoice ${id} (paid): ${(err as Error).message}`);
-      }
-    }
-    return result;
+    return this.payments.submit(tenantId, userId, payment.id);
   }
 
   /** Filtered list as CSV (expected/invoiced/variance per invoice).
