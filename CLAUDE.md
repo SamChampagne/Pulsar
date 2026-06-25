@@ -313,6 +313,22 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     pas être scopé par tenant ; `slugify` de `@pulsar/shared` est la seule source de
     normalisation — ne pas réimplémenter.
 
+## Hard rules (continued, Billing general ledger)
+
+41. (Billing general ledger — grand livre double-entrée) Le grand livre est **double-entrée** :
+    toute `JournalEntry` est postée UNIQUEMENT via `LedgerService.post` qui applique `isBalanced`
+    (`@pulsar/shared`) — un lot non équilibré est refusé (400), jamais silencieux. L'auto-post
+    depuis les transitions billing (approve/pay) est **best-effort** (jamais bloquant pour la
+    transition) et **idempotent** sur `(tenantId, sourceType, sourceId, sourceKind)` (unique
+    constraint `journal_entries`). Les mappings code-compte (`accountCode`) et l'activation de
+    l'auto-post (`ledgerAutoPost`) sont configurables dans `TenantModule.settings` billing
+    (framework de config — règle 36) ; les valeurs par défaut viennent du `DEFAULT_CHART`
+    (`@pulsar/shared`). La balance de vérification (trial balance) est **calculée à la lecture**
+    depuis `JournalLine` (aucun rollup, aucune migration supplémentaire). Le `normalBalance` d'un
+    compte est **dérivé** de son `AccountType` via la fonction pure `normalBalance` (`@pulsar/shared`)
+    — jamais persisté. Le plan comptable par défaut est seedé idempotement pour le tenant acme
+    (upsert sur `(tenantId, code)`).
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

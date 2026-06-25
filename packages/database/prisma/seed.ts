@@ -10,7 +10,7 @@
  */
 import { PrismaClient, TransportOrderStatus } from '@prisma/client';
 import { hashSync } from 'bcryptjs';
-import { MODULE_CATALOG, PERMISSION_CATALOG, LaneEndpointType, buildEndpointKey, sumLineItems } from '@pulsar/shared';
+import { MODULE_CATALOG, PERMISSION_CATALOG, LaneEndpointType, buildEndpointKey, sumLineItems, DEFAULT_CHART } from '@pulsar/shared';
 
 const prisma = new PrismaClient();
 
@@ -801,6 +801,17 @@ async function main() {
   });
 
   console.log('Sites demo data ready (1 PUBLISHED landing page, slug: bienvenue).');
+
+  // --- Billing: default chart of accounts (acme tenant) -------------------------
+  // Seed DEFAULT_CHART idempotently so /billing/ledger is never empty out of the box.
+  for (const account of DEFAULT_CHART) {
+    await prisma.chartOfAccount.upsert({
+      where: { tenantId_code: { tenantId: tenant.id, code: account.code } },
+      update: { name: account.name, type: account.type },
+      create: { tenantId: tenant.id, code: account.code, name: account.name, type: account.type },
+    });
+  }
+  console.log(`Billing chart of accounts ready (${DEFAULT_CHART.length} accounts seeded for acme).`);
 }
 
 main()

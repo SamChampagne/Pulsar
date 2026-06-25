@@ -427,6 +427,13 @@ describe('Billing General Ledger (e2e)', () => {
     });
 
     it('journal entries from another tenant are NOT visible in the trial balance of acme', async () => {
+      // Snapshot acme's trial balance BEFORE posting the other-tenant entry.
+      const before = await request(http)
+        .get('/api/v1/billing/ledger/trial-balance')
+        .set(auth())
+        .expect(200);
+      const totalDebitBefore = Number(before.body.totalDebit);
+
       // Post a journal entry directly for the other tenant.
       const { LedgerService } = await import('../src/modules/billing/ledger/ledger.service');
       const ledgerSvc = app.get(LedgerService);
@@ -451,11 +458,10 @@ describe('Billing General Ledger (e2e)', () => {
         .expect(200);
 
       const body = res.body as { totalDebit: number };
-      // If isolation is broken, totalDebit would jump by 9999.
-      // We check that the acme trial balance is still balanced (the key invariant).
+      // The acme trial balance must remain balanced (primary isolation invariant).
       expect(Number(res.body.totalDebit)).toBe(Number(res.body.totalCredit));
-      // And it doesn't contain 9999 (sanity: acme total should be much less than 9999).
-      expect(Number(body.totalDebit)).toBeLessThan(9999);
+      // And it must not have grown by 9999 (the other tenant's amount must be invisible).
+      expect(Number(body.totalDebit)).toBe(totalDebitBefore);
     });
   });
 });
