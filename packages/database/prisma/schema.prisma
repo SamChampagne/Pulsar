@@ -119,6 +119,7 @@ model Tenant {
   taxTemplates    TaxTemplate[]
   bankAccounts    BankAccount[]
   budgets         Budget[]
+  fixedAssets     FixedAsset[]
 
   @@map("tenants")
 }
@@ -3079,6 +3080,17 @@ model LandingPageSubmission {
 // BILLING — General Ledger (chart of accounts + double-entry journal)
 // ============================================================================
 
+// Mirrors DepreciationMethod / FixedAssetStatus from @pulsar/shared/billing/assets (rule 3).
+enum DepreciationMethod {
+  STRAIGHT_LINE
+}
+
+enum FixedAssetStatus {
+  DRAFT
+  ACTIVE
+  DISPOSED
+}
+
 enum AccountType {
   ASSET
   LIABILITY
@@ -3328,4 +3340,46 @@ model BudgetLine {
   budget      Budget  @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   @@index([tenantId, budgetId])
   @@map("budget_lines")
+}
+
+// ============================================================================
+// BILLING — Fixed Assets / Depreciation (module: billing)
+// ============================================================================
+
+model FixedAsset {
+  id              String   @id @default(cuid())
+  tenantId        String
+  assetCode       String
+  name            String
+  category        String?
+  acquisitionDate DateTime
+  cost            Decimal  @db.Decimal(12, 2)
+  salvageValue    Decimal  @default(0) @db.Decimal(12, 2)
+  usefulLifeMonths Int
+  method          DepreciationMethod @default(STRAIGHT_LINE)
+  status          FixedAssetStatus   @default(DRAFT)
+  accumulatedDepreciation Decimal @default(0) @db.Decimal(12, 2)
+  depreciationExpenseAccountCode      String @default("5100")
+  accumulatedDepreciationAccountCode  String @default("1590")
+  disposedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  depreciations   DepreciationEntry[]
+  @@unique([tenantId, assetCode])
+  @@index([tenantId, status])
+  @@map("fixed_assets")
+}
+
+model DepreciationEntry {
+  id        String   @id @default(cuid())
+  tenantId  String
+  assetId   String
+  period    DateTime
+  amount    Decimal  @db.Decimal(12, 2)
+  postedAt  DateTime @default(now())
+  asset     FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, assetId, period])
+  @@index([tenantId, assetId])
+  @@map("depreciation_entries")
 }
