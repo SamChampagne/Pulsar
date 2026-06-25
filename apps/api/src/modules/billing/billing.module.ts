@@ -5,6 +5,8 @@ import { EmailModule } from '../../core/email/email.module';
 import { ModuleRegistryModule } from '../../core/module-registry/module-registry.module';
 import { OperatingModule } from '../../core/operating/operating.module';
 import { TransportationModule } from '../transportation/transportation.module';
+import { BankAccountsController } from './banking/bank-accounts.controller';
+import { BankAccountsService } from './banking/bank-accounts.service';
 import { BillingCustomFieldsController } from './custom-fields/billing-custom-fields.controller';
 import { CustomerInvoicesController } from './customer-invoices.controller';
 import { CustomerInvoicesService } from './customer-invoices.service';
@@ -31,8 +33,8 @@ import { TaxTemplatesService } from './tax-templates.service';
  */
 @Module({
   imports: [AuditLogsModule, CustomFieldsModule, EmailModule, ModuleRegistryModule, TransportationModule, forwardRef(() => OperatingModule)],
-  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController, BillingCustomFieldsController, LedgerController, ModesOfPaymentController, PaymentsController, TaxTemplatesController, ReportsController],
-  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService, FinancialReportsService],
-  exports: [FreightAuditService, CustomerInvoicesService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService],
+  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController, BillingCustomFieldsController, LedgerController, ModesOfPaymentController, PaymentsController, TaxTemplatesController, ReportsController, BankAccountsController],
+  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService, FinancialReportsService, BankAccountsService],
+  exports: [FreightAuditService, CustomerInvoicesService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService, BankAccountsService],
 })
 export class BillingModule {}
