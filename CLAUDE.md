@@ -384,8 +384,8 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
 45. (Billing Banking — comptes bancaires & rapprochement) Un `BankAccount` identifie un compte
     réel du tenant par son `glAccountCode` (FK souple vers `ChartOfAccount.code`, ownership vérifié
     en service). Les `BankTransaction` sont créées manuellement ou importées par CSV via
-    `parseBankCsv` (`@pulsar/shared`, pur — jamais réimplémenté) ; l'import est idempotent sur
-    `externalRef`. Le rapprochement (`POST /billing/bank-transactions/:id/match`) fait correspondre
+    `parseBankCsv` (`@pulsar/shared`, pur — jamais réimplémenté) ; l'import CSV crée les lignes
+    telles quelles (pas de déduplication v1). Le rapprochement (`POST /billing/bank-transactions/:id/match`) fait correspondre
     une transaction bancaire 1:1 à un `Payment` dont le `ModeOfPayment.accountCode` égale le
     `glAccountCode` du compte bancaire (filtre des candidats) ; le claim se fait via deux
     `updateMany` conditionnels dans une seule transaction (transaction `UNRECONCILED → RECONCILED`
