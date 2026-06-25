@@ -572,7 +572,10 @@ describe('Financial Reports (e2e)', () => {
     });
 
     afterAll(async () => {
-      // Clean up isolation tenant (cascades journal entries, accounts, etc.).
+      // Clean up isolation tenant: pre-delete GL rows (no cascade).
+      await prisma.journalEntry.deleteMany({ where: { tenantId: otherTenantId } }).catch(() => undefined);
+      await prisma.chartOfAccount.deleteMany({ where: { tenantId: otherTenantId } }).catch(() => undefined);
+      // Then delete the tenant itself.
       await prisma.tenant.deleteMany({ where: { id: otherTenantId } }).catch(() => undefined);
     });
 
