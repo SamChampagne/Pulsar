@@ -22,6 +22,7 @@ export * from './billing/reconciliation';
 export * from './billing/ledger';
 export * from './billing/payment.workflow';
 export * from './billing/tax';
+export * from './billing/reports';
 export * from './cost/rate-cost';
 export * from './rating/lane-key';
 export * from './optimize/consolidation';
