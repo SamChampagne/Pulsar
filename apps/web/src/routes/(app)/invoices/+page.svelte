@@ -24,6 +24,22 @@
   // ── Shared tab state ────────────────────────────────────────────────────────
   let activeTab = $state<'carrier' | 'customer'>('carrier');
 
+  // ── Shared billing types ─────────────────────────────────────────────────────
+  interface TaxDetailLine {
+    description: string;
+    rate: number;
+    accountCode: string;
+    amount: number;
+  }
+  interface TaxDetail {
+    taxAmount: number;
+    lines: TaxDetailLine[];
+  }
+  interface TaxTemplateOption {
+    id: string;
+    name: string;
+  }
+
   // ── Carrier-invoice types ────────────────────────────────────────────────────
   interface LineRow {
     id: string;
@@ -38,6 +54,9 @@
     status: string;
     currency: string;
     totalAmount: string;
+    taxAmount: string;
+    taxDetail: TaxDetail | null;
+    taxTemplateId: string | null;
     invoicedTotal: string | null;
     varianceTotal: string | null;
     varianceGross: string | null;
@@ -94,6 +113,35 @@
   let resolution = $state<'ACCEPT_INVOICED' | 'KEEP_EXPECTED'>('ACCEPT_INVOICED');
   let reasonCode = $state('RATE_MISMATCH');
   let disputeNote = $state('');
+
+  // Purchase tax template selector state (DRAFT carrier invoices)
+  let purchaseTaxTemplates = $state<TaxTemplateOption[]>([]);
+  let purchaseTaxTemplatesLoaded = $state(false);
+
+  async function loadPurchaseTaxTemplates() {
+    if (purchaseTaxTemplatesLoaded) return;
+    try {
+      const result = await api<TaxTemplateOption[]>('/billing/tax-templates', {
+        query: { type: 'PURCHASE' },
+      });
+      purchaseTaxTemplates = result;
+      purchaseTaxTemplatesLoaded = true;
+    } catch {
+      // non-blocking — selector stays empty
+    }
+  }
+
+  async function applyCarrierTax(invoice: InvoiceRow, taxTemplateId: string | null) {
+    try {
+      await api(`/billing/invoices/${invoice.id}/tax`, {
+        method: 'PATCH',
+        body: { taxTemplateId },
+      });
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to apply tax template');
+    }
+  }
 
   async function load() {
     try {
@@ -251,6 +299,7 @@
     void statusFilter;
     carrierPage = 1;
     void load();
+    void loadPurchaseTaxTemplates();
   });
 
   // ── Customer-statement types ─────────────────────────────────────────────────
@@ -281,20 +330,6 @@
     amount: string;
     priceDetail: PriceDetail | null;
     transportOrder: { id: string; orderNumber: string; customerReference: string | null } | null;
-  }
-  interface TaxDetailLine {
-    description: string;
-    rate: number;
-    accountCode: string;
-    amount: number;
-  }
-  interface TaxDetail {
-    taxAmount: number;
-    lines: TaxDetailLine[];
-  }
-  interface TaxTemplateOption {
-    id: string;
-    name: string;
   }
   interface StatementRow {
     id: string;
@@ -698,6 +733,57 @@
                       <p class="text-sm text-ink-muted">
                         Dispute: {invoice.disputeReasonCode}{invoice.disputeNote ? ` — ${invoice.disputeNote}` : ''}
                       </p>
+                    {/if}
+
+                    <!-- Tax breakdown / totals -->
+                    {#if Number(invoice.taxAmount) > 0 && invoice.taxDetail}
+                      {@const taxAmt = Number(invoice.taxAmount)}
+                      {@const total = Number(invoice.totalAmount)}
+                      {@const net = total - taxAmt}
+                      <div class="rounded-md border border-edge bg-surface p-3 space-y-1 text-sm">
+                        <div class="flex justify-between text-ink-muted">
+                          <span>Net</span>
+                          <span>{net.toLocaleString()} {invoice.currency}</span>
+                        </div>
+                        {#each invoice.taxDetail.lines as tl (tl.description)}
+                          <div class="flex justify-between text-ink-muted">
+                            <span>{tl.description} ({tl.rate}%)</span>
+                            <span>{Number(tl.amount).toLocaleString()} {invoice.currency}</span>
+                          </div>
+                        {/each}
+                        <div class="flex justify-between font-semibold border-t border-edge pt-1 text-ink">
+                          <span>Total</span>
+                          <span>{total.toLocaleString()} {invoice.currency}</span>
+                        </div>
+                      </div>
+                    {:else}
+                      <div class="rounded-md border border-edge bg-surface p-3 text-sm">
+                        <div class="flex justify-between font-semibold text-ink">
+                          <span>Total</span>
+                          <span>{Number(invoice.totalAmount).toLocaleString()} {invoice.currency}</span>
+                        </div>
+                      </div>
+                    {/if}
+
+                    <!-- Tax template selector (DRAFT only) -->
+                    {#if invoice.status === 'DRAFT'}
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-xs text-ink-muted">Tax template:</span>
+                        <div class="w-56">
+                          <Select
+                            value={invoice.taxTemplateId ?? ''}
+                            onchange={(e) => {
+                              const val = (e.target as HTMLSelectElement).value;
+                              void applyCarrierTax(invoice, val === '' ? null : val);
+                            }}
+                          >
+                            <option value="">Aucune taxe</option>
+                            {#each purchaseTaxTemplates as t (t.id)}
+                              <option value={t.id}>{t.name}</option>
+                            {/each}
+                          </Select>
+                        </div>
+                      </div>
                     {/if}
                   </div>
                 </td>
