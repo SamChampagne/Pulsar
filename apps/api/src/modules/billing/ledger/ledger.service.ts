@@ -86,19 +86,17 @@ export class LedgerService {
     }
 
     // Step 4: idempotence check on (tenantId, sourceType, sourceId, sourceKind)
-    if (input.sourceType && input.sourceId && input.sourceKind) {
+    if (input.sourceType && input.sourceId) {
       const existing = await this.prisma.journalEntry.findFirst({
         where: {
           tenantId,
           sourceType: input.sourceType,
           sourceId: input.sourceId,
-          sourceKind: input.sourceKind,
+          sourceKind: input.sourceKind ?? null,
         },
         select: { id: true },
       });
-      if (existing) {
-        return { posted: false };
-      }
+      if (existing) return { posted: false, journalEntryId: existing.id };
     }
 
     // Step 5: persist entry + lines in a transaction
