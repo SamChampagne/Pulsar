@@ -1,13 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { computeBudgetVariance, naturalBalance } from '@pulsar/shared';
+import { computeBudgetVariance, fiscalYearBounds, naturalBalance } from '@pulsar/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { CreateBudgetDto, UpdateBudgetDto } from './dto/budget.dto';
 
 const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 
 @Injectable()
 export class BudgetsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly moduleSettings: ModuleSettingsService,
+  ) {}
 
   async list(tenantId: string) {
     return this.prisma.budget.findMany({
@@ -99,9 +103,9 @@ export class BudgetsService {
     });
     if (!budget) throw new NotFoundException('Budget not found');
 
-    const fy = budget.fiscalYear;
-    const from = new Date(Date.UTC(fy, 0, 1));
-    const to = new Date(Date.UTC(fy, 11, 31, 23, 59, 59, 999));
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    const startMonth = Number(s.fiscalYearStartMonth) || 1;
+    const { from, to } = fiscalYearBounds(budget.fiscalYear, startMonth);
 
     const lineCodes = budget.lines.map((l) => l.accountCode);
 
