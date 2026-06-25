@@ -201,41 +201,40 @@
 
   // ── Reactive loads ────────────────────────────────────────────────────────────
 
+  // When the range dates change, invalidate all range-based caches (pl, cf) so
+  // inactive tabs are forced to reload on next visit, then immediately reload the
+  // active tab if it belongs to this group.
   $effect(() => {
     void fromDate;
     void toDate;
+    pl = null;
+    cf = null;
     if (activeTab === 'pl') void loadPl();
+    else if (activeTab === 'cf') void loadCf();
   });
 
+  // When the point-in-time date changes, invalidate all asOf-based caches (bs,
+  // ar, ap) so inactive tabs are forced to reload on next visit, then immediately
+  // reload the active tab if it belongs to this group.
   $effect(() => {
     void asOf;
+    bs = null;
+    ar = null;
+    ap = null;
     if (activeTab === 'bs') void loadBs();
+    else if (activeTab === 'ar') void loadAr();
+    else if (activeTab === 'ap') void loadAp();
   });
 
-  $effect(() => {
-    void fromDate;
-    void toDate;
-    if (activeTab === 'cf') void loadCf();
-  });
-
-  $effect(() => {
-    void asOf;
-    if (activeTab === 'ar') void loadAr();
-  });
-
-  $effect(() => {
-    void asOf;
-    if (activeTab === 'ap') void loadAp();
-  });
-
-  // Also load when switching tabs (if not yet loaded)
+  // Load when switching tabs (if not yet loaded — caches are null after a date
+  // change, so this also handles the "return to stale tab" case).
   $effect(() => {
     const tab = activeTab;
     if (tab === 'pl' && !pl && !loadingPl) void loadPl();
-    if (tab === 'bs' && !bs && !loadingBs) void loadBs();
-    if (tab === 'cf' && !cf && !loadingCf) void loadCf();
-    if (tab === 'ar' && !ar && !loadingAr) void loadAr();
-    if (tab === 'ap' && !ap && !loadingAp) void loadAp();
+    else if (tab === 'bs' && !bs && !loadingBs) void loadBs();
+    else if (tab === 'cf' && !cf && !loadingCf) void loadCf();
+    else if (tab === 'ar' && !ar && !loadingAr) void loadAr();
+    else if (tab === 'ap' && !ap && !loadingAp) void loadAp();
   });
 
   // ── Derived ───────────────────────────────────────────────────────────────────
