@@ -344,6 +344,25 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     comptes AR/AP viennent des réglages billing (`arAccountCode`/`apAccountCode`). Le plan
     comptable est seedé via `ensureChart` (idempotent) avant toute transaction GL.
 
+## Hard rules (continued, Billing Taxes)
+
+43. (Billing Taxes — TVA / TPS multi-taux) La taxe est appliquée aux relevés clients et factures
+    transporteur UNIQUEMENT via `PATCH billing/customer-invoices/:id/tax` et
+    `PATCH billing/invoices/:id/tax` (statut DRAFT requis, jamais auto-appliquée) ;
+    `isDefault` est un indicateur de pré-sélection UI, pas un déclencheur automatique.
+    Un `TaxTemplate` (SALES → relevés clients, PURCHASE → factures transporteur) agrège N lignes
+    (`TaxTemplateLine` : taux + `accountCode`) ; appliquer un gabarit de mauvais type renvoie 400.
+    `computeTax` (`@pulsar/shared`, pur) calcule la taxe à partir des lignes : flat-on-net v1
+    (`rate × netAmount` par ligne, arrondi à 2 décimales, somme = `taxAmount`). `totalAmount =
+    netAmount + taxAmount` (montant brut, ce qui est dû). Effacer la taxe : passer
+    `taxTemplateId: null` (remet `taxAmount=0`, `totalAmount=netAmount`). Toute approbation avec
+    taxe > 0 génère une écriture GL **fractionnée** best-effort + idempotente (règle 41) :
+    relevé client → DR AR gross / CR Revenue net / CR compte-taxe par ligne du gabarit ;
+    facture transporteur → DR Expense net / DR compte-taxe (input-tax) par ligne / CR AP gross.
+    Les `accountCode` référencés par les lignes du gabarit doivent exister dans le plan comptable
+    du tenant (400 sinon). Tout endpoint taxes est `@RequireModule(BILLING)` +
+    `billing.taxes.read|manage`, tenant-scopé (règle 1).
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
