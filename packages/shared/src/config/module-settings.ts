@@ -136,6 +136,7 @@ export const MODULE_SETTINGS_CATALOG: ModuleSettingsCatalog[] = [
       { key: 'paymentNumberPrefix', label: 'Préfixe n° paiement', type: 'string', default: 'PAY', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
       { key: 'ledgerManualEntries', label: 'Écritures GL manuelles', help: 'Autorise la saisie manuelle d\'écritures de grand livre équilibrées depuis le grand livre.', type: 'boolean', default: true },
       { key: 'allowInvoiceDeletion', label: 'Suppression des factures brouillon', help: 'Autorise la suppression d\'une facture transporteur au statut DRAFT.', type: 'boolean', default: true },
+      { key: 'fiscalYearStartMonth', label: 'Mois de début d\'exercice fiscal', help: '1=janvier (défaut). Ex: 4=exercice avril→mars. Utilisé par les écarts de budget.', type: 'number', default: 1, min: 1, max: 12 },
     ],
   },
   {
