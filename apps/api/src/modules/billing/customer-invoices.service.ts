@@ -15,6 +15,7 @@ import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { MailService } from '../../core/email/mail.service';
 import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { RatingService } from '../transportation/rating/rating.service';
+import { LedgerService } from './ledger/ledger.service';
 
 const statementInclude = {
   customer: { select: { id: true, code: true, name: true, email: true } },
@@ -67,6 +68,7 @@ export class CustomerInvoicesService {
     private readonly mail: MailService,
     private readonly moduleSettings: ModuleSettingsService,
     private readonly rating: RatingService,
+    private readonly ledger: LedgerService,
   ) {}
 
   list(tenantId: string, status?: CustomerInvoiceStatus, customerId?: string) {
@@ -279,6 +281,30 @@ export class CustomerInvoicesService {
       approvedAt: new Date(),
     });
     const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    // Auto-post ledger entry: DR AR / CR Revenue (best-effort, never breaks the transition).
+    if (s.ledgerAutoPost === true) {
+      const amount = Number(result.totalAmount);
+      const arCode = (s.arAccountCode as string | undefined) ?? '1100';
+      const revCode = (s.revenueAccountCode as string | undefined) ?? '4000';
+      try {
+        await this.ledger.post(
+          tenantId,
+          {
+            memo: `Facture client ${result.invoiceNumber} approuvée`,
+            sourceType: 'customer-invoice',
+            sourceId: id,
+            sourceKind: 'approved',
+            lines: [
+              { accountCode: arCode, debit: amount },
+              { accountCode: revCode, credit: amount },
+            ],
+          },
+          userId,
+        );
+      } catch (err) {
+        this.logger.warn(`Ledger auto-post failed for customer-invoice ${id} (approved): ${(err as Error).message}`);
+      }
+    }
     if (s.autoSendOnApproval === true) {
       try { await this.send(tenantId, userId, id); } catch { /* no email / send failed: stays APPROVED, best-effort */ }
     }
@@ -366,10 +392,36 @@ export class CustomerInvoicesService {
     });
   }
 
-  markPaid(tenantId: string, userId: string, id: string, paidAt?: string) {
-    return this.transition(tenantId, userId, id, CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.PAID, {
+  async markPaid(tenantId: string, userId: string, id: string, paidAt?: string) {
+    const result = await this.transition(tenantId, userId, id, CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.PAID, {
       paidAt: paidAt ? new Date(paidAt) : new Date(),
     });
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    // Auto-post ledger entry: DR Cash / CR AR (best-effort, never breaks the transition).
+    if (s.ledgerAutoPost === true) {
+      const amount = Number(result.totalAmount);
+      const cashCode = (s.cashAccountCode as string | undefined) ?? '1000';
+      const arCode = (s.arAccountCode as string | undefined) ?? '1100';
+      try {
+        await this.ledger.post(
+          tenantId,
+          {
+            memo: `Facture client ${result.invoiceNumber} payée`,
+            sourceType: 'customer-invoice',
+            sourceId: id,
+            sourceKind: 'paid',
+            lines: [
+              { accountCode: cashCode, debit: amount },
+              { accountCode: arCode, credit: amount },
+            ],
+          },
+          userId,
+        );
+      } catch (err) {
+        this.logger.warn(`Ledger auto-post failed for customer-invoice ${id} (paid): ${(err as Error).message}`);
+      }
+    }
+    return result;
   }
 
   /**
