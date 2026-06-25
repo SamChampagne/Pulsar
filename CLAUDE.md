@@ -410,6 +410,25 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     Tout endpoint Budget est `@RequireModule(BILLING)` + `billing.ledger.read|manage` (aucune
     nouvelle permission), tenant-scopé (règle 1) ; FK vérifiées (règle 9).
 
+## Hard rules (continued, Billing Fixed Assets)
+
+47. (Billing Fixed Assets — registre des immobilisations) Le registre `FixedAsset` (DRAFT → ACTIVE
+    → DISPOSED via `canTransitionFixedAsset`, `@pulsar/shared`, règle 2) avec claim conditionnel
+    `updateMany` (TOCTOU) enregistre le coût d'acquisition et paramètre le plan d'amortissement
+    linéaire (`usefulLifeMonths`, `salvageValue`). La dotation mensuelle est calculée par
+    `depreciationForNextPeriod` (`@pulsar/shared`, pur) qui plafonne le montant afin que
+    `accumulatedDepreciation` ne dépasse jamais `cost − salvageValue`. L'appel à `depreciate`
+    exécute TROIS opérations dans une **seule transaction** : (1) crée un `DepreciationEntry` unique
+    sur `(tenantId, assetId, period)` — `P2002` → 409 idempotence ; (2) incrémente
+    `accumulatedDepreciation` sur l'asset ; (3) poste l'écriture GL via `LedgerService.postTx`
+    (`Dr depreciationExpenseAccountCode / Cr accumulatedDepreciationAccountCode`, idempotente sur
+    `sourceType='depreciation'`, `sourceId=<entryId>` — règle 41). Les valeurs par défaut sont
+    **5100** (dotation aux amortissements, EXPENSE) et **1590** (amortissement cumulé, contra-ASSET) ;
+    les deux comptes sont inclus dans `DEFAULT_CHART` et seedés pour chaque tenant. **Pas d'écriture
+    GL à l'acquisition ni à la cession en v1** — le registre porte le coût d'acquisition ; la
+    cession (`dispose`) est statut-only. Tout endpoint est `@RequireModule(BILLING)` +
+    `billing.assets.read|manage`, tenant-scopé (règle 1).
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
