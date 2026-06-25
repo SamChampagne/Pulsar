@@ -5,6 +5,8 @@ import {
   buildProfitAndLoss,
   buildBalanceSheet,
   naturalBalance,
+  buildAging,
+  AgingItemInput,
 } from '@pulsar/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
@@ -115,5 +117,45 @@ export class FinancialReportsService {
     const netChange = round2(accounts.reduce((s, a) => s + a.amount, 0));
 
     return { accounts, netChange };
+  }
+
+  async arAging(tenantId: string, asOf?: Date) {
+    const ref = asOf ?? new Date();
+    const invoices = await this.prisma.customerInvoice.findMany({
+      where: { tenantId, status: { not: 'DRAFT' } },
+      include: { customer: { select: { name: true } } },
+    });
+
+    const items: AgingItemInput[] = invoices
+      .map((inv) => ({
+        partyId: inv.customerId,
+        partyName: inv.customer.name,
+        reference: inv.invoiceNumber,
+        date: inv.approvedAt ?? inv.createdAt,
+        outstanding: round2(Number(inv.totalAmount) - Number(inv.amountPaid)),
+      }))
+      .filter((it) => it.outstanding > 0);
+
+    return buildAging(items, ref);
+  }
+
+  async apAging(tenantId: string, asOf?: Date) {
+    const ref = asOf ?? new Date();
+    const invoices = await this.prisma.invoice.findMany({
+      where: { tenantId, status: { not: 'DRAFT' } },
+      include: { carrier: { select: { name: true } } },
+    });
+
+    const items: AgingItemInput[] = invoices
+      .map((inv) => ({
+        partyId: inv.carrierId,
+        partyName: inv.carrier.name,
+        reference: inv.invoiceNumber,
+        date: inv.approvedAt ?? inv.createdAt,
+        outstanding: round2(Number(inv.totalAmount) - Number(inv.amountPaid)),
+      }))
+      .filter((it) => it.outstanding > 0);
+
+    return buildAging(items, ref);
   }
 }

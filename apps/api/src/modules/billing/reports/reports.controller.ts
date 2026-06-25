@@ -49,4 +49,22 @@ export class ReportsController {
   ) {
     return this.reports.cashFlow(user.tenantId, parseDate(from), parseDate(to));
   }
+
+  @Get('ar-aging')
+  @RequirePermissions(PERMISSIONS.BILLING.LEDGER_READ)
+  arAging(
+    @CurrentUser() user: AuthUser,
+    @Query('asOf') asOf?: string,
+  ) {
+    return this.reports.arAging(user.tenantId, parseDate(asOf));
+  }
+
+  @Get('ap-aging')
+  @RequirePermissions(PERMISSIONS.BILLING.LEDGER_READ)
+  apAging(
+    @CurrentUser() user: AuthUser,
+    @Query('asOf') asOf?: string,
+  ) {
+    return this.reports.apAging(user.tenantId, parseDate(asOf));
+  }
 }
