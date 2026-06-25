@@ -78,6 +78,8 @@ export const PERMISSIONS = {
     PAYMENTS_MANAGE: 'billing.payments.manage',
     TAXES_READ: 'billing.taxes.read',
     TAXES_MANAGE: 'billing.taxes.manage',
+    ASSETS_READ: 'billing.assets.read',
+    ASSETS_MANAGE: 'billing.assets.manage',
   },
   FLEET: {
     READ: 'fleet.read',
@@ -257,6 +259,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   billing(PERMISSIONS.BILLING.PAYMENTS_MANAGE, 'Record and submit payments'),
   billing(PERMISSIONS.BILLING.TAXES_READ, 'View tax templates'),
   billing(PERMISSIONS.BILLING.TAXES_MANAGE, 'Manage tax templates'),
+  billing(PERMISSIONS.BILLING.ASSETS_READ, 'View fixed assets'),
+  billing(PERMISSIONS.BILLING.ASSETS_MANAGE, 'Manage fixed assets and depreciation'),
   fleet(PERMISSIONS.FLEET.READ, 'View fleet assets, maintenance and compliance'),
   fleet(PERMISSIONS.FLEET.MANAGE, 'Manage maintenance orders and compliance documents'),
   wms(PERMISSIONS.WMS.READ, 'View warehouse inventory, receipts and pick orders'),
