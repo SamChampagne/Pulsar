@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import type { InvoiceStatus } from '@pulsar/shared';
@@ -61,6 +61,13 @@ export class InvoicesController {
   @RequirePermissions(PERMISSIONS.BILLING.INVOICES_MANAGE)
   draft(@CurrentUser() user: AuthUser, @Body() dto: DraftInvoiceDto) {
     return this.invoices.createDraft(user.tenantId, user.id, dto.carrierId);
+  }
+
+  /** DRAFT only — frees the loads for re-drafting (gated by allowInvoiceDeletion). */
+  @Delete(':id')
+  @RequirePermissions(PERMISSIONS.BILLING.INVOICES_MANAGE)
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.invoices.deleteDraft(user.tenantId, user.id, id);
   }
 
   @Post(':id/approve')

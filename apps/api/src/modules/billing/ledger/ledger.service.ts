@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { AuditAction, DEFAULT_CHART, isBalanced } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { paginated, paginationArgs } from '../../../common/pagination';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 
@@ -29,7 +30,25 @@ export class LedgerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogsService,
+    private readonly moduleSettings: ModuleSettingsService,
   ) {}
+
+  /**
+   * Manual journal-entry posting from the ledger UI. Gated by the billing
+   * `ledgerManualEntries` setting — ONLY this manual path is gated, never the
+   * best-effort auto-post from billing transitions (règle 41).
+   */
+  async postManual(
+    tenantId: string,
+    input: PostInput,
+    userId?: string,
+  ): Promise<{ posted: boolean; journalEntryId?: string }> {
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    if (s.ledgerManualEntries === false) {
+      throw new ForbiddenException('Manual ledger entries are disabled for this tenant');
+    }
+    return this.post(tenantId, input, userId);
+  }
 
   /**
    * Seed the tenant's chart of accounts from DEFAULT_CHART if they have none.

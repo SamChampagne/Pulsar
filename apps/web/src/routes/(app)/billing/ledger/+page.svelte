@@ -1,10 +1,12 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
+  import { toast } from '$lib/stores/toast';
   import {
     PageHeader,
     Card,
     Table,
     Badge,
+    Button,
     EmptyState,
     Skeleton,
     ErrorNotice,
@@ -179,6 +181,115 @@
   function goJournalPage(p: number) {
     journalPage = p;
   }
+
+  // ── Manual journal entry ───────────────────────────────────────────────────────
+
+  interface ManualLine {
+    accountCode: string;
+    debit: string;
+    credit: string;
+    memo: string;
+  }
+
+  // Gated by the billing `ledgerManualEntries` setting.
+  let manualEntriesEnabled = $state(false);
+  let showManualForm = $state(false);
+  let manualDate = $state('');
+  let manualMemo = $state('');
+  let manualLines = $state<ManualLine[]>([
+    { accountCode: '', debit: '', credit: '', memo: '' },
+    { accountCode: '', debit: '', credit: '', memo: '' },
+  ]);
+  let manualSaving = $state(false);
+  let manualError = $state('');
+
+  // Live totals so the operator sees imbalance before submitting.
+  const manualTotalDebit = $derived(
+    manualLines.reduce((s, l) => s + (Number(l.debit) || 0), 0),
+  );
+  const manualTotalCredit = $derived(
+    manualLines.reduce((s, l) => s + (Number(l.credit) || 0), 0),
+  );
+  const manualBalanced = $derived(
+    Math.round((manualTotalDebit - manualTotalCredit) * 100) === 0 &&
+      manualTotalDebit > 0,
+  );
+
+  async function loadSettings() {
+    try {
+      const res = await api<{ values: Record<string, string | number | boolean> }>(
+        '/modules/billing/settings',
+      );
+      manualEntriesEnabled = res.values.ledgerManualEntries !== false;
+    } catch {
+      // Settings unavailable: hide the manual form (default false).
+      manualEntriesEnabled = false;
+    }
+  }
+
+  function addManualLine() {
+    manualLines = [...manualLines, { accountCode: '', debit: '', credit: '', memo: '' }];
+  }
+
+  function removeManualLine(index: number) {
+    if (manualLines.length <= 2) return;
+    manualLines = manualLines.filter((_, i) => i !== index);
+  }
+
+  function resetManualForm() {
+    manualDate = '';
+    manualMemo = '';
+    manualLines = [
+      { accountCode: '', debit: '', credit: '', memo: '' },
+      { accountCode: '', debit: '', credit: '', memo: '' },
+    ];
+    manualError = '';
+  }
+
+  async function submitManualEntry() {
+    manualError = '';
+    // Build payload: drop empty lines, send only populated debit/credit.
+    const lines = manualLines
+      .filter((l) => l.accountCode.trim() !== '')
+      .map((l) => {
+        const debit = Number(l.debit) || 0;
+        const credit = Number(l.credit) || 0;
+        return {
+          accountCode: l.accountCode.trim(),
+          ...(debit > 0 ? { debit } : {}),
+          ...(credit > 0 ? { credit } : {}),
+          ...(l.memo.trim() ? { memo: l.memo.trim() } : {}),
+        };
+      });
+    if (lines.length < 2) {
+      manualError = 'Au moins deux lignes avec un compte sont requises.';
+      return;
+    }
+    manualSaving = true;
+    try {
+      await api('/billing/ledger/entries', {
+        method: 'POST',
+        body: {
+          ...(manualDate ? { date: manualDate } : {}),
+          ...(manualMemo.trim() ? { memo: manualMemo.trim() } : {}),
+          lines,
+        },
+      });
+      toast.success('Écriture enregistrée');
+      resetManualForm();
+      showManualForm = false;
+      await Promise.all([loadJournal(), loadBalance()]);
+    } catch (e) {
+      // Surface the API 400 (e.g. unbalanced, unknown account code).
+      manualError = e instanceof ApiError ? e.message : 'Échec de l’enregistrement';
+    } finally {
+      manualSaving = false;
+    }
+  }
+
+  $effect(() => {
+    void loadSettings();
+  });
 </script>
 
 <PageHeader
@@ -241,6 +352,139 @@
 
 <!-- ── Journal ────────────────────────────────────────────────────────────── -->
 {#if activeTab === 'journal'}
+  {#if manualEntriesEnabled}
+    <div class="mb-4">
+      {#if !showManualForm}
+        <Button variant="primary" onclick={() => { showManualForm = true; }}>
+          + Nouvelle écriture manuelle
+        </Button>
+      {:else}
+        <Card>
+          <div class="mb-3 flex items-center justify-between">
+            <h2 class="text-sm font-bold text-ink">Nouvelle écriture manuelle</h2>
+            <button
+              class="text-sm text-ink-muted hover:text-ink"
+              onclick={() => { showManualForm = false; resetManualForm(); }}
+            >Annuler</button>
+          </div>
+
+          <div class="mb-3 grid gap-3 sm:grid-cols-2">
+            <div>
+              <label class="mb-1 block text-xs font-medium text-ink-muted" for="manual-date">Date</label>
+              <input
+                id="manual-date"
+                type="date"
+                bind:value={manualDate}
+                class="w-full rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+              />
+              <p class="mt-1 text-xs text-ink-faint">Laisser vide pour la date courante.</p>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-ink-muted" for="manual-memo">Description</label>
+              <input
+                id="manual-memo"
+                placeholder="Mémo de l'écriture"
+                bind:value={manualMemo}
+                class="w-full rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-edge-soft text-xs text-ink-faint">
+                <th class="pb-1 text-left font-medium">Compte (code)</th>
+                <th class="pb-1 text-right font-medium">Débit</th>
+                <th class="pb-1 text-right font-medium">Crédit</th>
+                <th class="pb-1 text-left font-medium">Note</th>
+                <th class="pb-1"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each manualLines as line, i (i)}
+                <tr class="border-b border-edge-soft/50 last:border-0">
+                  <td class="py-1 pr-2">
+                    <input
+                      list="manual-account-codes"
+                      bind:value={line.accountCode}
+                      placeholder="ex. 1000"
+                      class="w-32 rounded border border-edge bg-surface px-2 py-1 text-sm focus:border-accent focus:outline-none"
+                    />
+                  </td>
+                  <td class="py-1 px-1 text-right">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      bind:value={line.debit}
+                      class="w-28 rounded border border-edge bg-surface px-2 py-1 text-right text-sm focus:border-accent focus:outline-none"
+                    />
+                  </td>
+                  <td class="py-1 px-1 text-right">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      bind:value={line.credit}
+                      class="w-28 rounded border border-edge bg-surface px-2 py-1 text-right text-sm focus:border-accent focus:outline-none"
+                    />
+                  </td>
+                  <td class="py-1 px-1">
+                    <input
+                      bind:value={line.memo}
+                      placeholder="(optionnel)"
+                      class="w-full rounded border border-edge bg-surface px-2 py-1 text-sm focus:border-accent focus:outline-none"
+                    />
+                  </td>
+                  <td class="py-1 pl-1 text-right">
+                    <button
+                      class="text-ink-faint hover:text-danger disabled:opacity-30"
+                      disabled={manualLines.length <= 2}
+                      title="Supprimer la ligne"
+                      onclick={() => removeManualLine(i)}
+                    >✕</button>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+            <tfoot class="border-t border-edge">
+              <tr class="text-xs font-semibold">
+                <td class="py-2">
+                  <button class="text-accent hover:underline" onclick={addManualLine}>+ Ajouter une ligne</button>
+                </td>
+                <td class="py-2 text-right tabular-nums">{money(String(manualTotalDebit))}</td>
+                <td class="py-2 text-right tabular-nums">{money(String(manualTotalCredit))}</td>
+                <td class="py-2" colspan={2}>
+                  {#if manualBalanced}
+                    <Badge tone="ok">Équilibré ✓</Badge>
+                  {:else}
+                    <Badge tone="warn">Déséquilibré</Badge>
+                  {/if}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <datalist id="manual-account-codes">
+            {#each accounts as a (a.id)}
+              <option value={a.code}>{a.code} — {a.name}</option>
+            {/each}
+          </datalist>
+
+          {#if manualError}
+            <p class="mt-3 text-sm text-danger">{manualError}</p>
+          {/if}
+
+          <div class="mt-4 flex justify-end">
+            <Button variant="primary" disabled={manualSaving || !manualBalanced} onclick={submitManualEntry}>
+              {manualSaving ? 'Enregistrement…' : 'Enregistrer l’écriture'}
+            </Button>
+          </div>
+        </Card>
+      {/if}
+    </div>
+  {/if}
+
   <ErrorNotice message={errorJournal} onretry={loadJournal} />
   {#if loadingJournal}
     <Card padded={false}><Skeleton rows={8} /></Card>

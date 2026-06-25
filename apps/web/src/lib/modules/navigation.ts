@@ -249,6 +249,7 @@ export function navCatalogue(): NavDomain[] {
           links: [
             { href: '/assets', label: 'Assets home' },
             { href: '/fleet', label: 'Fleet roster' },
+            { href: '/fleet/maintenance', label: 'Maintenance', perm: PERMISSIONS.FLEET.READ },
           ],
         },
         {
@@ -540,7 +541,7 @@ export function navCatalogue(): NavDomain[] {
       label: 'Courriels',
       icon: Mail,
       home: '/emails',
-      prefixes: ['/emails', '/email-config'],
+      prefixes: ['/emails'],
       anyPerms: [PERMISSIONS.EMAIL.READ],
       sections: [
         {

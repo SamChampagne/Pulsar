@@ -72,6 +72,11 @@
   // Carrier tab loads eagerly; customer tab lazy-loads on first switch — hence the different defaults.
   let loadingCarrier = $state(true);
 
+  // Billing settings drive optional UI affordances (delete-draft gating).
+  let allowInvoiceDeletion = $state(true);
+  // Optional payment date when marking a carrier invoice paid (per expanded row).
+  let markPaidDate = $state<Record<string, string>>({});
+
   // Client-side pagination for the carrier invoices table (endpoint returns a plain array).
   const PAGE_SIZE = 25;
   let carrierPage = $state(1);
@@ -99,6 +104,15 @@
         query: { pageSize: 100 },
       });
       carriers = result.items;
+      // Resolve billing settings to know whether draft deletion is allowed.
+      try {
+        const settings = await api<{ values: Record<string, string | number | boolean> }>(
+          '/modules/billing/settings',
+        );
+        allowInvoiceDeletion = settings.values.allowInvoiceDeletion !== false;
+      } catch {
+        // Settings unavailable: keep the default (deletion allowed).
+      }
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load invoices';
     } finally {
@@ -187,11 +201,31 @@
 
   async function markPaid(invoice: InvoiceRow) {
     try {
-      await api(`/billing/invoices/${invoice.id}/mark-paid`, { method: 'POST', body: {} });
+      const paidAt = markPaidDate[invoice.id];
+      await api(`/billing/invoices/${invoice.id}/mark-paid`, {
+        method: 'POST',
+        body: paidAt ? { paidAt } : {},
+      });
       toast.success(`${invoice.invoiceNumber} marked paid`);
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Failed to mark paid');
+    }
+  }
+
+  async function deleteInvoice(invoice: InvoiceRow) {
+    if (
+      !confirm(
+        `Delete draft invoice ${invoice.invoiceNumber}? This frees the loads for re-drafting.`,
+      )
+    )
+      return;
+    try {
+      await api(`/billing/invoices/${invoice.id}`, { method: 'DELETE' });
+      toast.success(`${invoice.invoiceNumber} deleted`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to delete invoice');
     }
   }
 
@@ -527,7 +561,16 @@
               <td class="text-right whitespace-nowrap">
                 {#if invoice.status === 'DRAFT'}
                   <Button variant="secondary" onclick={() => approve(invoice)}>Approve as-is</Button>
+                  {#if allowInvoiceDeletion}
+                    <Button variant="danger" onclick={() => deleteInvoice(invoice)}>Delete draft</Button>
+                  {/if}
                 {:else if invoice.status === 'APPROVED'}
+                  <input
+                    type="date"
+                    bind:value={markPaidDate[invoice.id]}
+                    title="Payment date (optional)"
+                    class="rounded border border-edge bg-surface px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
+                  />
                   <Button variant="secondary" onclick={() => markPaid(invoice)}>Mark paid</Button>
                 {/if}
               </td>

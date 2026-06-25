@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   AuditAction,
   canTransitionInvoice,
@@ -117,6 +117,41 @@ export class InvoicesService {
       after: { invoiceNumber: invoice.invoiceNumber, carrierId, lines: loads.length },
     });
     return invoice;
+  }
+
+  /** The only escape path of a draft carrier invoice: deletion frees the loads
+   *  (cascade on lines) for re-drafting. DRAFT only; gated by the billing
+   *  `allowInvoiceDeletion` setting. */
+  async deleteDraft(tenantId: string, userId: string, id: string) {
+    const invoice = await this.get(tenantId, id);
+    if (invoice.status !== InvoiceStatus.DRAFT) {
+      throw new BadRequestException('Only DRAFT invoices can be deleted');
+    }
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    if (s.allowInvoiceDeletion === false) {
+      throw new ForbiddenException('Invoice deletion is disabled for this tenant');
+    }
+    const { count } = await this.prisma.invoice.deleteMany({
+      where: { id, tenantId, status: InvoiceStatus.DRAFT },
+    });
+    if (count === 0) {
+      // Approved concurrently between the read and the delete — immutability wins.
+      throw new BadRequestException('Only DRAFT invoices can be deleted');
+    }
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.DELETE,
+      entityType: 'invoice',
+      entityId: id,
+      before: {
+        invoiceNumber: invoice.invoiceNumber,
+        status: invoice.status,
+        carrierId: invoice.carrierId,
+        loads: invoice.lines.map((l) => l.load?.loadNumber ?? l.description),
+      },
+    });
+    return { deleted: true };
   }
 
   async approve(tenantId: string, userId: string, id: string) {
