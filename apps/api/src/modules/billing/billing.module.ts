@@ -18,6 +18,8 @@ import { ModesOfPaymentController } from './modes-of-payment.controller';
 import { ModesOfPaymentService } from './modes-of-payment.service';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
+import { TaxTemplatesController } from './tax-templates.controller';
+import { TaxTemplatesService } from './tax-templates.service';
 
 /**
  * Billing — third business module, activable per tenant.
@@ -27,8 +29,8 @@ import { PaymentsService } from './payments.service';
  */
 @Module({
   imports: [AuditLogsModule, CustomFieldsModule, EmailModule, ModuleRegistryModule, TransportationModule, forwardRef(() => OperatingModule)],
-  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController, BillingCustomFieldsController, LedgerController, ModesOfPaymentController, PaymentsController],
-  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService, LedgerService, ModesOfPaymentService, PaymentsService],
-  exports: [FreightAuditService, CustomerInvoicesService, LedgerService, ModesOfPaymentService, PaymentsService],
+  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController, BillingCustomFieldsController, LedgerController, ModesOfPaymentController, PaymentsController, TaxTemplatesController],
+  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService],
+  exports: [FreightAuditService, CustomerInvoicesService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService],
 })
 export class BillingModule {}
