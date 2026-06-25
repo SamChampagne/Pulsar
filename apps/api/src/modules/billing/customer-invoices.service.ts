@@ -237,7 +237,7 @@ export class CustomerInvoicesService {
       before: {
         invoiceNumber: statement.invoiceNumber,
         status: statement.status,
-        orders: statement.lines.map((l) => l.transportOrder.orderNumber),
+        orders: statement.lines.map((l) => l.transportOrder?.orderNumber ?? null),
       },
     });
     return { deleted: true };
@@ -302,7 +302,7 @@ export class CustomerInvoicesService {
     const rows = statement.lines
       .map(
         (l) =>
-          `<tr><td>${l.transportOrder.orderNumber}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
+          `<tr><td>${l.transportOrder?.orderNumber ?? ''}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
       )
       .join('');
 
@@ -344,7 +344,7 @@ export class CustomerInvoicesService {
     const rows = statement.lines
       .map(
         (l) =>
-          `<tr><td>${l.transportOrder.orderNumber}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
+          `<tr><td>${l.transportOrder?.orderNumber ?? ''}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
       )
       .join('');
     // Route through the durable outbox — recorded in email history with relatedType/Id.

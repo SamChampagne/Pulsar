@@ -112,6 +112,8 @@ model Tenant {
   emailTemplates   EmailTemplate[]
   emailThreads     EmailThread[]
   landingPages     LandingPage[]
+  chartOfAccounts  ChartOfAccount[]
+  journalEntries   JournalEntry[]
 
   @@map("tenants")
 }
@@ -1452,19 +1454,26 @@ model CustomerInvoice {
 }
 
 model CustomerInvoiceLine {
-  id                String  @id @default(cuid())
+  id                String   @id @default(cuid())
   customerInvoiceId String
   // One line per order; the unique prevents double-billing an order. Freed by
   // deleting a DRAFT statement (cascade) — the only escape path by design.
-  transportOrderId  String  @unique
+  // Nullable to support free (non-order) invoice lines.
+  transportOrderId  String?  @unique
   description       String
-  amount            Decimal @db.Decimal(12, 2)
+  amount            Decimal  @db.Decimal(12, 2)
   // Frozen sell-side snapshot (customer rate as used + inputs + lines), same
   // self-contained structure as Load.costDetail. Never recomputed once APPROVED.
-  priceDetail       Json
+  // Nullable for free lines that have no rate snapshot.
+  priceDetail       Json?
+  // Free-line fields (null on order-linked lines)
+  source            String?
+  quantity          Decimal?
+  unitPrice         Decimal?
+  salesOrderLineId  String?
 
   customerInvoice CustomerInvoice @relation(fields: [customerInvoiceId], references: [id], onDelete: Cascade)
-  transportOrder  TransportOrder  @relation(fields: [transportOrderId], references: [id], onDelete: Restrict)
+  transportOrder  TransportOrder? @relation(fields: [transportOrderId], references: [id], onDelete: Restrict)
 
   @@map("customer_invoice_lines")
 }
@@ -3046,4 +3055,69 @@ model LandingPageSubmission {
 
   @@index([tenantId, landingPageId])
   @@map("landing_page_submissions")
+}
+
+// ============================================================================
+// BILLING — General Ledger (chart of accounts + double-entry journal)
+// ============================================================================
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+model ChartOfAccount {
+  id        String      @id @default(cuid())
+  tenantId  String
+  code      String
+  name      String
+  type      AccountType
+  active    Boolean     @default(true)
+  createdAt DateTime    @default(now())
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id])
+  lines  JournalLine[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, type])
+  @@map("chart_of_accounts")
+}
+
+model JournalEntry {
+  id          String   @id @default(cuid())
+  tenantId    String
+  date        DateTime
+  memo        String?
+  sourceType  String?
+  sourceId    String?
+  sourceKind  String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id])
+  lines  JournalLine[]
+
+  @@index([tenantId, date])
+  @@index([tenantId, sourceType, sourceId, sourceKind])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id             String   @id @default(cuid())
+  tenantId       String
+  journalEntryId String
+  accountId      String
+  debit          Decimal  @default(0)
+  credit         Decimal  @default(0)
+  memo           String?
+
+  entry   JournalEntry   @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account ChartOfAccount @relation(fields: [accountId], references: [id])
+
+  @@index([tenantId, accountId])
+  @@index([tenantId, journalEntryId])
+  @@map("journal_lines")
 }
