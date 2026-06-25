@@ -166,6 +166,9 @@
   });
 
   $effect(() => {
+    // read synchronously so the effect tracks pagination changes
+    void journalPage;
+    void journalPageSize;
     void loadJournal();
   });
 
