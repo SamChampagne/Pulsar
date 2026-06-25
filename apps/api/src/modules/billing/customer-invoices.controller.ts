@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser, CustomerInvoiceStatus } from '@pulsar/shared';
 import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
-import { IsDateString, IsOptional, IsString, ValidateIf } from 'class-validator';
+import { IsDefined, IsDateString, IsOptional, IsString, ValidateIf } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
@@ -21,7 +21,7 @@ class MarkStatementPaidDto {
 
 class ApplyTaxDto {
   /** Pass a tax template ID to apply that template, or null to clear the tax. */
-  @IsOptional()
+  @IsDefined()
   @ValidateIf((o: ApplyTaxDto) => o.taxTemplateId !== null)
   @IsString()
   taxTemplateId!: string | null;

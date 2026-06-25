@@ -305,7 +305,7 @@ export class CustomerInvoicesService {
       newTotal = round2(net + computation.taxAmount);
     }
 
-    await this.prisma.customerInvoice.updateMany({
+    const { count } = await this.prisma.customerInvoice.updateMany({
       where: { id, tenantId, status: CustomerInvoiceStatus.DRAFT },
       data: {
         taxTemplateId: newTemplateId,
@@ -314,6 +314,10 @@ export class CustomerInvoicesService {
         totalAmount: newTotal,
       },
     });
+    if (count === 0) {
+      // Approved concurrently between the read and the update — immutability wins.
+      throw new BadRequestException('Tax can only be applied to DRAFT invoices');
+    }
 
     await this.audit.log({
       tenantId,
