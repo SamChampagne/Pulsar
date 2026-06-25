@@ -50,9 +50,9 @@
   }
 
   interface ProfitAndLoss {
-    revenues: ReportLine[];
+    revenue: ReportLine[];
     totalRevenue: string;
-    expenses: ReportLine[];
+    expense: ReportLine[];
     totalExpense: string;
     netIncome: string;
   }
@@ -86,25 +86,16 @@
   }
 
   interface AgingRow {
-    party: string;
-    bucket0_30: string;
-    bucket31_60: string;
-    bucket61_90: string;
-    bucket91_120: string;
-    bucket120plus: string;
+    partyId: string;
+    partyName: string;
+    buckets: Record<'0-30' | '31-60' | '61-90' | '91-120' | '120+', string>;
     total: string;
   }
 
   interface AgingReport {
     rows: AgingRow[];
-    totals: {
-      bucket0_30: string;
-      bucket31_60: string;
-      bucket61_90: string;
-      bucket91_120: string;
-      bucket120plus: string;
-      grandTotal: string;
-    };
+    totals: Record<'0-30' | '31-60' | '61-90' | '91-120' | '120+', string>;
+    grandTotal: string;
   }
 
   // ── State ─────────────────────────────────────────────────────────────────────
@@ -326,7 +317,7 @@
               <tr class="bg-surface-muted/40">
                 <td class="px-4 py-2 text-xs font-bold uppercase text-ink-faint" colspan={3}>Revenus</td>
               </tr>
-              {#each pl.revenues as row (row.code)}
+              {#each pl.revenue as row (row.code)}
                 <tr class="text-sm hover:bg-surface-muted/50">
                   <td class="px-4 py-2.5 font-mono text-ink-muted">{row.code}</td>
                   <td class="px-4 py-2.5">{row.name}</td>
@@ -363,7 +354,7 @@
               <tr class="bg-surface-muted/40">
                 <td class="px-4 py-2 text-xs font-bold uppercase text-ink-faint" colspan={3}>Charges</td>
               </tr>
-              {#each pl.expenses as row (row.code)}
+              {#each pl.expense as row (row.code)}
                 <tr class="text-sm hover:bg-surface-muted/50">
                   <td class="px-4 py-2.5 font-mono text-ink-muted">{row.code}</td>
                   <td class="px-4 py-2.5">{row.name}</td>
@@ -614,14 +605,14 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-edge-soft">
-            {#each ar.rows as row (row.party)}
+            {#each ar.rows as row (row.partyId)}
               <tr class="text-sm hover:bg-surface-muted/50">
-                <td class="px-4 py-2.5 font-medium">{row.party}</td>
-                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.bucket0_30)}</td>
-                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.bucket31_60)}</td>
-                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.bucket61_90)}</td>
-                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.bucket91_120)}</td>
-                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.bucket120plus)}</td>
+                <td class="px-4 py-2.5 font-medium">{row.partyName}</td>
+                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.buckets['0-30'])}</td>
+                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.buckets['31-60'])}</td>
+                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.buckets['61-90'])}</td>
+                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.buckets['91-120'])}</td>
+                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.buckets['120+'])}</td>
                 <td class="px-4 py-2.5 text-right tabular-nums font-semibold">{money(row.total)}</td>
               </tr>
             {:else}
@@ -636,12 +627,12 @@
             <tfoot class="border-t-2 border-edge">
               <tr class="text-sm font-bold bg-surface-muted/30">
                 <td class="px-4 py-3">Total</td>
-                <td class="px-4 py-3 text-right tabular-nums">{money(ar.totals.bucket0_30)}</td>
-                <td class="px-4 py-3 text-right tabular-nums">{money(ar.totals.bucket31_60)}</td>
-                <td class="px-4 py-3 text-right tabular-nums">{money(ar.totals.bucket61_90)}</td>
-                <td class="px-4 py-3 text-right tabular-nums">{money(ar.totals.bucket91_120)}</td>
-                <td class="px-4 py-3 text-right tabular-nums">{money(ar.totals.bucket120plus)}</td>
-                <td class="px-4 py-3 text-right tabular-nums">{money(ar.totals.grandTotal)}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(ar.totals['0-30'])}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(ar.totals['31-60'])}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(ar.totals['61-90'])}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(ar.totals['91-120'])}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(ar.totals['120+'])}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(ar.grandTotal)}</td>
               </tr>
             </tfoot>
           {/if}
@@ -676,14 +667,14 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-edge-soft">
-            {#each ap.rows as row (row.party)}
+            {#each ap.rows as row (row.partyId)}
               <tr class="text-sm hover:bg-surface-muted/50">
-                <td class="px-4 py-2.5 font-medium">{row.party}</td>
-                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.bucket0_30)}</td>
-                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.bucket31_60)}</td>
-                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.bucket61_90)}</td>
-                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.bucket91_120)}</td>
-                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.bucket120plus)}</td>
+                <td class="px-4 py-2.5 font-medium">{row.partyName}</td>
+                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.buckets['0-30'])}</td>
+                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.buckets['31-60'])}</td>
+                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.buckets['61-90'])}</td>
+                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.buckets['91-120'])}</td>
+                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.buckets['120+'])}</td>
                 <td class="px-4 py-2.5 text-right tabular-nums font-semibold">{money(row.total)}</td>
               </tr>
             {:else}
@@ -698,12 +689,12 @@
             <tfoot class="border-t-2 border-edge">
               <tr class="text-sm font-bold bg-surface-muted/30">
                 <td class="px-4 py-3">Total</td>
-                <td class="px-4 py-3 text-right tabular-nums">{money(ap.totals.bucket0_30)}</td>
-                <td class="px-4 py-3 text-right tabular-nums">{money(ap.totals.bucket31_60)}</td>
-                <td class="px-4 py-3 text-right tabular-nums">{money(ap.totals.bucket61_90)}</td>
-                <td class="px-4 py-3 text-right tabular-nums">{money(ap.totals.bucket91_120)}</td>
-                <td class="px-4 py-3 text-right tabular-nums">{money(ap.totals.bucket120plus)}</td>
-                <td class="px-4 py-3 text-right tabular-nums">{money(ap.totals.grandTotal)}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(ap.totals['0-30'])}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(ap.totals['31-60'])}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(ap.totals['61-90'])}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(ap.totals['91-120'])}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(ap.totals['120+'])}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(ap.grandTotal)}</td>
               </tr>
             </tfoot>
           {/if}

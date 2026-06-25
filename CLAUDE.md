@@ -375,9 +375,9 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     sont gated `@RequireModule(BILLING)` + `billing.ledger.read` (aucune nouvelle permission) et
     sont tenant-scopés (règle 1). La plage de dates (`from`/`to`/`asOf`) est fournie en
     paramètre de requête ; le cumul depuis l'origine est retourné si `from` est absent.
-    Le vieillissement est calculé par tranches (0-30, 31-60, 61-90, 91+ jours) sur le `dueDate`
-    des factures non entièrement acquittées — `paidAt` absent = dû en totalité ; `paidAt` présent
-    = sorti du vieillissement.
+    Le vieillissement est calculé par tranches (0-30, 31-60, 61-90, 91-120, 120+ jours) sur
+    `approvedAt ?? createdAt` de la facture ; une facture est incluse si et seulement si
+    `outstanding = totalAmount − amountPaid > 0` (une facture partiellement payée reste visible).
 
 ## Adding a business module (the recipe)
 
