@@ -237,7 +237,7 @@ export class CustomerInvoicesService {
       before: {
         invoiceNumber: statement.invoiceNumber,
         status: statement.status,
-        orders: statement.lines.map((l) => l.transportOrder?.orderNumber ?? null),
+        orders: statement.lines.map((l) => l.transportOrder?.orderNumber ?? l.description),
       },
     });
     return { deleted: true };
@@ -302,7 +302,7 @@ export class CustomerInvoicesService {
     const rows = statement.lines
       .map(
         (l) =>
-          `<tr><td>${l.transportOrder?.orderNumber ?? ''}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
+          `<tr><td>${l.transportOrder?.orderNumber ?? l.description}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
       )
       .join('');
 
@@ -344,7 +344,7 @@ export class CustomerInvoicesService {
     const rows = statement.lines
       .map(
         (l) =>
-          `<tr><td>${l.transportOrder?.orderNumber ?? ''}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
+          `<tr><td>${l.transportOrder?.orderNumber ?? l.description}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
       )
       .join('');
     // Route through the durable outbox — recorded in email history with relatedType/Id.
@@ -375,14 +375,11 @@ export class CustomerInvoicesService {
   /**
    * Creates a DRAFT customer invoice from a CRM sales order's line items.
    *
-   * MODELLING NOTE — structural gap:
-   *   `CustomerInvoiceLine` has a NOT-NULL @unique FK `transportOrderId` (TransportOrder).
-   *   CRM sales-order lines have no associated transport orders. Therefore this method
-   *   creates the `CustomerInvoice` record (with totalAmount + currency) but stores
-   *   the line-item snapshot in `customData.soLines` instead of creating
-   *   `CustomerInvoiceLine` rows. The invoice will show `lines: []` via `statementInclude`
-   *   until the schema is extended with a free-form line type. Fabricating TransportOrder
-   *   FKs is explicitly ruled out.
+   * Each SO line item becomes a real `CustomerInvoiceLine` row with
+   * `transportOrderId: null`, `source: 'sales-order'`, `salesOrderLineId`,
+   * `description`, `quantity`, `unitPrice`, and computed `amount`. The schema
+   * now supports free (non-order) lines — `transportOrderId` is nullable and
+   * `priceDetail` is nullable for these lines (Task 3).
    *
    * IDEMPOTENCE:
    *   The `salesOrderId` is stored in `customData.salesOrderId`. On every call we query
@@ -429,13 +426,13 @@ export class CustomerInvoicesService {
     }
 
     // 4. Resolve currency and compute total from SO lines (Decimal → Number at boundary).
-    const soLines = order.lineItems.map((li) => ({
+    const lineAmounts = order.lineItems.map((li) => ({
       id: li.id,
       name: li.name,
       quantity: Number(li.quantity),
       unitPrice: Number(li.unitPrice),
       discountPct: Number(li.discountPct),
-      lineTotal: computeLineTotal({
+      amount: computeLineTotal({
         quantity: Number(li.quantity),
         unitPrice: Number(li.unitPrice),
         discountPct: Number(li.discountPct),
@@ -457,7 +454,9 @@ export class CustomerInvoicesService {
     // 6. Mint the invoice number (same sequence key as createDrafts).
     const invoiceNumber = await this.sequences.nextNumber(tenantId, 'customer-invoice');
 
-    // 7. Create the DRAFT invoice. Lines are stored in customData.soLines (see modelling note).
+    // 7. Create the DRAFT invoice with real CustomerInvoiceLine rows (one per SO line).
+    //    transportOrderId is null (free lines); priceDetail is null (no rate snapshot).
+    //    Idempotence anchor is kept in customData.salesOrderId (règle 16 — never recomputed).
     const invoice = await this.prisma.customerInvoice.create({
       data: {
         tenantId,
@@ -465,11 +464,21 @@ export class CustomerInvoicesService {
         customerId: order.customerId,
         currency,
         totalAmount,
-        // Idempotence anchor + frozen SO snapshot (règle 16 — never recomputed).
         customData: {
           salesOrderId,
           salesOrderNumber: order.number,
-          soLines,
+        },
+        lines: {
+          create: lineAmounts.map((la) => ({
+            transportOrderId: null,
+            source: 'sales-order',
+            salesOrderLineId: la.id,
+            description: la.name,
+            quantity: la.quantity,
+            unitPrice: la.unitPrice,
+            amount: la.amount,
+            priceDetail: Prisma.JsonNull,
+          })),
         },
       },
     });
@@ -489,6 +498,7 @@ export class CustomerInvoicesService {
         source: 'sales-order',
         salesOrderId,
         salesOrderNumber: order.number,
+        lines: lineAmounts.length,
       },
     });
 
