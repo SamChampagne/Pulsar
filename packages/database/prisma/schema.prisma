@@ -117,6 +117,7 @@ model Tenant {
   payments        Payment[]
   modesOfPayment  ModeOfPayment[]
   taxTemplates    TaxTemplate[]
+  bankAccounts    BankAccount[]
 
   @@map("tenants")
 }
@@ -3106,6 +3107,11 @@ enum PaymentTargetType {
   CARRIER_INVOICE
 }
 
+enum BankTxnStatus {
+  UNRECONCILED
+  RECONCILED
+}
+
 model ChartOfAccount {
   id        String      @id @default(cuid())
   tenantId  String
@@ -3194,6 +3200,7 @@ model Payment {
   note            String?
   submittedAt     DateTime?
   cancelledAt     DateTime?
+  reconciledAt    DateTime?
   createdById     String?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
@@ -3253,4 +3260,41 @@ model TaxTemplateLine {
 
   @@index([tenantId, templateId])
   @@map("tax_template_lines")
+}
+
+// ============================================================================
+// BILLING — Banking (bank accounts + transactions + reconciliation)
+// ============================================================================
+
+model BankAccount {
+  id            String   @id @default(cuid())
+  tenantId      String
+  name          String
+  accountNumber String?            // masqué à l'affichage (4 derniers)
+  glAccountCode String   @default("1010")
+  currency      String   @default("CAD")
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  transactions  BankTransaction[]
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("bank_accounts")
+}
+
+model BankTransaction {
+  id               String        @id @default(cuid())
+  tenantId         String
+  bankAccountId    String
+  date             DateTime
+  description      String
+  amount           Decimal       @db.Decimal(12, 2)   // signé
+  reference        String?
+  status           BankTxnStatus @default(UNRECONCILED)
+  matchedPaymentId String?       @unique
+  createdAt        DateTime      @default(now())
+  bankAccount      BankAccount   @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  @@index([tenantId, bankAccountId, status])
+  @@map("bank_transactions")
 }
