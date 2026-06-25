@@ -432,6 +432,25 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     seedé avant leur ajout doit relancer `pnpm db:seed` (upsert idempotent) pour les obtenir —
     sinon `depreciate` retourne un 400 propre ("Unknown account code: 5100") sans corruption.
 
+## Hard rules (continued, Billing Subscriptions)
+
+48. (Billing Subscriptions — facturation récurrente) Les `Subscription` (ACTIVE → PAUSED → ACTIVE,
+    ACTIVE/PAUSED → CANCELLED via `canTransitionSubscription`, `@pulsar/shared`, règle 2) avec claim
+    conditionnel `updateMany` (TOCTOU) définissent des lignes tarifaires périodiques
+    (WEEKLY/MONTHLY/YEARLY). La génération (`generate`) crée une `CustomerInvoice` DRAFT avec des
+    lignes libres (`source='subscription'`) dans une transaction atomique ; elle est **idempotente**
+    sur `(tenantId, subscriptionId, periodStart)` (unique constraint `SubscriptionInvoice` — `P2002`
+    → 409). Elle avance `nextRunDate` via `advanceRunDate` (`@pulsar/shared`, pur, UTC, clamp
+    fin-de-mois) dans la **même** transaction. Le numéro de facture vient de `SequencesService` clé
+    `'customer-invoice'` (règle 8). **Aucune écriture GL directe** : la facture générée suit le flux
+    billing normal (approve → GL — règle 41). `POST /billing/subscriptions/run-due` itère les
+    abonnements ACTIVE avec `nextRunDate <= now` et est **best-effort** (renvoie
+    `{ generated, skipped, errors }`, n'émet jamais d'exception globale) ; une génération échouée
+    pour un abonnement n'affecte pas les autres. Un abonnement PAUSED ou CANCELLED est bloqué en
+    génération (400). `DELETE` est bloqué si des `SubscriptionInvoice` existent. Tout endpoint est
+    `@RequireModule(BILLING)` + `billing.subscriptions.read|manage`, tenant-scopé (règle 1) ; FK
+    vérifiées (règle 9). Route web : `/billing/subscriptions`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
