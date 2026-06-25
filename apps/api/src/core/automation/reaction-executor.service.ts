@@ -107,6 +107,8 @@ export class ReactionExecutorService {
         return this.assignDockAppointment(tenantId, sysUserId, command.args['visitId']);
       case 'close_delivered_transport_order':
         return this.closeDeliveredTransportOrder(tenantId, sysUserId, command.args['loadId']);
+      case 'draft_invoice_from_sales_order':
+        return this.draftInvoiceFromSalesOrder(tenantId, command.args);
       default:
         this.logger.warn(`No handler for reaction action "${command.action}"`);
     }
@@ -267,6 +269,33 @@ export class ReactionExecutorService {
     const orderSvc = this.moduleRef.get(TransportOrdersService, { strict: false });
     for (const o of orders) {
       await orderSvc.close(tenantId, userId, o.id); // COMPLETED → CLOSED (canTransition)
+    }
+  }
+
+  private async draftInvoiceFromSalesOrder(
+    tenantId: string,
+    args: Record<string, unknown>,
+  ): Promise<void> {
+    const salesOrderId = String(args['salesOrderId'] ?? '');
+    if (!salesOrderId) return;
+
+    // Lazy-resolve CustomerInvoicesService to avoid a circular JS require chain.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { CustomerInvoicesService } = require('../../modules/billing/customer-invoices.service') as typeof import('../../modules/billing/customer-invoices.service');
+    const customerInvoices = this.moduleRef.get(CustomerInvoicesService, { strict: false });
+
+    const userId = await this.serviceAccountUserId(tenantId);
+    try {
+      await customerInvoices.createDraftFromSalesOrder(tenantId, userId, salesOrderId);
+    } catch (err) {
+      // "No ratable orders" is an expected no-op — swallow it.
+      if (err instanceof BadRequestException) {
+        this.logger.debug(
+          `draft_invoice_from_sales_order: no ratable orders for salesOrder ${salesOrderId} — skipping`,
+        );
+        return;
+      }
+      throw err;
     }
   }
 

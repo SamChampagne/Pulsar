@@ -72,6 +72,8 @@ export const PERMISSIONS = {
     CUSTOMER_INVOICES_MANAGE: 'billing.customer-invoices.manage',
     CUSTOMER_INVOICES_SEND: 'billing.customer-invoices.send',
     CUSTOMER_INVOICES_PAY: 'billing.customer-invoices.pay',
+    LEDGER_READ: 'billing.ledger.read',
+    LEDGER_MANAGE: 'billing.ledger.manage',
   },
   FLEET: {
     READ: 'fleet.read',
@@ -96,6 +98,10 @@ export const PERMISSIONS = {
     READ: 'crm.read',
     MANAGE: 'crm.manage',
   },
+  SITES: {
+    READ: 'sites.read',
+    MANAGE: 'sites.manage',
+  },
   EMAIL: {
     READ: 'core.email.read',
     SEND: 'core.email.send',
@@ -115,6 +121,7 @@ export type PermissionKey =
   | (typeof PERMISSIONS.PROCUREMENT)[keyof typeof PERMISSIONS.PROCUREMENT]
   | (typeof PERMISSIONS.CARRIER_PORTAL)[keyof typeof PERMISSIONS.CARRIER_PORTAL]
   | (typeof PERMISSIONS.CRM)[keyof typeof PERMISSIONS.CRM]
+  | (typeof PERMISSIONS.SITES)[keyof typeof PERMISSIONS.SITES]
   | (typeof PERMISSIONS.EMAIL)[keyof typeof PERMISSIONS.EMAIL];
 
 export interface PermissionDescriptor {
@@ -178,6 +185,11 @@ const crm = (key: PermissionKey, description: string): PermissionDescriptor => (
   module: MODULE_KEYS.CRM,
   description,
 });
+const sites = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.SITES,
+  description,
+});
 
 export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.TENANT_READ, 'View tenant profile and settings'),
@@ -235,6 +247,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_MANAGE, 'Draft, approve and delete customer billing statements'),
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_SEND, 'Send customer billing statements'),
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_PAY, 'Mark customer billing statements as paid'),
+  billing(PERMISSIONS.BILLING.LEDGER_READ, 'View the general ledger'),
+  billing(PERMISSIONS.BILLING.LEDGER_MANAGE, 'Manage the general ledger (manual journal entries, chart of accounts)'),
   fleet(PERMISSIONS.FLEET.READ, 'View fleet assets, maintenance and compliance'),
   fleet(PERMISSIONS.FLEET.MANAGE, 'Manage maintenance orders and compliance documents'),
   wms(PERMISSIONS.WMS.READ, 'View warehouse inventory, receipts and pick orders'),
@@ -249,6 +263,9 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   // CRM
   crm(PERMISSIONS.CRM.READ, 'View CRM companies, contacts, deals and activities'),
   crm(PERMISSIONS.CRM.MANAGE, 'Create and manage CRM records, advance and convert deals'),
+  // Sites
+  sites(PERMISSIONS.SITES.READ, 'View sites & landing pages'),
+  sites(PERMISSIONS.SITES.MANAGE, 'Create and manage sites & landing pages'),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);

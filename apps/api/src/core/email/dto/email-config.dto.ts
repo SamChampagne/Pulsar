@@ -8,6 +8,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpsertEmailConfigDto {
   @IsOptional()
@@ -50,6 +51,13 @@ export class UpsertEmailConfigDto {
   @IsEmail()
   @MaxLength(255)
   replyTo?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() imapHost?: string;
+  @ApiPropertyOptional() @IsOptional() @IsInt() imapPort?: number;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() imapSecure?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsString() imapUsername?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() imapPassword?: string;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() inboundActive?: boolean;
 }
 
 export class SendTestEmailDto {

@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditAction, canTransitionDeal, CrmDealStage, CustomFieldEntity } from '@pulsar/shared';
+import { AuditAction, canTransitionDeal, CrmDealStage, CustomFieldEntity, dealAgeDays, isDealStale } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { CustomFieldsService } from '../../core/custom-fields/custom-fields.service';
 import { SequencesService } from '../../prisma/sequences.service';
+import { DomainEventsService } from '../../core/operating/domain-events.service';
 import { paginationArgs, paginated } from '../../common/pagination';
 import { CreateDealDto, DealListQueryDto, UpdateDealDto } from './dto/deal.dto';
 
@@ -21,6 +22,7 @@ export class DealsService {
     private readonly audit: AuditLogsService,
     private readonly sequences: SequencesService,
     private readonly customFields: CustomFieldsService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
 
   async list(tenantId: string, query: DealListQueryDto) {
@@ -140,7 +142,10 @@ export class DealsService {
    * Claim-safe: optimistic lock on current stage (TOCTOU).
    */
   async advance(tenantId: string, id: string, userId: string, toStage: CrmDealStage) {
-    const deal = await this.prisma.crmDeal.findFirstOrThrow({ where: { id, tenantId } });
+    const deal = await this.prisma.crmDeal.findFirstOrThrow({
+      where: { id, tenantId },
+      select: { id: true, stage: true, companyId: true },
+    });
     if (!canTransitionDeal(deal.stage as CrmDealStage, toStage)) {
       throw new BadRequestException(`Cannot move deal from ${deal.stage} to ${toStage}`);
     }
@@ -158,6 +163,14 @@ export class DealsService {
       before: { stage: deal.stage },
       after: { stage: toStage },
     });
+    if (toStage === CrmDealStage.WON) {
+      await this.domainEvents.emit(
+        tenantId,
+        'crm.deal.won',
+        { type: 'deal', id },
+        { dealId: id, companyId: deal.companyId },
+      );
+    }
     return this.get(tenantId, id);
   }
 
@@ -201,6 +214,30 @@ export class DealsService {
   }
 
   /**
+   * Full context for a single deal — used by the coach agent (crm_get_deal).
+   * Returns the deal, its company, the company's contacts, and the deal's recent activities.
+   */
+  async getWithContext(tenantId: string, id: string) {
+    const deal = await this.prisma.crmDeal.findFirst({
+      where: { id, tenantId },
+      include: { company: { select: { id: true, name: true, domain: true, industry: true, status: true } } },
+    });
+    if (!deal) throw new NotFoundException('CRM deal not found');
+    const [contacts, activities] = await Promise.all([
+      this.prisma.crmContact.findMany({
+        where: { tenantId, companyId: deal.companyId },
+        select: { id: true, name: true, title: true, email: true, phone: true },
+      }),
+      this.prisma.crmActivity.findMany({
+        where: { tenantId, dealId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+      }),
+    ]);
+    return { deal, company: deal.company, contacts, activities };
+  }
+
+  /**
    * Pipeline view: deals grouped by stage, each with company name + amount + owner.
    */
   async pipeline(tenantId: string) {
@@ -227,6 +264,7 @@ export class DealsService {
       if (bucket) bucket.push(deal);
     }
 
+    const now = new Date();
     return stageOrder.map((stage) => ({
       stage,
       deals: (byStage.get(stage) ?? []).map((d) => ({
@@ -238,6 +276,13 @@ export class DealsService {
         ownerUserId: d.ownerUserId,
         lastActivityAt: d.lastActivityAt,
         expectedCloseDate: d.expectedCloseDate,
+        ageDays: dealAgeDays(d.createdAt, now),
+        stale: isDealStale({
+          stage: d.stage as CrmDealStage,
+          lastActivityAt: d.lastActivityAt,
+          createdAt: d.createdAt,
+          now,
+        }),
       })),
     }));
   }

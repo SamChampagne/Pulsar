@@ -10,7 +10,7 @@
  */
 import { PrismaClient, TransportOrderStatus } from '@prisma/client';
 import { hashSync } from 'bcryptjs';
-import { MODULE_CATALOG, PERMISSION_CATALOG, LaneEndpointType, buildEndpointKey } from '@pulsar/shared';
+import { MODULE_CATALOG, PERMISSION_CATALOG, LaneEndpointType, buildEndpointKey, sumLineItems, DEFAULT_CHART } from '@pulsar/shared';
 
 const prisma = new PrismaClient();
 
@@ -444,6 +444,25 @@ async function main() {
     });
   }
 
+  const draftInvoiceFromSalesOrderRuleName = 'Facture brouillon sur commande facturée';
+  const existingDraftInvoiceFromSalesOrderRule = await prisma.automationRule.findFirst({
+    where: { tenantId: tenant.id, name: draftInvoiceFromSalesOrderRuleName },
+  });
+  if (!existingDraftInvoiceFromSalesOrderRule) {
+    await prisma.automationRule.create({
+      data: {
+        tenantId: tenant.id,
+        name: draftInvoiceFromSalesOrderRuleName,
+        eventType: 'crm.sales_order.invoiced',
+        enabled: true,
+        match: 'ALL',
+        conditions: [],
+        action: { kind: 'RUN_ACTION', action: 'draft_invoice_from_sales_order', args: { salesOrderId: '{salesOrderId}' } },
+        createdById: admin.id,
+      },
+    });
+  }
+
   console.log('Built-in automation rules ready.');
 
   // --- CRM demo data (acme tenant) -------------------------------------------
@@ -623,7 +642,38 @@ async function main() {
     },
   });
 
-  console.log('CRM demo data ready (2 companies, 2 contacts, 3 deals, 1 overdue task).');
+  // CRM Products (3 demo products)
+  const prodA = await prisma.crmProduct.upsert({
+    where: { id: 'crm-product-tr-pal' },
+    update: {},
+    create: { id: 'crm-product-tr-pal', tenantId: tenant.id, name: 'Transport palette', sku: 'TR-PAL', unitPrice: 120, currency: 'CAD' },
+  });
+  const prodB = await prisma.crmProduct.upsert({
+    where: { id: 'crm-product-wh-mo' },
+    update: {},
+    create: { id: 'crm-product-wh-mo', tenantId: tenant.id, name: 'Entreposage (mois)', sku: 'WH-MO', unitPrice: 350, currency: 'CAD' },
+  });
+  await prisma.crmProduct.upsert({
+    where: { id: 'crm-product-hnd' },
+    update: {},
+    create: { id: 'crm-product-hnd', tenantId: tenant.id, name: 'Manutention', sku: 'HND', unitPrice: 45, currency: 'CAD' },
+  });
+
+  // CRM Deal Line Items — attached to deal 'crm-deal-qc-on-qualified'
+  const lineItemsData = [
+    { id: 'crm-li-1', tenantId: tenant.id, dealId: 'crm-deal-qc-on-qualified', productId: prodA.id, name: 'Transport palette', quantity: 10, unitPrice: 120, discountPct: 0, currency: 'CAD' },
+    { id: 'crm-li-2', tenantId: tenant.id, dealId: 'crm-deal-qc-on-qualified', productId: prodB.id, name: 'Entreposage (mois)', quantity: 2, unitPrice: 350, discountPct: 0, currency: 'CAD' },
+  ];
+  for (const li of lineItemsData) {
+    await prisma.crmDealLineItem.upsert({ where: { id: li.id }, update: {}, create: li });
+  }
+  const computedAmount = sumLineItems([
+    { quantity: 10, unitPrice: 120, discountPct: 0 },
+    { quantity: 2, unitPrice: 350, discountPct: 0 },
+  ]);
+  await prisma.crmDeal.update({ where: { id: 'crm-deal-qc-on-qualified' }, data: { amount: computedAmount } });
+
+  console.log('CRM demo data ready (2 companies, 2 contacts, 3 deals, 3 products, 2 line items, 1 overdue task).');
 
   // --- CRM Lists & Campaigns (idempotent, acme tenant) --------------------------
   const crmList = await prisma.crmList.upsert({
@@ -729,6 +779,39 @@ async function main() {
   }
 
   console.log('Email templates and sample message ready.');
+
+  // --- Sites demo data (acme tenant) ------------------------------------------
+  // The sites module is enabled via the available-module loop above.
+  await prisma.landingPage.upsert({
+    where: { id: 'sites-page-bienvenue' },
+    update: {},
+    create: {
+      id: 'sites-page-bienvenue',
+      tenantId: tenant.id,
+      slug: 'bienvenue',
+      title: 'Bienvenue chez Acme',
+      status: 'PUBLISHED',
+      publishedAt: new Date(),
+      content: [
+        { type: 'heading', text: 'Bienvenue chez Acme' },
+        { type: 'text', text: 'Acme Manufacturing est votre partenaire logistique de confiance au Québec.' },
+        { type: 'form', fields: ['name', 'email', 'company'] },
+      ],
+    },
+  });
+
+  console.log('Sites demo data ready (1 PUBLISHED landing page, slug: bienvenue).');
+
+  // --- Billing: default chart of accounts (acme tenant) -------------------------
+  // Seed DEFAULT_CHART idempotently so /billing/ledger is never empty out of the box.
+  for (const account of DEFAULT_CHART) {
+    await prisma.chartOfAccount.upsert({
+      where: { tenantId_code: { tenantId: tenant.id, code: account.code } },
+      update: { name: account.name, type: account.type },
+      create: { tenantId: tenant.id, code: account.code, name: account.name, type: account.type },
+    });
+  }
+  console.log(`Billing chart of accounts ready (${DEFAULT_CHART.length} accounts seeded for acme).`);
 }
 
 main()

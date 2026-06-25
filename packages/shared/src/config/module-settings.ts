@@ -126,6 +126,12 @@ export const MODULE_SETTINGS_CATALOG: ModuleSettingsCatalog[] = [
       { key: 'invoiceNumberPrefix', label: 'Préfixe n° facture transporteur', type: 'string', default: 'INV', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
       { key: 'customerInvoiceNumberPrefix', label: 'Préfixe n° relevé client', type: 'string', default: 'CINV', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
       { key: 'defaultCurrency', label: 'Devise par défaut', type: 'string', default: 'CAD', pattern: '^[A-Z]{3}$', maxLength: 3 },
+      { key: 'ledgerAutoPost', label: 'Écriture GL automatique', help: 'Crée automatiquement les écritures de grand livre lors des transitions de facturation.', type: 'boolean', default: true },
+      { key: 'arAccountCode', label: 'Compte client (AR)', type: 'string', default: '1100', pattern: '^[0-9A-Z]{1,10}$', maxLength: 10 },
+      { key: 'revenueAccountCode', label: 'Compte de revenus', type: 'string', default: '4000', pattern: '^[0-9A-Z]{1,10}$', maxLength: 10 },
+      { key: 'cashAccountCode', label: 'Compte de trésorerie', type: 'string', default: '1000', pattern: '^[0-9A-Z]{1,10}$', maxLength: 10 },
+      { key: 'apAccountCode', label: 'Compte fournisseur (AP)', type: 'string', default: '2000', pattern: '^[0-9A-Z]{1,10}$', maxLength: 10 },
+      { key: 'expenseAccountCode', label: 'Compte de charges', type: 'string', default: '5000', pattern: '^[0-9A-Z]{1,10}$', maxLength: 10 },
     ],
   },
   {

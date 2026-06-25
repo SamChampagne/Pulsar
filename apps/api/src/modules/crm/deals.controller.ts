@@ -6,6 +6,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { DealsService } from './deals.service';
+import { SalesOrdersService } from './sales-orders.service';
 import { AdvanceDealDto, CreateDealDto, DealListQueryDto, UpdateDealDto } from './dto/deal.dto';
 
 @ApiTags('crm')
@@ -13,7 +14,10 @@ import { AdvanceDealDto, CreateDealDto, DealListQueryDto, UpdateDealDto } from '
 @RequireModule(MODULE_KEYS.CRM)
 @Controller('crm/deals')
 export class DealsController {
-  constructor(private readonly deals: DealsService) {}
+  constructor(
+    private readonly deals: DealsService,
+    private readonly salesOrders: SalesOrdersService,
+  ) {}
 
   @Get()
   @RequirePermissions(PERMISSIONS.CRM.READ)
@@ -51,5 +55,11 @@ export class DealsController {
   @RequirePermissions(PERMISSIONS.CRM.MANAGE)
   convert(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.deals.convert(user.tenantId, id, user.id);
+  }
+
+  @Post(':id/create-sales-order')
+  @RequirePermissions(PERMISSIONS.CRM.MANAGE)
+  createSalesOrder(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.salesOrders.createFromDeal(user.tenantId, user.id, id);
   }
 }

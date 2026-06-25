@@ -498,3 +498,11 @@ config, an activity view, and a dedicated chat surface.
       has the runtime — today it's local/untracked.
 - [ ] **`HERMES_ENABLED` real smoke test** (carried from R1): install + configure a real provider,
       confirm `/test` lists models and a chat turn yields a real reply + proposed action.
+
+## CRM — Dette backlog
+
+- [ ] Unifier `CrmExceptionsService.detectStaleDeals` sur le helper partagé `isDealStale`/`DEFAULT_STALE_DAYS` (`@pulsar/shared`) — actuellement une 3e copie inline du seuil 7j (équivalente mais divergence latente). Aussi: enrichir `GET /crm/pipeline` avec `ownerName` (kanban affiche l'UUID brut) ; totaux kanban multi-devise = devise du 1er deal.
+
+## Billing — ligne de facture libre (backlog, post Cycle 6)
+- `CustomerInvoiceLine.transportOrderId` est NOT NULL @unique FK → `TransportOrder` : impossible de représenter une ligne de produit libre. Les factures issues d'une commande de vente CRM (`createDraftFromSalesOrder`) sont donc des **en-têtes** (total correct + snapshot dans `customData.soLines`), sans `CustomerInvoiceLine` → l'envoi/PDF affiche un total mais pas de détail de lignes. Fix futur : migration billing pour un type de ligne polymorphe/libre (`transportOrderId` nullable + `source`/`description`/`amount`/`salesOrderLineId?`), puis itemiser les factures SO et rendre les lignes dans `send()`.
+- Minor: `createDraftFromSalesOrder` → `assertOwnedIfSet('customer', ...)` pour un skip propre si le Customer a été hard-deleted (sinon P2003→FAILED). Minor: retirer le `catch (BadRequestException)` mort dans `draftInvoiceFromSalesOrder`.

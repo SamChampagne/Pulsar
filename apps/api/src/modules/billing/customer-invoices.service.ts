@@ -1,9 +1,11 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   AuditAction,
   CustomerInvoiceStatus,
   TransportOrderStatus,
   canTransitionCustomerInvoice,
+  computeLineTotal,
+  sumLineItems,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -13,6 +15,7 @@ import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { MailService } from '../../core/email/mail.service';
 import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { RatingService } from '../transportation/rating/rating.service';
+import { LedgerService } from './ledger/ledger.service';
 
 const statementInclude = {
   customer: { select: { id: true, code: true, name: true, email: true } },
@@ -55,6 +58,8 @@ export function groupByCurrency(rated: RatedOrder[]): Map<string, RatedOrder[]> 
  */
 @Injectable()
 export class CustomerInvoicesService {
+  private readonly logger = new Logger(CustomerInvoicesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ownership: OwnershipService,
@@ -63,6 +68,7 @@ export class CustomerInvoicesService {
     private readonly mail: MailService,
     private readonly moduleSettings: ModuleSettingsService,
     private readonly rating: RatingService,
+    private readonly ledger: LedgerService,
   ) {}
 
   list(tenantId: string, status?: CustomerInvoiceStatus, customerId?: string) {
@@ -233,7 +239,7 @@ export class CustomerInvoicesService {
       before: {
         invoiceNumber: statement.invoiceNumber,
         status: statement.status,
-        orders: statement.lines.map((l) => l.transportOrder.orderNumber),
+        orders: statement.lines.map((l) => l.transportOrder?.orderNumber ?? l.description),
       },
     });
     return { deleted: true };
@@ -275,6 +281,30 @@ export class CustomerInvoicesService {
       approvedAt: new Date(),
     });
     const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    // Auto-post ledger entry: DR AR / CR Revenue (best-effort, never breaks the transition).
+    if (s.ledgerAutoPost === true) {
+      const amount = Number(result.totalAmount);
+      const arCode = (s.arAccountCode as string | undefined) ?? '1100';
+      const revCode = (s.revenueAccountCode as string | undefined) ?? '4000';
+      try {
+        await this.ledger.post(
+          tenantId,
+          {
+            memo: `Facture client ${result.invoiceNumber} approuvée`,
+            sourceType: 'customer-invoice',
+            sourceId: id,
+            sourceKind: 'approved',
+            lines: [
+              { accountCode: arCode, debit: amount },
+              { accountCode: revCode, credit: amount },
+            ],
+          },
+          userId,
+        );
+      } catch (err) {
+        this.logger.warn(`Ledger auto-post failed for customer-invoice ${id} (approved): ${(err as Error).message}`);
+      }
+    }
     if (s.autoSendOnApproval === true) {
       try { await this.send(tenantId, userId, id); } catch { /* no email / send failed: stays APPROVED, best-effort */ }
     }
@@ -298,7 +328,7 @@ export class CustomerInvoicesService {
     const rows = statement.lines
       .map(
         (l) =>
-          `<tr><td>${l.transportOrder.orderNumber}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
+          `<tr><td>${l.transportOrder?.orderNumber ?? l.description}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
       )
       .join('');
 
@@ -340,7 +370,7 @@ export class CustomerInvoicesService {
     const rows = statement.lines
       .map(
         (l) =>
-          `<tr><td>${l.transportOrder.orderNumber}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
+          `<tr><td>${l.transportOrder?.orderNumber ?? l.description}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
       )
       .join('');
     // Route through the durable outbox — recorded in email history with relatedType/Id.
@@ -362,9 +392,168 @@ export class CustomerInvoicesService {
     });
   }
 
-  markPaid(tenantId: string, userId: string, id: string, paidAt?: string) {
-    return this.transition(tenantId, userId, id, CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.PAID, {
+  async markPaid(tenantId: string, userId: string, id: string, paidAt?: string) {
+    const result = await this.transition(tenantId, userId, id, CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.PAID, {
       paidAt: paidAt ? new Date(paidAt) : new Date(),
     });
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    // Auto-post ledger entry: DR Cash / CR AR (best-effort, never breaks the transition).
+    if (s.ledgerAutoPost === true) {
+      const amount = Number(result.totalAmount);
+      const cashCode = (s.cashAccountCode as string | undefined) ?? '1000';
+      const arCode = (s.arAccountCode as string | undefined) ?? '1100';
+      try {
+        await this.ledger.post(
+          tenantId,
+          {
+            memo: `Facture client ${result.invoiceNumber} payée`,
+            sourceType: 'customer-invoice',
+            sourceId: id,
+            sourceKind: 'paid',
+            lines: [
+              { accountCode: cashCode, debit: amount },
+              { accountCode: arCode, credit: amount },
+            ],
+          },
+          userId,
+        );
+      } catch (err) {
+        this.logger.warn(`Ledger auto-post failed for customer-invoice ${id} (paid): ${(err as Error).message}`);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Creates a DRAFT customer invoice from a CRM sales order's line items.
+   *
+   * Each SO line item becomes a real `CustomerInvoiceLine` row with
+   * `transportOrderId: null`, `source: 'sales-order'`, `salesOrderLineId`,
+   * `description`, `quantity`, `unitPrice`, and computed `amount`. The schema
+   * now supports free (non-order) lines — `transportOrderId` is nullable and
+   * `priceDetail` is nullable for these lines (Task 3).
+   *
+   * IDEMPOTENCE:
+   *   The `salesOrderId` is stored in `customData.salesOrderId`. On every call we query
+   *   `{ tenantId, customerId, customData: { path: ['salesOrderId'], equals: salesOrderId } }`
+   *   (Prisma JSON-path filter on Postgres). If a DRAFT or later invoice already exists
+   *   for this SO, we return `{ created: false }` without creating a duplicate.
+   */
+  async createDraftFromSalesOrder(
+    tenantId: string,
+    userId: string,
+    salesOrderId: string,
+  ): Promise<{ created: boolean; invoiceId?: string }> {
+    // 1. Load the SO with its line items, tenant-scoped.
+    const order = await this.prisma.salesOrder.findFirst({
+      where: { id: salesOrderId, tenantId },
+      include: { lineItems: true },
+    });
+    if (!order) {
+      this.logger.log(
+        `createDraftFromSalesOrder: sales order ${salesOrderId} not found for tenant ${tenantId} — skipping`,
+      );
+      return { created: false };
+    }
+
+    // 2. A Billing Customer link is required.
+    if (!order.customerId) {
+      this.logger.log(
+        `createDraftFromSalesOrder: sales order ${salesOrderId} has no customer — skipping`,
+      );
+      return { created: false };
+    }
+
+    // 3. Idempotence: check whether a draft (or later) invoice already links this SO.
+    const existing = await this.prisma.customerInvoice.findFirst({
+      where: {
+        tenantId,
+        customerId: order.customerId,
+        customData: { path: ['salesOrderId'], equals: salesOrderId },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      return { created: false };
+    }
+
+    // 4. Resolve currency and compute total from SO lines (Decimal → Number at boundary).
+    const lineAmounts = order.lineItems.map((li) => ({
+      id: li.id,
+      name: li.name,
+      quantity: Number(li.quantity),
+      unitPrice: Number(li.unitPrice),
+      discountPct: Number(li.discountPct),
+      amount: computeLineTotal({
+        quantity: Number(li.quantity),
+        unitPrice: Number(li.unitPrice),
+        discountPct: Number(li.discountPct),
+      }),
+    }));
+    const totalAmount = sumLineItems(
+      order.lineItems.map((li) => ({
+        quantity: Number(li.quantity),
+        unitPrice: Number(li.unitPrice),
+        discountPct: Number(li.discountPct),
+      })),
+    );
+
+    // 5. Resolve currency: prefer SO currency, fall back to billing defaultCurrency (règle 36).
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    const defaultCurrency = (s.defaultCurrency as string | undefined) ?? 'CAD';
+    const currency = order.currency ?? defaultCurrency;
+
+    // 6. Mint the invoice number (same sequence key as createDrafts).
+    const invoiceNumber = await this.sequences.nextNumber(tenantId, 'customer-invoice');
+
+    // 7. Create the DRAFT invoice with real CustomerInvoiceLine rows (one per SO line).
+    //    transportOrderId is null (free lines); priceDetail is null (no rate snapshot).
+    //    Idempotence anchor is kept in customData.salesOrderId (règle 16 — never recomputed).
+    const invoice = await this.prisma.customerInvoice.create({
+      data: {
+        tenantId,
+        invoiceNumber,
+        customerId: order.customerId,
+        currency,
+        totalAmount,
+        customData: {
+          salesOrderId,
+          salesOrderNumber: order.number,
+        },
+        lines: {
+          create: lineAmounts.map((la) => ({
+            transportOrderId: null,
+            source: 'sales-order',
+            salesOrderLineId: la.id,
+            description: la.name,
+            quantity: la.quantity,
+            unitPrice: la.unitPrice,
+            amount: la.amount,
+            priceDetail: Prisma.JsonNull,
+          })),
+        },
+      },
+    });
+
+    // 8. Audit (règle 6).
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.CREATE,
+      entityType: 'customer-invoice',
+      entityId: invoice.id,
+      after: {
+        invoiceNumber: invoice.invoiceNumber,
+        customerId: order.customerId,
+        currency: invoice.currency,
+        totalAmount,
+        source: 'sales-order',
+        salesOrderId,
+        salesOrderNumber: order.number,
+        lines: lineAmounts.length,
+      },
+    });
+
+    return { created: true, invoiceId: invoice.id };
   }
 }

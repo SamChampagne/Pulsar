@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   AuditAction,
   canTransitionInvoice,
@@ -13,6 +13,7 @@ import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { ReconcileInvoiceDto, ResolveDisputeDto } from './dto/reconcile.dto';
 import { csvSafe } from '../../common/csv';
+import { LedgerService } from './ledger/ledger.service';
 
 const invoiceInclude = {
   carrier: { select: { id: true, code: true, name: true } },
@@ -30,12 +31,15 @@ const invoiceInclude = {
  */
 @Injectable()
 export class InvoicesService {
+  private readonly logger = new Logger(InvoicesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ownership: OwnershipService,
     private readonly sequences: SequencesService,
     private readonly audit: AuditLogsService,
     private readonly moduleSettings: ModuleSettingsService,
+    private readonly ledger: LedgerService,
   ) {}
 
   list(tenantId: string, status?: InvoiceStatus) {
@@ -135,7 +139,33 @@ export class InvoicesService {
       before: { status: InvoiceStatus.DRAFT },
       after: { status: InvoiceStatus.APPROVED },
     });
-    return this.get(tenantId, id);
+    const result = await this.get(tenantId, id);
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    // Auto-post ledger entry: DR Expense / CR AP (best-effort, never breaks the transition).
+    if (s.ledgerAutoPost === true) {
+      const amount = Number(result.totalAmount);
+      const expCode = (s.expenseAccountCode as string | undefined) ?? '5000';
+      const apCode = (s.apAccountCode as string | undefined) ?? '2000';
+      try {
+        await this.ledger.post(
+          tenantId,
+          {
+            memo: `Facture transporteur ${result.invoiceNumber} approuvée`,
+            sourceType: 'invoice',
+            sourceId: id,
+            sourceKind: 'approved',
+            lines: [
+              { accountCode: expCode, debit: amount },
+              { accountCode: apCode, credit: amount },
+            ],
+          },
+          userId,
+        );
+      } catch (err) {
+        this.logger.warn(`Ledger auto-post failed for invoice ${id} (approved): ${(err as Error).message}`);
+      }
+    }
+    return result;
   }
 
   /** Tenant tolerances from the billing module settings (defaults: 2 % / 25 / MAX). */
@@ -296,7 +326,33 @@ export class InvoicesService {
       before: { status: InvoiceStatus.APPROVED },
       after: { status: InvoiceStatus.PAID, paidAt: resolvedPaidAt },
     });
-    return this.get(tenantId, id);
+    const result = await this.get(tenantId, id);
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    // Auto-post ledger entry: DR AP / CR Cash (best-effort, never breaks the transition).
+    if (s.ledgerAutoPost === true) {
+      const amount = Number(result.totalAmount);
+      const apCode = (s.apAccountCode as string | undefined) ?? '2000';
+      const cashCode = (s.cashAccountCode as string | undefined) ?? '1000';
+      try {
+        await this.ledger.post(
+          tenantId,
+          {
+            memo: `Facture transporteur ${result.invoiceNumber} payée`,
+            sourceType: 'invoice',
+            sourceId: id,
+            sourceKind: 'paid',
+            lines: [
+              { accountCode: apCode, debit: amount },
+              { accountCode: cashCode, credit: amount },
+            ],
+          },
+          userId,
+        );
+      } catch (err) {
+        this.logger.warn(`Ledger auto-post failed for invoice ${id} (paid): ${(err as Error).message}`);
+      }
+    }
+    return result;
   }
 
   /** Filtered list as CSV (expected/invoiced/variance per invoice).

@@ -283,6 +283,52 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     JAMAIS `WmsModule` ni `BillingModule` statiquement (cycle JS) ; `ReactionExecutorService`
     résout `PickingService`/`CustomerInvoicesService` via `ModuleRef.get()` + lazy `require()`.
 
+## Hard rules (continued, courriel bidirectionnel)
+
+39. (courriel bidirectionnel + threads CRM) La réception passe TOUJOURS par un
+    `InboundEmailDriver` (core/email/inbound — `log` en dev/CI, `imap` quand
+    `EMAIL_DRIVER=smtp`) ; l'ingestion (`InboundIngestService`) est idempotente sur
+    `messageId`, threade via headers RFC puis match `CrmContact.email` (décisions PURES
+    `resolveThreadDecision`/`normalizeSubject` de `@pulsar/shared` — ne pas réimplémenter),
+    et est best-effort/isolée par tenant (le cron ne throw JAMAIS, un tenant en échec
+    n'affecte pas les autres). Les pièces jointes entrantes passent par `DocumentsService`
+    (règle 12) ; le secret IMAP est chiffré via `CryptoService` et jamais renvoyé en clair
+    (règle 25, projection `hasImapPassword`). `EmailMessage` est réutilisé (`direction`
+    INBOUND/OUTBOUND) ; tout endpoint threads est `@RequireModule(CRM)` + `crm.read|manage`,
+    tenant-scopé (règle 1), FK vérifiées (règle 9). Les réponses agent passent TOUJOURS par
+    la file `ProposedAction` (`crm_reply_thread` SENSITIVE, `crm_link_thread` MUTATING —
+    règles 22/29).
+
+## Hard rules (continued, module Sites)
+
+40. (module Sites — pages de destination publiques) Le payload public `GET /public/sites/:slug`
+    est une **projection explicite** (jamais `tenantId` ni référence interne — règle 10) ; le
+    service public re-vérifie l'activation du module SITES **et** le statut `PUBLISHED` de la page
+    avant de répondre (règle 15 — la route `/public/**` bypass le `ModulesGuard`). La soumission
+    de formulaire (`POST /public/sites/:slug/submit`) crée un lead CRM **uniquement si le module
+    CRM est actif** — résolu via `ModuleRef.get(ContactsService)` (jamais d'import statique de
+    `CrmModule` — règle 38 pattern). Le champ anti-spam `_hp` (honeypot) renvoyé non vide est
+    silencieusement rejeté (200 sans création). Le slug est **globalement unique**
+    (`@@unique([slug])`) — la route publique résout le tenant depuis le slug, donc il ne peut
+    pas être scopé par tenant ; `slugify` de `@pulsar/shared` est la seule source de
+    normalisation — ne pas réimplémenter.
+
+## Hard rules (continued, Billing general ledger)
+
+41. (Billing general ledger — grand livre double-entrée) Le grand livre est **double-entrée** :
+    toute `JournalEntry` est postée UNIQUEMENT via `LedgerService.post` qui applique `isBalanced`
+    (`@pulsar/shared`) — un lot non équilibré est refusé (400), jamais silencieux. L'auto-post
+    depuis les transitions billing (approve/pay) est **best-effort** (jamais bloquant pour la
+    transition) et **idempotent** sur `(tenantId, sourceType, sourceId, sourceKind)` (unique
+    constraint `journal_entries`). Les mappings code-compte (`accountCode`) et l'activation de
+    l'auto-post (`ledgerAutoPost`) sont configurables dans `TenantModule.settings` billing
+    (framework de config — règle 36) ; les valeurs par défaut viennent du `DEFAULT_CHART`
+    (`@pulsar/shared`). La balance de vérification (trial balance) est **calculée à la lecture**
+    depuis `JournalLine` (aucun rollup, aucune migration supplémentaire). Le `normalBalance` d'un
+    compte est **dérivé** de son `AccountType` via la fonction pure `normalBalance` (`@pulsar/shared`)
+    — jamais persisté. Le plan comptable par défaut est seedé idempotement pour le tenant acme
+    (upsert sur `(tenantId, code)`).
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
