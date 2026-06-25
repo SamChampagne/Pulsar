@@ -2,13 +2,16 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import {
   AuditAction,
   canTransitionInvoice,
+  computeTax,
   evaluateReconciliation,
   InvoiceStatus,
   LoadStatus,
   PaymentPartyType,
   PaymentTargetType,
   PaymentType,
+  TaxTemplateType,
 } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { SequencesService } from '../../prisma/sequences.service';
@@ -18,6 +21,9 @@ import { ReconcileInvoiceDto, ResolveDisputeDto } from './dto/reconcile.dto';
 import { csvSafe } from '../../common/csv';
 import { LedgerService } from './ledger/ledger.service';
 import { PaymentsService } from './payments.service';
+import { TaxTemplatesService } from './tax-templates.service';
+
+const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 
 const invoiceInclude = {
   carrier: { select: { id: true, code: true, name: true } },
@@ -45,6 +51,7 @@ export class InvoicesService {
     private readonly moduleSettings: ModuleSettingsService,
     private readonly ledger: LedgerService,
     private readonly payments: PaymentsService,
+    private readonly taxTemplates: TaxTemplatesService,
   ) {}
 
   private async defaultModeId(tenantId: string): Promise<string> {
@@ -169,6 +176,69 @@ export class InvoicesService {
     return { deleted: true };
   }
 
+  /** Applies (or clears) a PURCHASE tax template on a DRAFT carrier invoice. */
+  async applyTax(tenantId: string, userId: string, id: string, taxTemplateId: string | null) {
+    const invoice = await this.get(tenantId, id);
+
+    const net = round2(Number(invoice.totalAmount) - Number(invoice.taxAmount));
+
+    let newTaxAmount: number;
+    let newTaxDetail: Prisma.InputJsonValue | null;
+    let newTemplateId: string | null;
+    let newTotal: number;
+
+    if (taxTemplateId === null) {
+      // Clear tax
+      newTaxAmount = 0;
+      newTaxDetail = null;
+      newTemplateId = null;
+      newTotal = round2(net);
+    } else {
+      const template = await this.taxTemplates.get(tenantId, taxTemplateId); // 404 if not owned — rule 9
+      if (template.type !== TaxTemplateType.PURCHASE) {
+        throw new BadRequestException('Tax template must be of type PURCHASE for carrier invoices');
+      }
+      const computation = computeTax(
+        net,
+        template.lines.map((l) => ({
+          description: l.description,
+          rate: Number(l.rate),
+          accountCode: l.accountCode,
+        })),
+      );
+      newTaxAmount = computation.taxAmount;
+      newTaxDetail = computation as unknown as Prisma.InputJsonValue;
+      newTemplateId = taxTemplateId;
+      newTotal = round2(net + computation.taxAmount);
+    }
+
+    const { count } = await this.prisma.invoice.updateMany({
+      where: { id, tenantId, status: InvoiceStatus.DRAFT },
+      data: {
+        taxTemplateId: newTemplateId,
+        taxAmount: newTaxAmount,
+        taxDetail: newTaxDetail ?? Prisma.JsonNull,
+        totalAmount: newTotal,
+      },
+    });
+    if (count === 0) {
+      // Approved concurrently between the read and the update — immutability wins.
+      throw new BadRequestException('Tax can only be applied to DRAFT invoices');
+    }
+
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'invoice',
+      entityId: id,
+      before: { taxTemplateId: invoice.taxTemplateId, taxAmount: Number(invoice.taxAmount), totalAmount: Number(invoice.totalAmount) },
+      after: { taxTemplateId: newTemplateId, taxAmount: newTaxAmount, totalAmount: newTotal },
+    });
+
+    return this.get(tenantId, id);
+  }
+
   async approve(tenantId: string, userId: string, id: string) {
     // Initial get for 404 and response shape; the write is conditional on status
     // to close the TOCTOU window between the read and the update.
@@ -191,12 +261,22 @@ export class InvoicesService {
     });
     const result = await this.get(tenantId, id);
     const s = await this.moduleSettings.resolve(tenantId, 'billing');
-    // Auto-post ledger entry: DR Expense / CR AP (best-effort, never breaks the transition).
+    // Auto-post ledger entry: DR Expense (net) + DR <inputTax> per line / CR AP (gross).
+    // When taxAmount is 0 / no taxDetail, reduces to DR Expense / CR AP (unchanged behaviour).
     if (s.ledgerAutoPost === true) {
-      const amount = Number(result.totalAmount);
+      const totalAmount = Number(result.totalAmount);
+      const taxAmount = Number(result.taxAmount);
+      const netAmount = round2(totalAmount - taxAmount);
       const expCode = (s.expenseAccountCode as string | undefined) ?? '5000';
       const apCode = (s.apAccountCode as string | undefined) ?? '2000';
       try {
+        // Build input-tax debit lines from the tax breakdown (one per tax line).
+        const taxDetail = result.taxDetail as { lines?: Array<{ accountCode: string; amount: number }> } | null;
+        const taxDebitLines: Array<{ accountCode: string; debit: number }> =
+          taxDetail && Array.isArray(taxDetail.lines) && taxDetail.lines.length > 0
+            ? taxDetail.lines.map((l) => ({ accountCode: l.accountCode, debit: l.amount }))
+            : [];
+
         await this.ledger.post(
           tenantId,
           {
@@ -205,8 +285,9 @@ export class InvoicesService {
             sourceId: id,
             sourceKind: 'approved',
             lines: [
-              { accountCode: expCode, debit: amount },
-              { accountCode: apCode, credit: amount },
+              { accountCode: expCode, debit: netAmount },
+              ...taxDebitLines,
+              { accountCode: apCode, credit: totalAmount },
             ],
           },
           userId,

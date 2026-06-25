@@ -1,9 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import type { InvoiceStatus } from '@pulsar/shared';
 import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
-import { IsString } from 'class-validator';
+import { IsDefined, IsString, ValidateIf } from 'class-validator';
 import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../common/decorators/require-module.decorator';
@@ -14,6 +14,14 @@ import { InvoicesService } from './invoices.service';
 class DraftInvoiceDto {
   @IsString()
   carrierId!: string;
+}
+
+class ApplyTaxDto {
+  /** Pass a tax template ID to apply that template, or null to clear the tax. */
+  @IsDefined()
+  @ValidateIf((o: ApplyTaxDto) => o.taxTemplateId !== null)
+  @IsString()
+  taxTemplateId!: string | null;
 }
 
 @ApiTags('billing')
@@ -68,6 +76,13 @@ export class InvoicesController {
   @RequirePermissions(PERMISSIONS.BILLING.INVOICES_MANAGE)
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.invoices.deleteDraft(user.tenantId, user.id, id);
+  }
+
+  /** Apply or clear a PURCHASE tax template on a DRAFT carrier invoice. */
+  @Patch(':id/tax')
+  @RequirePermissions(PERMISSIONS.BILLING.INVOICES_MANAGE)
+  applyTax(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ApplyTaxDto) {
+    return this.invoices.applyTax(user.tenantId, user.id, id, dto.taxTemplateId ?? null);
   }
 
   @Post(':id/approve')
