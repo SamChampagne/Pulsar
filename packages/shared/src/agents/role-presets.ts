@@ -144,6 +144,18 @@ export const AGENT_ROLE_PRESETS: AgentRolePreset[] = [
     handlesCategories: ['CRM_STALE_DEAL', 'CRM_FOLLOWUP_DUE'],
     suggestedMaxAmountPerAction: 1000,
   },
+  {
+    id: 'finance-analyst',
+    label: 'Analyste financier',
+    persona:
+      "Je suis l'analyste financier IA. Je consulte le grand livre comptable et la balance de vérification pour identifier les anomalies, valider l'équilibre débit/crédit et préparer des synthèses financières.",
+    suggestedPermissions: [
+      'billing.ledger.read',
+      'billing.customer-invoices.read',
+      'billing.freight-audit.read',
+    ],
+    suggestedAutonomy: AgentAutonomy.PROPOSE,
+  },
   // --- Interactive (chat-driven) specialist employees -------------------------
   // These are provisioned on demand and work through the CRM chat interface.
   {

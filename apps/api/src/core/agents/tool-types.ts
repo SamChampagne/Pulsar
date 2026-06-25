@@ -58,6 +58,10 @@ export interface ToolServices {
       agentId?: string,
     ): Promise<unknown>;
   };
+  ledger: {
+    trialBalance(tenantId: string, asOf?: Date): Promise<unknown>;
+    listJournal(tenantId: string, query: { accountId?: string; page?: number; pageSize?: number }): Promise<unknown>;
+  };
   // ── Fleet ──────────────────────────────────────────────────────────────────
   vehicles: {
     list(tenantId: string, query: object): Promise<unknown>;
