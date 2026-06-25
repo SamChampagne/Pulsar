@@ -284,21 +284,26 @@ export class SubscriptionsService {
     });
   }
 
-  async runDue(tenantId: string, userId: string): Promise<{ generated: number; skipped: number }> {
+  async runDue(tenantId: string, userId: string): Promise<{ generated: number; skipped: number; errors: number }> {
     const subs = await this.prisma.subscription.findMany({
       where: { tenantId, status: SubscriptionStatus.ACTIVE, nextRunDate: { lte: new Date() } },
       select: { id: true },
     });
     let generated = 0;
     let skipped = 0;
+    let errors = 0;
     for (const sub of subs) {
       try {
         await this.generate(tenantId, userId, sub.id);
         generated++;
-      } catch {
-        skipped++;
+      } catch (err) {
+        if (err instanceof ConflictException) {
+          skipped++;
+        } else {
+          errors++;
+        }
       }
     }
-    return { generated, skipped };
+    return { generated, skipped, errors };
   }
 }
