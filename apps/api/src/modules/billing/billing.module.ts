@@ -14,6 +14,8 @@ import { InvoicesController } from './invoices.controller';
 import { InvoicesService } from './invoices.service';
 import { LedgerController } from './ledger/ledger.controller';
 import { LedgerService } from './ledger/ledger.service';
+import { FinancialReportsService } from './reports/financial-reports.service';
+import { ReportsController } from './reports/reports.controller';
 import { ModesOfPaymentController } from './modes-of-payment.controller';
 import { ModesOfPaymentService } from './modes-of-payment.service';
 import { PaymentsController } from './payments.controller';
@@ -29,8 +31,8 @@ import { TaxTemplatesService } from './tax-templates.service';
  */
 @Module({
   imports: [AuditLogsModule, CustomFieldsModule, EmailModule, ModuleRegistryModule, TransportationModule, forwardRef(() => OperatingModule)],
-  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController, BillingCustomFieldsController, LedgerController, ModesOfPaymentController, PaymentsController, TaxTemplatesController],
-  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService],
+  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController, BillingCustomFieldsController, LedgerController, ModesOfPaymentController, PaymentsController, TaxTemplatesController, ReportsController],
+  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService, FinancialReportsService],
   exports: [FreightAuditService, CustomerInvoicesService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService],
 })
 export class BillingModule {}
