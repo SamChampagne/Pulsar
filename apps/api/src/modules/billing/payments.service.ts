@@ -1,10 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   AuditAction,
+  CustomerInvoiceStatus,
+  InvoiceStatus,
   PaymentPartyType,
   PaymentStatus,
   PaymentTargetType,
   PaymentType,
+  canTransitionCustomerInvoice,
+  canTransitionInvoice,
   canTransitionPayment,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
@@ -190,8 +194,20 @@ export class PaymentsService {
     const existing = await this.get(tenantId, id);
     if (existing.status !== PaymentStatus.DRAFT)
       throw new BadRequestException('Only DRAFT payments can be edited');
-    if (input.allocations)
-      this.assertPartyTargetCoherence(existing.partyType as PaymentPartyType, input.allocations);
+    if (input.allocations) {
+      const allocSum = this.assertPartyTargetCoherence(
+        existing.partyType as PaymentPartyType,
+        input.allocations,
+      );
+      const effectiveTotal = input.totalAmount ?? Number(existing.totalAmount);
+      if (allocSum > effectiveTotal + 1e-9)
+        throw new BadRequestException('Allocations exceed payment amount');
+    } else if (input.totalAmount != null) {
+      // totalAmount changed without new allocations — check existing alloc sum
+      const existingSum = existing.allocations.reduce((s, a) => s + Number(a.amount), 0);
+      if (existingSum > input.totalAmount + 1e-9)
+        throw new BadRequestException('Allocations exceed payment amount');
+    }
 
     const data: Prisma.PaymentUpdateInput = {};
     if (input.totalAmount != null) data.totalAmount = new Prisma.Decimal(input.totalAmount);
@@ -258,6 +274,14 @@ export class PaymentsService {
     // (ledger.postTx does not call ensureChart; we do it here so the tx stays clean).
     await this.ledger.ensureChart(tenantId);
 
+    // Collect invoice status changes for post-commit audit (avoid auditing inside tx).
+    const invoiceStatusChanges: Array<{
+      entityType: string;
+      entityId: string;
+      from: string;
+      to: string;
+    }> = [];
+
     await this.prisma.$transaction(async (tx: any) => {
       // Claim DRAFT→SUBMITTED (TOCTOU guard).
       const claim = await tx.payment.updateMany({
@@ -276,15 +300,34 @@ export class PaymentsService {
           const newPaid = Number(inv.amountPaid) + Number(a.amount);
           if (newPaid > Number(inv.totalAmount) + 1e-9)
             throw new BadRequestException('Allocation exceeds invoice outstanding');
+          const willBePaid = newPaid >= Number(inv.totalAmount) - 1e-9;
+          if (willBePaid) {
+            if (
+              !canTransitionCustomerInvoice(
+                inv.status as CustomerInvoiceStatus,
+                CustomerInvoiceStatus.PAID,
+              )
+            ) {
+              throw new BadRequestException(
+                `Cannot mark customer invoice PAID from status ${inv.status}`,
+              );
+            }
+          }
           await tx.customerInvoice.update({
             where: { id: a.targetId },
             data: {
               amountPaid: new Prisma.Decimal(newPaid),
-              ...(newPaid >= Number(inv.totalAmount) - 1e-9
-                ? { status: 'PAID', paidAt: new Date() }
-                : {}),
+              ...(willBePaid ? { status: CustomerInvoiceStatus.PAID, paidAt: new Date() } : {}),
             },
           });
+          if (willBePaid) {
+            invoiceStatusChanges.push({
+              entityType: 'customer-invoice',
+              entityId: a.targetId,
+              from: inv.status,
+              to: CustomerInvoiceStatus.PAID,
+            });
+          }
         } else {
           const inv = await tx.invoice.findFirst({
             where: { id: a.targetId, tenantId },
@@ -294,15 +337,29 @@ export class PaymentsService {
           const newPaid = Number(inv.amountPaid) + Number(a.amount);
           if (newPaid > Number(inv.totalAmount) + 1e-9)
             throw new BadRequestException('Allocation exceeds invoice outstanding');
+          const willBePaid = newPaid >= Number(inv.totalAmount) - 1e-9;
+          if (willBePaid) {
+            if (!canTransitionInvoice(inv.status as InvoiceStatus, InvoiceStatus.PAID)) {
+              throw new BadRequestException(
+                `Cannot mark carrier invoice PAID from status ${inv.status}`,
+              );
+            }
+          }
           await tx.invoice.update({
             where: { id: a.targetId },
             data: {
               amountPaid: new Prisma.Decimal(newPaid),
-              ...(newPaid >= Number(inv.totalAmount) - 1e-9
-                ? { status: 'PAID', paidAt: new Date() }
-                : {}),
+              ...(willBePaid ? { status: InvoiceStatus.PAID, paidAt: new Date() } : {}),
             },
           });
+          if (willBePaid) {
+            invoiceStatusChanges.push({
+              entityType: 'carrier-invoice',
+              entityId: a.targetId,
+              from: inv.status,
+              to: InvoiceStatus.PAID,
+            });
+          }
         }
       }
 
@@ -332,6 +389,18 @@ export class PaymentsService {
       before: { status: 'DRAFT' },
       after: { status: 'SUBMITTED' },
     });
+    // Audit invoice status changes after commit (best-effort — never blocks submit).
+    for (const change of invoiceStatusChanges) {
+      await this.audit.log({
+        tenantId,
+        userId,
+        action: AuditAction.STATUS_CHANGE,
+        entityType: change.entityType,
+        entityId: change.entityId,
+        before: { status: change.from },
+        after: { status: change.to },
+      });
+    }
     return this.get(tenantId, id);
   }
 
@@ -357,6 +426,13 @@ export class PaymentsService {
       await this.ledger.ensureChart(tenantId);
     }
 
+    const cancelInvoiceRevertChanges: Array<{
+      entityType: string;
+      entityId: string;
+      from: string;
+      to: string;
+    }> = [];
+
     await this.prisma.$transaction(async (tx: any) => {
       const claim = await tx.payment.updateMany({
         where: { id, tenantId, status: payment.status },
@@ -369,19 +445,46 @@ export class PaymentsService {
           if (a.targetType === PaymentTargetType.CUSTOMER_INVOICE) {
             const inv = await tx.customerInvoice.findFirst({
               where: { id: a.targetId, tenantId },
-              select: { totalAmount: true, amountPaid: true, status: true },
+              select: { totalAmount: true, amountPaid: true, status: true, sentAt: true },
             });
             if (!inv) continue;
             const newPaid = Math.max(0, Number(inv.amountPaid) - Number(a.amount));
+            const willRevert =
+              inv.status === CustomerInvoiceStatus.PAID && newPaid < Number(inv.totalAmount);
+            const revertTarget = willRevert
+              ? inv.sentAt
+                ? CustomerInvoiceStatus.SENT
+                : CustomerInvoiceStatus.APPROVED
+              : null;
+            if (willRevert && revertTarget) {
+              if (
+                !canTransitionCustomerInvoice(
+                  inv.status as CustomerInvoiceStatus,
+                  revertTarget,
+                )
+              ) {
+                throw new BadRequestException(
+                  `Cannot revert customer invoice from ${inv.status} to ${revertTarget}`,
+                );
+              }
+            }
             await tx.customerInvoice.update({
               where: { id: a.targetId },
               data: {
                 amountPaid: new Prisma.Decimal(newPaid),
-                ...(inv.status === 'PAID' && newPaid < Number(inv.totalAmount)
-                  ? { status: 'APPROVED', paidAt: null }
+                ...(willRevert && revertTarget
+                  ? { status: revertTarget, paidAt: null }
                   : {}),
               },
             });
+            if (willRevert && revertTarget) {
+              cancelInvoiceRevertChanges.push({
+                entityType: 'customer-invoice',
+                entityId: a.targetId,
+                from: inv.status,
+                to: revertTarget,
+              });
+            }
           } else {
             const inv = await tx.invoice.findFirst({
               where: { id: a.targetId, tenantId },
@@ -389,15 +492,31 @@ export class PaymentsService {
             });
             if (!inv) continue;
             const newPaid = Math.max(0, Number(inv.amountPaid) - Number(a.amount));
+            const willRevert =
+              inv.status === InvoiceStatus.PAID && newPaid < Number(inv.totalAmount);
+            const revertTarget = InvoiceStatus.APPROVED;
+            if (willRevert) {
+              if (!canTransitionInvoice(inv.status as InvoiceStatus, revertTarget)) {
+                throw new BadRequestException(
+                  `Cannot revert carrier invoice from ${inv.status} to ${revertTarget}`,
+                );
+              }
+            }
             await tx.invoice.update({
               where: { id: a.targetId },
               data: {
                 amountPaid: new Prisma.Decimal(newPaid),
-                ...(inv.status === 'PAID' && newPaid < Number(inv.totalAmount)
-                  ? { status: 'APPROVED', paidAt: null }
-                  : {}),
+                ...(willRevert ? { status: revertTarget, paidAt: null } : {}),
               },
             });
+            if (willRevert) {
+              cancelInvoiceRevertChanges.push({
+                entityType: 'carrier-invoice',
+                entityId: a.targetId,
+                from: inv.status,
+                to: revertTarget,
+              });
+            }
           }
         }
         // Post reversal GL entry with sourceKind='reversal' (distinct idempotence key from submit).
@@ -415,6 +534,7 @@ export class PaymentsService {
           userId,
         );
       }
+
     });
 
     await this.audit.log({
@@ -426,6 +546,18 @@ export class PaymentsService {
       before: { status: payment.status },
       after: { status: 'CANCELLED' },
     });
+    // Audit invoice status reversions after commit (best-effort).
+    for (const change of cancelInvoiceRevertChanges) {
+      await this.audit.log({
+        tenantId,
+        userId,
+        action: AuditAction.STATUS_CHANGE,
+        entityType: change.entityType,
+        entityId: change.entityId,
+        before: { status: change.from },
+        after: { status: change.to },
+      });
+    }
     return this.get(tenantId, id);
   }
 }

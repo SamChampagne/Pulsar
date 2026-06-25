@@ -4,9 +4,9 @@ import { CustomerInvoiceStatus } from '../enums/billing';
 // (see spec invariant 2). APPROVED+ statements are immutable.
 export const CUSTOMER_INVOICE_TRANSITIONS: Record<CustomerInvoiceStatus, CustomerInvoiceStatus[]> = {
   [CustomerInvoiceStatus.DRAFT]: [CustomerInvoiceStatus.APPROVED],
-  [CustomerInvoiceStatus.APPROVED]: [CustomerInvoiceStatus.SENT],
+  [CustomerInvoiceStatus.APPROVED]: [CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.PAID],
   [CustomerInvoiceStatus.SENT]: [CustomerInvoiceStatus.PAID],
-  [CustomerInvoiceStatus.PAID]: [],
+  [CustomerInvoiceStatus.PAID]: [CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.APPROVED], // revert on payment cancellation
 };
 
 export function canTransitionCustomerInvoice(
