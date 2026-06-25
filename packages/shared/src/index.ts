@@ -20,6 +20,7 @@ export * from './workflows/operational-task.workflow';
 export * from './workflows/freight-audit.workflow';
 export * from './billing/reconciliation';
 export * from './billing/ledger';
+export * from './billing/payment.workflow';
 export * from './cost/rate-cost';
 export * from './rating/lane-key';
 export * from './optimize/consolidation';
