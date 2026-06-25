@@ -21,8 +21,8 @@ export class FulfillmentService {
         status: { in: [ShipmentStatus.PENDING, ShipmentStatus.PLANNED] as any },
         originLocation: { type: 'WAREHOUSE' },
       },
-      orderBy: { plannedPickupEarly: 'asc' },
-      take: 100,
+      orderBy: [{ plannedPickupEarly: 'asc' }, { createdAt: 'desc' }],
+      take: 500,
       include: {
         originLocation: { select: { id: true, code: true, name: true } },
         destinationLocation: { select: { id: true, code: true, name: true } },

@@ -397,6 +397,19 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     `@RequireModule(BILLING)` + `billing.ledger.read|manage`, tenant-scopé (règle 1) ; FK
     vérifiées (règle 9).
 
+## Hard rules (continued, Billing Budget)
+
+46. (Billing Budget — budgets annuels par compte) Un `Budget` regroupe des `BudgetLine` (une ligne
+    par `accountCode` du plan comptable, montant budgété pour l'année fiscale `fiscalYear`). La
+    variance est calculée **à la lecture** (`GET /billing/budgets/:id/variance`) : le service agrège
+    les `JournalLine` du tenant sur la fenêtre fiscale (`[Jan 1, Dec 31]`) pour chaque `accountCode`
+    présent dans le budget, puis appelle `computeBudgetVariance` + `naturalBalance`
+    (`@pulsar/shared`, purs) pour dériver `actual`, `variance` et `variancePct` par ligne — **aucune
+    écriture GL, aucun rollup persisté, aucune migration supplémentaire**. Les lignes sans activité GL
+    utilisent les métadonnées du `ChartOfAccount` (nom, type) pour que `naturalBalance` reste correct.
+    Tout endpoint Budget est `@RequireModule(BILLING)` + `billing.ledger.read|manage` (aucune
+    nouvelle permission), tenant-scopé (règle 1) ; FK vérifiées (règle 9).
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
