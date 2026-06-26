@@ -284,6 +284,7 @@
               <div class="w-24">
                 <input
                   type="number"
+                  step="any"
                   bind:value={line.rate}
                   placeholder="Taux %"
                   class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"

@@ -138,6 +138,7 @@
         <input
           id="distance"
           type="number"
+          step="any"
           min="0"
           bind:value={editDistance}
           class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
@@ -147,6 +148,7 @@
         <input
           id="duration"
           type="number"
+          step="any"
           min="0"
           bind:value={editDuration}
           class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"

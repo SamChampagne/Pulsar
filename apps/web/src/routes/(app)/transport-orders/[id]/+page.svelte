@@ -225,6 +225,7 @@
                   <Field label="Weight (kg)">
                     <input
                       type="number"
+                      step="any"
                       min="0"
                       placeholder="Weight (kg)"
                       bind:value={row.weightKg}
