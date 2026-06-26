@@ -451,6 +451,21 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     `@RequireModule(BILLING)` + `billing.subscriptions.read|manage`, tenant-scopé (règle 1) ; FK
     vérifiées (règle 9). Route web : `/billing/subscriptions`.
 
+## Hard rules (continued, Billing Account Settings)
+
+49. (Billing Account Settings — paramètres comptables par tenant) Les paramètres comptables (dont
+    `fiscalYearStartMonth`) vivent dans le **framework de config billing** (`TenantModule.settings`,
+    règle 36) — aucune entité, aucune migration, aucune route dédiée supplémentaires. Ils sont
+    exposés sur `/billing/config` via le composant `ModuleSettings module="billing"` qui lit le
+    catalogue `MODULE_SETTINGS_CATALOG` de `@pulsar/shared`. `fiscalYearStartMonth` (number, 1–12,
+    défaut 1 = janvier = exercice calendaire = comportement actuel inchangé) est consommé par
+    `BudgetsService.variance` via la fonction pure `fiscalYearBounds(fiscalYear, startMonth)`
+    (`@pulsar/shared/billing/fiscal`) qui calcule la fenêtre [from, to) de l'exercice fiscal —
+    la variance budget agrège les `JournalLine` dans cette fenêtre. Un `startMonth` de 1 produit
+    exactement [1er janv, 31 déc] — zéro changement de comportement pour les tenants non configurés.
+    Le schéma est extensible vers une entité `FiscalYear` future (périodes nommées, arrêtés de
+    comptes) sans rupture : `fiscalYearBounds` sera alors le calcul de repli.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
