@@ -277,9 +277,18 @@ describe('Billing General Ledger (e2e)', () => {
       expect((res.body as { status: string }).status).toBe('PAID');
     });
 
-    it('a balanced JournalEntry (sourceKind=paid) exists: DR Cash / CR AR = totalAmount', async () => {
+    it('a balanced JournalEntry (sourceType=payment) exists: DR Cash / CR AR = totalAmount', async () => {
+      // Task 8 routed markPaid through PaymentsService: GL is now posted under
+      // sourceType='payment' (keyed by the payment's id), not 'customer-invoice'/'paid'.
+      // Find the payment created for this invoice via its allocation.
+      const alloc = await prisma.paymentAllocation.findFirst({
+        where: { tenantId, targetType: 'CUSTOMER_INVOICE', targetId: invoiceId },
+        select: { paymentId: true },
+      });
+      expect(alloc).not.toBeNull();
+
       const entry = await prisma.journalEntry.findFirst({
-        where: { tenantId, sourceType: 'customer-invoice', sourceId: invoiceId, sourceKind: 'paid' },
+        where: { tenantId, sourceType: 'payment', sourceId: alloc!.paymentId },
         include: { lines: { include: { account: true } } },
       });
       expect(entry).not.toBeNull();
@@ -297,16 +306,21 @@ describe('Billing General Ledger (e2e)', () => {
       expect(Number(arLine!.credit)).toBe(AMOUNT);
     });
 
-    it('re-paying does not double-post: journalEntry count for paid stable', async () => {
-      // Re-pay should return 400 (invoice is no longer SENT).
+    it('re-paying does not double-post: journalEntry count for this payment stable at 1', async () => {
+      // Re-pay should return 400 (invoice is no longer SENT after markPaid).
       await request(http)
         .post(`/api/v1/billing/customer-invoices/${invoiceId}/pay`)
         .set(auth())
         .send({})
         .expect(400);
 
+      // The payment created by markPaid has exactly 1 GL entry (no re-post on re-pay attempt).
+      const alloc = await prisma.paymentAllocation.findFirst({
+        where: { tenantId, targetType: 'CUSTOMER_INVOICE', targetId: invoiceId },
+        select: { paymentId: true },
+      });
       const count = await prisma.journalEntry.count({
-        where: { tenantId, sourceType: 'customer-invoice', sourceId: invoiceId, sourceKind: 'paid' },
+        where: { tenantId, sourceType: 'payment', sourceId: alloc?.paymentId ?? 'none' },
       });
       expect(count).toBe(1);
     });

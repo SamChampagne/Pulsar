@@ -69,7 +69,7 @@
   let addError = $state('');
 
   // Inline edit state: { lineId, field, value }
-  let editingCell = $state<{ lineId: string; field: 'quantity' | 'unitPrice' | 'discountPct'; value: string } | null>(null);
+  let editingCell = $state<{ lineId: string; field: 'quantity' | 'unitPrice' | 'discountPct'; value: string | number | null } | null>(null);
   let saving = $state(false);
 
   let deletingId = $state<string | null>(null);

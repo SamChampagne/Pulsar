@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { AuditAction, DEFAULT_CHART, isBalanced } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { paginated, paginationArgs } from '../../../common/pagination';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 
@@ -29,7 +30,25 @@ export class LedgerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogsService,
+    private readonly moduleSettings: ModuleSettingsService,
   ) {}
+
+  /**
+   * Manual journal-entry posting from the ledger UI. Gated by the billing
+   * `ledgerManualEntries` setting — ONLY this manual path is gated, never the
+   * best-effort auto-post from billing transitions (règle 41).
+   */
+  async postManual(
+    tenantId: string,
+    input: PostInput,
+    userId?: string,
+  ): Promise<{ posted: boolean; journalEntryId?: string }> {
+    const s = await this.moduleSettings.resolve(tenantId, 'billing');
+    if (s.ledgerManualEntries === false) {
+      throw new ForbiddenException('Manual ledger entries are disabled for this tenant');
+    }
+    return this.post(tenantId, input, userId);
+  }
 
   /**
    * Seed the tenant's chart of accounts from DEFAULT_CHART if they have none.
@@ -50,26 +69,30 @@ export class LedgerService {
   }
 
   /**
-   * Post a balanced journal entry.
-   * - Idempotent on (tenantId, sourceType, sourceId, sourceKind): returns { posted: false } if already exists.
-   * - Throws BadRequest on unknown account code or unbalanced lines.
-   * - Audits on success (règle 6).
+   * Post a balanced journal entry inside a caller-supplied transaction client.
+   * This is the canonical implementation; `post()` delegates here by wrapping
+   * in its own `$transaction`.
+   *
+   * Rules preserved:
+   * - Account-code resolution goes through `tx` (tenant-scoped).
+   * - `isBalanced` check (rule 41 — balanced double-entry).
+   * - Idempotence on (tenantId, sourceType, sourceId, sourceKind) via `tx` read +
+   *   P2002 no-op catch on concurrent inserts.
+   * - Audit via `this.audit` (not `tx`) — AuditLogsService uses its own PrismaService.
    */
-  async post(
+  async postTx(
+    tx: any,
     tenantId: string,
     input: PostInput,
     userId?: string,
   ): Promise<{ posted: boolean; journalEntryId?: string }> {
-    // Step 1: ensure chart exists
-    await this.ensureChart(tenantId);
-
-    // Step 2: resolve accountCode → accountId (tenant-scoped)
+    // Step 1: resolve accountCode → accountId (tenant-scoped) via caller's tx
     const codes = [...new Set(input.lines.map((l) => l.accountCode))];
-    const accounts = await this.prisma.chartOfAccount.findMany({
+    const accounts = await tx.chartOfAccount.findMany({
       where: { tenantId, code: { in: codes }, active: true },
       select: { id: true, code: true },
     });
-    const codeToId = new Map(accounts.map((a) => [a.code, a.id]));
+    const codeToId = new Map((accounts as { id: string; code: string }[]).map((a) => [a.code, a.id]));
 
     for (const code of codes) {
       if (!codeToId.has(code)) {
@@ -77,7 +100,7 @@ export class LedgerService {
       }
     }
 
-    // Step 3: validate balance using isBalanced from @pulsar/shared (Decimal→Number at boundary)
+    // Step 2: validate balance using isBalanced from @pulsar/shared (Decimal→Number at boundary)
     const balanceLines = input.lines.map((l) => ({
       debit: Number(l.debit ?? 0),
       credit: Number(l.credit ?? 0),
@@ -86,9 +109,9 @@ export class LedgerService {
       throw new BadRequestException('Journal entry is not balanced');
     }
 
-    // Step 4: idempotence check on (tenantId, sourceType, sourceId, sourceKind)
+    // Step 3: idempotence check on (tenantId, sourceType, sourceId, sourceKind)
     if (input.sourceType && input.sourceId) {
-      const existing = await this.prisma.journalEntry.findFirst({
+      const existing = await tx.journalEntry.findFirst({
         where: {
           tenantId,
           sourceType: input.sourceType,
@@ -97,41 +120,36 @@ export class LedgerService {
         },
         select: { id: true },
       });
-      if (existing) return { posted: false, journalEntryId: existing.id };
+      if (existing) return { posted: false, journalEntryId: (existing as { id: string }).id };
     }
 
-    // Step 5: persist entry + lines in a transaction
-    // Wrap in try/catch: a concurrent call may have raced past the findFirst check
+    // Step 4: persist entry + lines inside caller's transaction.
+    // P2002 catch: a concurrent call may have raced past the findFirst check
     // and already inserted the same (tenantId, sourceType, sourceId, sourceKind)
-    // tuple. The DB unique constraint (@@unique) will surface this as P2002; we
-    // treat it as a successful idempotent no-op rather than an error.
+    // tuple. Treat as successful idempotent no-op.
     let entry: { id: string };
     try {
-      entry = await (this.prisma.$transaction as (fn: (tx: any) => Promise<any>) => Promise<any>)(
-        async (tx: any) => {
-          return tx.journalEntry.create({
-            data: {
+      entry = await tx.journalEntry.create({
+        data: {
+          tenantId,
+          date: input.date ?? new Date(),
+          memo: input.memo,
+          sourceType: input.sourceType,
+          sourceId: input.sourceId,
+          sourceKind: input.sourceKind,
+          createdById: userId,
+          lines: {
+            create: input.lines.map((l) => ({
               tenantId,
-              date: input.date ?? new Date(),
-              memo: input.memo,
-              sourceType: input.sourceType,
-              sourceId: input.sourceId,
-              sourceKind: input.sourceKind,
-              createdById: userId,
-              lines: {
-                create: input.lines.map((l) => ({
-                  tenantId,
-                  accountId: codeToId.get(l.accountCode)!,
-                  debit: l.debit ?? 0,
-                  credit: l.credit ?? 0,
-                  memo: l.memo,
-                })),
-              },
-            },
-            select: { id: true },
-          });
+              accountId: codeToId.get(l.accountCode)!,
+              debit: l.debit ?? 0,
+              credit: l.credit ?? 0,
+              memo: l.memo,
+            })),
+          },
         },
-      );
+        select: { id: true },
+      });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         // Concurrent post of the same source tuple — already posted.
@@ -140,7 +158,7 @@ export class LedgerService {
       throw err;
     }
 
-    // Step 6: audit (règle 6)
+    // Step 5: audit (règle 6) — uses this.audit (its own PrismaService, not the tx)
     await this.audit.log({
       tenantId,
       userId,
@@ -158,6 +176,28 @@ export class LedgerService {
     });
 
     return { posted: true, journalEntryId: entry.id };
+  }
+
+  /**
+   * Post a balanced journal entry.
+   * - Idempotent on (tenantId, sourceType, sourceId, sourceKind): returns { posted: false } if already exists.
+   * - Throws BadRequest on unknown account code or unbalanced lines.
+   * - Audits on success (règle 6).
+   *
+   * Delegates to `postTx` inside its own transaction. Use `postTx` directly when
+   * you need the GL write to commit/rollback with a caller-supplied transaction
+   * (e.g. PaymentsService.submit — rule 41).
+   */
+  async post(
+    tenantId: string,
+    input: PostInput,
+    userId?: string,
+  ): Promise<{ posted: boolean; journalEntryId?: string }> {
+    // Ensure chart exists before entering the transaction (avoids nested tx issues).
+    await this.ensureChart(tenantId);
+    return (this.prisma.$transaction as (fn: (tx: any) => Promise<any>) => Promise<any>)(
+      (tx) => this.postTx(tx, tenantId, input, userId),
+    );
   }
 
   /**

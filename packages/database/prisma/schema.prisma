@@ -77,6 +77,13 @@ model Tenant {
   maintenanceOrders       MaintenanceOrder[]
   maintenanceSchedules    MaintenanceSchedule[]
   complianceDocuments     ComplianceDocument[]
+  maintenanceParts        MaintenancePart[]
+  odometerReadings        OdometerReading[]
+  fuelLogs                FuelLog[]
+  inspectionTemplates     InspectionTemplate[]
+  inspectionTemplateItems InspectionTemplateItem[]
+  inspectionReports       InspectionReport[]
+  inspectionItems         InspectionItem[]
   wmsItems        WmsItem[]
   wmsBins         Bin[]
   inventoryLevels InventoryLevel[]
@@ -114,6 +121,13 @@ model Tenant {
   landingPages     LandingPage[]
   chartOfAccounts  ChartOfAccount[]
   journalEntries   JournalEntry[]
+  payments        Payment[]
+  modesOfPayment  ModeOfPayment[]
+  taxTemplates    TaxTemplate[]
+  bankAccounts    BankAccount[]
+  budgets         Budget[]
+  fixedAssets     FixedAsset[]
+  subscriptions   Subscription[]
 
   @@map("tenants")
 }
@@ -492,6 +506,7 @@ model Customer {
   rates            Rate[]
   customerInvoices CustomerInvoice[]
   orderTemplates   OrderTemplate[]
+  subscriptions    Subscription[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -609,6 +624,7 @@ model Driver {
   tenant  Tenant   @relation(fields: [tenantId], references: [id])
   carrier Carrier? @relation(fields: [carrierId], references: [id])
   loads   Load[]
+  inspectionReports InspectionReport[]
 
   @@index([tenantId])
   @@map("drivers")
@@ -640,6 +656,7 @@ model Vehicle {
   vin        String?
   plate      String?
   status     AssetStatus @default(AVAILABLE)
+  fixedAssetId String?   // soft FK to billing FixedAsset (book value display; ownership checked in service)
   customData Json?
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
@@ -649,6 +666,9 @@ model Vehicle {
   loads                Load[]
   maintenanceOrders    MaintenanceOrder[]
   maintenanceSchedules MaintenanceSchedule[]
+  odometerReadings     OdometerReading[]
+  fuelLogs             FuelLog[]
+  inspectionReports    InspectionReport[]
 
   @@unique([tenantId, unitNumber])
   @@index([tenantId])
@@ -674,6 +694,7 @@ model Trailer {
   capacityPallets  Int?
   plate            String?
   status           AssetStatus @default(AVAILABLE)
+  fixedAssetId     String?     // soft FK to billing FixedAsset (book value display; ownership checked in service)
   customData       Json?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
@@ -684,6 +705,9 @@ model Trailer {
   maintenanceOrders    MaintenanceOrder[]
   maintenanceSchedules MaintenanceSchedule[]
   yardVisits           YardVisit[]
+  odometerReadings     OdometerReading[]
+  fuelLogs             FuelLog[]
+  inspectionReports    InspectionReport[]
 
   @@unique([tenantId, unitNumber])
   @@index([tenantId])
@@ -1348,6 +1372,11 @@ enum InvoiceStatus {
   PAID
 }
 
+enum TaxTemplateType {
+  SALES
+  PURCHASE
+}
+
 enum DisputeReasonCode {
   RATE_MISMATCH
   QUANTITY_MISMATCH
@@ -1376,6 +1405,10 @@ model Invoice {
   status        InvoiceStatus @default(DRAFT)
   currency      String        @default("CAD")
   totalAmount   Decimal       @db.Decimal(12, 2)
+  amountPaid    Decimal       @default(0) @db.Decimal(12, 2)
+  taxAmount     Decimal       @default(0) @db.Decimal(12, 2)
+  taxTemplateId String?
+  taxDetail     Json?
   approvedAt    DateTime?
 
   // --- Reconciliation against the carrier's actual invoice -------------------
@@ -1436,6 +1469,10 @@ model CustomerInvoice {
   status        CustomerInvoiceStatus @default(DRAFT)
   currency      String                @default("CAD")
   totalAmount   Decimal               @db.Decimal(12, 2)
+  amountPaid    Decimal               @default(0) @db.Decimal(12, 2)
+  taxAmount     Decimal               @default(0) @db.Decimal(12, 2)
+  taxTemplateId String?
+  taxDetail     Json?
   approvedAt    DateTime?
   sentAt        DateTime?
   paidAt        DateTime?
@@ -1829,6 +1866,9 @@ model MaintenanceOrder {
   description   String
   odometerKm    Int?
   costAmount    Decimal?               @db.Decimal(12, 2)
+  partsCost     Decimal?               @db.Decimal(12, 2)
+  laborHours    Decimal?               @db.Decimal(8, 2)
+  laborRate     Decimal?               @db.Decimal(10, 2)
   costCurrency  String                 @default("CAD")
   vendor        String?
   dueDate       DateTime?
@@ -1845,11 +1885,194 @@ model MaintenanceOrder {
   vehicle  Vehicle?             @relation(fields: [vehicleId], references: [id])
   trailer  Trailer?             @relation(fields: [trailerId], references: [id])
   schedule MaintenanceSchedule? @relation(fields: [scheduleId], references: [id])
+  parts    MaintenancePart[]
 
   @@index([tenantId, status])
   @@index([tenantId, vehicleId])
   @@index([tenantId, scheduleId])
   @@map("maintenance_orders")
+}
+
+/// A line of parts/materials consumed on a work order. WO total cost is derived as
+/// Σ part lineTotal (partsCost) + labour (laborHours × laborRate) — see @pulsar/shared
+/// workOrderTotal. lineTotal is persisted = qty × unitCost for cheap aggregation.
+model MaintenancePart {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  maintenanceOrderId String
+  description        String
+  qty                Decimal  @db.Decimal(10, 2)
+  unitCost           Decimal  @db.Decimal(12, 2)
+  lineTotal          Decimal  @db.Decimal(12, 2)
+  createdAt          DateTime @default(now())
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id])
+  order  MaintenanceOrder @relation(fields: [maintenanceOrderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, maintenanceOrderId])
+  @@map("maintenance_parts")
+}
+
+enum OdometerSource {
+  MANUAL
+  WORK_ORDER
+  FUEL_LOG
+}
+
+/// Append-only odometer history per asset (vehicle XOR trailer). Drives cost/km and
+/// utilisation KPIs. Never the source of asset status (rule 32 preserved).
+model OdometerReading {
+  id        String         @id @default(cuid())
+  tenantId  String
+  vehicleId String?
+  trailerId String?
+  readingKm Int
+  readAt    DateTime       @default(now())
+  source    OdometerSource @default(MANUAL)
+  note      String?
+  createdById String?
+  createdAt DateTime       @default(now())
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id])
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
+  trailer Trailer? @relation(fields: [trailerId], references: [id])
+
+  @@index([tenantId, vehicleId, readAt])
+  @@index([tenantId, trailerId, readAt])
+  @@map("odometer_readings")
+}
+
+enum FuelUnit {
+  L
+  GAL
+  KWH
+}
+
+/// Fuel / energy purchase per asset. Efficiency (L/100km) and cost/km are derived at
+/// read time from the surrounding odometer window — never persisted.
+model FuelLog {
+  id          String   @id @default(cuid())
+  tenantId    String
+  vehicleId   String?
+  trailerId   String?
+  filledAt    DateTime @default(now())
+  volume      Decimal  @db.Decimal(12, 3)
+  unit        FuelUnit @default(L)
+  totalCost   Decimal  @db.Decimal(12, 2)
+  currency    String   @default("CAD")
+  odometerKm  Int?
+  location    String?
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id])
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
+  trailer Trailer? @relation(fields: [trailerId], references: [id])
+
+  @@index([tenantId, vehicleId, filledAt])
+  @@index([tenantId, trailerId, filledAt])
+  @@map("fuel_logs")
+}
+
+enum InspectionSubject {
+  VEHICLE
+  TRAILER
+  DRIVER
+  ANY
+}
+
+enum InspectionStatus {
+  DRAFT
+  PASSED
+  FAILED
+}
+
+enum InspectionResult {
+  PASS
+  FAIL
+  NA
+}
+
+/// Reusable DVIR / inspection checklist template (a named list of items).
+model InspectionTemplate {
+  id        String                   @id @default(cuid())
+  tenantId  String
+  name      String
+  appliesTo InspectionSubject        @default(ANY)
+  isActive  Boolean                  @default(true)
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
+
+  tenant  Tenant                     @relation(fields: [tenantId], references: [id])
+  items   InspectionTemplateItem[]
+  reports InspectionReport[]
+
+  @@index([tenantId, isActive])
+  @@map("inspection_templates")
+}
+
+model InspectionTemplateItem {
+  id         String             @id @default(cuid())
+  tenantId   String
+  templateId String
+  label      String
+  category   String?
+  order      Int                @default(0)
+
+  tenant   Tenant             @relation(fields: [tenantId], references: [id])
+  template InspectionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, templateId])
+  @@map("inspection_template_items")
+}
+
+/// A performed inspection (DVIR). Status is derived from item results at submit
+/// (any FAIL ⇒ FAILED) via @pulsar/shared deriveInspectionStatus; transitions via
+/// canTransitionInspection (rule 2). Targets one subject (vehicle/trailer/driver).
+model InspectionReport {
+  id            String           @id @default(cuid())
+  tenantId      String
+  templateId    String
+  vehicleId     String?
+  trailerId     String?
+  driverId      String?
+  status        InspectionStatus @default(DRAFT)
+  inspectorName String?
+  odometerKm    Int?
+  note          String?
+  inspectedAt   DateTime         @default(now())
+  submittedAt   DateTime?
+  createdById   String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  tenant   Tenant             @relation(fields: [tenantId], references: [id])
+  template InspectionTemplate @relation(fields: [templateId], references: [id])
+  vehicle  Vehicle?           @relation(fields: [vehicleId], references: [id])
+  trailer  Trailer?           @relation(fields: [trailerId], references: [id])
+  driver   Driver?            @relation(fields: [driverId], references: [id])
+  items    InspectionItem[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, vehicleId])
+  @@index([tenantId, trailerId])
+  @@map("inspection_reports")
+}
+
+model InspectionItem {
+  id       String           @id @default(cuid())
+  tenantId String
+  reportId String
+  label    String
+  result   InspectionResult @default(NA)
+  note     String?
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id])
+  report InspectionReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, reportId])
+  @@map("inspection_items")
 }
 
 /// Preventive-maintenance plan: an interval (days and/or km) per asset. The cron
@@ -3061,12 +3284,61 @@ model LandingPageSubmission {
 // BILLING — General Ledger (chart of accounts + double-entry journal)
 // ============================================================================
 
+// Mirrors DepreciationMethod / FixedAssetStatus from @pulsar/shared/billing/assets (rule 3).
+enum DepreciationMethod {
+  STRAIGHT_LINE
+}
+
+enum FixedAssetStatus {
+  DRAFT
+  ACTIVE
+  DISPOSED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+}
+
+enum SubscriptionInterval {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
 enum AccountType {
   ASSET
   LIABILITY
   EQUITY
   REVENUE
   EXPENSE
+}
+
+enum PaymentType {
+  RECEIVE
+  PAY
+}
+
+enum PaymentStatus {
+  DRAFT
+  SUBMITTED
+  CANCELLED
+}
+
+enum PaymentPartyType {
+  CUSTOMER
+  CARRIER
+}
+
+enum PaymentTargetType {
+  CUSTOMER_INVOICE
+  CARRIER_INVOICE
+}
+
+enum BankTxnStatus {
+  UNRECONCILED
+  RECONCILED
 }
 
 model ChartOfAccount {
@@ -3120,4 +3392,258 @@ model JournalLine {
   @@index([tenantId, accountId])
   @@index([tenantId, journalEntryId])
   @@map("journal_lines")
+}
+
+// ============================================================================
+// BILLING — Payments (receive from customers / pay to carriers)
+// ============================================================================
+
+model ModeOfPayment {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  accountCode String
+  isDefault   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  payments    Payment[]
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("modes_of_payment")
+}
+
+model Payment {
+  id              String              @id @default(cuid())
+  tenantId        String
+  paymentNumber   String
+  type            PaymentType
+  status          PaymentStatus       @default(DRAFT)
+  partyType       PaymentPartyType
+  partyId         String
+  modeOfPaymentId String
+  date            DateTime
+  currency        String              @default("CAD")
+  totalAmount     Decimal             @db.Decimal(12, 2)
+  reference       String?
+  note            String?
+  submittedAt     DateTime?
+  cancelledAt     DateTime?
+  reconciledAt    DateTime?
+  createdById     String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  tenant          Tenant              @relation(fields: [tenantId], references: [id])
+  modeOfPayment   ModeOfPayment       @relation(fields: [modeOfPaymentId], references: [id])
+  allocations     PaymentAllocation[]
+  @@unique([tenantId, paymentNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, partyType, partyId])
+  @@map("payments")
+}
+
+model PaymentAllocation {
+  id         String            @id @default(cuid())
+  tenantId   String
+  paymentId  String
+  targetType PaymentTargetType
+  targetId   String
+  amount     Decimal           @db.Decimal(12, 2)
+  payment    Payment           @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  @@index([tenantId, targetType, targetId])
+  @@index([tenantId, paymentId])
+  @@map("payment_allocations")
+}
+
+// ============================================================================
+// BILLING — Tax Templates (multi-rate tax models, SALES + PURCHASE)
+// ============================================================================
+
+model TaxTemplate {
+  id        String          @id @default(cuid())
+  tenantId  String
+  name      String
+  type      TaxTemplateType
+  isDefault Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  tenant Tenant            @relation(fields: [tenantId], references: [id])
+  lines  TaxTemplateLine[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, type])
+  @@map("tax_templates")
+}
+
+model TaxTemplateLine {
+  id          String  @id @default(cuid())
+  tenantId    String
+  templateId  String
+  description String
+  rate        Decimal @db.Decimal(7, 4)
+  accountCode String
+  sortOrder   Int     @default(0)
+
+  template TaxTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, templateId])
+  @@map("tax_template_lines")
+}
+
+// ============================================================================
+// BILLING — Banking (bank accounts + transactions + reconciliation)
+// ============================================================================
+
+model BankAccount {
+  id            String   @id @default(cuid())
+  tenantId      String
+  name          String
+  accountNumber String?            // masqué à l'affichage (4 derniers)
+  glAccountCode String   @default("1010")
+  currency      String   @default("CAD")
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  transactions  BankTransaction[]
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("bank_accounts")
+}
+
+model BankTransaction {
+  id               String        @id @default(cuid())
+  tenantId         String
+  bankAccountId    String
+  date             DateTime
+  description      String
+  amount           Decimal       @db.Decimal(12, 2)   // signé
+  reference        String?
+  status           BankTxnStatus @default(UNRECONCILED)
+  matchedPaymentId String?       @unique
+  createdAt        DateTime      @default(now())
+  bankAccount      BankAccount   @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  @@index([tenantId, bankAccountId, status])
+  @@map("bank_transactions")
+}
+
+// ============================================================================
+// BILLING — Budgets (annual per-account budget + variance vs GL)
+// ============================================================================
+
+model Budget {
+  id         String   @id @default(cuid())
+  tenantId   String
+  name       String
+  fiscalYear Int
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  lines      BudgetLine[]
+  @@unique([tenantId, name, fiscalYear])
+  @@index([tenantId, fiscalYear])
+  @@map("budgets")
+}
+
+model BudgetLine {
+  id          String  @id @default(cuid())
+  tenantId    String
+  budgetId    String
+  accountCode String
+  amount      Decimal @db.Decimal(12, 2)
+  budget      Budget  @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  @@index([tenantId, budgetId])
+  @@map("budget_lines")
+}
+
+// ============================================================================
+// BILLING — Fixed Assets / Depreciation (module: billing)
+// ============================================================================
+
+model FixedAsset {
+  id              String   @id @default(cuid())
+  tenantId        String
+  assetCode       String
+  name            String
+  category        String?
+  acquisitionDate DateTime
+  cost            Decimal  @db.Decimal(12, 2)
+  salvageValue    Decimal  @default(0) @db.Decimal(12, 2)
+  usefulLifeMonths Int
+  method          DepreciationMethod @default(STRAIGHT_LINE)
+  status          FixedAssetStatus   @default(DRAFT)
+  accumulatedDepreciation Decimal @default(0) @db.Decimal(12, 2)
+  depreciationExpenseAccountCode      String @default("5100")
+  accumulatedDepreciationAccountCode  String @default("1590")
+  disposedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  depreciations   DepreciationEntry[]
+  @@unique([tenantId, assetCode])
+  @@index([tenantId, status])
+  @@map("fixed_assets")
+}
+
+model DepreciationEntry {
+  id        String   @id @default(cuid())
+  tenantId  String
+  assetId   String
+  period    DateTime
+  amount    Decimal  @db.Decimal(12, 2)
+  postedAt  DateTime @default(now())
+  asset     FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, assetId, period])
+  @@index([tenantId, assetId])
+  @@map("depreciation_entries")
+}
+
+// ============================================================================
+// BILLING — Subscriptions (recurring billing, module: billing)
+// ============================================================================
+
+model Subscription {
+  id          String               @id @default(cuid())
+  tenantId    String
+  name        String
+  customerId  String
+  status      SubscriptionStatus   @default(ACTIVE)
+  interval    SubscriptionInterval @default(MONTHLY)
+  startDate   DateTime
+  nextRunDate DateTime
+  currency    String               @default("CAD")
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  tenant      Tenant               @relation(fields: [tenantId], references: [id])
+  customer    Customer             @relation(fields: [customerId], references: [id])
+  lines       SubscriptionLine[]
+  generated   SubscriptionInvoice[]
+  @@index([tenantId, status, nextRunDate])
+  @@map("subscriptions")
+}
+
+model SubscriptionLine {
+  id             String       @id @default(cuid())
+  tenantId       String
+  subscriptionId String
+  description    String
+  amount         Decimal      @db.Decimal(12, 2)
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  @@index([tenantId, subscriptionId])
+  @@map("subscription_lines")
+}
+
+model SubscriptionInvoice {
+  id                String       @id @default(cuid())
+  tenantId          String
+  subscriptionId    String
+  periodStart       DateTime
+  customerInvoiceId String
+  createdAt         DateTime     @default(now())
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, subscriptionId, periodStart])
+  @@index([tenantId, subscriptionId])
+  @@map("subscription_invoices")
 }

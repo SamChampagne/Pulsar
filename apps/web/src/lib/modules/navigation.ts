@@ -249,6 +249,7 @@ export function navCatalogue(): NavDomain[] {
           links: [
             { href: '/assets', label: 'Assets home' },
             { href: '/fleet', label: 'Fleet roster' },
+            { href: '/fleet/maintenance', label: 'Maintenance', perm: PERMISSIONS.FLEET.READ },
           ],
         },
         {
@@ -279,6 +280,12 @@ export function navCatalogue(): NavDomain[] {
             { href: '/invoices', label: 'Receivables / Payables' },
             { href: '/billing/freight-audit', label: 'Freight audit' },
             { href: '/billing/ledger', label: 'Grand livre', perm: PERMISSIONS.BILLING.LEDGER_READ },
+            { href: '/billing/reports', label: 'Rapports financiers', perm: PERMISSIONS.BILLING.LEDGER_READ },
+            { href: '/billing/banking', label: 'Banque', perm: PERMISSIONS.BILLING.LEDGER_READ },
+            { href: '/billing/budgets', label: 'Budgets', perm: PERMISSIONS.BILLING.LEDGER_READ },
+            { href: '/billing/fixed-assets', label: 'Immobilisations', perm: PERMISSIONS.BILLING.ASSETS_READ },
+            { href: '/billing/subscriptions', label: 'Abonnements', perm: PERMISSIONS.BILLING.SUBSCRIPTIONS_READ },
+            { href: '/billing/payments', label: 'Paiements', perm: PERMISSIONS.BILLING.PAYMENTS_READ },
           ],
         },
         {
@@ -540,7 +547,7 @@ export function navCatalogue(): NavDomain[] {
       label: 'Courriels',
       icon: Mail,
       home: '/emails',
-      prefixes: ['/emails', '/email-config'],
+      prefixes: ['/emails'],
       anyPerms: [PERMISSIONS.EMAIL.READ],
       sections: [
         {

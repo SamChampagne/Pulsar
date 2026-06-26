@@ -161,7 +161,7 @@
 
   async function loadFormData() {
     const [listsResult, templatesResult] = await Promise.allSettled([
-      api<Paginated<ContactList>>('/crm/lists', { query: { pageSize: 200 } }),
+      api<Paginated<ContactList>>('/crm/lists', { query: { pageSize: 100 } }),
       api<EmailTemplate[]>('/emails/templates'),
     ]);
     availableLists = listsResult.status === 'fulfilled' ? listsResult.value.items : [];

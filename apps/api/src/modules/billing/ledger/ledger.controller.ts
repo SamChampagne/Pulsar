@@ -88,7 +88,7 @@ export class LedgerController {
   @Post('entries')
   @RequirePermissions(PERMISSIONS.BILLING.LEDGER_MANAGE)
   postEntry(@CurrentUser() user: AuthUser, @Body() dto: PostEntryDto) {
-    return this.ledger.post(
+    return this.ledger.postManual(
       user.tenantId,
       {
         date: dto.date ? new Date(dto.date) : undefined,

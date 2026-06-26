@@ -141,7 +141,7 @@
     carrierId.trim() !== '' &&
       carrierInvoiceNumber.trim() !== '' &&
       lines.length > 0 &&
-      lines.every((l) => l.lineRef.trim() !== '' && l.chargedAmount.trim() !== ''),
+      lines.every((l) => l.lineRef.trim() !== '' && String(l.chargedAmount ?? '').trim() !== ''),
   );
 
   async function create(event: SubmitEvent) {

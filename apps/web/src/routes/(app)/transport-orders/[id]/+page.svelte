@@ -59,8 +59,8 @@
 
   // Plan-with-split form
   let showPlanForm = $state(false);
-  let splitRows = $state<{ weightKg: string; palletCount: string }[]>([
-    { weightKg: '', palletCount: '' },
+  let splitRows = $state<{ weightKg: number | null; palletCount: number | null }[]>([
+    { weightKg: null, palletCount: null },
   ]);
 
   // Shipment custom fields
@@ -73,8 +73,8 @@
     const customDataPayload =
       Object.keys(shipmentCustomData).length > 0 ? shipmentCustomData : undefined;
     const rows = splitRows.map((r) => ({
-      weightKg: r.weightKg === '' ? undefined : Number(r.weightKg),
-      palletCount: r.palletCount === '' ? undefined : Number(r.palletCount),
+      weightKg: r.weightKg == null ? undefined : Number(r.weightKg),
+      palletCount: r.palletCount == null ? undefined : Number(r.palletCount),
       customData: customDataPayload,
     }));
     try {
@@ -94,7 +94,7 @@
         toast.success(`Order planned (${rows.length} shipment${rows.length > 1 ? 's' : ''})`);
       }
       showPlanForm = false;
-      splitRows = [{ weightKg: '', palletCount: '' }];
+      splitRows = [{ weightKg: null, palletCount: null }];
       shipmentCustomData = {};
       await load();
     } catch (e) {
@@ -225,6 +225,7 @@
                   <Field label="Weight (kg)">
                     <input
                       type="number"
+                      step="any"
                       min="0"
                       placeholder="Weight (kg)"
                       bind:value={row.weightKg}
@@ -259,7 +260,7 @@
               <Button
                 variant="secondary"
                 type="button"
-                onclick={() => { splitRows = [...splitRows, { weightKg: '', palletCount: '' }]; }}
+                onclick={() => { splitRows = [...splitRows, { weightKg: null, palletCount: null }]; }}
               >
                 Add shipment
               </Button>

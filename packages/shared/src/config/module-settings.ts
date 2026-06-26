@@ -132,6 +132,17 @@ export const MODULE_SETTINGS_CATALOG: ModuleSettingsCatalog[] = [
       { key: 'cashAccountCode', label: 'Compte de trésorerie', type: 'string', default: '1000', pattern: '^[0-9A-Z]{1,10}$', maxLength: 10 },
       { key: 'apAccountCode', label: 'Compte fournisseur (AP)', type: 'string', default: '2000', pattern: '^[0-9A-Z]{1,10}$', maxLength: 10 },
       { key: 'expenseAccountCode', label: 'Compte de charges', type: 'string', default: '5000', pattern: '^[0-9A-Z]{1,10}$', maxLength: 10 },
+      { key: 'bankAccountCode', label: 'Compte bancaire', type: 'string', default: '1010', pattern: '^[0-9A-Z]{1,10}$', maxLength: 10 },
+      { key: 'paymentNumberPrefix', label: 'Préfixe n° paiement', type: 'string', default: 'PAY', pattern: '^[A-Z0-9]{1,6}$', maxLength: 6 },
+      { key: 'ledgerManualEntries', label: 'Écritures GL manuelles', help: 'Autorise la saisie manuelle d\'écritures de grand livre équilibrées depuis le grand livre.', type: 'boolean', default: true },
+      { key: 'allowInvoiceDeletion', label: 'Suppression des factures brouillon', help: 'Autorise la suppression d\'une facture transporteur au statut DRAFT.', type: 'boolean', default: true },
+      { key: 'fiscalYearStartMonth', label: 'Mois de début d\'exercice fiscal', help: '1=janvier (défaut). Ex: 4=exercice avril→mars. Utilisé par les écarts de budget.', type: 'number', default: 1, min: 1, max: 12 },
+    ],
+  },
+  {
+    module: 'crm',
+    settings: [
+      { key: 'salesOrderDirectInvoicing', label: 'Facturation directe des commandes', help: 'Autorise la transition FULFILLED → INVOICED d\'une commande de vente depuis l\'interface.', type: 'boolean', default: true },
     ],
   },
   {

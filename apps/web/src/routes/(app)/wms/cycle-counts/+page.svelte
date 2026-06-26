@@ -359,6 +359,7 @@
                   {#if selected!.status === 'OPEN'}
                     <input
                       type="number"
+                      step="any"
                       min="0"
                       bind:value={entered[l.id]}
                       class="w-24 rounded-md border border-edge bg-surface px-2 py-1 text-right text-sm focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"

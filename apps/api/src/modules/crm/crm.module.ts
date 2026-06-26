@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { CustomFieldsModule } from '../../core/custom-fields/custom-fields.module';
 import { DocumentsModule } from '../../core/documents/documents.module';
+import { ModuleRegistryModule } from '../../core/module-registry/module-registry.module';
 import { OperatingModule } from '../../core/operating/operating.module';
 import { CrmCustomFieldsController } from './custom-fields/crm-custom-fields.controller';
 import { CompaniesController } from './companies.controller';
@@ -42,7 +43,7 @@ import { SalesOrderLineItemsService } from './sales-order-line-items.service';
  * MailService comes from the @Global() EmailModule (no explicit import needed).
  */
 @Module({
-  imports: [AuditLogsModule, CustomFieldsModule, DocumentsModule, OperatingModule],
+  imports: [AuditLogsModule, CustomFieldsModule, DocumentsModule, ModuleRegistryModule, OperatingModule],
   controllers: [
     CrmCustomFieldsController,
     CompaniesController,

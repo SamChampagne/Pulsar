@@ -172,7 +172,7 @@
     addContactOpen = true;
     try {
       const result = await api<Paginated<ContactRow>>('/crm/contacts', {
-        query: { pageSize: 200 },
+        query: { pageSize: 100 },
       });
       allContacts = result.items;
     } catch {
@@ -207,7 +207,7 @@
     addCompanyOpen = true;
     try {
       const result = await api<Paginated<CompanyRow>>('/crm/companies', {
-        query: { pageSize: 200 },
+        query: { pageSize: 100 },
       });
       allCompanies = result.items;
     } catch {

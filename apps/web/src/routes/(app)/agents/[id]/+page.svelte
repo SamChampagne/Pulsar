@@ -379,8 +379,8 @@
       const caps: AgentCaps = {};
       const amount = Number(fMaxAmount);
       const rate = Number(fMaxRate);
-      if (fMaxAmount.trim() !== '' && amount > 0) caps.maxAmountPerAction = amount;
-      if (fMaxRate.trim() !== '' && rate > 0) caps.maxActionsPerMinute = rate;
+      if (String(fMaxAmount ?? '').trim() !== '' && amount > 0) caps.maxAmountPerAction = amount;
+      if (String(fMaxRate ?? '').trim() !== '' && rate > 0) caps.maxActionsPerMinute = rate;
 
       await api(`/agents/${agentId}`, {
         method: 'PATCH',

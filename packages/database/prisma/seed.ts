@@ -812,6 +812,63 @@ async function main() {
     });
   }
   console.log(`Billing chart of accounts ready (${DEFAULT_CHART.length} accounts seeded for acme).`);
+
+  // --- Billing: default modes of payment (acme tenant) --------------------------
+  for (const m of [
+    { name: 'Espèces', accountCode: '1000', isDefault: true },
+    { name: 'Banque', accountCode: '1010', isDefault: false },
+  ]) {
+    await prisma.modeOfPayment.upsert({
+      where: { tenantId_name: { tenantId: tenant.id, name: m.name } },
+      update: { accountCode: m.accountCode, isDefault: m.isDefault },
+      create: { tenantId: tenant.id, ...m },
+    });
+  }
+  console.log('Billing modes of payment ready (Espèces, Banque).');
+
+  // --- Billing: default tax templates (acme tenant) -----------------------------
+  const taxTemplates = [
+    {
+      name: 'Canada GST 5%',
+      type: 'SALES' as const,
+      isDefault: true,
+      lines: [{ description: 'GST', rate: 5, accountCode: '2100', sortOrder: 0 }],
+    },
+    {
+      name: 'Canada HST 15%',
+      type: 'SALES' as const,
+      isDefault: false,
+      lines: [{ description: 'HST', rate: 15, accountCode: '2100', sortOrder: 0 }],
+    },
+    {
+      name: 'Québec GST+QST',
+      type: 'SALES' as const,
+      isDefault: false,
+      lines: [
+        { description: 'GST', rate: 5, accountCode: '2100', sortOrder: 0 },
+        { description: 'QST', rate: 9.975, accountCode: '2100', sortOrder: 1 },
+      ],
+    },
+    {
+      name: 'Achat GST 5%',
+      type: 'PURCHASE' as const,
+      isDefault: true,
+      lines: [{ description: 'GST', rate: 5, accountCode: '1150', sortOrder: 0 }],
+    },
+  ];
+
+  for (const tmpl of taxTemplates) {
+    const record = await prisma.taxTemplate.upsert({
+      where: { tenantId_name: { tenantId: tenant.id, name: tmpl.name } },
+      update: { type: tmpl.type, isDefault: tmpl.isDefault },
+      create: { tenantId: tenant.id, name: tmpl.name, type: tmpl.type, isDefault: tmpl.isDefault },
+    });
+    await prisma.taxTemplateLine.deleteMany({ where: { templateId: record.id } });
+    await prisma.taxTemplateLine.createMany({
+      data: tmpl.lines.map((l) => ({ tenantId: tenant.id, templateId: record.id, ...l })),
+    });
+  }
+  console.log('Billing tax templates ready (Canada GST 5%, HST 15%, Québec GST+QST, Achat GST 5%).');
 }
 
 main()

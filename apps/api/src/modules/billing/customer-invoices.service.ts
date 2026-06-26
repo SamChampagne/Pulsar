@@ -3,9 +3,14 @@ import {
   AuditAction,
   CustomerInvoiceStatus,
   TransportOrderStatus,
+  TaxTemplateType,
   canTransitionCustomerInvoice,
   computeLineTotal,
+  computeTax,
   sumLineItems,
+  PaymentPartyType,
+  PaymentTargetType,
+  PaymentType,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -16,6 +21,10 @@ import { MailService } from '../../core/email/mail.service';
 import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { RatingService } from '../transportation/rating/rating.service';
 import { LedgerService } from './ledger/ledger.service';
+import { PaymentsService } from './payments.service';
+import { TaxTemplatesService } from './tax-templates.service';
+
+const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 
 const statementInclude = {
   customer: { select: { id: true, code: true, name: true, email: true } },
@@ -69,7 +78,19 @@ export class CustomerInvoicesService {
     private readonly moduleSettings: ModuleSettingsService,
     private readonly rating: RatingService,
     private readonly ledger: LedgerService,
+    private readonly payments: PaymentsService,
+    private readonly taxTemplates: TaxTemplatesService,
   ) {}
+
+  private async defaultModeId(tenantId: string): Promise<string> {
+    const mode = await this.prisma.modeOfPayment.findFirst({
+      where: { tenantId },
+      orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+      select: { id: true },
+    });
+    if (!mode) throw new BadRequestException('No mode of payment configured');
+    return mode.id;
+  }
 
   list(tenantId: string, status?: CustomerInvoiceStatus, customerId?: string) {
     return this.prisma.customerInvoice.findMany({
@@ -245,6 +266,72 @@ export class CustomerInvoicesService {
     return { deleted: true };
   }
 
+  /** Applies (or clears) a tax template on a DRAFT invoice. */
+  async applyTax(tenantId: string, userId: string, id: string, taxTemplateId: string | null) {
+    const invoice = await this.get(tenantId, id);
+    if (invoice.status !== CustomerInvoiceStatus.DRAFT) {
+      throw new BadRequestException('Tax can only be applied to DRAFT invoices');
+    }
+
+    const net = round2(Number(invoice.totalAmount) - Number(invoice.taxAmount));
+
+    let newTaxAmount: number;
+    let newTaxDetail: Prisma.InputJsonValue | null;
+    let newTemplateId: string | null;
+    let newTotal: number;
+
+    if (taxTemplateId === null) {
+      // Clear tax
+      newTaxAmount = 0;
+      newTaxDetail = null;
+      newTemplateId = null;
+      newTotal = round2(net);
+    } else {
+      const template = await this.taxTemplates.get(tenantId, taxTemplateId); // 404 if not owned — rule 9
+      if (template.type !== TaxTemplateType.SALES) {
+        throw new BadRequestException('Tax template must be of type SALES for customer invoices');
+      }
+      const computation = computeTax(
+        net,
+        template.lines.map((l) => ({
+          description: l.description,
+          rate: Number(l.rate),
+          accountCode: l.accountCode,
+        })),
+      );
+      newTaxAmount = computation.taxAmount;
+      newTaxDetail = computation as unknown as Prisma.InputJsonValue;
+      newTemplateId = taxTemplateId;
+      newTotal = round2(net + computation.taxAmount);
+    }
+
+    const { count } = await this.prisma.customerInvoice.updateMany({
+      where: { id, tenantId, status: CustomerInvoiceStatus.DRAFT },
+      data: {
+        taxTemplateId: newTemplateId,
+        taxAmount: newTaxAmount,
+        taxDetail: newTaxDetail ?? Prisma.JsonNull,
+        totalAmount: newTotal,
+      },
+    });
+    if (count === 0) {
+      // Approved concurrently between the read and the update — immutability wins.
+      throw new BadRequestException('Tax can only be applied to DRAFT invoices');
+    }
+
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'customer-invoice',
+      entityId: id,
+      before: { taxTemplateId: invoice.taxTemplateId, taxAmount: Number(invoice.taxAmount), totalAmount: Number(invoice.totalAmount) },
+      after: { taxTemplateId: newTemplateId, taxAmount: newTaxAmount, totalAmount: newTotal },
+    });
+
+    return this.get(tenantId, id);
+  }
+
   /** Conditional-update transition (anti-TOCTOU): the WHERE carries the expected status. */
   private async transition(
     tenantId: string,
@@ -281,12 +368,22 @@ export class CustomerInvoicesService {
       approvedAt: new Date(),
     });
     const s = await this.moduleSettings.resolve(tenantId, 'billing');
-    // Auto-post ledger entry: DR AR / CR Revenue (best-effort, never breaks the transition).
+    // Auto-post ledger entry: DR AR = gross / CR Revenue = net / CR <taxAccount> per tax line.
+    // When taxAmount is 0 / no taxDetail, reduces to DR AR / CR Revenue (unchanged behaviour).
     if (s.ledgerAutoPost === true) {
-      const amount = Number(result.totalAmount);
+      const totalAmount = Number(result.totalAmount);
+      const taxAmount = Number(result.taxAmount);
+      const netAmount = round2(totalAmount - taxAmount);
       const arCode = (s.arAccountCode as string | undefined) ?? '1100';
       const revCode = (s.revenueAccountCode as string | undefined) ?? '4000';
       try {
+        // Build the credit lines: revenue net + one line per tax breakdown line.
+        const taxDetail = result.taxDetail as { lines?: Array<{ accountCode: string; amount: number }> } | null;
+        const taxCreditLines: Array<{ accountCode: string; credit: number }> =
+          taxDetail && Array.isArray(taxDetail.lines) && taxDetail.lines.length > 0
+            ? taxDetail.lines.map((l) => ({ accountCode: l.accountCode, credit: l.amount }))
+            : [];
+
         await this.ledger.post(
           tenantId,
           {
@@ -295,8 +392,9 @@ export class CustomerInvoicesService {
             sourceId: id,
             sourceKind: 'approved',
             lines: [
-              { accountCode: arCode, debit: amount },
-              { accountCode: revCode, credit: amount },
+              { accountCode: arCode, debit: totalAmount },
+              { accountCode: revCode, credit: netAmount },
+              ...taxCreditLines,
             ],
           },
           userId,
@@ -393,35 +491,27 @@ export class CustomerInvoicesService {
   }
 
   async markPaid(tenantId: string, userId: string, id: string, paidAt?: string) {
-    const result = await this.transition(tenantId, userId, id, CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.PAID, {
-      paidAt: paidAt ? new Date(paidAt) : new Date(),
+    const inv = await this.prisma.customerInvoice.findFirst({
+      where: { id, tenantId },
+      select: { id: true, status: true, totalAmount: true, amountPaid: true, customerId: true, currency: true },
     });
-    const s = await this.moduleSettings.resolve(tenantId, 'billing');
-    // Auto-post ledger entry: DR Cash / CR AR (best-effort, never breaks the transition).
-    if (s.ledgerAutoPost === true) {
-      const amount = Number(result.totalAmount);
-      const cashCode = (s.cashAccountCode as string | undefined) ?? '1000';
-      const arCode = (s.arAccountCode as string | undefined) ?? '1100';
-      try {
-        await this.ledger.post(
-          tenantId,
-          {
-            memo: `Facture client ${result.invoiceNumber} payée`,
-            sourceType: 'customer-invoice',
-            sourceId: id,
-            sourceKind: 'paid',
-            lines: [
-              { accountCode: cashCode, debit: amount },
-              { accountCode: arCode, credit: amount },
-            ],
-          },
-          userId,
-        );
-      } catch (err) {
-        this.logger.warn(`Ledger auto-post failed for customer-invoice ${id} (paid): ${(err as Error).message}`);
-      }
-    }
-    return result;
+    if (!inv) throw new NotFoundException('Statement not found');
+    if (inv.status !== 'SENT')
+      throw new BadRequestException('Only SENT statements can be marked paid via this endpoint');
+    const outstanding = Number(inv.totalAmount) - Number(inv.amountPaid);
+    if (outstanding <= 0) throw new BadRequestException('Statement already settled');
+    const payment = await this.payments.create(tenantId, userId, {
+      type: PaymentType.RECEIVE,
+      partyType: PaymentPartyType.CUSTOMER,
+      partyId: inv.customerId,
+      modeOfPaymentId: await this.defaultModeId(tenantId),
+      date: paidAt ?? new Date().toISOString(),
+      currency: inv.currency,
+      totalAmount: outstanding,
+      allocations: [{ targetType: PaymentTargetType.CUSTOMER_INVOICE, targetId: inv.id, amount: outstanding }],
+    });
+    await this.payments.submit(tenantId, userId, payment.id);
+    return this.get(tenantId, id);
   }
 
   /**

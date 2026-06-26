@@ -20,7 +20,8 @@ export type SequenceKey =
   | 'inbound-message'
   | 'rfp'
   | 'customer'
-  | 'sales-order';
+  | 'sales-order'
+  | 'payment';
 
 const PREFIXES: Record<SequenceKey, string> = {
   'transport-order': 'TO',
@@ -40,6 +41,7 @@ const PREFIXES: Record<SequenceKey, string> = {
   rfp: 'RFP',
   customer: 'CUST',
   'sales-order': 'SO',
+  payment: 'PAY',
 };
 
 /** Sequence keys whose prefix is overridable by a module tenant setting. */
@@ -54,6 +56,7 @@ const PREFIX_SETTING: Partial<Record<SequenceKey, { module: string; settingKey: 
   'yard-visit': { module: 'yard', settingKey: 'documentPrefixYardVisit' },
   'dock-appointment': { module: 'yard', settingKey: 'documentPrefixDockAppointment' },
   rfp: { module: 'procurement', settingKey: 'documentPrefixRfp' },
+  payment: { module: 'billing', settingKey: 'paymentNumberPrefix' },
 };
 
 /**

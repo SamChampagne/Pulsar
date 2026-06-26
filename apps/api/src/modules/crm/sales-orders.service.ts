@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditAction, canTransitionSalesOrder, CrmDealStage, SalesOrderStatus, sumLineItems } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { DomainEventsService } from '../../core/operating/domain-events.service';
+import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { paginationArgs, paginated } from '../../common/pagination';
 import { CreateSalesOrderDto, SalesOrderListQueryDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
 
@@ -19,6 +20,7 @@ export class SalesOrdersService {
     private readonly audit: AuditLogsService,
     private readonly sequences: SequencesService,
     private readonly domainEvents: DomainEventsService,
+    private readonly moduleSettings: ModuleSettingsService,
   ) {}
 
   async list(tenantId: string, query: SalesOrderListQueryDto) {
@@ -227,6 +229,14 @@ export class SalesOrdersService {
       select: { id: true, status: true, companyId: true, customerId: true },
     });
     if (!order) throw new NotFoundException('Sales order not found');
+
+    // Direct invoicing of a fulfilled sales order is gated by a tenant setting.
+    if (to === SalesOrderStatus.INVOICED) {
+      const settings = await this.moduleSettings.resolve(tenantId, 'crm');
+      if (settings.salesOrderDirectInvoicing === false) {
+        throw new ForbiddenException('Direct invoicing of sales orders is disabled for this tenant');
+      }
+    }
 
     if (!canTransitionSalesOrder(order.status as SalesOrderStatus, to)) {
       throw new BadRequestException(`Cannot transition sales order from ${order.status} to ${to}`);

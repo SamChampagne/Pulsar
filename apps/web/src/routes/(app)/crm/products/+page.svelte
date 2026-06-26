@@ -59,7 +59,7 @@
   let formName = $state('');
   let formSku = $state('');
   let formDescription = $state('');
-  let formUnitPrice = $state('');
+  let formUnitPrice = $state<number | null>(null);
   let formCurrency = $state('CAD');
   let formActive = $state(true);
   let formSaving = $state(false);
@@ -100,7 +100,7 @@
     formName = '';
     formSku = '';
     formDescription = '';
-    formUnitPrice = '';
+    formUnitPrice = null;
     formCurrency = 'CAD';
     formActive = true;
     deleteError = '';
@@ -113,7 +113,7 @@
     formName = product.name;
     formSku = product.sku ?? '';
     formDescription = product.description ?? '';
-    formUnitPrice = product.unitPrice != null ? String(product.unitPrice) : '';
+    formUnitPrice = product.unitPrice != null ? Number(product.unitPrice) : null;
     formCurrency = product.currency;
     formActive = product.active;
     deleteError = '';
@@ -125,8 +125,8 @@
       toast.error('Le nom est obligatoire');
       return;
     }
-    const parsedPrice = parseFloat(formUnitPrice);
-    if (formUnitPrice !== '' && (isNaN(parsedPrice) || parsedPrice < 0)) {
+    const parsedPrice = formUnitPrice != null ? Number(formUnitPrice) : NaN;
+    if (formUnitPrice != null && (isNaN(parsedPrice) || parsedPrice < 0)) {
       toast.error('Le prix unitaire doit être un nombre positif');
       return;
     }
@@ -136,7 +136,7 @@
         name: formName.trim(),
         sku: formSku.trim() || undefined,
         description: formDescription.trim() || undefined,
-        unitPrice: formUnitPrice !== '' ? parsedPrice : undefined,
+        unitPrice: formUnitPrice != null ? parsedPrice : undefined,
         currency: formCurrency || undefined,
         active: formActive,
       };

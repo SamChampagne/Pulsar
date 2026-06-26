@@ -98,13 +98,13 @@
     requestedPickupLate: '',
     requestedDeliveryEarly: '',
     requestedDeliveryLate: '',
-    totalWeightKg: '',
-    palletCount: '',
+    totalWeightKg: null as number | null,
+    palletCount: null as number | null,
     mode: TransportMode.FTL,
   });
 
   const modeSuggestion = $derived(() => {
-    const w = form.totalWeightKg ? Number(form.totalWeightKg) : null;
+    const w = form.totalWeightKg != null ? Number(form.totalWeightKg) : null;
     const suggested = suggestMode(w);
     return suggested && suggested !== form.mode ? suggested : null;
   });
@@ -196,8 +196,8 @@
           requestedDeliveryLate: form.requestedDeliveryLate
             ? new Date(form.requestedDeliveryLate).toISOString()
             : undefined,
-          totalWeightKg: form.totalWeightKg ? Number(form.totalWeightKg) : undefined,
-          palletCount: form.palletCount ? Number(form.palletCount) : undefined,
+          totalWeightKg: form.totalWeightKg != null ? Number(form.totalWeightKg) : undefined,
+          palletCount: form.palletCount != null ? Number(form.palletCount) : undefined,
           mode: form.mode,
           customData: Object.keys(customData).length > 0 ? customData : undefined,
         },
@@ -541,10 +541,26 @@
           <Input type="date" bind:value={form.requestedDeliveryLate} />
         </Field>
         <Field label="Poids (kg)">
-          <Input type="number" min="0" bind:value={form.totalWeightKg} />
+          <Input
+            type="number"
+            min="0"
+            value={form.totalWeightKg ?? ''}
+            oninput={(e) => {
+              const v = e.currentTarget.value;
+              form.totalWeightKg = v === '' ? null : Number(v);
+            }}
+          />
         </Field>
         <Field label="Palettes">
-          <Input type="number" min="0" bind:value={form.palletCount} />
+          <Input
+            type="number"
+            min="0"
+            value={form.palletCount ?? ''}
+            oninput={(e) => {
+              const v = e.currentTarget.value;
+              form.palletCount = v === '' ? null : Number(v);
+            }}
+          />
         </Field>
         <div class="col-span-2">
           <Field label="Mode">

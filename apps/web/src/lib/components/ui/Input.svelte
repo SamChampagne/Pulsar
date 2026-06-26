@@ -1,6 +1,6 @@
 <script lang="ts">
   let {
-    value = $bindable('' as string | number),
+    value = $bindable('' as string | number | null),
     type = 'text',
     placeholder = '',
     disabled = false,
@@ -18,7 +18,7 @@
 <input
   {type} {placeholder} {disabled} name={name || undefined}
   {required}
-  step={step !== undefined ? step : undefined}
+  step={step !== undefined ? step : type === 'number' ? 'any' : undefined}
   min={min !== undefined ? min : undefined}
   max={max !== undefined ? max : undefined}
   maxlength={maxlength !== undefined ? maxlength : undefined}

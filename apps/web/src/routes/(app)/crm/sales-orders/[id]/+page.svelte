@@ -71,7 +71,7 @@
   let addError = $state('');
 
   // Inline edit state
-  let editingCell = $state<{ lineId: string; field: 'quantity' | 'unitPrice' | 'discountPct'; value: string } | null>(null);
+  let editingCell = $state<{ lineId: string; field: 'quantity' | 'unitPrice' | 'discountPct'; value: string | number | null } | null>(null);
   let saving = $state(false);
 
   let deletingId = $state<string | null>(null);
@@ -79,6 +79,9 @@
   // Status action state
   let transitioning = $state(false);
   let transitionError = $state('');
+
+  // CRM module settings (gates direct invoicing of a fulfilled order)
+  let directInvoicing = $state(false);
 
   // ── Derived ───────────────────────────────────────────────────────────────────
 
@@ -128,6 +131,15 @@
       lines = freshLines.items;
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Erreur lors du rechargement');
+    }
+  }
+
+  async function loadSettings() {
+    try {
+      const res = await api<{ values: Record<string, unknown> }>('/modules/crm/settings');
+      directInvoicing = res.values?.salesOrderDirectInvoicing === true;
+    } catch {
+      // non-blocking — leave invoicing hidden if settings can't be read
     }
   }
 
@@ -223,11 +235,11 @@
 
   // ── Status transitions ────────────────────────────────────────────────────────
 
-  // Only buttons for transitions that have endpoints: confirm, fulfill, cancel
+  // Buttons for transitions that have endpoints: confirm, fulfill, invoice, cancel
   // DRAFT → CONFIRMED (confirm) | CANCELLED (cancel)
   // CONFIRMED → FULFILLED (fulfill) | CANCELLED (cancel)
-  // FULFILLED → INVOICED — no endpoint in v1, skip
-  type TransitionVerb = 'confirm' | 'fulfill' | 'cancel';
+  // FULFILLED → INVOICED (invoice) — gated by the salesOrderDirectInvoicing CRM setting
+  type TransitionVerb = 'confirm' | 'fulfill' | 'invoice' | 'cancel';
 
   interface StatusAction {
     verb: TransitionVerb;
@@ -247,6 +259,10 @@
           { verb: 'fulfill', label: 'Exécuter', variant: 'primary' },
           { verb: 'cancel',  label: 'Annuler',  variant: 'danger'  },
         ];
+      case 'FULFILLED':
+        return directInvoicing
+          ? [{ verb: 'invoice', label: 'Facturer', variant: 'primary' }]
+          : [];
       default:
         return [];
     }
@@ -259,6 +275,7 @@
     try {
       await api(`/crm/sales-orders/${order.id}/${verb}`, { method: 'POST' });
       await reloadAll();
+      if (verb === 'invoice') toast.success('Commande facturée');
     } catch (e) {
       transitionError = e instanceof ApiError ? e.message : 'Erreur lors du changement de statut';
     } finally {
@@ -306,6 +323,7 @@
 
   $effect(() => {
     void loadOrder();
+    void loadSettings();
   });
 
   $effect(() => {

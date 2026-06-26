@@ -135,6 +135,10 @@ describe('invoice workflow', () => {
     expect(canTransitionInvoice(InvoiceStatus.APPROVED, InvoiceStatus.PAID)).toBe(true);
   });
 
+  it('allows reverting PAID to APPROVED on payment cancellation', () => {
+    expect(canTransitionInvoice(InvoiceStatus.PAID, InvoiceStatus.APPROVED)).toBe(true);
+  });
+
   it('blocks the invalid paths', () => {
     expect(canTransitionInvoice(InvoiceStatus.PAID, InvoiceStatus.DRAFT)).toBe(false);
     expect(canTransitionInvoice(InvoiceStatus.APPROVED, InvoiceStatus.DISPUTED)).toBe(false);
@@ -143,16 +147,25 @@ describe('invoice workflow', () => {
 });
 
 describe('customer invoice workflow', () => {
-  it('follows DRAFT → APPROVED → SENT → PAID strictly', () => {
+  it('follows DRAFT → APPROVED → SENT → PAID', () => {
     expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.DRAFT, CustomerInvoiceStatus.APPROVED)).toBe(true);
     expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.APPROVED, CustomerInvoiceStatus.SENT)).toBe(true);
     expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.PAID)).toBe(true);
+  });
+
+  it('allows paying directly from APPROVED (no send required)', () => {
+    expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.APPROVED, CustomerInvoiceStatus.PAID)).toBe(true);
+  });
+
+  it('allows reverting PAID to SENT or APPROVED on payment cancellation', () => {
+    expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.PAID, CustomerInvoiceStatus.SENT)).toBe(true);
+    expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.PAID, CustomerInvoiceStatus.APPROVED)).toBe(true);
   });
 
   it('refuses skips and backward moves', () => {
     expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.DRAFT, CustomerInvoiceStatus.SENT)).toBe(false);
     expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.DRAFT, CustomerInvoiceStatus.PAID)).toBe(false);
     expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.APPROVED, CustomerInvoiceStatus.DRAFT)).toBe(false);
-    expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.PAID, CustomerInvoiceStatus.SENT)).toBe(false);
+    expect(canTransitionCustomerInvoice(CustomerInvoiceStatus.PAID, CustomerInvoiceStatus.DRAFT)).toBe(false);
   });
 });

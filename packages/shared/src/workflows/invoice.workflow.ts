@@ -6,7 +6,7 @@ export const INVOICE_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
   // resolve-dispute or a corrected-invoice re-reconcile; staying DISPUTED is a no-op.
   [InvoiceStatus.DISPUTED]: [InvoiceStatus.APPROVED],
   [InvoiceStatus.APPROVED]: [InvoiceStatus.PAID],
-  [InvoiceStatus.PAID]: [],
+  [InvoiceStatus.PAID]: [InvoiceStatus.APPROVED], // revert on payment cancellation
 };
 
 export function canTransitionInvoice(from: InvoiceStatus, to: InvoiceStatus): boolean {
