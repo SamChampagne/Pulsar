@@ -146,7 +146,7 @@
     formError = '';
     if (!form.name.trim()) { formError = 'Le nom est requis.'; return; }
     if (!form.fiscalYear || isNaN(form.fiscalYear)) { formError = "L'exercice fiscal est requis."; return; }
-    const validLines = lines.filter((l) => l.accountCode.trim() && l.amount.trim());
+    const validLines = lines.filter((l) => l.accountCode.trim() && String(l.amount ?? '').trim() !== '');
     if (validLines.length === 0) { formError = 'Au moins une ligne budgétaire est requise.'; return; }
     for (const l of validLines) {
       const amt = Number(l.amount);

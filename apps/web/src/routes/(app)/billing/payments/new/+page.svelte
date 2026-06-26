@@ -88,7 +88,7 @@
     loadingParties = true;
     try {
       const res = await api<{ items: PartyOption[] }>('/transportation/customers', {
-        query: { pageSize: 200 },
+        query: { pageSize: 100 },
       });
       customers = res.items;
     } catch {
@@ -103,7 +103,7 @@
     loadingParties = true;
     try {
       const res = await api<{ items: PartyOption[] }>('/transportation/carriers', {
-        query: { pageSize: 200 },
+        query: { pageSize: 100 },
       });
       carriers = res.items;
     } catch {

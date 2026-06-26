@@ -136,6 +136,10 @@
     errorAccounts = '';
     try {
       accounts = await api<BankAccount[]>('/billing/bank-accounts');
+      // Load balances AFTER the await (outside any $effect's synchronous tracking),
+      // so the balance writes never re-trigger a reactive effect (avoids
+      // effect_update_depth_exceeded).
+      for (const a of accounts) void loadBalance(a.id);
     } catch (e) {
       errorAccounts = e instanceof ApiError ? e.message : 'Échec du chargement des comptes';
     } finally {
@@ -229,12 +233,6 @@
 
   // Load balances whenever accounts change
   $effect(() => {
-    if (accounts.length > 0) {
-      accounts.forEach((a) => loadBalance(a.id));
-    }
-  });
-
-  $effect(() => {
     void loadAccounts();
   });
 
@@ -272,12 +270,12 @@
 
   // Manual create form
   let showTxnForm = $state(false);
-  let txnForm = $state({ date: '', description: '', amount: '', reference: '' });
+  let txnForm = $state({ date: '', description: '', amount: null as number | null, reference: '' });
   let savingTxn = $state(false);
   let txnFormError = $state('');
 
   function resetTxnForm() {
-    txnForm = { date: '', description: '', amount: '', reference: '' };
+    txnForm = { date: '', description: '', amount: null, reference: '' };
     txnFormError = '';
   }
 
@@ -286,8 +284,8 @@
     if (!selectedAccountId) { txnFormError = 'Sélectionnez un compte.'; return; }
     if (!txnForm.date) { txnFormError = 'La date est requise.'; return; }
     if (!txnForm.description.trim()) { txnFormError = 'La description est requise.'; return; }
-    const amt = Number(txnForm.amount);
-    if (isNaN(amt) || txnForm.amount === '') { txnFormError = 'Montant invalide.'; return; }
+    const amt = Number(txnForm.amount ?? '');
+    if (txnForm.amount === null || txnForm.amount === undefined || isNaN(amt)) { txnFormError = 'Montant invalide.'; return; }
 
     savingTxn = true;
     try {

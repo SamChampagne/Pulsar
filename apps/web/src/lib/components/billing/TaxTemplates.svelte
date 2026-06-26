@@ -35,7 +35,7 @@
   let formName = $state('');
   let formType = $state<TaxType>('SALES');
   let formIsDefault = $state(false);
-  let formLines = $state<{ description: string; rate: string; accountCode: string }[]>([]);
+  let formLines = $state<{ description: string; rate: number | undefined; accountCode: string }[]>([]);
   let formSaving = $state(false);
 
   // ── State — delete ────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@
     formName = '';
     formType = 'SALES';
     formIsDefault = false;
-    formLines = [{ description: '', rate: '', accountCode: '' }];
+    formLines = [{ description: '', rate: undefined, accountCode: '' }];
     deleteError = '';
     formOpen = true;
   }
@@ -78,18 +78,18 @@
     formIsDefault = tpl.isDefault;
     formLines = tpl.lines.map((l) => ({
       description: l.description,
-      rate: String(l.rate),
+      rate: Number(l.rate),
       accountCode: l.accountCode,
     }));
     if (formLines.length === 0) {
-      formLines = [{ description: '', rate: '', accountCode: '' }];
+      formLines = [{ description: '', rate: undefined, accountCode: '' }];
     }
     deleteError = '';
     formOpen = true;
   }
 
   function addLine() {
-    formLines = [...formLines, { description: '', rate: '', accountCode: '' }];
+    formLines = [...formLines, { description: '', rate: undefined, accountCode: '' }];
   }
 
   function removeLine(index: number) {
@@ -108,10 +108,10 @@
         type: formType,
         isDefault: formIsDefault,
         lines: formLines
-          .filter((l) => l.description.trim() || l.rate.trim())
+          .filter((l) => l.description.trim() || (l.rate !== undefined && String(l.rate).trim() !== ''))
           .map((l, i) => ({
             description: l.description.trim(),
-            rate: Number(l.rate),
+            rate: Number(l.rate ?? 0),
             accountCode: l.accountCode.trim(),
             sortOrder: i,
           })),
@@ -282,10 +282,11 @@
                 />
               </div>
               <div class="w-24">
-                <Input
+                <input
+                  type="number"
                   bind:value={line.rate}
                   placeholder="Taux %"
-                  type="number"
+                  class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
                 />
               </div>
               <div class="w-28">

@@ -91,14 +91,24 @@
 
   let showModal = $state(false);
   let editingAsset = $state<FixedAsset | null>(null);
-  let form = $state({
+  let form = $state<{
+    assetCode: string;
+    name: string;
+    category: string;
+    acquisitionDate: string;
+    cost: number | null;
+    salvageValue: number | null;
+    usefulLifeMonths: number | null;
+    depreciationExpenseAccountCode: string;
+    accumulatedDepreciationAccountCode: string;
+  }>({
     assetCode: '',
     name: '',
     category: '',
     acquisitionDate: '',
-    cost: '',
-    salvageValue: '',
-    usefulLifeMonths: '',
+    cost: null,
+    salvageValue: null,
+    usefulLifeMonths: null,
     depreciationExpenseAccountCode: '',
     accumulatedDepreciationAccountCode: '',
   });
@@ -112,9 +122,9 @@
       name: '',
       category: '',
       acquisitionDate: new Date().toISOString().slice(0, 10),
-      cost: '',
-      salvageValue: '0',
-      usefulLifeMonths: '',
+      cost: null,
+      salvageValue: 0,
+      usefulLifeMonths: null,
       depreciationExpenseAccountCode: '5100',
       accumulatedDepreciationAccountCode: '1590',
     };
@@ -129,9 +139,9 @@
       name: a.name,
       category: a.category ?? '',
       acquisitionDate: a.acquisitionDate.slice(0, 10),
-      cost: String(Number(a.cost)),
-      salvageValue: String(Number(a.salvageValue)),
-      usefulLifeMonths: String(a.usefulLifeMonths),
+      cost: Number(a.cost),
+      salvageValue: Number(a.salvageValue),
+      usefulLifeMonths: a.usefulLifeMonths,
       depreciationExpenseAccountCode: a.depreciationExpenseAccountCode,
       accumulatedDepreciationAccountCode: a.accumulatedDepreciationAccountCode,
     };
@@ -144,12 +154,12 @@
     if (!form.assetCode.trim()) { formError = 'Le code est requis.'; return; }
     if (!form.name.trim()) { formError = 'Le nom est requis.'; return; }
     if (!form.acquisitionDate) { formError = "La date d'acquisition est requise."; return; }
-    const cost = Number(form.cost);
-    if (!form.cost || isNaN(cost) || cost < 0) { formError = 'Le coût doit être un nombre positif.'; return; }
-    const salvage = Number(form.salvageValue);
+    const cost = Number(form.cost ?? '');
+    if (form.cost === null || form.cost === undefined || isNaN(cost) || cost < 0) { formError = 'Le coût doit être un nombre positif.'; return; }
+    const salvage = Number(form.salvageValue ?? 0);
     if (isNaN(salvage) || salvage < 0) { formError = 'La valeur résiduelle doit être un nombre positif.'; return; }
-    const life = Number(form.usefulLifeMonths);
-    if (!form.usefulLifeMonths || isNaN(life) || life < 1 || !Number.isInteger(life)) {
+    const life = Number(form.usefulLifeMonths ?? '');
+    if (form.usefulLifeMonths === null || form.usefulLifeMonths === undefined || isNaN(life) || life < 1 || !Number.isInteger(life)) {
       formError = 'La durée de vie doit être un entier supérieur à 0.';
       return;
     }

@@ -133,7 +133,7 @@
     if (customers.length > 0) return;
     loadingCustomers = true;
     try {
-      const res = await api<Paginated<CustomerItem>>('/transportation/customers?pageSize=200');
+      const res = await api<Paginated<CustomerItem>>('/transportation/customers?pageSize=100');
       customers = res.items;
     } catch {
       // non-blocking; select will be empty
@@ -149,7 +149,7 @@
 
   interface LineForm {
     description: string;
-    amount: string;
+    amount: number | null;
   }
 
   let form = $state({
@@ -158,7 +158,7 @@
     interval: 'MONTHLY' as SubscriptionInterval,
     startDate: '',
   });
-  let formLines = $state<LineForm[]>([{ description: '', amount: '' }]);
+  let formLines = $state<LineForm[]>([{ description: '', amount: null }]);
   let saving = $state(false);
   let formError = $state('');
 
@@ -170,7 +170,7 @@
       interval: 'MONTHLY',
       startDate: new Date().toISOString().slice(0, 10),
     };
-    formLines = [{ description: '', amount: '' }];
+    formLines = [{ description: '', amount: null }];
     formError = '';
     showModal = true;
     void loadCustomers();
@@ -184,15 +184,15 @@
       interval: s.interval,
       startDate: s.startDate.slice(0, 10),
     };
-    formLines = s.lines.map((l) => ({ description: l.description, amount: String(Number(l.amount)) }));
-    if (formLines.length === 0) formLines = [{ description: '', amount: '' }];
+    formLines = s.lines.map((l) => ({ description: l.description, amount: Number(l.amount) }));
+    if (formLines.length === 0) formLines = [{ description: '', amount: null }];
     formError = '';
     showModal = true;
     void loadCustomers();
   }
 
   function addLine() {
-    formLines = [...formLines, { description: '', amount: '' }];
+    formLines = [...formLines, { description: '', amount: null }];
   }
 
   function removeLine(idx: number) {
@@ -207,8 +207,8 @@
     if (!form.startDate) { formError = 'La date de début est requise.'; return; }
     for (const [i, l] of formLines.entries()) {
       if (!l.description.trim()) { formError = `Ligne ${i + 1} : la description est requise.`; return; }
-      const amt = Number(l.amount);
-      if (isNaN(amt) || amt < 0) { formError = `Ligne ${i + 1} : montant invalide.`; return; }
+      const amt = Number(l.amount ?? '');
+      if (l.amount === null || l.amount === undefined || isNaN(amt) || amt < 0) { formError = `Ligne ${i + 1} : montant invalide.`; return; }
     }
 
     saving = true;
@@ -218,7 +218,7 @@
         customerId: form.customerId,
         interval: form.interval,
         startDate: form.startDate,
-        lines: formLines.map((l) => ({ description: l.description.trim(), amount: Number(l.amount) })),
+        lines: formLines.map((l) => ({ description: l.description.trim(), amount: Number(l.amount ?? 0) })),
       };
       if (editingSub) {
         await api(`/billing/subscriptions/${editingSub.id}`, { method: 'PATCH', body });
