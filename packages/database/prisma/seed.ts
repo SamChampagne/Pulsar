@@ -8,7 +8,13 @@
  *  - an admin role (all permissions) and admin user admin@pulsar.dev / admin123
  *  - sample TMS master data and one transport order
  */
-import { PrismaClient, TransportOrderStatus } from '@prisma/client';
+import {
+  PrismaClient,
+  TransportOrderStatus,
+  ManufacturingOrderStatus,
+  ManufacturingPriority,
+  ManufacturingFirmness,
+} from '@prisma/client';
 import { hashSync } from 'bcryptjs';
 import { MODULE_CATALOG, PERMISSION_CATALOG, LaneEndpointType, buildEndpointKey } from '@pulsar/shared';
 
@@ -729,6 +735,71 @@ async function main() {
   }
 
   console.log('Email templates and sample message ready.');
+
+  // --- Manufacturing demo data (acme tenant) ---------------------------------
+  // A calendar (Mon–Fri 08:00–16:00), two work centers, a routing, and a
+  // RELEASED manufacturing order with two finish-to-start operations — enough
+  // for the scheduling Gantt to show a real plan out of the box.
+  const calendar = await prisma.workingCalendar.upsert({
+    where: { tenantId_code: { tenantId: tenant.id, code: 'CAL-MAIN' } },
+    update: { name: 'Atelier principal (Lun–Ven 08:00–16:00)' },
+    create: { tenantId: tenant.id, code: 'CAL-MAIN', name: 'Atelier principal (Lun–Ven 08:00–16:00)' },
+  });
+  await prisma.workCenterShift.deleteMany({ where: { calendarId: calendar.id } });
+  for (const weekday of [0, 1, 2, 3, 4]) {
+    await prisma.workCenterShift.create({
+      data: { tenantId: tenant.id, calendarId: calendar.id, weekday, startTime: '08:00', endTime: '16:00' },
+    });
+  }
+  const wcCut = await prisma.workCenter.upsert({
+    where: { tenantId_code: { tenantId: tenant.id, code: 'WC-CUT' } },
+    update: { name: 'Découpe', calendarId: calendar.id },
+    create: { tenantId: tenant.id, code: 'WC-CUT', name: 'Découpe', calendarId: calendar.id, capabilities: ['cnc'] },
+  });
+  const wcAsm = await prisma.workCenter.upsert({
+    where: { tenantId_code: { tenantId: tenant.id, code: 'WC-ASM' } },
+    update: { name: 'Assemblage', calendarId: calendar.id },
+    create: { tenantId: tenant.id, code: 'WC-ASM', name: 'Assemblage', calendarId: calendar.id, capabilities: ['manual'] },
+  });
+  const routing = await prisma.routing.upsert({
+    where: { tenantId_code: { tenantId: tenant.id, code: 'RT-WIDGET' } },
+    update: { name: 'Gamme widget', productRef: 'WIDGET-1' },
+    create: { tenantId: tenant.id, code: 'RT-WIDGET', name: 'Gamme widget', productRef: 'WIDGET-1' },
+  });
+  await prisma.routingStep.deleteMany({ where: { routingId: routing.id } });
+  await prisma.routingStep.create({
+    data: { tenantId: tenant.id, routingId: routing.id, sequence: 1, name: 'Découpe', durationMinutes: 120, eligibleWorkCenterIds: [wcCut.id] },
+  });
+  await prisma.routingStep.create({
+    data: { tenantId: tenant.id, routingId: routing.id, sequence: 2, name: 'Assemblage', durationMinutes: 90, eligibleWorkCenterIds: [wcAsm.id] },
+  });
+  const releaseDate = new Date();
+  const dueDate = new Date(releaseDate.getTime() + 7 * 86_400_000);
+  const mo = await prisma.manufacturingOrder.upsert({
+    where: { tenantId_number: { tenantId: tenant.id, number: 'MO-DEMO-001' } },
+    update: { status: ManufacturingOrderStatus.RELEASED, releaseDate, dueDate },
+    create: {
+      tenantId: tenant.id,
+      number: 'MO-DEMO-001',
+      name: 'Lot widget démo',
+      productRef: 'WIDGET-1',
+      quantity: 10,
+      releaseDate,
+      dueDate,
+      priority: ManufacturingPriority.HIGH,
+      firmness: ManufacturingFirmness.FIRM,
+      status: ManufacturingOrderStatus.RELEASED,
+      routingId: routing.id,
+    },
+  });
+  await prisma.manufacturingOperation.deleteMany({ where: { orderId: mo.id } });
+  await prisma.manufacturingOperation.create({
+    data: { tenantId: tenant.id, orderId: mo.id, sequence: 1, name: 'Découpe', durationMinutes: 120, eligibleWorkCenterIds: [wcCut.id] },
+  });
+  await prisma.manufacturingOperation.create({
+    data: { tenantId: tenant.id, orderId: mo.id, sequence: 2, name: 'Assemblage', durationMinutes: 90, eligibleWorkCenterIds: [wcAsm.id] },
+  });
+  console.log('Manufacturing demo data ready (1 calendar, 2 work centers, 1 routing, 1 RELEASED MO).');
 }
 
 main()

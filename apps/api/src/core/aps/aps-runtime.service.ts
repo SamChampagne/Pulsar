@@ -80,10 +80,19 @@ export class ApsRuntimeService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Starting APS engine (uvicorn) on 127.0.0.1:${port} ...`);
       let child: ChildProcessWithoutNullStreams;
       try {
+        // The engine reads its OWN config from services/aps/.env via pydantic-settings.
+        // CRITICAL: pydantic-settings prioritises real env vars over the .env file, and
+        // @nestjs/config has loaded Pulsar's DATABASE_URL into process.env. If we leaked
+        // that here the engine would connect to Pulsar's database instead of its own
+        // (planiadvance) and 500 on every query. Pin the engine's DATABASE_URL explicitly.
+        const env = { ...process.env };
+        const apsDbUrl = this.config.get<string>('APS_DATABASE_URL');
+        if (apsDbUrl) env.DATABASE_URL = apsDbUrl;
+        else delete env.DATABASE_URL; // fall back to services/aps/.env
         child = spawn(
           venvPython(),
           ['-m', 'uvicorn', 'planiadvance_v2.api.main:app', '--host', '127.0.0.1', '--port', port],
-          { stdio: ['pipe', 'pipe', 'pipe'], cwd: apsDir(), env: { ...process.env } },
+          { stdio: ['pipe', 'pipe', 'pipe'], cwd: apsDir(), env },
         ) as ChildProcessWithoutNullStreams;
       } catch (err) {
         this.logger.warn(`Failed to spawn APS engine: ${err instanceof Error ? err.message : err}`);
