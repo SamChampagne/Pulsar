@@ -52,6 +52,8 @@ export * from './integrations/operations';
 export * from './integrations/connector-foundation';
 export * from './fleet/maintenance.workflow';
 export * from './fleet/compliance';
+export * from './fleet/usage';
+export * from './fleet/inspection';
 export * from './wms/wms.workflow';
 export * from './wms/replenishment';
 export * from './yard/yard.workflow';
