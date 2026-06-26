@@ -60,13 +60,23 @@ function naiveIso(d: Date): string {
  * lost. When an operation has no explicit `dependsOn`, a finish-to-start chain
  * is derived from `sequence` (op N depends on the previous op id).
  */
+export interface SnapshotMaterials {
+  /** Aggregated WMS on-hand per material ref (materialRef === WmsItem.sku). */
+  inventory: { materialRef: string; onHand: number }[];
+  /** Material requirements per order id (from the order's BOM × quantity). */
+  byOrder: Record<string, { materialRef: string; fixedQuantity: number }[]>;
+}
+
 export function buildManufacturingSnapshot(input: {
   calendars: SnapshotCalendarRow[];
   workCenters: SnapshotWorkCenterRow[];
   orders: SnapshotOrderRow[];
   exportedAt: Date;
+  /** When provided (SP5 opt-in), wires WMS inventory into the engine's material ledger. */
+  materials?: SnapshotMaterials;
 }): SnapshotBuildResult {
   const warnings: string[] = [];
+  const onHand = new Map((input.materials?.inventory ?? []).map((i) => [i.materialRef, i.onHand]));
 
   const calendars = input.calendars.map((c) => ({
     id: c.id,
@@ -103,6 +113,15 @@ export function buildManufacturingSnapshot(input: {
       warnings.push(`Order "${order.name}" has no schedulable operations — skipped.`);
       continue;
     }
+    // Material requirements (SP5): the order's BOM-derived needs attach to op 1.
+    const reqs = input.materials?.byOrder[order.id] ?? [];
+    for (const r of reqs) {
+      if (!onHand.has(r.materialRef)) {
+        warnings.push(
+          `Material "${r.materialRef}" (order ${order.name}) has no matching WMS stock — treated as 0 on-hand.`,
+        );
+      }
+    }
     const operations = usable.map((op, idx) => {
       const dependencies =
         op.dependsOn.length > 0 ? op.dependsOn : idx > 0 ? [usable[idx - 1].id] : [];
@@ -115,6 +134,9 @@ export function buildManufacturingSnapshot(input: {
         eligible_machine_ids: op.eligibleWorkCenterIds,
         setup_minutes: op.setupMinutes,
         dependencies,
+        ...(idx === 0 && reqs.length > 0
+          ? { material_requirements: reqs.map((r) => ({ material_id: r.materialRef, fixed_quantity: r.fixedQuantity })) }
+          : {}),
       };
     });
     operationCount += operations.length;
@@ -131,6 +153,11 @@ export function buildManufacturingSnapshot(input: {
     });
   }
 
+  const inventory_items = (input.materials?.inventory ?? []).map((i) => ({
+    material_id: i.materialRef,
+    quantity_on_hand: i.onHand,
+  }));
+
   const snapshot: ApsSnapshot = {
     contract_version: APS_CONTRACT_VERSION,
     exported_at: naiveIso(input.exportedAt),
@@ -138,6 +165,7 @@ export function buildManufacturingSnapshot(input: {
     calendars,
     machines,
     work_orders: workOrders,
+    ...(inventory_items.length > 0 ? { inventory_items } : {}),
     metadata: { tenant_orders: input.orders.length },
   };
 

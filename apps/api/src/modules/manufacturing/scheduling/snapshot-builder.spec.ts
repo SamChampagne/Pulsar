@@ -73,4 +73,41 @@ describe('buildManufacturingSnapshot', () => {
     expect(res.snapshot.work_orders).toHaveLength(0);
     expect(res.warnings.some((w) => w.includes('no schedulable operations'))).toBe(true);
   });
+
+  it('SP5: attaches WMS inventory + op-1 material requirements when materials provided', () => {
+    const { snapshot } = buildManufacturingSnapshot({
+      exportedAt,
+      calendars: [],
+      workCenters: [],
+      orders: [baseOrder()],
+      materials: {
+        inventory: [{ materialRef: 'STEEL', onHand: 500 }],
+        byOrder: { o1: [{ materialRef: 'STEEL', fixedQuantity: 50 }] },
+      },
+    });
+    expect(snapshot.inventory_items).toEqual([{ material_id: 'STEEL', quantity_on_hand: 500 }]);
+    const ops = snapshot.work_orders![0]!.operations;
+    expect(ops[0]!.material_requirements).toEqual([{ material_id: 'STEEL', fixed_quantity: 50 }]);
+    expect(ops[1]!.material_requirements).toBeUndefined(); // only op 1 carries them
+  });
+
+  it('SP5: warns when a required material has no matching WMS stock', () => {
+    const res = buildManufacturingSnapshot({
+      exportedAt,
+      calendars: [],
+      workCenters: [],
+      orders: [baseOrder()],
+      materials: {
+        inventory: [], // STEEL not stocked
+        byOrder: { o1: [{ materialRef: 'STEEL', fixedQuantity: 50 }] },
+      },
+    });
+    expect(res.warnings.some((w) => w.includes('no matching WMS stock'))).toBe(true);
+  });
+
+  it('omits inventory_items entirely when no materials provided (unchanged behaviour)', () => {
+    const { snapshot } = buildManufacturingSnapshot({ exportedAt, calendars: [], workCenters: [], orders: [baseOrder()] });
+    expect(snapshot.inventory_items).toBeUndefined();
+    expect(snapshot.work_orders![0]!.operations[0]!.material_requirements).toBeUndefined();
+  });
 });

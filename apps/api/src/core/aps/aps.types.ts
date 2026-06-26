@@ -41,6 +41,14 @@ export interface ApsMachine {
   site_id?: string | null;
 }
 
+export interface ApsMaterialRequirement {
+  material_id: string;
+  /** consumed per produced unit (× work order quantity). */
+  quantity_per_unit?: number;
+  /** flat quantity regardless of order quantity. */
+  fixed_quantity?: number;
+}
+
 export interface ApsOperation {
   id: string;
   work_order_id: string;
@@ -52,7 +60,15 @@ export interface ApsOperation {
   /** simple finish-to-start predecessor operation ids. */
   dependencies?: string[];
   setup_family?: string | null;
+  material_requirements?: ApsMaterialRequirement[];
   external_ref?: string | null;
+}
+
+export interface ApsInventoryItem {
+  material_id: string;
+  quantity_on_hand: number;
+  /** ISO-8601; engine treats material as available from this instant (default: always). */
+  as_of?: string | null;
 }
 
 export interface ApsWorkOrder {
@@ -82,6 +98,7 @@ export interface ApsSnapshot {
   calendars?: ApsCalendar[];
   machines?: ApsMachine[];
   work_orders?: ApsWorkOrder[];
+  inventory_items?: ApsInventoryItem[];
   metadata?: Record<string, unknown>;
 }
 

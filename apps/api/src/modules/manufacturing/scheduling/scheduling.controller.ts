@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { AuditAction, MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
-import { IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Audit } from '../../../common/decorators/audit.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
@@ -21,6 +21,8 @@ class RunSchedulingDto {
   @IsOptional() @IsInt() @Min(1) @Max(365) horizonDays?: number;
 
   @IsOptional() @IsObject() objective?: Record<string, number>;
+
+  @IsOptional() @IsBoolean() respectMaterials?: boolean;
 }
 
 @ApiTags('manufacturing/scheduling')

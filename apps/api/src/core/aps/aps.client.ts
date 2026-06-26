@@ -1,4 +1,9 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
   ApsHealth,
@@ -63,6 +68,20 @@ export class ApsClient {
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       this.logger.warn(`APS ${method} ${path} → HTTP ${res.status}: ${text.slice(0, 300)}`);
+      // 4xx from the engine is a MEANINGFUL business response (e.g. a material
+      // shortage or an invalid snapshot), not a sidecar-unavailable condition.
+      // Surface the engine's own message as a 400 so the user can act on it.
+      // 5xx / network errors remain 503 (the engine is genuinely unavailable).
+      if (res.status >= 400 && res.status < 500) {
+        let detail = `APS engine rejected the request (HTTP ${res.status})`;
+        try {
+          const parsed = JSON.parse(text) as { message?: string; detail?: string };
+          detail = parsed.message ?? parsed.detail ?? detail;
+        } catch {
+          /* non-JSON body — keep the generic detail */
+        }
+        throw new BadRequestException(detail);
+      }
       throw new ServiceUnavailableException(`APS engine error (HTTP ${res.status})`);
     }
     return (await res.json()) as T;

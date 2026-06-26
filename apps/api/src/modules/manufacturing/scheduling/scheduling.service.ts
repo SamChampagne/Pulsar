@@ -4,13 +4,15 @@ import {
   ManufacturingFirmness,
   ManufacturingOrderStatus,
   ManufacturingPriority,
+  MODULE_KEYS,
 } from '@pulsar/shared';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
 import { ApsClient } from '../../../core/aps/aps.client';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
-import { buildManufacturingSnapshot } from './snapshot-builder';
+import { buildManufacturingSnapshot, type SnapshotMaterials } from './snapshot-builder';
 
 export interface RunSchedulingInput {
   strategy?: string;
@@ -23,6 +25,8 @@ export interface RunSchedulingInput {
     setup_cost?: number;
     idle_penalty?: number;
   };
+  /** SP5: feed WMS on-hand into the engine's material ledger (default false). */
+  respectMaterials?: boolean;
 }
 
 /**
@@ -36,7 +40,52 @@ export class SchedulingService {
     private readonly prisma: PrismaService,
     private readonly aps: ApsClient,
     private readonly audit: AuditLogsService,
+    private readonly modulesCache: TenantModulesCacheService,
   ) {}
+
+  /**
+   * SP5: aggregate WMS on-hand (per WmsItem.sku) + derive per-order material
+   * requirements from each order's BOM (quantityPerUnit × order.quantity).
+   * Returns null with a warning when WMS is not enabled. Best-effort.
+   */
+  private async loadMaterials(
+    tenantId: string,
+    orders: { id: string; quantity: number; bomId: string | null }[],
+  ): Promise<{ materials: SnapshotMaterials | undefined; warnings: string[] }> {
+    const enabled = await this.modulesCache.getEnabledKeys(tenantId);
+    if (!enabled.has(MODULE_KEYS.WMS)) {
+      return { materials: undefined, warnings: ['respectMaterials ignored — the WMS module is not enabled.'] };
+    }
+    const [items, levels] = await this.prisma.$transaction([
+      this.prisma.wmsItem.findMany({ where: { tenantId }, select: { id: true, sku: true } }),
+      this.prisma.inventoryLevel.findMany({ where: { tenantId }, select: { itemId: true, qtyOnHand: true } }),
+    ]);
+    const onHandByItem = new Map<string, number>();
+    for (const l of levels) {
+      onHandByItem.set(l.itemId, (onHandByItem.get(l.itemId) ?? 0) + Number(l.qtyOnHand));
+    }
+    const inventory = items.map((i) => ({
+      materialRef: i.sku,
+      onHand: onHandByItem.get(i.id) ?? 0,
+    }));
+
+    const bomIds = [...new Set(orders.map((o) => o.bomId).filter((b): b is string => !!b))];
+    const boms = bomIds.length
+      ? await this.prisma.bom.findMany({ where: { tenantId, id: { in: bomIds } }, include: { lines: true } })
+      : [];
+    const bomById = new Map(boms.map((b) => [b.id, b]));
+    const byOrder: SnapshotMaterials['byOrder'] = {};
+    for (const o of orders) {
+      if (!o.bomId) continue;
+      const bom = bomById.get(o.bomId);
+      if (!bom) continue;
+      byOrder[o.id] = bom.lines.map((l) => ({
+        materialRef: l.materialRef,
+        fixedQuantity: l.quantityPerUnit * o.quantity,
+      }));
+    }
+    return { materials: { inventory, byOrder }, warnings: [] };
+  }
 
   /** Passthrough so the UI only offers strategies the engine actually supports. */
   strategies() {
@@ -69,8 +118,21 @@ export class SchedulingService {
       );
     }
 
-    const { snapshot, warnings, orderCount, operationCount } = buildManufacturingSnapshot({
+    // SP5: optionally wire WMS inventory into the engine's material ledger.
+    let materials: SnapshotMaterials | undefined;
+    const materialWarnings: string[] = [];
+    if (input.respectMaterials) {
+      const loaded = await this.loadMaterials(
+        tenantId,
+        orders.map((o) => ({ id: o.id, quantity: o.quantity, bomId: o.bomId })),
+      );
+      materials = loaded.materials;
+      materialWarnings.push(...loaded.warnings);
+    }
+
+    const built = buildManufacturingSnapshot({
       exportedAt: new Date(),
+      materials,
       calendars: calendars.map((c) => ({
         id: c.id,
         name: c.name,
@@ -107,6 +169,8 @@ export class SchedulingService {
         })),
       })),
     });
+    const { snapshot, orderCount, operationCount } = built;
+    const warnings = [...materialWarnings, ...built.warnings];
 
     if (orderCount === 0) {
       throw new BadRequestException(
