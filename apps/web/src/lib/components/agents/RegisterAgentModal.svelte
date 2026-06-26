@@ -112,7 +112,7 @@
     try {
       const caps: { maxAmountPerAction?: number; alwaysOn?: boolean; handlesCategories?: string[] } = {};
       const amount = Number(maxAmountPerAction);
-      if (maxAmountPerAction.trim() !== '' && amount > 0) caps.maxAmountPerAction = amount;
+      if (String(maxAmountPerAction ?? '').trim() !== '' && amount > 0) caps.maxAmountPerAction = amount;
       if (alwaysOn) {
         caps.alwaysOn = true;
         caps.handlesCategories = handlesCategories;
