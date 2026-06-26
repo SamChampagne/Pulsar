@@ -159,8 +159,8 @@
       state: form.state || undefined,
       postalCode: form.postalCode || undefined,
       country: form.country || undefined,
-      latitude: form.latitude !== '' ? Number(form.latitude) : undefined,
-      longitude: form.longitude !== '' ? Number(form.longitude) : undefined,
+      latitude: String(form.latitude ?? '').trim() !== '' ? Number(form.latitude) : undefined,
+      longitude: String(form.longitude ?? '').trim() !== '' ? Number(form.longitude) : undefined,
       timezone: form.timezone || undefined,
       ...(editing ? { isActive: form.isActive } : {}),
     };
@@ -352,8 +352,12 @@
         <Field label="Pays"><Input bind:value={form.country} placeholder="CA" /></Field>
       </div>
       <div class="grid grid-cols-3 gap-3">
-        <Field label="Latitude"><Input bind:value={form.latitude} type="number" /></Field>
-        <Field label="Longitude"><Input bind:value={form.longitude} type="number" /></Field>
+        <Field label="Latitude"
+          ><Input bind:value={form.latitude} type="number" step="any" placeholder="45.5017" /></Field
+        >
+        <Field label="Longitude"
+          ><Input bind:value={form.longitude} type="number" step="any" placeholder="-73.5673" /></Field
+        >
         <Field label="Fuseau"
           ><Input bind:value={form.timezone} placeholder="America/Toronto" /></Field
         >
