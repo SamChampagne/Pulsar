@@ -7,6 +7,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { ApiKeysModule } from './core/api-keys/api-keys.module';
 import { AgentsModule } from './core/agents/agents.module';
+import { ApsModule } from './core/aps/aps.module';
 import { EmailModule } from './core/email/email.module';
 import { RoutingModule } from './core/routing/routing.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -56,6 +57,7 @@ import { ConnectModule } from './core/connect/connect.module';
     RoutingModule,
     ApiKeysModule,
     AgentsModule,
+    ApsModule,
     // Core platform modules
     AuthModule,
     TenantsModule,

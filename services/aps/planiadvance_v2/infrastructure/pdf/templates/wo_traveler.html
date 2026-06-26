@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}WO Traveler — {{ ctx.work_order_ref }}{% endblock %}
+{% block head_extra %}
+<style>
+  .op-block {
+    border-top: 0.5pt solid #999;
+    padding: 4mm 0;
+    page-break-inside: avoid;
+  }
+  .op-block h3 {
+    font-size: 11pt;
+    margin: 0 0 2mm 0;
+  }
+  .op-block .op-meta {
+    margin: 1mm 0;
+    font-size: 9pt;
+    color: #444;
+  }
+  .op-block table.materials {
+    width: 60%;
+    margin-top: 2mm;
+    font-size: 9pt;
+    border-collapse: collapse;
+  }
+  .op-block table.materials th,
+  .op-block table.materials td {
+    text-align: left;
+    padding: 1.5pt 4pt;
+    border-bottom: 0.25pt solid #ccc;
+  }
+  .op-block table.materials td.numeric {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .op-block .coverage-covered { color: #117a3d; }
+  .op-block .coverage-short { color: #a3262e; font-weight: bold; }
+  .op-block .coverage-unknown { color: #888; }
+  .wo-header dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 24mm auto;
+    gap: 1mm 4mm;
+    font-size: 10pt;
+  }
+  .wo-header dt {
+    font-weight: bold;
+    color: #444;
+  }
+  .wo-header dd {
+    margin: 0;
+  }
+</style>
+{% endblock %}
+{% block body %}
+<header class="header-row">
+  <h1 data-header-string="{{ ctx.organization_name }} · WO Traveler · {{ ctx.work_order_ref }}">
+    Work Order Traveler — {{ ctx.work_order_ref }}
+  </h1>
+  <div class="meta">
+    <div>{{ ctx.organization_name }}{% if ctx.workspace_name %} · {{ ctx.workspace_name }}{% endif %}</div>
+    <div>Generated: <strong>{{ ctx.generated_at.strftime('%Y-%m-%d %H:%M') }}</strong></div>
+  </div>
+</header>
+
+<section class="wo-header">
+  <h2 style="margin: 2mm 0 4mm 0; font-size: 13pt">{{ ctx.work_order_name }}</h2>
+  <dl>
+    <dt>Product</dt>      <dd>{{ ctx.product_id }}</dd>
+    <dt>Quantity</dt>     <dd>{{ ctx.quantity }}</dd>
+    <dt>Priority</dt>     <dd>{{ ctx.priority }}</dd>
+    <dt>Status</dt>       <dd>{{ ctx.status }}</dd>
+    <dt>Release</dt>      <dd>{{ ctx.release_date.strftime('%Y-%m-%d %H:%M') }}</dd>
+    <dt>Due</dt>          <dd>{{ ctx.due_date.strftime('%Y-%m-%d %H:%M') }}</dd>
+    <dt>Planned</dt>
+    <dd>
+      {% if ctx.planned_start and ctx.planned_end %}
+        {{ ctx.planned_start.strftime('%Y-%m-%d %H:%M') }} → {{ ctx.planned_end.strftime('%Y-%m-%d %H:%M') }}
+      {% else %}
+        — (no operations are planned in the current schedule)
+      {% endif %}
+    </dd>
+  </dl>
+</section>
+
+<section style="margin-top: 6mm">
+  <h2 style="font-size: 12pt; margin: 0 0 2mm 0">Operations</h2>
+  {% for op in ctx.operations %}
+  <div class="op-block">
+    <h3>Op {{ op.sequence }} · {{ op.name }}</h3>
+    <div class="op-meta">
+      <strong>Eligible:</strong> {{ op.eligible_machine_ids | join(', ') }}
+    </div>
+    <div class="op-meta">
+      <strong>Planned:</strong>
+      {% if op.planned_machine_id %}
+        {{ op.planned_machine_id }} · {{ op.planned_start.strftime('%Y-%m-%d %H:%M') }} → {{ op.planned_end.strftime('%Y-%m-%d %H:%M') }}
+      {% else %}
+        — (not planned)
+      {% endif %}
+    </div>
+    <div class="op-meta">
+      <strong>Setup:</strong> {{ op.setup_minutes }} min ·
+      <strong>Run:</strong> {{ op.run_minutes }} min
+    </div>
+    {% if op.materials %}
+    <table class="materials">
+      <thead>
+        <tr>
+          <th>Material</th>
+          <th class="numeric">Required</th>
+          <th>Coverage</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for material in op.materials %}
+        <tr>
+          <td>{{ material.material_id }}</td>
+          <td class="numeric">{{ '%.2f'|format(material.required_quantity) }}</td>
+          <td class="coverage-{{ material.coverage_status }}">
+            {% if material.coverage_status == "covered" %}covered ✓{% elif material.coverage_status == "short" %}short ⚠{% else %}?{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="op-meta" style="color:#888">No material requirements.</div>
+    {% endif %}
+  </div>
+  {% else %}
+  <p style="color:#888; padding:6mm 0">This work order has no operations defined.</p>
+  {% endfor %}
+</section>
+
+<footer class="footer-totals">
+  <div>
+    <strong>Total ops:</strong> {{ ctx.total_operation_count }} ·
+    <strong>Setup:</strong> {{ ctx.total_setup_minutes }} min ·
+    <strong>Run:</strong> {{ ctx.total_run_minutes }} min
+  </div>
+  <div class="schedule-info">
+    Schedule {{ ctx.schedule_id }} · published {{ ctx.schedule_published_at.strftime('%Y-%m-%d %H:%M') }}
+  </div>
+</footer>
+{% endblock %}

@@ -36,6 +36,8 @@ export const PERMISSIONS = {
     EMAIL_READ: 'core.email.read',
     EMAIL_SEND: 'core.email.send',
     EMAIL_MANAGE: 'core.email.manage',
+    APS_READ: 'core.aps.read',
+    APS_ADMIN: 'core.aps.admin',
   },
   TRANSPORTATION: {
     MASTER_DATA_READ: 'transportation.master-data.read',
@@ -209,6 +211,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.EMAIL_READ, 'View sent emails and templates'),
   core(PERMISSIONS.CORE.EMAIL_SEND, 'Compose and send emails'),
   core(PERMISSIONS.CORE.EMAIL_MANAGE, 'Manage email templates and tenant email configuration'),
+  core(PERMISSIONS.CORE.APS_READ, 'View the APS scheduling engine status and run schedules'),
+  core(PERMISSIONS.CORE.APS_ADMIN, 'Administer the APS scheduling engine (diagnostics, smoke runs)'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ, 'View customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_MANAGE, 'Manage customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.ORDERS_READ, 'View transport orders'),

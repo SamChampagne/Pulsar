@@ -1,0 +1,157 @@
+# PlaniAdvance V2 — pilot single-host bundle.
+#
+# Goal: a customer pilot operator runs `make pilot-up` and gets a
+# working stack on `http://<host>/` with zero developer hand-holding.
+#
+# Differences from docker/docker-compose.yml (the dev stack):
+#   - pinned Postgres image tag (16.4 vs 16-alpine "moving target")
+#   - SEED_DATASET=minimal so the pilot starts with no demo machines /
+#     work orders; the operator imports their own
+#   - no `smoke` service (operator runs the smoke flow through the UI)
+#   - `restart: unless-stopped` so the stack survives reboots
+#   - named external volume `pilot_pgdata` (operator decides when to
+#     drop it)
+#   - NEW `ui` service: nginx serving the Vite bundle on host :80,
+#     proxying API prefixes to the api service
+#   - api is NOT exposed on the host; access goes through the ui nginx
+#     reverse proxy, or the operator's own front-end TLS terminator
+#   - INTEGRATION_API_KEY has no default — the pilot must set one in
+#     .env.pilot before any /integration call will succeed
+#
+# Usage:
+#   cp .env.example.pilot .env.pilot && edit .env.pilot
+#   make pilot-up
+#   open http://<host>/
+
+name: planiadvance_v2_pilot
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: planiadvance_pilot_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-plani}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.pilot}
+      POSTGRES_DB: ${POSTGRES_DB:-planiadvance_v2}
+    volumes:
+      - pilot_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-plani} -d ${POSTGRES_DB:-planiadvance_v2}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: planiadvance_pilot_migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-plani}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-planiadvance_v2}
+    entrypoint: ["python", "-m", "alembic", "upgrade", "head"]
+    restart: "no"
+
+  bootstrap:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: planiadvance_pilot_bootstrap
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-plani}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-planiadvance_v2}
+      SEED_DATASET: ${SEED_DATASET:-minimal}
+      SEED_RESET: ${SEED_RESET:-false}
+      SEED_ORGANIZATION_ID: ${SEED_ORGANIZATION_ID:-org-pilot}
+      SEED_ORGANIZATION_NAME: ${SEED_ORGANIZATION_NAME:-Pilot Organization}
+      SEED_ORGANIZATION_SLUG: ${SEED_ORGANIZATION_SLUG:-pilot}
+      SEED_USER_ID: ${SEED_USER_ID:-user-pilot-planner}
+      SEED_USER_EMAIL: ${SEED_USER_EMAIL:-planner@pilot.local}
+      SEED_USER_DISPLAY_NAME: ${SEED_USER_DISPLAY_NAME:-Pilot Planner}
+      SEED_WORKSPACE_ID: ${SEED_WORKSPACE_ID:-default}
+      SEED_WORKSPACE_NAME: ${SEED_WORKSPACE_NAME:-Default Workspace}
+    entrypoint: ["python", "-m", "planiadvance_v2.infrastructure.bootstrap"]
+    restart: "no"
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: planiadvance_pilot_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-plani}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-planiadvance_v2}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      INTEGRATION_API_KEY: ${INTEGRATION_API_KEY:?INTEGRATION_API_KEY must be set in .env.pilot}
+      INTEGRATION_READ_API_KEY: ${INTEGRATION_READ_API_KEY:-}
+      INTEGRATION_RUN_API_KEY: ${INTEGRATION_RUN_API_KEY:-}
+      INTEGRATION_MAX_CSV_BYTES: ${INTEGRATION_MAX_CSV_BYTES:-2000000}
+      INTEGRATION_MAX_WORK_ORDERS: ${INTEGRATION_MAX_WORK_ORDERS:-10000}
+      INTEGRATION_MAX_OPERATIONS: ${INTEGRATION_MAX_OPERATIONS:-50000}
+      INTEGRATION_RATE_LIMIT_PER_MINUTE: ${INTEGRATION_RATE_LIMIT_PER_MINUTE:-120}
+    expose:
+      - "8000"
+    command:
+      [
+        "uvicorn",
+        "planiadvance_v2.api.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+      ]
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: ../ui
+      dockerfile: Dockerfile.pilot
+    container_name: planiadvance_pilot_ui
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "${PILOT_UI_PORT:-80}:80"
+    restart: unless-stopped
+
+  integration-worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: planiadvance_pilot_integration_worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-plani}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-planiadvance_v2}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      INTEGRATION_WORKER_INTERVAL_SECONDS: ${INTEGRATION_WORKER_INTERVAL_SECONDS:-60}
+      INTEGRATION_WORKER_BATCH_LIMIT: ${INTEGRATION_WORKER_BATCH_LIMIT:-50}
+      INTEGRATION_WORKER_LOCK_TTL_SECONDS: ${INTEGRATION_WORKER_LOCK_TTL_SECONDS:-900}
+      INTEGRATION_WORKER_ID: ${INTEGRATION_WORKER_ID:-pilot-worker}
+    command:
+      [
+        "planiadvance",
+        "automations",
+        "run-due",
+        "--loop",
+      ]
+    restart: unless-stopped
+
+volumes:
+  pilot_pgdata:
+    name: planiadvance_pilot_pgdata

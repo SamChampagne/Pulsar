@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Late-order Report — Plant QC</title>
+    <link rel="stylesheet" href="styles/print.css" />
+  </head>
+  <body>
+<header class="header-row">
+  <h1 data-header-string="Plant QC · Late-order Report · 2026-05-07">
+    Late-order Report
+  </h1>
+  <div class="meta">
+    <div>Plant QC · Plant A</div>
+    <div>Generated: <strong>2026-05-07 14:32</strong></div>
+    <div>Late WOs: <strong>4</strong></div>
+  </div>
+</header>
+
+<table class="lines">
+  <thead>
+    <tr>
+      <th style="width: 12%">WO</th>
+      <th>Name</th>
+      <th class="time" style="width: 14%">Due</th>
+      <th class="time" style="width: 14%">Planned end</th>
+      <th class="numeric" style="width: 10%">Late (min)</th>
+      <th style="width: 10%">Priority</th>
+      <th style="width: 12%">Reason</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>WO-1</td>
+      <td>Cabinet 12U</td>
+      <td class="time">2026-05-04 17:00</td>
+      <td class="time">2026-05-06 09:00</td>
+      <td class="numeric">2400</td>
+      <td>HIGH</td>
+      <td>material</td>
+    </tr>
+    <tr>
+      <td>WO-2</td>
+      <td>Steel frame</td>
+      <td class="time">2026-05-05 17:00</td>
+      <td class="time">2026-05-08 12:00</td>
+      <td class="numeric">4140</td>
+      <td>NORMAL</td>
+      <td>capacity</td>
+    </tr>
+    <tr>
+      <td>WO-3</td>
+      <td>Brackets</td>
+      <td class="time">2026-05-06 17:00</td>
+      <td class="time">2026-05-07 11:00</td>
+      <td class="numeric">1080</td>
+      <td>LOW</td>
+      <td>priority</td>
+    </tr>
+    <tr>
+      <td>WO-4</td>
+      <td>Casings</td>
+      <td class="time">2026-05-01 17:00</td>
+      <td class="time">—</td>
+      <td class="numeric">—</td>
+      <td>NORMAL</td>
+      <td>sequence</td>
+    </tr>
+  </tbody>
+</table>
+
+<footer class="footer-totals">
+  <div>
+    <strong>By reason:</strong>
+    material 1 ·
+    capacity 1 ·
+    priority 1 ·
+    sequence 1
+    &nbsp;·&nbsp;
+    <strong>Total lateness:</strong> 7620 min
+  </div>
+  <div class="schedule-info">
+    Schedule sched-1 · published 2026-05-07 09:14
+  </div>
+</footer>
+
+<aside style="margin-top:6mm; font-size:9pt; color:#444">
+  <strong>Recommended actions by reason:</strong>
+  material → expedite_material ·
+  capacity → add_overtime_or_reroute ·
+  priority → review_priority ·
+  sequence → split_lot_or_reroute
+</aside>
+  </body>
+</html>

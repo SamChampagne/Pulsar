@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Production Sheet — {{ ctx.machine_name }} — {{ ctx.date }}{% endblock %}
+{% block body %}
+<header class="header-row">
+  <h1 data-header-string="{{ ctx.organization_name }} · {{ ctx.machine_name }} · {{ ctx.date }}">
+    Production Sheet
+  </h1>
+  <div class="meta">
+    <div>{{ ctx.organization_name }}{% if ctx.workspace_name %} · {{ ctx.workspace_name }}{% endif %}</div>
+    <div>Machine: <strong>{{ ctx.machine_name }}</strong></div>
+    <div>Date: <strong>{{ ctx.date }}</strong></div>
+  </div>
+</header>
+
+<table class="lines">
+  <thead>
+    <tr>
+      <th class="numeric" style="width: 8%">#</th>
+      <th style="width: 16%">Work Order</th>
+      <th>Operation</th>
+      <th class="time" style="width: 12%">Start</th>
+      <th class="time" style="width: 12%">End</th>
+      <th class="numeric" style="width: 10%">Setup (min)</th>
+      <th class="numeric" style="width: 10%">Run (min)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for line in ctx.lines %}
+    <tr>
+      <td class="numeric">{{ line.sequence }}</td>
+      <td>{{ line.work_order_ref }}</td>
+      <td>
+        {{ line.work_order_name }}
+        {% if line.notes %}<br><small>{{ line.notes }}</small>{% endif %}
+      </td>
+      <td class="time">{{ line.start.strftime('%H:%M') }}</td>
+      <td class="time">{{ line.end.strftime('%H:%M') }}</td>
+      <td class="numeric">{{ line.setup_minutes }}</td>
+      <td class="numeric">{{ line.run_minutes }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" style="text-align:center; color:#888; padding:6mm">No operations scheduled for this machine on this day.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<footer class="footer-totals">
+  <div>
+    <strong>Total ops:</strong> {{ ctx.total_operation_count }} ·
+    <strong>Setup:</strong> {{ ctx.total_setup_minutes }} min ·
+    <strong>Run:</strong> {{ ctx.total_run_minutes }} min
+  </div>
+  <div class="schedule-info">
+    Schedule {{ ctx.schedule_id }} · published {{ ctx.schedule_published_at.strftime('%Y-%m-%d %H:%M') }}
+  </div>
+</footer>
+{% endblock %}
