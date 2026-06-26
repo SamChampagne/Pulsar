@@ -1,6 +1,6 @@
 <script lang="ts">
   let {
-    value = $bindable('' as string | number),
+    value = $bindable('' as string | number | null),
     type = 'text',
     placeholder = '',
     disabled = false,
