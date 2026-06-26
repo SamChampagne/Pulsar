@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
+import { ApsModule } from '../../core/aps/aps.module';
 import { CalendarsController } from './calendars/calendars.controller';
 import { CalendarsService } from './calendars/calendars.service';
 import { WorkCentersController } from './work-centers/work-centers.controller';
@@ -10,6 +11,8 @@ import { BomsController } from './boms/boms.controller';
 import { BomsService } from './boms/boms.service';
 import { OrdersController } from './orders/orders.controller';
 import { OrdersService } from './orders/orders.service';
+import { SchedulingController } from './scheduling/scheduling.controller';
+import { SchedulingService } from './scheduling/scheduling.service';
 
 /**
  * Manufacturing / APS master-data module (sub-project 2). Pulsar owns this
@@ -21,13 +24,14 @@ import { OrdersService } from './orders/orders.service';
  * pattern as FleetModule / WmsModule).
  */
 @Module({
-  imports: [AuditLogsModule],
+  imports: [AuditLogsModule, ApsModule],
   controllers: [
     CalendarsController,
     WorkCentersController,
     RoutingsController,
     BomsController,
     OrdersController,
+    SchedulingController,
   ],
   providers: [
     CalendarsService,
@@ -35,7 +39,15 @@ import { OrdersService } from './orders/orders.service';
     RoutingsService,
     BomsService,
     OrdersService,
+    SchedulingService,
   ],
-  exports: [CalendarsService, WorkCentersService, RoutingsService, BomsService, OrdersService],
+  exports: [
+    CalendarsService,
+    WorkCentersService,
+    RoutingsService,
+    BomsService,
+    OrdersService,
+    SchedulingService,
+  ],
 })
 export class ManufacturingModule {}

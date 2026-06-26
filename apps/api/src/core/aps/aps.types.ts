@@ -65,9 +65,11 @@ export interface ApsWorkOrder {
   /** ISO-8601 datetime. */
   release_date: string;
   operations: ApsOperation[];
-  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  /** APS wire value: low | normal | high | urgent. */
+  priority?: string;
   status?: string;
-  firmness?: 'firm' | 'forecast' | 'tentative';
+  /** APS wire value (Cas 2): firm | forecast | tentative. */
+  firmness?: string;
   external_ref?: string | null;
   site_id?: string | null;
 }
