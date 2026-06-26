@@ -98,6 +98,10 @@ export const PERMISSIONS = {
     READ: 'crm.read',
     MANAGE: 'crm.manage',
   },
+  MANUFACTURING: {
+    READ: 'manufacturing.read',
+    MANAGE: 'manufacturing.manage',
+  },
   EMAIL: {
     READ: 'core.email.read',
     SEND: 'core.email.send',
@@ -117,6 +121,7 @@ export type PermissionKey =
   | (typeof PERMISSIONS.PROCUREMENT)[keyof typeof PERMISSIONS.PROCUREMENT]
   | (typeof PERMISSIONS.CARRIER_PORTAL)[keyof typeof PERMISSIONS.CARRIER_PORTAL]
   | (typeof PERMISSIONS.CRM)[keyof typeof PERMISSIONS.CRM]
+  | (typeof PERMISSIONS.MANUFACTURING)[keyof typeof PERMISSIONS.MANUFACTURING]
   | (typeof PERMISSIONS.EMAIL)[keyof typeof PERMISSIONS.EMAIL];
 
 export interface PermissionDescriptor {
@@ -178,6 +183,11 @@ const carrierPortal = (key: PermissionKey, description: string): PermissionDescr
 const crm = (key: PermissionKey, description: string): PermissionDescriptor => ({
   key,
   module: MODULE_KEYS.CRM,
+  description,
+});
+const manufacturing = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.MANUFACTURING,
   description,
 });
 
@@ -253,6 +263,15 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   // CRM
   crm(PERMISSIONS.CRM.READ, 'View CRM companies, contacts, deals and activities'),
   crm(PERMISSIONS.CRM.MANAGE, 'Create and manage CRM records, advance and convert deals'),
+  // Manufacturing / APS
+  manufacturing(
+    PERMISSIONS.MANUFACTURING.READ,
+    'View work centers, calendars, routings, BOMs and manufacturing orders',
+  ),
+  manufacturing(
+    PERMISSIONS.MANUFACTURING.MANAGE,
+    'Manage manufacturing master-data and run the manufacturing order lifecycle',
+  ),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);

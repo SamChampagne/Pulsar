@@ -19,7 +19,8 @@ export type SequenceKey =
   | 'import-batch'
   | 'inbound-message'
   | 'rfp'
-  | 'customer';
+  | 'customer'
+  | 'manufacturing-order';
 
 const PREFIXES: Record<SequenceKey, string> = {
   'transport-order': 'TO',
@@ -38,6 +39,7 @@ const PREFIXES: Record<SequenceKey, string> = {
   'inbound-message': 'IN',
   rfp: 'RFP',
   customer: 'CUST',
+  'manufacturing-order': 'MO',
 };
 
 /** Sequence keys whose prefix is overridable by a module tenant setting. */

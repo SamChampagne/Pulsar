@@ -35,6 +35,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { CrmModule } from './modules/crm/crm.module';
+import { ManufacturingModule } from './modules/manufacturing/manufacturing.module';
 import { OperatingModule } from './core/operating/operating.module';
 import { AutomationModule } from './core/automation/automation.module';
 import { PreferencesModule } from './core/preferences/preferences.module';
@@ -86,6 +87,7 @@ import { ConnectModule } from './core/connect/connect.module';
     AnalyticsModule,
     ProcurementModule,
     CrmModule,
+    ManufacturingModule,
   ],
   providers: [
     // Guard order matters: authenticate, then check module activation, then permissions.
