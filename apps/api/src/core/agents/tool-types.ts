@@ -112,6 +112,20 @@ export interface ToolServices {
     advanceDeal(tenantId: string, id: string, userId: string, stage: string): Promise<unknown>;
     createFollowup(tenantId: string, input: object, author: { agentId?: string }): Promise<unknown>;
   };
+  // ── Manufacturing / APS ──────────────────────────────────────────────────
+  manufacturingOrders: {
+    list(tenantId: string, query: object): Promise<unknown>;
+  };
+  manufacturingPlanning: {
+    baseline(tenantId: string): Promise<unknown>;
+    listRuns(tenantId: string, query: object): Promise<unknown>;
+    run(
+      tenantId: string,
+      userId: string,
+      input: { strategy?: string; horizonDays?: number; respectMaterials?: boolean },
+    ): Promise<unknown>;
+    publish(tenantId: string, userId: string, runId: string): Promise<unknown>;
+  };
   // ── Email (core) ───────────────────────────────────────────────────────────
   email: {
     draft(tenantId: string, input: { prompt: string; context?: string }): Promise<unknown>;
