@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
   import { Badge, Card, EmptyState, ErrorNotice, PageHeader, Skeleton } from '$lib/components/ui';
+  import AgentPanel from '$lib/components/AgentPanel.svelte';
 
   interface CarrierInvoice {
     id: string;
@@ -136,7 +137,11 @@
   });
 </script>
 
-<PageHeader title="Finance" subtitle="AR/AP, litiges, audit, cash." />
+<PageHeader
+  title="Finance Cockpit"
+  eyebrow="Finance"
+  subtitle="Récupérez de l’argent : économies d’audit, litiges, AR/AP et cash — avec votre analyste financier IA."
+/>
 
 {#if error}<ErrorNotice message={error} />{/if}
 
@@ -298,13 +303,13 @@
     {/if}
   </Card>
 
-  <Card>
-    <p class="text-xs font-semibold tracking-[0.2em] text-ink-faint uppercase">Assigned employee</p>
-    <h2 class="mt-1 text-lg font-bold text-ink">Finance operator agent</h2>
-    <a href="/agents" class="mt-4 inline-flex text-sm font-semibold text-accent hover:underline"
-      >Voir les agents →</a
-    >
-  </Card>
+  <div class="h-[520px]">
+    <AgentPanel
+      presetId="finance-analyst"
+      title="Analyste financier IA"
+      intro="Demandez une synthèse des écarts, l’état des litiges ou une relance — l’agent propose, vous approuvez."
+    />
+  </div>
 </div>
 
 {#if !loading && !carrierInvoices.length && !customerInvoices.length && !incomingInvoices.length}

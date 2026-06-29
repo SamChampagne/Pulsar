@@ -119,43 +119,53 @@ export function navCatalogue(): NavDomain[] {
       ],
       sections: [
         {
-          label: 'Exécution',
+          label: 'Postes de travail',
           links: [
-            { href: '/dispatch', label: 'Dispatch' },
+            { href: '/dispatch', label: 'Dispatch Cockpit' },
+            {
+              href: '/loads/control-room',
+              label: 'Load Control Room',
+              perm: PERMISSIONS.TRANSPORTATION.PLANNING_READ,
+            },
             {
               href: '/planning',
               label: 'Planning Board',
               perm: PERMISSIONS.TRANSPORTATION.PLANNING_READ,
             },
-            { href: '/transport-orders', label: 'Ordres de transport' },
-            { href: '/shipments', label: 'Shipments' },
-            { href: '/loads', label: 'Loads' },
+            { href: '/rate-studio', label: 'Rate Studio', perm: PERMISSIONS.TRANSPORTATION.RATES_READ },
           ],
         },
         {
-          label: 'Tarification',
+          label: 'Registres',
           links: [
-            { href: '/rate-studio', label: 'Rate Studio', perm: PERMISSIONS.TRANSPORTATION.RATES_READ },
+            { href: '/transport-orders', label: 'Ordres de transport' },
+            { href: '/shipments', label: 'Shipments' },
+            { href: '/loads', label: 'Loads' },
             { href: '/lanes', label: 'Voies (lanes)' },
             { href: '/rates', label: 'Tarifs' },
             { href: '/accessorials', label: 'Accessoriaux' },
             { href: '/fuel-tables', label: 'Carburant' },
-          ],
-        },
-        {
-          label: 'Partenaires',
-          links: [
             { href: '/customers', label: 'Clients' },
             { href: '/carriers', label: 'Transporteurs' },
             { href: '/locations', label: 'Lieux' },
           ],
         },
         {
-          label: 'Administration',
+          label: 'Analyse',
+          links: [
+            {
+              href: '/analytics/carriers',
+              label: 'Scorecard transporteurs',
+              perm: 'transportation.analytics.read',
+            },
+          ],
+        },
+        {
+          label: 'Configuration',
           links: [
             {
               href: '/transportation/config',
-              label: 'Configuration',
+              label: 'Réglages Transport',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
           ],
@@ -173,33 +183,31 @@ export function navCatalogue(): NavDomain[] {
       prefixes: ['/wms'],
       sections: [
         {
-          links: [
-            { href: '/wms', label: "Vue d'ensemble" },
-            { href: '/wms/inventory', label: 'Inventaire' },
-          ],
+          links: [{ href: '/wms', label: 'Accueil Warehouse' }],
         },
         {
-          label: 'Flux',
+          label: 'Postes de travail',
           links: [
-            { href: '/wms/receiving', label: 'Réception' },
-            { href: '/wms/fulfillment', label: 'Préparation' },
-            { href: '/wms/picking', label: 'Prélèvement' },
+            { href: '/wms/inventory', label: 'Inventory Control' },
+            { href: '/wms/receiving', label: 'Receiving Workbench' },
+            { href: '/wms/fulfillment', label: 'Fulfillment / Staging' },
+            { href: '/wms/picking', label: 'Picking Workbench' },
             { href: '/wms/cycle-counts', label: 'Comptages' },
           ],
         },
         {
-          label: 'Données',
+          label: 'Registres',
           links: [
             { href: '/wms/items', label: 'Articles' },
             { href: '/wms/bins', label: 'Emplacements' },
           ],
         },
         {
-          label: 'Administration',
+          label: 'Configuration',
           links: [
             {
               href: '/wms/config',
-              label: 'Configuration',
+              label: 'Réglages WMS',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
           ],
@@ -217,19 +225,22 @@ export function navCatalogue(): NavDomain[] {
       prefixes: ['/manufacturing'],
       sections: [
         {
+          links: [{ href: '/manufacturing', label: 'Accueil Manufacturing' }],
+        },
+        {
+          label: 'Postes de travail',
           links: [
-            { href: '/manufacturing', label: "Vue d'ensemble" },
-            { href: '/manufacturing/scheduling', label: 'Planification (Gantt)' },
-            { href: '/manufacturing/orders', label: 'Ordres de fabrication' },
+            { href: '/manufacturing/scheduling', label: 'Scheduling Gantt' },
           ],
         },
         {
-          label: 'Données',
+          label: 'Registres',
           links: [
+            { href: '/manufacturing/orders', label: 'Ordres de fabrication' },
             { href: '/manufacturing/work-centers', label: 'Postes de charge' },
-            { href: '/manufacturing/calendars', label: 'Calendriers' },
             { href: '/manufacturing/routings', label: 'Gammes' },
             { href: '/manufacturing/boms', label: 'Nomenclatures' },
+            { href: '/manufacturing/calendars', label: 'Calendriers' },
           ],
         },
       ],
@@ -245,19 +256,25 @@ export function navCatalogue(): NavDomain[] {
       prefixes: ['/yard'],
       sections: [
         {
+          label: 'Postes de travail',
           links: [
-            { href: '/yard', label: 'Plan de cour' },
-            { href: '/yard/gate', label: 'Gate' },
-            { href: '/yard/appointments', label: 'Rendez-vous' },
-            { href: '/yard/spots', label: 'Emplacements' },
+            { href: '/yard', label: 'Yard Plan' },
+            { href: '/yard/gate', label: 'Gate Console' },
           ],
         },
         {
-          label: 'Administration',
+          label: 'Registres',
+          links: [
+            { href: '/yard/appointments', label: 'Rendez-vous' },
+            { href: '/yard/spots', label: 'Spots' },
+          ],
+        },
+        {
+          label: 'Configuration',
           links: [
             {
               href: '/yard/config',
-              label: 'Configuration',
+              label: 'Réglages Yard',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
           ],
@@ -275,18 +292,24 @@ export function navCatalogue(): NavDomain[] {
       prefixes: ['/assets', '/fleet'],
       sections: [
         {
+          links: [{ href: '/assets', label: 'Accueil Fleet' }],
+        },
+        {
+          label: 'Postes de travail',
           links: [
-            { href: '/assets', label: 'Assets home' },
-            { href: '/fleet', label: 'Fleet roster' },
-            { href: '/fleet/maintenance', label: 'Maintenance', perm: PERMISSIONS.FLEET.READ },
+            { href: '/fleet/maintenance', label: 'Maintenance Board', perm: PERMISSIONS.FLEET.READ },
           ],
         },
         {
-          label: 'Administration',
+          label: 'Registres',
+          links: [{ href: '/fleet', label: 'Roster des assets', perm: PERMISSIONS.FLEET.READ }],
+        },
+        {
+          label: 'Configuration',
           links: [
             {
               href: '/fleet/config',
-              label: 'Configuration',
+              label: 'Réglages Fleet',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
           ],
@@ -304,25 +327,38 @@ export function navCatalogue(): NavDomain[] {
       prefixes: ['/finance', '/invoices', '/billing'],
       sections: [
         {
+          links: [{ href: '/finance', label: 'Finance Cockpit' }],
+        },
+        {
+          label: 'Postes de travail',
           links: [
-            { href: '/finance', label: 'Finance home' },
-            { href: '/invoices', label: 'Receivables / Payables' },
-            { href: '/billing/freight-audit', label: 'Freight audit' },
+            { href: '/billing/freight-audit', label: 'Freight Audit Workbench' },
             { href: '/billing/ledger', label: 'Grand livre', perm: PERMISSIONS.BILLING.LEDGER_READ },
-            { href: '/billing/reports', label: 'Rapports financiers', perm: PERMISSIONS.BILLING.LEDGER_READ },
-            { href: '/billing/banking', label: 'Banque', perm: PERMISSIONS.BILLING.LEDGER_READ },
-            { href: '/billing/budgets', label: 'Budgets', perm: PERMISSIONS.BILLING.LEDGER_READ },
-            { href: '/billing/fixed-assets', label: 'Immobilisations', perm: PERMISSIONS.BILLING.ASSETS_READ },
-            { href: '/billing/subscriptions', label: 'Abonnements', perm: PERMISSIONS.BILLING.SUBSCRIPTIONS_READ },
-            { href: '/billing/payments', label: 'Paiements', perm: PERMISSIONS.BILLING.PAYMENTS_READ },
+            { href: '/billing/banking', label: 'Banque & rapprochement', perm: PERMISSIONS.BILLING.LEDGER_READ },
           ],
         },
         {
-          label: 'Administration',
+          label: 'Registres',
+          links: [
+            { href: '/invoices', label: 'Relevés & factures (AR/AP)' },
+            { href: '/billing/payments', label: 'Paiements', perm: PERMISSIONS.BILLING.PAYMENTS_READ },
+            { href: '/billing/budgets', label: 'Budgets', perm: PERMISSIONS.BILLING.LEDGER_READ },
+            { href: '/billing/fixed-assets', label: 'Immobilisations', perm: PERMISSIONS.BILLING.ASSETS_READ },
+            { href: '/billing/subscriptions', label: 'Abonnements', perm: PERMISSIONS.BILLING.SUBSCRIPTIONS_READ },
+          ],
+        },
+        {
+          label: 'Analyse',
+          links: [
+            { href: '/billing/reports', label: 'Rapports financiers', perm: PERMISSIONS.BILLING.LEDGER_READ },
+          ],
+        },
+        {
+          label: 'Configuration',
           links: [
             {
               href: '/billing/config',
-              label: 'Configuration',
+              label: 'Réglages Finance',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
           ],
@@ -354,12 +390,12 @@ export function navCatalogue(): NavDomain[] {
         {
           links: [
             // perm-gated links — filtered out when the user lacks the permission
-            { href: '/agents', label: 'Employés', perm: PERMISSIONS.CORE.AGENTS_READ },
-            {
-              href: '/control-tower',
-              label: 'Control Tower',
-              perm: PERMISSIONS.CORE.AGENTS_READ,
-            },
+            { href: '/agents', label: 'Employés (roster)', perm: PERMISSIONS.CORE.AGENTS_READ },
+          ],
+        },
+        {
+          label: 'Postes de travail',
+          links: [
             {
               href: '/agent-actions',
               label: 'Actions à approuver',
@@ -368,14 +404,29 @@ export function navCatalogue(): NavDomain[] {
             },
             {
               href: '/workbench',
-              label: 'Workbench',
+              label: 'Workbench (tâches)',
               perm: PERMISSIONS.CORE.OPERATING_TASKS_READ,
             },
             {
               href: '/automation',
-              label: "Règles d'automatisation",
+              label: 'Automatisations',
               perm: PERMISSIONS.CORE.AUTOMATION_RULES_READ,
             },
+          ],
+        },
+        {
+          label: 'Analyse',
+          links: [
+            {
+              href: '/control-tower',
+              label: 'Control Tower agents',
+              perm: PERMISSIONS.CORE.AGENTS_READ,
+            },
+          ],
+        },
+        {
+          label: 'Configuration',
+          links: [
             // Always visible when the domain is visible (no perm override needed —
             // the domain-level anyPerms gate already ensures the user can see agents)
             { href: '/settings/agent-runtime', label: 'Connexion du modèle' },
@@ -532,21 +583,29 @@ export function navCatalogue(): NavDomain[] {
       anyPerms: [PERMISSIONS.CORE.INTEGRATIONS_READ],
       sections: [
         {
+          links: [{ href: '/connect', label: 'Connect Studio' }],
+        },
+        {
+          label: 'Postes de travail',
           links: [
-            { href: '/connect', label: 'Connect home' },
             { href: '/connect/inbox', label: 'Inbox', perm: PERMISSIONS.CORE.CONNECT_READ },
             { href: '/connect/imports', label: 'Imports', perm: PERMISSIONS.CORE.CONNECT_READ },
-            { href: '/integrations', label: 'Connecteurs' },
-            { href: '/settings/api-keys', label: 'Clés API' },
-            { href: '/agents', label: 'MCP / agents', perm: PERMISSIONS.CORE.AGENTS_READ },
           ],
         },
         {
-          label: 'Administration',
+          label: 'Registres',
+          links: [
+            { href: '/integrations', label: 'Connecteurs' },
+            { href: '/settings/api-keys', label: 'Clés API' },
+            { href: '/agents', label: 'MCP Tools', perm: PERMISSIONS.CORE.AGENTS_READ },
+          ],
+        },
+        {
+          label: 'Configuration',
           links: [
             {
               href: '/connect/config',
-              label: 'Configuration',
+              label: 'Réglages Connect',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
           ],
