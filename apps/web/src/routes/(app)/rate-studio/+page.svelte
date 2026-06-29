@@ -133,6 +133,101 @@
   let simError = $state('');
   let expanded = $state<Record<string, boolean>>({});
 
+  // ─── Matrice des tarifs (heatmap lane × transporteur, baseAmount) ───────────────
+  interface MatrixRate {
+    id: string;
+    name: string;
+    rateType: string;
+    baseAmount: number;
+    currency: string | null;
+    mode: string | null;
+    carrier: { id: string; code: string; name: string } | null;
+    lane: { id: string; name: string | null; originType: string; destinationType: string } | null;
+  }
+  let matrixRates = $state<MatrixRate[]>([]);
+  let loadingMatrix = $state(true);
+  let matrixError = $state('');
+
+  async function loadMatrix() {
+    loadingMatrix = true;
+    matrixError = '';
+    try {
+      const res = await api<Paginated<MatrixRate>>('/transportation/rates', {
+        query: { pageSize: 100 },
+      });
+      matrixRates = res.items;
+    } catch (e) {
+      matrixError = e instanceof ApiError ? e.message : 'Échec du chargement des tarifs';
+    } finally {
+      loadingMatrix = false;
+    }
+  }
+
+  const GENERIC_LANE_ID = '__generic__';
+  const GENERIC_CARRIER_ID = '__generic__';
+
+  function laneRowLabel(lane: MatrixRate['lane']): string {
+    if (!lane) return 'Voie générique';
+    return lane.name ?? `${lane.originType} → ${lane.destinationType}`;
+  }
+
+  // Rows = lanes (incl. a generic bucket), columns = carriers (incl. a generic bucket).
+  // A cell holds the cheapest base rate for that (lane, carrier) pair.
+  const matrix = $derived.by(() => {
+    const rowMap = new Map<string, { id: string; label: string }>();
+    const colMap = new Map<string, { id: string; label: string }>();
+    const cells = new Map<string, { amount: number; currency: string | null; count: number }>();
+
+    let min = Infinity;
+    let max = -Infinity;
+
+    for (const r of matrixRates) {
+      const rowId = r.lane?.id ?? GENERIC_LANE_ID;
+      const colId = r.carrier?.id ?? GENERIC_CARRIER_ID;
+      if (!rowMap.has(rowId)) rowMap.set(rowId, { id: rowId, label: laneRowLabel(r.lane) });
+      if (!colMap.has(colId))
+        colMap.set(colId, { id: colId, label: r.carrier?.name ?? 'Générique' });
+
+      // baseAmount arrives as a string (Prisma Decimal) — coerce to Number so
+      // comparisons are numeric, not lexicographic ("25" vs "1450").
+      const amt = Number(r.baseAmount);
+      const key = `${rowId}::${colId}`;
+      const existing = cells.get(key);
+      if (!existing) {
+        cells.set(key, { amount: amt, currency: r.currency, count: 1 });
+      } else {
+        existing.count += 1;
+        if (amt < existing.amount) {
+          existing.amount = amt;
+          existing.currency = r.currency;
+        }
+      }
+      if (amt < min) min = amt;
+      if (amt > max) max = amt;
+    }
+
+    return {
+      rows: [...rowMap.values()],
+      cols: [...colMap.values()],
+      cells,
+      min: min === Infinity ? 0 : min,
+      max: max === -Infinity ? 0 : max,
+      currency: matrixRates.find((r) => r.currency)?.currency ?? 'CAD',
+    };
+  });
+
+  // Green (cheap) → amber → red (expensive) heat, via an hsl hue ramp on the normalized value.
+  function heatColor(amount: number, min: number, max: number): string {
+    const t = max > min ? (amount - min) / (max - min) : 0;
+    const hue = 140 - t * 140; // 140 = vert, 0 = rouge
+    return `hsl(${hue}, 70%, 88%)`;
+  }
+  function heatText(amount: number, min: number, max: number): string {
+    const t = max > min ? (amount - min) / (max - min) : 0;
+    const hue = 140 - t * 140;
+    return `hsl(${hue}, 80%, 26%)`;
+  }
+
   function laneLabel(lane: LaneOption): string {
     return lane.name ?? `${lane.originType} → ${lane.destinationType}`;
   }
@@ -242,6 +337,7 @@
 
   $effect(() => {
     void loadOptions();
+    void loadMatrix();
   });
 </script>
 
@@ -540,7 +636,94 @@
   </div>
 {/if}
 
-<!-- ─── Section 3 — Hub tarification ─────────────────────────────────────────── -->
+<!-- ─── Section 3 — Matrice des tarifs (heatmap) ─────────────────────────────── -->
+<div class="mt-8">
+  <div class="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+    <h2 class="text-base font-semibold text-ink">Matrice des tarifs</h2>
+    <span class="text-xs text-ink-muted">
+      Tarif de base par voie et transporteur — la cellule retient le tarif le plus bas du couple.
+    </span>
+  </div>
+
+  <Card>
+    {#snippet children()}
+      {#if loadingMatrix}
+        <Skeleton rows={5} />
+      {:else if matrixError}
+        <p class="text-sm text-danger">{matrixError}</p>
+      {:else if matrix.rows.length === 0}
+        <EmptyState
+          message="Aucun tarif configuré pour le moment — la matrice apparaîtra dès que des grilles tarifaires existeront."
+        />
+      {:else}
+        <!-- Légende -->
+        <div class="mb-3 flex flex-wrap items-center gap-3 text-xs text-ink-muted">
+          <span>Tarif de base&nbsp;:</span>
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-3 w-4 rounded-inner border border-edge-soft" style="background-color: {heatColor(matrix.min, matrix.min, matrix.max)}"></span>
+            bas <span class="font-mono text-ink">{formatMoney(matrix.min, matrix.currency)}</span>
+          </span>
+          <span
+            class="inline-block h-3 w-24 rounded-inner border border-edge-soft"
+            style="background-image: linear-gradient(to right, hsl(140,70%,88%), hsl(70,70%,88%), hsl(0,70%,88%))"
+          ></span>
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-3 w-4 rounded-inner border border-edge-soft" style="background-color: {heatColor(matrix.max, matrix.min, matrix.max)}"></span>
+            élevé <span class="font-mono text-ink">{formatMoney(matrix.max, matrix.currency)}</span>
+          </span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                <th class="sticky left-0 z-10 bg-surface px-3 py-2 text-left text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+                  Voie ＼ Transporteur
+                </th>
+                {#each matrix.cols as col (col.id)}
+                  <th class="px-3 py-2 text-center text-[11px] font-semibold tracking-wide whitespace-nowrap text-ink-muted uppercase">
+                    {col.label}
+                  </th>
+                {/each}
+              </tr>
+            </thead>
+            <tbody>
+              {#each matrix.rows as row (row.id)}
+                <tr class="border-t border-edge-soft">
+                  <th class="sticky left-0 z-10 bg-surface px-3 py-2 text-left font-medium whitespace-nowrap text-ink">
+                    {row.label}
+                  </th>
+                  {#each matrix.cols as col (col.id)}
+                    {@const cell = matrix.cells.get(`${row.id}::${col.id}`)}
+                    {#if cell}
+                      <td
+                        class="px-3 py-2 text-center font-mono tabular-nums"
+                        style="background-color: {heatColor(cell.amount, matrix.min, matrix.max)}; color: {heatText(cell.amount, matrix.min, matrix.max)}"
+                        title="{row.label} · {col.label}{cell.count > 1 ? ` · ${cell.count} tarifs (le plus bas affiché)` : ''}"
+                      >
+                        {formatMoney(cell.amount, cell.currency ?? matrix.currency)}
+                      </td>
+                    {:else}
+                      <td class="px-3 py-2 text-center text-ink-faint">—</td>
+                    {/if}
+                  {/each}
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+
+        <p class="mt-2 text-xs text-ink-faint">
+          {matrix.rows.length} voie(s) × {matrix.cols.length} transporteur(s) · le « tarif de base »
+          ne tient pas compte du carburant, des accessoriaux ni des paliers de poids — utilisez le
+          simulateur ci-dessus pour un prix complet.
+        </p>
+      {/if}
+    {/snippet}
+  </Card>
+</div>
+
+<!-- ─── Section 4 — Hub tarification ─────────────────────────────────────────── -->
 <div class="mt-8">
   <h2 class="mb-2 text-base font-semibold text-ink">Hub tarification</h2>
   <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

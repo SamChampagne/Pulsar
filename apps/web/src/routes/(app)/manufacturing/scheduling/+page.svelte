@@ -70,7 +70,7 @@
     try {
       const [runRes, wcRes] = await Promise.all([
         api<Paginated<Run>>('/manufacturing/scheduling/runs', { query: { pageSize: 50 } }),
-        api<Paginated<WorkCenter>>('/manufacturing/work-centers', { query: { pageSize: 200 } }),
+        api<Paginated<WorkCenter>>('/manufacturing/work-centers', { query: { pageSize: 100 } }),
       ]);
       runs = runRes.items;
       workCenters = wcRes.items;
@@ -203,6 +203,101 @@
   });
 
   const STRATEGIES = ['greedy', 'backward', 'hybrid', 'cpsat', 'auto'];
+
+  // --- Cockpit metrics (derived from the already-loaded run) -----------------
+  function fmtDuration(min: number): string {
+    if (min <= 0) return '0 min';
+    const h = Math.floor(min / 60);
+    const m = Math.round(min % 60);
+    if (h >= 24) {
+      const d = Math.floor(h / 24);
+      const rh = h % 24;
+      return rh ? `${d} j ${rh} h` : `${d} j`;
+    }
+    if (h) return m ? `${h} h ${m} min` : `${h} h`;
+    return `${m} min`;
+  }
+  const fmtDayTime = new Intl.DateTimeFormat('fr-CA', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  const kpis = $derived.by(() => {
+    const a = selected?.assignments ?? [];
+    if (a.length === 0) return null;
+    const starts = a.map((x) => new Date(x.start).getTime());
+    const ends = a.map((x) => new Date(x.end).getTime());
+    const windowStart = Math.min(...starts);
+    const windowEnd = Math.max(...ends);
+    // Total planned minutes = sum of operation durations (busy time, not wall window).
+    const busyMin = a.reduce((acc, x) => acc + (new Date(x.end).getTime() - new Date(x.start).getTime()) / 60_000, 0);
+    const centersUsed = new Set(a.map((x) => x.workCenterId)).size;
+    const ordersInPlan = new Set(a.map((x) => x.orderId)).size;
+    const makespanMin = (windowEnd - windowStart) / 60_000;
+    return {
+      ops: a.length,
+      busyMin,
+      centersUsed,
+      ordersInPlan,
+      makespanMin,
+      windowStart,
+      windowEnd,
+    };
+  });
+
+  // Per-work-center load: busy minutes + op count, ordered by busy desc, with a bar.
+  const utilization = $derived.by(() => {
+    const a = selected?.assignments ?? [];
+    if (a.length === 0) return [] as { wcId: string; name: string; busyMin: number; ops: number; pct: number }[];
+    const byWc = new Map<string, { busyMin: number; ops: number }>();
+    for (const x of a) {
+      const dur = (new Date(x.end).getTime() - new Date(x.start).getTime()) / 60_000;
+      const cur = byWc.get(x.workCenterId) ?? { busyMin: 0, ops: 0 };
+      cur.busyMin += dur;
+      cur.ops += 1;
+      byWc.set(x.workCenterId, cur);
+    }
+    const maxBusy = Math.max(...[...byWc.values()].map((v) => v.busyMin), 1);
+    return [...byWc.entries()]
+      .map(([wcId, v]) => ({
+        wcId,
+        name: wcName.get(wcId) ?? wcId,
+        busyMin: v.busyMin,
+        ops: v.ops,
+        pct: (v.busyMin / maxBusy) * 100,
+      }))
+      .sort((p, q) => q.busyMin - p.busyMin);
+  });
+
+  // --- Inspector: selected operation (low-risk; does not touch the Gantt) ----
+  let selectedOpId = $state<string | null>(null);
+  const inspected = $derived.by(() => {
+    const a = selected?.assignments ?? [];
+    const x = a.find((y) => y.id === selectedOpId);
+    if (!x) return null;
+    const s = new Date(x.start).getTime();
+    const e = new Date(x.end).getTime();
+    const setup = new Date(x.setupStart).getTime();
+    return {
+      a: x,
+      order: orderNumbers[x.orderId] ?? x.orderId.slice(0, 8),
+      op: opNames[x.operationId] ?? 'Opération',
+      center: wcName.get(x.workCenterId) ?? x.workCenterId,
+      color: orderColor(x.orderId),
+      runMin: (e - s) / 60_000,
+      setupMin: Math.max((s - setup) / 60_000, 0),
+      start: x.start,
+      end: x.end,
+    };
+  });
+
+  // Reset the inspector when the run changes.
+  $effect(() => {
+    void selected?.id;
+    selectedOpId = null;
+  });
 </script>
 
 <PageHeader title="Planification" eyebrow="Manufacturing / APS">
@@ -295,6 +390,88 @@
         {#if gantt.empty}
           <p class="text-sm text-ink-muted">Ce run n’a aucune affectation (aucune demande planifiable).</p>
         {:else}
+          <!-- KPI strip (dérivé des affectations du run) -->
+          {#if kpis}
+            <div class="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              <div class="rounded-inner border border-edge-soft bg-surface-muted px-3 py-2">
+                <div class="text-[11px] text-ink-faint">Opérations planifiées</div>
+                <div class="text-lg font-semibold text-ink">{kpis.ops}</div>
+                <div class="text-[11px] text-ink-muted">{kpis.ordersInPlan} ordre(s)</div>
+              </div>
+              <div class="rounded-inner border border-edge-soft bg-surface-muted px-3 py-2">
+                <div class="text-[11px] text-ink-faint">Charge totale planifiée</div>
+                <div class="text-lg font-semibold text-ink">{fmtDuration(kpis.busyMin)}</div>
+                <div class="text-[11px] text-ink-muted">temps machine cumulé</div>
+              </div>
+              <div class="rounded-inner border border-edge-soft bg-surface-muted px-3 py-2">
+                <div class="text-[11px] text-ink-faint">Postes de charge utilisés</div>
+                <div class="text-lg font-semibold text-ink">{kpis.centersUsed}</div>
+                <div class="text-[11px] text-ink-muted">sur {workCenters.length} défini(s)</div>
+              </div>
+              <div class="rounded-inner border border-edge-soft bg-surface-muted px-3 py-2">
+                <div class="text-[11px] text-ink-faint">Makespan</div>
+                <div class="text-lg font-semibold text-ink">{fmtDuration(kpis.makespanMin)}</div>
+                <div class="text-[11px] text-ink-muted">durée du plan</div>
+              </div>
+              <div class="col-span-2 rounded-inner border border-edge-soft bg-surface-muted px-3 py-2 sm:col-span-3 lg:col-span-1">
+                <div class="text-[11px] text-ink-faint">Fenêtre du plan</div>
+                <div class="text-sm font-medium text-ink">{fmtDayTime.format(new Date(kpis.windowStart))}</div>
+                <div class="text-[11px] text-ink-muted">→ {fmtDayTime.format(new Date(kpis.windowEnd))}</div>
+              </div>
+            </div>
+          {/if}
+
+          <!-- Charge par poste (dérivée) -->
+          {#if utilization.length}
+            <div class="mb-3 rounded-inner border border-edge-soft bg-surface px-3 py-2">
+              <div class="mb-2 text-xs font-medium text-ink-muted">Charge par poste</div>
+              <div class="overflow-x-auto">
+                <div class="min-w-[24rem] space-y-1.5">
+                  {#each utilization as u (u.wcId)}
+                    <div class="flex items-center gap-2 text-xs">
+                      <div class="w-40 shrink-0 truncate text-ink" title={u.name}>{u.name}</div>
+                      <div class="relative h-3.5 flex-1 overflow-hidden rounded-inner bg-surface-muted">
+                        <div class="h-full rounded-inner bg-accent" style="width:{u.pct}%"></div>
+                      </div>
+                      <div class="w-28 shrink-0 text-right text-ink-muted">
+                        {fmtDuration(u.busyMin)} · {u.ops} op.
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            </div>
+          {/if}
+
+          <!-- Inspecteur d'opération (sélection depuis le Gantt) -->
+          {#if inspected}
+            <div class="mb-3 flex flex-wrap items-start gap-3 rounded-inner border border-edge-soft bg-surface-muted px-3 py-2">
+              <span class="mt-0.5 inline-block h-3 w-3 shrink-0 rounded" style="background:{inspected.color}"></span>
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium text-ink">{inspected.op}</div>
+                <div class="text-xs text-ink-muted">
+                  Ordre <span class="text-ink">{inspected.order}</span> · poste
+                  <span class="text-ink">{inspected.center}</span>
+                </div>
+                <div class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-ink-muted">
+                  <span>Début <span class="text-ink">{fmtDayTime.format(new Date(inspected.start))}</span></span>
+                  <span>Fin <span class="text-ink">{fmtDayTime.format(new Date(inspected.end))}</span></span>
+                  <span>Exécution <span class="text-ink">{fmtDuration(inspected.runMin)}</span></span>
+                  {#if inspected.setupMin > 0}
+                    <span>Réglage <span class="text-ink">{fmtDuration(inspected.setupMin)}</span></span>
+                  {/if}
+                </div>
+              </div>
+              <button
+                class="shrink-0 text-xs text-ink-faint hover:text-ink"
+                onclick={() => (selectedOpId = null)}
+                aria-label="Fermer l'inspecteur"
+              >
+                ✕
+              </button>
+            </div>
+          {/if}
+
           <div class="overflow-x-auto">
             <div class="min-w-[48rem]">
               <!-- time axis -->
@@ -311,13 +488,18 @@
                   <div class="w-40 shrink-0 py-2 pr-2 text-sm text-ink">{row.name}</div>
                   <div class="relative my-1 h-8 flex-1">
                     {#each row.bars as bar (bar.a.id)}
-                      <div
-                        class="absolute top-0 flex h-8 items-center overflow-hidden rounded px-1.5 text-[11px] font-medium text-white shadow-sm"
+                      <button
+                        type="button"
+                        class="absolute top-0 flex h-8 items-center overflow-hidden rounded px-1.5 text-left text-[11px] font-medium text-white shadow-sm {selectedOpId ===
+                        bar.a.id
+                          ? 'ring-2 ring-accent ring-offset-1'
+                          : ''}"
                         style="left:{bar.leftPct}%; width:{bar.widthPct}%; background:{bar.color}"
                         title={bar.title}
+                        onclick={() => (selectedOpId = selectedOpId === bar.a.id ? null : bar.a.id)}
                       >
                         <span class="truncate">{bar.label}</span>
-                      </div>
+                      </button>
                     {/each}
                   </div>
                 </div>
