@@ -7,6 +7,7 @@
   import DispatchBacklog from '$lib/components/dispatch/DispatchBacklog.svelte';
   import LoadBuilder from '$lib/components/dispatch/LoadBuilder.svelte';
   import DispatchSidePanel from '$lib/components/dispatch/DispatchSidePanel.svelte';
+  import AgentPanel from '$lib/components/AgentPanel.svelte';
 
   interface BacklogShipment {
     id: string;
@@ -70,6 +71,7 @@
   let selectedLoad = $state<LoadDetail | null>(null);
   let busy = $state(false);
   let view = $state<DispatchView>('map');
+  let showAgent = $state(false);
 
   const hasSelection = $derived(selectedIds.size > 0);
   const selectedCount = $derived(selectedIds.size);
@@ -288,7 +290,17 @@
 <PageHeader
   title="Dispatch"
   subtitle="Plan unassigned shipments, build loads, and move execution forward from one cockpit."
-/>
+>
+  {#snippet actions()}
+    <button
+      type="button"
+      onclick={() => (showAgent = !showAgent)}
+      class={`rounded-md border px-3 py-1.5 text-sm font-semibold transition ${showAgent ? 'border-accent bg-accent text-white' : 'border-edge bg-surface text-ink-muted hover:bg-surface-muted hover:text-ink'}`}
+    >
+      Assistant IA
+    </button>
+  {/snippet}
+</PageHeader>
 
 <section class="mb-4 overflow-hidden rounded-card border border-edge bg-surface shadow-sm">
   <div
@@ -665,5 +677,30 @@
       {selectedLoad}
       onChanged={() => selectedLoadId && selectLoad(selectedLoadId)}
     />
+  </div>
+{/if}
+
+{#if showAgent}
+  <div
+    class="fixed right-4 bottom-4 z-40 flex h-[560px] w-[380px] flex-col overflow-hidden rounded-card border border-edge bg-surface shadow-xl"
+  >
+    <div class="flex items-center justify-between border-b border-edge bg-surface-muted px-3 py-2">
+      <span class="text-xs font-semibold tracking-wide text-ink-muted uppercase">Cockpit IA</span>
+      <button
+        type="button"
+        onclick={() => (showAgent = false)}
+        aria-label="Fermer l'assistant"
+        class="rounded-md px-2 py-0.5 text-sm text-ink-muted transition hover:bg-surface hover:text-ink"
+      >
+        ✕
+      </button>
+    </div>
+    <div class="min-h-0 flex-1">
+      <AgentPanel
+        presetId="dispatcher"
+        title="Répartiteur IA"
+        intro="Demandez une consolidation, un statut de load ou une affectation — l'agent propose, vous approuvez."
+      />
+    </div>
   </div>
 {/if}
