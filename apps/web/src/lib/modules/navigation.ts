@@ -606,11 +606,12 @@ export function navCatalogue(): NavDomain[] {
       anyPerms: [PERMISSIONS.CORE.INTEGRATIONS_READ],
       sections: [
         {
-          links: [{ href: '/connect', label: 'Connect Studio' }],
+          links: [{ href: '/connect', label: 'Accueil Connect' }],
         },
         {
           label: 'Postes de travail',
           links: [
+            { href: '/connect/studio', label: 'Connect Studio' },
             { href: '/connect/inbox', label: 'Inbox', perm: PERMISSIONS.CORE.CONNECT_READ },
             { href: '/connect/imports', label: 'Imports', perm: PERMISSIONS.CORE.CONNECT_READ },
           ],
