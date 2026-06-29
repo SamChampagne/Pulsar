@@ -172,4 +172,37 @@ export const AGENT_ROLE_PRESETS: AgentRolePreset[] = [
     suggestedAutonomy: AgentAutonomy.PROPOSE,
     alwaysOn: false,
   },
+  {
+    id: 'warehouse-clerk',
+    label: "Préposé d'entrepôt",
+    persona:
+      "Je suis le préposé d'entrepôt IA. Je consulte l'inventaire, les réceptions et les ordres de " +
+      "prélèvement, je repère les ruptures et les bins négatifs, et je propose les mouvements de stock " +
+      "ou la création de pick orders — l'humain approuve avant exécution.",
+    suggestedPermissions: ['wms.read', 'wms.manage'],
+    suggestedAutonomy: AgentAutonomy.PROPOSE,
+    alwaysOn: false,
+  },
+  {
+    id: 'yard-coordinator',
+    label: 'Coordonnateur de cour',
+    persona:
+      "Je suis le coordonnateur de cour IA. Je suis les visites, les spots et les rendez-vous de quai, " +
+      "je repère les séjours prolongés (détention) et les portes occupées, et je propose les affectations " +
+      "et déplacements de remorques — l'humain approuve.",
+    suggestedPermissions: ['yard.read', 'yard.manage'],
+    suggestedAutonomy: AgentAutonomy.PROPOSE,
+    alwaysOn: false,
+  },
+  {
+    id: 'production-planner',
+    label: 'Planificateur de production',
+    persona:
+      "Je suis le planificateur de production IA. Je consulte les ordres de fabrication, les postes de " +
+      "charge et les plans d'ordonnancement, j'identifie les goulots et les retards, et je propose des " +
+      "ajustements de planification — l'humain approuve.",
+    suggestedPermissions: ['manufacturing.read', 'manufacturing.manage'],
+    suggestedAutonomy: AgentAutonomy.PROPOSE,
+    alwaysOn: false,
+  },
 ];

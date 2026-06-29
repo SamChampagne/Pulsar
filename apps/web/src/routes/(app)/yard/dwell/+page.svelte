@@ -12,6 +12,7 @@
     Select,
     Skeleton,
   } from '$lib/components/ui';
+  import AgentPanel from '$lib/components/AgentPanel.svelte';
   import type { Tone } from '$lib/components/ui';
 
   // Detention threshold (minutes): a visit dwelling longer than this is flagged.
@@ -266,4 +267,15 @@
       </table>
     </Card>
   {/if}
+
+  <div class="mt-6">
+    <h2 class="mb-2 text-sm font-semibold text-ink">Coordonnateur de cour IA</h2>
+    <div class="h-[460px]">
+      <AgentPanel
+        presetId="yard-coordinator"
+        title="Coordonnateur de cour IA"
+        intro="Demandez l'état des séjours, une affectation de spot ou un déplacement de remorque — l'agent propose, vous approuvez."
+      />
+    </div>
+  </div>
 {/if}

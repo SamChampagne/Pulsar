@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
   import { Badge, Card, EmptyState, ErrorNotice, PageHeader, Skeleton } from '$lib/components/ui';
+  import AgentPanel from '$lib/components/AgentPanel.svelte';
   import { toast } from '$lib/stores/toast';
 
   interface NegativeBin {
@@ -129,5 +130,15 @@
         {link.label}
       </a>
     {/each}
+  </div>
+
+  <!-- D. Contextual AI employee -->
+  <h2 class="mt-6 mb-2 text-sm font-semibold text-ink">Préposé d'entrepôt IA</h2>
+  <div class="h-[480px]">
+    <AgentPanel
+      presetId="warehouse-clerk"
+      title="Préposé d'entrepôt IA"
+      intro="Demandez l'état du stock, un réapprovisionnement ou la création d'un pick order — l'agent propose, vous approuvez."
+    />
   </div>
 {/if}

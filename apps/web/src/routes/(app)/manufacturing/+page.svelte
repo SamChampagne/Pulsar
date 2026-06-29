@@ -2,6 +2,7 @@
   import type { Paginated } from '@pulsar/shared';
   import { api } from '$lib/api/client';
   import { Card, PageHeader, Skeleton } from '$lib/components/ui';
+  import AgentPanel from '$lib/components/AgentPanel.svelte';
   import { Factory, CalendarClock, Workflow, Boxes, ClipboardList, GanttChartSquare } from 'lucide-svelte';
 
   interface Counts {
@@ -112,4 +113,15 @@
       </Card>
     </div>
   {/if}
+
+  <div class="mt-6">
+    <h2 class="mb-2 text-sm font-semibold text-ink">Planificateur de production IA</h2>
+    <div class="h-[480px]">
+      <AgentPanel
+        presetId="production-planner"
+        title="Planificateur de production IA"
+        intro="Demandez l'état des ordres de fabrication, la charge des postes ou un ajustement de plan — l'agent propose, vous approuvez."
+      />
+    </div>
+  </div>
 {/if}
