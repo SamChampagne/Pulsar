@@ -426,6 +426,11 @@ export function navCatalogue(): NavDomain[] {
               label: 'Automatisations',
               perm: PERMISSIONS.CORE.AUTOMATION_RULES_READ,
             },
+            {
+              href: '/automation/designer',
+              label: 'Workflow Designer',
+              perm: PERMISSIONS.CORE.AUTOMATION_RULES_READ,
+            },
           ],
         },
         {
