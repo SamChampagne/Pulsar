@@ -237,6 +237,7 @@ export function navCatalogue(): NavDomain[] {
           label: 'Postes de travail',
           links: [
             { href: '/manufacturing/scheduling', label: 'Scheduling Gantt' },
+            { href: '/manufacturing/runs', label: 'Planning Runs' },
           ],
         },
         {
