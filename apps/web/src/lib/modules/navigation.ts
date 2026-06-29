@@ -128,6 +128,11 @@ export function navCatalogue(): NavDomain[] {
               perm: PERMISSIONS.TRANSPORTATION.PLANNING_READ,
             },
             {
+              href: '/transportation/exceptions',
+              label: 'Exception Desk',
+              perm: PERMISSIONS.CORE.OPERATING_TASKS_READ,
+            },
+            {
               href: '/planning',
               label: 'Planning Board',
               perm: PERMISSIONS.TRANSPORTATION.PLANNING_READ,
@@ -188,6 +193,7 @@ export function navCatalogue(): NavDomain[] {
         {
           label: 'Postes de travail',
           links: [
+            { href: '/wms/flow', label: 'Warehouse Flow Board' },
             { href: '/wms/inventory', label: 'Inventory Control' },
             { href: '/wms/receiving', label: 'Receiving Workbench' },
             { href: '/wms/fulfillment', label: 'Fulfillment / Staging' },
@@ -260,6 +266,8 @@ export function navCatalogue(): NavDomain[] {
           links: [
             { href: '/yard', label: 'Yard Plan' },
             { href: '/yard/gate', label: 'Gate Console' },
+            { href: '/yard/scheduler', label: 'Dock Scheduler' },
+            { href: '/yard/dwell', label: 'Séjour / Détention' },
           ],
         },
         {
@@ -297,6 +305,7 @@ export function navCatalogue(): NavDomain[] {
         {
           label: 'Postes de travail',
           links: [
+            { href: '/fleet/control-room', label: 'Fleet Control Room', perm: PERMISSIONS.FLEET.READ },
             { href: '/fleet/maintenance', label: 'Maintenance Board', perm: PERMISSIONS.FLEET.READ },
           ],
         },
@@ -396,6 +405,11 @@ export function navCatalogue(): NavDomain[] {
         {
           label: 'Postes de travail',
           links: [
+            {
+              href: '/agents/operations',
+              label: 'Operations Center',
+              perm: PERMISSIONS.CORE.AGENTS_READ,
+            },
             {
               href: '/agent-actions',
               label: 'Actions à approuver',
