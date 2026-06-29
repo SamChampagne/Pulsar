@@ -25,6 +25,7 @@ import {
   Palette,
   Handshake,
   Mail,
+  Globe,
   Factory,
 } from 'lucide-svelte';
 import type { ComponentType } from 'svelte';
@@ -277,6 +278,7 @@ export function navCatalogue(): NavDomain[] {
           links: [
             { href: '/assets', label: 'Assets home' },
             { href: '/fleet', label: 'Fleet roster' },
+            { href: '/fleet/maintenance', label: 'Maintenance', perm: PERMISSIONS.FLEET.READ },
           ],
         },
         {
@@ -306,6 +308,13 @@ export function navCatalogue(): NavDomain[] {
             { href: '/finance', label: 'Finance home' },
             { href: '/invoices', label: 'Receivables / Payables' },
             { href: '/billing/freight-audit', label: 'Freight audit' },
+            { href: '/billing/ledger', label: 'Grand livre', perm: PERMISSIONS.BILLING.LEDGER_READ },
+            { href: '/billing/reports', label: 'Rapports financiers', perm: PERMISSIONS.BILLING.LEDGER_READ },
+            { href: '/billing/banking', label: 'Banque', perm: PERMISSIONS.BILLING.LEDGER_READ },
+            { href: '/billing/budgets', label: 'Budgets', perm: PERMISSIONS.BILLING.LEDGER_READ },
+            { href: '/billing/fixed-assets', label: 'Immobilisations', perm: PERMISSIONS.BILLING.ASSETS_READ },
+            { href: '/billing/subscriptions', label: 'Abonnements', perm: PERMISSIONS.BILLING.SUBSCRIPTIONS_READ },
+            { href: '/billing/payments', label: 'Paiements', perm: PERMISSIONS.BILLING.PAYMENTS_READ },
           ],
         },
         {
@@ -419,6 +428,8 @@ export function navCatalogue(): NavDomain[] {
             { href: '/crm/companies', label: 'Sociétés', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/contacts', label: 'Contacts', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/activities', label: 'Activités', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/inbox', label: 'Boîte de réception', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/coach', label: 'Coach', perm: PERMISSIONS.CORE.AGENTS_CHAT },
           ],
         },
         {
@@ -429,6 +440,13 @@ export function navCatalogue(): NavDomain[] {
           ],
         },
         {
+          label: 'Catalogue',
+          links: [
+            { href: '/crm/products', label: 'Produits', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/sales-orders', label: 'Commandes', perm: PERMISSIONS.CRM.READ },
+          ],
+        },
+        {
           label: 'Administration',
           links: [
             {
@@ -436,6 +454,24 @@ export function navCatalogue(): NavDomain[] {
               label: 'Configuration',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
+          ],
+        },
+      ],
+    },
+
+    // ── Sites & Pages ─────────────────────────────────────────────────────
+    {
+      key: 'sites',
+      label: 'Sites',
+      icon: Globe,
+      home: '/sites',
+      module: MODULE_KEYS.SITES,
+      prefixes: ['/sites'],
+      anyPerms: [PERMISSIONS.SITES.READ],
+      sections: [
+        {
+          links: [
+            { href: '/sites', label: 'Pages', perm: PERMISSIONS.SITES.READ },
           ],
         },
       ],
@@ -540,7 +576,7 @@ export function navCatalogue(): NavDomain[] {
       label: 'Courriels',
       icon: Mail,
       home: '/emails',
-      prefixes: ['/emails', '/email-config'],
+      prefixes: ['/emails'],
       anyPerms: [PERMISSIONS.EMAIL.READ],
       sections: [
         {

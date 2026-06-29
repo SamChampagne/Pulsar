@@ -74,6 +74,16 @@ export const PERMISSIONS = {
     CUSTOMER_INVOICES_MANAGE: 'billing.customer-invoices.manage',
     CUSTOMER_INVOICES_SEND: 'billing.customer-invoices.send',
     CUSTOMER_INVOICES_PAY: 'billing.customer-invoices.pay',
+    LEDGER_READ: 'billing.ledger.read',
+    LEDGER_MANAGE: 'billing.ledger.manage',
+    PAYMENTS_READ: 'billing.payments.read',
+    PAYMENTS_MANAGE: 'billing.payments.manage',
+    SUBSCRIPTIONS_READ: 'billing.subscriptions.read',
+    SUBSCRIPTIONS_MANAGE: 'billing.subscriptions.manage',
+    TAXES_READ: 'billing.taxes.read',
+    TAXES_MANAGE: 'billing.taxes.manage',
+    ASSETS_READ: 'billing.assets.read',
+    ASSETS_MANAGE: 'billing.assets.manage',
   },
   FLEET: {
     READ: 'fleet.read',
@@ -98,6 +108,10 @@ export const PERMISSIONS = {
     READ: 'crm.read',
     MANAGE: 'crm.manage',
   },
+  SITES: {
+    READ: 'sites.read',
+    MANAGE: 'sites.manage',
+  },
   MANUFACTURING: {
     READ: 'manufacturing.read',
     MANAGE: 'manufacturing.manage',
@@ -121,6 +135,7 @@ export type PermissionKey =
   | (typeof PERMISSIONS.PROCUREMENT)[keyof typeof PERMISSIONS.PROCUREMENT]
   | (typeof PERMISSIONS.CARRIER_PORTAL)[keyof typeof PERMISSIONS.CARRIER_PORTAL]
   | (typeof PERMISSIONS.CRM)[keyof typeof PERMISSIONS.CRM]
+  | (typeof PERMISSIONS.SITES)[keyof typeof PERMISSIONS.SITES]
   | (typeof PERMISSIONS.MANUFACTURING)[keyof typeof PERMISSIONS.MANUFACTURING]
   | (typeof PERMISSIONS.EMAIL)[keyof typeof PERMISSIONS.EMAIL];
 
@@ -183,6 +198,11 @@ const carrierPortal = (key: PermissionKey, description: string): PermissionDescr
 const crm = (key: PermissionKey, description: string): PermissionDescriptor => ({
   key,
   module: MODULE_KEYS.CRM,
+  description,
+});
+const sites = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.SITES,
   description,
 });
 const manufacturing = (key: PermissionKey, description: string): PermissionDescriptor => ({
@@ -249,6 +269,16 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_MANAGE, 'Draft, approve and delete customer billing statements'),
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_SEND, 'Send customer billing statements'),
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_PAY, 'Mark customer billing statements as paid'),
+  billing(PERMISSIONS.BILLING.LEDGER_READ, 'View the general ledger'),
+  billing(PERMISSIONS.BILLING.LEDGER_MANAGE, 'Manage the general ledger (manual journal entries, chart of accounts)'),
+  billing(PERMISSIONS.BILLING.PAYMENTS_READ, 'View payments'),
+  billing(PERMISSIONS.BILLING.PAYMENTS_MANAGE, 'Record and submit payments'),
+  billing(PERMISSIONS.BILLING.SUBSCRIPTIONS_READ, 'View subscriptions'),
+  billing(PERMISSIONS.BILLING.SUBSCRIPTIONS_MANAGE, 'Manage subscriptions and recurring billing'),
+  billing(PERMISSIONS.BILLING.TAXES_READ, 'View tax templates'),
+  billing(PERMISSIONS.BILLING.TAXES_MANAGE, 'Manage tax templates'),
+  billing(PERMISSIONS.BILLING.ASSETS_READ, 'View fixed assets'),
+  billing(PERMISSIONS.BILLING.ASSETS_MANAGE, 'Manage fixed assets and depreciation'),
   fleet(PERMISSIONS.FLEET.READ, 'View fleet assets, maintenance and compliance'),
   fleet(PERMISSIONS.FLEET.MANAGE, 'Manage maintenance orders and compliance documents'),
   wms(PERMISSIONS.WMS.READ, 'View warehouse inventory, receipts and pick orders'),
@@ -263,6 +293,9 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   // CRM
   crm(PERMISSIONS.CRM.READ, 'View CRM companies, contacts, deals and activities'),
   crm(PERMISSIONS.CRM.MANAGE, 'Create and manage CRM records, advance and convert deals'),
+  // Sites
+  sites(PERMISSIONS.SITES.READ, 'View sites & landing pages'),
+  sites(PERMISSIONS.SITES.MANAGE, 'Create and manage sites & landing pages'),
   // Manufacturing / APS
   manufacturing(
     PERMISSIONS.MANUFACTURING.READ,

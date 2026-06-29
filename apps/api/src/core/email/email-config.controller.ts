@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Put } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { PERMISSIONS } from '@pulsar/shared';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -30,5 +30,13 @@ export class EmailConfigController {
   @RequirePermissions(PERMISSIONS.EMAIL.MANAGE)
   async test(@CurrentUser() user: AuthUser, @Body() dto: SendTestEmailDto) {
     return this.emailConfig.sendTest(user.tenantId, dto.to);
+  }
+
+  @Post('test-inbound')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(PERMISSIONS.EMAIL.MANAGE)
+  @ApiOperation({ summary: 'Test the tenant IMAP inbound connection' })
+  testInbound(@CurrentUser() user: AuthUser) {
+    return this.emailConfig.testInbound(user.tenantId);
   }
 }

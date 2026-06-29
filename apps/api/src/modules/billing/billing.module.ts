@@ -5,13 +5,33 @@ import { EmailModule } from '../../core/email/email.module';
 import { ModuleRegistryModule } from '../../core/module-registry/module-registry.module';
 import { OperatingModule } from '../../core/operating/operating.module';
 import { TransportationModule } from '../transportation/transportation.module';
+import { BankAccountsController } from './banking/bank-accounts.controller';
+import { BankAccountsService } from './banking/bank-accounts.service';
+import { BankTransactionsController } from './banking/bank-transactions.controller';
+import { BankTransactionsService } from './banking/bank-transactions.service';
+import { BudgetsController } from './budgets/budgets.controller';
+import { BudgetsService } from './budgets/budgets.service';
+import { FixedAssetsController } from './assets/fixed-assets.controller';
+import { FixedAssetsService } from './assets/fixed-assets.service';
 import { BillingCustomFieldsController } from './custom-fields/billing-custom-fields.controller';
+import { SubscriptionsController } from './subscriptions/subscriptions.controller';
+import { SubscriptionsService } from './subscriptions/subscriptions.service';
 import { CustomerInvoicesController } from './customer-invoices.controller';
 import { CustomerInvoicesService } from './customer-invoices.service';
 import { FreightAuditController } from './freight-audit/freight-audit.controller';
 import { FreightAuditService } from './freight-audit/freight-audit.service';
 import { InvoicesController } from './invoices.controller';
 import { InvoicesService } from './invoices.service';
+import { LedgerController } from './ledger/ledger.controller';
+import { LedgerService } from './ledger/ledger.service';
+import { FinancialReportsService } from './reports/financial-reports.service';
+import { ReportsController } from './reports/reports.controller';
+import { ModesOfPaymentController } from './modes-of-payment.controller';
+import { ModesOfPaymentService } from './modes-of-payment.service';
+import { PaymentsController } from './payments.controller';
+import { PaymentsService } from './payments.service';
+import { TaxTemplatesController } from './tax-templates.controller';
+import { TaxTemplatesService } from './tax-templates.service';
 
 /**
  * Billing — third business module, activable per tenant.
@@ -21,8 +41,8 @@ import { InvoicesService } from './invoices.service';
  */
 @Module({
   imports: [AuditLogsModule, CustomFieldsModule, EmailModule, ModuleRegistryModule, TransportationModule, forwardRef(() => OperatingModule)],
-  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController, BillingCustomFieldsController],
-  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService],
-  exports: [FreightAuditService, CustomerInvoicesService],
+  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController, BillingCustomFieldsController, LedgerController, ModesOfPaymentController, PaymentsController, TaxTemplatesController, ReportsController, BankAccountsController, BankTransactionsController, BudgetsController, FixedAssetsController, SubscriptionsController],
+  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService, FinancialReportsService, BankAccountsService, BankTransactionsService, BudgetsService, FixedAssetsService, SubscriptionsService],
+  exports: [FreightAuditService, CustomerInvoicesService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService, BankAccountsService, BankTransactionsService],
 })
 export class BillingModule {}

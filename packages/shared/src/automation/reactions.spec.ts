@@ -39,3 +39,13 @@ describe('arc E reactions in catalogue', () => {
     },
   );
 });
+
+describe('CRM cross-module reactions', () => {
+  it('has draft_invoice_from_sales_order (billing, salesOrderId)', () => {
+    const r = REACTION_CATALOG.find((x) => x.key === 'draft_invoice_from_sales_order');
+    expect(r).toBeDefined();
+    expect(r!.module).toBe('billing');
+    expect(r!.requiredModules).toEqual(['billing']);
+    expect(r!.argKeys).toEqual(['salesOrderId']);
+  });
+});

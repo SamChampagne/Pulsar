@@ -16,6 +16,7 @@ export const MODULE_KEYS = {
   PROCUREMENT: 'procurement',
   CARRIER_PORTAL: 'carrier-portal',
   CRM: 'crm',
+  SITES: 'sites',
   MANUFACTURING: 'manufacturing',
 } as const;
 
@@ -105,6 +106,13 @@ export const MODULE_CATALOG: ModuleDescriptor[] = [
     key: MODULE_KEYS.CRM,
     name: 'CRM',
     description: 'Commercial relationships: companies, contacts, deals pipeline and activity timeline, worked by an AI commercial agent.',
+    isCore: false,
+    available: true,
+  },
+  {
+    key: MODULE_KEYS.SITES,
+    name: 'Sites & Pages',
+    description: 'Landing pages and microsites with CRM lead capture.',
     isCore: false,
     available: true,
   },

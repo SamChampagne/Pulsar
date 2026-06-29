@@ -58,6 +58,10 @@ export interface ToolServices {
       agentId?: string,
     ): Promise<unknown>;
   };
+  ledger: {
+    trialBalance(tenantId: string, asOf?: Date): Promise<unknown>;
+    listJournal(tenantId: string, query: { accountId?: string; page?: number; pageSize?: number }): Promise<unknown>;
+  };
   // ── Fleet ──────────────────────────────────────────────────────────────────
   vehicles: {
     list(tenantId: string, query: object): Promise<unknown>;
@@ -111,6 +115,13 @@ export interface ToolServices {
     logActivity(tenantId: string, input: object, author: { agentId?: string; userId?: string }): Promise<unknown>;
     advanceDeal(tenantId: string, id: string, userId: string, stage: string): Promise<unknown>;
     createFollowup(tenantId: string, input: object, author: { agentId?: string }): Promise<unknown>;
+    getDeal(tenantId: string, id: string): Promise<unknown>;
+    listThreads(tenantId: string, query: object): Promise<unknown>;
+    getThread(tenantId: string, id: string): Promise<unknown>;
+    replyThread(tenantId: string, id: string, dto: { html: string; subject?: string }, author: { agentId?: string; userId?: string }): Promise<unknown>;
+    linkThread(tenantId: string, id: string, dto: object, userId: string): Promise<unknown>;
+    listProducts(tenantId: string, query: object): Promise<unknown>;
+    listSalesOrders(tenantId: string, query: object): Promise<unknown>;
   };
   // ── Manufacturing / APS ──────────────────────────────────────────────────
   manufacturingOrders: {

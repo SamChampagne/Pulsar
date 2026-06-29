@@ -7,7 +7,7 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
-import { ReplaceCustomFieldsDto } from './dto/custom-field.dto';
+import { ReplaceCustomFieldsDto } from '../../../core/custom-fields/dto/custom-field.dto';
 
 @ApiTags('transportation/custom-fields')
 @ApiBearerAuth()

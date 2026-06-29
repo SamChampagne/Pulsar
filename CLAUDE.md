@@ -283,6 +283,189 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     JAMAIS `WmsModule` ni `BillingModule` statiquement (cycle JS) ; `ReactionExecutorService`
     résout `PickingService`/`CustomerInvoicesService` via `ModuleRef.get()` + lazy `require()`.
 
+## Hard rules (continued, courriel bidirectionnel)
+
+39. (courriel bidirectionnel + threads CRM) La réception passe TOUJOURS par un
+    `InboundEmailDriver` (core/email/inbound — `log` en dev/CI, `imap` quand
+    `EMAIL_DRIVER=smtp`) ; l'ingestion (`InboundIngestService`) est idempotente sur
+    `messageId`, threade via headers RFC puis match `CrmContact.email` (décisions PURES
+    `resolveThreadDecision`/`normalizeSubject` de `@pulsar/shared` — ne pas réimplémenter),
+    et est best-effort/isolée par tenant (le cron ne throw JAMAIS, un tenant en échec
+    n'affecte pas les autres). Les pièces jointes entrantes passent par `DocumentsService`
+    (règle 12) ; le secret IMAP est chiffré via `CryptoService` et jamais renvoyé en clair
+    (règle 25, projection `hasImapPassword`). `EmailMessage` est réutilisé (`direction`
+    INBOUND/OUTBOUND) ; tout endpoint threads est `@RequireModule(CRM)` + `crm.read|manage`,
+    tenant-scopé (règle 1), FK vérifiées (règle 9). Les réponses agent passent TOUJOURS par
+    la file `ProposedAction` (`crm_reply_thread` SENSITIVE, `crm_link_thread` MUTATING —
+    règles 22/29).
+
+## Hard rules (continued, module Sites)
+
+40. (module Sites — pages de destination publiques) Le payload public `GET /public/sites/:slug`
+    est une **projection explicite** (jamais `tenantId` ni référence interne — règle 10) ; le
+    service public re-vérifie l'activation du module SITES **et** le statut `PUBLISHED` de la page
+    avant de répondre (règle 15 — la route `/public/**` bypass le `ModulesGuard`). La soumission
+    de formulaire (`POST /public/sites/:slug/submit`) crée un lead CRM **uniquement si le module
+    CRM est actif** — résolu via `ModuleRef.get(ContactsService)` (jamais d'import statique de
+    `CrmModule` — règle 38 pattern). Le champ anti-spam `_hp` (honeypot) renvoyé non vide est
+    silencieusement rejeté (200 sans création). Le slug est **globalement unique**
+    (`@@unique([slug])`) — la route publique résout le tenant depuis le slug, donc il ne peut
+    pas être scopé par tenant ; `slugify` de `@pulsar/shared` est la seule source de
+    normalisation — ne pas réimplémenter.
+
+## Hard rules (continued, Billing general ledger)
+
+41. (Billing general ledger — grand livre double-entrée) Le grand livre est **double-entrée** :
+    toute `JournalEntry` est postée UNIQUEMENT via `LedgerService.post` qui applique `isBalanced`
+    (`@pulsar/shared`) — un lot non équilibré est refusé (400), jamais silencieux. L'auto-post
+    depuis les transitions billing (approve/pay) est **best-effort** (jamais bloquant pour la
+    transition) et **idempotent** sur `(tenantId, sourceType, sourceId, sourceKind)` (unique
+    constraint `journal_entries`). Les mappings code-compte (`accountCode`) et l'activation de
+    l'auto-post (`ledgerAutoPost`) sont configurables dans `TenantModule.settings` billing
+    (framework de config — règle 36) ; les valeurs par défaut viennent du `DEFAULT_CHART`
+    (`@pulsar/shared`). La balance de vérification (trial balance) est **calculée à la lecture**
+    depuis `JournalLine` (aucun rollup, aucune migration supplémentaire). Le `normalBalance` d'un
+    compte est **dérivé** de son `AccountType` via la fonction pure `normalBalance` (`@pulsar/shared`)
+    — jamais persisté. Le plan comptable par défaut est seedé idempotement pour le tenant acme
+    (upsert sur `(tenantId, code)`).
+
+## Hard rules (continued, Billing Payments)
+
+42. (Billing Payments — paiement comme entrée unique) `Payment`/`PaymentAllocation`/`ModeOfPayment`
+    sont la seule voie de paiement billing. Tout paiement passe par `PaymentsService.submit` qui
+    poste le GL **transactionnellement** via `LedgerService.postTx` (`sourceType='payment'`,
+    `sourceId=payment.id`, `sourceKind=undefined`) ; l'annulation poste une écriture inversée
+    (`sourceKind='reversal'`) dans la même transaction. Les statuts `Payment` ne changent QUE via
+    `canTransitionPayment` (`@pulsar/shared`). Le mark-paid des relevés clients (`POST
+    customer-invoices/:id/pay`) exige le statut `SENT` (pas `APPROVED`) et retourne le relevé
+    mis à jour. Le mark-paid des factures transporteur (`POST invoices/:id/mark-paid`) retourne
+    la facture mise à jour. Les deux endpoints créent et soumettent un `Payment` en coulisse —
+    jamais de GL direct. `ModeOfPayment.accountCode` désigne le compte caisse/banque ; les
+    comptes AR/AP viennent des réglages billing (`arAccountCode`/`apAccountCode`). Le plan
+    comptable est seedé via `ensureChart` (idempotent) avant toute transaction GL.
+
+## Hard rules (continued, Billing Taxes)
+
+43. (Billing Taxes — TVA / TPS multi-taux) La taxe est appliquée aux relevés clients et factures
+    transporteur UNIQUEMENT via `PATCH billing/customer-invoices/:id/tax` et
+    `PATCH billing/invoices/:id/tax` (statut DRAFT requis, jamais auto-appliquée) ;
+    `isDefault` est un indicateur de pré-sélection UI, pas un déclencheur automatique.
+    Un `TaxTemplate` (SALES → relevés clients, PURCHASE → factures transporteur) agrège N lignes
+    (`TaxTemplateLine` : taux + `accountCode`) ; appliquer un gabarit de mauvais type renvoie 400.
+    `computeTax` (`@pulsar/shared`, pur) calcule la taxe à partir des lignes : flat-on-net v1
+    (`rate × netAmount` par ligne, arrondi à 2 décimales, somme = `taxAmount`). `totalAmount =
+    netAmount + taxAmount` (montant brut, ce qui est dû). Effacer la taxe : passer
+    `taxTemplateId: null` (remet `taxAmount=0`, `totalAmount=netAmount`). Toute approbation avec
+    taxe > 0 génère une écriture GL **fractionnée** best-effort + idempotente (règle 41) :
+    relevé client → DR AR gross / CR Revenue net / CR compte-taxe par ligne du gabarit ;
+    facture transporteur → DR Expense net / DR compte-taxe (input-tax) par ligne / CR AP gross.
+    Les `accountCode` référencés par les lignes du gabarit doivent exister dans le plan comptable
+    du tenant (400 sinon). Tout endpoint taxes est `@RequireModule(BILLING)` +
+    `billing.taxes.read|manage`, tenant-scopé (règle 1).
+
+## Hard rules (continued, Financial Reports)
+
+44. (Financial Reports — états financiers lecture seule) Les états financiers (P&L, bilan,
+    flux de trésorerie, vieillissement AR/AP) sont **calculés à la lecture** depuis `JournalLine`
+    (+ `CustomerInvoice`/`IncomingCarrierInvoice` à statut `APPROVED`/`SENT`/`PAID` pour le
+    vieillissement) via les helpers purs `buildProfitAndLoss`/`buildBalanceSheet`/`buildAging`
+    (`@pulsar/shared/billing/reports`) — **aucun store de rollup, aucune migration**.
+    `naturalBalance` (alias de `normalBalance`, `@pulsar/shared`) dérive le solde normal d'un
+    compte depuis son `AccountType` — jamais persisté. Les endpoints `GET /billing/reports/*`
+    sont gated `@RequireModule(BILLING)` + `billing.ledger.read` (aucune nouvelle permission) et
+    sont tenant-scopés (règle 1). La plage de dates (`from`/`to`/`asOf`) est fournie en
+    paramètre de requête ; le cumul depuis l'origine est retourné si `from` est absent.
+    Le vieillissement est calculé par tranches (0-30, 31-60, 61-90, 91-120, 120+ jours) sur
+    `approvedAt ?? createdAt` de la facture ; une facture est incluse si et seulement si
+    `outstanding = totalAmount − amountPaid > 0` (une facture partiellement payée reste visible).
+
+## Hard rules (continued, Billing Banking)
+
+45. (Billing Banking — comptes bancaires & rapprochement) Un `BankAccount` identifie un compte
+    réel du tenant par son `glAccountCode` (FK souple vers `ChartOfAccount.code`, ownership vérifié
+    en service). Les `BankTransaction` sont créées manuellement ou importées par CSV via
+    `parseBankCsv` (`@pulsar/shared`, pur — jamais réimplémenté) ; l'import CSV crée les lignes
+    telles quelles (pas de déduplication v1). Le rapprochement (`POST /billing/bank-transactions/:id/match`) fait correspondre
+    une transaction bancaire 1:1 à un `Payment` dont le `ModeOfPayment.accountCode` égale le
+    `glAccountCode` du compte bancaire (filtre des candidats) ; le claim se fait via deux
+    `updateMany` conditionnels dans une seule transaction (transaction `UNRECONCILED → RECONCILED`
+    + `Payment.reconciledAt` non nul) — si l'un échoue, les deux rollbackent. `Payment.reconciledAt`
+    est un marqueur de rapprochement uniquement : il ne modifie JAMAIS `Payment.status` ni
+    `amountPaid` (le GL n'est JAMAIS modifié depuis le module Banking — clearing sub-ledger,
+    règle 41 préservée). Le numéro de compte (`accountNumber`) est **masqué dans toutes les
+    projections** (4 derniers caractères + `****` — esprit règle 10). Tout endpoint Banking est
+    `@RequireModule(BILLING)` + `billing.ledger.read|manage`, tenant-scopé (règle 1) ; FK
+    vérifiées (règle 9).
+
+## Hard rules (continued, Billing Budget)
+
+46. (Billing Budget — budgets annuels par compte) Un `Budget` regroupe des `BudgetLine` (une ligne
+    par `accountCode` du plan comptable, montant budgété pour l'année fiscale `fiscalYear`). La
+    variance est calculée **à la lecture** (`GET /billing/budgets/:id/variance`) : le service agrège
+    les `JournalLine` du tenant sur la fenêtre fiscale (`[Jan 1, Dec 31]`) pour chaque `accountCode`
+    présent dans le budget, puis appelle `computeBudgetVariance` + `naturalBalance`
+    (`@pulsar/shared`, purs) pour dériver `actual`, `variance` et `variancePct` par ligne — **aucune
+    écriture GL, aucun rollup persisté, aucune migration supplémentaire**. Les lignes sans activité GL
+    utilisent les métadonnées du `ChartOfAccount` (nom, type) pour que `naturalBalance` reste correct.
+    Tout endpoint Budget est `@RequireModule(BILLING)` + `billing.ledger.read|manage` (aucune
+    nouvelle permission), tenant-scopé (règle 1) ; FK vérifiées (règle 9).
+
+## Hard rules (continued, Billing Fixed Assets)
+
+47. (Billing Fixed Assets — registre des immobilisations) Le registre `FixedAsset` (DRAFT → ACTIVE
+    → DISPOSED via `canTransitionFixedAsset`, `@pulsar/shared`, règle 2) avec claim conditionnel
+    `updateMany` (TOCTOU) enregistre le coût d'acquisition et paramètre le plan d'amortissement
+    linéaire (`usefulLifeMonths`, `salvageValue`). La dotation mensuelle est calculée par
+    `depreciationForNextPeriod` (`@pulsar/shared`, pur) qui plafonne le montant afin que
+    `accumulatedDepreciation` ne dépasse jamais `cost − salvageValue`. L'appel à `depreciate`
+    exécute TROIS opérations dans une **seule transaction** : (1) crée un `DepreciationEntry` unique
+    sur `(tenantId, assetId, period)` — `P2002` → 409 idempotence ; (2) incrémente
+    `accumulatedDepreciation` sur l'asset ; (3) poste l'écriture GL via `LedgerService.postTx`
+    (`Dr depreciationExpenseAccountCode / Cr accumulatedDepreciationAccountCode`, idempotente sur
+    `sourceType='depreciation'`, `sourceId=<entryId>` — règle 41). Les valeurs par défaut sont
+    **5100** (dotation aux amortissements, EXPENSE) et **1590** (amortissement cumulé, contra-ASSET) ;
+    les deux comptes sont inclus dans `DEFAULT_CHART` et seedés pour chaque tenant. **Pas d'écriture
+    GL à l'acquisition ni à la cession en v1** — le registre porte le coût d'acquisition ; la
+    cession (`dispose`) est statut-only. Tout endpoint est `@RequireModule(BILLING)` +
+    `billing.assets.read|manage`, tenant-scopé (règle 1). Les comptes 1500/1590/5100 sont
+    inclus dans `DEFAULT_CHART` mais `ensureChart` ne backfille pas un plan non-vide : un tenant
+    seedé avant leur ajout doit relancer `pnpm db:seed` (upsert idempotent) pour les obtenir —
+    sinon `depreciate` retourne un 400 propre ("Unknown account code: 5100") sans corruption.
+
+## Hard rules (continued, Billing Subscriptions)
+
+48. (Billing Subscriptions — facturation récurrente) Les `Subscription` (ACTIVE → PAUSED → ACTIVE,
+    ACTIVE/PAUSED → CANCELLED via `canTransitionSubscription`, `@pulsar/shared`, règle 2) avec claim
+    conditionnel `updateMany` (TOCTOU) définissent des lignes tarifaires périodiques
+    (WEEKLY/MONTHLY/YEARLY). La génération (`generate`) crée une `CustomerInvoice` DRAFT avec des
+    lignes libres (`source='subscription'`) dans une transaction atomique ; elle est **idempotente**
+    sur `(tenantId, subscriptionId, periodStart)` (unique constraint `SubscriptionInvoice` — `P2002`
+    → 409). Elle avance `nextRunDate` via `advanceRunDate` (`@pulsar/shared`, pur, UTC, clamp
+    fin-de-mois) dans la **même** transaction. Le numéro de facture vient de `SequencesService` clé
+    `'customer-invoice'` (règle 8). **Aucune écriture GL directe** : la facture générée suit le flux
+    billing normal (approve → GL — règle 41). `POST /billing/subscriptions/run-due` itère les
+    abonnements ACTIVE avec `nextRunDate <= now` et est **best-effort** (renvoie
+    `{ generated, skipped, errors }`, n'émet jamais d'exception globale) ; une génération échouée
+    pour un abonnement n'affecte pas les autres. Un abonnement PAUSED ou CANCELLED est bloqué en
+    génération (400). `DELETE` est bloqué si des `SubscriptionInvoice` existent. Tout endpoint est
+    `@RequireModule(BILLING)` + `billing.subscriptions.read|manage`, tenant-scopé (règle 1) ; FK
+    vérifiées (règle 9). Route web : `/billing/subscriptions`.
+
+## Hard rules (continued, Billing Account Settings)
+
+49. (Billing Account Settings — paramètres comptables par tenant) Les paramètres comptables (dont
+    `fiscalYearStartMonth`) vivent dans le **framework de config billing** (`TenantModule.settings`,
+    règle 36) — aucune entité, aucune migration, aucune route dédiée supplémentaires. Ils sont
+    exposés sur `/billing/config` via le composant `ModuleSettings module="billing"` qui lit le
+    catalogue `MODULE_SETTINGS_CATALOG` de `@pulsar/shared`. `fiscalYearStartMonth` (number, 1–12,
+    défaut 1 = janvier = exercice calendaire = comportement actuel inchangé) est consommé par
+    `BudgetsService.variance` via la fonction pure `fiscalYearBounds(fiscalYear, startMonth)`
+    (`@pulsar/shared/billing/fiscal`) qui calcule la fenêtre [from, to) de l'exercice fiscal —
+    la variance budget agrège les `JournalLine` dans cette fenêtre. Un `startMonth` de 1 produit
+    exactement [1er janv, 31 déc] — zéro changement de comportement pour les tenants non configurés.
+    Le schéma est extensible vers une entité `FiscalYear` future (périodes nommées, arrêtés de
+    comptes) sans rupture : `fiscalYearBounds` sera alors le calcul de repli.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

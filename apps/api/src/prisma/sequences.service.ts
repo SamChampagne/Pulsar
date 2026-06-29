@@ -20,6 +20,8 @@ export type SequenceKey =
   | 'inbound-message'
   | 'rfp'
   | 'customer'
+  | 'sales-order'
+  | 'payment'
   | 'manufacturing-order';
 
 const PREFIXES: Record<SequenceKey, string> = {
@@ -39,6 +41,8 @@ const PREFIXES: Record<SequenceKey, string> = {
   'inbound-message': 'IN',
   rfp: 'RFP',
   customer: 'CUST',
+  'sales-order': 'SO',
+  payment: 'PAY',
   'manufacturing-order': 'MO',
 };
 
@@ -54,6 +58,7 @@ const PREFIX_SETTING: Partial<Record<SequenceKey, { module: string; settingKey: 
   'yard-visit': { module: 'yard', settingKey: 'documentPrefixYardVisit' },
   'dock-appointment': { module: 'yard', settingKey: 'documentPrefixDockAppointment' },
   rfp: { module: 'procurement', settingKey: 'documentPrefixRfp' },
+  payment: { module: 'billing', settingKey: 'paymentNumberPrefix' },
 };
 
 /**

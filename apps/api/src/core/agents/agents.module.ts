@@ -17,6 +17,7 @@ import { TrailersService } from '../../modules/transportation/trailers/trailers.
 import { OperationalTasksService } from '../operating/operational-tasks.service';
 import { BillingModule } from '../../modules/billing/billing.module';
 import { FreightAuditService } from '../../modules/billing/freight-audit/freight-audit.service';
+import { LedgerService } from '../../modules/billing/ledger/ledger.service';
 import { FleetModule } from '../../modules/fleet/fleet.module';
 import { MaintenanceService } from '../../modules/fleet/maintenance/maintenance.service';
 import { ComplianceService } from '../../modules/fleet/compliance/compliance.service';
@@ -35,6 +36,9 @@ import { CrmModule } from '../../modules/crm/crm.module';
 import { CompaniesService } from '../../modules/crm/companies.service';
 import { DealsService } from '../../modules/crm/deals.service';
 import { ActivitiesService } from '../../modules/crm/activities.service';
+import { ThreadsService } from '../../modules/crm/threads.service';
+import { ProductsService } from '../../modules/crm/products.service';
+import { SalesOrdersService } from '../../modules/crm/sales-orders.service';
 import { ManufacturingModule } from '../../modules/manufacturing/manufacturing.module';
 import { SchedulingService } from '../../modules/manufacturing/scheduling/scheduling.service';
 import { OrdersService as ManufacturingOrdersService } from '../../modules/manufacturing/orders/orders.service';
@@ -103,6 +107,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         TrailersService,
         OperationalTasksService,
         FreightAuditService,
+        LedgerService,
         MaintenanceService,
         ComplianceService,
         FleetOverviewService,
@@ -116,6 +121,9 @@ import { RuntimeConfigController } from './runtime-config.controller';
         CompaniesService,
         DealsService,
         ActivitiesService,
+        ThreadsService,
+        ProductsService,
+        SalesOrdersService,
         AiDraftService,
         MailService,
         SchedulingService,
@@ -132,6 +140,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         trailers: TrailersService,
         operationalTasks: OperationalTasksService,
         freightAudit: FreightAuditService,
+        ledger: LedgerService,
         maintenance: MaintenanceService,
         compliance: ComplianceService,
         fleetOverview: FleetOverviewService,
@@ -145,6 +154,9 @@ import { RuntimeConfigController } from './runtime-config.controller';
         companies: CompaniesService,
         deals: DealsService,
         activities: ActivitiesService,
+        threads: ThreadsService,
+        products: ProductsService,
+        salesOrders: SalesOrdersService,
         aiDraft: AiDraftService,
         mail: MailService,
         scheduling: SchedulingService,
@@ -180,6 +192,10 @@ import { RuntimeConfigController } from './runtime-config.controller';
         freightAudit: {
           audit: (t, u, id) => freightAudit.audit(t, u, id),
           dispute: (t, a, id, dto, agentId) => freightAudit.dispute(t, a, id, dto as never, agentId),
+        },
+        ledger: {
+          trialBalance: (tenantId, asOf) => ledger.trialBalance(tenantId, asOf),
+          listJournal: (tenantId, query) => ledger.listJournal(tenantId, query),
         },
         vehicles: {
           list: (tenantId, query) => vehicles.list(tenantId, query as never),
@@ -241,6 +257,13 @@ import { RuntimeConfigController } from './runtime-config.controller';
             deals.advance(tenantId, id, userId, stage as never),
           createFollowup: (tenantId, input, author) =>
             activities.create(tenantId, { ...(input as object), type: 'TASK' } as never, author),
+          getDeal: (tenantId, id) => deals.getWithContext(tenantId, id),
+          listThreads: (tenantId, query) => threads.list(tenantId, query as never),
+          getThread: (tenantId, id) => threads.get(tenantId, id),
+          replyThread: (tenantId, id, dto, author) => threads.reply(tenantId, id, dto, author),
+          linkThread: (tenantId, id, dto, userId) => threads.link(tenantId, id, dto as never, userId),
+          listProducts: (tenantId, query) => products.list(tenantId, query as never),
+          listSalesOrders: (tenantId, query) => salesOrders.list(tenantId, query as never),
         },
         manufacturingOrders: {
           list: (tenantId, query) => mfgOrders.list(tenantId, query as never),

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { CrmActivityType, CrmDealStage, isDealOpen } from '@pulsar/shared';
+import { CrmActivityType, CrmDealStage, isDealOpen, isDealStale } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export interface PipelineStageStats {
@@ -38,7 +38,6 @@ export class OverviewService {
 
   async get(tenantId: string): Promise<CrmOverview> {
     const now = new Date();
-    const staleThreshold = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     // All tenant deals — used for pipeline groupBy + open/won/lost counts + stale
     const deals = await this.prisma.crmDeal.findMany({
@@ -87,10 +86,7 @@ export class OverviewService {
       const stage = deal.stage as CrmDealStage;
       if (isDealOpen(stage)) {
         openValue += deal.amount ? Number(deal.amount) : 0;
-        // Stale: open deal with lastActivityAt < threshold OR (null AND createdAt < threshold)
-        // Mirrors exactly the predicate in CrmExceptionsService.detectStaleDeals
-        const lastAt = deal.lastActivityAt ?? deal.createdAt;
-        if (lastAt < staleThreshold) {
+        if (isDealStale({ stage, lastActivityAt: deal.lastActivityAt, createdAt: deal.createdAt, now })) {
           staleDealCount += 1;
         }
       } else if (stage === CrmDealStage.WON) {

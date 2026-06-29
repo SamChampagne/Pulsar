@@ -24,6 +24,22 @@
   // ── Shared tab state ────────────────────────────────────────────────────────
   let activeTab = $state<'carrier' | 'customer'>('carrier');
 
+  // ── Shared billing types ─────────────────────────────────────────────────────
+  interface TaxDetailLine {
+    description: string;
+    rate: number;
+    accountCode: string;
+    amount: number;
+  }
+  interface TaxDetail {
+    taxAmount: number;
+    lines: TaxDetailLine[];
+  }
+  interface TaxTemplateOption {
+    id: string;
+    name: string;
+  }
+
   // ── Carrier-invoice types ────────────────────────────────────────────────────
   interface LineRow {
     id: string;
@@ -38,6 +54,9 @@
     status: string;
     currency: string;
     totalAmount: string;
+    taxAmount: string;
+    taxDetail: TaxDetail | null;
+    taxTemplateId: string | null;
     invoicedTotal: string | null;
     varianceTotal: string | null;
     varianceGross: string | null;
@@ -72,6 +91,11 @@
   // Carrier tab loads eagerly; customer tab lazy-loads on first switch — hence the different defaults.
   let loadingCarrier = $state(true);
 
+  // Billing settings drive optional UI affordances (delete-draft gating).
+  let allowInvoiceDeletion = $state(true);
+  // Optional payment date when marking a carrier invoice paid (per expanded row).
+  let markPaidDate = $state<Record<string, string>>({});
+
   // Client-side pagination for the carrier invoices table (endpoint returns a plain array).
   const PAGE_SIZE = 25;
   let carrierPage = $state(1);
@@ -90,6 +114,35 @@
   let reasonCode = $state('RATE_MISMATCH');
   let disputeNote = $state('');
 
+  // Purchase tax template selector state (DRAFT carrier invoices)
+  let purchaseTaxTemplates = $state<TaxTemplateOption[]>([]);
+  let purchaseTaxTemplatesLoaded = $state(false);
+
+  async function loadPurchaseTaxTemplates() {
+    if (purchaseTaxTemplatesLoaded) return;
+    try {
+      const result = await api<TaxTemplateOption[]>('/billing/tax-templates', {
+        query: { type: 'PURCHASE' },
+      });
+      purchaseTaxTemplates = result;
+      purchaseTaxTemplatesLoaded = true;
+    } catch {
+      // non-blocking — selector stays empty
+    }
+  }
+
+  async function applyCarrierTax(invoice: InvoiceRow, taxTemplateId: string | null) {
+    try {
+      await api(`/billing/invoices/${invoice.id}/tax`, {
+        method: 'PATCH',
+        body: { taxTemplateId },
+      });
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to apply tax template');
+    }
+  }
+
   async function load() {
     try {
       invoices = await api<InvoiceRow[]>('/billing/invoices', {
@@ -99,6 +152,15 @@
         query: { pageSize: 100 },
       });
       carriers = result.items;
+      // Resolve billing settings to know whether draft deletion is allowed.
+      try {
+        const settings = await api<{ values: Record<string, string | number | boolean> }>(
+          '/modules/billing/settings',
+        );
+        allowInvoiceDeletion = settings.values.allowInvoiceDeletion !== false;
+      } catch {
+        // Settings unavailable: keep the default (deletion allowed).
+      }
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load invoices';
     } finally {
@@ -187,11 +249,31 @@
 
   async function markPaid(invoice: InvoiceRow) {
     try {
-      await api(`/billing/invoices/${invoice.id}/mark-paid`, { method: 'POST', body: {} });
+      const paidAt = markPaidDate[invoice.id];
+      await api(`/billing/invoices/${invoice.id}/mark-paid`, {
+        method: 'POST',
+        body: paidAt ? { paidAt } : {},
+      });
       toast.success(`${invoice.invoiceNumber} marked paid`);
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Failed to mark paid');
+    }
+  }
+
+  async function deleteInvoice(invoice: InvoiceRow) {
+    if (
+      !confirm(
+        `Delete draft invoice ${invoice.invoiceNumber}? This frees the loads for re-drafting.`,
+      )
+    )
+      return;
+    try {
+      await api(`/billing/invoices/${invoice.id}`, { method: 'DELETE' });
+      toast.success(`${invoice.invoiceNumber} deleted`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to delete invoice');
     }
   }
 
@@ -217,6 +299,7 @@
     void statusFilter;
     carrierPage = 1;
     void load();
+    void loadPurchaseTaxTemplates();
   });
 
   // ── Customer-statement types ─────────────────────────────────────────────────
@@ -254,6 +337,9 @@
     status: 'DRAFT' | 'APPROVED' | 'SENT' | 'PAID';
     currency: string;
     totalAmount: string;
+    taxAmount: string;
+    taxDetail: TaxDetail | null;
+    taxTemplateId: string | null;
     approvedAt: string | null;
     sentAt: string | null;
     paidAt: string | null;
@@ -428,12 +514,42 @@
     }
   }
 
+  // Tax template selector state (for DRAFT statements)
+  let taxTemplates = $state<TaxTemplateOption[]>([]);
+  let taxTemplatesLoaded = $state(false);
+
+  async function loadTaxTemplates() {
+    if (taxTemplatesLoaded) return;
+    try {
+      const result = await api<TaxTemplateOption[]>('/billing/tax-templates', {
+        query: { type: 'SALES' },
+      });
+      taxTemplates = result;
+      taxTemplatesLoaded = true;
+    } catch {
+      // non-blocking — selector just stays empty
+    }
+  }
+
+  async function applyTax(stmt: StatementRow, taxTemplateId: string | null) {
+    try {
+      await api(`/billing/customer-invoices/${stmt.id}/tax`, {
+        method: 'PATCH',
+        body: { taxTemplateId },
+      });
+      await loadCustomerData();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Failed to apply tax template');
+    }
+  }
+
   // Load customer tab data when switching to it (once)
   let customerDataLoaded = $state(false);
   $effect(() => {
     if (activeTab === 'customer' && !customerDataLoaded) {
       customerDataLoaded = true;
       void loadCustomerData();
+      void loadTaxTemplates();
     }
   });
 
@@ -527,7 +643,16 @@
               <td class="text-right whitespace-nowrap">
                 {#if invoice.status === 'DRAFT'}
                   <Button variant="secondary" onclick={() => approve(invoice)}>Approve as-is</Button>
+                  {#if allowInvoiceDeletion}
+                    <Button variant="danger" onclick={() => deleteInvoice(invoice)}>Delete draft</Button>
+                  {/if}
                 {:else if invoice.status === 'APPROVED'}
+                  <input
+                    type="date"
+                    bind:value={markPaidDate[invoice.id]}
+                    title="Payment date (optional)"
+                    class="rounded border border-edge bg-surface px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
+                  />
                   <Button variant="secondary" onclick={() => markPaid(invoice)}>Mark paid</Button>
                 {/if}
               </td>
@@ -608,6 +733,57 @@
                       <p class="text-sm text-ink-muted">
                         Dispute: {invoice.disputeReasonCode}{invoice.disputeNote ? ` — ${invoice.disputeNote}` : ''}
                       </p>
+                    {/if}
+
+                    <!-- Tax breakdown / totals -->
+                    {#if Number(invoice.taxAmount) > 0 && invoice.taxDetail}
+                      {@const taxAmt = Number(invoice.taxAmount)}
+                      {@const total = Number(invoice.totalAmount)}
+                      {@const net = total - taxAmt}
+                      <div class="rounded-md border border-edge bg-surface p-3 space-y-1 text-sm">
+                        <div class="flex justify-between text-ink-muted">
+                          <span>Net</span>
+                          <span>{net.toLocaleString()} {invoice.currency}</span>
+                        </div>
+                        {#each invoice.taxDetail.lines as tl (tl.description)}
+                          <div class="flex justify-between text-ink-muted">
+                            <span>{tl.description} ({tl.rate}%)</span>
+                            <span>{Number(tl.amount).toLocaleString()} {invoice.currency}</span>
+                          </div>
+                        {/each}
+                        <div class="flex justify-between font-semibold border-t border-edge pt-1 text-ink">
+                          <span>Total</span>
+                          <span>{total.toLocaleString()} {invoice.currency}</span>
+                        </div>
+                      </div>
+                    {:else}
+                      <div class="rounded-md border border-edge bg-surface p-3 text-sm">
+                        <div class="flex justify-between font-semibold text-ink">
+                          <span>Total</span>
+                          <span>{Number(invoice.totalAmount).toLocaleString()} {invoice.currency}</span>
+                        </div>
+                      </div>
+                    {/if}
+
+                    <!-- Tax template selector (DRAFT only) -->
+                    {#if invoice.status === 'DRAFT'}
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-xs text-ink-muted">Tax template:</span>
+                        <div class="w-56">
+                          <Select
+                            value={invoice.taxTemplateId ?? ''}
+                            onchange={(e) => {
+                              const val = (e.target as HTMLSelectElement).value;
+                              void applyCarrierTax(invoice, val === '' ? null : val);
+                            }}
+                          >
+                            <option value="">Aucune taxe</option>
+                            {#each purchaseTaxTemplates as t (t.id)}
+                              <option value={t.id}>{t.name}</option>
+                            {/each}
+                          </Select>
+                        </div>
+                      </div>
                     {/if}
                   </div>
                 </td>
@@ -835,6 +1011,57 @@
                         {/each}
                       {/snippet}
                     </Table>
+
+                    <!-- Tax breakdown / totals -->
+                    {#if Number(stmt.taxAmount) > 0 && stmt.taxDetail}
+                      {@const taxAmt = Number(stmt.taxAmount)}
+                      {@const total = Number(stmt.totalAmount)}
+                      {@const net = total - taxAmt}
+                      <div class="rounded-md border border-edge bg-surface p-3 space-y-1 text-sm">
+                        <div class="flex justify-between text-ink-muted">
+                          <span>Net</span>
+                          <span>{net.toLocaleString()} {stmt.currency}</span>
+                        </div>
+                        {#each stmt.taxDetail.lines as tl (tl.description)}
+                          <div class="flex justify-between text-ink-muted">
+                            <span>{tl.description} ({tl.rate}%)</span>
+                            <span>{Number(tl.amount).toLocaleString()} {stmt.currency}</span>
+                          </div>
+                        {/each}
+                        <div class="flex justify-between font-semibold border-t border-edge pt-1 text-ink">
+                          <span>Total</span>
+                          <span>{total.toLocaleString()} {stmt.currency}</span>
+                        </div>
+                      </div>
+                    {:else}
+                      <div class="rounded-md border border-edge bg-surface p-3 text-sm">
+                        <div class="flex justify-between font-semibold text-ink">
+                          <span>Total</span>
+                          <span>{Number(stmt.totalAmount).toLocaleString()} {stmt.currency}</span>
+                        </div>
+                      </div>
+                    {/if}
+
+                    <!-- Tax template selector (DRAFT only) -->
+                    {#if stmt.status === 'DRAFT'}
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-xs text-ink-muted">Tax template:</span>
+                        <div class="w-56">
+                          <Select
+                            value={stmt.taxTemplateId ?? ''}
+                            onchange={(e) => {
+                              const val = (e.target as HTMLSelectElement).value;
+                              void applyTax(stmt, val === '' ? null : val);
+                            }}
+                          >
+                            <option value="">Aucune taxe</option>
+                            {#each taxTemplates as t (t.id)}
+                              <option value={t.id}>{t.name}</option>
+                            {/each}
+                          </Select>
+                        </div>
+                      </div>
+                    {/if}
                   </div>
                 </td>
               </tr>
