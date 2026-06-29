@@ -22,7 +22,8 @@ export type SequenceKey =
   | 'customer'
   | 'sales-order'
   | 'payment'
-  | 'manufacturing-order';
+  | 'manufacturing-order'
+  | 'dispatch-plan';
 
 const PREFIXES: Record<SequenceKey, string> = {
   'transport-order': 'TO',
@@ -44,6 +45,7 @@ const PREFIXES: Record<SequenceKey, string> = {
   'sales-order': 'SO',
   payment: 'PAY',
   'manufacturing-order': 'MO',
+  'dispatch-plan': 'PLAN',
 };
 
 /** Sequence keys whose prefix is overridable by a module tenant setting. */

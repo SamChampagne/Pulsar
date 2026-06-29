@@ -141,6 +141,11 @@ export function navCatalogue(): NavDomain[] {
               perm: PERMISSIONS.TRANSPORTATION.PLANNING_READ,
             },
             { href: '/rate-studio', label: 'Rate Studio', perm: PERMISSIONS.TRANSPORTATION.RATES_READ },
+            {
+              href: '/dispatch-plans',
+              label: 'Dispatch Plans',
+              perm: PERMISSIONS.TRANSPORTATION.PLANNING_READ,
+            },
           ],
         },
         {

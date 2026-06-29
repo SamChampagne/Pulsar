@@ -134,6 +134,7 @@ model Tenant {
   boms                    Bom[]
   manufacturingOrders     ManufacturingOrder[]
   schedulingRuns          SchedulingRun[]
+  dispatchPlans           DispatchPlan[]
 
   @@map("tenants")
 }
@@ -3900,4 +3901,52 @@ model SubscriptionInvoice {
   @@unique([tenantId, subscriptionId, periodStart])
   @@index([tenantId, subscriptionId])
   @@map("subscription_invoices")
+}
+
+// ===========================================================================
+// Continuous Planning v1 — versioned dispatch plans (PlanProposal/PlanCommit).
+// Mirrors DispatchPlanStatus from @pulsar/shared/workflows (rule 3). Commit
+// reuses LoadsService.consolidate per item; no recompute logic lives here.
+// ===========================================================================
+enum DispatchPlanStatus {
+  DRAFT
+  PROPOSED
+  COMMITTED
+  DISCARDED
+}
+
+model DispatchPlan {
+  id            String             @id @default(cuid())
+  tenantId      String
+  planNumber    String
+  status        DispatchPlanStatus @default(DRAFT)
+  engine        String             @default("MANUAL")
+  note          String?
+  createdById   String?
+  committedById String?
+  committedAt   DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  tenant Tenant             @relation(fields: [tenantId], references: [id])
+  items  DispatchPlanItem[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@map("dispatch_plans")
+}
+
+model DispatchPlanItem {
+  id           String   @id @default(cuid())
+  tenantId     String
+  planId       String
+  shipmentIds  String[]
+  resultLoadId String?
+  error        String?
+  createdAt    DateTime @default(now())
+
+  plan DispatchPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, planId])
+  @@map("dispatch_plan_items")
 }

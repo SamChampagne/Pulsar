@@ -51,6 +51,8 @@ import { PlanningBoardController } from './planning-board/planning-board.control
 import { PlanningBoardService } from './planning-board/planning-board.service';
 import { CustomFieldsModule } from '../../core/custom-fields/custom-fields.module';
 import { CustomFieldsController } from './custom-fields/custom-fields.controller';
+import { DispatchPlansController } from './dispatch-plans/dispatch-plans.controller';
+import { DispatchPlansService } from './dispatch-plans/dispatch-plans.service';
 
 /**
  * Transportation Management module (TMS).
@@ -79,6 +81,7 @@ import { CustomFieldsController } from './custom-fields/custom-fields.controller
     PlanningBoardController,
     RatingController,
     CustomFieldsController,
+    DispatchPlansController,
     // Public, token-authenticated endpoints (tender response, tracking, driver)
     PublicLinksController,
   ],
@@ -108,6 +111,7 @@ import { CustomFieldsController } from './custom-fields/custom-fields.controller
     BolService,
     DelayDetectionService,
     PlanningBoardService,
+    DispatchPlansService,
   ],
   exports: [
     CustomFieldsModule,

@@ -15,6 +15,7 @@ export * from './automation/reactions';
 export * from './workflows/transport-order.workflow';
 export * from './workflows/shipment.workflow';
 export * from './workflows/load.workflow';
+export * from './workflows/dispatch-plan.workflow';
 export * from './workflows/invoice.workflow';
 export * from './workflows/customer-invoice.workflow';
 export * from './workflows/operational-task.workflow';
