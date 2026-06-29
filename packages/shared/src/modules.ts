@@ -17,6 +17,7 @@ export const MODULE_KEYS = {
   CARRIER_PORTAL: 'carrier-portal',
   CRM: 'crm',
   SITES: 'sites',
+  MANUFACTURING: 'manufacturing',
 } as const;
 
 export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS];
@@ -112,6 +113,14 @@ export const MODULE_CATALOG: ModuleDescriptor[] = [
     key: MODULE_KEYS.SITES,
     name: 'Sites & Pages',
     description: 'Landing pages and microsites with CRM lead capture.',
+    isCore: false,
+    available: true,
+  },
+  {
+    key: MODULE_KEYS.MANUFACTURING,
+    name: 'Manufacturing / APS',
+    description:
+      'Production master-data (work centers, calendars, routings, BOM) and manufacturing orders, scheduled by the PlaniAdvance APS engine.',
     isCore: false,
     available: true,
   },

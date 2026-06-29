@@ -1,0 +1,40 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+*.db
+.coverage
+htmlcov/
+dist/
+build/
+.hypothesis/
+node_modules/
+ui/node_modules/
+ui/dist/
+ui/*.tsbuildinfo
+ui/vite.config.js
+ui/vite.config.d.ts
+# V1.2 P1.2 — Playwright artifacts
+ui/playwright-report/
+ui/test-results/
+ui/blob-report/
+ui/.playwright/
+
+# Session-local artifacts (Chrome MCP screenshots, curl dev JSON, scheduler lock)
+/*.png
+/*.jpeg
+/*.jpg
+/flow.json
+/flow_put.json
+.claude/scheduled_tasks.lock
+
+# Local dev scratch + test runtime working dir
+/scratch/
+mock_sftp_root/*
+!mock_sftp_root/.gitkeep

@@ -7,6 +7,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { ApiKeysModule } from './core/api-keys/api-keys.module';
 import { AgentsModule } from './core/agents/agents.module';
+import { ApsModule } from './core/aps/aps.module';
 import { EmailModule } from './core/email/email.module';
 import { RoutingModule } from './core/routing/routing.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -35,6 +36,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { CrmModule } from './modules/crm/crm.module';
 import { SitesModule } from './modules/sites/sites.module';
+import { ManufacturingModule } from './modules/manufacturing/manufacturing.module';
 import { OperatingModule } from './core/operating/operating.module';
 import { AutomationModule } from './core/automation/automation.module';
 import { PreferencesModule } from './core/preferences/preferences.module';
@@ -57,6 +59,7 @@ import { ConnectModule } from './core/connect/connect.module';
     RoutingModule,
     ApiKeysModule,
     AgentsModule,
+    ApsModule,
     // Core platform modules
     AuthModule,
     TenantsModule,
@@ -86,6 +89,7 @@ import { ConnectModule } from './core/connect/connect.module';
     ProcurementModule,
     CrmModule,
     SitesModule,
+    ManufacturingModule,
   ],
   providers: [
     // Guard order matters: authenticate, then check module activation, then permissions.

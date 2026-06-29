@@ -1,21 +1,30 @@
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 
-export default defineConfig({
-  plugins: [tailwindcss(), sveltekit()],
-  resolve: {
-    alias: {
-      // Consume the shared package's TypeScript source directly: Vite compiles it,
-      // avoiding CJS interop issues with the package's dist build (used by the API).
-      '@pulsar/shared': fileURLToPath(new URL('../../packages/shared/src/index.ts', import.meta.url)),
+export default defineConfig(({ mode }) => {
+  // Read API_PORT from the monorepo-root .env so the dev proxy follows the API,
+  // wherever it binds. Defaults to 3000; some environments (e.g. a Windows host
+  // whose winnat reserves the 2949-3048 range) move the API to another port.
+  const env = loadEnv(mode, fileURLToPath(new URL('../../', import.meta.url)), '');
+  const apiPort = env.API_PORT || '3000';
+  return {
+    plugins: [tailwindcss(), sveltekit()],
+    resolve: {
+      alias: {
+        // Consume the shared package's TypeScript source directly: Vite compiles it,
+        // avoiding CJS interop issues with the package's dist build (used by the API).
+        '@pulsar/shared': fileURLToPath(
+          new URL('../../packages/shared/src/index.ts', import.meta.url),
+        ),
+      },
     },
-  },
-  server: {
-    proxy: {
-      // Local dev: forward API calls to the NestJS server.
-      '/api': 'http://localhost:3000',
+    server: {
+      proxy: {
+        // Local dev: forward API calls to the NestJS server (port follows API_PORT).
+        '/api': `http://localhost:${apiPort}`,
+      },
     },
-  },
+  };
 });

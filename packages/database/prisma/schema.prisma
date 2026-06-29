@@ -12,8 +12,8 @@ generator client {
 }
 
 datasource db {
-  provider          = "postgresql"
-  url               = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ============================================================================
@@ -27,52 +27,52 @@ enum TenantStatus {
 }
 
 model Tenant {
-  id        String       @id @default(cuid())
-  slug      String       @unique
-  name      String
-  status    TenantStatus @default(TRIAL)
-  settings  Json         @default("{}")
+  id         String       @id @default(cuid())
+  slug       String       @unique
+  name       String
+  status     TenantStatus @default(TRIAL)
+  settings   Json         @default("{}")
   // OIDC SSO config: { enabled, issuer, clientId, clientSecret (enc:v1), defaultRoleId }
   authConfig Json?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
 
-  users             User[]
-  roles             Role[]
-  auditLogs         AuditLog[]
-  documents         Document[]
-  notifications     Notification[]
-  integrations      Integration[]
-  webhookDeliveries WebhookDelivery[]
-  apiKeys           ApiKey[]
-  modules           TenantModule[]
-  customers         Customer[]
-  locations         Location[]
-  carriers          Carrier[]
-  drivers           Driver[]
-  vehicles          Vehicle[]
-  trailers          Trailer[]
-  transportOrders   TransportOrder[]
-  shipments         Shipment[]
-  loads             Load[]
-  tenders           Tender[]
-  lanePreferences     LaneCarrierPreference[]
-  lanes               Lane[]
-  accessorials        Accessorial[]
-  fuelSurchargeTables FuelSurchargeTable[]
-  invoices            Invoice[]
-  routes            Route[]
-  stops             Stop[]
-  rates             Rate[]
-  trackingEvents    TrackingEvent[]
-  proofsOfDelivery  ProofOfDelivery[]
-  shipmentLoadLegs  ShipmentLoadLeg[]
-  customerInvoices  CustomerInvoice[]
-  agents            Agent[]
-  proposedActions   ProposedAction[]
-  agentConversations AgentConversation[]
-  agentRuntimeConfig AgentRuntimeConfig?
-  agentRuns         AgentRun[]
+  users                   User[]
+  roles                   Role[]
+  auditLogs               AuditLog[]
+  documents               Document[]
+  notifications           Notification[]
+  integrations            Integration[]
+  webhookDeliveries       WebhookDelivery[]
+  apiKeys                 ApiKey[]
+  modules                 TenantModule[]
+  customers               Customer[]
+  locations               Location[]
+  carriers                Carrier[]
+  drivers                 Driver[]
+  vehicles                Vehicle[]
+  trailers                Trailer[]
+  transportOrders         TransportOrder[]
+  shipments               Shipment[]
+  loads                   Load[]
+  tenders                 Tender[]
+  lanePreferences         LaneCarrierPreference[]
+  lanes                   Lane[]
+  accessorials            Accessorial[]
+  fuelSurchargeTables     FuelSurchargeTable[]
+  invoices                Invoice[]
+  routes                  Route[]
+  stops                   Stop[]
+  rates                   Rate[]
+  trackingEvents          TrackingEvent[]
+  proofsOfDelivery        ProofOfDelivery[]
+  shipmentLoadLegs        ShipmentLoadLeg[]
+  customerInvoices        CustomerInvoice[]
+  agents                  Agent[]
+  proposedActions         ProposedAction[]
+  agentConversations      AgentConversation[]
+  agentRuntimeConfig      AgentRuntimeConfig?
+  agentRuns               AgentRun[]
   incomingCarrierInvoices IncomingCarrierInvoice[]
   maintenanceOrders       MaintenanceOrder[]
   maintenanceSchedules    MaintenanceSchedule[]
@@ -84,50 +84,56 @@ model Tenant {
   inspectionTemplateItems InspectionTemplateItem[]
   inspectionReports       InspectionReport[]
   inspectionItems         InspectionItem[]
-  wmsItems        WmsItem[]
-  wmsBins         Bin[]
-  inventoryLevels InventoryLevel[]
-  stockMovements  StockMovement[]
-  receipts        Receipt[]
-  pickOrders      PickOrder[]
-  cycleCounts      CycleCount[]
-  cycleCountLines  CycleCountLine[]
-  yardSpots        YardSpot[]
-  yardVisits       YardVisit[]
-  yardMoves        YardMove[]
-  dockAppointments DockAppointment[]
-  inboundMessages  InboundMessage[]
-  importBatches    ImportBatch[]
-  importRows       ImportRow[]
-  rfps             Rfp[]
-  rfpLanes         RfpLane[]
-  rfpInvites       RfpInvite[]
-  bids             Bid[]
-  awards           Award[]
-  orderTemplates   OrderTemplate[]
-  automationRules  AutomationRule[]
-  crmCompanies     CrmCompany[]
-  crmContacts      CrmContact[]
-  crmDeals         CrmDeal[]
-  crmActivities    CrmActivity[]
-  crmLists         CrmList[]
-  crmCampaigns     CrmCampaign[]
-  crmProducts      CrmProduct[]
-  salesOrders      SalesOrder[]
-  emailConfig      TenantEmailConfig?
-  emailMessages    EmailMessage[]
-  emailTemplates   EmailTemplate[]
-  emailThreads     EmailThread[]
-  landingPages     LandingPage[]
-  chartOfAccounts  ChartOfAccount[]
-  journalEntries   JournalEntry[]
-  payments        Payment[]
-  modesOfPayment  ModeOfPayment[]
-  taxTemplates    TaxTemplate[]
-  bankAccounts    BankAccount[]
-  budgets         Budget[]
-  fixedAssets     FixedAsset[]
-  subscriptions   Subscription[]
+  wmsItems                WmsItem[]
+  wmsBins                 Bin[]
+  inventoryLevels         InventoryLevel[]
+  stockMovements          StockMovement[]
+  receipts                Receipt[]
+  pickOrders              PickOrder[]
+  cycleCounts             CycleCount[]
+  cycleCountLines         CycleCountLine[]
+  yardSpots               YardSpot[]
+  yardVisits              YardVisit[]
+  yardMoves               YardMove[]
+  dockAppointments        DockAppointment[]
+  inboundMessages         InboundMessage[]
+  importBatches           ImportBatch[]
+  importRows              ImportRow[]
+  rfps                    Rfp[]
+  rfpLanes                RfpLane[]
+  rfpInvites              RfpInvite[]
+  bids                    Bid[]
+  awards                  Award[]
+  orderTemplates          OrderTemplate[]
+  automationRules         AutomationRule[]
+  crmCompanies            CrmCompany[]
+  crmContacts             CrmContact[]
+  crmDeals                CrmDeal[]
+  crmActivities           CrmActivity[]
+  crmLists                CrmList[]
+  crmCampaigns            CrmCampaign[]
+  crmProducts             CrmProduct[]
+  salesOrders             SalesOrder[]
+  emailConfig             TenantEmailConfig?
+  emailMessages           EmailMessage[]
+  emailTemplates          EmailTemplate[]
+  emailThreads            EmailThread[]
+  landingPages            LandingPage[]
+  chartOfAccounts         ChartOfAccount[]
+  journalEntries          JournalEntry[]
+  payments                Payment[]
+  modesOfPayment          ModeOfPayment[]
+  taxTemplates            TaxTemplate[]
+  bankAccounts            BankAccount[]
+  budgets                 Budget[]
+  fixedAssets             FixedAsset[]
+  subscriptions           Subscription[]
+  workingCalendars        WorkingCalendar[]
+  workCenters             WorkCenter[]
+  routings                Routing[]
+  boms                    Bom[]
+  manufacturingOrders     ManufacturingOrder[]
+  schedulingRuns          SchedulingRun[]
 
   @@map("tenants")
 }
@@ -259,20 +265,20 @@ enum PlatformUserStatus {
 // Cross-tenant operators (create/suspend tenants). Deliberately has NO relation
 // to any tenant-scoped model — the platform plane never mixes with tenant data.
 model PlatformUser {
-  id           String             @id @default(cuid())
-  email        String             @unique
-  passwordHash String
-  firstName    String
-  lastName     String
-  status       PlatformUserStatus @default(ACTIVE)
-  lastLoginAt  DateTime?
+  id            String             @id @default(cuid())
+  email         String             @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  status        PlatformUserStatus @default(ACTIVE)
+  lastLoginAt   DateTime?
   // MFA (TOTP). totpSecret encrypted at rest (enc:v1, CryptoService); recovery
   // codes are bcrypt-hashed and single-use (consumed codes are removed).
   totpSecret    String?
   mfaEnabledAt  DateTime?
-  recoveryCodes String[]  @default([])
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  recoveryCodes String[]           @default([])
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
 
   @@map("platform_users")
 }
@@ -470,8 +476,8 @@ model ModuleDefinition {
 model TenantModule {
   tenantId  String
   moduleId  String
-  enabled   Boolean  @default(false)
-  settings  Json     @default("{}")
+  enabled   Boolean   @default(false)
+  settings  Json      @default("{}")
   enabledAt DateTime?
 
   tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -542,21 +548,21 @@ model Location {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  tenant               Tenant           @relation(fields: [tenantId], references: [id])
-  customer             Customer?        @relation(fields: [customerId], references: [id])
-  originOrders         TransportOrder[] @relation("OrderOrigin")
-  destinationOrders    TransportOrder[] @relation("OrderDestination")
-  originShipments      Shipment[]       @relation("ShipmentOrigin")
-  destinationShipments Shipment[]       @relation("ShipmentDestination")
+  tenant               Tenant            @relation(fields: [tenantId], references: [id])
+  customer             Customer?         @relation(fields: [customerId], references: [id])
+  originOrders         TransportOrder[]  @relation("OrderOrigin")
+  destinationOrders    TransportOrder[]  @relation("OrderDestination")
+  originShipments      Shipment[]        @relation("ShipmentOrigin")
+  destinationShipments Shipment[]        @relation("ShipmentDestination")
   stops                Stop[]
-  laneOrigins          Lane[] @relation("LaneOrigin")
-  laneDestinations     Lane[] @relation("LaneDestination")
-  bins       Bin[]
-  receipts   Receipt[]
-  pickOrders PickOrder[]
-  yardSpots        YardSpot[]
-  yardVisits       YardVisit[]
-  dockAppointments DockAppointment[]
+  laneOrigins          Lane[]            @relation("LaneOrigin")
+  laneDestinations     Lane[]            @relation("LaneDestination")
+  bins                 Bin[]
+  receipts             Receipt[]
+  pickOrders           PickOrder[]
+  yardSpots            YardSpot[]
+  yardVisits           YardVisit[]
+  dockAppointments     DockAppointment[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -585,18 +591,18 @@ model Carrier {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id])
-  drivers  Driver[]
-  vehicles Vehicle[]
-  trailers Trailer[]
-  loads    Load[]
-  rates    Rate[]
-  tenders  Tender[]
-  lanePreferences LaneCarrierPreference[]
-  invoices Invoice[]
+  tenant                  Tenant                   @relation(fields: [tenantId], references: [id])
+  drivers                 Driver[]
+  vehicles                Vehicle[]
+  trailers                Trailer[]
+  loads                   Load[]
+  rates                   Rate[]
+  tenders                 Tender[]
+  lanePreferences         LaneCarrierPreference[]
+  invoices                Invoice[]
   incomingCarrierInvoices IncomingCarrierInvoice[]
-  yardVisits       YardVisit[]
-  dockAppointments DockAppointment[]
+  yardVisits              YardVisit[]
+  dockAppointments        DockAppointment[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -764,33 +770,33 @@ enum TransportOrderStatus {
 
 // Customer demand — the commercial request to move freight (OTM "order release").
 model TransportOrder {
-  id                    String               @id @default(cuid())
-  tenantId              String
-  orderNumber           String
-  customerId            String
-  customerReference     String?
-  status                TransportOrderStatus @default(DRAFT)
-  mode                  TransportMode        @default(FTL)
-  originLocationId      String
-  destinationLocationId String
+  id                     String               @id @default(cuid())
+  tenantId               String
+  orderNumber            String
+  customerId             String
+  customerReference      String?
+  status                 TransportOrderStatus @default(DRAFT)
+  mode                   TransportMode        @default(FTL)
+  originLocationId       String
+  destinationLocationId  String
   requestedPickupEarly   DateTime?
   requestedPickupLate    DateTime?
   requestedDeliveryEarly DateTime?
   requestedDeliveryLate  DateTime?
-  totalWeightKg         Float?
-  totalVolumeM3         Float?
-  palletCount           Int?
-  notes                 String?
-  customData            Json?
-  createdById           String?
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
+  totalWeightKg          Float?
+  totalVolumeM3          Float?
+  palletCount            Int?
+  notes                  String?
+  customData             Json?
+  createdById            String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
 
-  tenant              Tenant                @relation(fields: [tenantId], references: [id])
-  customer            Customer              @relation(fields: [customerId], references: [id])
-  originLocation      Location              @relation("OrderOrigin", fields: [originLocationId], references: [id])
-  destinationLocation Location              @relation("OrderDestination", fields: [destinationLocationId], references: [id])
-  createdBy           User?                 @relation(fields: [createdById], references: [id])
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  customer            Customer             @relation(fields: [customerId], references: [id])
+  originLocation      Location             @relation("OrderOrigin", fields: [originLocationId], references: [id])
+  destinationLocation Location             @relation("OrderDestination", fields: [destinationLocationId], references: [id])
+  createdBy           User?                @relation(fields: [createdById], references: [id])
   shipments           Shipment[]
   customerInvoiceLine CustomerInvoiceLine?
 
@@ -815,8 +821,8 @@ model OrderTemplate {
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
-  customer  Customer @relation(fields: [customerId], references: [id])
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
 
   @@index([tenantId, customerId])
   @@map("order_templates")
@@ -879,11 +885,11 @@ model Shipment {
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
-  tenant              Tenant           @relation(fields: [tenantId], references: [id])
-  transportOrder      TransportOrder   @relation(fields: [transportOrderId], references: [id])
-  originLocation      Location         @relation("ShipmentOrigin", fields: [originLocationId], references: [id])
-  destinationLocation Location         @relation("ShipmentDestination", fields: [destinationLocationId], references: [id])
-  load                Load?            @relation(fields: [loadId], references: [id])
+  tenant              Tenant            @relation(fields: [tenantId], references: [id])
+  transportOrder      TransportOrder    @relation(fields: [transportOrderId], references: [id])
+  originLocation      Location          @relation("ShipmentOrigin", fields: [originLocationId], references: [id])
+  destinationLocation Location          @relation("ShipmentDestination", fields: [destinationLocationId], references: [id])
+  load                Load?             @relation(fields: [loadId], references: [id])
   stops               Stop[]
   trackingEvents      TrackingEvent[]
   proofOfDelivery     ProofOfDelivery?
@@ -936,26 +942,26 @@ model Load {
   trailerId     String?
   rateId        String?
   // Estimated buy-side cost computed from the assigned rate (see calculateRateCost).
-  estimatedCost Decimal?   @db.Decimal(12, 2)
+  estimatedCost Decimal?      @db.Decimal(12, 2)
   costCurrency  String?
   // Frozen calculation snapshot (rate as used + inputs + lines). See spec invariants:
   // a COMPLETED load is never recomputed; reconciliation reads this, never recomputes.
   costDetail    Json?
   // Public driver token: grants stop check-in/out + POD capture on this load only.
-  driverToken   String?    @unique
+  driverToken   String?       @unique
   dispatchedAt  DateTime?
   completedAt   DateTime?
   notes         String?
   customData    Json?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  tenant         Tenant          @relation(fields: [tenantId], references: [id])
-  carrier        Carrier?        @relation(fields: [carrierId], references: [id])
-  driver         Driver?         @relation(fields: [driverId], references: [id])
-  vehicle        Vehicle?        @relation(fields: [vehicleId], references: [id])
-  trailer        Trailer?        @relation(fields: [trailerId], references: [id])
-  rate           Rate?           @relation(fields: [rateId], references: [id])
+  tenant         Tenant            @relation(fields: [tenantId], references: [id])
+  carrier        Carrier?          @relation(fields: [carrierId], references: [id])
+  driver         Driver?           @relation(fields: [driverId], references: [id])
+  vehicle        Vehicle?          @relation(fields: [vehicleId], references: [id])
+  trailer        Trailer?          @relation(fields: [trailerId], references: [id])
+  rate           Rate?             @relation(fields: [rateId], references: [id])
   shipments      Shipment[]
   route          Route?
   trackingEvents TrackingEvent[]
@@ -1095,17 +1101,17 @@ enum DistanceSource {
 
 // Ordered stop sequence for a load.
 model Route {
-  id                   String   @id @default(cuid())
+  id                   String          @id @default(cuid())
   tenantId             String
-  loadId               String   @unique
+  loadId               String          @unique
   totalDistanceKm      Float?
   estimatedDurationMin Int?
   // Provenance of totalDistanceKm — MANUAL is never overwritten by recomputes.
   distanceSource       DistanceSource?
   // OSRM route geometry (GeoJSON LineString, [lng, lat] order). Display only.
   geometry             Json?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
   load   Load   @relation(fields: [loadId], references: [id], onDelete: Cascade)
@@ -1129,20 +1135,20 @@ enum StopStatus {
 }
 
 model Stop {
-  id                 String     @id @default(cuid())
-  tenantId           String
-  routeId            String
-  sequence           Int
-  type               StopType
-  status             StopStatus @default(PENDING)
-  locationId         String
-  shipmentId         String?
+  id                  String     @id @default(cuid())
+  tenantId            String
+  routeId             String
+  sequence            Int
+  type                StopType
+  status              StopStatus @default(PENDING)
+  locationId          String
+  shipmentId          String?
   plannedArrivalEarly DateTime?
   plannedArrivalLate  DateTime?
-  plannedDepartureAt DateTime?
-  actualArrivalAt    DateTime?
-  actualDepartureAt  DateTime?
-  notes              String?
+  plannedDepartureAt  DateTime?
+  actualArrivalAt     DateTime?
+  actualDepartureAt   DateTime?
+  notes               String?
 
   tenant         Tenant          @relation(fields: [tenantId], references: [id])
   route          Route           @relation(fields: [routeId], references: [id], onDelete: Cascade)
@@ -1423,8 +1429,8 @@ model Invoice {
   reconciledAt         DateTime?
   paidAt               DateTime?
 
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   tenant  Tenant        @relation(fields: [tenantId], references: [id])
   carrier Carrier       @relation(fields: [carrierId], references: [id])
@@ -1436,12 +1442,12 @@ model Invoice {
 }
 
 model InvoiceLine {
-  id          String  @id @default(cuid())
-  invoiceId   String
+  id             String   @id @default(cuid())
+  invoiceId      String
   // One line per load; the unique constraint prevents double-billing a load.
-  loadId      String  @unique
-  description String
-  amount      Decimal @db.Decimal(12, 2)
+  loadId         String   @unique
+  description    String
+  amount         Decimal  @db.Decimal(12, 2)
   invoicedAmount Decimal? @db.Decimal(12, 2)
   variance       Decimal? @db.Decimal(12, 2)
 
@@ -1632,28 +1638,28 @@ enum AgentRunStatus {
 }
 
 model Agent {
-  id            String      @id @default(cuid())
-  tenantId      String
-  name          String
-  description   String?
-  permissions   String[]
-  caps          Json        @default("{}")
-  prefix        String
-  secretHash    String      @unique
-  serviceUserId String
-  status        AgentStatus @default(ACTIVE)
-  persona       String?
-  role          String?
-  model         String?
-  autonomyLevel AgentAutonomy @default(PROPOSE)
-  avatar        String?
-  lastUsedAt    DateTime?
-  lastSeenAt    DateTime?
+  id               String        @id @default(cuid())
+  tenantId         String
+  name             String
+  description      String?
+  permissions      String[]
+  caps             Json          @default("{}")
+  prefix           String
+  secretHash       String        @unique
+  serviceUserId    String
+  status           AgentStatus   @default(ACTIVE)
+  persona          String?
+  role             String?
+  model            String?
+  autonomyLevel    AgentAutonomy @default(PROPOSE)
+  avatar           String?
+  lastUsedAt       DateTime?
+  lastSeenAt       DateTime?
   lastRunAt        DateTime?
   breakerTrippedAt DateTime?
-  createdById   String?
-  createdAt     DateTime    @default(now())
-  revokedAt     DateTime?
+  createdById      String?
+  createdAt        DateTime      @default(now())
+  revokedAt        DateTime?
 
   tenant        Tenant              @relation(fields: [tenantId], references: [id])
   serviceUser   User                @relation("AgentServiceUser", fields: [serviceUserId], references: [id])
@@ -1721,22 +1727,22 @@ model ProposedAction {
 }
 
 model AgentRuntimeConfig {
-  id           String    @id @default(cuid())
-  tenantId     String    @unique
-  provider     String
-  authMode     String
-  apiKeyEnc    String?
-  defaultModel String?
-  baseUrl      String?
-  connectedAt  DateTime?
-  lastTestAt   DateTime?
-  lastTestOk   Boolean?
+  id              String    @id @default(cuid())
+  tenantId        String    @unique
+  provider        String
+  authMode        String
+  apiKeyEnc       String?
+  defaultModel    String?
+  baseUrl         String?
+  connectedAt     DateTime?
+  lastTestAt      DateTime?
+  lastTestOk      Boolean?
   // Cache of the provider's available models, captured on the last successful
   // connection test: [{ value: "<provider:model>", label: "<name>" }]. Populates
   // the model dropdown in agent create/edit (no free-text typos → no 404s).
   availableModels Json?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
@@ -1798,18 +1804,18 @@ enum DomainEventStatus {
 // Durable domain-event outbox: mirrors WebhookDelivery pattern for internal
 // event processing. Consumed by the workbench runner to generate operational tasks.
 model DomainEvent {
-  id          String            @id @default(cuid())
-  tenantId    String
-  type        String
-  subjectType String?
-  subjectId   String?
-  payload         Json
-  status          DomainEventStatus @default(PENDING)
-  attempts        Int               @default(0)
-  lastError       String?
-  processedAt     DateTime?
-  reactionRuleId  String?
-  createdAt       DateTime          @default(now())
+  id             String            @id @default(cuid())
+  tenantId       String
+  type           String
+  subjectType    String?
+  subjectId      String?
+  payload        Json
+  status         DomainEventStatus @default(PENDING)
+  attempts       Int               @default(0)
+  lastError      String?
+  processedAt    DateTime?
+  reactionRuleId String?
+  createdAt      DateTime          @default(now())
 
   @@index([status, createdAt])
   @@index([tenantId, type, createdAt])
@@ -2291,14 +2297,14 @@ model Bin {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  tenant       Tenant           @relation(fields: [tenantId], references: [id])
-  location     Location         @relation(fields: [locationId], references: [id])
-  levels       InventoryLevel[]
-  movementsFrom StockMovement[] @relation("MovementFromBin")
-  movementsTo   StockMovement[] @relation("MovementToBin")
-  receiptLines ReceiptLine[]
-  pickLines    PickLine[]
-  cycleCounts  CycleCount[]
+  tenant        Tenant           @relation(fields: [tenantId], references: [id])
+  location      Location         @relation(fields: [locationId], references: [id])
+  levels        InventoryLevel[]
+  movementsFrom StockMovement[]  @relation("MovementFromBin")
+  movementsTo   StockMovement[]  @relation("MovementToBin")
+  receiptLines  ReceiptLine[]
+  pickLines     PickLine[]
+  cycleCounts   CycleCount[]
 
   @@unique([tenantId, locationId, code])
   @@index([tenantId, locationId])
@@ -2525,8 +2531,8 @@ model YardMove {
   note        String?
   createdById String?
 
-  tenant  Tenant    @relation(fields: [tenantId], references: [id])
-  visit   YardVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  visit    YardVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
   fromSpot YardSpot? @relation("YardMoveFrom", fields: [fromSpotId], references: [id])
   toSpot   YardSpot? @relation("YardMoveTo", fields: [toSpotId], references: [id])
 
@@ -2705,15 +2711,15 @@ model Rfp {
 }
 
 model RfpLane {
-  id              String         @id @default(cuid())
-  tenantId        String
-  rfpId           String
-  laneId          String
-  mode            TransportMode?
-  volumeEstimate  Int?
+  id             String         @id @default(cuid())
+  tenantId       String
+  rfpId          String
+  laneId         String
+  mode           TransportMode?
+  volumeEstimate Int?
 
-  tenant Tenant  @relation(fields: [tenantId], references: [id])
-  rfp    Rfp     @relation(fields: [rfpId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  rfp    Rfp    @relation(fields: [rfpId], references: [id], onDelete: Cascade)
   bids   Bid[]
   award  Award?
 
@@ -2831,7 +2837,7 @@ model CrmCompany {
 }
 
 model CrmContact {
-  id          String      @id @default(cuid())
+  id          String          @id @default(cuid())
   tenantId    String
   name        String
   companyId   String?
@@ -2840,8 +2846,8 @@ model CrmContact {
   phone       String?
   ownerUserId String?
   customData  Json?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
   tenant      Tenant          @relation(fields: [tenantId], references: [id])
   company     CrmCompany?     @relation(fields: [companyId], references: [id])
   listMembers CrmListMember[]
@@ -3227,13 +3233,261 @@ model ReactionExecution {
   eventId   String
   ruleId    String
   action    String
-  status    String   // 'EXECUTED' | 'FAILED'
+  status    String // 'EXECUTED' | 'FAILED'
   error     String?
   createdAt DateTime @default(now())
 
   @@unique([tenantId, eventId, ruleId])
   @@index([tenantId, createdAt])
   @@map("reaction_executions")
+}
+
+// ===========================================================================
+// Manufacturing / APS (sub-project 2). Master-data owned by Pulsar; projected
+// into the vendored APS engine's canonical snapshot by SP3. Enums mirror
+// packages/shared/src/enums/manufacturing.ts (rule 3).
+// ===========================================================================
+
+enum ManufacturingOrderStatus {
+  DRAFT
+  RELEASED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ManufacturingOperationStatus {
+  PENDING
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ManufacturingPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum ManufacturingFirmness {
+  FIRM
+  FORECAST
+  TENTATIVE
+}
+
+model WorkingCalendar {
+  id        String   @id @default(cuid())
+  tenantId  String
+  code      String
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id])
+  shifts      WorkCenterShift[]
+  workCenters WorkCenter[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("working_calendars")
+}
+
+model WorkCenterShift {
+  id         String   @id @default(cuid())
+  tenantId   String
+  calendarId String
+  weekday    Int // 0 = Monday … 6 = Sunday
+  startTime  String // "HH:MM" local plant time
+  endTime    String // "HH:MM" local plant time
+  createdAt  DateTime @default(now())
+
+  calendar WorkingCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, calendarId])
+  @@map("work_center_shifts")
+}
+
+model WorkCenter {
+  id           String   @id @default(cuid())
+  tenantId     String
+  code         String
+  name         String
+  calendarId   String
+  capabilities String[] @default([])
+  efficiency   Float    @default(1)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id])
+  calendar WorkingCalendar @relation(fields: [calendarId], references: [id])
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("work_centers")
+}
+
+model Routing {
+  id         String   @id @default(cuid())
+  tenantId   String
+  code       String
+  name       String
+  productRef String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id])
+  steps  RoutingStep[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("routings")
+}
+
+model RoutingStep {
+  id                    String   @id @default(cuid())
+  tenantId              String
+  routingId             String
+  sequence              Int
+  name                  String
+  durationMinutes       Int
+  setupMinutes          Int      @default(0)
+  eligibleWorkCenterIds String[] @default([])
+  createdAt             DateTime @default(now())
+
+  routing Routing @relation(fields: [routingId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, routingId])
+  @@map("routing_steps")
+}
+
+model Bom {
+  id         String   @id @default(cuid())
+  tenantId   String
+  code       String
+  name       String
+  productRef String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant    @relation(fields: [tenantId], references: [id])
+  lines  BomLine[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("boms")
+}
+
+model BomLine {
+  id              String   @id @default(cuid())
+  tenantId        String
+  bomId           String
+  materialRef     String
+  materialName    String?
+  quantityPerUnit Float    @default(1)
+  createdAt       DateTime @default(now())
+
+  bom Bom @relation(fields: [bomId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, bomId])
+  @@map("bom_lines")
+}
+
+model ManufacturingOrder {
+  id          String                   @id @default(cuid())
+  tenantId    String
+  number      String
+  name        String
+  productRef  String
+  quantity    Int                      @default(1)
+  dueDate     DateTime
+  releaseDate DateTime
+  priority    ManufacturingPriority    @default(NORMAL)
+  status      ManufacturingOrderStatus @default(DRAFT)
+  firmness    ManufacturingFirmness    @default(FIRM)
+  routingId   String?
+  bomId       String?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  tenant     Tenant                   @relation(fields: [tenantId], references: [id])
+  operations ManufacturingOperation[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("manufacturing_orders")
+}
+
+model ManufacturingOperation {
+  id                    String                       @id @default(cuid())
+  tenantId              String
+  orderId               String
+  sequence              Int
+  name                  String
+  durationMinutes       Int
+  setupMinutes          Int                          @default(0)
+  eligibleWorkCenterIds String[]                     @default([])
+  dependsOn             String[]                     @default([]) // predecessor operation ids; empty ⇒ SP3 derives FS chain from sequence
+  status                ManufacturingOperationStatus @default(PENDING)
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+
+  order ManufacturingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, orderId])
+  @@map("manufacturing_operations")
+}
+
+// --- Manufacturing scheduling (sub-project 3) — persisted APS run results ---
+
+model SchedulingRun {
+  id              String    @id @default(cuid())
+  tenantId        String
+  apsScheduleId   String?
+  strategy        String
+  solverStatus    String
+  objectiveValue  Int       @default(0)
+  wallTimeMs      Int       @default(0)
+  horizonStart    DateTime?
+  horizonEnd      DateTime?
+  orderCount      Int       @default(0)
+  operationCount  Int       @default(0)
+  assignmentCount Int       @default(0)
+  isBaseline      Boolean   @default(false)
+  snapshotHash    String?
+  warnings        String[]  @default([])
+  diagnostics     Json?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+
+  tenant      Tenant                            @relation(fields: [tenantId], references: [id])
+  assignments ScheduledManufacturingOperation[]
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, isBaseline])
+  @@map("scheduling_runs")
+}
+
+model ScheduledManufacturingOperation {
+  id           String   @id @default(cuid())
+  tenantId     String
+  runId        String
+  operationId  String
+  orderId      String
+  workCenterId String
+  setupStart   DateTime
+  start        DateTime
+  end          DateTime
+
+  run SchedulingRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, runId])
+  @@map("scheduled_manufacturing_operations")
 }
 
 // ============================================================================

@@ -1,0 +1,100 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "planiadvance_v2"
+version = "2.0.0"
+description = "PlaniAdvance V2 - Industrial APS (Advanced Planning & Scheduling) engine"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "PlaniAdvance Team" }]
+
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "alembic>=1.13",
+    "typer>=0.12",
+    "python-dateutil>=2.9",
+    "jinja2>=3.1",
+    "weasyprint>=65",
+    "bcrypt>=4.1",
+]
+
+[project.optional-dependencies]
+# Industrial-grade exact solver — optional because OR-Tools is a heavy
+# dependency and is not needed for the fast "greedy" dispatching strategy.
+# Install with `pip install planiadvance_v2[cpsat]` to enable the "cpsat"
+# strategy in the scheduler registry.
+cpsat = [
+    "ortools>=9.10",
+]
+sftp = [
+    "paramiko>=3.4",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "httpx>=0.27",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "hypothesis>=6.100",
+    "ortools>=9.10",
+]
+
+[project.scripts]
+planiadvance = "planiadvance_v2.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["planiadvance_v2*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
+# V1.2 P3.1b residual — slow tests (industrial-scale perf gates that
+# cross the second mark) are EXCLUDED from the default unit lane so
+# the per-save iteration stays fast. CI's nightly-perf lane explicitly
+# runs ``pytest -m slow`` (CLI -m overrides this default).
+addopts = ["-m", "not slow"]
+markers = [
+    "integration: uses real external integration points such as a live PostgreSQL stack",
+    "slow: industrial-scale benchmark; runs only in the nightly perf lane (pytest -m slow)",
+]
+
+# V1.2 P1.3 — coverage gate. Baseline measured 2026-05-22 at 91.19 %
+# on `planiadvance_v2.domain` (4607 lines, 406 missing). Threshold
+# raised from 85 → 90 in V1.2 final pass: 1 pp of headroom for
+# natural fluctuation, tight enough to catch a meaningful regression
+# without forcing a test-the-test arms race. Move it up over time
+# as coverage grows — never down.
+[tool.coverage.run]
+source = ["planiadvance_v2/domain"]
+branch = false
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "UP"]
+# B008: FastAPI Depends() and typer Option() in defaults are idiomatic.
+ignore = ["E501", "B008"]

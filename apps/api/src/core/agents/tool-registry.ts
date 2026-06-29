@@ -19,6 +19,7 @@ import { wmsTools } from './tools/wms.tools';
 import { analyticsTools } from './tools/analytics.tools';
 import { crmTools } from './tools/crm.tools';
 import { emailTools } from './tools/email.tools';
+import { manufacturingTools } from './tools/manufacturing.tools';
 
 /** All agent tools, in their canonical order (preserved from the original monolithic registry). */
 export const TOOL_REGISTRY: ToolDef[] = [
@@ -31,6 +32,7 @@ export const TOOL_REGISTRY: ToolDef[] = [
   ...analyticsTools,
   ...crmTools,
   ...emailTools,
+  ...manufacturingTools,
 ];
 
 export const TOOL_BY_NAME = new Map<string, ToolDef>(TOOL_REGISTRY.map((t) => [t.name, t]));

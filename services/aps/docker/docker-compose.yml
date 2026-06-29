@@ -1,0 +1,129 @@
+name: planiadvance_v2
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: planiadvance_v2_db
+    environment:
+      POSTGRES_USER: plani
+      POSTGRES_PASSWORD: plani
+      POSTGRES_DB: planiadvance_v2
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plani -d planiadvance_v2"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: planiadvance_v2_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://plani:plani@postgres:5432/planiadvance_v2
+      LOG_LEVEL: INFO
+      INTEGRATION_API_KEY: ${INTEGRATION_API_KEY:-}
+      INTEGRATION_READ_API_KEY: ${INTEGRATION_READ_API_KEY:-}
+      INTEGRATION_RUN_API_KEY: ${INTEGRATION_RUN_API_KEY:-}
+      INTEGRATION_MAX_CSV_BYTES: ${INTEGRATION_MAX_CSV_BYTES:-2000000}
+      INTEGRATION_MAX_WORK_ORDERS: ${INTEGRATION_MAX_WORK_ORDERS:-10000}
+      INTEGRATION_MAX_OPERATIONS: ${INTEGRATION_MAX_OPERATIONS:-50000}
+      INTEGRATION_RATE_LIMIT_PER_MINUTE: ${INTEGRATION_RATE_LIMIT_PER_MINUTE:-120}
+      STUDIO_V2_ENABLED: ${STUDIO_V2_ENABLED:-true}
+      # Persists the auth session HMAC key across container restarts.
+      # Without this, the API regenerates the key on boot and every
+      # signed-in user is forced to re-login after `docker compose up`.
+      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:-}
+      # Real-auth slice 1 — flip to true once the UI ships the password
+      # form (slice 3) and every user has a bcrypt hash on file. While
+      # this is false, /auth/login keeps the legacy selector flow alive.
+      AUTH_REQUIRE_PASSWORD: ${AUTH_REQUIRE_PASSWORD:-false}
+      AUTH_SEED_PASSWORD: ${AUTH_SEED_PASSWORD:-demo}
+    ports:
+      - "8000:8000"
+    command:
+      [
+        "uvicorn",
+        "planiadvance_v2.api.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+      ]
+
+  integration-worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: planiadvance_v2_integration_worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://plani:plani@postgres:5432/planiadvance_v2
+      LOG_LEVEL: INFO
+      INTEGRATION_WORKER_INTERVAL_SECONDS: ${INTEGRATION_WORKER_INTERVAL_SECONDS:-60}
+      INTEGRATION_WORKER_BATCH_LIMIT: ${INTEGRATION_WORKER_BATCH_LIMIT:-50}
+      INTEGRATION_WORKER_LOCK_TTL_SECONDS: ${INTEGRATION_WORKER_LOCK_TTL_SECONDS:-900}
+      INTEGRATION_WORKER_ID: ${INTEGRATION_WORKER_ID:-docker-compose-worker}
+    command:
+      [
+        "planiadvance",
+        "automations",
+        "run-due",
+        "--loop",
+      ]
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: planiadvance_v2_migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://plani:plani@postgres:5432/planiadvance_v2
+    entrypoint: ["python", "-m", "alembic", "upgrade", "head"]
+    restart: "no"
+
+  seed:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: planiadvance_v2_seed
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://plani:plani@postgres:5432/planiadvance_v2
+      SEED_DATASET: ${SEED_DATASET:-demo}
+      SEED_RESET: ${SEED_RESET:-true}
+    entrypoint: ["python", "-m", "planiadvance_v2.infrastructure.bootstrap"]
+    restart: "no"
+
+  smoke:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: planiadvance_v2_smoke
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://api:8000
+    entrypoint: ["python", "-m", "planiadvance_v2.infrastructure.industrial_stack_smoke"]
+    restart: "no"
+
+volumes:
+  pgdata:

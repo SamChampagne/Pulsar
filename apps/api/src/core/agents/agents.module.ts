@@ -39,6 +39,9 @@ import { ActivitiesService } from '../../modules/crm/activities.service';
 import { ThreadsService } from '../../modules/crm/threads.service';
 import { ProductsService } from '../../modules/crm/products.service';
 import { SalesOrdersService } from '../../modules/crm/sales-orders.service';
+import { ManufacturingModule } from '../../modules/manufacturing/manufacturing.module';
+import { SchedulingService } from '../../modules/manufacturing/scheduling/scheduling.service';
+import { OrdersService as ManufacturingOrdersService } from '../../modules/manufacturing/orders/orders.service';
 import { AgentsController } from './agents.controller';
 import { AgentsService } from './agents.service';
 import { ProposedActionsController } from './proposed-actions.controller';
@@ -76,6 +79,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
     WmsModule,
     AnalyticsModule,
     CrmModule,
+    ManufacturingModule,
   ],
   controllers: [
     AgentsController,
@@ -122,6 +126,8 @@ import { RuntimeConfigController } from './runtime-config.controller';
         SalesOrdersService,
         AiDraftService,
         MailService,
+        SchedulingService,
+        ManufacturingOrdersService,
       ],
       useFactory: (
         transportOrders: TransportOrdersService,
@@ -153,6 +159,8 @@ import { RuntimeConfigController } from './runtime-config.controller';
         salesOrders: SalesOrdersService,
         aiDraft: AiDraftService,
         mail: MailService,
+        scheduling: SchedulingService,
+        mfgOrders: ManufacturingOrdersService,
       ): ToolServices => ({
         transportOrders: {
           list: (tenantId, query) => transportOrders.list(tenantId, query as never),
@@ -256,6 +264,15 @@ import { RuntimeConfigController } from './runtime-config.controller';
           linkThread: (tenantId, id, dto, userId) => threads.link(tenantId, id, dto as never, userId),
           listProducts: (tenantId, query) => products.list(tenantId, query as never),
           listSalesOrders: (tenantId, query) => salesOrders.list(tenantId, query as never),
+        },
+        manufacturingOrders: {
+          list: (tenantId, query) => mfgOrders.list(tenantId, query as never),
+        },
+        manufacturingPlanning: {
+          baseline: (tenantId) => scheduling.baseline(tenantId),
+          listRuns: (tenantId, query) => scheduling.list(tenantId, query as never),
+          run: (tenantId, userId, input) => scheduling.run(tenantId, userId, input),
+          publish: (tenantId, userId, runId) => scheduling.publish(tenantId, userId, runId),
         },
         email: {
           draft: (tenantId, input) => aiDraft.draft(tenantId, input),

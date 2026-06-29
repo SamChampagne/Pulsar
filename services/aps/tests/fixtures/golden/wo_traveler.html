@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>WO Traveler — WO-IND-ALPHA</title>
+    <link rel="stylesheet" href="styles/print.css" />
+<style>
+  .op-block {
+    border-top: 0.5pt solid #999;
+    padding: 4mm 0;
+    page-break-inside: avoid;
+  }
+  .op-block h3 {
+    font-size: 11pt;
+    margin: 0 0 2mm 0;
+  }
+  .op-block .op-meta {
+    margin: 1mm 0;
+    font-size: 9pt;
+    color: #444;
+  }
+  .op-block table.materials {
+    width: 60%;
+    margin-top: 2mm;
+    font-size: 9pt;
+    border-collapse: collapse;
+  }
+  .op-block table.materials th,
+  .op-block table.materials td {
+    text-align: left;
+    padding: 1.5pt 4pt;
+    border-bottom: 0.25pt solid #ccc;
+  }
+  .op-block table.materials td.numeric {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .op-block .coverage-covered { color: #117a3d; }
+  .op-block .coverage-short { color: #a3262e; font-weight: bold; }
+  .op-block .coverage-unknown { color: #888; }
+  .wo-header dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 24mm auto;
+    gap: 1mm 4mm;
+    font-size: 10pt;
+  }
+  .wo-header dt {
+    font-weight: bold;
+    color: #444;
+  }
+  .wo-header dd {
+    margin: 0;
+  }
+</style>
+  </head>
+  <body>
+<header class="header-row">
+  <h1 data-header-string="Plant QC · WO Traveler · WO-IND-ALPHA">
+    Work Order Traveler — WO-IND-ALPHA
+  </h1>
+  <div class="meta">
+    <div>Plant QC · Plant A</div>
+    <div>Generated: <strong>2026-05-07 14:32</strong></div>
+  </div>
+</header>
+
+<section class="wo-header">
+  <h2 style="margin: 2mm 0 4mm 0; font-size: 13pt">Cabinet 12U</h2>
+  <dl>
+    <dt>Product</dt>      <dd>PROD-CAB12</dd>
+    <dt>Quantity</dt>     <dd>5</dd>
+    <dt>Priority</dt>     <dd>HIGH</dd>
+    <dt>Status</dt>       <dd>RELEASED</dd>
+    <dt>Release</dt>      <dd>2026-05-04 08:00</dd>
+    <dt>Due</dt>          <dd>2026-05-10 17:00</dd>
+    <dt>Planned</dt>
+    <dd>
+        2026-05-05 08:00 → 2026-05-06 11:00
+    </dd>
+  </dl>
+</section>
+
+<section style="margin-top: 6mm">
+  <h2 style="font-size: 12pt; margin: 0 0 2mm 0">Operations</h2>
+  <div class="op-block">
+    <h3>Op 1 · Cutting</h3>
+    <div class="op-meta">
+      <strong>Eligible:</strong> CNC-FAST, CNC-FLEX
+    </div>
+    <div class="op-meta">
+      <strong>Planned:</strong>
+        CNC-FAST · 2026-05-05 08:00 → 2026-05-05 09:30
+    </div>
+    <div class="op-meta">
+      <strong>Setup:</strong> 10 min ·
+      <strong>Run:</strong> 80 min
+    </div>
+    <table class="materials">
+      <thead>
+        <tr>
+          <th>Material</th>
+          <th class="numeric">Required</th>
+          <th>Coverage</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>RAW-AL</td>
+          <td class="numeric">2.50</td>
+          <td class="coverage-covered">
+covered ✓          </td>
+        </tr>
+        <tr>
+          <td>STEEL</td>
+          <td class="numeric">1.00</td>
+          <td class="coverage-short">
+short ⚠          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="op-block">
+    <h3>Op 2 · Drilling</h3>
+    <div class="op-meta">
+      <strong>Eligible:</strong> CNC-FLEX
+    </div>
+    <div class="op-meta">
+      <strong>Planned:</strong>
+        CNC-FLEX · 2026-05-06 10:00 → 2026-05-06 11:00
+    </div>
+    <div class="op-meta">
+      <strong>Setup:</strong> 5 min ·
+      <strong>Run:</strong> 55 min
+    </div>
+    <table class="materials">
+      <thead>
+        <tr>
+          <th>Material</th>
+          <th class="numeric">Required</th>
+          <th>Coverage</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>PAINT-RED</td>
+          <td class="numeric">0.50</td>
+          <td class="coverage-unknown">
+?          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="op-block">
+    <h3>Op 3 · QA</h3>
+    <div class="op-meta">
+      <strong>Eligible:</strong> QA-1
+    </div>
+    <div class="op-meta">
+      <strong>Planned:</strong>
+        — (not planned)
+    </div>
+    <div class="op-meta">
+      <strong>Setup:</strong> 0 min ·
+      <strong>Run:</strong> 15 min
+    </div>
+    <div class="op-meta" style="color:#888">No material requirements.</div>
+  </div>
+</section>
+
+<footer class="footer-totals">
+  <div>
+    <strong>Total ops:</strong> 3 ·
+    <strong>Setup:</strong> 15 min ·
+    <strong>Run:</strong> 150 min
+  </div>
+  <div class="schedule-info">
+    Schedule sched-1 · published 2026-05-07 09:14
+  </div>
+</footer>
+  </body>
+</html>

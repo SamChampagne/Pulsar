@@ -18,7 +18,12 @@ export type OwnedEntity =
   | 'load'
   | 'stop'
   | 'role'
-  | 'user';
+  | 'user'
+  | 'workingCalendar'
+  | 'workCenter'
+  | 'routing'
+  | 'bom'
+  | 'manufacturingOrder';
 
 /**
  * Write-path referential guard: every foreign key accepted from a request body

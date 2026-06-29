@@ -25,7 +25,8 @@
     "db:push": "pnpm --filter @pulsar/database push",
     "db:seed": "pnpm --filter @pulsar/database seed",
     "db:studio": "pnpm --filter @pulsar/database studio",
-    "agents:setup": "node scripts/setup-agents.mjs"
+    "agents:setup": "node scripts/setup-agents.mjs",
+    "aps:setup": "node scripts/setup-aps.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

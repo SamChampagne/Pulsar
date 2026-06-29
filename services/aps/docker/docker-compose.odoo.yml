@@ -1,0 +1,39 @@
+# Standalone Odoo stack for PlaniAdvance integration exploration.
+#
+# Usage (from planiadvance_v2/):
+#   docker compose -f docker/docker-compose.odoo.yml up -d
+#   open http://localhost:8069   # create DB, install "Manufacturing" module
+#   docker compose -f docker/docker-compose.odoo.yml down -v   # wipe everything
+#
+# Reach from the PlaniAdvance API container: http://host.docker.internal:8069
+# Reach from the host browser / curl:        http://localhost:8069
+
+services:
+  odoo-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+    volumes:
+      - odoo-db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  odoo:
+    image: odoo:17
+    depends_on:
+      - odoo-db
+    ports:
+      - "8069:8069"   # web UI + JSON-RPC
+      - "8072:8072"   # longpolling (chat / live updates)
+    environment:
+      HOST: odoo-db
+      USER: odoo
+      PASSWORD: odoo
+    volumes:
+      - odoo-data:/var/lib/odoo
+    restart: unless-stopped
+
+volumes:
+  odoo-db-data:
+  odoo-data:

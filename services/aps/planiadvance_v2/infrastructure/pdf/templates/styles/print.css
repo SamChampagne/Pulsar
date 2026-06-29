@@ -1,0 +1,89 @@
+@page {
+  size: A4;
+  margin: 15mm 15mm 18mm 15mm;
+  @top-center {
+    content: string(report-header);
+    font-family: 'Helvetica', 'Arial', sans-serif;
+    font-size: 9pt;
+    color: #555;
+  }
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font-family: 'Helvetica', 'Arial', sans-serif;
+    font-size: 8pt;
+    color: #888;
+  }
+}
+
+body {
+  font-family: 'Helvetica', 'Arial', sans-serif;
+  font-size: 10pt;
+  color: #111;
+  margin: 0;
+}
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1pt solid #222;
+  padding-bottom: 4mm;
+  margin-bottom: 6mm;
+}
+
+.header-row h1 {
+  font-size: 14pt;
+  margin: 0;
+  string-set: report-header attr(data-header-string);
+}
+
+.header-row .meta {
+  text-align: right;
+  font-size: 9pt;
+  color: #444;
+}
+
+table.lines {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+table.lines th,
+table.lines td {
+  border-bottom: 0.5pt solid #ccc;
+  padding: 3pt 4pt;
+  text-align: left;
+  vertical-align: top;
+}
+
+table.lines thead th {
+  background: #f2f2f2;
+  font-weight: bold;
+  font-size: 9pt;
+  border-bottom: 1pt solid #222;
+}
+
+table.lines td.numeric,
+table.lines th.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+table.lines td.time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.footer-totals {
+  margin-top: 6mm;
+  padding-top: 4mm;
+  border-top: 1pt solid #222;
+  display: flex;
+  justify-content: space-between;
+  font-size: 9pt;
+}
+
+.footer-totals .schedule-info {
+  color: #555;
+}

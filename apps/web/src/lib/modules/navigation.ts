@@ -26,6 +26,7 @@ import {
   Handshake,
   Mail,
   Globe,
+  Factory,
 } from 'lucide-svelte';
 import type { ComponentType } from 'svelte';
 
@@ -201,6 +202,34 @@ export function navCatalogue(): NavDomain[] {
               label: 'Configuration',
               perm: PERMISSIONS.CORE.MODULES_MANAGE,
             },
+          ],
+        },
+      ],
+    },
+
+    // ── Fabrication (Manufacturing / APS) ───────────────────────────────────
+    {
+      key: 'manufacturing',
+      label: 'Fabrication',
+      icon: Factory,
+      home: '/manufacturing',
+      module: MODULE_KEYS.MANUFACTURING,
+      prefixes: ['/manufacturing'],
+      sections: [
+        {
+          links: [
+            { href: '/manufacturing', label: "Vue d'ensemble" },
+            { href: '/manufacturing/scheduling', label: 'Planification (Gantt)' },
+            { href: '/manufacturing/orders', label: 'Ordres de fabrication' },
+          ],
+        },
+        {
+          label: 'Données',
+          links: [
+            { href: '/manufacturing/work-centers', label: 'Postes de charge' },
+            { href: '/manufacturing/calendars', label: 'Calendriers' },
+            { href: '/manufacturing/routings', label: 'Gammes' },
+            { href: '/manufacturing/boms', label: 'Nomenclatures' },
           ],
         },
       ],

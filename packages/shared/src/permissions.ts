@@ -36,6 +36,8 @@ export const PERMISSIONS = {
     EMAIL_READ: 'core.email.read',
     EMAIL_SEND: 'core.email.send',
     EMAIL_MANAGE: 'core.email.manage',
+    APS_READ: 'core.aps.read',
+    APS_ADMIN: 'core.aps.admin',
   },
   TRANSPORTATION: {
     MASTER_DATA_READ: 'transportation.master-data.read',
@@ -110,6 +112,10 @@ export const PERMISSIONS = {
     READ: 'sites.read',
     MANAGE: 'sites.manage',
   },
+  MANUFACTURING: {
+    READ: 'manufacturing.read',
+    MANAGE: 'manufacturing.manage',
+  },
   EMAIL: {
     READ: 'core.email.read',
     SEND: 'core.email.send',
@@ -130,6 +136,7 @@ export type PermissionKey =
   | (typeof PERMISSIONS.CARRIER_PORTAL)[keyof typeof PERMISSIONS.CARRIER_PORTAL]
   | (typeof PERMISSIONS.CRM)[keyof typeof PERMISSIONS.CRM]
   | (typeof PERMISSIONS.SITES)[keyof typeof PERMISSIONS.SITES]
+  | (typeof PERMISSIONS.MANUFACTURING)[keyof typeof PERMISSIONS.MANUFACTURING]
   | (typeof PERMISSIONS.EMAIL)[keyof typeof PERMISSIONS.EMAIL];
 
 export interface PermissionDescriptor {
@@ -198,6 +205,11 @@ const sites = (key: PermissionKey, description: string): PermissionDescriptor =>
   module: MODULE_KEYS.SITES,
   description,
 });
+const manufacturing = (key: PermissionKey, description: string): PermissionDescriptor => ({
+  key,
+  module: MODULE_KEYS.MANUFACTURING,
+  description,
+});
 
 export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.TENANT_READ, 'View tenant profile and settings'),
@@ -229,6 +241,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.EMAIL_READ, 'View sent emails and templates'),
   core(PERMISSIONS.CORE.EMAIL_SEND, 'Compose and send emails'),
   core(PERMISSIONS.CORE.EMAIL_MANAGE, 'Manage email templates and tenant email configuration'),
+  core(PERMISSIONS.CORE.APS_READ, 'View the APS scheduling engine status and run schedules'),
+  core(PERMISSIONS.CORE.APS_ADMIN, 'Administer the APS scheduling engine (diagnostics, smoke runs)'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ, 'View customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_MANAGE, 'Manage customers, locations, carriers, fleet'),
   tms(PERMISSIONS.TRANSPORTATION.ORDERS_READ, 'View transport orders'),
@@ -282,6 +296,15 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   // Sites
   sites(PERMISSIONS.SITES.READ, 'View sites & landing pages'),
   sites(PERMISSIONS.SITES.MANAGE, 'Create and manage sites & landing pages'),
+  // Manufacturing / APS
+  manufacturing(
+    PERMISSIONS.MANUFACTURING.READ,
+    'View work centers, calendars, routings, BOMs and manufacturing orders',
+  ),
+  manufacturing(
+    PERMISSIONS.MANUFACTURING.MANAGE,
+    'Manage manufacturing master-data and run the manufacturing order lifecycle',
+  ),
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);

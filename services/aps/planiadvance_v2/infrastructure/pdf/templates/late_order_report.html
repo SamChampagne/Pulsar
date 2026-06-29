@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Late-order Report — {{ ctx.organization_name }}{% endblock %}
+{% block body %}
+<header class="header-row">
+  <h1 data-header-string="{{ ctx.organization_name }} · Late-order Report · {{ ctx.generated_at.strftime('%Y-%m-%d') }}">
+    Late-order Report
+  </h1>
+  <div class="meta">
+    <div>{{ ctx.organization_name }}{% if ctx.workspace_name %} · {{ ctx.workspace_name }}{% endif %}</div>
+    <div>Generated: <strong>{{ ctx.generated_at.strftime('%Y-%m-%d %H:%M') }}</strong></div>
+    <div>Late WOs: <strong>{{ ctx.total_late_count }}</strong></div>
+  </div>
+</header>
+
+<table class="lines">
+  <thead>
+    <tr>
+      <th style="width: 12%">WO</th>
+      <th>Name</th>
+      <th class="time" style="width: 14%">Due</th>
+      <th class="time" style="width: 14%">Planned end</th>
+      <th class="numeric" style="width: 10%">Late (min)</th>
+      <th style="width: 10%">Priority</th>
+      <th style="width: 12%">Reason</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for line in ctx.lines %}
+    <tr>
+      <td>{{ line.work_order_ref }}</td>
+      <td>{{ line.work_order_name }}</td>
+      <td class="time">{{ line.due_date.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td class="time">{% if line.planned_end %}{{ line.planned_end.strftime('%Y-%m-%d %H:%M') }}{% else %}—{% endif %}</td>
+      <td class="numeric">{% if line.lateness_minutes is not none %}{{ line.lateness_minutes }}{% else %}—{% endif %}</td>
+      <td>{{ line.priority }}</td>
+      <td>{{ line.reason }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" style="text-align:center; color:#888; padding:6mm">No late orders ✓</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<footer class="footer-totals">
+  <div>
+    <strong>By reason:</strong>
+    material {{ ctx.by_reason.material }} ·
+    capacity {{ ctx.by_reason.capacity }} ·
+    priority {{ ctx.by_reason.priority }} ·
+    sequence {{ ctx.by_reason.sequence }}
+    &nbsp;·&nbsp;
+    <strong>Total lateness:</strong> {{ ctx.total_lateness_minutes }} min
+  </div>
+  <div class="schedule-info">
+    Schedule {{ ctx.schedule_id }} · published {{ ctx.schedule_published_at.strftime('%Y-%m-%d %H:%M') }}
+  </div>
+</footer>
+
+<aside style="margin-top:6mm; font-size:9pt; color:#444">
+  <strong>Recommended actions by reason:</strong>
+  material → expedite_material ·
+  capacity → add_overtime_or_reroute ·
+  priority → review_priority ·
+  sequence → split_lot_or_reroute
+</aside>
+{% endblock %}
