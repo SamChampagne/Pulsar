@@ -99,7 +99,7 @@ export function navCatalogue(): NavDomain[] {
       key: 'transport',
       label: 'Transport',
       icon: Truck,
-      home: '/dispatch',
+      home: '/transportation',
       module: MODULE_KEYS.TRANSPORTATION,
       prefixes: [
         '/transportation',
@@ -118,6 +118,9 @@ export function navCatalogue(): NavDomain[] {
         '/locations',
       ],
       sections: [
+        {
+          links: [{ href: '/transportation', label: 'Accueil Transport' }],
+        },
         {
           label: 'Postes de travail',
           links: [
