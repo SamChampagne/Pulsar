@@ -2,7 +2,7 @@ import { writable } from 'svelte/store';
 
 export interface Toast {
   id: number;
-  kind: 'success' | 'error';
+  kind: 'success' | 'error' | 'info';
   message: string;
 }
 
@@ -19,4 +19,5 @@ function push(kind: Toast['kind'], message: string) {
 export const toast = {
   success: (message: string) => push('success', message),
   error: (message: string) => push('error', message),
+  info: (message: string) => push('info', message),
 };

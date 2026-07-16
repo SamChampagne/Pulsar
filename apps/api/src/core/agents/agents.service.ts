@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { AuthUser, PermissionKey } from '@pulsar/shared';
@@ -302,13 +303,35 @@ export class AgentsService {
     return agents.length;
   }
 
-  /** Manual "Run now" — enqueue the agent's oldest OPEN task. */
+  /**
+   * Manual "Run now" — enqueue the agent's oldest OPEN task.
+   * Honest contract: before enqueuing, verify the runtime is installed, a provider is
+   * configured and a model is connected. If not, throw a clear 503 so the UI never shows
+   * a fake success. Returns the structured worker result ({ enqueued, runId, taskId, reason }).
+   */
   async runNow(tenantId: string, id: string) {
     const agent = await this.prisma.agent.findFirst({ where: { id, tenantId } });
     if (!agent) throw new NotFoundException('Agent not found');
     if (agent.status !== AgentStatus.ACTIVE) throw new BadRequestException('Agent is not active');
-    const enqueued = await this.worker.runNow(tenantId, id);
-    return { enqueued };
+
+    const readiness = await this.runtime.readiness(tenantId);
+    if (!readiness.installed) {
+      throw new ServiceUnavailableException(
+        "Le runtime agent n'est pas installé — exécutez `pnpm agents:setup`.",
+      );
+    }
+    if (!readiness.configured) {
+      throw new ServiceUnavailableException(
+        "Le runtime agent n'est pas configuré — connectez un fournisseur dans Réglages → Runtime agents.",
+      );
+    }
+    if (!(agent.model ?? readiness.defaultModel)) {
+      throw new ServiceUnavailableException(
+        "Aucun modèle connecté — choisissez un modèle dans le profil de l'agent ou la config runtime.",
+      );
+    }
+
+    return this.worker.runNow(tenantId, id);
   }
 
   /** Paginated run history (projection — no secrets, rule 26). */

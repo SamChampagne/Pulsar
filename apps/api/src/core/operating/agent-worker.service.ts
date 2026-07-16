@@ -97,16 +97,28 @@ export class AgentWorkerService {
     }
   }
 
-  /** Manual "Run now": enqueue the agent's oldest OPEN task, if any. Returns whether one was enqueued. */
-  async runNow(tenantId: string, agentId: string): Promise<boolean> {
+  /**
+   * Manual "Run now": enqueue the agent's oldest OPEN task, if any.
+   * Returns a structured result so the caller (and UI) can report exactly what happened —
+   * a run was created (with its id), there was no open task, or one is already in flight.
+   * Never claims a fake success.
+   */
+  async runNow(
+    tenantId: string,
+    agentId: string,
+  ): Promise<{ enqueued: boolean; runId: string | null; taskId: string | null; reason: string }> {
     const open = await this.prisma.operationalTask.findMany({
       where: { tenantId, assigneeAgentId: agentId, status: OperationalTaskStatus.OPEN },
       orderBy: { createdAt: 'asc' },
       take: 1,
     });
-    if (open.length === 0) return false;
+    if (open.length === 0) {
+      return { enqueued: false, runId: null, taskId: null, reason: 'no-open-task' };
+    }
     const task = open[0];
-    if (this.inFlightTasks.has(task.id)) return false;
+    if (this.inFlightTasks.has(task.id)) {
+      return { enqueued: false, runId: null, taskId: task.id, reason: 'already-in-flight' };
+    }
     const agent = await this.prisma.agent.findFirst({ where: { id: agentId, tenantId }, select: { model: true } });
     const runId = await this.ledger.createQueued({
       tenantId, agentId, taskId: task.id, trigger: AgentRunTrigger.MANUAL, model: agent?.model ?? null,
@@ -114,7 +126,7 @@ export class AgentWorkerService {
     this.inFlightTasks.add(task.id);
     this.queue.push({ runId, tenantId, agentId, taskId: task.id, trigger: AgentRunTrigger.MANUAL, attempt: 1 });
     void this.dispatch();
-    return true;
+    return { enqueued: true, runId, taskId: task.id, reason: 'queued' };
   }
 
   @Cron(CronExpression.EVERY_5_MINUTES)

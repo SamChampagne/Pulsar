@@ -88,6 +88,11 @@ class FakeAgentRuntimeService {
     this.scripts.set(agentId, script);
   }
 
+  /** Manual run-now readiness gate probe — the fake runtime is always ready. */
+  async readiness(): Promise<{ installed: boolean; configured: boolean; defaultModel: string | null }> {
+    return { installed: true, configured: true, defaultModel: 'fake-model' };
+  }
+
   async openSession(input: {
     tenantId: string;
     agent: { id: string; model: string | null; persona: string | null };

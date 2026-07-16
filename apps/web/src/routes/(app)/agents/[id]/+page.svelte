@@ -333,7 +333,7 @@
     }
   }
 
-  async function runAction(verb: 'pause' | 'resume' | 'run-now', label: string) {
+  async function runAction(verb: 'pause' | 'resume', label: string) {
     busy = true;
     try {
       await api(`/agents/${agentId}/${verb}`, { method: 'POST' });
@@ -342,6 +342,35 @@
       await loadRuns(agentId);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Échec de l\'action');
+    } finally {
+      busy = false;
+    }
+  }
+
+  // "Run now" is honest: the backend gates on runtime availability + a connected model and
+  // returns exactly what happened. We only claim success when a run was actually created,
+  // and surface the runtime error otherwise.
+  async function runNow() {
+    busy = true;
+    try {
+      const res = await api<{ enqueued: boolean; runId: string | null; reason: string }>(
+        `/agents/${agentId}/run-now`,
+        { method: 'POST' },
+      );
+      if (res.enqueued && res.runId) {
+        toast.success(`Exécution lancée — run ${res.runId.slice(0, 8)} créé.`);
+      } else if (res.reason === 'no-open-task') {
+        toast.info('Aucune tâche ouverte à exécuter pour cet agent.');
+      } else if (res.reason === 'already-in-flight') {
+        toast.info('Une exécution est déjà en cours pour cette tâche.');
+      } else {
+        toast.info("Rien à exécuter pour le moment.");
+      }
+      await load();
+      await loadRuns(agentId);
+    } catch (e) {
+      // 503 = runtime not installed/configured/no model — a useful, actionable message.
+      toast.error(e instanceof ApiError ? e.message : "Échec de l'exécution");
     } finally {
       busy = false;
     }
@@ -800,7 +829,7 @@
             {:else}
               <Button
                 variant="secondary"
-                onclick={() => runAction('run-now', 'Exécution déclenchée')}
+                onclick={runNow}
                 loading={busy}
                 disabled={busy}
               >

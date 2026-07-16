@@ -25,7 +25,8 @@ class DeclineTenderDto {
  * Public, token-authenticated carrier portal endpoints — no JWT, no module/permission guard.
  * The carrier portal token in the URL is the sole credential; every handler revalidates it
  * via CarrierPortalService.carrierByToken (module gate re-checked — rule 15).
- * Payloads never expose tenantId/carrierId/loadId (rule 10).
+ * Payloads never expose tenantId/carrierId (rule 10); entity ids for the carrier's own
+ * tenders/loads/invoices are exposed so the portal can act on them (token-scoped).
  */
 @ApiTags('public')
 @Public()

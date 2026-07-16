@@ -181,6 +181,20 @@ describe('Collaboration & cost (e2e)', () => {
     expect(view.body.status).toBe('PENDING');
     expect(view.body.load.loadNumber).toBeDefined();
 
+    // P0-F: the carrier gets enough context to price the decision.
+    expect(view.body).toHaveProperty('offeredRate');
+    expect(view.body).toHaveProperty('offeredCurrency');
+    expect(view.body.load).toHaveProperty('mode');
+    expect(view.body.load).toHaveProperty('totalDistanceKm');
+    const s0 = view.body.load.shipments[0];
+    expect(s0).toHaveProperty('origin');
+    expect(s0).toHaveProperty('destination');
+    expect(s0).toHaveProperty('plannedPickupEarly');
+    expect(s0).toHaveProperty('plannedDeliveryEarly');
+    expect(s0).toHaveProperty('volumeM3');
+    // Rule 10: no tenant internals in the public payload.
+    expect(JSON.stringify(view.body)).not.toContain('tenantId');
+
     await request(http)
       .post(`/api/v1/public/tenders/${t}/decline`)
       .send({ reason: 'No capacity' })

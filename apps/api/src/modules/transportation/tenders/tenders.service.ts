@@ -253,7 +253,23 @@ export class TendersService {
             loadNumber: true,
             status: true,
             notes: true,
-            shipments: { select: { shipmentNumber: true, weightKg: true, palletCount: true } },
+            mode: true,
+            estimatedCost: true,
+            costCurrency: true,
+            shipments: {
+              select: {
+                shipmentNumber: true,
+                weightKg: true,
+                volumeM3: true,
+                palletCount: true,
+                plannedPickupEarly: true,
+                plannedPickupLate: true,
+                plannedDeliveryEarly: true,
+                plannedDeliveryLate: true,
+                originLocation: { select: { name: true, city: true, state: true } },
+                destinationLocation: { select: { name: true, city: true, state: true } },
+              },
+            },
             route: {
               select: {
                 totalDistanceKm: true,
@@ -290,13 +306,60 @@ export class TendersService {
     }
 
     // Public payload: no tenant ids, no internal identifiers beyond what the carrier needs.
+    // Explicit projection (rule 10) — enough context for the carrier to price the decision:
+    // offered rate, equipment/mode, weight/volume/pallets, pickup & delivery windows,
+    // origin/destination and the stop sequence. Decimals are converted to numbers.
+    const load = tender.load;
+    const shipments = load.shipments;
+    const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+
     return {
       status: tender.status,
       shipper: tender.tenant.name,
       carrier: tender.carrier.name,
       message: tender.message,
       expiresAt: tender.expiresAt,
-      load: tender.load,
+      // Offered rate the carrier is being asked to accept (frozen buy-side estimate, rule 16).
+      offeredRate: num(load.estimatedCost),
+      offeredCurrency: load.costCurrency,
+      load: {
+        loadNumber: load.loadNumber,
+        status: load.status,
+        notes: load.notes,
+        mode: load.mode, // equipment / transport mode (FTL/LTL/PARCEL)
+        totalDistanceKm: load.route?.totalDistanceKm ?? null,
+        shipments: shipments.map((s) => ({
+          shipmentNumber: s.shipmentNumber,
+          weightKg: num(s.weightKg),
+          volumeM3: num(s.volumeM3),
+          palletCount: s.palletCount,
+          plannedPickupEarly: s.plannedPickupEarly,
+          plannedPickupLate: s.plannedPickupLate,
+          plannedDeliveryEarly: s.plannedDeliveryEarly,
+          plannedDeliveryLate: s.plannedDeliveryLate,
+          origin: s.originLocation
+            ? { name: s.originLocation.name, city: s.originLocation.city, state: s.originLocation.state }
+            : null,
+          destination: s.destinationLocation
+            ? {
+                name: s.destinationLocation.name,
+                city: s.destinationLocation.city,
+                state: s.destinationLocation.state,
+              }
+            : null,
+        })),
+        route: {
+          totalDistanceKm: load.route?.totalDistanceKm ?? null,
+          stops:
+            load.route?.stops.map((st) => ({
+              sequence: st.sequence,
+              type: st.type,
+              plannedArrivalEarly: st.plannedArrivalEarly,
+              plannedArrivalLate: st.plannedArrivalLate,
+              location: st.location,
+            })) ?? [],
+        },
+      },
     };
   }
 

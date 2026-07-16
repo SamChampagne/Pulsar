@@ -256,6 +256,23 @@ export class AgentRuntimeService {
   }
 
   /**
+   * Cheap readiness probe (NO spawn): is Hermes installed and is a provider configured
+   * with a default model? Used by manual "Run now" to avoid claiming success when the
+   * runtime could never actually run the agent. For a real connectivity check use
+   * {@link testConnection}.
+   */
+  async readiness(
+    tenantId: string,
+  ): Promise<{ installed: boolean; configured: boolean; defaultModel: string | null }> {
+    const config = await this.runtimeConfig.get(tenantId);
+    return {
+      installed: isInstalled(),
+      configured: !!config,
+      defaultModel: config?.defaultModel ?? null,
+    };
+  }
+
+  /**
    * Best-effort connectivity probe: spawns a throwaway runtime, initializes and
    * opens a bare session (no MCP), records the result via `markTested`, and tears
    * the process down. Never throws — failures are returned as `{ ok:false, error }`.

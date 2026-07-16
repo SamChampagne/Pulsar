@@ -33,7 +33,13 @@ export class SitesService {
         : {}),
     };
     const [items, total] = await Promise.all([
-      this.prisma.landingPage.findMany({ where, orderBy: { updatedAt: 'desc' }, skip, take }),
+      this.prisma.landingPage.findMany({
+        where,
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take,
+        include: { _count: { select: { submissions: true } } },
+      }),
       this.prisma.landingPage.count({ where }),
     ]);
     return paginated(items, total, page, pageSize);
