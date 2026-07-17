@@ -6,6 +6,8 @@
     Badge, Button, PageHeader,
     toneFor, labelFor,
     Skeleton, ErrorNotice,
+    RelatedEntities, ExceptionBanner,
+    type RelatedGroup,
   } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
   import { toast } from '$lib/stores/toast';
@@ -55,12 +57,47 @@
     detail?.status === 'IN_TRANSIT' ||
     detail?.status === 'COMPLETED',
   );
-  /** Simple heuristic: any DELAYED event present and load not COMPLETED → show badge. */
+  /** Simple heuristic: any DELAYED event present and load not COMPLETED → show badge + banner. */
   const isDelayed = $derived(
     detail?.status !== 'COMPLETED' &&
     detail?.status !== 'CANCELLED' &&
     events.some((e) => e.type === 'DELAYED'),
   );
+  // Additional exception sources (e.g. capacity warnings, freight-audit disputes on this
+  // load) would derive here from data this page already fetches — none cheaply available yet.
+
+  /** "Lié à" panel — only ids actually present in the loaded data become links. */
+  const relatedGroups = $derived.by((): RelatedGroup[] => {
+    if (!detail) return [];
+
+    const carrierItems = detail.carrier
+      ? [{ label: detail.carrier.name, href: `/carriers/${detail.carrier.id}` }]
+      : [];
+
+    const byOrder = new Map<string, string[]>();
+    for (const s of detail.shipments) {
+      const numbers = byOrder.get(s.transportOrderId) ?? [];
+      numbers.push(s.shipmentNumber);
+      byOrder.set(s.transportOrderId, numbers);
+    }
+    const orderItems = Array.from(byOrder.entries()).map(([orderId, numbers]) => ({
+      label: 'Commande de transport',
+      sublabel: numbers.join(', '),
+      href: `/transport-orders/${orderId}`,
+    }));
+
+    const shipmentItems = detail.shipments.map((s) => ({
+      label: s.shipmentNumber,
+      sublabel: labelFor(s.status),
+      tone: toneFor(s.status),
+    }));
+
+    return [
+      { label: 'Transporteur', items: carrierItems },
+      { label: 'Commandes de transport', items: orderItems },
+      { label: 'Expéditions', items: shipmentItems },
+    ];
+  });
 
   async function load() {
     try {
@@ -243,6 +280,16 @@
     {/snippet}
   </PageHeader>
 
+  {#if isDelayed}
+    <div class="mb-4">
+      <ExceptionBanner
+        severity="danger"
+        title="Livraison en retard"
+        message="Un événement de suivi retardé a été signalé pour cette charge — vérifiez le plan de route et informez le client au besoin."
+      />
+    </div>
+  {/if}
+
   <!-- Window warnings -->
   {#if detail.windowWarnings && detail.windowWarnings.length > 0}
     <div class="mb-4 flex flex-col gap-2">
@@ -333,6 +380,10 @@
         onFormChange={(f) => { form = f; }}
         onReload={load}
       />
+
+      <Card>
+        <RelatedEntities groups={relatedGroups} />
+      </Card>
     </div>
   </div>
 {:else}

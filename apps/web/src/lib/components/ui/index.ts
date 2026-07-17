@@ -17,3 +17,7 @@ export { toneFor, labelFor, type Tone } from './status';
 export { default as CommandPalette } from './CommandPalette.svelte';
 export { default as ViewToggle } from './ViewToggle.svelte';
 export { type ViewId } from './view';
+export { default as Drawer } from './Drawer.svelte';
+export { default as RelatedEntities, type RelatedGroup, type RelatedItem } from './RelatedEntities.svelte';
+export { default as ExceptionBanner } from './ExceptionBanner.svelte';
+export { default as StatusTimeline, type TimelineEntry } from './StatusTimeline.svelte';
