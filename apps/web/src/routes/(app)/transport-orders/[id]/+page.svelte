@@ -49,6 +49,9 @@
     originLocation: { id: string; code: string; name: string; city: string };
     destinationLocation: { id: string; code: string; name: string; city: string };
     shipments: { id: string; shipmentNumber: string; status: string; loadId: string | null }[];
+    sourceSalesOrderId?: string | null;
+    sourceFulfillmentKey?: string | null;
+    sourceSalesOrder?: { id: string; number: string; status: string } | null;
     windowWarnings?: WindowWarning[];
     customData?: Record<string, unknown>;
   }
@@ -185,6 +188,21 @@
                 href: `/customers/${order.customer.id}`,
               },
             ],
+          },
+          {
+            label: 'Commande de vente (source)',
+            items: order.sourceSalesOrder
+              ? [
+                  {
+                    label: order.sourceSalesOrder.number,
+                    sublabel:
+                      order.sourceFulfillmentKey && order.sourceFulfillmentKey !== 'primary'
+                        ? `Expédition « ${order.sourceFulfillmentKey} »`
+                        : 'Expédition principale',
+                    href: `/crm/sales-orders/${order.sourceSalesOrder.id}`,
+                  },
+                ]
+              : [],
           },
           {
             label: 'Expéditions',

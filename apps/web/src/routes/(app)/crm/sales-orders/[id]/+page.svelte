@@ -10,6 +10,7 @@
     Button,
     Badge,
     Card,
+    Modal,
     Skeleton,
     ErrorNotice,
     RelatedEntities,
@@ -316,6 +317,118 @@
     }
   }
 
+  // ── Fulfillment bridge (Prepare shipment) ─────────────────────────────────────
+
+  interface LocationOption { id: string; name: string; code: string }
+  interface TransportOrderLink {
+    id: string;
+    orderNumber: string;
+    status: string;
+    sourceFulfillmentKey: string | null;
+    originLocation: { id: string; name: string } | null;
+    destinationLocation: { id: string; name: string } | null;
+  }
+  interface FulfillmentContext {
+    canPrepareShipment: boolean;
+    transportOrders: TransportOrderLink[];
+  }
+
+  // Best-effort: this needs transportation.orders.read + crm.read. A CRM-only
+  // user simply won't see the shipment panel (noTransportAccess stays true).
+  let noTransportAccess = $state(true);
+  let fulfillment = $state<FulfillmentContext | null>(null);
+  let wizardLocations = $state<LocationOption[]>([]);
+
+  let showWizard = $state(false);
+  let wOrigin = $state('');
+  let wDest = $state('');
+  let wPickupEarly = $state('');
+  let wPickupLate = $state('');
+  let wDeliveryEarly = $state('');
+  let wDeliveryLate = $state('');
+  let wMode = $state<'FTL' | 'LTL' | 'PARCEL'>('FTL');
+  let wWeight = $state<number | null>(null);
+  let wVolume = $state<number | null>(null);
+  let wPallets = $state<number | null>(null);
+  let wKey = $state('');
+  let wNotes = $state('');
+  let wSubmitting = $state(false);
+  let wError = $state('');
+  let lastCreatedTO = $state<{ id: string; orderNumber: string } | null>(null);
+
+  const TO_STATUS_LABELS: Record<string, string> = {
+    DRAFT: 'Brouillon', CONFIRMED: 'Confirmé', PLANNED: 'Planifié',
+    IN_EXECUTION: 'En exécution', COMPLETED: 'Livré', CLOSED: 'Clôturé', CANCELLED: 'Annulé',
+  };
+
+  async function loadFulfillmentContext() {
+    if (!order) return;
+    try {
+      fulfillment = await api<FulfillmentContext>(
+        `/transportation/transport-orders/from-sales-order/${order.id}/context`,
+      );
+      noTransportAccess = false;
+    } catch (e) {
+      // 403 (no transportation access) or the module is off → hide the panel.
+      noTransportAccess = true;
+      fulfillment = null;
+    }
+  }
+
+  async function openWizard() {
+    lastCreatedTO = null;
+    wError = '';
+    showWizard = true;
+    if (wizardLocations.length === 0) {
+      try {
+        const res = await api<{ items: LocationOption[] }>('/transportation/locations', {
+          query: { pageSize: 100 },
+        });
+        wizardLocations = res.items;
+      } catch {
+        // leave empty — the selects just show no options
+      }
+    }
+  }
+
+  async function submitPrepareShipment() {
+    if (!order) return;
+    if (!wOrigin || !wDest) { wError = 'Origine et destination sont requises.'; return; }
+    wSubmitting = true;
+    wError = '';
+    try {
+      const body: Record<string, unknown> = {
+        originLocationId: wOrigin,
+        destinationLocationId: wDest,
+        mode: wMode,
+      };
+      if (wKey.trim()) body.fulfillmentKey = wKey.trim();
+      if (wPickupEarly) body.requestedPickupEarly = new Date(wPickupEarly).toISOString();
+      if (wPickupLate) body.requestedPickupLate = new Date(wPickupLate).toISOString();
+      if (wDeliveryEarly) body.requestedDeliveryEarly = new Date(wDeliveryEarly).toISOString();
+      if (wDeliveryLate) body.requestedDeliveryLate = new Date(wDeliveryLate).toISOString();
+      if (wWeight != null) body.totalWeightKg = wWeight;
+      if (wVolume != null) body.totalVolumeM3 = wVolume;
+      if (wPallets != null) body.palletCount = wPallets;
+      if (wNotes.trim()) body.notes = wNotes.trim();
+
+      const to = await api<{ id: string; orderNumber: string }>(
+        `/transportation/transport-orders/from-sales-order/${order.id}`,
+        { method: 'POST', body },
+      );
+      lastCreatedTO = { id: to.id, orderNumber: to.orderNumber };
+      toast.success(`Ordre de transport ${to.orderNumber} créé`);
+      showWizard = false;
+      // Reset the volatile fields for a possible next shipment.
+      wKey = ''; wNotes = '';
+      await loadFulfillmentContext();
+    } catch (e) {
+      wError = e instanceof ApiError ? e.message : "Impossible de préparer l'expédition";
+    } finally {
+      wSubmitting = false;
+    }
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
   const STATUS_LABELS: Record<SalesOrderStatus, string> = {
@@ -361,6 +474,10 @@
 
   $effect(() => {
     if (order) void loadLines();
+  });
+
+  $effect(() => {
+    if (order) void loadFulfillmentContext();
   });
 
   $effect(() => {
@@ -736,6 +853,63 @@
         </Card>
       {/if}
 
+      <!-- Préparer l'expédition (fulfillment bridge) -->
+      {#if !noTransportAccess}
+        <Card>
+          <h2 class="mb-2 text-sm font-semibold text-ink">Expédition</h2>
+
+          {#if order.status !== 'CONFIRMED' && (!fulfillment || fulfillment.transportOrders.length === 0)}
+            <p class="text-xs text-ink-muted">
+              {#if order.status === 'DRAFT'}
+                Confirmez la commande pour pouvoir préparer une expédition.
+              {:else}
+                Aucune expédition liée.
+              {/if}
+            </p>
+          {/if}
+
+          {#if !order.customerId}
+            <p class="mb-2 rounded-md border border-amber-400/40 bg-amber-50/40 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+              Aucun client lié à cette commande. Liez un client (conversion du deal) avant de préparer une expédition.
+            </p>
+          {/if}
+
+          <!-- Linked transport orders ("Lié à" for shipments) -->
+          {#if fulfillment && fulfillment.transportOrders.length > 0}
+            <div class="mb-3 space-y-1.5">
+              {#each fulfillment.transportOrders as to (to.id)}
+                <a
+                  href="/transport-orders/{to.id}"
+                  class="flex items-center justify-between gap-2 rounded-md border border-edge bg-surface px-2.5 py-1.5 text-xs transition-colors hover:border-accent"
+                >
+                  <span class="min-w-0">
+                    <span class="font-mono text-ink">{to.orderNumber}</span>
+                    {#if to.sourceFulfillmentKey && to.sourceFulfillmentKey !== 'primary'}
+                      <span class="ml-1 text-ink-faint">· {to.sourceFulfillmentKey}</span>
+                    {/if}
+                  </span>
+                  <Badge tone={to.status === 'CANCELLED' ? 'danger' : (to.status === 'COMPLETED' || to.status === 'CLOSED') ? 'ok' : 'info'}>
+                    {TO_STATUS_LABELS[to.status] ?? to.status}
+                  </Badge>
+                </a>
+              {/each}
+            </div>
+          {/if}
+
+          {#if lastCreatedTO}
+            <p class="mb-2 rounded-md border border-emerald-400/40 bg-emerald-50/40 px-2.5 py-1.5 text-xs text-emerald-700 dark:text-emerald-300">
+              Ordre de transport <a class="font-mono underline" href="/transport-orders/{lastCreatedTO.id}">{lastCreatedTO.orderNumber}</a> créé.
+            </p>
+          {/if}
+
+          {#if order.status === 'CONFIRMED' && order.customerId}
+            <Button variant="primary" onclick={openWizard}>
+              Préparer l'expédition
+            </Button>
+          {/if}
+        </Card>
+      {/if}
+
       <!-- Lié à -->
       <Card>
         <RelatedEntities groups={relatedGroups} />
@@ -755,4 +929,85 @@
       </Card>
     </div>
   </div>
+
+  <!-- Prepare-shipment wizard -->
+  <Modal bind:open={showWizard} title="Préparer l'expédition" onclose={() => (showWizard = false)}>
+    <div class="space-y-3">
+      <p class="text-xs text-ink-muted">
+        Le client est repris de la commande. Renseignez les informations logistiques —
+        elles ne sont jamais déduites des montants ou des quantités.
+      </p>
+      {#if wError}
+        <p class="rounded-md border border-danger/40 bg-danger/10 px-2.5 py-1.5 text-xs text-danger">{wError}</p>
+      {/if}
+
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label for="w-origin" class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Origine *</label>
+          <select id="w-origin" bind:value={wOrigin} class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent">
+            <option value="">— Sélectionner —</option>
+            {#each wizardLocations as l (l.id)}<option value={l.id}>{l.name} ({l.code})</option>{/each}
+          </select>
+        </div>
+        <div>
+          <label for="w-dest" class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Destination *</label>
+          <select id="w-dest" bind:value={wDest} class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent">
+            <option value="">— Sélectionner —</option>
+            {#each wizardLocations as l (l.id)}<option value={l.id}>{l.name} ({l.code})</option>{/each}
+          </select>
+        </div>
+        <div>
+          <label for="w-pue" class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Ramassage — au plus tôt</label>
+          <input id="w-pue" type="datetime-local" bind:value={wPickupEarly} class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink" />
+        </div>
+        <div>
+          <label for="w-pul" class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Ramassage — au plus tard</label>
+          <input id="w-pul" type="datetime-local" bind:value={wPickupLate} class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink" />
+        </div>
+        <div>
+          <label for="w-dle" class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Livraison — au plus tôt</label>
+          <input id="w-dle" type="datetime-local" bind:value={wDeliveryEarly} class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink" />
+        </div>
+        <div>
+          <label for="w-dll" class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Livraison — au plus tard</label>
+          <input id="w-dll" type="datetime-local" bind:value={wDeliveryLate} class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink" />
+        </div>
+        <div>
+          <label for="w-mode" class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Mode</label>
+          <select id="w-mode" bind:value={wMode} class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent">
+            <option value="FTL">FTL</option>
+            <option value="LTL">LTL</option>
+            <option value="PARCEL">Colis</option>
+          </select>
+        </div>
+        <div>
+          <label for="w-key" class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Clé d'expédition</label>
+          <input id="w-key" type="text" placeholder="primary" bind:value={wKey} class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink" />
+        </div>
+        <div>
+          <label for="w-wt" class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Poids (kg)</label>
+          <input id="w-wt" type="number" min="0" bind:value={wWeight} class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink" />
+        </div>
+        <div>
+          <label for="w-vol" class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Volume (m³)</label>
+          <input id="w-vol" type="number" min="0" bind:value={wVolume} class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink" />
+        </div>
+        <div>
+          <label for="w-pal" class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Palettes</label>
+          <input id="w-pal" type="number" min="0" step="1" bind:value={wPallets} class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink" />
+        </div>
+      </div>
+      <div>
+        <label for="w-notes" class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Notes</label>
+        <textarea id="w-notes" rows="2" bind:value={wNotes} class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink"></textarea>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-1">
+        <Button variant="secondary" onclick={() => { showWizard = false; }}>Annuler</Button>
+        <Button variant="primary" loading={wSubmitting} onclick={() => void submitPrepareShipment()}>
+          Créer l'ordre de transport
+        </Button>
+      </div>
+    </div>
+  </Modal>
 {/if}
