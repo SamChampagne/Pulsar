@@ -68,7 +68,9 @@ export class HealthService {
     try {
       return { ok: true, installed: isAgentRuntimeInstalled() };
     } catch (err) {
-      return { ok: false, error: (err as Error).message };
+      // Public endpoint — never echo a raw error (may embed a filesystem path).
+      this.logger.warn(`agent-runtime healthcheck failed: ${(err as Error).message}`);
+      return { ok: false, error: 'unavailable' };
     }
   }
 
@@ -76,7 +78,8 @@ export class HealthService {
     try {
       return { ok: true, installed: isApsRuntimeInstalled() };
     } catch (err) {
-      return { ok: false, error: (err as Error).message };
+      this.logger.warn(`aps healthcheck failed: ${(err as Error).message}`);
+      return { ok: false, error: 'unavailable' };
     }
   }
 }
