@@ -4,12 +4,19 @@
 # Build from the REPO ROOT (workspace resolution needs the monorepo):
 #   docker build -f apps/web/Dockerfile -t pulsar-web .
 
-FROM node:20-alpine AS base
-RUN corepack enable
+# Node 22 matches local dev, CI, and CLAUDE.md. pnpm is pinned to 10 to match CI
+# (pnpm/action-setup version: 10) — installed directly rather than via corepack,
+# whose shim otherwise resolves the LATEST pnpm (11.13.1), whose sqlite-backed
+# store needs node:sqlite and both crashes the install and hard-fails on ignored
+# build scripts in a clean container.
+FROM node:22-alpine AS base
+RUN npm install -g pnpm@10
 WORKDIR /app
 
 FROM base AS deps
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+# tsconfig.base.json is extended by the shared package's tsconfig — without it
+# the shared build falls back to compiler defaults (ES3 target) and fails.
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY apps/api/package.json apps/api/package.json
@@ -28,5 +35,9 @@ RUN pnpm --filter @pulsar/shared build \
 # SPA to apps/web/build/ — matches the `vite build` output for this adapter.
 FROM nginx:alpine AS runtime
 COPY --from=build /app/apps/web/build /usr/share/nginx/html
-COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+# Same-origin: the nginx entrypoint renders this template (envsubst) into
+# /etc/nginx/conf.d/default.conf at startup, substituting ${PULSAR_API_UPSTREAM}
+# so the SPA's relative /api/v1/... calls proxy to the API from the same origin.
+COPY apps/web/nginx.conf.template /etc/nginx/templates/default.conf.template
+ENV PULSAR_API_UPSTREAM=http://api:3000
 EXPOSE 80

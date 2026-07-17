@@ -8,13 +8,21 @@
 # (prisma generate + tsc) -> api. Migrations are NOT run at build time — see the
 # CMD note below and docs/runbook.md.
 
-FROM node:20-alpine AS base
-RUN corepack enable
+# Node 22 matches local dev, CI, and CLAUDE.md. pnpm is pinned to 10 to match CI
+# (pnpm/action-setup version: 10) — installed directly rather than via corepack,
+# whose shim otherwise resolves the LATEST pnpm (11.13.1), whose sqlite-backed
+# store needs node:sqlite and both crashes the install and hard-fails on ignored
+# build scripts in a clean container.
+FROM node:22-alpine AS base
+RUN npm install -g pnpm@10
 WORKDIR /app
 
 # --- deps: install workspace dependencies (cached while only manifests change) ---
 FROM base AS deps
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+# tsconfig.base.json is extended by every package's tsconfig — without it the
+# shared/database/api tsc builds fall back to compiler defaults (ES3 target) and
+# fail with downlevel-iteration / missing-module errors.
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY apps/api/package.json apps/api/package.json

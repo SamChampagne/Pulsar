@@ -1,0 +1,97 @@
+# Reproducible containerized SMOKE test — proves the same-origin production
+# deployment end to end with the built images:
+#
+#   postgres → one-shot migrate+seed → API (internal only, never published) →
+#   web/nginx (the ONLY published port, reverse-proxies /api to the API).
+#
+# No real secrets (all values below are throwaway smoke credentials). Usage:
+#   docker build -f apps/api/Dockerfile -t pulsar-api:rc .
+#   docker build -f apps/web/Dockerfile -t pulsar-web:rc .
+#   docker compose -f docker-compose.smoke.yml up -d
+#   curl -fsS http://localhost:8080/api/v1/health/ready
+#   docker compose -f docker-compose.smoke.yml down -v   # teardown + drop volume
+#
+# S3 and SMTP are intentionally NOT required for the smoke (local storage + log
+# email driver). Hermes (agents) and APS stay optional/best-effort (APS_AUTOSTART
+# is false; the API degrades to 503 on those subsystems — never crashes).
+name: pulsar-smoke
+
+x-secrets: &secrets
+  # Throwaway smoke secrets — NOT real, and deliberately NOT the published
+  # .env.example / CI values (boot-checks reject those under NODE_ENV=production).
+  JWT_SECRET: smoke-rc-jwt-secret-not-a-real-secret
+  ENCRYPTION_KEY: gbOf40D1PBGNIrVeUUuJ58WJ/JPpe6Zc8fnIL+I4qhM=
+  PLATFORM_ADMIN_EMAIL: platform@pulsar.dev
+  PLATFORM_ADMIN_PASSWORD: smoke-rc-admin-not-default
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pulsar
+      POSTGRES_PASSWORD: pulsar
+      POSTGRES_DB: pulsar
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulsar -d pulsar"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pulsar-smoke-pgdata:/var/lib/postgresql/data
+
+  # One-shot: apply migrations then seed. Exits 0; the API waits for its success.
+  migrate:
+    image: pulsar-api:rc
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *secrets
+      NODE_ENV: production
+      DATABASE_URL: postgresql://pulsar:pulsar@db:5432/pulsar?schema=public
+    command:
+      - sh
+      - -c
+      - >-
+        pnpm --filter @pulsar/database exec prisma migrate deploy &&
+        pnpm --filter @pulsar/database exec tsx prisma/seed.ts
+    restart: "no"
+
+  api:
+    image: pulsar-api:rc
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *secrets
+      NODE_ENV: production
+      API_PORT: 3000
+      DATABASE_URL: postgresql://pulsar:pulsar@db:5432/pulsar?schema=public
+      EMAIL_DRIVER: log
+      STORAGE_DRIVER: local
+      ROUTING_DRIVER: none
+      GEOCODING_DRIVER: none
+      APS_AUTOSTART: "false"
+      # Same-origin: the SPA is served by nginx on :8080 and calls /api there.
+      CORS_ORIGINS: http://localhost:8080
+      API_URL: http://localhost:8080
+      WEB_URL: http://localhost:8080
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/v1/health/ready >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 30
+    # Intentionally NO published ports — nginx is the only entry point.
+
+  web:
+    image: pulsar-web:rc
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      PULSAR_API_UPSTREAM: http://api:3000
+    ports:
+      - "8080:80"
+
+volumes:
+  pulsar-smoke-pgdata:

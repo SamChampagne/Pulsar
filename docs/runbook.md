@@ -63,9 +63,22 @@ docker build -f apps/web/Dockerfile -t pulsar-web .
   and then starts `node apps/api/dist/main.js`. Exposes `3000` (`API_PORT`).
 - **`apps/web/Dockerfile`**: builds the static SPA (`pnpm --filter @pulsar/web
   build`, output `apps/web/build/` per `adapter-static`'s default), then serves
-  it from an `nginx:alpine` stage with `apps/web/nginx.conf`
-  (`try_files $uri $uri/ /index.html` — required for SvelteKit's client-side
-  router to resolve deep links). No extra Node static-server dependency added.
+  it from an `nginx:alpine` stage. The nginx config is rendered at container
+  start by the official image's `envsubst` step from
+  `apps/web/nginx.conf.template` → `/etc/nginx/conf.d/default.conf`:
+  - `try_files $uri $uri/ /index.html` — SvelteKit deep-link fallback.
+  - **`location /api/ { proxy_pass ${PULSAR_API_UPSTREAM}; }`** — the SPA calls
+    the API via relative `/api/v1/...` paths, so nginx reverse-proxies them to
+    the API **from the same origin** (no CORS needed). `PULSAR_API_UPSTREAM`
+    defaults to `http://api:3000` (the compose service name) and is overridable
+    per environment. SSE endpoints (agent chat, OAuth device-code) are proxied
+    unbuffered. This is the tested same-origin path — see the smoke compose below.
+- **Base image & pnpm**: both Dockerfiles use `node:22-alpine` (matches local
+  dev and CI) and install `pnpm@10` directly (matching CI's
+  `pnpm/action-setup version: 10`) rather than via corepack — corepack's shim
+  resolves the LATEST pnpm, whose sqlite-backed store requires `node:sqlite` and
+  fails the container install. The root `tsconfig.base.json` (extended by every
+  package tsconfig) is copied into the build stage.
 - **Migrations are never run inside the image build.** Apply them explicitly
   at deploy time, against the target database:
   ```bash
@@ -83,6 +96,30 @@ docker build -f apps/web/Dockerfile -t pulsar-web .
 - `.dockerignore` (repo root) excludes `node_modules`, build outputs, `.git`,
   the Python venvs, vendored sub-projects (`PlaniAdvanceV2`, `fleetbase`), and
   `.env*` (except `.env.example`).
+
+### Reproducible same-origin smoke (`docker-compose.smoke.yml`)
+
+A self-contained compose file at the repo root proves the containerized
+same-origin deployment end to end: `postgres` → a one-shot `migrate` service
+(`prisma migrate deploy` + seed) → `api` (internal only, **never published**) →
+`web`/nginx (the **only** published port, reverse-proxying `/api` to the API).
+It uses throwaway secrets (deliberately not the published examples, so the
+production boot checks pass) and `NODE_ENV=production`, so it also exercises the
+production boot path.
+
+```bash
+docker build -f apps/api/Dockerfile -t pulsar-api:rc .
+docker build -f apps/web/Dockerfile -t pulsar-web:rc .
+docker compose -f docker-compose.smoke.yml up -d            # db → migrate → api → web
+curl -fsS http://localhost:8080/api/v1/health/ready         # via the web origin (nginx → api)
+curl -fsS http://localhost:8080/loads                       # SPA deep link → index.html
+docker compose -f docker-compose.smoke.yml down -v          # teardown + drop the volume
+```
+
+S3 and SMTP are not required for the smoke (local storage + `log` email driver).
+The agent runtime (Hermes) and APS engine stay optional/best-effort
+(`APS_AUTOSTART=false`); the API degrades to 503 on those subsystems and never
+crashes (rule 24).
 
 ## 4. Health checks
 

@@ -254,3 +254,45 @@ sur le fallback SPA (index.html) au lieu d'atteindre l'API → **tous les tests 
 authentifiés auraient échoué** sur le chemin CI. **Fix** : ajout de `preview.proxy` miroir du dev
 proxy. (Le contrat same-origin `/api` tient donc en dev ET en preview.)
 
+### Gate C — Docker build & smoke conteneurisé same-origin (**réellement exécuté**)
+
+`docker build` des deux images **réellement lancé** ; 4 défauts trouvés et corrigés
+(les images ne construisaient pas avant) :
+
+1. **pnpm via corepack non pinné** → corepack résolvait pnpm **latest (11.13.1)**, dont
+   le store sqlite exige `node:sqlite` (Node 22.5+) → crash de `pnpm install`. **Fix** :
+   installer `pnpm@10` directement (aligné sur la CI `pnpm/action-setup version: 10`).
+2. **`ERR_PNPM_IGNORED_BUILDS`** (pnpm 11 en env propre refusait les scripts de build) — évité
+   en revenant à pnpm 10 (comme la CI) + `ignoredBuiltDependencies: ['@scarf/scarf']`.
+3. **`tsconfig.base.json` absent de l'image** → les builds tsc (shared/database/api) tombaient
+   sur les defaults (target ES3) → erreurs downlevel-iteration. **Fix** : copier
+   `tsconfig.base.json` dans l'étape de build.
+4. **Base Node** bumpée `node:20-alpine` → `node:22-alpine` (aligne dev/CI/CLAUDE.md).
+
+**Smoke conteneurisé reproductible** (`docker-compose.smoke.yml`, base isolée dédiée) :
+`postgres` → `migrate` one-shot (`prisma migrate deploy` + seed, **exit 0**) → `api` (interne,
+non exposé) → `web`/nginx (seul port publié 8080, **proxy `/api` → api:3000**). Tourne en
+`NODE_ENV=production` (exerce les boot-checks prod). Vérifié **via l'origine web (8080)** :
+
+| Vérif | Résultat |
+| --- | --- |
+| `GET /api/v1/health/live` (nginx→api) | **200** |
+| `GET /api/v1/health/ready` | **200** `{postgres:{ok:true}, agentRuntime/aps installed:false}` |
+| Deep link SPA `GET /loads` | **200 text/html** (fallback index.html) |
+| `POST /api/v1/auth/login` (origine web) | **200** (jeton 2992 c.) |
+| `GET /api/v1/transportation/transport-orders` authentifié (origine web) | **200** |
+| SPA racine | `<title>Pulsar</title>` |
+
+**Correction du défaut nginx** : `apps/web/nginx.conf` ne proxifiait PAS `/api` (le conteneur web
+ne pouvait pas servir le same-origin). Remplacé par `nginx.conf.template` (rendu par l'entrypoint
+nginx via envsubst) avec `location /api/ { proxy_pass ${PULSAR_API_UPSTREAM}; }` (défaut
+`http://api:3000`, SSE non bufferisé). **C'est la preuve de fonctionnement demandée — pas une phrase
+de runbook.**
+
+**Logs** : structurés en **`clé=valeur`** (`method=… path=… status=… durationMs=… requestId=…
+tenantId=… userId=…`) avec correlation id `x-request-id` — **PAS du JSON** (à ne pas décrire
+comme tel). Suffisamment exploitables pour le tri opérationnel.
+
+Hermes/APS restent optionnels (`APS_AUTOSTART=false`, `installed:false` en readiness, jamais
+bloquant — règle 24). S3/SMTP non requis pour le smoke (storage local + email `log`).
+
