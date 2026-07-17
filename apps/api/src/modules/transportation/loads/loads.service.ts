@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
@@ -182,7 +187,10 @@ export class LoadsService {
   }
 
   async get(tenantId: string, id: string) {
-    const load = await this.prisma.load.findFirst({ where: { id, tenantId }, include: loadInclude });
+    const load = await this.prisma.load.findFirst({
+      where: { id, tenantId },
+      include: loadInclude,
+    });
     if (!load) throw new NotFoundException('Load not found');
     return {
       ...load,
@@ -256,7 +264,11 @@ export class LoadsService {
 
   async create(tenantId: string, userId: string, dto: CreateLoadDto) {
     const customData = await this.customFields.validateValues(
-      'transportation', tenantId, CustomFieldEntity.LOAD, dto.customData, { partial: false },
+      'transportation',
+      tenantId,
+      CustomFieldEntity.LOAD,
+      dto.customData,
+      { partial: false },
     );
     const load = await this.prisma.load.create({
       data: {
@@ -371,7 +383,9 @@ export class LoadsService {
         select: { weightKg: true, volumeM3: true, palletCount: true },
       });
       const sum = (values: (number | null)[]) =>
-        values.some((v) => v !== null) ? values.reduce<number>((acc, v) => acc + (v ?? 0), 0) : null;
+        values.some((v) => v !== null)
+          ? values.reduce<number>((acc, v) => acc + (v ?? 0), 0)
+          : null;
       const excesses = trailer
         ? checkCapacity(
             {
@@ -390,7 +404,10 @@ export class LoadsService {
         const tmsSettings = await this.moduleSettings.resolve(tenantId, 'transportation');
         const overage = tmsSettings['capacityOverage'] as string;
         if (overage === 'BLOCK') {
-          throw new ConflictException({ message: 'Trailer capacity exceeded (blocked by tenant policy)', excesses });
+          throw new ConflictException({
+            message: 'Trailer capacity exceeded (blocked by tenant policy)',
+            excesses,
+          });
         }
         if (!force) {
           throw new BadRequestException({ message: 'Trailer capacity exceeded', excesses });
@@ -423,7 +440,9 @@ export class LoadsService {
   async setAccessorials(tenantId: string, userId: string, id: string, dto: SetLoadAccessorialsDto) {
     const load = await this.get(tenantId, id);
     if (load.status === LoadStatus.COMPLETED || load.status === LoadStatus.CANCELLED) {
-      throw new BadRequestException('Accessorials cannot be changed on a COMPLETED or CANCELLED load');
+      throw new BadRequestException(
+        'Accessorials cannot be changed on a COMPLETED or CANCELLED load',
+      );
     }
     const ids = dto.items.map((i) => i.accessorialId);
     if (new Set(ids).size !== ids.length) {
@@ -555,7 +574,11 @@ export class LoadsService {
       }),
     ]);
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.DISPATCHED);
-    await this.notifications.onDispatched(tenantId, { id, loadNumber: load.loadNumber, carrierId: load.carrierId });
+    await this.notifications.onDispatched(tenantId, {
+      id,
+      loadNumber: load.loadNumber,
+      carrierId: load.carrierId,
+    });
     return updated;
   }
 
@@ -596,18 +619,22 @@ export class LoadsService {
         where: { tenantId, loadId: id, proofOfDelivery: null },
       });
       if (shipmentsWithoutPod > 0) {
-        throw new BadRequestException('Tenant policy requires a POD on every shipment before completion');
+        throw new BadRequestException(
+          'Tenant policy requires a POD on every shipment before completion',
+        );
       }
     }
     const now = new Date();
 
     await this.prisma.$transaction([
-      this.prisma.load.update({
-        where: { id },
+      // Tenant-scoped (rule 1) even though `id` is unique — the load was already
+      // verified for this tenant by get() above; keep the invariant explicit.
+      this.prisma.load.updateMany({
+        where: { id, tenantId },
         data: { status: LoadStatus.COMPLETED, completedAt: now },
       }),
       this.prisma.shipment.updateMany({
-        where: { loadId: id },
+        where: { loadId: id, tenantId },
         data: { status: ShipmentStatus.DELIVERED, actualDeliveryAt: now },
       }),
       this.prisma.trackingEvent.create({
@@ -633,7 +660,9 @@ export class LoadsService {
         where: {
           tenantId,
           transportOrderId: orderId,
-          status: { notIn: [ShipmentStatus.DELIVERED, ShipmentStatus.CLOSED, ShipmentStatus.CANCELLED] },
+          status: {
+            notIn: [ShipmentStatus.DELIVERED, ShipmentStatus.CLOSED, ShipmentStatus.CANCELLED],
+          },
         },
       });
       if (open === 0) {
@@ -642,7 +671,11 @@ export class LoadsService {
     }
 
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.COMPLETED);
-    await this.notifications.onCompleted(tenantId, { id, loadNumber: load.loadNumber, carrierId: load.carrierId });
+    await this.notifications.onCompleted(tenantId, {
+      id,
+      loadNumber: load.loadNumber,
+      carrierId: load.carrierId,
+    });
     return this.get(tenantId, id);
   }
 

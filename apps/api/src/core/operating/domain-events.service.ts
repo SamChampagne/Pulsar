@@ -64,7 +64,9 @@ export class DomainEventsService {
         },
       });
     } catch (err) {
-      this.logger.error(`emit(${type}) failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.error(
+        `emit(${type}) failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -103,7 +105,11 @@ export class DomainEventsService {
     for (const event of pending) {
       const claimed = await this.prisma.domainEvent.updateMany({
         where: { id: event.id, status: DomainEventStatus.PENDING },
-        data: { status: DomainEventStatus.PROCESSED, attempts: { increment: 1 }, processedAt: new Date() },
+        data: {
+          status: DomainEventStatus.PROCESSED,
+          attempts: { increment: 1 },
+          processedAt: new Date(),
+        },
       });
       if (claimed.count === 0) continue;
 
@@ -114,9 +120,15 @@ export class DomainEventsService {
         // Additive layer: consult tenant-configured automation rules. Best-effort
         // (rule 24) — a failure here must never break built-in task creation.
         let customSpecs: ReturnType<typeof resolvePolicies> = [];
-        let reactionCommands: Awaited<ReturnType<CustomRuleResolver['resolve']>>['reactionCommands'] = [];
+        let reactionCommands: Awaited<
+          ReturnType<CustomRuleResolver['resolve']>
+        >['reactionCommands'] = [];
         try {
-          const customResult = await this.customRuleResolver.resolve(event.tenantId, event.type, payload);
+          const customResult = await this.customRuleResolver.resolve(
+            event.tenantId,
+            event.type,
+            payload,
+          );
           customSpecs = customResult.taskSpecs;
           reactionCommands = customResult.reactionCommands;
         } catch (ruleErr) {
@@ -166,7 +178,8 @@ export class DomainEventsService {
               void this.worker.enqueueTask(event.tenantId, agentId, created.id);
             }
           } catch (err) {
-            if (!(err && typeof err === 'object' && (err as { code?: string }).code === 'P2002')) throw err;
+            if (!(err && typeof err === 'object' && (err as { code?: string }).code === 'P2002'))
+              throw err;
           }
         }
         // Reactions: skip entirely for reaction-originated events (anti-loop, single hop).
@@ -190,7 +203,10 @@ export class DomainEventsService {
         // Guard on PROCESSED (the claim set it) so we never walk back another worker's state.
         await this.prisma.domainEvent.updateMany({
           where: { id: event.id, status: DomainEventStatus.PROCESSED },
-          data: { status: DomainEventStatus.FAILED, lastError: err instanceof Error ? err.message : String(err) },
+          data: {
+            status: DomainEventStatus.FAILED,
+            lastError: err instanceof Error ? err.message : String(err),
+          },
         });
       }
     }

@@ -35,10 +35,18 @@ const uniq = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 @Injectable()
 class FakeAgentRuntimeService {
   constructor(private readonly _agents: AgentsService) {}
-  async openSession(): Promise<string> { return 'fake-session'; }
-  async *sendTurn(): AsyncGenerator<never> { /* no turns */ }
-  async closeSession(): Promise<void> { /* no-op */ }
-  async killAgentSessions(): Promise<void> { /* no-op */ }
+  async openSession(): Promise<string> {
+    return 'fake-session';
+  }
+  async *sendTurn(): AsyncGenerator<never> {
+    /* no turns */
+  }
+  async closeSession(): Promise<void> {
+    /* no-op */
+  }
+  async killAgentSessions(): Promise<void> {
+    /* no-op */
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +123,11 @@ describe('CRM cross-module events (e2e)', () => {
           enabled: true,
           match: 'ALL',
           conditions: [],
-          action: { kind: 'RUN_ACTION', action: 'draft_invoice_from_sales_order', args: { salesOrderId: '{salesOrderId}' } },
+          action: {
+            kind: 'RUN_ACTION',
+            action: 'draft_invoice_from_sales_order',
+            args: { salesOrderId: '{salesOrderId}' },
+          },
         },
       });
     }
@@ -123,27 +135,41 @@ describe('CRM cross-module events (e2e)', () => {
 
   afterAll(async () => {
     if (prisma) {
-      await prisma.customerInvoice.deleteMany({
-        where: { id: { in: cleanupInvoiceIds } },
-      }).catch(() => undefined);
-      await prisma.reactionExecution.deleteMany({
-        where: { id: { in: cleanupReactionIds } },
-      }).catch(() => undefined);
-      await prisma.domainEvent.deleteMany({
-        where: { tenantId, id: { in: cleanupEventIds } },
-      }).catch(() => undefined);
-      await prisma.salesOrder.deleteMany({
-        where: { id: { in: cleanupSalesOrderIds } },
-      }).catch(() => undefined);
-      await prisma.crmDeal.deleteMany({
-        where: { id: { in: cleanupDealIds } },
-      }).catch(() => undefined);
-      await prisma.crmCompany.deleteMany({
-        where: { id: { in: cleanupCompanyIds } },
-      }).catch(() => undefined);
-      await prisma.customer.deleteMany({
-        where: { id: { in: cleanupCustomerIds } },
-      }).catch(() => undefined);
+      await prisma.customerInvoice
+        .deleteMany({
+          where: { id: { in: cleanupInvoiceIds } },
+        })
+        .catch(() => undefined);
+      await prisma.reactionExecution
+        .deleteMany({
+          where: { id: { in: cleanupReactionIds } },
+        })
+        .catch(() => undefined);
+      await prisma.domainEvent
+        .deleteMany({
+          where: { tenantId, id: { in: cleanupEventIds } },
+        })
+        .catch(() => undefined);
+      await prisma.salesOrder
+        .deleteMany({
+          where: { id: { in: cleanupSalesOrderIds } },
+        })
+        .catch(() => undefined);
+      await prisma.crmDeal
+        .deleteMany({
+          where: { id: { in: cleanupDealIds } },
+        })
+        .catch(() => undefined);
+      await prisma.crmCompany
+        .deleteMany({
+          where: { id: { in: cleanupCompanyIds } },
+        })
+        .catch(() => undefined);
+      await prisma.customer
+        .deleteMany({
+          where: { id: { in: cleanupCustomerIds } },
+        })
+        .catch(() => undefined);
     }
     await app.close();
   });
@@ -255,10 +281,7 @@ describe('CRM cross-module events (e2e)', () => {
 
       // Convert → creates a Customer and sets convertedCustomerId
       const conv = (
-        await request(http)
-          .post(`/api/v1/crm/deals/${dealId2}/convert`)
-          .set(auth())
-          .expect(200)
+        await request(http).post(`/api/v1/crm/deals/${dealId2}/convert`).set(auth()).expect(200)
       ).body as { customerId: string };
       customerId2 = conv.customerId;
       cleanupCustomerIds.push(customerId2);
@@ -335,10 +358,7 @@ describe('CRM cross-module events (e2e)', () => {
 
       // Convert deal → Customer
       const conv = (
-        await request(http)
-          .post(`/api/v1/crm/deals/${dealId3}/convert`)
-          .set(auth())
-          .expect(200)
+        await request(http).post(`/api/v1/crm/deals/${dealId3}/convert`).set(auth()).expect(200)
       ).body as { customerId: string };
       customerId3 = conv.customerId;
       cleanupCustomerIds.push(customerId3);
@@ -486,10 +506,18 @@ describe('CRM cross-module events (e2e)', () => {
 
     afterAll(async () => {
       if (isolTenantId) {
-        await prisma.reactionExecution.deleteMany({ where: { tenantId: isolTenantId } }).catch(() => undefined);
-        await prisma.domainEvent.deleteMany({ where: { tenantId: isolTenantId } }).catch(() => undefined);
-        await prisma.customerInvoice.deleteMany({ where: { tenantId: isolTenantId } }).catch(() => undefined);
-        await prisma.tenantModule.deleteMany({ where: { tenantId: isolTenantId } }).catch(() => undefined);
+        await prisma.reactionExecution
+          .deleteMany({ where: { tenantId: isolTenantId } })
+          .catch(() => undefined);
+        await prisma.domainEvent
+          .deleteMany({ where: { tenantId: isolTenantId } })
+          .catch(() => undefined);
+        await prisma.customerInvoice
+          .deleteMany({ where: { tenantId: isolTenantId } })
+          .catch(() => undefined);
+        await prisma.tenantModule
+          .deleteMany({ where: { tenantId: isolTenantId } })
+          .catch(() => undefined);
         await prisma.tenant.deleteMany({ where: { id: isolTenantId } }).catch(() => undefined);
       }
     });
@@ -512,7 +540,9 @@ describe('CRM cross-module events (e2e)', () => {
       expect(afterCount).toBe(beforeCount);
 
       // No invoice created for isolated tenant either (no rule, no customer)
-      const isolInvoices = await prisma.customerInvoice.count({ where: { tenantId: isolTenantId } });
+      const isolInvoices = await prisma.customerInvoice.count({
+        where: { tenantId: isolTenantId },
+      });
       expect(isolInvoices).toBe(0);
     });
   });

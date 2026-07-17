@@ -15,12 +15,20 @@ describe('canTransitionSalesOrder', () => {
     expect(canTransitionSalesOrder(SalesOrderStatus.DRAFT, SalesOrderStatus.FULFILLED)).toBe(false);
   });
   it('CONFIRMED → FULFILLED / CANCELLED', () => {
-    expect(canTransitionSalesOrder(SalesOrderStatus.CONFIRMED, SalesOrderStatus.FULFILLED)).toBe(true);
-    expect(canTransitionSalesOrder(SalesOrderStatus.CONFIRMED, SalesOrderStatus.CANCELLED)).toBe(true);
+    expect(canTransitionSalesOrder(SalesOrderStatus.CONFIRMED, SalesOrderStatus.FULFILLED)).toBe(
+      true,
+    );
+    expect(canTransitionSalesOrder(SalesOrderStatus.CONFIRMED, SalesOrderStatus.CANCELLED)).toBe(
+      true,
+    );
   });
   it('FULFILLED → INVOICED only', () => {
-    expect(canTransitionSalesOrder(SalesOrderStatus.FULFILLED, SalesOrderStatus.INVOICED)).toBe(true);
-    expect(canTransitionSalesOrder(SalesOrderStatus.FULFILLED, SalesOrderStatus.CANCELLED)).toBe(false);
+    expect(canTransitionSalesOrder(SalesOrderStatus.FULFILLED, SalesOrderStatus.INVOICED)).toBe(
+      true,
+    );
+    expect(canTransitionSalesOrder(SalesOrderStatus.FULFILLED, SalesOrderStatus.CANCELLED)).toBe(
+      false,
+    );
   });
   it('terminal states never transition out', () => {
     for (const to of Object.values(SalesOrderStatus)) {
@@ -41,23 +49,53 @@ describe('isSalesOrderOpen', () => {
 
 describe('deriveSalesOrderFulfillment', () => {
   it('no transport orders → not fulfilled', () => {
-    expect(deriveSalesOrderFulfillment([])).toEqual({ fulfill: false, reason: 'no-transport-orders' });
+    expect(deriveSalesOrderFulfillment([])).toEqual({
+      fulfill: false,
+      reason: 'no-transport-orders',
+    });
   });
   it('any active transport order → not fulfilled (blocks)', () => {
-    expect(deriveSalesOrderFulfillment(['COMPLETED', 'IN_EXECUTION'])).toEqual({ fulfill: false, reason: 'active-remaining' });
-    expect(deriveSalesOrderFulfillment(['PLANNED'])).toEqual({ fulfill: false, reason: 'active-remaining' });
-    expect(deriveSalesOrderFulfillment(['DRAFT', 'CONFIRMED'])).toEqual({ fulfill: false, reason: 'active-remaining' });
+    expect(deriveSalesOrderFulfillment(['COMPLETED', 'IN_EXECUTION'])).toEqual({
+      fulfill: false,
+      reason: 'active-remaining',
+    });
+    expect(deriveSalesOrderFulfillment(['PLANNED'])).toEqual({
+      fulfill: false,
+      reason: 'active-remaining',
+    });
+    expect(deriveSalesOrderFulfillment(['DRAFT', 'CONFIRMED'])).toEqual({
+      fulfill: false,
+      reason: 'active-remaining',
+    });
   });
   it('all cancelled, none delivered → not fulfilled', () => {
-    expect(deriveSalesOrderFulfillment(['CANCELLED'])).toEqual({ fulfill: false, reason: 'all-cancelled' });
-    expect(deriveSalesOrderFulfillment(['CANCELLED', 'CANCELLED'])).toEqual({ fulfill: false, reason: 'all-cancelled' });
+    expect(deriveSalesOrderFulfillment(['CANCELLED'])).toEqual({
+      fulfill: false,
+      reason: 'all-cancelled',
+    });
+    expect(deriveSalesOrderFulfillment(['CANCELLED', 'CANCELLED'])).toEqual({
+      fulfill: false,
+      reason: 'all-cancelled',
+    });
   });
   it('every order terminal with at least one delivered → fulfilled', () => {
-    expect(deriveSalesOrderFulfillment(['COMPLETED'])).toEqual({ fulfill: true, reason: 'all-delivered' });
-    expect(deriveSalesOrderFulfillment(['CLOSED'])).toEqual({ fulfill: true, reason: 'all-delivered' });
+    expect(deriveSalesOrderFulfillment(['COMPLETED'])).toEqual({
+      fulfill: true,
+      reason: 'all-delivered',
+    });
+    expect(deriveSalesOrderFulfillment(['CLOSED'])).toEqual({
+      fulfill: true,
+      reason: 'all-delivered',
+    });
     // A cancelled sibling does not block once the rest are delivered.
-    expect(deriveSalesOrderFulfillment(['COMPLETED', 'CANCELLED'])).toEqual({ fulfill: true, reason: 'all-delivered' });
-    expect(deriveSalesOrderFulfillment(['CLOSED', 'COMPLETED'])).toEqual({ fulfill: true, reason: 'all-delivered' });
+    expect(deriveSalesOrderFulfillment(['COMPLETED', 'CANCELLED'])).toEqual({
+      fulfill: true,
+      reason: 'all-delivered',
+    });
+    expect(deriveSalesOrderFulfillment(['CLOSED', 'COMPLETED'])).toEqual({
+      fulfill: true,
+      reason: 'all-delivered',
+    });
   });
 });
 
@@ -65,15 +103,20 @@ describe('validateFulfillmentLogistics', () => {
   const base = { originLocationId: 'o', destinationLocationId: 'd', mode: 'FTL' };
 
   it('requires origin, destination and mode', () => {
-    expect(validateFulfillmentLogistics({ ...base, originLocationId: '', totalWeightKg: 1 }).ok).toBe(false);
-    expect(validateFulfillmentLogistics({ ...base, destinationLocationId: '', totalWeightKg: 1 }).ok).toBe(false);
+    expect(
+      validateFulfillmentLogistics({ ...base, originLocationId: '', totalWeightKg: 1 }).ok,
+    ).toBe(false);
+    expect(
+      validateFulfillmentLogistics({ ...base, destinationLocationId: '', totalWeightKg: 1 }).ok,
+    ).toBe(false);
     expect(validateFulfillmentLogistics({ ...base, mode: '', totalWeightKg: 1 }).ok).toBe(false);
   });
 
   it('requires at least one strictly-positive measure', () => {
     expect(validateFulfillmentLogistics({ ...base }).ok).toBe(false); // none
     expect(
-      validateFulfillmentLogistics({ ...base, totalWeightKg: 0, totalVolumeM3: 0, palletCount: 0 }).ok,
+      validateFulfillmentLogistics({ ...base, totalWeightKg: 0, totalVolumeM3: 0, palletCount: 0 })
+        .ok,
     ).toBe(false); // all zero
     expect(validateFulfillmentLogistics({ ...base, totalWeightKg: 800 }).ok).toBe(true);
     expect(validateFulfillmentLogistics({ ...base, totalVolumeM3: 12 }).ok).toBe(true);

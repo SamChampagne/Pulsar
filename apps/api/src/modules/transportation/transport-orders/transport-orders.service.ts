@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import {
   AuditAction,
   DOMAIN_EVENT_TYPES,
+  DomainEventStatus,
   CustomFieldEntity,
   MODULE_KEYS,
   SalesOrderStatus,
@@ -126,7 +127,11 @@ export class TransportOrdersService {
       assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
     }
     const customData = await this.customFields.validateValues(
-      'transportation', tenantId, CustomFieldEntity.TRANSPORT_ORDER, dto.customData, { partial: false },
+      'transportation',
+      tenantId,
+      CustomFieldEntity.TRANSPORT_ORDER,
+      dto.customData,
+      { partial: false },
     );
     const { customData: _cd, ...dtoWithout } = dto;
     const order = await this.prisma.transportOrder.create({
@@ -255,7 +260,11 @@ export class TransportOrdersService {
       // Concurrent retry raced us to the unique (tenant, salesOrder, key) — return the winner.
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         const raced = await this.prisma.transportOrder.findFirst({
-          where: { tenantId, sourceSalesOrderId: salesOrderId, sourceFulfillmentKey: fulfillmentKey },
+          where: {
+            tenantId,
+            sourceSalesOrderId: salesOrderId,
+            sourceFulfillmentKey: fulfillmentKey,
+          },
           include: orderInclude,
         });
         if (raced) return raced;
@@ -330,8 +339,7 @@ export class TransportOrdersService {
     });
 
     const fulfillment = deriveSalesOrderFulfillment(transportOrders.map((t) => t.status));
-    const canPrepareShipment =
-      so.status === SalesOrderStatus.CONFIRMED && !!so.customerId;
+    const canPrepareShipment = so.status === SalesOrderStatus.CONFIRMED && !!so.customerId;
 
     return {
       salesOrder: so,
@@ -359,16 +367,32 @@ export class TransportOrdersService {
       throw new BadRequestException('Only DRAFT orders can be edited');
     }
     await this.assertReferences(tenantId, dto);
-    const pickupEarly = dto.requestedPickupEarly !== undefined ? toDate(dto.requestedPickupEarly) : order.requestedPickupEarly;
-    const pickupLate = dto.requestedPickupLate !== undefined ? toDate(dto.requestedPickupLate) : order.requestedPickupLate;
-    const deliveryEarly = dto.requestedDeliveryEarly !== undefined ? toDate(dto.requestedDeliveryEarly) : order.requestedDeliveryEarly;
-    const deliveryLate = dto.requestedDeliveryLate !== undefined ? toDate(dto.requestedDeliveryLate) : order.requestedDeliveryLate;
+    const pickupEarly =
+      dto.requestedPickupEarly !== undefined
+        ? toDate(dto.requestedPickupEarly)
+        : order.requestedPickupEarly;
+    const pickupLate =
+      dto.requestedPickupLate !== undefined
+        ? toDate(dto.requestedPickupLate)
+        : order.requestedPickupLate;
+    const deliveryEarly =
+      dto.requestedDeliveryEarly !== undefined
+        ? toDate(dto.requestedDeliveryEarly)
+        : order.requestedDeliveryEarly;
+    const deliveryLate =
+      dto.requestedDeliveryLate !== undefined
+        ? toDate(dto.requestedDeliveryLate)
+        : order.requestedDeliveryLate;
     const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
     if (tms['windowCoherence'] !== 'LENIENT') {
       assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
     }
     const customData = await this.customFields.validateValues(
-      'transportation', tenantId, CustomFieldEntity.TRANSPORT_ORDER, dto.customData, { partial: true },
+      'transportation',
+      tenantId,
+      CustomFieldEntity.TRANSPORT_ORDER,
+      dto.customData,
+      { partial: true },
     );
     const { customData: _cd, ...dtoWithout } = dto;
     return this.prisma.transportOrder.update({
@@ -402,52 +426,75 @@ export class TransportOrdersService {
    * Centralizes the invariants the load-completion path needs (rules 1/2/6):
    *  - tenant-scoped, race-safe conditional claim (IN_EXECUTION → COMPLETED);
    *  - transition guarded by canTransitionTransportOrder;
-   *  - STATUS_CHANGE audit with the real actor;
-   *  - the fulfillment event (transport-order.completed) emitted exactly once,
-   *    ONLY when THIS call won the claim (count === 1) and the order was created
-   *    from a sales order — so a retry never double-fires. Costs are never
-   *    recomputed here (rule 16 untouched).
+   *  - the fulfillment event (transport-order.completed) written in the SAME
+   *    transaction as the status flip (durable-outbox semantics): the event row
+   *    exists iff the transition committed, so a crash right after the status
+   *    change cannot lose it. The reaction that consumes it is idempotent.
+   *    Emitted ONLY when THIS call won the claim (count === 1) and the order came
+   *    from a sales order — a retry finds it already COMPLETED and no-ops.
+   *  - STATUS_CHANGE audit with the real actor (best-effort, AFTER the durable
+   *    transition — the audit is a log, not the source of truth).
+   *  Costs are never recomputed here (rule 16 untouched). Non-reaction context
+   *  (called from load completion), so the emitted event carries no reactionRuleId.
    * Returns true iff this call performed the transition.
    */
   async completeFromDelivery(tenantId: string, userId: string, orderId: string): Promise<boolean> {
-    if (!canTransitionTransportOrder(TransportOrderStatus.IN_EXECUTION, TransportOrderStatus.COMPLETED)) {
+    if (
+      !canTransitionTransportOrder(
+        TransportOrderStatus.IN_EXECUTION,
+        TransportOrderStatus.COMPLETED,
+      )
+    ) {
       return false;
     }
-    // TOCTOU-safe: only a row still IN_EXECUTION for THIS tenant flips. A
-    // CANCELLED/CLOSED/already-COMPLETED order or another tenant's order → 0.
-    const { count } = await this.prisma.transportOrder.updateMany({
-      where: { id: orderId, tenantId, status: TransportOrderStatus.IN_EXECUTION },
-      data: { status: TransportOrderStatus.COMPLETED },
-    });
-    if (count !== 1) return false;
+    // Atomic claim + event: both commit together or neither does.
+    const transitioned = await this.prisma.$transaction(async (tx) => {
+      // TOCTOU-safe: only a row still IN_EXECUTION for THIS tenant flips. A
+      // CANCELLED/CLOSED/already-COMPLETED order or another tenant's order → 0.
+      const { count } = await tx.transportOrder.updateMany({
+        where: { id: orderId, tenantId, status: TransportOrderStatus.IN_EXECUTION },
+        data: { status: TransportOrderStatus.COMPLETED },
+      });
+      if (count !== 1) return false;
 
-    await this.audit.log({
-      tenantId,
-      userId,
-      action: AuditAction.STATUS_CHANGE,
-      entityType: 'transport-order',
-      entityId: orderId,
-      before: { status: TransportOrderStatus.IN_EXECUTION },
-      after: { status: TransportOrderStatus.COMPLETED },
+      const done = await tx.transportOrder.findFirst({
+        where: { id: orderId, tenantId },
+        select: { sourceSalesOrderId: true, sourceFulfillmentKey: true, customerId: true },
+      });
+      if (done?.sourceSalesOrderId) {
+        await tx.domainEvent.create({
+          data: {
+            tenantId,
+            type: DOMAIN_EVENT_TYPES.TRANSPORT_ORDER_COMPLETED,
+            subjectType: 'transport-order',
+            subjectId: orderId,
+            payload: {
+              transportOrderId: orderId,
+              sourceSalesOrderId: done.sourceSalesOrderId,
+              sourceFulfillmentKey: done.sourceFulfillmentKey,
+              customerId: done.customerId,
+            } as Prisma.InputJsonValue,
+            status: DomainEventStatus.PENDING,
+            reactionRuleId: null,
+          },
+        });
+      }
+      return true;
     });
+    if (!transitioned) return false;
 
-    const done = await this.prisma.transportOrder.findFirst({
-      where: { id: orderId, tenantId },
-      select: { sourceSalesOrderId: true, sourceFulfillmentKey: true, customerId: true },
-    });
-    if (done?.sourceSalesOrderId) {
-      await this.domainEvents.emit(
+    // Best-effort audit AFTER the durable transition (a log, never a gate).
+    await this.audit
+      .log({
         tenantId,
-        DOMAIN_EVENT_TYPES.TRANSPORT_ORDER_COMPLETED,
-        { type: 'transport-order', id: orderId },
-        {
-          transportOrderId: orderId,
-          sourceSalesOrderId: done.sourceSalesOrderId,
-          sourceFulfillmentKey: done.sourceFulfillmentKey,
-          customerId: done.customerId,
-        },
-      );
-    }
+        userId,
+        action: AuditAction.STATUS_CHANGE,
+        entityType: 'transport-order',
+        entityId: orderId,
+        before: { status: TransportOrderStatus.IN_EXECUTION },
+        after: { status: TransportOrderStatus.COMPLETED },
+      })
+      .catch(() => undefined);
     return true;
   }
 
@@ -475,7 +522,11 @@ export class TransportOrdersService {
     for (const split of splits) {
       const windows = resolveSplitWindows(order, split, strict);
       const shipmentCustomData = await this.customFields.validateValues(
-        'transportation', tenantId, CustomFieldEntity.SHIPMENT, split.customData, { partial: false },
+        'transportation',
+        tenantId,
+        CustomFieldEntity.SHIPMENT,
+        split.customData,
+        { partial: false },
       );
       await this.prisma.shipment.create({
         data: {
@@ -489,7 +540,9 @@ export class TransportOrdersService {
           volumeM3: split.volumeM3,
           palletCount: split.palletCount,
           ...windows,
-          ...(shipmentCustomData !== undefined ? { customData: shipmentCustomData as Prisma.InputJsonValue } : {}),
+          ...(shipmentCustomData !== undefined
+            ? { customData: shipmentCustomData as Prisma.InputJsonValue }
+            : {}),
         },
       });
     }
@@ -513,7 +566,11 @@ export class TransportOrdersService {
     const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
     const windows = resolveSplitWindows(order, split, tms['windowCoherence'] !== 'LENIENT');
     const shipmentCustomData = await this.customFields.validateValues(
-      'transportation', tenantId, CustomFieldEntity.SHIPMENT, split.customData, { partial: false },
+      'transportation',
+      tenantId,
+      CustomFieldEntity.SHIPMENT,
+      split.customData,
+      { partial: false },
     );
     const shipment = await this.prisma.shipment.create({
       data: {
@@ -527,7 +584,9 @@ export class TransportOrdersService {
         volumeM3: split.volumeM3,
         palletCount: split.palletCount,
         ...windows,
-        ...(shipmentCustomData !== undefined ? { customData: shipmentCustomData as Prisma.InputJsonValue } : {}),
+        ...(shipmentCustomData !== undefined
+          ? { customData: shipmentCustomData as Prisma.InputJsonValue }
+          : {}),
       },
     });
     await this.audit.log({

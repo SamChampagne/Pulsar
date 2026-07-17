@@ -354,7 +354,11 @@ describe('Phase 12 — Operating Workbench (e2e)', () => {
         .query({ status: 'OPEN' })
         .expect(200);
 
-      const items = (res.body as { items: Array<{ category: string; assigneeType: string; subjectId: string; id: string }> }).items;
+      const items = (
+        res.body as {
+          items: Array<{ category: string; assigneeType: string; subjectId: string; id: string }>;
+        }
+      ).items;
       const task = items.find((t) => t.category === 'DELAY' && t.subjectId === stopId);
       expect(task).toBeDefined();
       expect(task!.assigneeType).toBe('UNASSIGNED');

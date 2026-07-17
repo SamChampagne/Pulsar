@@ -40,10 +40,18 @@ const suffix = `L2C-${Date.now().toString(36)}-${Math.random().toString(36).slic
 @Injectable()
 class FakeAgentRuntimeService {
   constructor(private readonly _agents: AgentsService) {}
-  async openSession(): Promise<string> { return 'fake-session'; }
-  async *sendTurn(): AsyncGenerator<never> { /* no turns */ }
-  async closeSession(): Promise<void> { /* no-op */ }
-  async killAgentSessions(): Promise<void> { /* no-op */ }
+  async openSession(): Promise<string> {
+    return 'fake-session';
+  }
+  async *sendTurn(): AsyncGenerator<never> {
+    /* no turns */
+  }
+  async closeSession(): Promise<void> {
+    /* no-op */
+  }
+  async killAgentSessions(): Promise<void> {
+    /* no-op */
+  }
 }
 
 describe('Lead-to-cash (e2e) — CRM Deal → SalesOrder → CustomerInvoice → GL', () => {
@@ -135,14 +143,20 @@ describe('Lead-to-cash (e2e) — CRM Deal → SalesOrder → CustomerInvoice →
   afterAll(async () => {
     if (prisma) {
       const alloc = await prisma.paymentAllocation
-        .findFirst({ where: { tenantId, targetType: 'CUSTOMER_INVOICE', targetId: invoiceId || 'none' } })
+        .findFirst({
+          where: { tenantId, targetType: 'CUSTOMER_INVOICE', targetId: invoiceId || 'none' },
+        })
         .catch(() => null);
       await prisma.paymentAllocation
-        .deleteMany({ where: { tenantId, targetType: 'CUSTOMER_INVOICE', targetId: invoiceId || 'none' } })
+        .deleteMany({
+          where: { tenantId, targetType: 'CUSTOMER_INVOICE', targetId: invoiceId || 'none' },
+        })
         .catch(() => undefined);
       if (alloc) {
         await prisma.journalLine
-          .deleteMany({ where: { entry: { tenantId, sourceType: 'payment', sourceId: alloc.paymentId } } })
+          .deleteMany({
+            where: { entry: { tenantId, sourceType: 'payment', sourceId: alloc.paymentId } },
+          })
           .catch(() => undefined);
         await prisma.journalEntry
           .deleteMany({ where: { tenantId, sourceType: 'payment', sourceId: alloc.paymentId } })
@@ -152,12 +166,19 @@ describe('Lead-to-cash (e2e) — CRM Deal → SalesOrder → CustomerInvoice →
           .catch(() => undefined);
       }
       await prisma.journalLine
-        .deleteMany({ where: { entry: { tenantId, OR: [
-          { sourceType: 'customer-invoice', sourceId: invoiceId || 'none' },
-        ] } } })
+        .deleteMany({
+          where: {
+            entry: {
+              tenantId,
+              OR: [{ sourceType: 'customer-invoice', sourceId: invoiceId || 'none' }],
+            },
+          },
+        })
         .catch(() => undefined);
       await prisma.journalEntry
-        .deleteMany({ where: { tenantId, sourceType: 'customer-invoice', sourceId: invoiceId || 'none' } })
+        .deleteMany({
+          where: { tenantId, sourceType: 'customer-invoice', sourceId: invoiceId || 'none' },
+        })
         .catch(() => undefined);
       await prisma.customerInvoice
         .deleteMany({ where: { id: invoiceId || 'none' } })
@@ -168,12 +189,8 @@ describe('Lead-to-cash (e2e) — CRM Deal → SalesOrder → CustomerInvoice →
       await prisma.domainEvent
         .deleteMany({ where: { tenantId, id: { in: eventIds } } })
         .catch(() => undefined);
-      await prisma.salesOrder
-        .deleteMany({ where: { id: soId || 'none' } })
-        .catch(() => undefined);
-      await prisma.crmDeal
-        .deleteMany({ where: { id: dealId || 'none' } })
-        .catch(() => undefined);
+      await prisma.salesOrder.deleteMany({ where: { id: soId || 'none' } }).catch(() => undefined);
+      await prisma.crmDeal.deleteMany({ where: { id: dealId || 'none' } }).catch(() => undefined);
       await prisma.crmCompany
         .deleteMany({ where: { id: companyId || 'none' } })
         .catch(() => undefined);
@@ -228,10 +245,7 @@ describe('Lead-to-cash (e2e) — CRM Deal → SalesOrder → CustomerInvoice →
     // 3. Convert the WON deal → creates/links a billing Customer
     // -------------------------------------------------------------------
     const conv = (
-      await request(http)
-        .post(`/api/v1/crm/deals/${dealId}/convert`)
-        .set(auth())
-        .expect(200)
+      await request(http).post(`/api/v1/crm/deals/${dealId}/convert`).set(auth()).expect(200)
     ).body as { dealId: string; customerId: string };
     customerId = conv.customerId;
     expect(customerId).toBeTruthy();
@@ -344,7 +358,12 @@ describe('Lead-to-cash (e2e) — CRM Deal → SalesOrder → CustomerInvoice →
     // 9. Assert balanced GL journal entries were posted (approve + pay)
     // -------------------------------------------------------------------
     const approveEntry = await prisma.journalEntry.findFirst({
-      where: { tenantId, sourceType: 'customer-invoice', sourceId: invoiceId, sourceKind: 'approved' },
+      where: {
+        tenantId,
+        sourceType: 'customer-invoice',
+        sourceId: invoiceId,
+        sourceKind: 'approved',
+      },
       include: { lines: { include: { account: true } } },
     });
     expect(approveEntry).not.toBeNull();

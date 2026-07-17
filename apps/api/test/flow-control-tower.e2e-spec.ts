@@ -288,9 +288,7 @@ describe('Flow Control Tower (e2e)', () => {
       await prisma.operationalTask
         .deleteMany({ where: { tenantId, dedupKey: seedTaskDedupKey } })
         .catch(() => undefined);
-      await prisma.domainEvent
-        .deleteMany({ where: { id: seedEventId } })
-        .catch(() => undefined);
+      await prisma.domainEvent.deleteMany({ where: { id: seedEventId } }).catch(() => undefined);
 
       // TransportOrder chain
       await prisma.shipment.deleteMany({ where: { id: shipmentId } }).catch(() => undefined);
@@ -325,35 +323,29 @@ describe('Flow Control Tower (e2e)', () => {
         await prisma.shipmentLoadLeg
           .deleteMany({ where: { shipmentId: rxShipmentId } })
           .catch(() => undefined);
-        await prisma.shipment
-          .deleteMany({ where: { id: rxShipmentId } })
-          .catch(() => undefined);
-        await prisma.load
-          .deleteMany({ where: { id: rxLoadId } })
-          .catch(() => undefined);
+        await prisma.shipment.deleteMany({ where: { id: rxShipmentId } }).catch(() => undefined);
+        await prisma.load.deleteMany({ where: { id: rxLoadId } }).catch(() => undefined);
       }
       if (rxOrderId) {
-        await prisma.transportOrder
-          .deleteMany({ where: { id: rxOrderId } })
-          .catch(() => undefined);
+        await prisma.transportOrder.deleteMany({ where: { id: rxOrderId } }).catch(() => undefined);
       }
       if (rxRuleId) {
-        await prisma.automationRule
-          .deleteMany({ where: { id: rxRuleId } })
-          .catch(() => undefined);
+        await prisma.automationRule.deleteMany({ where: { id: rxRuleId } }).catch(() => undefined);
       }
       if (rxCarrierId) {
-        await prisma.carrier
-          .deleteMany({ where: { id: rxCarrierId } })
-          .catch(() => undefined);
+        await prisma.carrier.deleteMany({ where: { id: rxCarrierId } }).catch(() => undefined);
       }
 
       // Scenario 6C — clean up the isolated zero-reaction tenant
       if (zeroTenantId) {
-        await prisma.domainEvent.deleteMany({ where: { tenantId: zeroTenantId } }).catch(() => undefined);
+        await prisma.domainEvent
+          .deleteMany({ where: { tenantId: zeroTenantId } })
+          .catch(() => undefined);
         await prisma.user.deleteMany({ where: { tenantId: zeroTenantId } }).catch(() => undefined);
         await prisma.role.deleteMany({ where: { tenantId: zeroTenantId } }).catch(() => undefined);
-        await prisma.tenantModule.deleteMany({ where: { tenantId: zeroTenantId } }).catch(() => undefined);
+        await prisma.tenantModule
+          .deleteMany({ where: { tenantId: zeroTenantId } })
+          .catch(() => undefined);
         await prisma.tenant.deleteMany({ where: { id: zeroTenantId } }).catch(() => undefined);
       }
     }
@@ -410,9 +402,7 @@ describe('Flow Control Tower (e2e)', () => {
   describe('Scenario 2 — entity trace', () => {
     it('returns stages with Créée=DONE for a newly created TransportOrder', async () => {
       const res = await request(http)
-        .get(
-          `/api/v1/analytics/flow/trace?entityType=TRANSPORT_ORDER&entityId=${orderId}`,
-        )
+        .get(`/api/v1/analytics/flow/trace?entityType=TRANSPORT_ORDER&entityId=${orderId}`)
         .set(auth())
         .expect(200);
 
@@ -458,9 +448,7 @@ describe('Flow Control Tower (e2e)', () => {
 
     it('returns the same trace when the entityType is SHIPMENT (resolved to order)', async () => {
       const res = await request(http)
-        .get(
-          `/api/v1/analytics/flow/trace?entityType=SHIPMENT&entityId=${shipmentId}`,
-        )
+        .get(`/api/v1/analytics/flow/trace?entityType=SHIPMENT&entityId=${shipmentId}`)
         .set(auth())
         .expect(200);
 
@@ -574,7 +562,11 @@ describe('Flow Control Tower (e2e)', () => {
           eventType: 'load.completed',
           match: 'ALL',
           conditions: [],
-          action: { kind: 'RUN_ACTION', action: 'draft_customer_invoice', args: { loadId: '{loadId}' } },
+          action: {
+            kind: 'RUN_ACTION',
+            action: 'draft_customer_invoice',
+            args: { loadId: '{loadId}' },
+          },
         })
         .expect(201);
       rxRuleId = (ruleRes.body as { id: string }).id;
@@ -591,7 +583,12 @@ describe('Flow Control Tower (e2e)', () => {
       const orderRes = await request(http)
         .post('/api/v1/transportation/transport-orders')
         .set(auth())
-        .send({ customerId, originLocationId: originId, destinationLocationId: destId, totalWeightKg: 100 })
+        .send({
+          customerId,
+          originLocationId: originId,
+          destinationLocationId: destId,
+          totalWeightKg: 100,
+        })
         .expect(201);
       rxOrderId = (orderRes.body as { id: string }).id;
 
@@ -649,7 +646,11 @@ describe('Flow Control Tower (e2e)', () => {
 
       // Collect the load.completed DomainEvent id for cleanup
       const completedEvent = await prisma.domainEvent.findFirst({
-        where: { tenantId, type: 'load.completed', payload: { path: ['loadId'], equals: rxLoadId } },
+        where: {
+          tenantId,
+          type: 'load.completed',
+          payload: { path: ['loadId'], equals: rxLoadId },
+        },
         select: { id: true },
       });
       if (completedEvent) rxEventIds.push(completedEvent.id);
@@ -680,8 +681,10 @@ describe('Flow Control Tower (e2e)', () => {
       };
 
       // Find the chain for our load.completed event
-      const chain = body.chains.find((c) =>
-        c.event?.type === 'load.completed' && c.reactions.some((r) => r.action === 'draft_customer_invoice'),
+      const chain = body.chains.find(
+        (c) =>
+          c.event?.type === 'load.completed' &&
+          c.reactions.some((r) => r.action === 'draft_customer_invoice'),
       );
       expect(chain).toBeTruthy();
 
@@ -723,13 +726,22 @@ describe('Flow Control Tower (e2e)', () => {
       zeroTenantId = zeroTenant.id;
 
       // Enable ANALYTICS module for the zero tenant
-      const analyticsMod = await prisma.moduleDefinition.findUniqueOrThrow({ where: { key: 'analytics' } });
+      const analyticsMod = await prisma.moduleDefinition.findUniqueOrThrow({
+        where: { key: 'analytics' },
+      });
       await prisma.tenantModule.create({
-        data: { tenantId: zeroTenantId, moduleId: analyticsMod.id, enabled: true, enabledAt: new Date() },
+        data: {
+          tenantId: zeroTenantId,
+          moduleId: analyticsMod.id,
+          enabled: true,
+          enabledAt: new Date(),
+        },
       });
 
       // Create a role with analytics.read permission
-      const analyticsReadPerm = await prisma.permission.findUniqueOrThrow({ where: { key: 'analytics.read' } });
+      const analyticsReadPerm = await prisma.permission.findUniqueOrThrow({
+        where: { key: 'analytics.read' },
+      });
       const zeroRole = await prisma.role.create({
         data: {
           tenantId: zeroTenantId,
@@ -758,7 +770,11 @@ describe('Flow Control Tower (e2e)', () => {
       // Log in as the zero tenant admin
       const zeroLogin = await request(http)
         .post('/api/v1/auth/login')
-        .send({ email: `fct-zero-admin-${suffix}@example.test`, password: 'Zero$123', tenant: zeroSlug })
+        .send({
+          email: `fct-zero-admin-${suffix}@example.test`,
+          password: 'Zero$123',
+          tenant: zeroSlug,
+        })
         .expect(200);
       zeroToken = (zeroLogin.body as { accessToken: string }).accessToken;
 

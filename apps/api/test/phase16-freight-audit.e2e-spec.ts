@@ -344,7 +344,12 @@ describe('Phase 16 — Freight audit (e2e)', () => {
       const body = get.body as {
         status: string;
         varianceTotal: string | number;
-        lines: Array<{ lineRef: string; matchedLoadId: string | null; expectedAmount: string | number | null; variance: string | number | null }>;
+        lines: Array<{
+          lineRef: string;
+          matchedLoadId: string | null;
+          expectedAmount: string | number | null;
+          variance: string | number | null;
+        }>;
       };
       expect(body.status).toBe('FLAGGED');
       expect(Number(body.varianceTotal)).toBe(100);
@@ -404,10 +409,7 @@ describe('Phase 16 — Freight audit (e2e)', () => {
     });
 
     it('S2.4: GET /freight-audit/savings → tenantTotal >= 100', async () => {
-      const res = await request(http)
-        .get('/api/v1/freight-audit/savings')
-        .set(auth())
-        .expect(200);
+      const res = await request(http).get('/api/v1/freight-audit/savings').set(auth()).expect(200);
       const body = res.body as { tenantTotal: number; byAgent: unknown[] };
       expect(Number(body.tenantTotal)).toBeGreaterThanOrEqual(100);
     });
@@ -470,7 +472,9 @@ describe('Phase 16 — Freight audit (e2e)', () => {
         .get(`/api/v1/freight-audit/incoming-invoices/${invoiceId}`)
         .set(auth())
         .expect(200);
-      const lines = (get.body as { lines: Array<{ lineRef: string; matchedLoadId: string | null }> }).lines;
+      const lines = (
+        get.body as { lines: Array<{ lineRef: string; matchedLoadId: string | null }> }
+      ).lines;
       const nope = lines.find((l) => l.lineRef === `NOPE-${suffix}`);
       expect(nope).toBeDefined();
       expect(nope!.matchedLoadId).toBeNull();
@@ -627,7 +631,9 @@ describe('Phase 16 — Freight audit (e2e)', () => {
         .get(`/api/v1/freight-audit/incoming-invoices/${invoiceId}`)
         .set(auth())
         .expect(200);
-      const lines = (get.body as { lines: Array<{ lineRef: string; matchedLoadId: string | null }> }).lines;
+      const lines = (
+        get.body as { lines: Array<{ lineRef: string; matchedLoadId: string | null }> }
+      ).lines;
       const other = lines.find((l) => l.lineRef === otherLoadNumber);
       expect(other).toBeDefined();
       // Even though otherLoadNumber IS a real COMPLETED load with a cost, it

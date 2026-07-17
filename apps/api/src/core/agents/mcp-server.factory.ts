@@ -47,12 +47,24 @@ export function buildAgentMcpServer(
         if (decision.effect === 'PROPOSE') {
           return {
             content: [
-              { type: 'text' as const, text: JSON.stringify({ queued: true, proposalId: decision.proposalId, status: 'PENDING' }) },
+              {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  queued: true,
+                  proposalId: decision.proposalId,
+                  status: 'PENDING',
+                }),
+              },
             ],
           };
         }
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ autoApproved: true, result: decision.result }) }],
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ autoApproved: true, result: decision.result }),
+            },
+          ],
         };
       },
     );

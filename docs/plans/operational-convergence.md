@@ -406,14 +406,14 @@ Revue finale : 6 commits ciblés (aucune nouvelle feature majeure), tous vérifi
 - **P0 — Complétion TransportOrder tenant-scopée & auditée** (`fix(fulfillment)`). Nouvelle
   `TransportOrdersService.completeFromDelivery` : garde `canTransitionTransportOrder`, claim
   conditionnel `updateMany {id, tenantId, IN_EXECUTION}`, `AuditLog` STATUS_CHANGE (acteur réel),
-  event `transport-order.completed` émis **exactement une fois** (count===1, uniquement si issu
-  d'une SO) ; coûts jamais recalculés (règle 16). `LoadsService.complete` : `shipment.count`
-  tenant-scopé + appel centralisé. +4 e2e (transition/audit/event-unique, retry idempotent,
-  CANCELLED non transitionné, autre tenant sans effet).
+  event `transport-order.completed` **écrit dans la même transaction que la transition** (outbox
+  durable : l'event existe ssi la transition a commité — plus de « au plus une fois » ; la réaction
+  consommatrice est idempotente), émis uniquement si issu d'une SO ; coûts jamais recalculés
+  (règle 16). `LoadsService.complete` : `shipment.count` tenant-scopé + appel centralisé. +4 e2e.
 - **P1 — Contrat logistique aligné** (`fix(fulfillment)`). Helper pur
   `validateFulfillmentLogistics` (source unique, browser-safe) : origine+destination+mode requis
   **et ≥1 mesure physique > 0** (zéro ne compte pas, jamais déduit). Branché : service (source de
-  vérité, chemins HTTP+agent), DTO (`mode` requis), Zod (`mode` requis, mesures `.positive()`),
+  vérité, chemins HTTP+agent), DTO (`mode` requis), Zod (`mode` requis, mesures `.nonnegative()`),
   contexte READ (`requiredLogisticsFields` = constante partagée + `optionalLogisticsFields`),
   descriptions MCP, wizard UI (validation client + fenêtres annoncées facultatives). +unit +7 e2e.
 - **P1 — Isolation DomainEvents + catch-up borné** (`test(operating)`). 10 suites e2e : les blocs
@@ -469,3 +469,29 @@ l'origine web** (no-mesure → 400, poids → 201, `sourceSalesOrderId` posé).
 centaines de fichiers **hors périmètre de cette mission**. Les fichiers ajoutés/édités ici suivent
 le style de-facto du code environnant (cohérents). La normalisation Prettier globale = dette
 séparée à traiter dans un commit dédié.
+
+### Corrections post-revue (2026-07-17, avant PR)
+
+Revue humaine (8,8/10) → micro-passe de finition, un commit `fix(review)` :
+1. **Tenant-scoping** : `ProposedActionsService.approve` lit l'agent par `{id, tenantId}` et le
+   claim de proposition inclut `tenantId` ; `LoadsService.complete` scope le `load.updateMany` et
+   le `shipment.updateMany` par `tenantId` (règle 1, même si l'id est unique).
+2. **« Exactly once » corrigé** : `completeFromDelivery` écrit désormais l'event
+   `transport-order.completed` **dans la même transaction** que la transition (outbox durable) —
+   plus de fenêtre de perte au crash ; libellé/doc corrigés.
+3. **Playwright refus** : assertion ciblée sur le bloc d'erreur (`data-testid="wizard-error"`, plus
+   le texte d'intro), + modal reste ouvert + 0 TransportOrder créé ; message d'erreur **traduit en
+   français** (helper renvoie un `code`, l'UI mappe FR) ; capture `03` stabilisée (`networkidle`) ;
+   décision de nettoyage des données documentée (DB jetable, entités workflow sans endpoint delete).
+4. **Cohérence HTTP↔agent** : Zod des mesures passé de `.positive()` à `.nonnegative()` (la règle
+   « ≥1 > 0 » reste au helper serveur) — `poids=800, palettes=0` accepté des deux côtés.
+5. **Prettier** : les **27 fichiers code** de la branche formatés (`prettier --check` vert dessus) ;
+   la dérive Prettier globale préexistante reste hors périmètre.
+
+### Verdict (aligné revue)
+
+- **Draft PR** : OUI. **PR mergeable** : OUI après cette micro-passe (faite).
+- **Staging mono-instance** : OUI.
+- **Production (même mono-instance)** : **PAS ENCORE** tant que stockage durable (S3), SMTP,
+  secrets réels, **observabilité** et **procédures de sauvegarde/restauration** ne sont pas
+  qualifiés (backup/restore documenté au runbook §8 mais non exercé). Multi-instance : NON (Redis).

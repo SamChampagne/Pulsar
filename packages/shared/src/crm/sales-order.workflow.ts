@@ -77,15 +77,23 @@ export function hasPositivePhysicalMeasure(input: FulfillmentLogisticsInput): bo
   );
 }
 
+/** Machine-readable failure code so callers can localize the message (UI in FR). */
+export type FulfillmentLogisticsError = 'origin' | 'destination' | 'mode' | 'measure';
+
 export function validateFulfillmentLogistics(
   input: FulfillmentLogisticsInput,
-): { ok: true } | { ok: false; error: string } {
-  if (!input.originLocationId) return { ok: false, error: 'An origin location is required.' };
-  if (!input.destinationLocationId) return { ok: false, error: 'A destination location is required.' };
-  if (!input.mode) return { ok: false, error: 'A transport mode is required.' };
+): { ok: true } | { ok: false; code: FulfillmentLogisticsError; error: string } {
+  if (!input.originLocationId) {
+    return { ok: false, code: 'origin', error: 'An origin location is required.' };
+  }
+  if (!input.destinationLocationId) {
+    return { ok: false, code: 'destination', error: 'A destination location is required.' };
+  }
+  if (!input.mode) return { ok: false, code: 'mode', error: 'A transport mode is required.' };
   if (!hasPositivePhysicalMeasure(input)) {
     return {
       ok: false,
+      code: 'measure',
       error:
         'At least one physical measure (weight, volume or pallet count) greater than 0 is required — never inferred from amounts or quantities.',
     };
@@ -93,15 +101,14 @@ export function validateFulfillmentLogistics(
   return { ok: true };
 }
 
-export function deriveSalesOrderFulfillment(
-  transportOrderStatuses: readonly string[],
-): { fulfill: boolean; reason: FulfillmentReason } {
+export function deriveSalesOrderFulfillment(transportOrderStatuses: readonly string[]): {
+  fulfill: boolean;
+  reason: FulfillmentReason;
+} {
   if (transportOrderStatuses.length === 0) {
     return { fulfill: false, reason: 'no-transport-orders' };
   }
-  const active = transportOrderStatuses.filter(
-    (s) => !TO_DELIVERED.has(s) && s !== TO_CANCELLED,
-  );
+  const active = transportOrderStatuses.filter((s) => !TO_DELIVERED.has(s) && s !== TO_CANCELLED);
   if (active.length > 0) return { fulfill: false, reason: 'active-remaining' };
   const delivered = transportOrderStatuses.filter((s) => TO_DELIVERED.has(s));
   if (delivered.length === 0) return { fulfill: false, reason: 'all-cancelled' };

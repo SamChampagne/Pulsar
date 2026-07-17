@@ -75,7 +75,10 @@ export interface ToolServices {
   };
   ledger: {
     trialBalance(tenantId: string, asOf?: Date): Promise<unknown>;
-    listJournal(tenantId: string, query: { accountId?: string; page?: number; pageSize?: number }): Promise<unknown>;
+    listJournal(
+      tenantId: string,
+      query: { accountId?: string; page?: number; pageSize?: number },
+    ): Promise<unknown>;
   };
   // ── Fleet ──────────────────────────────────────────────────────────────────
   vehicles: {
@@ -99,8 +102,18 @@ export interface ToolServices {
   yardVisits: {
     list(tenantId: string, q: object): Promise<unknown>;
     get(tenantId: string, id: string): Promise<unknown>;
-    assign(tenantId: string, userId: string, visitId: string, dto: { spotId: string; note?: string }): Promise<unknown>;
-    move(tenantId: string, userId: string, visitId: string, dto: { spotId: string; note?: string }): Promise<unknown>;
+    assign(
+      tenantId: string,
+      userId: string,
+      visitId: string,
+      dto: { spotId: string; note?: string },
+    ): Promise<unknown>;
+    move(
+      tenantId: string,
+      userId: string,
+      visitId: string,
+      dto: { spotId: string; note?: string },
+    ): Promise<unknown>;
     checkOut(tenantId: string, userId: string, visitId: string): Promise<unknown>;
   };
   yardOverview: {
@@ -115,25 +128,45 @@ export interface ToolServices {
   wmsOverview: { overview(tenantId: string): Promise<unknown> };
   wmsPicking: { get(tenantId: string, id: string): Promise<unknown> };
   wmsCycleCounts: {
-    create(tenantId: string, userId: string, dto: { binId: string; note?: string }): Promise<unknown>;
+    create(
+      tenantId: string,
+      userId: string,
+      dto: { binId: string; note?: string },
+    ): Promise<unknown>;
   };
   // ── Analytics / Flow ───────────────────────────────────────────────────────
   flow: {
-    timeline(tenantId: string, opts: { days?: number; modules?: string[]; crossOnly?: boolean; limit?: number }): Promise<unknown>;
-    trace(tenantId: string, entityType: 'TRANSPORT_ORDER' | 'SHIPMENT' | 'LOAD', entityId: string): Promise<unknown>;
+    timeline(
+      tenantId: string,
+      opts: { days?: number; modules?: string[]; crossOnly?: boolean; limit?: number },
+    ): Promise<unknown>;
+    trace(
+      tenantId: string,
+      entityType: 'TRANSPORT_ORDER' | 'SHIPMENT' | 'LOAD',
+      entityId: string,
+    ): Promise<unknown>;
   };
   // ── CRM ────────────────────────────────────────────────────────────────────
   crm: {
     listDeals(tenantId: string, query: object): Promise<unknown>;
     getCompany(tenantId: string, id: string): Promise<unknown>;
     listActivities(tenantId: string, query: object): Promise<unknown>;
-    logActivity(tenantId: string, input: object, author: { agentId?: string; userId?: string }): Promise<unknown>;
+    logActivity(
+      tenantId: string,
+      input: object,
+      author: { agentId?: string; userId?: string },
+    ): Promise<unknown>;
     advanceDeal(tenantId: string, id: string, userId: string, stage: string): Promise<unknown>;
     createFollowup(tenantId: string, input: object, author: { agentId?: string }): Promise<unknown>;
     getDeal(tenantId: string, id: string): Promise<unknown>;
     listThreads(tenantId: string, query: object): Promise<unknown>;
     getThread(tenantId: string, id: string): Promise<unknown>;
-    replyThread(tenantId: string, id: string, dto: { html: string; subject?: string }, author: { agentId?: string; userId?: string }): Promise<unknown>;
+    replyThread(
+      tenantId: string,
+      id: string,
+      dto: { html: string; subject?: string },
+      author: { agentId?: string; userId?: string },
+    ): Promise<unknown>;
     linkThread(tenantId: string, id: string, dto: object, userId: string): Promise<unknown>;
     listProducts(tenantId: string, query: object): Promise<unknown>;
     listSalesOrders(tenantId: string, query: object): Promise<unknown>;

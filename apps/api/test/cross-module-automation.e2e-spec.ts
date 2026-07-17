@@ -51,10 +51,18 @@ const ADMIN = { email: 'admin@pulsar.dev', password: 'admin123', tenant: 'acme' 
 @Injectable()
 class FakeAgentRuntimeService {
   constructor(private readonly _agents: AgentsService) {}
-  async openSession(): Promise<string> { return 'fake-session'; }
-  async *sendTurn(): AsyncGenerator<never> { /* no turns */ }
-  async closeSession(): Promise<void> { /* no-op */ }
-  async killAgentSessions(): Promise<void> { /* no-op */ }
+  async openSession(): Promise<string> {
+    return 'fake-session';
+  }
+  async *sendTurn(): AsyncGenerator<never> {
+    /* no turns */
+  }
+  async closeSession(): Promise<void> {
+    /* no-op */
+  }
+  async killAgentSessions(): Promise<void> {
+    /* no-op */
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -71,8 +79,8 @@ describe('Cross-module automation (e2e)', () => {
   // Master data shared across scenarios
   const suffix = `${Date.now()}`;
   let customerId = '';
-  let warehouseOriginId = '';   // WAREHOUSE — triggers WMS braid
-  let plantOriginId = '';       // PLANT — no WMS braid
+  let warehouseOriginId = ''; // WAREHOUSE — triggers WMS braid
+  let plantOriginId = ''; // PLANT — no WMS braid
   let destId = '';
   let carrierId = '';
 
@@ -140,7 +148,11 @@ describe('Cross-module automation (e2e)', () => {
           enabled: true,
           match: 'ALL',
           conditions: [],
-          action: { kind: 'RUN_ACTION', action: 'create_picks_for_order', args: { orderId: '{orderId}' } },
+          action: {
+            kind: 'RUN_ACTION',
+            action: 'create_picks_for_order',
+            args: { orderId: '{orderId}' },
+          },
         },
       });
       cleanupRuleIds.push(r.id);
@@ -158,7 +170,11 @@ describe('Cross-module automation (e2e)', () => {
           enabled: true,
           match: 'ALL',
           conditions: [],
-          action: { kind: 'RUN_ACTION', action: 'draft_customer_invoice', args: { loadId: '{loadId}' } },
+          action: {
+            kind: 'RUN_ACTION',
+            action: 'draft_customer_invoice',
+            args: { loadId: '{loadId}' },
+          },
         },
       });
       cleanupRuleIds.push(r.id);
@@ -228,58 +244,92 @@ describe('Cross-module automation (e2e)', () => {
       // Collect the domain event IDs this suite owns (transport-order.planned by orderId
       // and load.completed by loadId) so cleanup is scoped to this suite only.
       if (cleanupOrderIds.length > 0 || cleanupLoadIds.length > 0) {
-        const ownedEvents = await prisma.domainEvent.findMany({
-          where: {
-            tenantId,
-            OR: [
-              ...(cleanupOrderIds.length > 0
-                ? [{ type: 'transport-order.planned' as const, payload: { path: ['orderId'], string_contains: suffix } }]
-                : []),
-              ...(cleanupLoadIds.length > 0
-                ? [{ type: 'load.completed' as const, payload: { path: ['loadId'], string_contains: suffix } }]
-                : []),
-            ],
-          },
-          select: { id: true },
-        }).catch(() => [] as { id: string }[]);
+        const ownedEvents = await prisma.domainEvent
+          .findMany({
+            where: {
+              tenantId,
+              OR: [
+                ...(cleanupOrderIds.length > 0
+                  ? [
+                      {
+                        type: 'transport-order.planned' as const,
+                        payload: { path: ['orderId'], string_contains: suffix },
+                      },
+                    ]
+                  : []),
+                ...(cleanupLoadIds.length > 0
+                  ? [
+                      {
+                        type: 'load.completed' as const,
+                        payload: { path: ['loadId'], string_contains: suffix },
+                      },
+                    ]
+                  : []),
+              ],
+            },
+            select: { id: true },
+          })
+          .catch(() => [] as { id: string }[]);
         cleanupEventIds.push(...ownedEvents.map((e) => e.id));
       }
 
       // Clean up in dependency order
-      await prisma.customerInvoice.deleteMany({
-        where: { id: { in: cleanupInvoiceIds } },
-      }).catch(() => undefined);
-      await prisma.pickLine.deleteMany({
-        where: { pickOrderId: { in: cleanupPickOrderIds } },
-      }).catch(() => undefined);
-      await prisma.pickOrder.deleteMany({
-        where: { id: { in: cleanupPickOrderIds } },
-      }).catch(() => undefined);
-      await prisma.reactionExecution.deleteMany({
-        where: { tenantId, eventId: { in: cleanupEventIds } },
-      }).catch(() => undefined);
-      await prisma.domainEvent.deleteMany({
-        where: { tenantId, id: { in: cleanupEventIds } },
-      }).catch(() => undefined);
-      await prisma.shipmentLoadLeg.deleteMany({
-        where: { shipmentId: { in: cleanupShipmentIds } },
-      }).catch(() => undefined);
-      await prisma.shipment.deleteMany({
-        where: { id: { in: cleanupShipmentIds } },
-      }).catch(() => undefined);
-      await prisma.load.deleteMany({
-        where: { id: { in: cleanupLoadIds } },
-      }).catch(() => undefined);
-      await prisma.transportOrder.deleteMany({
-        where: { id: { in: cleanupOrderIds } },
-      }).catch(() => undefined);
-      await prisma.automationRule.deleteMany({
-        where: { id: { in: cleanupRuleIds } },
-      }).catch(() => undefined);
+      await prisma.customerInvoice
+        .deleteMany({
+          where: { id: { in: cleanupInvoiceIds } },
+        })
+        .catch(() => undefined);
+      await prisma.pickLine
+        .deleteMany({
+          where: { pickOrderId: { in: cleanupPickOrderIds } },
+        })
+        .catch(() => undefined);
+      await prisma.pickOrder
+        .deleteMany({
+          where: { id: { in: cleanupPickOrderIds } },
+        })
+        .catch(() => undefined);
+      await prisma.reactionExecution
+        .deleteMany({
+          where: { tenantId, eventId: { in: cleanupEventIds } },
+        })
+        .catch(() => undefined);
+      await prisma.domainEvent
+        .deleteMany({
+          where: { tenantId, id: { in: cleanupEventIds } },
+        })
+        .catch(() => undefined);
+      await prisma.shipmentLoadLeg
+        .deleteMany({
+          where: { shipmentId: { in: cleanupShipmentIds } },
+        })
+        .catch(() => undefined);
+      await prisma.shipment
+        .deleteMany({
+          where: { id: { in: cleanupShipmentIds } },
+        })
+        .catch(() => undefined);
+      await prisma.load
+        .deleteMany({
+          where: { id: { in: cleanupLoadIds } },
+        })
+        .catch(() => undefined);
+      await prisma.transportOrder
+        .deleteMany({
+          where: { id: { in: cleanupOrderIds } },
+        })
+        .catch(() => undefined);
+      await prisma.automationRule
+        .deleteMany({
+          where: { id: { in: cleanupRuleIds } },
+        })
+        .catch(() => undefined);
       await prisma.carrier.deleteMany({ where: { id: carrierId } }).catch(() => undefined);
-      await prisma.location.deleteMany({
-        where: { id: { in: [warehouseOriginId, plantOriginId, destId].filter(Boolean) } },
-      }).catch(() => undefined);
+      await prisma.location
+        .deleteMany({
+          where: { id: { in: [warehouseOriginId, plantOriginId, destId].filter(Boolean) } },
+        })
+        .catch(() => undefined);
       await prisma.customer.deleteMany({ where: { id: customerId } }).catch(() => undefined);
     }
     await app.close();
@@ -532,15 +582,17 @@ describe('Cross-module automation (e2e)', () => {
       // Manually re-insert a duplicate pending event to simulate the idempotency path.
       // Actually, we can't re-emit the same event; instead we verify the unique constraint
       // holds by trying to insert a duplicate ledger row directly — it must be rejected.
-      const insertResult = await prisma.reactionExecution.create({
-        data: {
-          tenantId,
-          eventId: event!.id,
-          ruleId: pickRule!.id,
-          action: 'create_picks_for_order',
-          status: 'EXECUTED',
-        },
-      }).catch((err: { code?: string }) => err);
+      const insertResult = await prisma.reactionExecution
+        .create({
+          data: {
+            tenantId,
+            eventId: event!.id,
+            ruleId: pickRule!.id,
+            action: 'create_picks_for_order',
+            status: 'EXECUTED',
+          },
+        })
+        .catch((err: { code?: string }) => err);
 
       // The insert should fail with unique constraint violation (P2002)
       expect((insertResult as { code?: string }).code).toBe('P2002');
@@ -598,7 +650,11 @@ describe('Cross-module automation (e2e)', () => {
             type: 'transport-order.planned',
             subjectType: 'transport-order',
             subjectId: `fake-${suffix}`,
-            payload: { orderId: `fake-order-${suffix}`, orderNumber: 'TO-ANTILOOP', shipmentCount: 0 },
+            payload: {
+              orderId: `fake-order-${suffix}`,
+              orderNumber: 'TO-ANTILOOP',
+              shipmentCount: 0,
+            },
             status: 'PENDING',
             reactionRuleId: dummyRuleId,
           },
@@ -666,7 +722,11 @@ describe('Cross-module automation (e2e)', () => {
           enabled: true,
           match: 'ALL',
           conditions: [],
-          action: { kind: 'RUN_ACTION', action: 'create_picks_for_order', args: { orderId: '{orderId}' } },
+          action: {
+            kind: 'RUN_ACTION',
+            action: 'create_picks_for_order',
+            args: { orderId: '{orderId}' },
+          },
         },
       });
 
@@ -706,16 +766,28 @@ describe('Cross-module automation (e2e)', () => {
 
     afterAll(async () => {
       if (tenant2Id) {
-        await prisma.reactionExecution.deleteMany({ where: { tenantId: tenant2Id } }).catch(() => undefined);
-        await prisma.domainEvent.deleteMany({ where: { tenantId: tenant2Id } }).catch(() => undefined);
-        await prisma.shipmentLoadLeg.deleteMany({ where: { shipment: { tenantId: tenant2Id } } }).catch(() => undefined);
+        await prisma.reactionExecution
+          .deleteMany({ where: { tenantId: tenant2Id } })
+          .catch(() => undefined);
+        await prisma.domainEvent
+          .deleteMany({ where: { tenantId: tenant2Id } })
+          .catch(() => undefined);
+        await prisma.shipmentLoadLeg
+          .deleteMany({ where: { shipment: { tenantId: tenant2Id } } })
+          .catch(() => undefined);
         await prisma.shipment.deleteMany({ where: { tenantId: tenant2Id } }).catch(() => undefined);
-        await prisma.transportOrder.deleteMany({ where: { tenantId: tenant2Id } }).catch(() => undefined);
-        await prisma.automationRule.deleteMany({ where: { tenantId: tenant2Id } }).catch(() => undefined);
+        await prisma.transportOrder
+          .deleteMany({ where: { tenantId: tenant2Id } })
+          .catch(() => undefined);
+        await prisma.automationRule
+          .deleteMany({ where: { tenantId: tenant2Id } })
+          .catch(() => undefined);
         await prisma.location.deleteMany({ where: { tenantId: tenant2Id } }).catch(() => undefined);
         await prisma.customer.deleteMany({ where: { tenantId: tenant2Id } }).catch(() => undefined);
         await prisma.user.deleteMany({ where: { tenantId: tenant2Id } }).catch(() => undefined);
-        await prisma.tenantModule.deleteMany({ where: { tenantId: tenant2Id } }).catch(() => undefined);
+        await prisma.tenantModule
+          .deleteMany({ where: { tenantId: tenant2Id } })
+          .catch(() => undefined);
         await prisma.tenant.deleteMany({ where: { id: tenant2Id } }).catch(() => undefined);
       }
     });
@@ -796,7 +868,11 @@ describe('Cross-module automation (e2e)', () => {
           enabled: false,
           match: 'ALL',
           conditions: [],
-          action: { kind: 'RUN_ACTION', action: 'create_picks_for_order', args: { orderId: '{orderId}' } },
+          action: {
+            kind: 'RUN_ACTION',
+            action: 'create_picks_for_order',
+            args: { orderId: '{orderId}' },
+          },
         },
       });
       cleanupRuleIds.push(disabledRule.id);
@@ -843,9 +919,15 @@ describe('Cross-module automation (e2e)', () => {
 
     afterAll(async () => {
       if (isolTenantId) {
-        await prisma.domainEvent.deleteMany({ where: { tenantId: isolTenantId } }).catch(() => undefined);
-        await prisma.automationRule.deleteMany({ where: { tenantId: isolTenantId } }).catch(() => undefined);
-        await prisma.tenantModule.deleteMany({ where: { tenantId: isolTenantId } }).catch(() => undefined);
+        await prisma.domainEvent
+          .deleteMany({ where: { tenantId: isolTenantId } })
+          .catch(() => undefined);
+        await prisma.automationRule
+          .deleteMany({ where: { tenantId: isolTenantId } })
+          .catch(() => undefined);
+        await prisma.tenantModule
+          .deleteMany({ where: { tenantId: isolTenantId } })
+          .catch(() => undefined);
         await prisma.tenant.deleteMany({ where: { id: isolTenantId } }).catch(() => undefined);
       }
     });

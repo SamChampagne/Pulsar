@@ -5,16 +5,31 @@ import { login, DEMO_USER } from './helpers';
  * Deep journey: the CRM → TMS "Prepare shipment" workflow, driven through the
  * real UI (desktop). Needs the API + a seeded DB reachable through the web
  * server's /api proxy (see playwright.config.ts). Data is prepared via the API
- * with unique codes (isolated test DB only); screenshots land under
- * apps/web/playwright-artifacts/fulfillment/ as review evidence.
+ * with unique codes; screenshots land under apps/web/playwright-artifacts/
+ * fulfillment/ as review evidence.
+ *
+ * Data hygiene (explicit decision): this suite runs ONLY against a disposable/
+ * isolated database (local pulsar_rc for the reproduced CI path, or a fresh
+ * Postgres in CI) and uses per-run unique codes, so runs never collide. There is
+ * no programmatic teardown: the entities it creates (sales order + the derived
+ * TransportOrders) are workflow records with no delete endpoint by design, and
+ * reusing existing seeded locations means it adds no master data. Accumulation is
+ * bounded to the throwaway DB — documented, not hidden.
  */
 
 const SUFFIX = `PW-${Date.now().toString(36)}`;
 const ART = 'playwright-artifacts/fulfillment';
 
-async function api(request: APIRequestContext, token: string, method: 'post', url: string, data: unknown) {
+async function api(
+  request: APIRequestContext,
+  token: string,
+  method: 'post',
+  url: string,
+  data: unknown,
+) {
   const res = await request[method](url, { headers: { Authorization: `Bearer ${token}` }, data });
-  if (!res.ok()) throw new Error(`${method.toUpperCase()} ${url} → ${res.status()} ${await res.text()}`);
+  if (!res.ok())
+    throw new Error(`${method.toUpperCase()} ${url} → ${res.status()} ${await res.text()}`);
   return res.json();
 }
 
@@ -27,7 +42,9 @@ async function seedConfirmedSalesOrder(request: APIRequestContext) {
   });
   const token: string = (await login.json()).accessToken;
 
-  const company = await api(request, token, 'post', '/api/v1/crm/companies', { name: `PW Co ${uid}` });
+  const company = await api(request, token, 'post', '/api/v1/crm/companies', {
+    name: `PW Co ${uid}`,
+  });
   const customer = await api(request, token, 'post', '/api/v1/transportation/customers', {
     code: `PWC-${uid}`,
     name: `PW Customer ${uid}`,
@@ -43,7 +60,8 @@ async function seedConfirmedSalesOrder(request: APIRequestContext) {
   if (locs.length < 2) throw new Error('need >=2 seeded locations for the fulfillment journey');
 
   const so = await api(request, token, 'post', '/api/v1/crm/sales-orders', {
-    companyId: company.id, customerId: customer.id,
+    companyId: company.id,
+    customerId: customer.id,
   });
   await api(request, token, 'post', `/api/v1/crm/sales-orders/${so.id}/confirm`, {});
 
@@ -63,7 +81,10 @@ test.describe('CRM → TMS fulfillment journey', () => {
     await page.goto(`/crm/sales-orders/${soId}`);
 
     // 3. The Expédition section is visible for a CONFIRMED order with a customer.
-    const shipmentPanel = page.locator('section, div').filter({ has: page.getByRole('heading', { name: 'Expédition' }) }).first();
+    const shipmentPanel = page
+      .locator('section, div')
+      .filter({ has: page.getByRole('heading', { name: 'Expédition' }) })
+      .first();
     await expect(page.getByRole('heading', { name: 'Expédition' })).toBeVisible();
     const prepareBtn = page.getByRole('button', { name: "Préparer l'expédition" });
     await expect(prepareBtn).toBeVisible();
@@ -78,11 +99,17 @@ test.describe('CRM → TMS fulfillment journey', () => {
     await expect(page.getByLabel('Mode')).toBeVisible();
     await expect(page.getByLabel('Poids (kg)')).toBeVisible();
 
-    // 6. Submitting without a physical measure is refused (client mirrors server).
+    // 6. Submitting without a physical measure is refused: the error block appears
+    // (targeted precisely, NOT the always-visible intro text), the modal stays
+    // open, and NO transport order is created.
     await page.getByLabel('Origine *').selectOption(originId);
     await page.getByLabel('Destination *').selectOption(destId);
     await page.getByRole('button', { name: "Créer l'ordre de transport" }).click();
-    await expect(page.getByText(/mesure physique/i)).toBeVisible();
+    const errorBlock = page.getByTestId('wizard-error');
+    await expect(errorBlock).toBeVisible();
+    await expect(errorBlock).toContainText(/mesure physique/i);
+    await expect(modal).toBeVisible(); // modal did not close
+    await expect(page.locator('a[href^="/transport-orders/"]')).toHaveCount(0); // nothing created
 
     // 7. Fill a measure and create.
     await page.getByLabel('Poids (kg)').fill('800');
@@ -101,6 +128,8 @@ test.describe('CRM → TMS fulfillment journey', () => {
     await expect(page.getByText('Commande de vente (source)')).toBeVisible();
     const backLink = page.getByRole('link', { name: soNumber });
     await expect(backLink).toBeVisible();
+    // Let the page settle (data fetches + any fade-in) so the capture isn't washed out.
+    await page.waitForLoadState('networkidle');
     await page.screenshot({ path: `${ART}/03-transport-order-crm-link.png`, fullPage: true });
 
     // 13-15. Back to the sales order; create a SECOND shipment with a different
@@ -129,7 +158,10 @@ test.describe('CRM → TMS fulfillment journey', () => {
     void shipmentPanel;
   });
 
-  test('wizard is usable on a tablet viewport (no horizontal overflow)', async ({ page, request }) => {
+  test('wizard is usable on a tablet viewport (no horizontal overflow)', async ({
+    page,
+    request,
+  }) => {
     const { soId, originId, destId } = await seedConfirmedSalesOrder(request);
     await page.setViewportSize({ width: 810, height: 1080 });
     await login(page);
@@ -141,7 +173,9 @@ test.describe('CRM → TMS fulfillment journey', () => {
     await page.getByLabel('Destination *').selectOption(destId);
     await page.screenshot({ path: `${ART}/04-wizard-tablet.png`, fullPage: true });
 
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
     expect(overflow).toBeLessThanOrEqual(1);
   });
 });

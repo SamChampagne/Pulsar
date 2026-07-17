@@ -120,9 +120,12 @@ export const tmsTools: ToolDef[] = [
       // cross-field rule is enforced server-side (validateFulfillmentLogistics),
       // since a Zod .refine() would change the schema type the MCP layer needs.
       mode: z.enum(['FTL', 'LTL', 'PARCEL']),
-      totalWeightKg: z.number().positive().optional(),
-      totalVolumeM3: z.number().positive().optional(),
-      palletCount: z.number().int().positive().optional(),
+      // Each measure is nonnegative; the "at least one > 0" rule is enforced
+      // server-side by validateFulfillmentLogistics (matches the HTTP DTO — a 0
+      // in one field is fine as long as another is positive).
+      totalWeightKg: z.number().nonnegative().optional(),
+      totalVolumeM3: z.number().nonnegative().optional(),
+      palletCount: z.number().int().nonnegative().optional(),
       notes: z.string().optional(),
     }),
     run: (args, ctx) => {

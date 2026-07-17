@@ -40,10 +40,18 @@ const ADMIN = { email: 'admin@pulsar.dev', password: 'admin123', tenant: 'acme' 
 @Injectable()
 class FakeAgentRuntimeService {
   constructor(private readonly _agents: AgentsService) {}
-  async openSession(): Promise<string> { return 'fake-session'; }
-  async *sendTurn(): AsyncGenerator<never> { /* no turns */ }
-  async closeSession(): Promise<void> { /* no-op */ }
-  async killAgentSessions(): Promise<void> { /* no-op */ }
+  async openSession(): Promise<string> {
+    return 'fake-session';
+  }
+  async *sendTurn(): AsyncGenerator<never> {
+    /* no turns */
+  }
+  async closeSession(): Promise<void> {
+    /* no-op */
+  }
+  async killAgentSessions(): Promise<void> {
+    /* no-op */
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -136,16 +144,24 @@ describe('Arc-E reactions (e2e)', () => {
 
     const origin = await prisma.location.create({
       data: {
-        tenantId, code: `AE-ORIG-${suffix}`, name: `AE Origin ${suffix}`,
-        addressLine1: '1 AE St', city: 'Montreal', country: 'CA',
+        tenantId,
+        code: `AE-ORIG-${suffix}`,
+        name: `AE Origin ${suffix}`,
+        addressLine1: '1 AE St',
+        city: 'Montreal',
+        country: 'CA',
       },
     });
     originId = origin.id;
 
     const dest = await prisma.location.create({
       data: {
-        tenantId, code: `AE-DEST-${suffix}`, name: `AE Dest ${suffix}`,
-        addressLine1: '2 AE Ave', city: 'Toronto', country: 'CA',
+        tenantId,
+        code: `AE-DEST-${suffix}`,
+        name: `AE Dest ${suffix}`,
+        addressLine1: '2 AE Ave',
+        city: 'Toronto',
+        country: 'CA',
       },
     });
     destId = dest.id;
@@ -171,8 +187,13 @@ describe('Arc-E reactions (e2e)', () => {
     // Seed a yard location for reaction 2
     const yardLoc = await prisma.location.create({
       data: {
-        tenantId, code: `AE-YARD-${suffix}`, name: `AE Yard ${suffix}`,
-        type: 'WAREHOUSE', addressLine1: '3 Yard Blvd', city: 'Laval', country: 'CA',
+        tenantId,
+        code: `AE-YARD-${suffix}`,
+        name: `AE Yard ${suffix}`,
+        type: 'WAREHOUSE',
+        addressLine1: '3 Yard Blvd',
+        city: 'Laval',
+        country: 'CA',
       },
     });
     yardLocationId = yardLoc.id;
@@ -181,46 +202,84 @@ describe('Arc-E reactions (e2e)', () => {
   afterAll(async () => {
     if (prisma) {
       // Collect domain events this suite emitted
-      const ownedEvents = await prisma.domainEvent.findMany({
-        where: {
-          tenantId,
-          OR: [
-            { type: 'fleet.maintenance.due', payload: { path: ['assetId'], string_contains: vehicleId } },
-            { type: 'yard.visit.checked-in', payload: { path: ['locationId'], equals: yardLocationId } },
-          ],
-        },
-        select: { id: true },
-      }).catch(() => [] as { id: string }[]);
+      const ownedEvents = await prisma.domainEvent
+        .findMany({
+          where: {
+            tenantId,
+            OR: [
+              {
+                type: 'fleet.maintenance.due',
+                payload: { path: ['assetId'], string_contains: vehicleId },
+              },
+              {
+                type: 'yard.visit.checked-in',
+                payload: { path: ['locationId'], equals: yardLocationId },
+              },
+            ],
+          },
+          select: { id: true },
+        })
+        .catch(() => [] as { id: string }[]);
 
       // Also collect load.completed events from this suite
-      const loadEvents = await prisma.domainEvent.findMany({
-        where: { tenantId, type: 'load.completed' },
-        select: { id: true },
-      }).catch(() => [] as { id: string }[]);
+      const loadEvents = await prisma.domainEvent
+        .findMany({
+          where: { tenantId, type: 'load.completed' },
+          select: { id: true },
+        })
+        .catch(() => [] as { id: string }[]);
 
       const allEventIds = [...ownedEvents, ...loadEvents].map((e) => e.id);
 
-      await prisma.reactionExecution.deleteMany({ where: { tenantId, eventId: { in: allEventIds } } }).catch(() => undefined);
-      await prisma.domainEvent.deleteMany({ where: { tenantId, id: { in: allEventIds } } }).catch(() => undefined);
+      await prisma.reactionExecution
+        .deleteMany({ where: { tenantId, eventId: { in: allEventIds } } })
+        .catch(() => undefined);
+      await prisma.domainEvent
+        .deleteMany({ where: { tenantId, id: { in: allEventIds } } })
+        .catch(() => undefined);
 
-      await prisma.maintenanceOrder.deleteMany({ where: { id: { in: cleanupMaintenanceOrderIds } } }).catch(() => undefined);
-      await prisma.yardMove.deleteMany({ where: { visitId: { in: cleanupYardVisitIds } } }).catch(() => undefined);
-      await prisma.yardVisit.deleteMany({ where: { id: { in: cleanupYardVisitIds } } }).catch(() => undefined);
-      await prisma.dockAppointment.deleteMany({ where: { id: { in: cleanupAppointmentIds } } }).catch(() => undefined);
-      await prisma.yardSpot.deleteMany({ where: { id: { in: cleanupSpotIds } } }).catch(() => undefined);
-      await prisma.maintenanceOrder.deleteMany({ where: { tenantId, vehicleId } }).catch(() => undefined);
+      await prisma.maintenanceOrder
+        .deleteMany({ where: { id: { in: cleanupMaintenanceOrderIds } } })
+        .catch(() => undefined);
+      await prisma.yardMove
+        .deleteMany({ where: { visitId: { in: cleanupYardVisitIds } } })
+        .catch(() => undefined);
+      await prisma.yardVisit
+        .deleteMany({ where: { id: { in: cleanupYardVisitIds } } })
+        .catch(() => undefined);
+      await prisma.dockAppointment
+        .deleteMany({ where: { id: { in: cleanupAppointmentIds } } })
+        .catch(() => undefined);
+      await prisma.yardSpot
+        .deleteMany({ where: { id: { in: cleanupSpotIds } } })
+        .catch(() => undefined);
+      await prisma.maintenanceOrder
+        .deleteMany({ where: { tenantId, vehicleId } })
+        .catch(() => undefined);
 
       // Reaction 3 cleanup (loads/shipments/orders)
-      const cleanupLoads = await prisma.load.findMany({ where: { tenantId, loadNumber: { startsWith: 'LD-' } }, select: { id: true } }).catch(() => [] as { id: string }[]);
+      const cleanupLoads = await prisma.load
+        .findMany({ where: { tenantId, loadNumber: { startsWith: 'LD-' } }, select: { id: true } })
+        .catch(() => [] as { id: string }[]);
       const loadIds = cleanupLoads.map((l) => l.id);
-      await prisma.shipmentLoadLeg.deleteMany({ where: { load: { tenantId, loadNumber: { startsWith: 'LD-' } } } }).catch(() => undefined);
-      await prisma.shipment.deleteMany({ where: { tenantId, transportOrder: { customerId } } }).catch(() => undefined);
+      await prisma.shipmentLoadLeg
+        .deleteMany({ where: { load: { tenantId, loadNumber: { startsWith: 'LD-' } } } })
+        .catch(() => undefined);
+      await prisma.shipment
+        .deleteMany({ where: { tenantId, transportOrder: { customerId } } })
+        .catch(() => undefined);
       await prisma.load.deleteMany({ where: { id: { in: loadIds } } }).catch(() => undefined);
-      await prisma.transportOrder.deleteMany({ where: { tenantId, customerId } }).catch(() => undefined);
+      await prisma.transportOrder
+        .deleteMany({ where: { tenantId, customerId } })
+        .catch(() => undefined);
 
-      await prisma.automationRule.deleteMany({ where: { id: { in: cleanupRuleIds } } }).catch(() => undefined);
+      await prisma.automationRule
+        .deleteMany({ where: { id: { in: cleanupRuleIds } } })
+        .catch(() => undefined);
       await prisma.vehicle.deleteMany({ where: { id: vehicleId } }).catch(() => undefined);
-      await prisma.location.deleteMany({ where: { id: { in: [originId, destId, yardLocationId].filter(Boolean) } } }).catch(() => undefined);
+      await prisma.location
+        .deleteMany({ where: { id: { in: [originId, destId, yardLocationId].filter(Boolean) } } })
+        .catch(() => undefined);
       await prisma.carrier.deleteMany({ where: { id: carrierId } }).catch(() => undefined);
       await prisma.customer.deleteMany({ where: { id: customerId } }).catch(() => undefined);
     }
@@ -294,7 +353,11 @@ describe('Arc-E reactions (e2e)', () => {
 
       // Ledger row should be EXECUTED
       const event = await prisma.domainEvent.findFirst({
-        where: { tenantId, type: 'fleet.maintenance.due', payload: { path: ['assetId'], equals: vehicleId } },
+        where: {
+          tenantId,
+          type: 'fleet.maintenance.due',
+          payload: { path: ['assetId'], equals: vehicleId },
+        },
       });
       expect(event).not.toBeNull();
       const ledger = await prisma.reactionExecution.findFirst({
@@ -419,7 +482,11 @@ describe('Arc-E reactions (e2e)', () => {
 
       // Ledger row should be EXECUTED
       const event = await prisma.domainEvent.findFirst({
-        where: { tenantId, type: 'yard.visit.checked-in', payload: { path: ['visitId'], equals: visitId } },
+        where: {
+          tenantId,
+          type: 'yard.visit.checked-in',
+          payload: { path: ['visitId'], equals: visitId },
+        },
       });
       expect(event).not.toBeNull();
       const ledger = await prisma.reactionExecution.findFirst({
@@ -529,9 +596,18 @@ describe('Arc-E reactions (e2e)', () => {
       // Drain any pending events (e.g. transport-order.planned) before completing
       await domainEvents.processPending(50);
 
-      await request(http).post(`/api/v1/transportation/loads/${loadId}/dispatch`).set(auth()).expect(201);
-      await request(http).post(`/api/v1/transportation/loads/${loadId}/start-transit`).set(auth()).expect(201);
-      await request(http).post(`/api/v1/transportation/loads/${loadId}/complete`).set(auth()).expect(201);
+      await request(http)
+        .post(`/api/v1/transportation/loads/${loadId}/dispatch`)
+        .set(auth())
+        .expect(201);
+      await request(http)
+        .post(`/api/v1/transportation/loads/${loadId}/start-transit`)
+        .set(auth())
+        .expect(201);
+      await request(http)
+        .post(`/api/v1/transportation/loads/${loadId}/complete`)
+        .set(auth())
+        .expect(201);
 
       return { orderId, loadId };
     }
@@ -613,7 +689,11 @@ describe('Arc-E reactions (e2e)', () => {
             enabled: true,
             match: 'ALL',
             conditions: [],
-            action: { kind: 'RUN_ACTION', action: 'close_delivered_transport_order', args: { loadId: '{loadId}' } },
+            action: {
+              kind: 'RUN_ACTION',
+              action: 'close_delivered_transport_order',
+              args: { loadId: '{loadId}' },
+            },
           },
         });
 
@@ -631,9 +711,13 @@ describe('Arc-E reactions (e2e)', () => {
         expect(ledgerCount).toBe(0);
       } finally {
         // Cleanup t2
-        await prisma.reactionExecution.deleteMany({ where: { tenantId: t2Id } }).catch(() => undefined);
+        await prisma.reactionExecution
+          .deleteMany({ where: { tenantId: t2Id } })
+          .catch(() => undefined);
         await prisma.domainEvent.deleteMany({ where: { tenantId: t2Id } }).catch(() => undefined);
-        await prisma.automationRule.deleteMany({ where: { tenantId: t2Id } }).catch(() => undefined);
+        await prisma.automationRule
+          .deleteMany({ where: { tenantId: t2Id } })
+          .catch(() => undefined);
         await prisma.user.deleteMany({ where: { tenantId: t2Id } }).catch(() => undefined);
         await prisma.tenantModule.deleteMany({ where: { tenantId: t2Id } }).catch(() => undefined);
         await prisma.tenant.deleteMany({ where: { id: t2Id } }).catch(() => undefined);
