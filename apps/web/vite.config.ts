@@ -26,5 +26,17 @@ export default defineConfig(({ mode }) => {
         '/api': `http://localhost:${apiPort}`,
       },
     },
+    // `vite preview` (the static production bundle server, used by the CI
+    // browser-e2e job when CI=true) does NOT inherit `server.proxy` — it has its
+    // own `preview.proxy`. Without this, every `/api/v1/...` call from the SPA
+    // would hit the preview server's SPA fallback and 200-with-index.html
+    // instead of reaching the API, so all authenticated Playwright specs would
+    // fail. Mirror the dev proxy so the same-origin `/api` contract holds under
+    // preview too.
+    preview: {
+      proxy: {
+        '/api': `http://localhost:${apiPort}`,
+      },
+    },
   };
 });

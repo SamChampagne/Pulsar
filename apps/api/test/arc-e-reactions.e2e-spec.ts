@@ -94,6 +94,15 @@ describe('Arc-E reactions (e2e)', () => {
 
     prisma = app.get(PrismaService);
     domainEvents = app.get(DomainEventsService);
+    // Test isolation: drain the PENDING domain-event backlog inherited from
+    // earlier e2e suites. The outbox queue is global + oldest-first + batch-
+    // limited, so a large cross-suite backlog would otherwise starve THIS
+    // suite's freshly-emitted events out of its processPending(N) window. The
+    // inherited events belong to already-completed suites, so processing them
+    // here is harmless (and this suite's own events are emitted afterwards).
+    for (let _i = 0; _i < 100; _i++) {
+      if ((await domainEvents.processPending(500)) === 0) break;
+    }
 
     // Login
     const login = await request(http).post('/api/v1/auth/login').send(ADMIN).expect(200);

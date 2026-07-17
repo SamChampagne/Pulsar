@@ -194,5 +194,63 @@ leurs tâches respectives (contrat exact + fichiers) avant modification.
     probe. `AgentRuntimeService.readiness()` renvoie désormais la décision complète (le gate
     `runNow` couvre l'auth manquante et un `test-failed`, non couverts avant) ; message unique
     par `blockReason`. +12 tests unitaires. phase13-workforce + collaboration 17/17.
-</content>
-</invoke>
+
+---
+
+## 10. Release Qualification (2026-07-17)
+
+> Stage « Connected Fulfillment & Release Qualification ». But : (1) qualifier réellement
+> la branche comme release candidate ; (2) construire le pont CRM SalesOrder → TMS
+> TransportOrder. **Résultats réels inscrits au fil du travail** — jamais « vert » sur la seule
+> compilation. Base de qualification isolée : `pulsar_rc` (jamais la base de travail `pulsar_aps`).
+
+### Gate A — Qualification complète (base isolée `pulsar_rc`)
+
+Exécuté sur une base Postgres fraîche (`pulsar_rc`, migrée via `prisma migrate deploy` + seedée),
+`.env` pointé temporairement dessus puis restauré. Node 22, pnpm 11.5.3.
+
+| Commande | Résultat réel |
+| --- | --- |
+| `pnpm setup` | ✅ exit 0 (submodules à jour, prisma generate, build shared+database) |
+| `pnpm typecheck` | ✅ **0 erreur** (api + web), 41 warnings a11y préexistants (baseline inchangée) |
+| `pnpm build` | ✅ monorepo complet (shared→database→api→web), SPA statique écrite |
+| `pnpm test` (unit) | ✅ **798** — shared 557/557, api 218/218, web 23/23 |
+| `pnpm test:e2e` (complet, 1 run) | ✅ **572 passed, 1 skip, 0 fail / 573** (69 suites, 68 exécutées) après corrections ci-dessous ; le skip = timing phase13 connu |
+
+**Défauts réels trouvés et corrigés (pas masqués) :**
+
+1. **`pnpm test` cassé sur `apps/web`** — Vitest ramassait les specs Playwright (`e2e/*.spec.ts`)
+   et plantait (`test.describe()` de Playwright hors runtime Playwright). Régression introduite par
+   la fondation Playwright (Wave 6) : la config Vitest n'avait ni `include` ni `exclude`. **Fix** :
+   `apps/web/vitest.config.ts` — `include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}']` +
+   `exclude: [...configDefaults.exclude, 'e2e/**']`. Les vrais unit tests vivent sous `src/`.
+
+2. **Flake E2E cross-suite (root cause identifiée, non masquée)** — l'outbox `DomainEvent` est une
+   file **globale** (tous tenants), drainée **oldest-first** par lots (`processPending(limit)`).
+   Sur un run complet `--runInBand`, les suites qui émettent des events sans tout drainer laissent
+   un backlog PENDING croissant ; une suite plus tardive qui fait `emit → processPending(50) →
+   assert l'effet de MON event` voit son event (le plus récent) **affamé** hors du lot de 50 → 0
+   tâche/réaction → échec dépendant de l'ordre. **Reproduit déterministiquement** en injectant 60
+   events PENDING anciens : `arc-e-reactions` passe de 7/7 à 1 échec, puis re-passe 7/7 avec le fix.
+   **Fix d'isolation** (les 9 suites concernées : `arc-e-reactions`, `crm-cross-module`,
+   `crm-module`, `cross-module-automation`, `flow-control-tower`, `lead-to-cash`,
+   `phase12-operating-workbench`, `phase13-workforce`, `phase16-freight-audit`) : au démarrage de
+   chaque suite (juste après `app.get(DomainEventsService)`), drainer le backlog **hérité** (events
+   de suites déjà terminées → traitement inoffensif) pour partir d'une file vide. Aucune assertion
+   affaiblie ; le comportement métier de `processPending` est inchangé.
+
+3. **NB** : le vieux flake « Reports/Cash Flow » **ne s'est pas reproduit** (`reports.e2e-spec.ts`
+   vert dans les 3 runs complets) ; le flake réel de la baseline était le pattern outbox ci-dessus.
+
+Critères Gate A : build ✅, typecheck 0 err ✅, unit ✅, **E2E complet vert en 1 run** ✅, aucune
+donnée laissée dans `acme` (qualif sur `pulsar_rc`) ✅.
+
+### Gate B — chemin CI Playwright
+
+**Défaut réel trouvé** : `apps/web/vite.config.ts` ne définissait que `server.proxy` (serveur de
+dev). En mode `vite preview` (le chemin **CI** quand `CI=true`), le proxy `/api` **ne s'applique
+pas** (`vite preview` a sa propre clé `preview.proxy`) → tout appel `/api/v1/...` de la SPA tombait
+sur le fallback SPA (index.html) au lieu d'atteindre l'API → **tous les tests Playwright
+authentifiés auraient échoué** sur le chemin CI. **Fix** : ajout de `preview.proxy` miroir du dev
+proxy. (Le contrat same-origin `/api` tient donc en dev ET en preview.)
+
