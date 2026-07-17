@@ -77,10 +77,13 @@ export const tmsTools: ToolDef[] = [
     description:
       'Read the fulfillment context of a CRM sales order: the order, its linked TMS customer, ' +
       'the transport orders already derived from it, the derived fulfillment status, and the ' +
-      'logistics fields a shipment still needs. Read-only — use before proposing a shipment.',
+      'logistics fields a shipment still needs. Read-only — use before proposing a shipment. ' +
+      'Requires transportation.orders.read AND crm.read, with both modules enabled.',
     tier: RiskTier.READ,
     permission: T.ORDERS_READ,
+    additionalPermissions: [PERMISSIONS.CRM.READ],
     module: MODULE_KEYS.TRANSPORTATION,
+    additionalModules: [MODULE_KEYS.CRM],
     inputSchema: z.object({ salesOrderId: z.string().min(1) }),
     run: (args, ctx) =>
       ctx.services.transportOrders.salesOrderFulfillmentContext(
@@ -95,10 +98,13 @@ export const tmsTools: ToolDef[] = [
       'customer is derived server-side from the sales order (never provide it). You MUST supply ' +
       'origin and destination locations and the physical metrics (weight/volume/pallets) — NEVER ' +
       'infer weight/volume from product quantities or commercial amounts. Idempotent per ' +
-      '(salesOrder, fulfillmentKey). PROPOSED — requires human approval.',
+      '(salesOrder, fulfillmentKey). Requires transportation.orders.manage AND crm.read, with ' +
+      'both modules enabled. PROPOSED — requires human approval.',
     tier: RiskTier.MUTATING,
     permission: T.ORDERS_MANAGE,
+    additionalPermissions: [PERMISSIONS.CRM.READ],
     module: MODULE_KEYS.TRANSPORTATION,
+    additionalModules: [MODULE_KEYS.CRM],
     inputSchema: z.object({
       salesOrderId: z.string().min(1),
       fulfillmentKey: z.string().optional(),

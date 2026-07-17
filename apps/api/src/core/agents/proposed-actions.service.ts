@@ -15,10 +15,12 @@ import {
   type RiskTier,
 } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import type { AgentPrincipal } from './agent-principal';
 import { TOOL_BY_NAME, type ToolServices } from './tool-registry';
+import { toolRequiredModules, toolRequiredPermissions } from './tool-types';
 
 @Injectable()
 export class ProposedActionsService {
@@ -26,6 +28,7 @@ export class ProposedActionsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogsService,
     private readonly notifications: NotificationsService,
+    private readonly modules: TenantModulesCacheService,
   ) {}
 
   /**
@@ -260,6 +263,28 @@ export class ProposedActionsService {
     const agent = await this.prisma.agent.findUniqueOrThrow({ where: { id: proposal.agentId } });
     if (agent.status !== AgentStatus.ACTIVE) {
       throw new BadRequestException(`Agent is ${agent.status}, cannot approve its actions`);
+    }
+
+    // Approval must not bypass the tool's authorization: the agent must STILL hold
+    // every required permission and the tenant STILL have every required module
+    // enabled (a demotion or a module toggle between enqueue and approval must
+    // block execution). Same requirements the MCP exposure gate enforced.
+    const grantedPerms = new Set(agent.permissions as string[]);
+    const missingPerm = toolRequiredPermissions(def).find((p) => !grantedPerms.has(p));
+    if (missingPerm) {
+      throw new BadRequestException(
+        `Agent no longer holds required permission "${missingPerm}" for tool "${def.name}"`,
+      );
+    }
+    const requiredModules = toolRequiredModules(def);
+    if (requiredModules.length > 0) {
+      const enabled = await this.modules.getEnabledKeys(tenantId).catch(() => new Set<string>());
+      const missingModule = requiredModules.find((m) => !enabled.has(m));
+      if (missingModule) {
+        throw new BadRequestException(
+          `Module "${missingModule}" is not enabled; cannot approve tool "${def.name}"`,
+        );
+      }
     }
 
     // Race-safe claim: only one approver moves PENDING -> APPROVED.

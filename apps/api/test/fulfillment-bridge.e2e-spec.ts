@@ -75,6 +75,7 @@ describe('Connected Fulfillment bridge (e2e) — CRM SalesOrder → TMS Transpor
   let carrierId = '';
   let agentKey = '';
   let agentId = '';
+  const extraAgentIds: string[] = [];
 
   const soIds: string[] = [];
   const toIds: string[] = [];
@@ -85,12 +86,30 @@ describe('Connected Fulfillment bridge (e2e) — CRM SalesOrder → TMS Transpor
   const dealIds: string[] = [];
 
   let mcpId = 0;
-  const mcp = (method: string, params: unknown) =>
+  const mcpAs = (key: string, method: string, params: unknown) =>
     request(http)
       .post('/api/v1/mcp')
-      .set('X-Agent-Key', agentKey)
+      .set('X-Agent-Key', key)
       .set('Accept', 'application/json, text/event-stream')
       .send({ jsonrpc: '2.0', id: ++mcpId, method, params });
+  const mcp = (method: string, params: unknown) => mcpAs(agentKey, method, params);
+
+  /** Create a throwaway agent and return its key; tracked for cleanup. */
+  async function createAgent(name: string, permissions: string[], caps: Record<string, unknown> = {}) {
+    const res = await request(http)
+      .post('/api/v1/agents')
+      .set(auth())
+      .send({ name: `${name}-${suffix}`, permissions, caps: { maxAmountPerAction: 100000, ...caps } })
+      .expect(201);
+    const body = res.body as { key: string; id: string };
+    extraAgentIds.push(body.id);
+    return body.key;
+  }
+
+  function toolNamesFrom(res: request.Response): string[] {
+    const env = parseMcp(res);
+    return ((env.result?.tools ?? []) as Array<{ name: string }>).map((t) => t.name);
+  }
 
   async function enableModule(key: string, enabled = true) {
     const mod = await prisma.moduleDefinition.findUniqueOrThrow({ where: { key } });
@@ -229,8 +248,9 @@ describe('Connected Fulfillment bridge (e2e) — CRM SalesOrder → TMS Transpor
 
   afterAll(async () => {
     if (prisma) {
-      await prisma.proposedAction.deleteMany({ where: { agentId } }).catch(() => undefined);
-      await prisma.agent.deleteMany({ where: { id: agentId } }).catch(() => undefined);
+      const allAgentIds = [agentId, ...extraAgentIds].filter(Boolean);
+      await prisma.proposedAction.deleteMany({ where: { agentId: { in: allAgentIds } } }).catch(() => undefined);
+      await prisma.agent.deleteMany({ where: { id: { in: allAgentIds } } }).catch(() => undefined);
       // Payments / GL from the vertical slice
       for (const invId of invoiceIds) {
         const allocs = await prisma.paymentAllocation.findMany({ where: { tenantId, targetId: invId } }).catch(() => []);
@@ -540,5 +560,61 @@ describe('Connected Fulfillment bridge (e2e) — CRM SalesOrder → TMS Transpor
       expect(pDr).toBe(pCr);
       expect(pDr).toBe(1000);
     }, 90_000);
+  });
+
+  // -------------------------------------------------------------------------
+  describe('7. Cross-module tool authorization (registry-enforced)', () => {
+    const BRIDGE_TOOLS = ['get_sales_order_fulfillment_context', 'create_transport_order_from_sales_order'];
+
+    it('agent with BOTH permissions + both modules sees the bridge tools', async () => {
+      const names = toolNamesFrom(await mcp('tools/list', {}).expect(200));
+      for (const t of BRIDGE_TOOLS) expect(names).toContain(t);
+    });
+
+    it('agent WITHOUT crm.read does not see the bridge tools (cross-module leak closed)', async () => {
+      const key = await createAgent('fb-nocrm', ['transportation.orders.read', 'transportation.orders.manage']);
+      const names = toolNamesFrom(await mcpAs(key, 'tools/list', {}).expect(200));
+      for (const t of BRIDGE_TOOLS) expect(names).not.toContain(t);
+      // Sanity: it still sees a pure-TMS tool it IS authorized for.
+      expect(names).toContain('list_transport_orders');
+    });
+
+    it('agent WITHOUT a TMS permission does not see the bridge tools', async () => {
+      const key = await createAgent('fb-nomts', ['crm.read']);
+      const names = toolNamesFrom(await mcpAs(key, 'tools/list', {}).expect(200));
+      for (const t of BRIDGE_TOOLS) expect(names).not.toContain(t);
+    });
+
+    it('directly invoking an unexposed bridge tool is rejected (never reaches the handler)', async () => {
+      const key = await createAgent('fb-nocrm2', ['transportation.orders.read', 'transportation.orders.manage']);
+      const env = parseMcp(
+        await mcpAs(key, 'tools/call', { name: 'get_sales_order_fulfillment_context', arguments: { salesOrderId: 'x' } }).expect(200),
+      );
+      expect(env.result?.isError).toBe(true);
+      expect(env.result.content[0].text).toContain('not found');
+    });
+
+    it('CRM disabled hides the bridge tools even for a fully-permissioned agent', async () => {
+      await enableModule('crm', false);
+      try {
+        const names = toolNamesFrom(await mcp('tools/list', {}).expect(200));
+        for (const t of BRIDGE_TOOLS) expect(names).not.toContain(t);
+        // A pure-TMS tool remains visible (transportation still enabled).
+        expect(names).toContain('list_transport_orders');
+      } finally {
+        await enableModule('crm', true);
+      }
+    });
+
+    it('toolAllowlist still filters (allowlist without the bridge tool hides it)', async () => {
+      const key = await createAgent(
+        'fb-allow',
+        ['transportation.orders.read', 'transportation.orders.manage', 'crm.read'],
+        { toolAllowlist: ['list_transport_orders'] },
+      );
+      const names = toolNamesFrom(await mcpAs(key, 'tools/list', {}).expect(200));
+      expect(names).toEqual(['list_transport_orders']);
+      for (const t of BRIDGE_TOOLS) expect(names).not.toContain(t);
+    });
   });
 });

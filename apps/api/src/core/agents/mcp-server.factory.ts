@@ -3,6 +3,7 @@ import { isExecutableLive } from '@pulsar/shared';
 import type { AgentPrincipal } from './agent-principal';
 import type { ProposedActionsService } from './proposed-actions.service';
 import { TOOL_REGISTRY, type ToolServices } from './tool-registry';
+import { toolRequiredModules, toolRequiredPermissions } from './tool-types';
 
 /**
  * Build a fresh stateless McpServer exposing ONLY the tools this agent may use
@@ -20,8 +21,12 @@ export function buildAgentMcpServer(
   const granted = new Set(principal.user.permissions as string[]);
 
   for (const def of TOOL_REGISTRY) {
-    if (!granted.has(def.permission)) continue;
-    if (def.module && !enabledModules.has(def.module)) continue;
+    // Authorization is carried by the registry and enforced BEFORE exposure: an
+    // agent must hold EVERY required permission and the tenant must have EVERY
+    // required module enabled. A cross-module tool (e.g. the CRM→TMS bridge) is
+    // never partially authorized — missing crm.read OR a disabled module hides it.
+    if (!toolRequiredPermissions(def).every((p) => granted.has(p))) continue;
+    if (!toolRequiredModules(def).every((m) => enabledModules.has(m))) continue;
     if (allowlist && !allowlist.includes(def.name)) continue;
 
     server.registerTool(

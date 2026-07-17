@@ -179,12 +179,34 @@ export interface ToolDef {
   name: string;
   description: string;
   tier: RiskTier;
+  /** Primary permission. The agent must hold this AND every `additionalPermissions`. */
   permission: PermissionKey;
+  /**
+   * Extra permissions the agent must ALSO hold for the tool to be exposed/run.
+   * Used by cross-module tools (e.g. the CRM→TMS bridge needs a TMS permission
+   * AND `crm.read`). ALL of them are required — never partially authorized.
+   */
+  additionalPermissions?: readonly PermissionKey[];
   /** When undefined, the tool is a core tool available regardless of enabled modules. */
   module?: ModuleKey;
+  /**
+   * Extra modules that must ALSO be enabled for the tenant. A cross-module tool
+   * touching two modules lists the second here so it is hidden unless BOTH are on.
+   */
+  additionalModules?: readonly ModuleKey[];
   inputSchema: z.ZodObject<z.ZodRawShape>;
   /** Executes the real operation. Live for READ/LOW; on approval for MUTATING/SENSITIVE. */
   run(args: Record<string, unknown>, ctx: ToolContext): Promise<unknown>;
   /** Optional monetary amount used for cap evaluation at enqueue time. */
   amountFrom?(args: Record<string, unknown>): number | undefined;
+}
+
+/** All permissions an agent must hold for `def` (primary + additional). */
+export function toolRequiredPermissions(def: ToolDef): PermissionKey[] {
+  return [def.permission, ...(def.additionalPermissions ?? [])];
+}
+
+/** All modules that must be enabled for `def` (primary + additional; empty = core tool). */
+export function toolRequiredModules(def: ToolDef): ModuleKey[] {
+  return [...(def.module ? [def.module] : []), ...(def.additionalModules ?? [])];
 }

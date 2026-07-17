@@ -36,7 +36,7 @@ function makePrisma(created: any[], opts: { breakerTrippedAt?: Date | null; rece
 describe('ProposedActionsService.handleMutatingTool', () => {
   it('AUTO: runs the tool and records an EXECUTED autoApproved proposal', async () => {
     const created: any[] = [];
-    const svc = new ProposedActionsService(makePrisma(created), { log: async () => undefined } as any, { notify: async () => undefined } as any);
+    const svc = new ProposedActionsService(makePrisma(created), { log: async () => undefined } as any, { notify: async () => undefined } as any, { getEnabledKeys: async () => ({ has: () => true }) } as any);
     const res = await svc.handleMutatingTool(principal(), tenderDef, { amount: 100 }, {} as any);
     expect(res.effect).toBe('AUTO');
     expect(created.some((d) => d.status === ProposalStatus.EXECUTED && d.autoApproved === true)).toBe(true);
@@ -44,7 +44,7 @@ describe('ProposedActionsService.handleMutatingTool', () => {
 
   it('PROPOSE: enqueues a PENDING proposal when a policy demotes', async () => {
     const created: any[] = [];
-    const svc = new ProposedActionsService(makePrisma(created), { log: async () => undefined } as any, { notify: async () => undefined } as any);
+    const svc = new ProposedActionsService(makePrisma(created), { log: async () => undefined } as any, { notify: async () => undefined } as any, { getEnabledKeys: async () => ({ has: () => true }) } as any);
     const res = await svc.handleMutatingTool(
       principal({ policies: [{ tool: 'tender_load', effect: 'PROPOSE' }] }),
       tenderDef, { amount: 100 }, {} as any,
@@ -55,7 +55,7 @@ describe('ProposedActionsService.handleMutatingTool', () => {
 
   it('DENY: refuses above the hard amount cap and records nothing', async () => {
     const created: any[] = [];
-    const svc = new ProposedActionsService(makePrisma(created), { log: async () => undefined } as any, { notify: async () => undefined } as any);
+    const svc = new ProposedActionsService(makePrisma(created), { log: async () => undefined } as any, { notify: async () => undefined } as any, { getEnabledKeys: async () => ({ has: () => true }) } as any);
     const res = await svc.handleMutatingTool(principal({ maxAmountPerAction: 50 }), tenderDef, { amount: 5000 }, {} as any);
     expect(res.effect).toBe('DENY');
     expect(created).toHaveLength(0);
@@ -63,7 +63,7 @@ describe('ProposedActionsService.handleMutatingTool', () => {
 
   it('breaker active → AUTO policy is demoted to PROPOSE', async () => {
     const created: any[] = [];
-    const svc = new ProposedActionsService(makePrisma(created, { breakerTrippedAt: new Date() }), { log: async () => undefined } as any, { notify: async () => undefined } as any);
+    const svc = new ProposedActionsService(makePrisma(created, { breakerTrippedAt: new Date() }), { log: async () => undefined } as any, { notify: async () => undefined } as any, { getEnabledKeys: async () => ({ has: () => true }) } as any);
     const res = await svc.handleMutatingTool(principal(), tenderDef, { amount: 100 }, {} as any);
     expect(res.effect).toBe('PROPOSE');
   });

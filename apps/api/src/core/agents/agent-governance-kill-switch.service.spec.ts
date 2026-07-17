@@ -65,7 +65,12 @@ function makeProposedActions(agentStatus: AgentStatus) {
   } as any;
   const audit = { log: async () => undefined } as any;
   const notifications = { notify: async () => undefined } as any;
-  return { svc: new ProposedActionsService(prisma, audit, notifications), toolName };
+  return {
+    svc: new ProposedActionsService(prisma, audit, notifications, {
+      getEnabledKeys: async () => ({ has: () => true }),
+    } as any),
+    toolName,
+  };
 }
 
 describe('ProposedActionsService.approve — kill switch', () => {
