@@ -12,6 +12,8 @@
     Card,
     Skeleton,
     ErrorNotice,
+    RelatedEntities,
+    type RelatedGroup,
     type Tone,
   } from '$lib/components/ui';
 
@@ -29,6 +31,8 @@
     notes: string | null;
     company: { id: string; name: string } | null;
     companyId: string;
+    customerId: string | null;
+    dealId: string | null;
   }
 
   interface LineItem {
@@ -86,6 +90,35 @@
   // ── Derived ───────────────────────────────────────────────────────────────────
 
   const isDraft = $derived(order?.status === 'DRAFT');
+
+  // "Lié à" — only ids the already-loaded order carries are linked. The generated
+  // customer invoice (customData.salesOrderId on CustomerInvoice) has no cheap
+  // lookup-by-salesOrderId endpoint today, so it is skipped here rather than
+  // adding a new API surface.
+  const relatedGroups = $derived<RelatedGroup[]>(
+    order
+      ? [
+          {
+            label: 'Deal',
+            items: order.dealId
+              ? [{ label: 'Deal d\'origine', href: `/crm/deals/${order.dealId}` }]
+              : [],
+          },
+          {
+            label: 'Société',
+            items: order.company
+              ? [{ label: order.company.name, href: `/crm/companies/${order.company.id}` }]
+              : [],
+          },
+          {
+            label: 'Client',
+            items: order.customerId
+              ? [{ label: 'Client lié', href: `/customers/${order.customerId}` }]
+              : [],
+          },
+        ]
+      : [],
+  );
 
   // ── Data loading ─────────────────────────────────────────────────────────────
 
@@ -703,18 +736,15 @@
         </Card>
       {/if}
 
+      <!-- Lié à -->
+      <Card>
+        <RelatedEntities groups={relatedGroups} />
+      </Card>
+
       <!-- Navigation -->
       <Card>
         <h2 class="mb-2 text-sm font-semibold text-ink">Navigation</h2>
         <div class="space-y-2">
-          {#if order.company}
-            <a
-              href="/crm/companies/{order.company.id}"
-              class="flex items-center gap-2 rounded-md border border-edge bg-surface px-3 py-2 text-xs text-ink transition-colors hover:border-accent hover:text-accent"
-            >
-              Voir la société
-            </a>
-          {/if}
           <a
             href="/crm/sales-orders"
             class="flex items-center gap-2 rounded-md border border-edge bg-surface px-3 py-2 text-xs text-ink transition-colors hover:border-accent hover:text-accent"

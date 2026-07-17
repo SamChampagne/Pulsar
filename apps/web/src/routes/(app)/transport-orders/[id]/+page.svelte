@@ -5,6 +5,8 @@
     Badge, Button, Card, Field, PageHeader,
     toneFor, labelFor,
     Skeleton, ErrorNotice,
+    RelatedEntities, StatusTimeline,
+    type RelatedGroup, type TimelineEntry as StatusEntry,
   } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
@@ -169,6 +171,66 @@
   $effect(() => {
     if (orderId) void load();
   });
+
+  // "Lié à" — only ids the page already has are linked (customer, shipments, loads).
+  const relatedGroups = $derived<RelatedGroup[]>(
+    order
+      ? [
+          {
+            label: 'Client',
+            items: [
+              {
+                label: order.customer.name,
+                sublabel: order.customer.code,
+                href: `/customers/${order.customer.id}`,
+              },
+            ],
+          },
+          {
+            label: 'Expéditions',
+            items: order.shipments.map((s) => ({
+              // No shipment-detail route exists yet — informational only, no href.
+              label: s.shipmentNumber,
+              sublabel: labelFor(s.status),
+              tone: toneFor(s.status),
+            })),
+          },
+          {
+            label: 'Chargements',
+            items: (() => {
+              const byLoad = new Map<string, string[]>();
+              for (const s of order.shipments) {
+                if (!s.loadId) continue;
+                byLoad.set(s.loadId, [...(byLoad.get(s.loadId) ?? []), s.shipmentNumber]);
+              }
+              return Array.from(byLoad.entries()).map(([loadId, shipmentNumbers]) => ({
+                label: `Chargement #${loadId.slice(-6)}`,
+                sublabel: shipmentNumbers.join(', '),
+                href: `/loads/${loadId}`,
+              }));
+            })(),
+          },
+        ]
+      : [],
+  );
+
+  // Status timeline: no dedicated status-history table for TransportOrder (only
+  // createdAt + requested windows are available from the already-loaded record),
+  // so we build a small entries array from those rather than inventing a fetch.
+  const timelineEntries = $derived<StatusEntry[]>(
+    order
+      ? [
+          { label: 'Commande créée', timestamp: order.createdAt, tone: 'neutral' },
+          ...(order.requestedPickupEarly
+            ? [{ label: 'Collecte demandée', timestamp: order.requestedPickupEarly, tone: 'info' as const }]
+            : []),
+          ...(order.requestedDeliveryEarly
+            ? [{ label: 'Livraison demandée', timestamp: order.requestedDeliveryEarly, tone: 'info' as const }]
+            : []),
+          { label: labelFor(order.status), description: 'Statut actuel', tone: toneFor(order.status) },
+        ]
+      : [],
+  );
 </script>
 
 {#if error}
@@ -391,6 +453,17 @@
             {/each}
           {/if}
         </dl>
+      </Card>
+
+      <!-- Historique (créée / fenêtres demandées / statut actuel) -->
+      <Card>
+        <h2 class="mb-3 font-semibold text-ink">Historique</h2>
+        <StatusTimeline entries={timelineEntries} />
+      </Card>
+
+      <!-- Lié à -->
+      <Card>
+        <RelatedEntities groups={relatedGroups} />
       </Card>
 
       {#if order.windowWarnings && order.windowWarnings.length > 0}
