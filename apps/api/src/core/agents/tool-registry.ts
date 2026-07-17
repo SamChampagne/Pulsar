@@ -11,6 +11,7 @@ export type { ToolServices, ToolContext, ToolDef } from './tool-types';
 
 import type { ToolDef } from './tool-types';
 import { tmsTools } from './tools/tms.tools';
+import { dispatchTools } from './tools/dispatch.tools';
 import { coreTools } from './tools/core.tools';
 import { billingTools } from './tools/billing.tools';
 import { fleetTools } from './tools/fleet.tools';
@@ -24,6 +25,7 @@ import { manufacturingTools } from './tools/manufacturing.tools';
 /** All agent tools, in their canonical order (preserved from the original monolithic registry). */
 export const TOOL_REGISTRY: ToolDef[] = [
   ...tmsTools,
+  ...dispatchTools,
   ...coreTools,
   ...billingTools,
   ...fleetTools,

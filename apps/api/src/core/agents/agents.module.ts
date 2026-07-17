@@ -168,6 +168,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         loads: {
           get: (tenantId, id) => loads.get(tenantId, id),
           create: (tenantId, userId, dto) => loads.create(tenantId, userId, dto as never),
+          capacitySummary: (tenantId, id) => loads.capacitySummary(tenantId, id),
         },
         rating: {
           rateOptions: (tenantId, loadId) => rating.rateOptions(tenantId, loadId),
@@ -188,6 +189,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
           listForAgent: (t, a) => operationalTasks.listForAgent(t, a),
           getForTenant: (t, id) => operationalTasks.getForTenant(t, id),
           resolve: (t, id, u, note) => operationalTasks.resolve(t, id, u, note),
+          list: (t, filter) => operationalTasks.list(t, filter as never),
         },
         freightAudit: {
           audit: (t, u, id) => freightAudit.audit(t, u, id),

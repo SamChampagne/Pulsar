@@ -188,6 +188,70 @@ export class LoadsService {
     };
   }
 
+  /**
+   * READ-only capacity summary for a load: current weight/volume/pallet totals from its
+   * shipments vs. the assigned trailer's limits. Reuses the SAME pure `checkCapacity`
+   * (@pulsar/shared) as `assignResources` (rule 18) — never a re-implementation of the
+   * formula — but only reads, never mutates. Used by the `check_load_capacity` agent tool.
+   */
+  async capacitySummary(tenantId: string, id: string) {
+    const load = await this.prisma.load.findFirst({
+      where: { id, tenantId },
+      select: {
+        id: true,
+        loadNumber: true,
+        trailer: {
+          select: {
+            id: true,
+            unitNumber: true,
+            capacityWeightKg: true,
+            capacityVolumeM3: true,
+            capacityPallets: true,
+          },
+        },
+      },
+    });
+    if (!load) throw new NotFoundException('Load not found');
+
+    const shipments = await this.prisma.shipment.findMany({
+      where: { loadId: id, tenantId },
+      select: { weightKg: true, volumeM3: true, palletCount: true },
+    });
+    const sum = (values: (number | null)[]) =>
+      values.some((v) => v !== null) ? values.reduce<number>((acc, v) => acc + (v ?? 0), 0) : null;
+    const totals = {
+      weightKg: sum(shipments.map((s) => s.weightKg)),
+      volumeM3: sum(shipments.map((s) => s.volumeM3)),
+      pallets: sum(shipments.map((s) => s.palletCount)),
+    };
+    const capacities = {
+      weightKg: load.trailer?.capacityWeightKg ?? null,
+      volumeM3: load.trailer?.capacityVolumeM3 ?? null,
+      pallets: load.trailer?.capacityPallets ?? null,
+    };
+    const excesses = checkCapacity(capacities, totals);
+
+    const axes = (['weightKg', 'volumeM3', 'pallets'] as const).map((axis) => {
+      const capacity = capacities[axis];
+      const requested = totals[axis];
+      const utilizationPct =
+        capacity != null && capacity > 0 && requested != null
+          ? Math.round((requested / capacity) * 1000) / 10
+          : null;
+      return { axis, capacity, requested, utilizationPct };
+    });
+
+    return {
+      loadId: load.id,
+      loadNumber: load.loadNumber,
+      trailer: load.trailer ? { id: load.trailer.id, unitNumber: load.trailer.unitNumber } : null,
+      shipmentCount: shipments.length,
+      axes,
+      overCapacity: excesses.length > 0,
+      excesses,
+    };
+  }
+
   async create(tenantId: string, userId: string, dto: CreateLoadDto) {
     const customData = await this.customFields.validateValues(
       'transportation', tenantId, CustomFieldEntity.LOAD, dto.customData, { partial: false },

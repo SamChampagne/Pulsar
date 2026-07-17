@@ -23,6 +23,7 @@ export interface ToolServices {
   loads: {
     get(tenantId: string, id: string): Promise<unknown>;
     create(tenantId: string, userId: string, dto: object): Promise<unknown>;
+    capacitySummary(tenantId: string, id: string): Promise<unknown>;
   };
   rating: { rateOptions(tenantId: string, loadId: string): Promise<unknown> };
   shipments: {
@@ -47,6 +48,11 @@ export interface ToolServices {
     listForAgent(tenantId: string, agentId: string): Promise<unknown>;
     getForTenant(tenantId: string, id: string): Promise<unknown>;
     resolve(tenantId: string, id: string, userId: string, note?: string): Promise<unknown>;
+    /** Tenant-wide task list filtered by status/category (not just tasks assigned to me). */
+    list(
+      tenantId: string,
+      filter: { status?: string; category?: string; page?: number; pageSize?: number },
+    ): Promise<unknown>;
   };
   freightAudit: {
     audit(tenantId: string, userId: string, invoiceId: string): Promise<unknown>;
