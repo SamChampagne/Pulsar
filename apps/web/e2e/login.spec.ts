@@ -11,7 +11,8 @@ test.describe('login flow', () => {
     await login(page);
 
     await expect(page).toHaveURL(/\/dashboard$/);
-    // A known nav element from the authenticated shell (apps/web/src/routes/(app)/+layout.svelte).
-    await expect(page.getByRole('link', { name: 'Bureau des apps' })).toBeVisible();
+    // The authenticated landing renders the operations centre heading — a stable
+    // signal that login succeeded and the app shell mounted.
+    await expect(page.getByRole('heading', { name: 'Centre des opérations' })).toBeVisible();
   });
 });

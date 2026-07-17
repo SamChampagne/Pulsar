@@ -22,6 +22,11 @@ import { defineConfig, devices } from '@playwright/test';
  * .github/workflows/ci.yml starts the API separately against a migrated +
  * seeded Postgres service container before invoking Playwright.
  */
+// The web port is overridable (PW_WEB_PORT) so the CI preview path can be
+// reproduced locally even when 5173 is taken (e.g. Docker Desktop reserves it on
+// Windows). Defaults to 5173 — CI leaves it unset.
+const WEB_PORT = process.env.PW_WEB_PORT || '5173';
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
@@ -32,21 +37,46 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: [['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: `http://localhost:${WEB_PORT}`,
     trace: 'on-first-retry',
   },
   projects: [
+    // Desktop is the default surface for the authenticated app shell. It runs
+    // every spec EXCEPT the *.mobile.spec.ts files (public/portal responsiveness).
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: 'desktop-chromium',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } },
+      testIgnore: /\.mobile\.spec\.ts$/,
+    },
+    // Tablet width — same authenticated specs, narrower shell (drawer sidebar).
+    // Chromium engine (CI installs chromium only) at an iPad-portrait viewport,
+    // rather than the webkit-based `iPad` device preset.
+    {
+      name: 'tablet',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 810, height: 1080 }, isMobile: false },
+      testMatch: /responsive\.spec\.ts$/,
+    },
+    // Mobile — public/portal pages must be usable on a phone. Chromium engine at
+    // a phone viewport (the Pixel 5 preset uses chromium, so it's safe).
+    {
+      name: 'mobile-chromium',
+      use: { ...devices['Pixel 5'] },
+      testMatch: /\.mobile\.spec\.ts$/,
     },
   ],
   webServer: {
+    // Invoke vite directly (pnpm exec) rather than `pnpm run preview -- …`:
+    // pnpm forwards the `--` separator literally, so vite saw `-- --port` and
+    // ignored the port, binding its default 4173 while Playwright waited on
+    // WEB_PORT forever. This also fixes the real CI browser-e2e job.
     command: process.env.CI
-      ? 'pnpm run build && pnpm run preview -- --port 5173 --strictPort'
+      ? `pnpm run build && pnpm exec vite preview --port ${WEB_PORT} --strictPort`
       : 'pnpm run dev',
-    url: 'http://localhost:5173',
+    url: `http://localhost:${WEB_PORT}`,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    // CI builds the SPA then previews it — the full production build can take
+    // ~1–2 min on a cold cache, so allow generous headroom before Playwright
+    // gives up waiting for the server URL.
+    timeout: 240_000,
   },
 });

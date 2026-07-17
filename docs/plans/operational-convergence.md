@@ -254,6 +254,31 @@ sur le fallback SPA (index.html) au lieu d'atteindre l'API → **tous les tests 
 authentifiés auraient échoué** sur le chemin CI. **Fix** : ajout de `preview.proxy` miroir du dev
 proxy. (Le contrat same-origin `/api` tient donc en dev ET en preview.)
 
+**Chemin CI reproduit localement** (PAS « exécuté en CI » — aucun run GitHub) : API bâtie
+(`node dist/main.js`) sur :3100 contre `pulsar_rc` seedée, `CI=true` → `pnpm build` +
+`vite preview` (port paramétrable `PW_WEB_PORT`) → Playwright chromium. **16/16 verts** sur 3
+projets (desktop 1280, tablette 810, mobile Pixel 5). Défauts additionnels trouvés et corrigés
+(le chemin CI **n'avait jamais réellement tourné**) :
+- **`pnpm run preview -- --port` casse le port** : pnpm transmet le `--` littéralement à vite
+  (`vite preview -- --port 5199`), donc vite ignore le port et bind son 4173 par défaut →
+  Playwright attend indéfiniment. **Fix** : `pnpm exec vite preview --port …` (corrige aussi le
+  vrai job CI). Timeout webServer porté à 240 s (build+preview à froid).
+- **Assertion périmée** `login.spec` : cherchait un lien nav « Bureau des apps » renommé →
+  remplacé par le titre stable « Centre des opérations ».
+- **Moteur webkit non installé** : le device `iPad` de Playwright est webkit (la CI n'installe
+  que chromium) → projet tablette repassé sous chromium + viewport iPad.
+
+Parcours couverts (render-smoke sur sélecteurs accessibles, sans attente arbitraire, trace/
+screenshot on-retry) : login (+page publique), dashboard opérationnel, transport-orders,
+sales-orders (CRM), WMS, Yard, Fleet, Agents, factures transporteur, Gantt manufacturing (sans
+crash), + shell responsive tablette (pas de scroll horizontal) + page publique mobile.
+
+**Dette honnête** : ce sont des smoke-tests de rendu, pas les 13 parcours profonds multi-étapes
+demandés. Le parcours SO→TO (« Préparer l'expédition ») est prouvé bout-en-bout par l'e2e API
+`fulfillment-bridge` (14/14, dont la slice verticale) mais **pas** encore comme flux Playwright UI.
+Portail transporteur multi-load, tender public, portail conducteur load fermé, pick WMS lié,
+Freight Audit→litige, agent Run Now = couverts côté e2e API, non re-testés en navigateur ici.
+
 ### Gate C — Docker build & smoke conteneurisé same-origin (**réellement exécuté**)
 
 `docker build` des deux images **réellement lancé** ; 4 défauts trouvés et corrigés
