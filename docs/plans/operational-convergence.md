@@ -102,13 +102,13 @@ leurs tâches respectives (contrat exact + fichiers) avant modification.
 - [x] UI de relations : `RelatedEntities` (« Lié à ») + `StatusTimeline` câblés sur `transport-orders/[id]` (client, chargements, expéditions, historique) et `crm/sales-orders/[id]` (deal, société, client) — commit `d8c4ee6`. (Déjà sur `loads/[id]` en Wave 2.)
 - **⚠️ Découverte invalidante du plan** : il n'existe **aucun chemin de code** `SalesOrder` → `TransportOrder` (grep confirmé). Le lead-to-cash « pur » du plan (CRM→TMS→livraison→facture) est en réalité **deux pipelines séparés** convergeant seulement au `Customer` partagé. La slice lead-to-cash prouvée est donc le pipeline CRM→billing. Construire un pont SO→TO (schéma + migration + sémantique origine/destination) est un **choix stratégique** laissé à décision (cf. résumé).
 
-### Wave 4 — Agents
-- [ ] Runtime réel connectable + testé (provider LLM remplaçable)
-- [ ] Freight Audit Agent (coût figé, écarts expliqués, preuves, litige gouverné, $ récupéré)
-- [ ] Dispatch Exception Agent (détection retard/capacité/tender expiré/asset/conflit, résolution)
-- [ ] Transparence agent (dispo runtime, modèle, session, dernier run, outils, preuves, raison PROPOSE/AUTO/DENY, résultat)
-- [ ] Harness d'évaluation (scénarios reproductibles : outils autorisés/interdits, cap, idempotence, prompt-injection, cross-tenant, runtime down, réponse invalide, double exécution)
-- [ ] KPIs agent
+### Wave 4 — Agents ✅ (2026-07-16)
+- [x] Runtime réel connectable + testé (provider LLM remplaçable **par tenant**, 8 providers, clé chiffrée/OAuth) — déjà en place ; le cas « runtime down » est désormais couvert par le harness d'éval + `testConnection`.
+- [x] Freight Audit Agent : outils `audit_carrier_invoice` (READ, variance) + `dispute_carrier_invoice` (SENSITIVE, cap) déjà présents ; `$ récupéré` via `GET /freight-audit/savings`.
+- [x] Dispatch Exception Agent : outils **ajoutés** — `list_dispatch_exceptions` (READ), `check_load_capacity` (READ), re-tender via `tender_load` (SENSITIVE, cap) — commit `abdcd9c`, e2e 5/5.
+- [x] Transparence agent : `GET /agent-runtime/readiness` + chip readiness (raison `blockReason` FR) + « pourquoi en attente » par action proposée — commit `61f970f`, e2e 2/2.
+- [x] Harness d'évaluation : `agent-evals.e2e-spec.ts` — 16 assertions (scoping/outil interdit, cap dur, mutating→file, idempotence, course d'approbation, isolation cross-tenant, args hostiles/prompt-injection, runtime-down gracieux) — commit `2d7306a`, 16/16.
+- [~] KPIs agent : génériques déjà calculés (`deriveAgentKpis` : approval/auto/error rate, runs, breaker, tasks). KPIs **spécifiques domaine** (dispute $ récupéré, exceptions rattrapées) = dette légère documentée.
 
 ### Wave 5 — Workflows supplémentaires
 - [ ] WMS/Yard/Fleet · CRM/Sites · Manufacturing/APS : relations + tests
