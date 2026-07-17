@@ -1,11 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
+  DOMAIN_EVENT_MAX_CATCHUP_BATCHES,
   DomainEventStatus,
   NotificationLevel,
   OperationalTaskStatus,
   TaskAssigneeType,
   computeSlaDueAt,
+  drainInBatches,
   resolvePolicies,
   type Severity,
 } from '@pulsar/shared';
@@ -68,7 +70,17 @@ export class DomainEventsService {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async processCron(): Promise<void> {
-    await this.processPending(DOMAIN_EVENT_BATCH_SIZE);
+    // Bounded catch-up: drain up to N batches this run so a backlog doesn't take
+    // N minutes to clear, while never looping unboundedly. Best-effort — never
+    // throws (rule 24). This stays a single-process, in-memory-orchestrated,
+    // DB-durable outbox (NOT a distributed queue) — see docs/runbook.md.
+    try {
+      await drainInBatches(() => this.processPending(DOMAIN_EVENT_BATCH_SIZE), {
+        maxBatches: DOMAIN_EVENT_MAX_CATCHUP_BATCHES,
+      });
+    } catch {
+      // drainInBatches never throws by construction; this keeps the cron bulletproof.
+    }
   }
 
   /** Claim PENDING events, run policies, create tasks (idempotent), mark PROCESSED/FAILED. */

@@ -28,6 +28,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AgentRuntimeService } from '../src/core/agents/agent-runtime.service';
 import { DomainEventsService } from '../src/core/operating/domain-events.service';
+import { drainInheritedDomainEvents } from './utils/domain-events';
 import { AgentsService } from '../src/core/agents/agents.service';
 
 const ADMIN = { email: 'admin@pulsar.dev', password: 'admin123', tenant: 'acme' };
@@ -89,14 +90,7 @@ describe('Lead-to-cash (e2e) — CRM Deal → SalesOrder → CustomerInvoice →
 
     prisma = app.get(PrismaService);
     domainEvents = app.get(DomainEventsService);
-    // Test isolation: drain the PENDING domain-event backlog inherited from
-    // earlier e2e suites (global + oldest-first + batch-limited queue, so a
-    // large cross-suite backlog would otherwise starve this suite's freshly-
-    // emitted events out of its processPending(N) window). Harmless — those
-    // events belong to already-completed suites.
-    for (let _i = 0; _i < 100; _i++) {
-      if ((await domainEvents.processPending(500)) === 0) break;
-    }
+    await drainInheritedDomainEvents(domainEvents);
 
     const login = await request(http).post('/api/v1/auth/login').send(ADMIN).expect(200);
     token = (login.body as { accessToken: string }).accessToken;

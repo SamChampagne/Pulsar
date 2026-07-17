@@ -31,6 +31,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { AgentRuntimeService } from '../src/core/agents/agent-runtime.service';
 import { AgentsService } from '../src/core/agents/agents.service';
 import { DomainEventsService } from '../src/core/operating/domain-events.service';
+import { drainInheritedDomainEvents } from './utils/domain-events';
 import { TenantModulesCacheService } from '../src/prisma/tenant-modules-cache.service';
 import { TransportOrdersService } from '../src/modules/transportation/transport-orders/transport-orders.service';
 
@@ -190,9 +191,7 @@ describe('Connected Fulfillment bridge (e2e) — CRM SalesOrder → TMS Transpor
     prisma = app.get(PrismaService);
     domainEvents = app.get(DomainEventsService);
     modulesCache = app.get(TenantModulesCacheService);
-    for (let _i = 0; _i < 100; _i++) {
-      if ((await domainEvents.processPending(500)) === 0) break;
-    }
+    await drainInheritedDomainEvents(domainEvents);
 
     const login = await request(http).post('/api/v1/auth/login').send(ADMIN).expect(200);
     token = (login.body as { accessToken: string }).accessToken;
@@ -743,6 +742,50 @@ describe('Connected Fulfillment bridge (e2e) — CRM SalesOrder → TMS Transpor
       await prepareShipment(soId, { destinationLocationId: destId, mode: 'FTL', totalWeightKg: 500 }).expect(400);
       const { soId: soId2 } = await createConfirmedSO();
       await prepareShipment(soId2, { originLocationId: originId, mode: 'FTL', totalWeightKg: 500 }).expect(400);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe('10. Backlog resilience (fulfillment still works behind >100 old PENDING events)', () => {
+    const backlogTenant = `zzz-fb-backlog-${suffix}`;
+
+    afterAll(async () => {
+      await prisma.domainEvent.deleteMany({ where: { tenantId: backlogTenant } }).catch(() => undefined);
+    });
+
+    it('drains a 120-event backlog and still fulfills the sales order', async () => {
+      // Inject 120 old PENDING events for a throwaway tenant (older than anything
+      // this test emits). Oldest-first + batch limits would starve a naive single
+      // batch; the bounded catch-up helper drains them.
+      await prisma.$transaction(
+        Array.from({ length: 120 }, (_v, i) =>
+          prisma.domainEvent.create({
+            data: {
+              tenantId: backlogTenant,
+              type: 'noop.backlog',
+              payload: {},
+              status: 'PENDING',
+              createdAt: new Date(Date.now() - (200 - i) * 1000),
+            },
+          }),
+        ),
+      );
+      expect(
+        await prisma.domainEvent.count({ where: { tenantId: backlogTenant, status: 'PENDING' } }),
+      ).toBe(120);
+
+      const { soId } = await createConfirmedSO();
+      const to = (await prepareShipment(soId, LOGISTICS()).expect(201)).body as { id: string };
+      toIds.push(to.id);
+      await deliverTransportOrder(to.id);
+
+      // Bounded catch-up drains the whole queue (backlog + this suite's events).
+      await drainInheritedDomainEvents(domainEvents);
+
+      expect((await prisma.salesOrder.findUniqueOrThrow({ where: { id: soId } })).status).toBe('FULFILLED');
+      expect(
+        await prisma.domainEvent.count({ where: { tenantId: backlogTenant, status: 'PENDING' } }),
+      ).toBe(0);
     });
   });
 });

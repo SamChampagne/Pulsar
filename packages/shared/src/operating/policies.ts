@@ -421,3 +421,38 @@ for (const p of POLICIES) {
 export function resolvePolicies(event: DomainEventInput): TaskSpec[] {
   return (POLICIES_BY_EVENT.get(event.type) ?? []).flatMap((p) => p.produce(event));
 }
+
+/**
+ * Default upper bound on how many consecutive `processPending` batches a single
+ * cron run may drain. The queue stays a single-process, in-memory-orchestrated,
+ * DB-durable outbox — this only lets one run CATCH UP on a backlog instead of
+ * clearing exactly one batch per minute, without ever looping unboundedly.
+ */
+export const DOMAIN_EVENT_MAX_CATCHUP_BATCHES = 20;
+
+/**
+ * Run `runBatch` (a race-safe claim-and-process step that returns how many
+ * events it handled) repeatedly until the queue is drained OR the batch bound is
+ * hit. Pure orchestration — no double execution (each batch claims its own
+ * events), never loops forever (bounded by maxBatches), and never throws (a
+ * batch error stops the catch-up and is reported, so a caller cron can stay
+ * best-effort). Stops as soon as a batch reports 0 handled (queue empty).
+ */
+export async function drainInBatches(
+  runBatch: () => Promise<number>,
+  opts: { maxBatches: number },
+): Promise<{ batches: number; handled: number; hitLimit: boolean; errored: boolean }> {
+  let handled = 0;
+  const max = Math.max(1, opts.maxBatches);
+  for (let batch = 0; batch < max; batch++) {
+    let n: number;
+    try {
+      n = await runBatch();
+    } catch {
+      return { batches: batch, handled, hitLimit: false, errored: true };
+    }
+    if (n <= 0) return { batches: batch + 1, handled, hitLimit: false, errored: false };
+    handled += n;
+  }
+  return { batches: max, handled, hitLimit: true, errored: false };
+}
