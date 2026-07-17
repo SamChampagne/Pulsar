@@ -3,7 +3,9 @@ import {
   forwardRef,
   Inject,
   Injectable,
+  Logger,
   ServiceUnavailableException,
+  type OnModuleDestroy,
 } from '@nestjs/common';
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -68,7 +70,8 @@ export interface LoginEvent {
 }
 
 @Injectable()
-export class AgentRuntimeService {
+export class AgentRuntimeService implements OnModuleDestroy {
+  private readonly logger = new Logger(AgentRuntimeService.name);
   /** One Hermes process PER conversation (isolation — spike finding). Keyed by hermes sessionId. */
   private readonly live = new Map<string, LiveSession>();
 
@@ -77,6 +80,29 @@ export class AgentRuntimeService {
     private readonly agents: AgentsService,
     private readonly runtimeConfig: RuntimeConfigService,
   ) {}
+
+  /**
+   * Nest lifecycle hook (requires `app.enableShutdownHooks()` in main.ts): on
+   * SIGTERM/SIGINT (container stop/redeploy) kill every still-live Hermes child
+   * process so none survive as orphans/zombies. Best-effort and non-throwing —
+   * mirrors the posture of `killAgentSessions` (rule 24: the agent runtime is
+   * best-effort and isolated, never allowed to block or crash teardown).
+   */
+  onModuleDestroy(): void {
+    const count = this.live.size;
+    if (count === 0) return;
+    for (const [sessionId, session] of this.live) {
+      try {
+        session.child.kill();
+      } catch (err) {
+        this.logger.warn(
+          `Failed to kill Hermes child for session ${sessionId}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+    this.live.clear();
+    this.logger.log(`Shutdown: killed ${count} live Hermes agent session(s).`);
+  }
 
   /**
    * Prepares a tenant's HERMES_HOME and spawns the ACP adapter under the

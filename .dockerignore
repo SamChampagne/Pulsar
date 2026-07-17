@@ -1,0 +1,43 @@
+# Keep the Docker build context small — build from the repo root, e.g.:
+#   docker build -f apps/api/Dockerfile -t pulsar-api .
+
+node_modules
+**/node_modules
+.pnpm-store
+
+# Build outputs (rebuilt inside the image; never trust a host-built artifact)
+apps/api/dist
+apps/web/build
+apps/web/.svelte-kit
+packages/shared/dist
+packages/database/dist
+**/*.tsbuildinfo
+
+# VCS / editor / CI
+.git
+.github
+.vscode
+.idea
+
+# Local env / secrets — never bake secrets into an image
+.env
+.env.*
+!.env.example
+
+# Python sidecars (Hermes agent runtime, APS engine) — provisioned separately
+# via `pnpm agents:setup` / `pnpm aps:setup`, not part of the API/web images.
+hermes-agent/.venv
+hermes-agent/.hermes-home
+services/aps/.venv
+**/__pycache__
+**/*.pyc
+
+# Vendored/unrelated sub-projects and worktrees not needed for the api/web images
+PlaniAdvanceV2
+fleetbase
+.claude/worktrees
+
+# Logs, coverage, misc local artifacts
+*.log
+coverage
+storage
