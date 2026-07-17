@@ -5,10 +5,57 @@ on:
     branches: [main]
   pull_request:
 
-jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
+# Separate jobs on purpose: a red typecheck job vs a red browser-e2e job point
+# straight at the failing tier instead of one monolithic "build-and-test" run.
+env:
+  DATABASE_URL: postgresql://pulsar:pulsar@localhost:5432/pulsar?schema=public
+  JWT_SECRET: ci-only-secret
+  JWT_EXPIRES_IN: 8h
+  ENCRYPTION_KEY: 1qK0pZ8Yw3mB6dT9rV2xU5nC7sE4hG1jL0aF3kM8oP4=
 
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm db:generate
+      - name: Build shared packages
+        run: pnpm --filter @pulsar/shared build && pnpm --filter @pulsar/database build
+      - name: Typecheck all workspaces
+        run: pnpm typecheck
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm db:generate
+      - name: Build shared packages
+        run: pnpm --filter @pulsar/shared build && pnpm --filter @pulsar/database build
+      - name: Unit tests (shared + api + web)
+        run: pnpm test
+
+  api-e2e:
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16-alpine
@@ -23,53 +70,113 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
-
-    env:
-      DATABASE_URL: postgresql://pulsar:pulsar@localhost:5432/pulsar?schema=public
-      JWT_SECRET: ci-only-secret
-      JWT_EXPIRES_IN: 8h
-      ENCRYPTION_KEY: 1qK0pZ8Yw3mB6dT9rV2xU5nC7sE4hG1jL0aF3kM8oP4=
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Validate Prisma schema
-        run: pnpm --filter @pulsar/database exec prisma validate
-
       - name: Generate Prisma client
         run: pnpm db:generate
-
       - name: Build shared packages
         run: pnpm --filter @pulsar/shared build && pnpm --filter @pulsar/database build
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Build apps
-        run: pnpm --filter @pulsar/api build && pnpm --filter @pulsar/web build
-
-      - name: Unit tests (shared)
-        run: pnpm --filter @pulsar/shared test
-
-      - name: Unit tests (api)
-        run: pnpm --filter @pulsar/api test
-
       - name: Apply migrations & seed
         run: |
           pnpm --filter @pulsar/database exec prisma migrate deploy
           pnpm --filter @pulsar/database exec tsx prisma/seed.ts
-
       - name: E2E tests (api)
         run: pnpm --filter @pulsar/api test:e2e
+
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm db:generate
+      - name: Build everything (shared -> database -> api -> web)
+        run: pnpm build
+
+  browser-e2e:
+    runs-on: ubuntu-latest
+    needs: [web-build]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pulsar
+          POSTGRES_PASSWORD: pulsar
+          POSTGRES_DB: pulsar
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pulsar -d pulsar"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      API_PORT: 3000
+      API_CORS_ORIGIN: http://localhost:5173
+      API_URL: http://localhost:3000
+      WEB_URL: http://localhost:5173
+      EMAIL_DRIVER: log
+      STORAGE_DRIVER: local
+      ROUTING_DRIVER: none
+      GEOCODING_DRIVER: none
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm db:generate
+      - name: Build shared, database and api
+        run: |
+          pnpm --filter @pulsar/shared build
+          pnpm --filter @pulsar/database build
+          pnpm --filter @pulsar/api build
+      - name: Apply migrations & seed
+        run: |
+          pnpm --filter @pulsar/database exec prisma migrate deploy
+          pnpm --filter @pulsar/database exec tsx prisma/seed.ts
+      - name: Start the API (built) in the background
+        run: nohup node apps/api/dist/main.js > api.log 2>&1 &
+      - name: Wait for the API to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/api/v1/health/live > /dev/null; then
+              echo "API is up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "API did not become ready in time"; cat api.log; exit 1
+      - name: Install Playwright browsers (chromium only)
+        run: pnpm --filter @pulsar/web exec playwright install --with-deps chromium
+      - name: Browser E2E tests (builds + previews the web app, CI=true selects the preview webServer command)
+        run: pnpm --filter @pulsar/web test:e2e
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 14

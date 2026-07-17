@@ -46,3 +46,7 @@ osrm-data/
 # Vendored Hermes agent runtime (phase 11): venv + per-machine HERMES_HOME
 hermes-agent/.venv/
 hermes-agent/.hermes-home/
+
+# Playwright browser E2E (Wave 6): local browser binaries + run artifacts
+apps/web/playwright-report/
+apps/web/test-results/
