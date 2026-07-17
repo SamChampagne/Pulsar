@@ -391,6 +391,60 @@ export class TransportOrdersService {
   }
 
   /**
+   * Mark an order COMPLETED after all its shipments were delivered on a load.
+   * Centralizes the invariants the load-completion path needs (rules 1/2/6):
+   *  - tenant-scoped, race-safe conditional claim (IN_EXECUTION → COMPLETED);
+   *  - transition guarded by canTransitionTransportOrder;
+   *  - STATUS_CHANGE audit with the real actor;
+   *  - the fulfillment event (transport-order.completed) emitted exactly once,
+   *    ONLY when THIS call won the claim (count === 1) and the order was created
+   *    from a sales order — so a retry never double-fires. Costs are never
+   *    recomputed here (rule 16 untouched).
+   * Returns true iff this call performed the transition.
+   */
+  async completeFromDelivery(tenantId: string, userId: string, orderId: string): Promise<boolean> {
+    if (!canTransitionTransportOrder(TransportOrderStatus.IN_EXECUTION, TransportOrderStatus.COMPLETED)) {
+      return false;
+    }
+    // TOCTOU-safe: only a row still IN_EXECUTION for THIS tenant flips. A
+    // CANCELLED/CLOSED/already-COMPLETED order or another tenant's order → 0.
+    const { count } = await this.prisma.transportOrder.updateMany({
+      where: { id: orderId, tenantId, status: TransportOrderStatus.IN_EXECUTION },
+      data: { status: TransportOrderStatus.COMPLETED },
+    });
+    if (count !== 1) return false;
+
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.STATUS_CHANGE,
+      entityType: 'transport-order',
+      entityId: orderId,
+      before: { status: TransportOrderStatus.IN_EXECUTION },
+      after: { status: TransportOrderStatus.COMPLETED },
+    });
+
+    const done = await this.prisma.transportOrder.findFirst({
+      where: { id: orderId, tenantId },
+      select: { sourceSalesOrderId: true, sourceFulfillmentKey: true, customerId: true },
+    });
+    if (done?.sourceSalesOrderId) {
+      await this.domainEvents.emit(
+        tenantId,
+        DOMAIN_EVENT_TYPES.TRANSPORT_ORDER_COMPLETED,
+        { type: 'transport-order', id: orderId },
+        {
+          transportOrderId: orderId,
+          sourceSalesOrderId: done.sourceSalesOrderId,
+          sourceFulfillmentKey: done.sourceFulfillmentKey,
+          customerId: done.customerId,
+        },
+      );
+    }
+    return true;
+  }
+
+  /**
    * Planning step: derives shipments (freight units) from the order. Without a
    * split, one shipment carries the full order; with `dto.shipments`, one
    * shipment is created per entry (order splitting).

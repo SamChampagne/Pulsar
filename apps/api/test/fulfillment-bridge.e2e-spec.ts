@@ -32,6 +32,7 @@ import { AgentRuntimeService } from '../src/core/agents/agent-runtime.service';
 import { AgentsService } from '../src/core/agents/agents.service';
 import { DomainEventsService } from '../src/core/operating/domain-events.service';
 import { TenantModulesCacheService } from '../src/prisma/tenant-modules-cache.service';
+import { TransportOrdersService } from '../src/modules/transportation/transport-orders/transport-orders.service';
 
 const ADMIN = { email: 'admin@pulsar.dev', password: 'admin123', tenant: 'acme' };
 const suffix = `FB-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -615,6 +616,88 @@ describe('Connected Fulfillment bridge (e2e) — CRM SalesOrder → TMS Transpor
       const names = toolNamesFrom(await mcpAs(key, 'tools/list', {}).expect(200));
       expect(names).toEqual(['list_transport_orders']);
       for (const t of BRIDGE_TOOLS) expect(names).not.toContain(t);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe('8. Completion invariants (completeFromDelivery: tenant-scoped, audited, single-event)', () => {
+    let txService: TransportOrdersService;
+    let realUserId = '';
+
+    // Create a bridge-linked transport order directly in IN_EXECUTION.
+    async function makeInExecutionBridgeTO(status: 'IN_EXECUTION' | 'CANCELLED' = 'IN_EXECUTION') {
+      const { soId } = await createConfirmedSO();
+      const cust = await prisma.customer.create({
+        data: { tenantId, code: `FB-CMP-${suffix}-${toIds.length}`, name: `FB Cmp ${suffix} ${toIds.length}` },
+      });
+      customerIds.push(cust.id);
+      const to = await prisma.transportOrder.create({
+        data: {
+          tenantId,
+          orderNumber: `FB-CMP-TO-${suffix}-${toIds.length}`,
+          customerId: cust.id,
+          originLocationId: originId,
+          destinationLocationId: destId,
+          status: status as never,
+          sourceSalesOrderId: soId,
+          sourceFulfillmentKey: 'primary',
+        },
+      });
+      toIds.push(to.id);
+      return { orderId: to.id, soId };
+    }
+
+    beforeAll(async () => {
+      txService = app.get(TransportOrdersService);
+      const admin = await prisma.user.findFirstOrThrow({ where: { tenantId, email: 'admin@pulsar.dev' } });
+      realUserId = admin.id;
+    });
+
+    it('IN_EXECUTION → COMPLETED: returns true, audits STATUS_CHANGE, emits exactly one event', async () => {
+      const { orderId } = await makeInExecutionBridgeTO();
+      const did = await txService.completeFromDelivery(tenantId, realUserId, orderId);
+      expect(did).toBe(true);
+
+      expect((await prisma.transportOrder.findUniqueOrThrow({ where: { id: orderId } })).status).toBe('COMPLETED');
+
+      const audit = await prisma.auditLog.findFirst({
+        where: { tenantId, entityType: 'transport-order', entityId: orderId, action: 'STATUS_CHANGE' },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(audit).not.toBeNull();
+      expect((audit!.after as { status?: string }).status).toBe('COMPLETED');
+
+      const events = await prisma.domainEvent.count({
+        where: { tenantId, type: 'transport-order.completed', subjectId: orderId },
+      });
+      expect(events).toBe(1);
+    });
+
+    it('retry is idempotent: a second call returns false and emits no second event', async () => {
+      const { orderId } = await makeInExecutionBridgeTO();
+      expect(await txService.completeFromDelivery(tenantId, realUserId, orderId)).toBe(true);
+      expect(await txService.completeFromDelivery(tenantId, realUserId, orderId)).toBe(false);
+      const events = await prisma.domainEvent.count({
+        where: { tenantId, type: 'transport-order.completed', subjectId: orderId },
+      });
+      expect(events).toBe(1);
+    });
+
+    it('a CANCELLED order is not transitioned (no state-machine violation)', async () => {
+      const { orderId } = await makeInExecutionBridgeTO('CANCELLED');
+      expect(await txService.completeFromDelivery(tenantId, realUserId, orderId)).toBe(false);
+      expect((await prisma.transportOrder.findUniqueOrThrow({ where: { id: orderId } })).status).toBe('CANCELLED');
+    });
+
+    it('another tenant cannot complete this tenant\'s order (tenant isolation)', async () => {
+      const { orderId } = await makeInExecutionBridgeTO();
+      const other = await prisma.tenant.create({ data: { slug: `fb-other-${suffix}`, name: `FB Other ${suffix}` } });
+      try {
+        expect(await txService.completeFromDelivery(other.id, 'test-user', orderId)).toBe(false);
+        expect((await prisma.transportOrder.findUniqueOrThrow({ where: { id: orderId } })).status).toBe('IN_EXECUTION');
+      } finally {
+        await prisma.tenant.deleteMany({ where: { id: other.id } }).catch(() => undefined);
+      }
     });
   });
 });
