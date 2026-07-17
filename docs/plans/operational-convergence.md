@@ -390,3 +390,82 @@ Tout vert **ensemble**, base isolée `pulsar_rc` (jamais `pulsar_aps`) :
 **Recommandation** : prêt à ouvrir une PR de `operational-convergence` vers `main` (sous réserve
 de la revue humaine des captures navigateur et de la décision sur la dette Playwright profonde).
 Aucun push/merge effectué.
+
+### Passe de durcissement final (2026-07-17, P0→P2)
+
+Revue finale : 6 commits ciblés (aucune nouvelle feature majeure), tous vérifiés sur `pulsar_rc`.
+
+- **P0 — Autorisation cross-module des outils agents** (`fix(agents)`). `ToolDef` gagne
+  `additionalPermissions[]`/`additionalModules[]` + helpers purs `toolRequiredPermissions`/
+  `toolRequiredModules`. `buildAgentMcpServer` exige TOUTES les permissions ET TOUS les modules
+  avant d'exposer un outil (jamais d'autorisation partielle). Les 2 outils du pont exigent
+  `transportation.orders.{read|manage}` **ET** `crm.read` + modules transportation **ET** crm.
+  `approve` re-vérifie perms+modules (une rétrogradation entre enfilage et approbation bloque
+  l'exécution). +6 e2e (visibles avec les 2 perms ; absents sans crm.read / sans perm TMS / CRM
+  off ; invocation directe rejetée ; toolAllowlist ; mutating toujours mis en file).
+- **P0 — Complétion TransportOrder tenant-scopée & auditée** (`fix(fulfillment)`). Nouvelle
+  `TransportOrdersService.completeFromDelivery` : garde `canTransitionTransportOrder`, claim
+  conditionnel `updateMany {id, tenantId, IN_EXECUTION}`, `AuditLog` STATUS_CHANGE (acteur réel),
+  event `transport-order.completed` émis **exactement une fois** (count===1, uniquement si issu
+  d'une SO) ; coûts jamais recalculés (règle 16). `LoadsService.complete` : `shipment.count`
+  tenant-scopé + appel centralisé. +4 e2e (transition/audit/event-unique, retry idempotent,
+  CANCELLED non transitionné, autre tenant sans effet).
+- **P1 — Contrat logistique aligné** (`fix(fulfillment)`). Helper pur
+  `validateFulfillmentLogistics` (source unique, browser-safe) : origine+destination+mode requis
+  **et ≥1 mesure physique > 0** (zéro ne compte pas, jamais déduit). Branché : service (source de
+  vérité, chemins HTTP+agent), DTO (`mode` requis), Zod (`mode` requis, mesures `.positive()`),
+  contexte READ (`requiredLogisticsFields` = constante partagée + `optionalLogisticsFields`),
+  descriptions MCP, wizard UI (validation client + fenêtres annoncées facultatives). +unit +7 e2e.
+- **P1 — Isolation DomainEvents + catch-up borné** (`test(operating)`). 10 suites e2e : les blocs
+  de drain copiés-collés remplacés par un helper unique documenté `drainInheritedDomainEvents`
+  (E2E, base isolée). Production : `processCron` utilise `drainInBatches` pur (rattrape jusqu'à
+  `DOMAIN_EVENT_MAX_CATCHUP_BATCHES=20` batches/exécution, jamais infini, jamais throw, pas de
+  double exécution) ; `processPending(limit)` inchangé/race-safe ; file toujours mono-process
+  in-memory-orchestrée + DB-durable (runbook). +5 unit (`drainInBatches`) + e2e prouvant le
+  fulfillment derrière un backlog de 120 events PENDING.
+- **P1 — Parcours Playwright profond CRM→TMS** (`test(browser)`). `fulfillment.spec.ts` : SO
+  CONFIRMED → panneau Expédition → wizard → refus sans mesure → création → TO listé → lien retour
+  → 2ᵉ expédition (clé différente) → 2 TO distincts ; + wizard tablette sans débordement
+  horizontal. Sélecteurs accessibles, sans attente arbitraire, captures sous
+  `apps/web/playwright-artifacts/fulfillment/` (01 panneau, 02 wizard, 03 lien CRM, 04 tablette).
+- **P2 — Polish** (`chore(deploy)`). `git diff --check` propre (ligne vide EOF retirée) ; API
+  Dockerfile : plus de `prisma generate` au démarrage (build+runtime = node:22-alpine → engine
+  musl déjà généré/copié ; prouvé par le smoke) ; dette d'image documentée (dev-deps non prunées
+  car migrate/seed via la même image ont besoin de prisma+tsx ; runtime encore root — non prouvable
+  par le smoke actuel, prod devrait de toute façon utiliser S3).
+
+**Preuves finales combinées (`pulsar_rc`, `APS_AUTOSTART=false`)** : voir §« Résultats des gates »
+ci-dessous (mis à jour au run). Le smoke Docker a en plus validé la **création du pont via
+l'origine web** (no-mesure → 400, poids → 201, `sourceSalesOrderId` posé).
+
+### Niveaux de préparation (honnête)
+
+- **Prêt pour PR** : OUI — build/typecheck/unit/e2e/Playwright verts, smoke conteneurisé prouvé,
+  `git diff --check` propre.
+- **Prêt pour staging** : OUI mono-instance (health/ready, migrations explicites, same-origin nginx,
+  secrets via env, S3+SMTP à brancher).
+- **Prêt pour production mono-instance** : OUI sous conditions — S3 pour le stockage (local non
+  durable), SMTP réel, `JWT_SECRET`/`ENCRYPTION_KEY`/`PLATFORM_ADMIN_PASSWORD` réels, Hermes réel
+  non qualifié dans ce gate (best-effort 503 sinon).
+- **Prêt pour production multi-instance** : NON — caches modules en mémoire (30 s), dispatcher
+  d'agents + file DomainEvent orchestrés en mémoire mono-process, throttle Nominatim in-process ;
+  chemin Redis documenté (§6) non implémenté. Observabilité = logs `clé=valeur` + `x-request-id`
+  (pas de tracing/metrics agrégés).
+
+### Résultats des gates (2026-07-17, `pulsar_rc`, `APS_AUTOSTART=false`)
+
+| Gate | Résultat |
+| --- | --- |
+| `pnpm typecheck` | ✅ 0 erreur (api + web ; 41 warnings a11y préexistants) |
+| `pnpm build` | ✅ shared → database → api → web |
+| `pnpm test` (unit) | ✅ **810** — shared 569, api 218, web 23 |
+| `pnpm test:e2e` (1 run, 70 suites) | ✅ **604 passed, 1 skip, 0 fail / 605**, exit 0 propre (skip = timing phase13 connu) |
+| Playwright (chemin CI reproduit) | ✅ **18/18** (desktop/tablette/mobile) — dont le parcours profond CRM→TMS |
+| Docker `pulsar-api:rc` + `pulsar-web:rc` | ✅ construites ; smoke same-origin : health 200/200, deep-link, login, appel authentifié, **pont CRM→TMS via l'origine** (no-mesure→400, poids→201) |
+| `git diff --check` | ✅ propre |
+
+**Note `pnpm format`** : NON exécuté. Le dépôt a une **dérive Prettier préexistante systémique**
+(quasi tout `apps/api` diverge du `.prettierrc` courant) — lancer `pnpm format` réécrirait des
+centaines de fichiers **hors périmètre de cette mission**. Les fichiers ajoutés/édités ici suivent
+le style de-facto du code environnant (cohérents). La normalisation Prettier globale = dette
+séparée à traiter dans un commit dédié.

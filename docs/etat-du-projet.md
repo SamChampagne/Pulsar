@@ -6,6 +6,16 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Stage en cours (2026-07-17) — `operational-convergence` (branche non mergée, prête PR).**
+> Waves 0→7 + Release Qualification (Gates A→D) + **pont CRM SalesOrder → TMS TransportOrder**
+> (« Préparer l'expédition ») + passe de durcissement finale (autorisation cross-module des outils
+> agents, complétion TransportOrder tenant-scopée/auditée/state-machine, contrat logistique aligné
+> API↔agents↔UI, isolation DomainEvents + catch-up cron borné, parcours Playwright profond,
+> polish Docker). Gates verts : typecheck 0, build, unit 810, e2e 604/605 (1 skip, exit 0),
+> Playwright 18/18, smoke Docker same-origin prouvé. **Prêt PR / staging / prod mono-instance
+> (sous S3+SMTP+secrets réels) ; PAS multi-instance** (Redis non implémenté). Détail + preuves :
+> [docs/plans/operational-convergence.md](./plans/operational-convergence.md) §Release Qualification.
+
 ## Où on est rendu
 
 | Phase | Livré | Contenu clé |
