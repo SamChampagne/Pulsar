@@ -321,3 +321,73 @@ comme tel). Suffisamment exploitables pour le tri opérationnel.
 Hermes/APS restent optionnels (`APS_AUTOSTART=false`, `installed:false` en readiness, jamais
 bloquant — règle 24). S3/SMTP non requis pour le smoke (storage local + email `log`).
 
+### Gate D — Pont CRM SalesOrder → TMS TransportOrder (**livré + testé**)
+
+Décision produit appliquée : **pas** de création auto à la confirmation (une SalesOrder n'a pas
+les infos logistiques). Workflow explicite « Préparer l'expédition » depuis une SalesOrder
+**CONFIRMED**.
+
+**Schéma / migration** (`20260717120000_fulfillment_sales_order_transport_order`) :
+`TransportOrder.sourceSalesOrderId` + `sourceFulfillmentKey` (nullables) + contrainte unique
+`(tenantId, sourceSalesOrderId, sourceFulfillmentKey)` (idempotence ; NULLs distincts en Postgres →
+les TO ordinaires ne collisionnent jamais) ; FK `ON DELETE SET NULL` ; back-relation
+`SalesOrder.fulfillmentOrders`.
+
+**Pont (CRM→TMS)** : `POST /transportation/transport-orders/from-sales-order/:salesOrderId`
+(perms `transportation.orders.manage` **ET** `crm.read` ; CRM re-vérifié en service). Client
+**dérivé** de `SalesOrder.customerId` (jamais du front) ; `customerReference` = n° SO par défaut ;
+poids/volume/palettes fournis explicitement (jamais déduits). Réutilise
+`TransportOrdersService.create` (séquences r8, ownership r9, custom fields r35, audit r6) ;
+idempotent par `fulfillmentKey` (P2002 → retour de l'existant). Émet
+`crm.sales_order.transport_requested` ; lien audité des deux côtés. `GET …/context` (lecture) pour
+l'UI. `moduleOfEventType` inchangé (préfixes `crm`/`transport-order` déjà mappés — pas de
+réimplémentation).
+
+**Fulfillment (TMS→CRM)** : `LoadsService.complete` émet `transport-order.completed` pour les TO
+issues d'une SO ; réaction `fulfill_sales_order` (`REACTION_CATALOG` + règle seedée,
+`ReactionExecutorService`, idempotence `ReactionExecution`, service-account) →
+`SalesOrdersService.fulfillFromTransport` : CONFIRMED → FULFILLED **ssi** toutes les TO liées sont
+terminales et ≥1 livrée (décision **pure** `deriveSalesOrderFulfillment` `@pulsar/shared` ;
+transition gardée par `canTransitionSalesOrder` + claim conditionnel). FULFILLED et INVOICED
+restent 2 transitions distinctes (pas de facturation auto).
+
+**Agents** : `create_transport_order_from_sales_order` (MUTATING) + `get_sales_order_fulfillment_context`
+(READ) via le registre + `handleMutatingTool` → `ProposedAction` (jamais d'exécution directe dans
+le handler ; l'agent ne peut inventer client/origine/destination/poids).
+
+**UI** : fiche SalesOrder → panneau « Expédition » (bouton visible seulement si CONFIRMED + client
+lié, sinon message ; wizard logistique modal ; anti-double-clic ; liste des TO liées + n° créé) ;
+fiche TransportOrder → SalesOrder source dans « Lié à » (clé de fulfillment humanisée).
+
+**Tests** : unit `deriveSalesOrderFulfillment` (shared, 4 cas) ; e2e `fulfillment-bridge` **14/14** —
+création depuis CONFIRMED, refus DRAFT/CANCELLED/sans-client/SO-inconnue/location-non-possédée/
+CRM-désactivé, idempotence (même clé) + multi-clés, réaction de fulfillment (mono/partiel/annulé
+seul/dupliqué idempotent), gouvernance agent (READ direct + MUTATING mis en file puis approuvé),
+et **slice verticale** Deal WON → Customer → SalesOrder → CONFIRMED → Préparer l'expédition → TO →
+livraison → SalesOrder **FULFILLED** → INVOICED → CustomerInvoice → paiement → **GL équilibré**.
+C'est la preuve « lead-to-cash » complète **à travers le pont**.
+
+### Correction des incohérences du plan
+
+- Balises parasites `</content></invoke>` en fin de fichier retirées.
+- Le stage « Operational Convergence » (Waves 0→7) reste la base ; **cette qualification (Gate A→D)
+  valide réellement** ce qui était marqué terminé : l'E2E complet passe en 1 run (flake d'isolation
+  outbox corrigé), le chemin CI Playwright tourne (preview proxy + fix `vite`), les images Docker
+  **construisent et tournent** (smoke same-origin prouvé). Les « manques structurels » de la §1
+  (pas de Playwright, pas de déploiement reproductible) sont **levés** ; restent en dette : les
+  parcours Playwright profonds (13), les caches/queues en mémoire (chemin Redis documenté).
+
+### Vérification finale combinée (2026-07-17)
+
+Tout vert **ensemble**, base isolée `pulsar_rc` (jamais `pulsar_aps`) :
+- `pnpm typecheck` : 0 erreur ; `pnpm build` : OK ; `pnpm test` : **802** (shared 561, api 218,
+  web 23).
+- `pnpm test:e2e` (1 run, 70 suites) : **586 passed, 1 skip, 0 fail / 587** (le skip = timing
+  phase13 connu). Inclut la nouvelle suite `fulfillment-bridge` 14/14.
+- Playwright (chemin CI reproduit) : **16/16** (desktop/tablette/mobile).
+- Docker : `pulsar-api:rc` + `pulsar-web:rc` construites ; smoke same-origin conteneurisé vérifié.
+
+**Recommandation** : prêt à ouvrir une PR de `operational-convergence` vers `main` (sous réserve
+de la revue humaine des captures navigateur et de la décision sur la dette Playwright profonde).
+Aucun push/merge effectué.
+
