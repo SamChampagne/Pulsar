@@ -9,6 +9,8 @@ import {
   TransportOrderStatus,
   canTransitionTransportOrder,
   deriveSalesOrderFulfillment,
+  validateFulfillmentLogistics,
+  FULFILLMENT_REQUIRED_LOGISTICS,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
@@ -210,6 +212,12 @@ export class TransportOrdersService {
       );
     }
 
+    // Logistics contract (source of truth — covers the HTTP and agent paths):
+    // origin, destination and mode required + at least one strictly-positive
+    // physical measure. Never inferred from commercial amounts/quantities.
+    const logistics = validateFulfillmentLogistics(dto);
+    if (!logistics.ok) throw new BadRequestException(logistics.error);
+
     const fulfillmentKey = dto.fulfillmentKey?.trim() || 'primary';
 
     // Idempotent retry: return the transport order already created for this
@@ -333,15 +341,14 @@ export class TransportOrdersService {
       canPrepareShipment,
       // Logistics data must be supplied explicitly — a sales order carries none
       // of it and it must never be inferred from commercial amounts/quantities.
-      requiredLogisticsFields: [
-        'originLocationId',
-        'destinationLocationId',
-        'requestedPickupEarly/Late',
-        'requestedDeliveryEarly/Late',
-        'totalWeightKg',
-        'totalVolumeM3',
-        'palletCount',
-        'mode',
+      // Single source of truth for the contract (shared with the validator).
+      requiredLogisticsFields: [...FULFILLMENT_REQUIRED_LOGISTICS],
+      optionalLogisticsFields: [
+        'requestedPickupEarly',
+        'requestedPickupLate',
+        'requestedDeliveryEarly',
+        'requestedDeliveryLate',
+        'notes',
       ],
     };
   }

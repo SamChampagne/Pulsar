@@ -693,11 +693,56 @@ describe('Connected Fulfillment bridge (e2e) — CRM SalesOrder → TMS Transpor
       const { orderId } = await makeInExecutionBridgeTO();
       const other = await prisma.tenant.create({ data: { slug: `fb-other-${suffix}`, name: `FB Other ${suffix}` } });
       try {
-        expect(await txService.completeFromDelivery(other.id, 'test-user', orderId)).toBe(false);
+        expect(await txService.completeFromDelivery(other.id, realUserId, orderId)).toBe(false);
         expect((await prisma.transportOrder.findUniqueOrThrow({ where: { id: orderId } })).status).toBe('IN_EXECUTION');
       } finally {
         await prisma.tenant.deleteMany({ where: { id: other.id } }).catch(() => undefined);
       }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe('9. Logistics contract (origin/destination/mode + >=1 positive measure)', () => {
+    const NO_MEASURE = () => ({ originLocationId: originId, destinationLocationId: destId, mode: 'FTL' as const });
+
+    it('refuses when no physical measure is provided', async () => {
+      const { soId } = await createConfirmedSO();
+      await prepareShipment(soId, NO_MEASURE()).expect(400);
+    });
+
+    it('refuses when all measures are zero (zero never satisfies the rule)', async () => {
+      const { soId } = await createConfirmedSO();
+      await prepareShipment(soId, { ...NO_MEASURE(), totalWeightKg: 0, totalVolumeM3: 0, palletCount: 0 }).expect(400);
+    });
+
+    it('accepts a positive weight only', async () => {
+      const { soId } = await createConfirmedSO();
+      const to = (await prepareShipment(soId, { ...NO_MEASURE(), totalWeightKg: 500 }).expect(201)).body as { id: string };
+      toIds.push(to.id);
+    });
+
+    it('accepts a positive volume only', async () => {
+      const { soId } = await createConfirmedSO();
+      const to = (await prepareShipment(soId, { ...NO_MEASURE(), totalVolumeM3: 8 }).expect(201)).body as { id: string };
+      toIds.push(to.id);
+    });
+
+    it('accepts a positive pallet count only', async () => {
+      const { soId } = await createConfirmedSO();
+      const to = (await prepareShipment(soId, { ...NO_MEASURE(), palletCount: 3 }).expect(201)).body as { id: string };
+      toIds.push(to.id);
+    });
+
+    it('refuses when mode is missing', async () => {
+      const { soId } = await createConfirmedSO();
+      await prepareShipment(soId, { originLocationId: originId, destinationLocationId: destId, totalWeightKg: 500 }).expect(400);
+    });
+
+    it('refuses when origin or destination is missing', async () => {
+      const { soId } = await createConfirmedSO();
+      await prepareShipment(soId, { destinationLocationId: destId, mode: 'FTL', totalWeightKg: 500 }).expect(400);
+      const { soId: soId2 } = await createConfirmedSO();
+      await prepareShipment(soId2, { originLocationId: originId, mode: 'FTL', totalWeightKg: 500 }).expect(400);
     });
   });
 });

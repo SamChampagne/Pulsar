@@ -96,10 +96,11 @@ export const tmsTools: ToolDef[] = [
     description:
       'Prepare a shipment: create a transport order from a CONFIRMED CRM sales order. The ' +
       'customer is derived server-side from the sales order (never provide it). You MUST supply ' +
-      'origin and destination locations and the physical metrics (weight/volume/pallets) — NEVER ' +
-      'infer weight/volume from product quantities or commercial amounts. Idempotent per ' +
-      '(salesOrder, fulfillmentKey). Requires transportation.orders.manage AND crm.read, with ' +
-      'both modules enabled. PROPOSED — requires human approval.',
+      'originLocationId, destinationLocationId, a mode, AND at least one physical measure > 0 ' +
+      '(totalWeightKg, totalVolumeM3 or palletCount) — NEVER infer weight/volume/pallets from ' +
+      'product quantities or commercial amounts; zero does not count. Time windows are optional. ' +
+      'Idempotent per (salesOrder, fulfillmentKey). Requires transportation.orders.manage AND ' +
+      'crm.read, with both modules enabled. PROPOSED — requires human approval.',
     tier: RiskTier.MUTATING,
     permission: T.ORDERS_MANAGE,
     additionalPermissions: [PERMISSIONS.CRM.READ],
@@ -115,10 +116,13 @@ export const tmsTools: ToolDef[] = [
       requestedPickupLate: z.string().optional(),
       requestedDeliveryEarly: z.string().optional(),
       requestedDeliveryLate: z.string().optional(),
-      mode: z.enum(['FTL', 'LTL', 'PARCEL']).optional(),
-      totalWeightKg: z.number().nonnegative().optional(),
-      totalVolumeM3: z.number().nonnegative().optional(),
-      palletCount: z.number().int().nonnegative().optional(),
+      // mode is REQUIRED. At least one of the three measures must be > 0 — this
+      // cross-field rule is enforced server-side (validateFulfillmentLogistics),
+      // since a Zod .refine() would change the schema type the MCP layer needs.
+      mode: z.enum(['FTL', 'LTL', 'PARCEL']),
+      totalWeightKg: z.number().positive().optional(),
+      totalVolumeM3: z.number().positive().optional(),
+      palletCount: z.number().int().positive().optional(),
       notes: z.string().optional(),
     }),
     run: (args, ctx) => {

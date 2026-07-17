@@ -4,6 +4,8 @@ import {
   canTransitionSalesOrder,
   isSalesOrderOpen,
   deriveSalesOrderFulfillment,
+  validateFulfillmentLogistics,
+  hasPositivePhysicalMeasure,
 } from './sales-order.workflow';
 
 describe('canTransitionSalesOrder', () => {
@@ -56,5 +58,32 @@ describe('deriveSalesOrderFulfillment', () => {
     // A cancelled sibling does not block once the rest are delivered.
     expect(deriveSalesOrderFulfillment(['COMPLETED', 'CANCELLED'])).toEqual({ fulfill: true, reason: 'all-delivered' });
     expect(deriveSalesOrderFulfillment(['CLOSED', 'COMPLETED'])).toEqual({ fulfill: true, reason: 'all-delivered' });
+  });
+});
+
+describe('validateFulfillmentLogistics', () => {
+  const base = { originLocationId: 'o', destinationLocationId: 'd', mode: 'FTL' };
+
+  it('requires origin, destination and mode', () => {
+    expect(validateFulfillmentLogistics({ ...base, originLocationId: '', totalWeightKg: 1 }).ok).toBe(false);
+    expect(validateFulfillmentLogistics({ ...base, destinationLocationId: '', totalWeightKg: 1 }).ok).toBe(false);
+    expect(validateFulfillmentLogistics({ ...base, mode: '', totalWeightKg: 1 }).ok).toBe(false);
+  });
+
+  it('requires at least one strictly-positive measure', () => {
+    expect(validateFulfillmentLogistics({ ...base }).ok).toBe(false); // none
+    expect(
+      validateFulfillmentLogistics({ ...base, totalWeightKg: 0, totalVolumeM3: 0, palletCount: 0 }).ok,
+    ).toBe(false); // all zero
+    expect(validateFulfillmentLogistics({ ...base, totalWeightKg: 800 }).ok).toBe(true);
+    expect(validateFulfillmentLogistics({ ...base, totalVolumeM3: 12 }).ok).toBe(true);
+    expect(validateFulfillmentLogistics({ ...base, palletCount: 4 }).ok).toBe(true);
+  });
+
+  it('never counts negative / non-finite / zero as a measure', () => {
+    expect(hasPositivePhysicalMeasure({ totalWeightKg: -5 })).toBe(false);
+    expect(hasPositivePhysicalMeasure({ totalVolumeM3: 0 })).toBe(false);
+    expect(hasPositivePhysicalMeasure({ palletCount: NaN })).toBe(false);
+    expect(hasPositivePhysicalMeasure({ palletCount: 1 })).toBe(true);
   });
 });

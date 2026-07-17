@@ -46,6 +46,53 @@ export type FulfillmentReason =
 const TO_DELIVERED = new Set(['COMPLETED', 'CLOSED']);
 const TO_CANCELLED = 'CANCELLED';
 
+/**
+ * Logistics contract for preparing a shipment from a sales order. Pure and
+ * browser-safe so the API service (source of truth), the agent tool and the
+ * SvelteKit wizard all validate identically. The rule (product decision):
+ * origin, destination and mode are required, AND at least one physical measure
+ * must be STRICTLY positive — zeros never satisfy it, and nothing is inferred
+ * from commercial amounts/quantities. Time windows stay optional.
+ */
+export interface FulfillmentLogisticsInput {
+  originLocationId?: string | null;
+  destinationLocationId?: string | null;
+  mode?: string | null;
+  totalWeightKg?: number | null;
+  totalVolumeM3?: number | null;
+  palletCount?: number | null;
+}
+
+/** The fields a shipment always requires (for UI hints and the READ context tool). */
+export const FULFILLMENT_REQUIRED_LOGISTICS = [
+  'originLocationId',
+  'destinationLocationId',
+  'mode',
+  'at least one of: totalWeightKg, totalVolumeM3, palletCount (> 0)',
+] as const;
+
+export function hasPositivePhysicalMeasure(input: FulfillmentLogisticsInput): boolean {
+  return [input.totalWeightKg, input.totalVolumeM3, input.palletCount].some(
+    (v) => typeof v === 'number' && Number.isFinite(v) && v > 0,
+  );
+}
+
+export function validateFulfillmentLogistics(
+  input: FulfillmentLogisticsInput,
+): { ok: true } | { ok: false; error: string } {
+  if (!input.originLocationId) return { ok: false, error: 'An origin location is required.' };
+  if (!input.destinationLocationId) return { ok: false, error: 'A destination location is required.' };
+  if (!input.mode) return { ok: false, error: 'A transport mode is required.' };
+  if (!hasPositivePhysicalMeasure(input)) {
+    return {
+      ok: false,
+      error:
+        'At least one physical measure (weight, volume or pallet count) greater than 0 is required — never inferred from amounts or quantities.',
+    };
+  }
+  return { ok: true };
+}
+
 export function deriveSalesOrderFulfillment(
   transportOrderStatuses: readonly string[],
 ): { fulfill: boolean; reason: FulfillmentReason } {

@@ -4,7 +4,7 @@
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import { formatDate, formatMoney } from '$lib/format';
-  import { computeLineTotal } from '@pulsar/shared';
+  import { computeLineTotal, validateFulfillmentLogistics } from '@pulsar/shared';
   import {
     PageHeader,
     Button,
@@ -393,7 +393,17 @@
 
   async function submitPrepareShipment() {
     if (!order) return;
-    if (!wOrigin || !wDest) { wError = 'Origine et destination sont requises.'; return; }
+    // Same contract as the server (source of truth): origin, destination, mode
+    // and at least one strictly-positive physical measure. Zeros never satisfy it.
+    const check = validateFulfillmentLogistics({
+      originLocationId: wOrigin,
+      destinationLocationId: wDest,
+      mode: wMode,
+      totalWeightKg: wWeight,
+      totalVolumeM3: wVolume,
+      palletCount: wPallets,
+    });
+    if (!check.ok) { wError = check.error; return; }
     wSubmitting = true;
     wError = '';
     try {
@@ -934,8 +944,10 @@
   <Modal bind:open={showWizard} title="Préparer l'expédition" onclose={() => (showWizard = false)}>
     <div class="space-y-3">
       <p class="text-xs text-ink-muted">
-        Le client est repris de la commande. Renseignez les informations logistiques —
-        elles ne sont jamais déduites des montants ou des quantités.
+        Le client est repris de la commande. <strong>Origine, destination, mode</strong> et
+        <strong>au moins une mesure physique &gt; 0</strong> (poids, volume ou palettes) sont
+        requis — jamais déduits des montants ou des quantités. Les fenêtres horaires sont
+        facultatives.
       </p>
       {#if wError}
         <p class="rounded-md border border-danger/40 bg-danger/10 px-2.5 py-1.5 text-xs text-danger">{wError}</p>

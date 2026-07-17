@@ -114,10 +114,14 @@ export class CreateTransportOrderFromSalesOrderDto {
   @IsDateString()
   requestedDeliveryLate?: string;
 
-  @IsOptional()
+  // Required for the bridge (a shipment must have a mode). The service also
+  // re-validates via validateFulfillmentLogistics (source of truth, agent path).
   @IsEnum(TransportMode)
-  mode?: TransportMode;
+  mode!: TransportMode;
 
+  // Each measure is individually optional, but the service enforces that AT
+  // LEAST ONE is strictly positive (validateFulfillmentLogistics). A 0 never
+  // satisfies the rule, and nothing is inferred from commercial amounts.
   @IsOptional()
   @IsNumber()
   @Min(0)
