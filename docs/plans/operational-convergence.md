@@ -110,20 +110,21 @@ leurs tâches respectives (contrat exact + fichiers) avant modification.
 - [x] Harness d'évaluation : `agent-evals.e2e-spec.ts` — 16 assertions (scoping/outil interdit, cap dur, mutating→file, idempotence, course d'approbation, isolation cross-tenant, args hostiles/prompt-injection, runtime-down gracieux) — commit `2d7306a`, 16/16.
 - [~] KPIs agent : génériques déjà calculés (`deriveAgentKpis` : approval/auto/error rate, runs, breaker, tasks). KPIs **spécifiques domaine** (dispute $ récupéré, exceptions rattrapées) = dette légère documentée.
 
-### Wave 5 — Workflows supplémentaires
-- [ ] WMS/Yard/Fleet · CRM/Sites · Manufacturing/APS : relations + tests
+### Wave 5 — Workflows supplémentaires ✅ (2026-07-16)
+- [x] Relations UI cross-module câblées sur WMS (pick/receipt) + Fleet (asset↔maintenance/conformité) — commit `430de77`. Braids automatisés (transport-order.planned→picks, load.completed→facture+close TO, maintenance/dock) **vérifiés verts** : `cross-module-automation` + `arc-e-reactions` 17/17. (Yard/Manufacturing/APS : braids déjà couverts ; relations UI supplémentaires = dette légère.)
 
-### Wave 6 — Tests UI & CI
-- [ ] Playwright (12 parcours critiques, sélecteurs stables/accessibles)
-- [ ] Isolation E2E stricte (namespaces uniques, diag handles Jest ouverts, échec E2E reproduit & corrigé)
-- [ ] CI distinguant unit / API E2E / web component / browser E2E / typecheck / build ; artifacts Playwright
+### Wave 6 — Tests UI & CI ✅ fondation (2026-07-16)
+- [x] Playwright installé + 4 smoke tests critiques (login page sans backend ✅ exécuté ; login/dashboard/loads authentifiés écrits sur sélecteurs accessibles, exécutés en CI) — commit `cee1392`. (Fondation ~4 parcours, pas 12 — extension = dette.)
+- [x] Isolation E2E : suites nouvelles utilisent des codes uniques + cleanup FK-safe ; **8 suites nouvelles exécutées ensemble en un batch (51 tests) sans interférence**. (Le vieux flake cross-suite de la baseline reste à isoler — dette.)
+- [x] CI `.github/workflows/ci.yml` : jobs séparés typecheck / unit / api-e2e (Postgres service + migrate deploy + seed) / web-build / browser-e2e (Playwright + artifact HTML report).
 
-### Wave 7 — Fondation cloud
-- [ ] `/health/live`, `/health/ready` (PostgreSQL, APS, runtime agent)
-- [ ] Logs structurés + correlation/request ID + métriques minimales
-- [ ] Conteneurs API + web ; migrations au déploiement ; CORS configurable ; arrêt propre des enfants
-- [ ] Chemin Redis/queue durable identifié/isolé ; traçabilité des runs agent jamais uniquement en mémoire
-- [ ] Runbook secrets/S3/SMTP/backup-restore
+### Wave 7 — Fondation cloud ✅ (2026-07-16)
+- [x] `/health/live` + `/health/ready` (PostgreSQL fatal ; runtime agent + APS best-effort informatifs) — commit `a8c9507`, e2e 3/3.
+- [x] Logs structurés (interceptor par requête, skip `/health`) + correlation/request ID (`x-request-id`) — commit `a8c9507`.
+- [x] Conteneurs API + web (Dockerfile multi-stage + nginx SPA fallback) ; migrations au déploiement (`prisma migrate deploy`) ; CORS configurable (`CORS_ORIGINS`) ; arrêt propre des enfants Hermes (`onModuleDestroy`) — commit `54c6fde`. (Images non `docker build`-testées — documenté.)
+- [x] Chemin Redis/queue documenté dans le runbook (composants in-memory identifiés + migration path). Traçabilité runs agent = déjà durable (`AgentRun`).
+- [x] Runbook `docs/runbook.md` : env, migrations, conteneurs, health, shutdown, scaling Redis, backup/restore — commit `54c6fde`.
+- [x] Durcissement post-revue : backfill snapshot tender + `/health/ready` sans erreur brute — commit final-review.
 
 ---
 
@@ -180,6 +181,7 @@ leurs tâches respectives (contrat exact + fichiers) avant modification.
   Suites vertes : sites 9/9, carrier-portal 2/2, driver-load-closed 3/3, collaboration,
   phase13-workforce 10/10. Typecheck 0 erreur. Aucun assouplissement des règles métier.
   Ajouts transverses réutilisables : `toast.info`, `AgentRuntimeService.readiness()`.
+- **2026-07-16** — **Waves 2→7 livrées** (session autonome, subagent-driven, branche `operational-convergence`). Wave 2 (shell responsive, primitives d'interconnexion, cohérence états/i18n, dashboard attention) ; Wave 3 (e2e lead-to-cash CRM→billing + relations UI ; **gap SO→TO documenté**) ; Wave 4 (outils Dispatch Exception, harness d'éval 16 scénarios, transparence readiness) ; Wave 5 (relations WMS/Fleet + braids vérifiés 17/17) ; Wave 6 (Playwright 4 smoke + CI multi-jobs) ; Wave 7 (health, correlation id, logs, conteneurs, CORS, shutdown, runbook). Vérif finale : build monorepo OK, typecheck 0 err (api+web), unit 218 api + 557 shared, 8 suites e2e nouvelles 51/51 en batch. Revue finale opus : aucun défaut bloquant ; 2 items mineurs corrigés. **Restes/dette** : pont SO→TO (choix stratégique), KPIs agent spécifiques domaine, extension Playwright à 12 parcours, isolation du flake e2e baseline, docker build réel, i18n framework.
 - **2026-07-16** — Wave 1.1 (durcissement) livrée :
   - **P0-F+** Offre tender **immuable** : snapshot `Tender.offeredAmount/offeredCurrency`
     figé à l'envoi depuis `Load.estimatedCost/costCurrency` (migration
