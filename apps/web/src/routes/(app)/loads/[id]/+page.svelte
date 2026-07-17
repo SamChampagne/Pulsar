@@ -5,6 +5,7 @@
   import {
     Badge, Button, PageHeader,
     toneFor, labelFor,
+    Skeleton, ErrorNotice,
   } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
   import { toast } from '$lib/stores/toast';
@@ -204,7 +205,7 @@
 </script>
 
 {#if error}
-  <p class="text-sm text-danger">{error}</p>
+  <ErrorNotice message={error} onretry={load} />
 {:else if detail}
   <!-- Page header with title + status badge + action buttons -->
   <PageHeader title={detail.loadNumber}>
@@ -335,5 +336,5 @@
     </div>
   </div>
 {:else}
-  <p class="text-sm text-ink-muted">Loading…</p>
+  <Card padded={false}><div class="p-4"><Skeleton rows={6} /></div></Card>
 {/if}

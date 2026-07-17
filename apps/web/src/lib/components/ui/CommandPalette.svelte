@@ -53,7 +53,7 @@
         <Search class="size-4 text-ink-faint" />
         <input
           class="w-full bg-transparent py-3 text-sm outline-none placeholder:text-ink-faint"
-          placeholder="Go to… or pick “AI assistant”"
+          placeholder="Aller à… ou choisir « Assistant IA »"
           bind:value={query}
           oninput={() => (selected = 0)}
           use:focusOnMount
@@ -73,7 +73,7 @@
             </button>
           </li>
         {:else}
-          <li class="px-3 py-4 text-center text-xs text-ink-faint">No results</li>
+          <li class="px-3 py-4 text-center text-xs text-ink-faint">Aucun résultat</li>
         {/each}
       </ul>
     </div>

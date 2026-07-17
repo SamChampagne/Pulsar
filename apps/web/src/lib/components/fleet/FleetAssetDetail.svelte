@@ -11,6 +11,7 @@
     Select,
     Skeleton,
     Textarea,
+    ErrorNotice,
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
@@ -356,7 +357,7 @@
     {#each Array(3) as _, i (i)}<Skeleton />{/each}
   </div>
 {:else if error}
-  <Card><p class="text-sm text-danger">{error}</p></Card>
+  <ErrorNotice message={error} onretry={load} />
 {:else if asset}
   <!-- Header -->
   <PageHeader title={asset.unitNumber}>

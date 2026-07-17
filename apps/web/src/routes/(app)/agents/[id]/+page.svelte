@@ -16,6 +16,7 @@
     Select,
     Skeleton,
     Textarea,
+    ErrorNotice,
   } from '$lib/components/ui';
   import Conversation from '$lib/components/agents/Conversation.svelte';
 
@@ -491,7 +492,7 @@
     </div>
   </div>
 {:else if loadError && !agent}
-  <p class="mt-8 text-sm text-danger">{loadError}</p>
+  <ErrorNotice message={loadError} onretry={load} />
 {:else if !agent}
   <div class="space-y-4">
     <Card><Skeleton rows={3} /></Card>

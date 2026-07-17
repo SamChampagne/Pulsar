@@ -4,6 +4,7 @@
   import {
     Badge, Button, Card, Field, PageHeader,
     toneFor, labelFor,
+    Skeleton, ErrorNotice,
   } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
@@ -171,7 +172,7 @@
 </script>
 
 {#if error}
-  <p class="text-sm text-danger">{error}</p>
+  <ErrorNotice message={error} onretry={load} />
 {:else if order}
   <PageHeader title={order.orderNumber}>
     {#snippet actions()}
@@ -405,5 +406,5 @@
     </div>
   </div>
 {:else}
-  <p class="text-sm text-ink-muted">Loading…</p>
+  <Card padded={false}><div class="p-4"><Skeleton rows={6} /></div></Card>
 {/if}

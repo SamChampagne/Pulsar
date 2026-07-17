@@ -3,7 +3,7 @@
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import {
-    Badge, Card, PageHeader, ErrorNotice,
+    Badge, Card, PageHeader, ErrorNotice, Skeleton,
     toneFor, labelFor,
   } from '$lib/components/ui';
 
@@ -194,5 +194,5 @@
     </div>
   </div>
 {:else}
-  <p class="text-sm text-ink-muted">Loading…</p>
+  <Card padded={false}><div class="p-4"><Skeleton rows={6} /></div></Card>
 {/if}
