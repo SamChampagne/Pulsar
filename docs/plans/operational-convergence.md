@@ -89,20 +89,18 @@ leurs tâches respectives (contrat exact + fichiers) avant modification.
 - [x] **P0-F** Tender public : projection explicite enrichie (`offeredRate`/`offeredCurrency`, `mode`, volume, fenêtres pickup/delivery, origine/destination) ; page web affiche taux proéminent + O/D + fenêtres ; assertions e2e collaboration
 - [x] Critère de sortie : typecheck 0 err, suites affectées vertes (sites 9/9, carrier-portal 2/2, driver-load-closed 3/3, collaboration, phase13 10/10), erreurs explicites, **zéro assouplissement métier**
 
-### Wave 2 — Fondations UX
-- [ ] Shell responsive (sidebar repliable / drawer, tablette OK, portails publics ≥360 px)
-- [ ] Primitives partagées **utiles** (réduisent clics ou augmentent compréhension) :
-      OperationalPageHeader, WorkQueue, EntitySummary, StatusTimeline, RelatedEntities,
-      NextBestActions, ExceptionBanner, ContextDrawer, ActivityTimeline, AgentRecommendation,
-      SavedView, CommandPalette/recherche globale
-- [ ] États loading/empty/error/success cohérents ; IDs humains (jamais d'ID brut si nom existe)
-- [ ] Dashboard orienté rôle & attention (retard/bloqué/décision/coût/automatisable/proposé/récent)
-- [ ] Cohérence i18n (français) ou architecture i18n claire
+### Wave 2 — Fondations UX ✅ (2026-07-16)
+- [x] Shell responsive : sidebar off-canvas (drawer) < `lg`, top-bar mobile (hamburger + bell + profil), `p-4 lg:p-6`, portails publics ≥360 px (overflow-x-auto sur tables carrier/portal) — commit `258eaa3`
+- [x] Primitives partagées **utiles** (sous-ensemble ciblé, YAGNI) : `Drawer`, `RelatedEntities` (« Lié à »), `ExceptionBanner`, `StatusTimeline` — câblées dans `loads/[id]` — commit `2884392`. (Existaient déjà : PageHeader, Table, Badge, EmptyState, ErrorNotice, Skeleton, Modal, CommandPalette, Toasts, TrackingTimeline.) Reportées (non nécessaires avant un consommateur réel) : WorkQueue, EntitySummary, NextBestActions, AgentRecommendation, SavedView, recherche globale d'entités.
+- [x] États loading/empty/error cohérents : 9 pages `[id]` alignées sur `Skeleton`/`ErrorNotice`, sweep i18n français des primitives partagées — commit `19bf8ea`
+- [x] Dashboard orienté attention & **multi-module** (gated `enabledModules`, chaque bucket best-effort isolé) : retard/bloqué, décisions PENDING, tâches ouvertes, exceptions coût (freight-audit), CRM, récent — commit `3974b42`
+- [x] i18n : pas de framework (hors périmètre) ; sweep de cohérence français des primitives partagées. Décision d'architecture i18n = dette documentée.
 
-### Wave 3 — Deux vertical slices intermodules
-- [ ] **Lead-to-cash** : site/lead → deal → SO → transport order → shipment/load → livraison → facture client → paiement (e2e bout-en-bout)
-- [ ] **Freight-audit-to-resolution** : facture entrante → audit → litige gouverné → résolution → paiement + KPI récupéré (e2e)
-- [ ] UI de relations : panneau « Lié à », navigation directe, timeline fusionnée, trace workflow
+### Wave 3 — Deux vertical slices intermodules ✅ (2026-07-16)
+- [x] **Lead-to-cash** (pipeline **CRM réellement connecté**) : deal (WON + lignes) → convert Customer → SalesOrder → confirm/fulfill/invoice → réaction `crm.sales_order.invoiced` → CustomerInvoice DRAFT → approve/send/pay + 2 écritures GL équilibrées. E2e `lead-to-cash.e2e-spec.ts` 1/1 — commit `f69873b`.
+- [x] **Freight-audit-to-resolution** : déjà entièrement couvert par `phase16-freight-audit.e2e-spec.ts` (intake→audit→FLAGGED→dispute→resolve KEEP_EXPECTED→recoveredAmount→savings KPI ; +MATCHED→PAID) — vérifié vert (22/22 avec crm-cross-module). Pas de duplication.
+- [x] UI de relations : `RelatedEntities` (« Lié à ») + `StatusTimeline` câblés sur `transport-orders/[id]` (client, chargements, expéditions, historique) et `crm/sales-orders/[id]` (deal, société, client) — commit `d8c4ee6`. (Déjà sur `loads/[id]` en Wave 2.)
+- **⚠️ Découverte invalidante du plan** : il n'existe **aucun chemin de code** `SalesOrder` → `TransportOrder` (grep confirmé). Le lead-to-cash « pur » du plan (CRM→TMS→livraison→facture) est en réalité **deux pipelines séparés** convergeant seulement au `Customer` partagé. La slice lead-to-cash prouvée est donc le pipeline CRM→billing. Construire un pont SO→TO (schéma + migration + sémantique origine/destination) est un **choix stratégique** laissé à décision (cf. résumé).
 
 ### Wave 4 — Agents
 - [ ] Runtime réel connectable + testé (provider LLM remplaçable)
