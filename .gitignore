@@ -50,3 +50,4 @@ hermes-agent/.hermes-home/
 # Playwright browser E2E (Wave 6): local browser binaries + run artifacts
 apps/web/playwright-report/
 apps/web/test-results/
+apps/web/playwright-artifacts/
