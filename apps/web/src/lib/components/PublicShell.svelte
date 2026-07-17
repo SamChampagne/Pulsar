@@ -1,5 +1,11 @@
 <script lang="ts">
-  let { title = '', subtitle = '', maxWidth = 'max-w-md', brand = undefined as { logoUrl?: string; accentColor?: string } | undefined, children } = $props();
+  let {
+    title = '',
+    subtitle = '',
+    maxWidth = 'max-w-md',
+    brand = undefined as { logoUrl?: string; accentColor?: string } | undefined,
+    children,
+  } = $props();
 </script>
 
 <div
@@ -13,7 +19,9 @@
       <span class="text-accent">⬢</span> PULSAR
     {/if}
   </div>
-  <div class={`w-full ${maxWidth} rounded-card border border-edge bg-surface p-6 shadow-pop`}>
+  <div
+    class={`w-full ${maxWidth} rounded-card border border-edge bg-surface p-4 shadow-pop sm:p-6`}
+  >
     {#if title}<h1 class="mb-1 text-lg font-bold text-ink">{title}</h1>{/if}
     {#if subtitle}<p class="mb-4 text-sm text-ink-muted">{subtitle}</p>{/if}
     {@render children()}
