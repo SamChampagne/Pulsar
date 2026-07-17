@@ -3,9 +3,12 @@ import {
   AuditAction,
   DOMAIN_EVENT_TYPES,
   CustomFieldEntity,
+  MODULE_KEYS,
+  SalesOrderStatus,
   ShipmentStatus,
   TransportOrderStatus,
   canTransitionTransportOrder,
+  deriveSalesOrderFulfillment,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
@@ -13,12 +16,14 @@ import { paginated, paginationArgs } from '../../../common/pagination';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
+import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import {
   CreateTransportOrderDto,
+  CreateTransportOrderFromSalesOrderDto,
   PlanTransportOrderDto,
   ShipmentSplitDto,
   UpdateTransportOrderDto,
@@ -30,6 +35,7 @@ const orderInclude = {
   customer: { select: { id: true, code: true, name: true } },
   originLocation: { select: { id: true, code: true, name: true, city: true } },
   destinationLocation: { select: { id: true, code: true, name: true, city: true } },
+  sourceSalesOrder: { select: { id: true, number: true, status: true, companyId: true } },
   shipments: {
     select: {
       id: true,
@@ -54,6 +60,7 @@ export class TransportOrdersService {
     private readonly domainEvents: DomainEventsService,
     private readonly moduleSettings: ModuleSettingsService,
     private readonly customFields: CustomFieldsService,
+    private readonly modules: TenantModulesCacheService,
   ) {}
 
   private async assertReferences(tenantId: string, dto: UpdateTransportOrderDto) {
@@ -101,7 +108,12 @@ export class TransportOrdersService {
     return { ...order, windowWarnings: shipmentWindowWarnings(order, order.shipments) };
   }
 
-  async create(tenantId: string, userId: string, dto: CreateTransportOrderDto) {
+  async create(
+    tenantId: string,
+    userId: string,
+    dto: CreateTransportOrderDto,
+    source?: { sourceSalesOrderId?: string; sourceFulfillmentKey?: string },
+  ) {
     await this.assertReferences(tenantId, dto);
     const pickupEarly = toDate(dto.requestedPickupEarly);
     const pickupLate = toDate(dto.requestedPickupLate);
@@ -126,6 +138,12 @@ export class TransportOrdersService {
         requestedDeliveryEarly: deliveryEarly,
         requestedDeliveryLate: deliveryLate,
         ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
+        ...(source?.sourceSalesOrderId
+          ? {
+              sourceSalesOrderId: source.sourceSalesOrderId,
+              sourceFulfillmentKey: source.sourceFulfillmentKey ?? 'primary',
+            }
+          : {}),
       },
       include: orderInclude,
     });
@@ -135,9 +153,197 @@ export class TransportOrdersService {
       action: AuditAction.CREATE,
       entityType: 'transport-order',
       entityId: order.id,
-      after: { orderNumber: order.orderNumber, status: order.status },
+      after: {
+        orderNumber: order.orderNumber,
+        status: order.status,
+        ...(source?.sourceSalesOrderId
+          ? {
+              sourceSalesOrderId: source.sourceSalesOrderId,
+              sourceFulfillmentKey: source.sourceFulfillmentKey ?? 'primary',
+            }
+          : {}),
+      },
     });
     return order;
+  }
+
+  /**
+   * Fulfillment bridge (CRM → TMS). Creates a transport order from a CONFIRMED
+   * sales order. The customer is derived from SalesOrder.customerId (never
+   * trusted from the client); logistics data (origin/destination/windows/
+   * weight/volume/pallets) is supplied explicitly in the DTO (never inferred
+   * from commercial amounts). Idempotent on (tenant, salesOrder, fulfillmentKey)
+   * — a retry returns the existing transport order. Reuses create() so
+   * sequences (rule 8), ownership (rule 9), custom-field validation (rule 35)
+   * and audit (rule 6) all apply. Requires both CRM and Transportation modules.
+   */
+  async createFromSalesOrder(
+    tenantId: string,
+    userId: string,
+    salesOrderId: string,
+    dto: CreateTransportOrderFromSalesOrderDto,
+  ) {
+    // Both modules must be enabled. The controller already gates Transportation
+    // (@RequireModule); CRM is enforced here since this route lives under the
+    // Transportation module (rule 15 spirit — re-check in the service).
+    const enabled = await this.modules.getEnabledKeys(tenantId).catch(() => new Set<string>());
+    if (!enabled.has(MODULE_KEYS.CRM)) {
+      throw new BadRequestException('CRM module is not enabled for this tenant');
+    }
+    if (!enabled.has(MODULE_KEYS.TRANSPORTATION)) {
+      throw new BadRequestException('Transportation module is not enabled for this tenant');
+    }
+
+    const so = await this.prisma.salesOrder.findFirst({
+      where: { id: salesOrderId, tenantId },
+      select: { id: true, number: true, status: true, customerId: true },
+    });
+    if (!so) throw new NotFoundException('Sales order not found');
+    if (so.status !== SalesOrderStatus.CONFIRMED) {
+      throw new BadRequestException(
+        `Only a CONFIRMED sales order can request a shipment (current: ${so.status})`,
+      );
+    }
+    if (!so.customerId) {
+      throw new BadRequestException(
+        'This sales order has no linked customer; link a TMS customer before preparing a shipment',
+      );
+    }
+
+    const fulfillmentKey = dto.fulfillmentKey?.trim() || 'primary';
+
+    // Idempotent retry: return the transport order already created for this
+    // (salesOrder, fulfillmentKey) instead of a duplicate.
+    const existing = await this.prisma.transportOrder.findFirst({
+      where: { tenantId, sourceSalesOrderId: salesOrderId, sourceFulfillmentKey: fulfillmentKey },
+      include: orderInclude,
+    });
+    if (existing) return existing;
+
+    const orderDto: CreateTransportOrderDto = {
+      customerId: so.customerId, // derived, never trusted from the client
+      originLocationId: dto.originLocationId,
+      destinationLocationId: dto.destinationLocationId,
+      customerReference: dto.customerReference ?? so.number, // rule 9-flow: default to SO number
+      requestedPickupEarly: dto.requestedPickupEarly,
+      requestedPickupLate: dto.requestedPickupLate,
+      requestedDeliveryEarly: dto.requestedDeliveryEarly,
+      requestedDeliveryLate: dto.requestedDeliveryLate,
+      mode: dto.mode,
+      totalWeightKg: dto.totalWeightKg,
+      totalVolumeM3: dto.totalVolumeM3,
+      palletCount: dto.palletCount,
+      notes: dto.notes,
+      customData: dto.customData,
+    };
+
+    let order;
+    try {
+      order = await this.create(tenantId, userId, orderDto, {
+        sourceSalesOrderId: salesOrderId,
+        sourceFulfillmentKey: fulfillmentKey,
+      });
+    } catch (e) {
+      // Concurrent retry raced us to the unique (tenant, salesOrder, key) — return the winner.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const raced = await this.prisma.transportOrder.findFirst({
+          where: { tenantId, sourceSalesOrderId: salesOrderId, sourceFulfillmentKey: fulfillmentKey },
+          include: orderInclude,
+        });
+        if (raced) return raced;
+      }
+      throw e;
+    }
+
+    // Audit the link on the sales-order side too (both entities carry the link).
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'crm-sales-order',
+      entityId: salesOrderId,
+      after: { transportOrderId: order.id, fulfillmentKey },
+    });
+
+    // Explicit cross-module event (best-effort, never blocking — rule 27).
+    await this.domainEvents.emit(
+      tenantId,
+      DOMAIN_EVENT_TYPES.CRM_SALES_ORDER_TRANSPORT_REQUESTED,
+      { type: 'sales-order', id: salesOrderId },
+      {
+        salesOrderId,
+        transportOrderId: order.id,
+        fulfillmentKey,
+        customerId: so.customerId,
+      },
+    );
+
+    return order;
+  }
+
+  /**
+   * Read-only fulfillment context for a sales order: the sales order, its linked
+   * TMS customer (if any), the transport orders already derived from it, the
+   * derived fulfillment decision, and the logistics fields the user must supply
+   * (never inferred). Powers the agent READ tool and the "Prepare shipment" UI.
+   */
+  async getSalesOrderFulfillmentContext(tenantId: string, salesOrderId: string) {
+    const so = await this.prisma.salesOrder.findFirst({
+      where: { id: salesOrderId, tenantId },
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        customerId: true,
+        currency: true,
+        totalAmount: true,
+      },
+    });
+    if (!so) throw new NotFoundException('Sales order not found');
+
+    const customer = so.customerId
+      ? await this.prisma.customer.findFirst({
+          where: { id: so.customerId, tenantId },
+          select: { id: true, code: true, name: true },
+        })
+      : null;
+
+    const transportOrders = await this.prisma.transportOrder.findMany({
+      where: { tenantId, sourceSalesOrderId: salesOrderId },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        sourceFulfillmentKey: true,
+        originLocation: { select: { id: true, name: true, city: true } },
+        destinationLocation: { select: { id: true, name: true, city: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const fulfillment = deriveSalesOrderFulfillment(transportOrders.map((t) => t.status));
+    const canPrepareShipment =
+      so.status === SalesOrderStatus.CONFIRMED && !!so.customerId;
+
+    return {
+      salesOrder: so,
+      customer,
+      transportOrders,
+      fulfillment,
+      canPrepareShipment,
+      // Logistics data must be supplied explicitly — a sales order carries none
+      // of it and it must never be inferred from commercial amounts/quantities.
+      requiredLogisticsFields: [
+        'originLocationId',
+        'destinationLocationId',
+        'requestedPickupEarly/Late',
+        'requestedDeliveryEarly/Late',
+        'totalWeightKg',
+        'totalVolumeM3',
+        'palletCount',
+        'mode',
+      ],
+    };
   }
 
   async update(tenantId: string, id: string, dto: UpdateTransportOrderDto) {

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { SalesOrderStatus, canTransitionSalesOrder, isSalesOrderOpen } from './sales-order.workflow';
+import {
+  SalesOrderStatus,
+  canTransitionSalesOrder,
+  isSalesOrderOpen,
+  deriveSalesOrderFulfillment,
+} from './sales-order.workflow';
 
 describe('canTransitionSalesOrder', () => {
   it('DRAFT → CONFIRMED / CANCELLED', () => {
@@ -29,5 +34,27 @@ describe('isSalesOrderOpen', () => {
     expect(isSalesOrderOpen(SalesOrderStatus.FULFILLED)).toBe(true);
     expect(isSalesOrderOpen(SalesOrderStatus.INVOICED)).toBe(false);
     expect(isSalesOrderOpen(SalesOrderStatus.CANCELLED)).toBe(false);
+  });
+});
+
+describe('deriveSalesOrderFulfillment', () => {
+  it('no transport orders → not fulfilled', () => {
+    expect(deriveSalesOrderFulfillment([])).toEqual({ fulfill: false, reason: 'no-transport-orders' });
+  });
+  it('any active transport order → not fulfilled (blocks)', () => {
+    expect(deriveSalesOrderFulfillment(['COMPLETED', 'IN_EXECUTION'])).toEqual({ fulfill: false, reason: 'active-remaining' });
+    expect(deriveSalesOrderFulfillment(['PLANNED'])).toEqual({ fulfill: false, reason: 'active-remaining' });
+    expect(deriveSalesOrderFulfillment(['DRAFT', 'CONFIRMED'])).toEqual({ fulfill: false, reason: 'active-remaining' });
+  });
+  it('all cancelled, none delivered → not fulfilled', () => {
+    expect(deriveSalesOrderFulfillment(['CANCELLED'])).toEqual({ fulfill: false, reason: 'all-cancelled' });
+    expect(deriveSalesOrderFulfillment(['CANCELLED', 'CANCELLED'])).toEqual({ fulfill: false, reason: 'all-cancelled' });
+  });
+  it('every order terminal with at least one delivered → fulfilled', () => {
+    expect(deriveSalesOrderFulfillment(['COMPLETED'])).toEqual({ fulfill: true, reason: 'all-delivered' });
+    expect(deriveSalesOrderFulfillment(['CLOSED'])).toEqual({ fulfill: true, reason: 'all-delivered' });
+    // A cancelled sibling does not block once the rest are delivered.
+    expect(deriveSalesOrderFulfillment(['COMPLETED', 'CANCELLED'])).toEqual({ fulfill: true, reason: 'all-delivered' });
+    expect(deriveSalesOrderFulfillment(['CLOSED', 'COMPLETED'])).toEqual({ fulfill: true, reason: 'all-delivered' });
   });
 });

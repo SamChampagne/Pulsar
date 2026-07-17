@@ -109,6 +109,8 @@ export class ReactionExecutorService {
         return this.closeDeliveredTransportOrder(tenantId, sysUserId, command.args['loadId']);
       case 'draft_invoice_from_sales_order':
         return this.draftInvoiceFromSalesOrder(tenantId, command.args);
+      case 'fulfill_sales_order':
+        return this.fulfillSalesOrder(tenantId, sysUserId, command.args);
       default:
         this.logger.warn(`No handler for reaction action "${command.action}"`);
     }
@@ -297,6 +299,27 @@ export class ReactionExecutorService {
       }
       throw err;
     }
+  }
+
+  private async fulfillSalesOrder(
+    tenantId: string,
+    userId: string,
+    args: Record<string, unknown>,
+  ): Promise<void> {
+    const salesOrderId = String(args['salesOrderId'] ?? '');
+    if (!salesOrderId) return;
+
+    // Lazy-resolve SalesOrdersService to avoid a circular JS require chain
+    // (AutomationModule must not statically import CrmModule — rule 38).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { SalesOrdersService } = require('../../modules/crm/sales-orders.service') as typeof import('../../modules/crm/sales-orders.service');
+    const salesOrders = this.moduleRef.get(SalesOrdersService, { strict: false });
+
+    // Idempotent + claim-safe inside the service; returns a decision we log.
+    const result = await salesOrders.fulfillFromTransport(tenantId, userId, salesOrderId);
+    this.logger.debug(
+      `fulfill_sales_order ${salesOrderId}: fulfilled=${result.fulfilled} reason=${result.reason}`,
+    );
   }
 
   /**

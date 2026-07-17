@@ -164,6 +164,10 @@ import { RuntimeConfigController } from './runtime-config.controller';
       ): ToolServices => ({
         transportOrders: {
           list: (tenantId, query) => transportOrders.list(tenantId, query as never),
+          createFromSalesOrder: (tenantId, userId, salesOrderId, dto) =>
+            transportOrders.createFromSalesOrder(tenantId, userId, salesOrderId, dto as never),
+          salesOrderFulfillmentContext: (tenantId, salesOrderId) =>
+            transportOrders.getSalesOrderFulfillmentContext(tenantId, salesOrderId),
         },
         loads: {
           get: (tenantId, id) => loads.get(tenantId, id),

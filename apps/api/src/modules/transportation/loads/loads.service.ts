@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
   CustomFieldEntity,
+  DOMAIN_EVENT_TYPES,
   LoadStatus,
   ShipmentStatus,
   TenderStatus,
@@ -21,6 +22,7 @@ import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { LoadCostService } from './load-cost.service';
 import { LoadNotificationsService } from './load-notifications.service';
 import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
@@ -81,6 +83,7 @@ export class LoadsService {
     private readonly moduleSettings: ModuleSettingsService,
     private readonly customFields: CustomFieldsService,
     private readonly notifications: LoadNotificationsService,
+    private readonly domainEvents: DomainEventsService,
   ) {}
 
   async list(tenantId: string, query: ListQueryDto & { status?: LoadStatus }) {
@@ -629,10 +632,34 @@ export class LoadsService {
         },
       });
       if (open === 0) {
-        await this.prisma.transportOrder.updateMany({
+        const { count } = await this.prisma.transportOrder.updateMany({
           where: { id: orderId, status: TransportOrderStatus.IN_EXECUTION },
           data: { status: TransportOrderStatus.COMPLETED },
         });
+        // Fulfillment bridge: if this transport order just reached COMPLETED and
+        // was created from a CRM sales order, emit an event so the fulfillment
+        // reaction can decide whether the sales order is now fully delivered.
+        // Best-effort, never blocking (rule 27); non-reaction context so the
+        // RUN_ACTION reaction is eligible (single-hop anti-loop preserved).
+        if (count > 0) {
+          const done = await this.prisma.transportOrder.findFirst({
+            where: { id: orderId, tenantId },
+            select: { id: true, sourceSalesOrderId: true, sourceFulfillmentKey: true, customerId: true },
+          });
+          if (done?.sourceSalesOrderId) {
+            await this.domainEvents.emit(
+              tenantId,
+              DOMAIN_EVENT_TYPES.TRANSPORT_ORDER_COMPLETED,
+              { type: 'transport-order', id: orderId },
+              {
+                transportOrderId: orderId,
+                sourceSalesOrderId: done.sourceSalesOrderId,
+                sourceFulfillmentKey: done.sourceFulfillmentKey,
+                customerId: done.customerId,
+              },
+            );
+          }
+        }
       }
     }
 

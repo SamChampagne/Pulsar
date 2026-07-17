@@ -469,6 +469,25 @@ async function main() {
     });
   }
 
+  const fulfillSalesOrderRuleName = 'Commande exécutée à la livraison du transport';
+  const existingFulfillSalesOrderRule = await prisma.automationRule.findFirst({
+    where: { tenantId: tenant.id, name: fulfillSalesOrderRuleName },
+  });
+  if (!existingFulfillSalesOrderRule) {
+    await prisma.automationRule.create({
+      data: {
+        tenantId: tenant.id,
+        name: fulfillSalesOrderRuleName,
+        eventType: 'transport-order.completed',
+        enabled: true,
+        match: 'ALL',
+        conditions: [],
+        action: { kind: 'RUN_ACTION', action: 'fulfill_sales_order', args: { salesOrderId: '{sourceSalesOrderId}' } },
+        createdById: admin.id,
+      },
+    });
+  }
+
   console.log('Built-in automation rules ready.');
 
   // --- CRM demo data (acme tenant) -------------------------------------------

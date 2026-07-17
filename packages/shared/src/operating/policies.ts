@@ -26,6 +26,9 @@ export const DOMAIN_EVENT_TYPES = {
   // CRM operating integration.
   CRM_DEAL_STALE: 'crm.deal.stale',
   CRM_FOLLOWUP_DUE: 'crm.followup.due',
+  // Fulfillment bridge (CRM SalesOrder ⇄ TMS TransportOrder).
+  CRM_SALES_ORDER_TRANSPORT_REQUESTED: 'crm.sales_order.transport_requested',
+  TRANSPORT_ORDER_COMPLETED: 'transport-order.completed',
 } as const;
 
 export interface DomainEventInput {
