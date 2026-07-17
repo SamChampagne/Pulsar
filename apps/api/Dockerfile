@@ -48,10 +48,11 @@ ENV API_PORT=3000
 COPY --from=build /app /app
 EXPOSE 3000
 
-# `prisma generate` must run again here (not just in the build stage) so the
-# query engine binary matches THIS image's libc (alpine/musl) — the same
-# posture as any cross-stage Prisma build. Database migrations are a deploy-time
-# operation, run explicitly against the target database, NEVER baked into the
-# image:
+# No `prisma generate` at startup: the build stage already generated the client
+# for this exact libc (build and runtime share the node:22-alpine base, so the
+# musl query-engine binary in the copied node_modules/.prisma matches). Removing
+# it shaves several seconds off every boot. Database migrations remain a
+# deploy-time operation, run explicitly against the target DB, NEVER baked into
+# the image:
 #   pnpm --filter @pulsar/database exec prisma migrate deploy
-CMD ["sh", "-c", "pnpm --filter @pulsar/database exec prisma generate && node apps/api/dist/main.js"]
+CMD ["node", "apps/api/dist/main.js"]

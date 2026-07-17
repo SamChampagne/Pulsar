@@ -390,4 +390,3 @@ Tout vert **ensemble**, base isolée `pulsar_rc` (jamais `pulsar_aps`) :
 **Recommandation** : prêt à ouvrir une PR de `operational-convergence` vers `main` (sous réserve
 de la revue humaine des captures navigateur et de la décision sur la dette Playwright profonde).
 Aucun push/merge effectué.
-

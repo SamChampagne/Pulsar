@@ -79,6 +79,22 @@ docker build -f apps/web/Dockerfile -t pulsar-web .
   resolves the LATEST pnpm, whose sqlite-backed store requires `node:sqlite` and
   fails the container install. The root `tsconfig.base.json` (extended by every
   package tsconfig) is copied into the build stage.
+- **No `prisma generate` at container start**: the API build stage generates the
+  Prisma client for this exact libc (build and runtime share the `node:22-alpine`
+  base, so the copied `node_modules/.prisma` musl engine matches). The runtime
+  CMD is just `node apps/api/dist/main.js`. Verified by the smoke below.
+- **Known image debt (deliberate, not yet optimized):**
+  - **Dev dependencies are not pruned.** The images intentionally keep the full
+    installed workspace because deploy-time `prisma migrate deploy` + the seed run
+    through the SAME api image and need `prisma` and `tsx` (both devDependencies).
+    A `--prod` prune would break the migrate/seed one-shot. Revisit only with a
+    separate migration/seed image or a bundled runner.
+  - **Runtime runs as root.** A non-root user was not adopted in this pass: the
+    `STORAGE_DRIVER=local` path writes under `apps/api/storage`, and the smoke
+    does not exercise a document upload, so non-root file-permission safety could
+    not be *proven* here. Production should use `STORAGE_DRIVER=s3` anyway (local
+    storage is not durable across container replacement); non-root + a writable
+    volume for local storage is a follow-up.
 - **Migrations are never run inside the image build.** Apply them explicitly
   at deploy time, against the target database:
   ```bash
