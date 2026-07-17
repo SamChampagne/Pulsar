@@ -4,12 +4,14 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { assertProductionSecrets } from './common/boot-checks';
+import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 
 async function bootstrap() {
   assertProductionSecrets(process.env);
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
 
+  app.use(requestIdMiddleware);
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),

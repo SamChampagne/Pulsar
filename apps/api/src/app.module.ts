@@ -5,7 +5,9 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
+import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
 import { ApiKeysModule } from './core/api-keys/api-keys.module';
+import { HealthModule } from './core/health/health.module';
 import { AgentsModule } from './core/agents/agents.module';
 import { ApsModule } from './core/aps/aps.module';
 import { EmailModule } from './core/email/email.module';
@@ -55,6 +57,7 @@ import { ConnectModule } from './core/connect/connect.module';
     // added as APP_GUARD — it is applied selectively on PlatformAuthController only.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 20 }]),
     PrismaModule,
+    HealthModule,
     EmailModule,
     RoutingModule,
     ApiKeysModule,
@@ -97,6 +100,7 @@ import { ConnectModule } from './core/connect/connect.module';
     { provide: APP_GUARD, useClass: ModulesGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: RequestLoggingInterceptor },
   ],
 })
 export class AppModule {}
