@@ -79,6 +79,10 @@ export class TendersService {
           token: randomBytes(24).toString('base64url'),
           message: input.message,
           expiresAt: new Date(Date.now() + expiresInHours * 3600 * 1000),
+          // Freeze the offered rate at send time — a later Load.estimatedCost recompute
+          // must not retroactively change an offer the carrier already received.
+          offeredAmount: load.estimatedCost,
+          offeredCurrency: load.costCurrency,
         },
         include: tenderInclude,
       }),
@@ -254,8 +258,6 @@ export class TendersService {
             status: true,
             notes: true,
             mode: true,
-            estimatedCost: true,
-            costCurrency: true,
             shipments: {
               select: {
                 shipmentNumber: true,
@@ -319,9 +321,11 @@ export class TendersService {
       carrier: tender.carrier.name,
       message: tender.message,
       expiresAt: tender.expiresAt,
-      // Offered rate the carrier is being asked to accept (frozen buy-side estimate, rule 16).
-      offeredRate: num(load.estimatedCost),
-      offeredCurrency: load.costCurrency,
+      // Offered rate the carrier is being asked to accept — read from the FROZEN tender
+      // snapshot (offeredAmount), never the live load cost, so a later recompute of the
+      // load never changes an offer already sent.
+      offeredRate: num(tender.offeredAmount),
+      offeredCurrency: tender.offeredCurrency,
       load: {
         loadNumber: load.loadNumber,
         status: load.status,

@@ -8,7 +8,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { AuthUser, PermissionKey } from '@pulsar/shared';
-import { ALL_PERMISSION_KEYS, AgentAutonomy, AgentStatus, autoApprovedTiers, computeTrustScore, deriveAgentKpis, mergeTimeline, type AgentKpiRaw, type TimelineEntry } from '@pulsar/shared';
+import { ALL_PERMISSION_KEYS, AgentAutonomy, AgentStatus, autoApprovedTiers, computeTrustScore, deriveAgentKpis, mergeTimeline, runtimeBlockMessage, type AgentKpiRaw, type TimelineEntry } from '@pulsar/shared';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { ListQueryDto } from '../../common/dto/list-query.dto';
@@ -314,21 +314,11 @@ export class AgentsService {
     if (!agent) throw new NotFoundException('Agent not found');
     if (agent.status !== AgentStatus.ACTIVE) throw new BadRequestException('Agent is not active');
 
-    const readiness = await this.runtime.readiness(tenantId);
-    if (!readiness.installed) {
-      throw new ServiceUnavailableException(
-        "Le runtime agent n'est pas installé — exécutez `pnpm agents:setup`.",
-      );
-    }
-    if (!readiness.configured) {
-      throw new ServiceUnavailableException(
-        "Le runtime agent n'est pas configuré — connectez un fournisseur dans Réglages → Runtime agents.",
-      );
-    }
-    if (!(agent.model ?? readiness.defaultModel)) {
-      throw new ServiceUnavailableException(
-        "Aucun modèle connecté — choisissez un modèle dans le profil de l'agent ou la config runtime.",
-      );
+    // Honest gate: install → config → auth → model → last probe (pure decision, single
+    // point). The agent's model override counts toward the model precondition.
+    const readiness = await this.runtime.readiness(tenantId, agent.model);
+    if (!readiness.ready && readiness.blockReason) {
+      throw new ServiceUnavailableException(runtimeBlockMessage(readiness.blockReason, readiness.authMode));
     }
 
     return this.worker.runNow(tenantId, id);

@@ -8,7 +8,13 @@ import {
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { getRuntimeProvider, AGENT_SYSTEM_PREAMBLE } from '@pulsar/shared';
+import {
+  getRuntimeProvider,
+  AGENT_SYSTEM_PREAMBLE,
+  deriveRuntimeReadiness,
+  type RuntimeAuthMode,
+  type RuntimeReadiness,
+} from '@pulsar/shared';
 import { HermesAcpClient, type AcpEvent, type AcpModelOption } from './hermes-acp.client';
 import { AgentsService } from './agents.service';
 import { RuntimeConfigService } from './runtime-config.service';
@@ -256,20 +262,29 @@ export class AgentRuntimeService {
   }
 
   /**
-   * Cheap readiness probe (NO spawn): is Hermes installed and is a provider configured
-   * with a default model? Used by manual "Run now" to avoid claiming success when the
-   * runtime could never actually run the agent. For a real connectivity check use
+   * Cheap readiness probe (NO spawn): can the runtime actually run an agent right now?
+   * Checks install → config → auth (apiKey stored / login connected) → model → last probe,
+   * via the pure {@link deriveRuntimeReadiness} so the first failing precondition is
+   * surfaced honestly. Used by manual "Run now" to avoid claiming a fake success. Pass the
+   * agent's model override so an agent-level model satisfies the model precondition even
+   * when the tenant config has no default. For a real connectivity check use
    * {@link testConnection}.
    */
-  async readiness(
-    tenantId: string,
-  ): Promise<{ installed: boolean; configured: boolean; defaultModel: string | null }> {
+  async readiness(tenantId: string, agentModel?: string | null): Promise<RuntimeReadiness> {
     const config = await this.runtimeConfig.get(tenantId);
-    return {
+    // Prefer the provider catalog's auth mode; fall back to the stored config value.
+    const authMode: RuntimeAuthMode | null = config
+      ? getRuntimeProvider(config.provider)?.authMode ?? (config.authMode as RuntimeAuthMode)
+      : null;
+    return deriveRuntimeReadiness({
       installed: isInstalled(),
       configured: !!config,
-      defaultModel: config?.defaultModel ?? null,
-    };
+      authMode,
+      hasApiKey: !!config?.apiKeyEnc,
+      connected: !!config?.connectedAt,
+      hasModel: !!(agentModel ?? config?.defaultModel),
+      lastTestOk: config?.lastTestOk ?? null,
+    });
   }
 
   /**

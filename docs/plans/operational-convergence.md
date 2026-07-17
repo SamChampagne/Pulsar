@@ -182,5 +182,17 @@ leurs tâches respectives (contrat exact + fichiers) avant modification.
   Suites vertes : sites 9/9, carrier-portal 2/2, driver-load-closed 3/3, collaboration,
   phase13-workforce 10/10. Typecheck 0 erreur. Aucun assouplissement des règles métier.
   Ajouts transverses réutilisables : `toast.info`, `AgentRuntimeService.readiness()`.
+- **2026-07-16** — Wave 1.1 (durcissement) livrée :
+  - **P0-F+** Offre tender **immuable** : snapshot `Tender.offeredAmount/offeredCurrency`
+    figé à l'envoi depuis `Load.estimatedCost/costCurrency` (migration
+    `20260716120000_tender_offer_snapshot`) ; la projection publique lit le snapshot, jamais
+    le coût vivant → un recompute ultérieur du load ne change pas une offre déjà envoyée
+    (esprit règle 16). E2e `tender-offer-snapshot` 1/1.
+  - **P0-D+** Readiness runtime extraite en helper **pur** `@pulsar/shared`
+    (`deriveRuntimeReadiness`/`runtimeBlockMessage`, `agents/runtime-readiness.ts`) :
+    ordre de priorité install→config→**auth** (clé API stockée / login connecté)→modèle→dernier
+    probe. `AgentRuntimeService.readiness()` renvoie désormais la décision complète (le gate
+    `runNow` couvre l'auth manquante et un `test-failed`, non couverts avant) ; message unique
+    par `blockReason`. +12 tests unitaires. phase13-workforce + collaboration 17/17.
 </content>
 </invoke>
