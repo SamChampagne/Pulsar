@@ -52,13 +52,13 @@
           .bindTooltip(label);
       };
 
-      add(origin, '#1d4ed8', 'Origin');
+      add(origin, '#1d4ed8', 'Origine');
       add(destination, '#1d4ed8', 'Destination');
       if (lastPosition) {
         add(
           lastPosition,
           '#15803d',
-          `Last position — ${new Date(lastPosition.occurredAt).toLocaleString()}`,
+          `Dernière position — ${new Date(lastPosition.occurredAt).toLocaleString()}`,
         );
       }
 

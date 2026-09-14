@@ -21,7 +21,9 @@ const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'
  * One revocable token per carrier opens a page listing their tenders, loads, and
  * incoming invoices. Security model mirrors the Customer Portal (docs/collaboration.md).
  * Tenant isolation: tenantId is always derived from the token — never from the request body (rule 1).
- * Public projections never expose tenantId/carrierId/loadId (rule 10).
+ * Public projections never expose tenantId/carrierId (rule 10). Entity ids the carrier needs to
+ * act on ITS OWN resources are exposed (tender.id to respond, load.id for POD upload,
+ * invoice.id for attachment upload) — the token scopes them to this carrier.
  * Module gate re-checked in carrierByToken even on public routes (rule 15).
  */
 @Injectable()
@@ -156,6 +158,10 @@ export class CarrierPortalService {
         message: t.message,
       })),
       loads: loadRows.map((l) => ({
+        // id is required by the portal to target POD uploads (/loads/:id/pod). It is the
+        // carrier's OWN load id, scoped by the capability token — like tender.id above.
+        // Never expose tenantId/carrierId (rule 10).
+        id: l.id,
         loadNumber: l.loadNumber,
         status: l.status,
         dispatchedAt: l.dispatchedAt,
@@ -167,6 +173,8 @@ export class CarrierPortalService {
         })),
       })),
       invoices: invoiceRows.map((inv) => ({
+        // id is required to target attachment uploads (/invoices/:id/attachment) — carrier's own.
+        id: inv.id,
         carrierInvoiceNumber: inv.carrierInvoiceNumber,
         currency: inv.currency,
         chargedTotal: inv.chargedTotal,

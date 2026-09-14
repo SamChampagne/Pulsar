@@ -1,9 +1,21 @@
 <script lang="ts">
+  import DossierButton from '$lib/components/workflows/DossierButton.svelte';
   import { page } from '$app/state';
   import { api, ApiError } from '$lib/api/client';
   import {
-    Badge, Button, Card, Field, PageHeader,
-    toneFor, labelFor,
+    Badge,
+    Button,
+    Card,
+    Field,
+    PageHeader,
+    toneFor,
+    labelFor,
+    Skeleton,
+    ErrorNotice,
+    RelatedEntities,
+    StatusTimeline,
+    type RelatedGroup,
+    type TimelineEntry as StatusEntry,
   } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
@@ -46,6 +58,9 @@
     originLocation: { id: string; code: string; name: string; city: string };
     destinationLocation: { id: string; code: string; name: string; city: string };
     shipments: { id: string; shipmentNumber: string; status: string; loadId: string | null }[];
+    sourceSalesOrderId?: string | null;
+    sourceFulfillmentKey?: string | null;
+    sourceSalesOrder?: { id: string; number: string; status: string } | null;
     windowWarnings?: WindowWarning[];
     customData?: Record<string, unknown>;
   }
@@ -88,7 +103,9 @@
         }
         toast.success(`${rows.length} shipment${rows.length > 1 ? 's' : ''} added`);
       } else {
-        const meaningful = rows.filter((r) => r.weightKg !== undefined || r.palletCount !== undefined);
+        const meaningful = rows.filter(
+          (r) => r.weightKg !== undefined || r.palletCount !== undefined,
+        );
         const body = splitRows.length > 1 || meaningful.length > 0 ? { shipments: rows } : {};
         await api(`/transportation/transport-orders/${orderId}/plan`, { method: 'POST', body });
         toast.success(`Order planned (${rows.length} shipment${rows.length > 1 ? 's' : ''})`);
@@ -147,7 +164,8 @@
 
   const fmtWindow = (early: string | null, late?: string | null) =>
     early
-      ? new Date(early).toLocaleDateString() + (late ? ' → ' + new Date(late).toLocaleDateString() : '')
+      ? new Date(early).toLocaleDateString() +
+        (late ? ' → ' + new Date(late).toLocaleDateString() : '')
       : '—';
 
   function warningText(w: WindowWarning): string {
@@ -168,28 +186,150 @@
   $effect(() => {
     if (orderId) void load();
   });
+
+  // "Lié à" — only ids the page already has are linked (customer, shipments, loads).
+  const relatedGroups = $derived<RelatedGroup[]>(
+    order
+      ? [
+          {
+            label: 'Client',
+            items: [
+              {
+                label: order.customer.name,
+                sublabel: order.customer.code,
+                href: `/customers/${order.customer.id}`,
+              },
+            ],
+          },
+          {
+            label: 'Commande de vente (source)',
+            items: order.sourceSalesOrder
+              ? [
+                  {
+                    label: order.sourceSalesOrder.number,
+                    sublabel:
+                      order.sourceFulfillmentKey && order.sourceFulfillmentKey !== 'primary'
+                        ? `Expédition « ${order.sourceFulfillmentKey} »`
+                        : 'Expédition principale',
+                    href: `/crm/sales-orders/${order.sourceSalesOrder.id}`,
+                  },
+                ]
+              : [],
+          },
+          {
+            label: 'Expéditions',
+            items: order.shipments.map((s) => ({
+              // No shipment-detail route exists yet — informational only, no href.
+              label: s.shipmentNumber,
+              sublabel: labelFor(s.status),
+              tone: toneFor(s.status),
+            })),
+          },
+          {
+            label: 'Chargements',
+            items: (() => {
+              const byLoad = new Map<string, string[]>();
+              for (const s of order.shipments) {
+                if (!s.loadId) continue;
+                byLoad.set(s.loadId, [...(byLoad.get(s.loadId) ?? []), s.shipmentNumber]);
+              }
+              return Array.from(byLoad.entries()).map(([loadId, shipmentNumbers]) => ({
+                label: `Chargement #${loadId.slice(-6)}`,
+                sublabel: shipmentNumbers.join(', '),
+                href: `/loads/${loadId}`,
+              }));
+            })(),
+          },
+        ]
+      : [],
+  );
+
+  // Status timeline: no dedicated status-history table for TransportOrder (only
+  // createdAt + requested windows are available from the already-loaded record),
+  // so we build a small entries array from those rather than inventing a fetch.
+  const timelineEntries = $derived<StatusEntry[]>(
+    order
+      ? [
+          { label: 'Commande créée', timestamp: order.createdAt, tone: 'neutral' },
+          ...(order.requestedPickupEarly
+            ? [
+                {
+                  label: 'Collecte demandée',
+                  timestamp: order.requestedPickupEarly,
+                  tone: 'info' as const,
+                },
+              ]
+            : []),
+          ...(order.requestedDeliveryEarly
+            ? [
+                {
+                  label: 'Livraison demandée',
+                  timestamp: order.requestedDeliveryEarly,
+                  tone: 'info' as const,
+                },
+              ]
+            : []),
+          {
+            label: labelFor(order.status),
+            description: 'Statut actuel',
+            tone: toneFor(order.status),
+          },
+        ]
+      : [],
+  );
 </script>
 
 {#if error}
-  <p class="text-sm text-danger">{error}</p>
+  <ErrorNotice message={error} onretry={load} />
 {:else if order}
   <PageHeader title={order.orderNumber}>
     {#snippet actions()}
+      <DossierButton entityType="TRANSPORT_ORDER" entityId={order!.id} />
       <Badge tone={toneFor(order!.status)}>{labelFor(order!.status)}</Badge>
       {#if order!.mode}
         <Badge tone="info">{order!.mode}</Badge>
       {/if}
 
       {#if order!.status === 'DRAFT'}
-        <Button variant="primary" onclick={() => { void action('confirm'); }}>Confirm</Button>
-        <Button variant="danger" onclick={() => { void action('cancel'); }}>Cancel</Button>
+        <Button
+          variant="primary"
+          onclick={() => {
+            void action('confirm');
+          }}>Confirm</Button
+        >
+        <Button
+          variant="danger"
+          onclick={() => {
+            void action('cancel');
+          }}>Cancel</Button
+        >
       {:else if order!.status === 'CONFIRMED'}
-        <Button variant="primary" onclick={() => { void openPlanForm(); }}>Plan…</Button>
-        <Button variant="danger" onclick={() => { void action('cancel'); }}>Cancel</Button>
+        <Button
+          variant="primary"
+          onclick={() => {
+            void openPlanForm();
+          }}>Plan…</Button
+        >
+        <Button
+          variant="danger"
+          onclick={() => {
+            void action('cancel');
+          }}>Cancel</Button
+        >
       {:else if order!.status === 'PLANNED'}
-        <Button variant="secondary" onclick={() => { void openPlanForm(); }}>Add shipment…</Button>
+        <Button
+          variant="secondary"
+          onclick={() => {
+            void openPlanForm();
+          }}>Add shipment…</Button
+        >
       {:else if order!.status === 'COMPLETED'}
-        <Button variant="primary" onclick={() => { void action('close'); }}>Close</Button>
+        <Button
+          variant="primary"
+          onclick={() => {
+            void action('close');
+          }}>Close</Button
+        >
       {/if}
     {/snippet}
   </PageHeader>
@@ -207,7 +347,6 @@
   <div class="grid gap-4 lg:grid-cols-3">
     <!-- Left 2/3: Shipments + Plan form -->
     <div class="flex flex-col gap-4 lg:col-span-2">
-
       <!-- Plan / Add shipment card -->
       {#if showPlanForm}
         <Card>
@@ -215,7 +354,8 @@
             {order.status === 'PLANNED' ? 'Add shipment' : 'Plan — split into shipments'}
           </h2>
           <p class="mb-3 text-xs text-ink-muted">
-            One shipment per row. Leave a single empty row to create one shipment with the full order quantities.
+            One shipment per row. Leave a single empty row to create one shipment with the full
+            order quantities.
           </p>
           <form onsubmit={submitPlan}>
             <div class="flex flex-col gap-2">
@@ -243,7 +383,12 @@
                   </Field>
                   {#if splitRows.length > 1}
                     <div class="mt-5">
-                      <Button variant="danger" onclick={() => { splitRows = splitRows.filter((_, i) => i !== index); }}>✕</Button>
+                      <Button
+                        variant="danger"
+                        onclick={() => {
+                          splitRows = splitRows.filter((_, i) => i !== index);
+                        }}>✕</Button
+                      >
                     </div>
                   {:else}
                     <span></span>
@@ -260,14 +405,22 @@
               <Button
                 variant="secondary"
                 type="button"
-                onclick={() => { splitRows = [...splitRows, { weightKg: null, palletCount: null }]; }}
+                onclick={() => {
+                  splitRows = [...splitRows, { weightKg: null, palletCount: null }];
+                }}
               >
                 Add shipment
               </Button>
               <Button variant="primary" type="submit">
                 {order.status === 'PLANNED' ? 'Add' : 'Plan order'}
               </Button>
-              <Button variant="secondary" type="button" onclick={() => { showPlanForm = false; }}>Cancel</Button>
+              <Button
+                variant="secondary"
+                type="button"
+                onclick={() => {
+                  showPlanForm = false;
+                }}>Cancel</Button
+              >
             </div>
           </form>
         </Card>
@@ -297,9 +450,13 @@
                     </td>
                     <td class="py-2">
                       {#if shipment.loadId}
-                        <a href={`/loads/${shipment.loadId}`} class="text-accent hover:underline">View load</a>
+                        <a href={`/loads/${shipment.loadId}`} class="text-accent hover:underline"
+                          >View load</a
+                        >
                       {:else}
-                        <a href="/shipments" class="text-accent hover:underline">Assign via Shipments</a>
+                        <a href="/shipments" class="text-accent hover:underline"
+                          >Assign via Shipments</a
+                        >
                       {/if}
                     </td>
                   </tr>
@@ -322,14 +479,16 @@
 
     <!-- Right 1/3: Summary + warnings -->
     <div class="flex flex-col gap-4">
-
       <!-- Summary card -->
       <Card>
         <h2 class="mb-3 font-semibold text-ink">Summary</h2>
         <dl class="flex flex-col gap-2 text-sm">
           <div class="flex items-start justify-between gap-2">
             <dt class="text-ink-muted shrink-0">Customer</dt>
-            <dd class="font-medium text-right">{order.customer.name} <span class="text-xs text-ink-muted">({order.customer.code})</span></dd>
+            <dd class="font-medium text-right">
+              {order.customer.name}
+              <span class="text-xs text-ink-muted">({order.customer.code})</span>
+            </dd>
           </div>
           {#if order.customerReference}
             <div class="flex items-center justify-between gap-2">
@@ -339,19 +498,27 @@
           {/if}
           <div class="flex items-start justify-between gap-2">
             <dt class="text-ink-muted shrink-0">Origin</dt>
-            <dd class="font-medium text-right">{order.originLocation.name}, {order.originLocation.city}</dd>
+            <dd class="font-medium text-right">
+              {order.originLocation.name}, {order.originLocation.city}
+            </dd>
           </div>
           <div class="flex items-start justify-between gap-2">
             <dt class="text-ink-muted shrink-0">Destination</dt>
-            <dd class="font-medium text-right">{order.destinationLocation.name}, {order.destinationLocation.city}</dd>
+            <dd class="font-medium text-right">
+              {order.destinationLocation.name}, {order.destinationLocation.city}
+            </dd>
           </div>
           <div class="flex items-center justify-between gap-2">
             <dt class="text-ink-muted">Pickup window</dt>
-            <dd class="font-medium">{fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}</dd>
+            <dd class="font-medium">
+              {fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}
+            </dd>
           </div>
           <div class="flex items-center justify-between gap-2">
             <dt class="text-ink-muted">Delivery window</dt>
-            <dd class="font-medium">{fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}</dd>
+            <dd class="font-medium">
+              {fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}
+            </dd>
           </div>
           <div class="flex items-center justify-between gap-2">
             <dt class="text-ink-muted">Mode</dt>
@@ -359,11 +526,15 @@
           </div>
           <div class="flex items-center justify-between gap-2">
             <dt class="text-ink-muted">Weight</dt>
-            <dd class="font-medium">{order.totalWeightKg != null ? `${order.totalWeightKg} kg` : '—'}</dd>
+            <dd class="font-medium">
+              {order.totalWeightKg != null ? `${order.totalWeightKg} kg` : '—'}
+            </dd>
           </div>
           <div class="flex items-center justify-between gap-2">
             <dt class="text-ink-muted">Volume</dt>
-            <dd class="font-medium">{order.totalVolumeM3 != null ? `${order.totalVolumeM3} m³` : '—'}</dd>
+            <dd class="font-medium">
+              {order.totalVolumeM3 != null ? `${order.totalVolumeM3} m³` : '—'}
+            </dd>
           </div>
           <div class="flex items-center justify-between gap-2">
             <dt class="text-ink-muted">Pallets</dt>
@@ -392,6 +563,17 @@
         </dl>
       </Card>
 
+      <!-- Historique (créée / fenêtres demandées / statut actuel) -->
+      <Card>
+        <h2 class="mb-3 font-semibold text-ink">Historique</h2>
+        <StatusTimeline entries={timelineEntries} />
+      </Card>
+
+      <!-- Lié à -->
+      <Card>
+        <RelatedEntities groups={relatedGroups} />
+      </Card>
+
       {#if order.windowWarnings && order.windowWarnings.length > 0}
         <div class="rounded-card bg-warn-soft text-warn p-3 text-sm">
           <p class="mb-2 font-semibold">Window warnings ({order.windowWarnings.length})</p>
@@ -405,5 +587,5 @@
     </div>
   </div>
 {:else}
-  <p class="text-sm text-ink-muted">Loading…</p>
+  <Card padded={false}><div class="p-4"><Skeleton rows={6} /></div></Card>
 {/if}

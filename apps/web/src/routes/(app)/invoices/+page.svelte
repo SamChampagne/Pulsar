@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page as route } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { getAccessToken } from '$lib/stores/auth';
@@ -22,7 +23,9 @@
   } from '$lib/components/ui';
 
   // ── Shared tab state ────────────────────────────────────────────────────────
-  let activeTab = $state<'carrier' | 'customer'>('carrier');
+  let activeTab = $state<'carrier' | 'customer'>(
+    route.url.searchParams.has('statement') ? 'customer' : 'carrier',
+  );
 
   // ── Shared billing types ─────────────────────────────────────────────────────
   interface TaxDetailLine {
@@ -401,10 +404,23 @@
         }),
         api<Paginated<CustomerOption>>('/transportation/customers', {
           query: { pageSize: 100 },
-        }),
+        }).catch(() => ({ items: [] as CustomerOption[] })),
       ]);
       customerStatements = stmts;
       customerOptions = customers.items;
+      const target = route.url.searchParams.get('statement');
+      if (target) {
+        let index = stmts.findIndex((s) => s.id === target);
+        if (index < 0) {
+          const linked = await api<StatementRow>(
+            `/billing/customer-invoices/${encodeURIComponent(target)}`,
+          );
+          customerStatements = [linked, ...stmts];
+          index = 0;
+        }
+        customerPage = Math.floor(index / PAGE_SIZE) + 1;
+        stmtExpanded = target;
+      }
     } catch (e) {
       stmtError = e instanceof ApiError ? e.message : 'Failed to load customer statements';
     } finally {

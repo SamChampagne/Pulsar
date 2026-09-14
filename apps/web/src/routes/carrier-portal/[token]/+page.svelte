@@ -65,9 +65,12 @@
     try {
       view = await api<CarrierView>(`/public/carrier-portal/${token}`);
     } catch (e) {
-      error = e instanceof ApiError && e.statusCode === 404
-        ? 'Ce lien est invalide ou a expiré.'
-        : (e instanceof ApiError ? e.message : 'Ce lien est invalide ou a expiré.');
+      error =
+        e instanceof ApiError && e.statusCode === 404
+          ? 'Ce lien est invalide ou a expiré.'
+          : e instanceof ApiError
+            ? e.message
+            : 'Ce lien est invalide ou a expiré.';
     }
   }
 
@@ -149,26 +152,26 @@
 
     <!-- Carrier profile card -->
     <div class="mb-6">
-    <Card>
-      <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
-        <div>
-          <p class="text-xs text-ink-muted">Code</p>
-          <p class="font-mono font-semibold text-ink">{view.carrier.code}</p>
+      <Card>
+        <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+          <div>
+            <p class="text-xs text-ink-muted">Code</p>
+            <p class="font-mono font-semibold text-ink">{view.carrier.code}</p>
+          </div>
+          <div>
+            <p class="text-xs text-ink-muted">Contact</p>
+            <p class="text-ink">{view.carrier.contactName ?? '—'}</p>
+          </div>
+          <div>
+            <p class="text-xs text-ink-muted">Courriel</p>
+            <p class="text-ink">{view.carrier.email ?? '—'}</p>
+          </div>
+          <div>
+            <p class="text-xs text-ink-muted">Téléphone</p>
+            <p class="text-ink">{view.carrier.phone ?? '—'}</p>
+          </div>
         </div>
-        <div>
-          <p class="text-xs text-ink-muted">Contact</p>
-          <p class="text-ink">{view.carrier.contactName ?? '—'}</p>
-        </div>
-        <div>
-          <p class="text-xs text-ink-muted">Courriel</p>
-          <p class="text-ink">{view.carrier.email ?? '—'}</p>
-        </div>
-        <div>
-          <p class="text-xs text-ink-muted">Téléphone</p>
-          <p class="text-ink">{view.carrier.phone ?? '—'}</p>
-        </div>
-      </div>
-    </Card>
+      </Card>
     </div>
 
     <!-- Tenders section -->
@@ -195,7 +198,13 @@
             {#if tender.status === 'PENDING'}
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <Button onclick={() => acceptTender(tender.id)}>Accepter</Button>
-                <Button variant="secondary" onclick={() => { declining = tender.id; declineReason = ''; }}>Refuser</Button>
+                <Button
+                  variant="secondary"
+                  onclick={() => {
+                    declining = tender.id;
+                    declineReason = '';
+                  }}>Refuser</Button
+                >
               </div>
             {/if}
             {#if declining === tender.id}
@@ -204,7 +213,13 @@
                 <Textarea bind:value={declineReason} rows={2} placeholder="Indiquez un motif…" />
                 <div class="mt-2 flex gap-2">
                   <Button variant="danger" onclick={confirmDecline}>Confirmer le refus</Button>
-                  <Button variant="secondary" onclick={() => { declining = null; declineReason = ''; }}>Annuler</Button>
+                  <Button
+                    variant="secondary"
+                    onclick={() => {
+                      declining = null;
+                      declineReason = '';
+                    }}>Annuler</Button
+                  >
                 </div>
               </div>
             {/if}
@@ -225,28 +240,36 @@
               <strong class="font-mono text-ink">{load.loadNumber}</strong>
               <Badge tone={toneFor(load.status)}>{labelFor(load.status)}</Badge>
               {#if load.dispatchedAt}
-                <span class="text-xs text-ink-muted">Dispatché le {formatDate(load.dispatchedAt)}</span>
+                <span class="text-xs text-ink-muted"
+                  >Dispatché le {formatDate(load.dispatchedAt)}</span
+                >
               {/if}
               {#if load.completedAt}
-                <span class="text-xs text-ink-muted">Complété le {formatDate(load.completedAt)}</span>
+                <span class="text-xs text-ink-muted"
+                  >Complété le {formatDate(load.completedAt)}</span
+                >
               {/if}
             </div>
             {#if load.shipments.length > 0}
-              <table class="mb-3 w-full text-sm">
-                <tbody>
-                  {#each load.shipments as shipment (shipment.shipmentNumber)}
-                    <tr class="border-b border-edge last:border-0">
-                      <td class="py-1.5 pr-3 font-mono text-ink">{shipment.shipmentNumber}</td>
-                      <td class="py-1.5 pr-3">
-                        <Badge tone={toneFor(shipment.status)}>{labelFor(shipment.status)}</Badge>
-                      </td>
-                      <td class="py-1.5 text-ink-muted">
-                        {shipment.actualDeliveryAt ? `Livré le ${formatDate(shipment.actualDeliveryAt)}` : ''}
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
+              <div class="mb-3 overflow-x-auto">
+                <table class="w-full text-sm">
+                  <tbody>
+                    {#each load.shipments as shipment (shipment.shipmentNumber)}
+                      <tr class="border-b border-edge last:border-0">
+                        <td class="py-1.5 pr-3 font-mono text-ink">{shipment.shipmentNumber}</td>
+                        <td class="py-1.5 pr-3">
+                          <Badge tone={toneFor(shipment.status)}>{labelFor(shipment.status)}</Badge>
+                        </td>
+                        <td class="py-1.5 text-ink-muted">
+                          {shipment.actualDeliveryAt
+                            ? `Livré le ${formatDate(shipment.actualDeliveryAt)}`
+                            : ''}
+                        </td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
             {/if}
             <div class="flex flex-wrap items-center gap-2">
               <label class="text-xs text-ink-muted">
@@ -284,17 +307,25 @@
             <div class="mb-1 flex flex-wrap items-center gap-2">
               <strong class="font-mono text-ink">{invoice.carrierInvoiceNumber}</strong>
               <Badge tone={toneFor(invoice.status)}>{labelFor(invoice.status)}</Badge>
-              <span class="text-sm text-ink">{invoice.chargedTotal.toFixed(2)} {invoice.currency}</span>
+              <span class="text-sm text-ink"
+                >{invoice.chargedTotal.toFixed(2)} {invoice.currency}</span
+              >
               {#if invoice.matchedTotal !== null}
-                <span class="text-xs text-ink-muted">Rapproché : {invoice.matchedTotal.toFixed(2)} {invoice.currency}</span>
+                <span class="text-xs text-ink-muted"
+                  >Rapproché : {invoice.matchedTotal.toFixed(2)} {invoice.currency}</span
+                >
               {/if}
               {#if invoice.varianceTotal !== null}
-                <span class="text-xs text-ink-muted">Écart : {invoice.varianceTotal.toFixed(2)} {invoice.currency}</span>
+                <span class="text-xs text-ink-muted"
+                  >Écart : {invoice.varianceTotal.toFixed(2)} {invoice.currency}</span
+                >
               {/if}
             </div>
             {#if invoice.disputeReasonCode || invoice.disputeNote}
               <p class="mb-1 text-xs text-ink-muted">
-                Litige : {invoice.disputeReasonCode ?? ''}{invoice.disputeNote ? ` — ${invoice.disputeNote}` : ''}
+                Litige : {invoice.disputeReasonCode ?? ''}{invoice.disputeNote
+                  ? ` — ${invoice.disputeNote}`
+                  : ''}
               </p>
             {/if}
             {#if invoice.resolution}

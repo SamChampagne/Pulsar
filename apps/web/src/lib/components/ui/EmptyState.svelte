@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { title = '', message = 'Nothing here yet.', children = undefined } = $props();
+  let { title = '', message = "Rien à afficher pour l'instant.", children = undefined } = $props();
 </script>
 
 <div class="flex flex-col items-center gap-2 py-10 text-center">

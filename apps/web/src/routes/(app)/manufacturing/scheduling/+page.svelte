@@ -64,16 +64,34 @@
 
   const wcName = $derived(new Map(workCenters.map((w) => [w.id, w.name])));
 
+  // The Gantt rows are keyed by work-center id and need the *complete* name map, but the API
+  // caps pageSize at 100 (a hard @Max — 200 would 400 the whole request). Page through instead.
+  async function loadAllWorkCenters(): Promise<WorkCenter[]> {
+    const pageSize = 100;
+    const all: WorkCenter[] = [];
+    let pageNum = 1;
+    // Guard against a runaway loop; 20 pages = 2000 work centers, far beyond any real tenant.
+    for (let i = 0; i < 20; i++) {
+      const res = await api<Paginated<WorkCenter>>('/manufacturing/work-centers', {
+        query: { page: pageNum, pageSize },
+      });
+      all.push(...res.items);
+      if (all.length >= res.total || res.items.length === 0) break;
+      pageNum += 1;
+    }
+    return all;
+  }
+
   async function loadRuns() {
     loading = true;
     error = '';
     try {
-      const [runRes, wcRes] = await Promise.all([
+      const [runRes, wcAll] = await Promise.all([
         api<Paginated<Run>>('/manufacturing/scheduling/runs', { query: { pageSize: 50 } }),
-        api<Paginated<WorkCenter>>('/manufacturing/work-centers', { query: { pageSize: 200 } }),
+        loadAllWorkCenters(),
       ]);
       runs = runRes.items;
-      workCenters = wcRes.items;
+      workCenters = wcAll;
       if (runs.length > 0 && !selected) await select(runs[0].id);
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Échec du chargement';

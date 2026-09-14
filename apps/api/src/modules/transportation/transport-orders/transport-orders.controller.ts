@@ -9,6 +9,7 @@ import { RequirePermissions } from '../../../common/decorators/require-permissio
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import {
   CreateTransportOrderDto,
+  CreateTransportOrderFromSalesOrderDto,
   PlanTransportOrderDto,
   ShipmentSplitDto,
   UpdateTransportOrderDto,
@@ -44,6 +45,33 @@ export class TransportOrdersController {
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.ORDERS_MANAGE)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateTransportOrderDto) {
     return this.orders.create(user.tenantId, user.id, dto);
+  }
+
+  /**
+   * Fulfillment bridge: "Prepare shipment" from a CONFIRMED CRM sales order.
+   * Requires BOTH transportation.orders.manage AND crm.read (the customer is
+   * read from the sales order). CRM module activation is re-checked in the
+   * service. Idempotent on (salesOrder, fulfillmentKey).
+   */
+  @Post('from-sales-order/:salesOrderId')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.ORDERS_MANAGE, PERMISSIONS.CRM.READ)
+  createFromSalesOrder(
+    @CurrentUser() user: AuthUser,
+    @Param('salesOrderId') salesOrderId: string,
+    @Body() dto: CreateTransportOrderFromSalesOrderDto,
+  ) {
+    return this.orders.createFromSalesOrder(user.tenantId, user.id, salesOrderId, dto);
+  }
+
+  /**
+   * Read-only fulfillment context for a sales order: linked customer, transport
+   * orders already derived from it, derived fulfillment status, and the
+   * logistics fields a shipment still needs. Powers the "Prepare shipment" UI.
+   */
+  @Get('from-sales-order/:salesOrderId/context')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.ORDERS_READ, PERMISSIONS.CRM.READ)
+  fulfillmentContext(@CurrentUser() user: AuthUser, @Param('salesOrderId') salesOrderId: string) {
+    return this.orders.getSalesOrderFulfillmentContext(user.tenantId, salesOrderId);
   }
 
   @Patch(':id')

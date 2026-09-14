@@ -69,7 +69,7 @@
         if (pos) {
           L.circleMarker([pos.latitude!, pos.longitude!], { radius: 7, color: '#15803d', fillColor: '#15803d', fillOpacity: 0.9 })
             .addTo(map!)
-            .bindTooltip(`Last position — ${new Date(pos.occurredAt).toLocaleString()}`);
+            .bindTooltip(`Dernière position — ${new Date(pos.occurredAt).toLocaleString()}`);
         }
       } catch { /* tracking optional */ }
 

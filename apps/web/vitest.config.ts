@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { defineConfig, configDefaults } from 'vitest/config';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 
@@ -9,6 +9,11 @@ export default defineConfig({
     globals: true,
     // Expose vi globally so mock files can use vi.fn() without import
     setupFiles: [],
+    // Unit tests live under src/. The Playwright browser specs under e2e/ use
+    // @playwright/test's own runner (`pnpm test:e2e`) and must NOT be collected
+    // by Vitest — its `test.describe()` throws under the Vitest runtime.
+    include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}'],
+    exclude: [...configDefaults.exclude, 'e2e/**'],
   },
   resolve: {
     alias: {

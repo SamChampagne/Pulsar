@@ -1,17 +1,21 @@
 <script lang="ts">
+  import DossierButton from '$lib/components/workflows/DossierButton.svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import { formatDate, formatMoney } from '$lib/format';
-  import { computeLineTotal } from '@pulsar/shared';
+  import { computeLineTotal, validateFulfillmentLogistics } from '@pulsar/shared';
   import {
     PageHeader,
     Button,
     Badge,
     Card,
+    Modal,
     Skeleton,
     ErrorNotice,
+    RelatedEntities,
+    type RelatedGroup,
     type Tone,
   } from '$lib/components/ui';
 
@@ -29,6 +33,8 @@
     notes: string | null;
     company: { id: string; name: string } | null;
     companyId: string;
+    customerId: string | null;
+    dealId: string | null;
   }
 
   interface LineItem {
@@ -71,7 +77,11 @@
   let addError = $state('');
 
   // Inline edit state
-  let editingCell = $state<{ lineId: string; field: 'quantity' | 'unitPrice' | 'discountPct'; value: string | number | null } | null>(null);
+  let editingCell = $state<{
+    lineId: string;
+    field: 'quantity' | 'unitPrice' | 'discountPct';
+    value: string | number | null;
+  } | null>(null);
   let saving = $state(false);
 
   let deletingId = $state<string | null>(null);
@@ -87,6 +97,35 @@
 
   const isDraft = $derived(order?.status === 'DRAFT');
 
+  // "Lié à" — only ids the already-loaded order carries are linked. The generated
+  // customer invoice (customData.salesOrderId on CustomerInvoice) has no cheap
+  // lookup-by-salesOrderId endpoint today, so it is skipped here rather than
+  // adding a new API surface.
+  const relatedGroups = $derived<RelatedGroup[]>(
+    order
+      ? [
+          {
+            label: 'Deal',
+            items: order.dealId
+              ? [{ label: "Deal d'origine", href: `/crm/deals/${order.dealId}` }]
+              : [],
+          },
+          {
+            label: 'Société',
+            items: order.company
+              ? [{ label: order.company.name, href: `/crm/companies/${order.company.id}` }]
+              : [],
+          },
+          {
+            label: 'Client',
+            items: order.customerId
+              ? [{ label: 'Client lié', href: `/customers/${order.customerId}` }]
+              : [],
+          },
+        ]
+      : [],
+  );
+
   // ── Data loading ─────────────────────────────────────────────────────────────
 
   async function loadOrder() {
@@ -99,7 +138,7 @@
       if (e instanceof ApiError && e.statusCode === 404) {
         notFound = true;
       } else {
-        error = e instanceof ApiError ? e.message : "Impossible de charger la commande";
+        error = e instanceof ApiError ? e.message : 'Impossible de charger la commande';
       }
     } finally {
       loading = false;
@@ -166,14 +205,26 @@
     addError = '';
     try {
       if (addMode === 'catalog') {
-        if (!selectedProductId) { addError = 'Sélectionnez un produit.'; adding = false; return; }
+        if (!selectedProductId) {
+          addError = 'Sélectionnez un produit.';
+          adding = false;
+          return;
+        }
         await api(`/crm/sales-orders/${order.id}/line-items`, {
           method: 'POST',
           body: { productId: selectedProductId, quantity: addQty },
         });
       } else {
-        if (!freeName.trim()) { addError = 'Le nom est requis.'; adding = false; return; }
-        if (freeUnitPrice <= 0) { addError = 'Le prix unitaire doit être positif.'; adding = false; return; }
+        if (!freeName.trim()) {
+          addError = 'Le nom est requis.';
+          adding = false;
+          return;
+        }
+        if (freeUnitPrice <= 0) {
+          addError = 'Le prix unitaire doit être positif.';
+          adding = false;
+          return;
+        }
         await api(`/crm/sales-orders/${order.id}/line-items`, {
           method: 'POST',
           body: { name: freeName.trim(), unitPrice: freeUnitPrice, quantity: addQty },
@@ -252,17 +303,15 @@
       case 'DRAFT':
         return [
           { verb: 'confirm', label: 'Confirmer', variant: 'primary' },
-          { verb: 'cancel',  label: 'Annuler',   variant: 'danger'  },
+          { verb: 'cancel', label: 'Annuler', variant: 'danger' },
         ];
       case 'CONFIRMED':
         return [
           { verb: 'fulfill', label: 'Exécuter', variant: 'primary' },
-          { verb: 'cancel',  label: 'Annuler',  variant: 'danger'  },
+          { verb: 'cancel', label: 'Annuler', variant: 'danger' },
         ];
       case 'FULFILLED':
-        return directInvoicing
-          ? [{ verb: 'invoice', label: 'Facturer', variant: 'primary' }]
-          : [];
+        return directInvoicing ? [{ verb: 'invoice', label: 'Facturer', variant: 'primary' }] : [];
       default:
         return [];
     }
@@ -280,6 +329,148 @@
       transitionError = e instanceof ApiError ? e.message : 'Erreur lors du changement de statut';
     } finally {
       transitioning = false;
+    }
+  }
+
+  // ── Fulfillment bridge (Prepare shipment) ─────────────────────────────────────
+
+  interface LocationOption {
+    id: string;
+    name: string;
+    code: string;
+  }
+  interface TransportOrderLink {
+    id: string;
+    orderNumber: string;
+    status: string;
+    sourceFulfillmentKey: string | null;
+    originLocation: { id: string; name: string } | null;
+    destinationLocation: { id: string; name: string } | null;
+  }
+  interface FulfillmentContext {
+    canPrepareShipment: boolean;
+    transportOrders: TransportOrderLink[];
+  }
+
+  // Best-effort: this needs transportation.orders.read + crm.read. A CRM-only
+  // user simply won't see the shipment panel (noTransportAccess stays true).
+  let noTransportAccess = $state(true);
+  let fulfillment = $state<FulfillmentContext | null>(null);
+  let wizardLocations = $state<LocationOption[]>([]);
+
+  let showWizard = $state(false);
+  let wOrigin = $state('');
+  let wDest = $state('');
+  let wPickupEarly = $state('');
+  let wPickupLate = $state('');
+  let wDeliveryEarly = $state('');
+  let wDeliveryLate = $state('');
+  let wMode = $state<'FTL' | 'LTL' | 'PARCEL'>('FTL');
+  let wWeight = $state<number | null>(null);
+  let wVolume = $state<number | null>(null);
+  let wPallets = $state<number | null>(null);
+  let wKey = $state('');
+  let wNotes = $state('');
+  let wSubmitting = $state(false);
+  let wError = $state('');
+  let lastCreatedTO = $state<{ id: string; orderNumber: string } | null>(null);
+
+  const TO_STATUS_LABELS: Record<string, string> = {
+    DRAFT: 'Brouillon',
+    CONFIRMED: 'Confirmé',
+    PLANNED: 'Planifié',
+    IN_EXECUTION: 'En exécution',
+    COMPLETED: 'Livré',
+    CLOSED: 'Clôturé',
+    CANCELLED: 'Annulé',
+  };
+
+  async function loadFulfillmentContext() {
+    if (!order) return;
+    try {
+      fulfillment = await api<FulfillmentContext>(
+        `/transportation/transport-orders/from-sales-order/${order.id}/context`,
+      );
+      noTransportAccess = false;
+    } catch (e) {
+      // 403 (no transportation access) or the module is off → hide the panel.
+      noTransportAccess = true;
+      fulfillment = null;
+    }
+  }
+
+  async function openWizard() {
+    lastCreatedTO = null;
+    wError = '';
+    showWizard = true;
+    if (wizardLocations.length === 0) {
+      try {
+        const res = await api<{ items: LocationOption[] }>('/transportation/locations', {
+          query: { pageSize: 100 },
+        });
+        wizardLocations = res.items;
+      } catch {
+        // leave empty — the selects just show no options
+      }
+    }
+  }
+
+  async function submitPrepareShipment() {
+    if (!order) return;
+    // Same contract as the server (source of truth): origin, destination, mode
+    // and at least one strictly-positive physical measure. Zeros never satisfy it.
+    const check = validateFulfillmentLogistics({
+      originLocationId: wOrigin,
+      destinationLocationId: wDest,
+      mode: wMode,
+      totalWeightKg: wWeight,
+      totalVolumeM3: wVolume,
+      palletCount: wPallets,
+    });
+    if (!check.ok) {
+      const FR: Record<typeof check.code, string> = {
+        origin: 'Une origine est requise.',
+        destination: 'Une destination est requise.',
+        mode: 'Un mode de transport est requis.',
+        measure:
+          'Au moins une mesure physique (poids, volume ou palettes) supérieure à 0 est requise.',
+      };
+      wError = FR[check.code];
+      return;
+    }
+    wSubmitting = true;
+    wError = '';
+    try {
+      const body: Record<string, unknown> = {
+        originLocationId: wOrigin,
+        destinationLocationId: wDest,
+        mode: wMode,
+      };
+      if (wKey.trim()) body.fulfillmentKey = wKey.trim();
+      if (wPickupEarly) body.requestedPickupEarly = new Date(wPickupEarly).toISOString();
+      if (wPickupLate) body.requestedPickupLate = new Date(wPickupLate).toISOString();
+      if (wDeliveryEarly) body.requestedDeliveryEarly = new Date(wDeliveryEarly).toISOString();
+      if (wDeliveryLate) body.requestedDeliveryLate = new Date(wDeliveryLate).toISOString();
+      if (wWeight != null) body.totalWeightKg = wWeight;
+      if (wVolume != null) body.totalVolumeM3 = wVolume;
+      if (wPallets != null) body.palletCount = wPallets;
+      if (wNotes.trim()) body.notes = wNotes.trim();
+
+      const to = await api<{ id: string; orderNumber: string }>(
+        `/transportation/transport-orders/from-sales-order/${order.id}`,
+        { method: 'POST', body },
+      );
+      lastCreatedTO = { id: to.id, orderNumber: to.orderNumber };
+      toast.success(`Ordre de transport ${to.orderNumber} créé`);
+      showWizard = false;
+      // Reset the volatile fields for a possible next shipment.
+      wKey = '';
+      wNotes = '';
+      await loadFulfillmentContext();
+    } catch (e) {
+      wError = e instanceof ApiError ? e.message : "Impossible de préparer l'expédition";
+    } finally {
+      wSubmitting = false;
     }
   }
 
@@ -331,6 +522,10 @@
   });
 
   $effect(() => {
+    if (order) void loadFulfillmentContext();
+  });
+
+  $effect(() => {
     if (showAddForm && addMode === 'catalog') void loadProducts();
   });
 </script>
@@ -354,18 +549,16 @@
   <div class="mb-6 flex items-start justify-between gap-4">
     <div class="min-w-0">
       <div class="mb-1 flex items-center gap-2">
-        <Button variant="secondary" onclick={() => goto('/crm/sales-orders')}>
-          ← Commandes
-        </Button>
+        <Button variant="secondary" onclick={() => goto('/crm/sales-orders')}>← Commandes</Button>
+        <DossierButton entityType="SALES_ORDER" entityId={order.id} />
       </div>
       <h1 class="mt-2 font-mono text-2xl font-bold text-ink">{order.number}</h1>
       <div class="mt-1 flex flex-wrap items-center gap-2">
         <Badge tone={statusTone(order.status)}>{statusLabel(order.status)}</Badge>
         {#if order.company}
-          <a
-            href="/crm/companies/{order.company.id}"
-            class="text-sm text-accent hover:underline"
-          >{order.company.name}</a>
+          <a href="/crm/companies/{order.company.id}" class="text-sm text-accent hover:underline"
+            >{order.company.name}</a
+          >
         {/if}
       </div>
     </div>
@@ -374,7 +567,6 @@
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
     <!-- ── Left column ── -->
     <div class="space-y-6 lg:col-span-2">
-
       <!-- Order meta -->
       <Card>
         <h2 class="mb-3 text-sm font-semibold text-ink">Informations</h2>
@@ -384,7 +576,9 @@
             <Badge tone={statusTone(order.status)}>{statusLabel(order.status)}</Badge>
           </div>
           <div>
-            <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Montant total</div>
+            <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">
+              Montant total
+            </div>
             <div class="text-base font-semibold text-accent">
               {formatMoney(order.totalAmount, order.currency)}
             </div>
@@ -392,14 +586,19 @@
           {#if order.company}
             <div>
               <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Société</div>
-              <a href="/crm/companies/{order.company.id}" class="text-ink hover:underline hover:text-accent">
+              <a
+                href="/crm/companies/{order.company.id}"
+                class="text-ink hover:underline hover:text-accent"
+              >
                 {order.company.name}
               </a>
             </div>
           {/if}
           {#if order.ownerUserId}
             <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Responsable</div>
+              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">
+                Responsable
+              </div>
               <div class="font-mono text-xs text-ink">{order.ownerUserId.slice(0, 8)}…</div>
             </div>
           {/if}
@@ -419,14 +618,22 @@
             Lignes ({lines.length})
           </h2>
           {#if isDraft && !showAddForm}
-            <Button variant="primary" onclick={() => { showAddForm = true; addMode = 'catalog'; }}>
+            <Button
+              variant="primary"
+              onclick={() => {
+                showAddForm = true;
+                addMode = 'catalog';
+              }}
+            >
               + Ajouter une ligne
             </Button>
           {/if}
         </div>
 
         {#if !isDraft}
-          <div class="mb-3 rounded-md border border-edge bg-surface-muted/40 px-3 py-2 text-xs text-ink-muted">
+          <div
+            class="mb-3 rounded-md border border-edge bg-surface-muted/40 px-3 py-2 text-xs text-ink-muted"
+          >
             Commande verrouillée (non DRAFT) — les lignes ne peuvent plus être modifiées.
           </div>
         {/if}
@@ -437,18 +644,26 @@
             <div class="mb-2 flex gap-2">
               <button
                 class={`rounded px-3 py-1 text-xs font-medium transition-colors ${addMode === 'catalog' ? 'bg-accent text-white' : 'bg-surface border border-edge text-ink-muted hover:border-accent hover:text-ink'}`}
-                onclick={() => { addMode = 'catalog'; void loadProducts(); }}
-              >Depuis le catalogue</button>
+                onclick={() => {
+                  addMode = 'catalog';
+                  void loadProducts();
+                }}>Depuis le catalogue</button
+              >
               <button
                 class={`rounded px-3 py-1 text-xs font-medium transition-colors ${addMode === 'free' ? 'bg-accent text-white' : 'bg-surface border border-edge text-ink-muted hover:border-accent hover:text-ink'}`}
-                onclick={() => { addMode = 'free'; }}
-              >Ligne libre</button>
+                onclick={() => {
+                  addMode = 'free';
+                }}>Ligne libre</button
+              >
             </div>
 
             {#if addMode === 'catalog'}
               <div class="flex flex-wrap items-end gap-2">
                 <div class="flex-1 min-w-32">
-                  <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Produit</label>
+                  <label
+                    class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+                    >Produit</label
+                  >
                   {#if productsLoading}
                     <div class="text-xs text-ink-faint">Chargement…</div>
                   {:else}
@@ -458,13 +673,18 @@
                     >
                       <option value="">— Sélectionner —</option>
                       {#each products as p (p.id)}
-                        <option value={p.id}>{p.name} ({formatMoney(p.unitPrice, order.currency)})</option>
+                        <option value={p.id}
+                          >{p.name} ({formatMoney(p.unitPrice, order.currency)})</option
+                        >
                       {/each}
                     </select>
                   {/if}
                 </div>
                 <div class="w-20">
-                  <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Qté</label>
+                  <label
+                    class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+                    >Qté</label
+                  >
                   <input
                     type="number"
                     min="1"
@@ -477,7 +697,10 @@
             {:else}
               <div class="flex flex-wrap items-end gap-2">
                 <div class="flex-1 min-w-40">
-                  <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Nom</label>
+                  <label
+                    class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+                    >Nom</label
+                  >
                   <input
                     type="text"
                     bind:value={freeName}
@@ -486,7 +709,10 @@
                   />
                 </div>
                 <div class="w-28">
-                  <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Prix unitaire</label>
+                  <label
+                    class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+                    >Prix unitaire</label
+                  >
                   <input
                     type="number"
                     min="0"
@@ -496,7 +722,10 @@
                   />
                 </div>
                 <div class="w-20">
-                  <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Qté</label>
+                  <label
+                    class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+                    >Qté</label
+                  >
                   <input
                     type="number"
                     min="1"
@@ -516,7 +745,13 @@
               <Button variant="primary" loading={adding} onclick={() => void addLine()}>
                 Ajouter
               </Button>
-              <Button variant="secondary" onclick={() => { showAddForm = false; addError = ''; }}>
+              <Button
+                variant="secondary"
+                onclick={() => {
+                  showAddForm = false;
+                  addError = '';
+                }}
+              >
                 Annuler
               </Button>
             </div>
@@ -560,7 +795,10 @@
                           class="w-16 rounded border border-accent px-1 py-0.5 text-right text-xs focus:outline-none"
                           bind:value={editingCell.value}
                           onblur={() => void commitEdit()}
-                          onkeydown={(e) => { if (e.key === 'Enter') void commitEdit(); if (e.key === 'Escape') editingCell = null; }}
+                          onkeydown={(e) => {
+                            if (e.key === 'Enter') void commitEdit();
+                            if (e.key === 'Escape') editingCell = null;
+                          }}
                           autofocus
                         />
                       {:else}
@@ -568,8 +806,8 @@
                         <span
                           class={`rounded px-1 py-0.5 text-ink ${isDraft ? 'cursor-pointer hover:bg-surface-muted' : ''}`}
                           title={isDraft ? 'Cliquer pour modifier' : undefined}
-                          onclick={() => startEdit(line, 'quantity')}
-                        >{line.quantity}</span>
+                          onclick={() => startEdit(line, 'quantity')}>{line.quantity}</span
+                        >
                       {/if}
                     </td>
 
@@ -583,7 +821,10 @@
                           class="w-24 rounded border border-accent px-1 py-0.5 text-right text-xs focus:outline-none"
                           bind:value={editingCell.value}
                           onblur={() => void commitEdit()}
-                          onkeydown={(e) => { if (e.key === 'Enter') void commitEdit(); if (e.key === 'Escape') editingCell = null; }}
+                          onkeydown={(e) => {
+                            if (e.key === 'Enter') void commitEdit();
+                            if (e.key === 'Escape') editingCell = null;
+                          }}
                           autofocus
                         />
                       {:else}
@@ -592,7 +833,8 @@
                           class={`rounded px-1 py-0.5 text-ink-muted ${isDraft ? 'cursor-pointer hover:bg-surface-muted' : ''}`}
                           title={isDraft ? 'Cliquer pour modifier' : undefined}
                           onclick={() => startEdit(line, 'unitPrice')}
-                        >{formatMoney(line.unitPrice, order.currency)}</span>
+                          >{formatMoney(line.unitPrice, order.currency)}</span
+                        >
                       {/if}
                     </td>
 
@@ -607,7 +849,10 @@
                           class="w-20 rounded border border-accent px-1 py-0.5 text-right text-xs focus:outline-none"
                           bind:value={editingCell.value}
                           onblur={() => void commitEdit()}
-                          onkeydown={(e) => { if (e.key === 'Enter') void commitEdit(); if (e.key === 'Escape') editingCell = null; }}
+                          onkeydown={(e) => {
+                            if (e.key === 'Enter') void commitEdit();
+                            if (e.key === 'Escape') editingCell = null;
+                          }}
                           autofocus
                         />
                       {:else}
@@ -616,7 +861,8 @@
                           class={`rounded px-1 py-0.5 text-ink-muted ${isDraft ? 'cursor-pointer hover:bg-surface-muted' : ''}`}
                           title={isDraft ? 'Cliquer pour modifier' : undefined}
                           onclick={() => startEdit(line, 'discountPct')}
-                        >{Number(line.discountPct).toFixed(1)} %</span>
+                          >{Number(line.discountPct).toFixed(1)} %</span
+                        >
                       {/if}
                     </td>
 
@@ -629,8 +875,8 @@
                           disabled={deletingId === line.id || saving}
                           onclick={() => void deleteLine(line.id)}
                           class="rounded p-1 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
-                          title="Supprimer la ligne"
-                        >✕</button>
+                          title="Supprimer la ligne">✕</button
+                        >
                       </td>
                     {/if}
                   </tr>
@@ -638,7 +884,10 @@
               </tbody>
               <tfoot>
                 <tr class="border-t border-edge">
-                  <td colspan={4} class="py-2 pr-3 text-right text-[11px] uppercase tracking-wide font-semibold text-ink-muted">
+                  <td
+                    colspan={4}
+                    class="py-2 pr-3 text-right text-[11px] uppercase tracking-wide font-semibold text-ink-muted"
+                  >
                     Total commande
                   </td>
                   <td class="py-2 pl-3 text-right text-sm font-bold text-accent">
@@ -661,16 +910,10 @@
       <Card>
         <h2 class="mb-3 text-sm font-semibold text-ink">Statut</h2>
         <div class="space-y-1.5">
-          {#each (
-            [
-              { key: 'DRAFT',     label: 'Brouillon', tone: 'neutral' as Tone },
-              { key: 'CONFIRMED', label: 'Confirmée', tone: 'info'    as Tone },
-              { key: 'FULFILLED', label: 'Exécutée',  tone: 'ok'      as Tone },
-              { key: 'INVOICED',  label: 'Facturée',  tone: 'info'    as Tone },
-              { key: 'CANCELLED', label: 'Annulée',   tone: 'danger'  as Tone },
-            ] as const
-          ) as s (s.key)}
-            <div class={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs ${order.status === s.key ? 'bg-surface-muted font-semibold' : 'text-ink-faint'}`}>
+          {#each [{ key: 'DRAFT', label: 'Brouillon', tone: 'neutral' as Tone }, { key: 'CONFIRMED', label: 'Confirmée', tone: 'info' as Tone }, { key: 'FULFILLED', label: 'Exécutée', tone: 'ok' as Tone }, { key: 'INVOICED', label: 'Facturée', tone: 'info' as Tone }, { key: 'CANCELLED', label: 'Annulée', tone: 'danger' as Tone }] as const as s (s.key)}
+            <div
+              class={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs ${order.status === s.key ? 'bg-surface-muted font-semibold' : 'text-ink-faint'}`}
+            >
               <Badge tone={s.tone}>{s.label}</Badge>
               {#if order.status === s.key}
                 <span class="ml-auto text-[10px] font-semibold text-ink-muted">← actuel</span>
@@ -689,7 +932,11 @@
           {/if}
           <div class="space-y-2">
             {#each allowedActions(order.status) as action (action.verb)}
-              <div class={action.variant === 'danger' ? 'w-full border-danger/40 text-danger hover:bg-danger/10' : 'w-full'}>
+              <div
+                class={action.variant === 'danger'
+                  ? 'w-full border-danger/40 text-danger hover:bg-danger/10'
+                  : 'w-full'}
+              >
                 <Button
                   variant={action.variant === 'danger' ? 'secondary' : action.variant}
                   loading={transitioning}
@@ -703,18 +950,84 @@
         </Card>
       {/if}
 
+      <!-- Préparer l'expédition (fulfillment bridge) -->
+      {#if !noTransportAccess}
+        <Card>
+          <h2 class="mb-2 text-sm font-semibold text-ink">Expédition</h2>
+
+          {#if order.status !== 'CONFIRMED' && (!fulfillment || fulfillment.transportOrders.length === 0)}
+            <p class="text-xs text-ink-muted">
+              {#if order.status === 'DRAFT'}
+                Confirmez la commande pour pouvoir préparer une expédition.
+              {:else}
+                Aucune expédition liée.
+              {/if}
+            </p>
+          {/if}
+
+          {#if !order.customerId}
+            <p
+              class="mb-2 rounded-md border border-amber-400/40 bg-amber-50/40 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-300"
+            >
+              Aucun client lié à cette commande. Liez un client (conversion du deal) avant de
+              préparer une expédition.
+            </p>
+          {/if}
+
+          <!-- Linked transport orders ("Lié à" for shipments) -->
+          {#if fulfillment && fulfillment.transportOrders.length > 0}
+            <div class="mb-3 space-y-1.5">
+              {#each fulfillment.transportOrders as to (to.id)}
+                <a
+                  href="/transport-orders/{to.id}"
+                  class="flex items-center justify-between gap-2 rounded-md border border-edge bg-surface px-2.5 py-1.5 text-xs transition-colors hover:border-accent"
+                >
+                  <span class="min-w-0">
+                    <span class="font-mono text-ink">{to.orderNumber}</span>
+                    {#if to.sourceFulfillmentKey && to.sourceFulfillmentKey !== 'primary'}
+                      <span class="ml-1 text-ink-faint">· {to.sourceFulfillmentKey}</span>
+                    {/if}
+                  </span>
+                  <Badge
+                    tone={to.status === 'CANCELLED'
+                      ? 'danger'
+                      : to.status === 'COMPLETED' || to.status === 'CLOSED'
+                        ? 'ok'
+                        : 'info'}
+                  >
+                    {TO_STATUS_LABELS[to.status] ?? to.status}
+                  </Badge>
+                </a>
+              {/each}
+            </div>
+          {/if}
+
+          {#if lastCreatedTO}
+            <p
+              class="mb-2 rounded-md border border-emerald-400/40 bg-emerald-50/40 px-2.5 py-1.5 text-xs text-emerald-700 dark:text-emerald-300"
+            >
+              Ordre de transport <a
+                class="font-mono underline"
+                href="/transport-orders/{lastCreatedTO.id}">{lastCreatedTO.orderNumber}</a
+              > créé.
+            </p>
+          {/if}
+
+          {#if order.status === 'CONFIRMED' && order.customerId}
+            <Button variant="primary" onclick={openWizard}>Préparer l'expédition</Button>
+          {/if}
+        </Card>
+      {/if}
+
+      <!-- Lié à -->
+      <Card>
+        <RelatedEntities groups={relatedGroups} />
+      </Card>
+
       <!-- Navigation -->
       <Card>
         <h2 class="mb-2 text-sm font-semibold text-ink">Navigation</h2>
         <div class="space-y-2">
-          {#if order.company}
-            <a
-              href="/crm/companies/{order.company.id}"
-              class="flex items-center gap-2 rounded-md border border-edge bg-surface px-3 py-2 text-xs text-ink transition-colors hover:border-accent hover:text-accent"
-            >
-              Voir la société
-            </a>
-          {/if}
           <a
             href="/crm/sales-orders"
             class="flex items-center gap-2 rounded-md border border-edge bg-surface px-3 py-2 text-xs text-ink transition-colors hover:border-accent hover:text-accent"
@@ -725,4 +1038,212 @@
       </Card>
     </div>
   </div>
+
+  <!-- Prepare-shipment wizard -->
+  <Modal bind:open={showWizard} title="Préparer l'expédition" onclose={() => (showWizard = false)}>
+    <div class="space-y-3">
+      <p class="text-xs text-ink-muted">
+        Le client est repris de la commande. <strong>Origine, destination, mode</strong> et
+        <strong>au moins une mesure physique &gt; 0</strong> (poids, volume ou palettes) sont requis —
+        jamais déduits des montants ou des quantités. Les fenêtres horaires sont facultatives.
+      </p>
+      {#if wError}
+        <p
+          data-testid="wizard-error"
+          class="rounded-md border border-danger/40 bg-danger/10 px-2.5 py-1.5 text-xs text-danger"
+        >
+          {wError}
+        </p>
+      {/if}
+
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label
+            for="w-origin"
+            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+            >Origine *</label
+          >
+          <select
+            id="w-origin"
+            bind:value={wOrigin}
+            class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            <option value="">— Sélectionner —</option>
+            {#each wizardLocations as l (l.id)}<option value={l.id}>{l.name} ({l.code})</option
+              >{/each}
+          </select>
+        </div>
+        <div>
+          <label
+            for="w-dest"
+            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+            >Destination *</label
+          >
+          <select
+            id="w-dest"
+            bind:value={wDest}
+            class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            <option value="">— Sélectionner —</option>
+            {#each wizardLocations as l (l.id)}<option value={l.id}>{l.name} ({l.code})</option
+              >{/each}
+          </select>
+        </div>
+        <div>
+          <label
+            for="w-pue"
+            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+            >Ramassage — au plus tôt</label
+          >
+          <input
+            id="w-pue"
+            type="datetime-local"
+            bind:value={wPickupEarly}
+            class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink"
+          />
+        </div>
+        <div>
+          <label
+            for="w-pul"
+            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+            >Ramassage — au plus tard</label
+          >
+          <input
+            id="w-pul"
+            type="datetime-local"
+            bind:value={wPickupLate}
+            class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink"
+          />
+        </div>
+        <div>
+          <label
+            for="w-dle"
+            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+            >Livraison — au plus tôt</label
+          >
+          <input
+            id="w-dle"
+            type="datetime-local"
+            bind:value={wDeliveryEarly}
+            class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink"
+          />
+        </div>
+        <div>
+          <label
+            for="w-dll"
+            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+            >Livraison — au plus tard</label
+          >
+          <input
+            id="w-dll"
+            type="datetime-local"
+            bind:value={wDeliveryLate}
+            class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink"
+          />
+        </div>
+        <div>
+          <label
+            for="w-mode"
+            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+            >Mode</label
+          >
+          <select
+            id="w-mode"
+            bind:value={wMode}
+            class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            <option value="FTL">FTL</option>
+            <option value="LTL">LTL</option>
+            <option value="PARCEL">Colis</option>
+          </select>
+        </div>
+        <div>
+          <label
+            for="w-key"
+            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+            >Clé d'expédition</label
+          >
+          <input
+            id="w-key"
+            type="text"
+            placeholder="primary"
+            bind:value={wKey}
+            class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink"
+          />
+        </div>
+        <div>
+          <label
+            for="w-wt"
+            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+            >Poids (kg)</label
+          >
+          <input
+            id="w-wt"
+            type="number"
+            min="0"
+            bind:value={wWeight}
+            class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink"
+          />
+        </div>
+        <div>
+          <label
+            for="w-vol"
+            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+            >Volume (m³)</label
+          >
+          <input
+            id="w-vol"
+            type="number"
+            min="0"
+            bind:value={wVolume}
+            class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink"
+          />
+        </div>
+        <div>
+          <label
+            for="w-pal"
+            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+            >Palettes</label
+          >
+          <input
+            id="w-pal"
+            type="number"
+            min="0"
+            step="1"
+            bind:value={wPallets}
+            class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink"
+          />
+        </div>
+      </div>
+      <div>
+        <label
+          for="w-notes"
+          class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+          >Notes</label
+        >
+        <textarea
+          id="w-notes"
+          rows="2"
+          bind:value={wNotes}
+          class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink"
+        ></textarea>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-1">
+        <Button
+          variant="secondary"
+          onclick={() => {
+            showWizard = false;
+          }}>Annuler</Button
+        >
+        <Button
+          variant="primary"
+          loading={wSubmitting}
+          onclick={() => void submitPrepareShipment()}
+        >
+          Créer l'ordre de transport
+        </Button>
+      </div>
+    </div>
+  </Modal>
 {/if}

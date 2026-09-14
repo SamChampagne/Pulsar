@@ -4,10 +4,11 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { AuthUser, PermissionKey } from '@pulsar/shared';
-import { ALL_PERMISSION_KEYS, AgentAutonomy, AgentStatus, autoApprovedTiers, computeTrustScore, deriveAgentKpis, mergeTimeline, type AgentKpiRaw, type TimelineEntry } from '@pulsar/shared';
+import { ALL_PERMISSION_KEYS, AgentAutonomy, AgentStatus, autoApprovedTiers, computeTrustScore, deriveAgentKpis, mergeTimeline, runtimeBlockMessage, type AgentKpiRaw, type TimelineEntry } from '@pulsar/shared';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { ListQueryDto } from '../../common/dto/list-query.dto';
@@ -302,13 +303,25 @@ export class AgentsService {
     return agents.length;
   }
 
-  /** Manual "Run now" — enqueue the agent's oldest OPEN task. */
+  /**
+   * Manual "Run now" — enqueue the agent's oldest OPEN task.
+   * Honest contract: before enqueuing, verify the runtime is installed, a provider is
+   * configured and a model is connected. If not, throw a clear 503 so the UI never shows
+   * a fake success. Returns the structured worker result ({ enqueued, runId, taskId, reason }).
+   */
   async runNow(tenantId: string, id: string) {
     const agent = await this.prisma.agent.findFirst({ where: { id, tenantId } });
     if (!agent) throw new NotFoundException('Agent not found');
     if (agent.status !== AgentStatus.ACTIVE) throw new BadRequestException('Agent is not active');
-    const enqueued = await this.worker.runNow(tenantId, id);
-    return { enqueued };
+
+    // Honest gate: install → config → auth → model → last probe (pure decision, single
+    // point). The agent's model override counts toward the model precondition.
+    const readiness = await this.runtime.readiness(tenantId, agent.model);
+    if (!readiness.ready && readiness.blockReason) {
+      throw new ServiceUnavailableException(runtimeBlockMessage(readiness.blockReason, readiness.authMode));
+    }
+
+    return this.worker.runNow(tenantId, id);
   }
 
   /** Paginated run history (projection — no secrets, rule 26). */

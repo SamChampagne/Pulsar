@@ -17,6 +17,7 @@
     Field,
     Input,
     Select,
+    ErrorNotice,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -300,7 +301,7 @@
 {#if loading}
   <Card padded={false}><Skeleton rows={8} /></Card>
 {:else if error}
-  <p class="text-sm text-danger">{error}</p>
+  <ErrorNotice message={error} onretry={load} />
 {:else if rfp}
   <PageHeader title="{rfp.rfpNumber} — {rfp.title}">
     {#snippet actions()}

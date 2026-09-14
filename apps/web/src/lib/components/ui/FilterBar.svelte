@@ -9,8 +9,8 @@
   <button
     class="ml-auto inline-flex items-center gap-1 rounded-md border border-edge bg-surface px-2 py-1 text-xs text-ink-muted hover:text-ink"
     onclick={toggleDensity}
-    title="Toggle table density"
+    title="Basculer la densité du tableau"
   >
-    <Rows3 class="size-3.5" /> Density
+    <Rows3 class="size-3.5" /> Densité
   </button>
 </div>

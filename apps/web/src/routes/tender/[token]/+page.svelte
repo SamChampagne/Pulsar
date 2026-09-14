@@ -6,16 +6,36 @@
   import { toneFor, labelFor } from '$lib/components/ui';
   import { formatDateTime } from '$lib/format';
 
+  interface Place {
+    name: string;
+    city: string;
+    state: string | null;
+  }
   interface TenderView {
     status: string;
     shipper: string;
     carrier: string;
     message: string | null;
     expiresAt: string;
+    offeredRate: number | null;
+    offeredCurrency: string | null;
     load: {
       loadNumber: string;
       notes: string | null;
-      shipments: { shipmentNumber: string; weightKg: number | null; palletCount: number | null }[];
+      mode: string | null;
+      totalDistanceKm: number | null;
+      shipments: {
+        shipmentNumber: string;
+        weightKg: number | null;
+        volumeM3: number | null;
+        palletCount: number | null;
+        plannedPickupEarly: string | null;
+        plannedPickupLate: string | null;
+        plannedDeliveryEarly: string | null;
+        plannedDeliveryLate: string | null;
+        origin: Place | null;
+        destination: Place | null;
+      }[];
       route: {
         totalDistanceKm: number | null;
         stops: {
@@ -71,6 +91,11 @@
   const totalPallets = $derived(
     tender?.load.shipments.reduce((acc, s) => acc + (s.palletCount ?? 0), 0) ?? 0,
   );
+  const totalVolume = $derived(
+    tender?.load.shipments.reduce((acc, s) => acc + (s.volumeM3 ?? 0), 0) ?? 0,
+  );
+  const place = (p: Place | null) =>
+    p ? `${p.name}, ${p.city}${p.state ? `, ${p.state}` : ''}` : '—';
 
   $effect(() => {
     if (token) void load();
@@ -94,16 +119,51 @@
       <p class="mb-4 text-sm text-ink">{tender.message}</p>
     {/if}
 
+    <!-- Offered rate — the single most important number for the carrier's decision. -->
+    {#if tender.offeredRate !== null}
+      <Card>
+        <p class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Offered rate</p>
+        <p class="text-2xl font-bold text-ink">
+          {tender.offeredRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <span class="text-base font-semibold text-ink-muted">{tender.offeredCurrency ?? ''}</span>
+        </p>
+      </Card>
+    {/if}
+
     <Card>
       <p class="text-sm text-ink">
         <strong>{tender.load.shipments.length}</strong> shipment(s) ·
-        <strong>{totalWeight.toLocaleString()}</strong> kg ·
-        <strong>{totalPallets}</strong> pallets
-        {#if tender.load.route?.totalDistanceKm}
-          · {tender.load.route.totalDistanceKm} km
-        {/if}
+        <strong>{totalWeight.toLocaleString()}</strong> kg
+        {#if totalVolume > 0}· <strong>{totalVolume.toLocaleString()}</strong> m³{/if}
+        · <strong>{totalPallets}</strong> pallets
+        {#if tender.load.mode}· <strong>{tender.load.mode}</strong>{/if}
+        {#if tender.load.totalDistanceKm}· {tender.load.totalDistanceKm} km{/if}
       </p>
+      {#if tender.load.notes}
+        <p class="mt-2 text-sm text-ink-muted">{tender.load.notes}</p>
+      {/if}
     </Card>
+
+    <!-- Per-shipment origin → destination + windows -->
+    {#if tender.load.shipments.length > 0}
+      <div class="mt-4 flex flex-col gap-2">
+        {#each tender.load.shipments as s (s.shipmentNumber)}
+          <Card>
+            <p class="font-mono text-sm font-semibold text-ink">{s.shipmentNumber}</p>
+            <div class="mt-1 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+              <div>
+                <p class="text-xs text-ink-muted">Pickup — {place(s.origin)}</p>
+                <p class="text-ink">{fmtWindow(s.plannedPickupEarly, s.plannedPickupLate)}</p>
+              </div>
+              <div>
+                <p class="text-xs text-ink-muted">Delivery — {place(s.destination)}</p>
+                <p class="text-ink">{fmtWindow(s.plannedDeliveryEarly, s.plannedDeliveryLate)}</p>
+              </div>
+            </div>
+          </Card>
+        {/each}
+      </div>
+    {/if}
 
     {#if tender.load.route}
       <div class="mt-4 overflow-x-auto">

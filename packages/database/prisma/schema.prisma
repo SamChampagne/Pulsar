@@ -789,6 +789,14 @@ model TransportOrder {
   notes                  String?
   customData             Json?
   createdById            String?
+  // Fulfillment bridge (CRM → TMS). Null for ordinary transport orders. When a
+  // transport order is created from a CRM sales order, these carry the source
+  // link. `sourceFulfillmentKey` defaults to "primary" and lets one sales order
+  // fan out to several transport orders later (partial shipments). The compound
+  // unique below makes the CRM-origin creation idempotent; NULLs are distinct in
+  // Postgres, so ordinary transport orders (both null) never collide.
+  sourceSalesOrderId     String?
+  sourceFulfillmentKey   String?
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
 
@@ -797,12 +805,15 @@ model TransportOrder {
   originLocation      Location             @relation("OrderOrigin", fields: [originLocationId], references: [id])
   destinationLocation Location             @relation("OrderDestination", fields: [destinationLocationId], references: [id])
   createdBy           User?                @relation(fields: [createdById], references: [id])
+  sourceSalesOrder    SalesOrder?          @relation("SalesOrderFulfillment", fields: [sourceSalesOrderId], references: [id])
   shipments           Shipment[]
   customerInvoiceLine CustomerInvoiceLine?
 
   @@unique([tenantId, orderNumber])
+  @@unique([tenantId, sourceSalesOrderId, sourceFulfillmentKey], name: "to_source_fulfillment")
   @@index([tenantId, status])
   @@index([tenantId, customerId])
+  @@index([tenantId, sourceSalesOrderId])
   @@map("transport_orders")
 }
 
@@ -1022,6 +1033,11 @@ model Tender {
   expiresAt     DateTime
   sentAt        DateTime     @default(now())
   respondedAt   DateTime?
+  // Frozen offer snapshot taken at send time from Load.estimatedCost/costCurrency.
+  // The carrier-facing projection reads THIS, never the live load cost — a later
+  // recompute of the load must not change an offer already sent (immutability).
+  offeredAmount   Decimal?   @db.Decimal(12, 2)
+  offeredCurrency String?
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
   load    Load    @relation(fields: [loadId], references: [id], onDelete: Cascade)
@@ -2976,6 +2992,9 @@ model SalesOrder {
   tenant   Tenant       @relation(fields: [tenantId], references: [id])
   company  CrmCompany   @relation(fields: [companyId], references: [id])
   lineItems SalesOrderLineItem[]
+  // Fulfillment bridge: a sales order can request 0..N transport orders (rule 9
+  // ownership + explicit logistics data supplied at creation, never inferred).
+  fulfillmentOrders TransportOrder[] @relation("SalesOrderFulfillment")
   @@unique([tenantId, number])
   @@index([tenantId, status])
   @@index([tenantId, companyId])

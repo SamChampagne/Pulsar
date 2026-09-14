@@ -9,8 +9,9 @@
   import { deskSearch } from '$lib/stores/desk';
   import { getPreferences } from '$lib/api/preferences';
   import { loadAppearanceFrom } from '$lib/stores/appearance';
-  import { Bell, LogOut, Search, UserRound } from 'lucide-svelte';
+  import { Bell, LogOut, Menu, Search, UserRound, X } from 'lucide-svelte';
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
+  import WorkspaceTools from '$lib/components/workflows/WorkspaceTools.svelte';
   import AssistantPanel from '$lib/components/agents/AssistantPanel.svelte';
   import { MODULE_UNIVERSES } from '$lib/modules/universe';
   import { visibleDomains as buildVisibleDomains, type NavDomain } from '$lib/modules/navigation';
@@ -28,6 +29,8 @@
   let notifications = $state<Notification[]>([]);
   let notifOpen = $state(false);
   let profileOpen = $state(false);
+  let drawerOpen = $state(false);
+  let drawerCloseBtn = $state<HTMLButtonElement | undefined>(undefined);
   const unreadCount = $derived(notifications.filter((n) => !n.readAt).length);
 
   const canReadAgentActions = $derived(
@@ -79,6 +82,33 @@
   });
   $effect(() => {
     if (page.url.pathname !== '/apps') deskSearch.set('');
+    // Route change (including SPA navigations from drawer links) always closes
+    // the mobile drawer — there's nothing to keep open once we've navigated.
+    drawerOpen = false;
+  });
+
+  // Escape closes the mobile drawer.
+  $effect(() => {
+    if (!drawerOpen) return;
+    function onKeydown(e: KeyboardEvent) {
+      if (e.key === 'Escape') drawerOpen = false;
+    }
+    window.addEventListener('keydown', onKeydown);
+    return () => window.removeEventListener('keydown', onKeydown);
+  });
+
+  // Lock body scroll while the mobile drawer is open.
+  $effect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.style.overflow = drawerOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  });
+
+  // Sensible focus on open — land on the drawer's own close control.
+  $effect(() => {
+    if (drawerOpen) drawerCloseBtn?.focus();
   });
 
   onMount(() => {
@@ -134,7 +164,8 @@
   );
 
   const reduceMotion =
-    typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
   // The single active link = the LONGEST href among the visible links that the
   // current path matches. Without this, a module "home" link (e.g. /analytics)
@@ -283,16 +314,32 @@
       </div>
     {:else}
       <!-- Module shell — once an app is opened, show ONLY that selected universe. Global app switching lives on /apps. -->
-      <aside class="flex w-64 shrink-0 flex-col border-r border-edge bg-surface">
+      <!-- Below `lg`, the sidebar is an off-canvas drawer (translate + overlay); at `lg`+ it's the
+           original static sidebar — `lg:static lg:translate-x-0` restores the exact desktop layout. -->
+      <aside
+        class={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] shrink-0 flex-col border-r border-edge bg-surface ${reduceMotion ? '' : 'transition-transform duration-200 ease-out'} ${drawerOpen ? 'translate-x-0' : '-translate-x-full'} lg:static lg:z-auto lg:w-64 lg:max-w-none lg:translate-x-0`}
+        aria-label="Menu principal"
+      >
         <div class="border-b border-edge-soft p-4">
-          <a
-            href="/apps"
-            class="inline-flex items-center gap-2 rounded-xl bg-surface-muted px-3 py-2 text-xs font-semibold text-ink-muted transition hover:bg-accent-soft hover:text-accent"
-            aria-label="Retour au bureau Pulsar"
-          >
-            <span class="text-base leading-none">⬢</span>
-            Bureau des apps
-          </a>
+          <div class="flex items-center justify-between gap-2">
+            <a
+              href="/apps"
+              class="inline-flex items-center gap-2 rounded-xl bg-surface-muted px-3 py-2 text-xs font-semibold text-ink-muted transition hover:bg-accent-soft hover:text-accent"
+              aria-label="Retour au bureau Pulsar"
+            >
+              <span class="text-base leading-none">⬢</span>
+              Bureau des apps
+            </a>
+            <button
+              type="button"
+              bind:this={drawerCloseBtn}
+              class="flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-muted hover:text-ink lg:hidden"
+              onclick={() => (drawerOpen = false)}
+              aria-label="Fermer le menu"
+            >
+              <X class="size-4" />
+            </button>
+          </div>
           <div class="mt-5 flex items-start gap-3">
             {#if activeDomain}
               {@const Icon = activeDomain.icon}
@@ -388,21 +435,93 @@
         </div>
       </aside>
 
-      <main
-        class="min-w-0 flex-1 overflow-x-hidden p-6"
-        style={`background: radial-gradient(circle at top left, rgb(${activeUniverse.rgb} / 0.10), transparent 360px), var(--color-canvas);`}
-      >
-        {#key page.url.pathname}
-          <div in:fade={{ duration: reduceMotion ? 0 : 120 }}>
-            {@render children()}
+      {#if drawerOpen}
+        <button
+          type="button"
+          class="fixed inset-0 z-40 bg-ink/40 lg:hidden"
+          onclick={() => (drawerOpen = false)}
+          aria-label="Fermer le menu"
+        ></button>
+      {/if}
+
+      <div class="flex min-w-0 flex-1 flex-col">
+        <!-- Mobile-only top bar: hamburger + active module title + notifications/profile
+             reachable without opening the drawer. Hidden entirely at `lg`+ (static sidebar). -->
+        <header
+          class="flex h-14 shrink-0 items-center gap-2 border-b border-edge bg-surface px-3 lg:hidden"
+        >
+          <button
+            type="button"
+            class="flex size-9 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-muted hover:text-ink"
+            onclick={() => (drawerOpen = true)}
+            aria-label="Ouvrir le menu"
+            aria-expanded={drawerOpen}
+          >
+            <Menu class="size-5" />
+          </button>
+          {#if activeDomain}
+            {@const Icon = activeDomain.icon}
+            <div
+              class="grid size-7 shrink-0 place-items-center rounded-lg text-white"
+              style={`background: ${activeUniverse.accent}`}
+            >
+              <Icon class="size-4" />
+            </div>
+          {/if}
+          <span class="truncate text-sm font-semibold text-ink">{activeUniverse.title}</span>
+          <div class="ml-auto flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              class="relative flex size-9 items-center justify-center rounded-full text-ink-muted hover:bg-surface-muted hover:text-ink"
+              onclick={() => {
+                profileOpen = false;
+                notifOpen = !notifOpen;
+              }}
+              aria-label="Notifications"
+              aria-expanded={notifOpen}
+            >
+              <Bell class="size-4" />
+              {#if unreadCount > 0}<span
+                  class="absolute top-1 right-1 size-2 rounded-full bg-danger"
+                ></span>{/if}
+            </button>
+            <button
+              type="button"
+              class={`grid size-9 place-items-center rounded-full text-xs font-semibold transition ${profileOpen ? 'bg-ink text-white' : 'bg-surface-muted text-ink hover:bg-accent-soft hover:text-accent'}`}
+              onclick={() => {
+                notifOpen = false;
+                profileOpen = !profileOpen;
+              }}
+              aria-label="Profil utilisateur"
+              aria-expanded={profileOpen}
+              title={$auth.user.email}
+            >
+              {initials()}
+            </button>
           </div>
-        {/key}
-      </main>
+        </header>
+
+        <main
+          class="min-w-0 flex-1 overflow-x-hidden p-4 lg:p-6"
+          style={`background: radial-gradient(circle at top left, rgb(${activeUniverse.rgb} / 0.10), transparent 360px), var(--color-canvas);`}
+        >
+          <WorkspaceTools
+            onsearch={() => {
+              paletteOpen = true;
+            }}
+          />
+          {#key page.url.pathname}
+            <div in:fade={{ duration: reduceMotion ? 0 : 120 }}>
+              {@render children()}
+            </div>
+          {/key}
+        </main>
+      </div>
     {/if}
 
     {#if profileOpen}
       <div
-        class={`fixed z-50 w-80 rounded-2xl border border-edge bg-surface p-3 shadow-pop ${deskMode ? 'top-14 right-4' : 'bottom-4 left-[17rem]'}`}
+        class={`fixed z-50 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-edge bg-surface p-3 shadow-pop ${deskMode ? 'top-14 right-4' : 'top-16 right-4 lg:top-auto lg:right-auto lg:bottom-4 lg:left-[17rem]'}`}
       >
         <div class="flex items-start gap-3 border-b border-edge-soft pb-3">
           <div
@@ -465,7 +584,7 @@
 
     {#if notifOpen}
       <div
-        class="fixed bottom-4 left-[17rem] z-30 max-h-96 w-72 overflow-y-auto rounded-card border border-edge bg-surface p-2 shadow-pop"
+        class={`fixed z-30 max-h-96 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-card border border-edge bg-surface p-2 shadow-pop ${deskMode ? 'top-14 right-4' : 'top-16 right-4 lg:top-auto lg:right-auto lg:bottom-4 lg:left-[17rem]'}`}
       >
         {#if notifications.length === 0}
           <p class="px-2 py-3 text-center text-xs text-ink-faint">Aucune notification</p>

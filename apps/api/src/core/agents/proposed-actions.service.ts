@@ -15,10 +15,12 @@ import {
   type RiskTier,
 } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import type { AgentPrincipal } from './agent-principal';
 import { TOOL_BY_NAME, type ToolServices } from './tool-registry';
+import { toolRequiredModules, toolRequiredPermissions } from './tool-types';
 
 @Injectable()
 export class ProposedActionsService {
@@ -26,6 +28,7 @@ export class ProposedActionsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogsService,
     private readonly notifications: NotificationsService,
+    private readonly modules: TenantModulesCacheService,
   ) {}
 
   /**
@@ -101,11 +104,16 @@ export class ProposedActionsService {
 
   /** True iff the breaker is tripped AND within cooldown. Lazily auto-rearms past cooldown. */
   private async isBreakerTripped(agentId: string): Promise<boolean> {
-    const agent = await this.prisma.agent.findFirst({ where: { id: agentId }, select: { breakerTrippedAt: true } });
+    const agent = await this.prisma.agent.findFirst({
+      where: { id: agentId },
+      select: { breakerTrippedAt: true },
+    });
     const at = agent?.breakerTrippedAt;
     if (!at) return false;
     if (Date.now() - at.getTime() > DEFAULT_BREAKER.cooldownMs) {
-      await this.prisma.agent.update({ where: { id: agentId }, data: { breakerTrippedAt: null } }).catch(() => undefined);
+      await this.prisma.agent
+        .update({ where: { id: agentId }, data: { breakerTrippedAt: null } })
+        .catch(() => undefined);
       return false;
     }
     return true;
@@ -121,14 +129,21 @@ export class ProposedActionsService {
     def: {
       name: string;
       tier: RiskTier;
-      run: (a: Record<string, unknown>, ctx: { principal: AgentPrincipal; services: ToolServices }) => Promise<unknown>;
+      run: (
+        a: Record<string, unknown>,
+        ctx: { principal: AgentPrincipal; services: ToolServices },
+      ) => Promise<unknown>;
       amountFrom?: (a: Record<string, unknown>) => number | undefined;
     },
     args: Record<string, unknown>,
     services: ToolServices,
   ): Promise<PolicyDecision & { proposalId?: string; result?: unknown }> {
     const amount = def.amountFrom?.(args);
-    const rules = effectivePolicies(principal.caps.policies, principal.autonomyLevel, principal.caps.autoApprove);
+    const rules = effectivePolicies(
+      principal.caps.policies,
+      principal.autonomyLevel,
+      principal.caps.autoApprove,
+    );
     const decision = evaluatePolicy(rules, {
       tool: def.name,
       tier: def.tier,
@@ -159,7 +174,10 @@ export class ProposedActionsService {
       await this.recordAutoOutcome(principal, def.name, def.tier, args, key, { ok: true, result });
       return { ...decision, result };
     } catch (err) {
-      await this.recordAutoOutcome(principal, def.name, def.tier, args, key, { ok: false, error: err instanceof Error ? err.message : String(err) });
+      await this.recordAutoOutcome(principal, def.name, def.tier, args, key, {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
       throw err;
     }
   }
@@ -189,7 +207,7 @@ export class ProposedActionsService {
             idempotencyKey: key,
             status: outcome.ok ? ProposalStatus.EXECUTED : ProposalStatus.FAILED,
             autoApproved: true,
-            resultJson: (outcome.ok ? outcome.result ?? {} : { error: outcome.error }) as object,
+            resultJson: (outcome.ok ? (outcome.result ?? {}) : { error: outcome.error }) as object,
           },
         })
         .catch(() => undefined); // idempotent: a concurrent same-key insert already recorded it
@@ -200,17 +218,28 @@ export class ProposedActionsService {
   /** Read recent outcomes and trip the breaker if the pattern warrants. Best-effort: never throws (rule 24). */
   async maybeTripBreaker(principal: AgentPrincipal): Promise<void> {
     try {
-      const agent = await this.prisma.agent.findFirst({ where: { id: principal.agentId }, select: { breakerTrippedAt: true } });
+      const agent = await this.prisma.agent.findFirst({
+        where: { id: principal.agentId },
+        select: { breakerTrippedAt: true },
+      });
       if (agent?.breakerTrippedAt) return;
       const rows = await this.prisma.proposedAction.findMany({
-        where: { agentId: principal.agentId, status: { in: [ProposalStatus.EXECUTED, ProposalStatus.FAILED] } },
+        where: {
+          agentId: principal.agentId,
+          status: { in: [ProposalStatus.EXECUTED, ProposalStatus.FAILED] },
+        },
         orderBy: { proposedAt: 'desc' },
         take: DEFAULT_BREAKER.consecutiveFailures,
         select: { status: true, proposedAt: true },
       });
-      const recent = rows.map((r) => ({ failed: r.status === ProposalStatus.FAILED, at: r.proposedAt.getTime() }));
+      const recent = rows.map((r) => ({
+        failed: r.status === ProposalStatus.FAILED,
+        at: r.proposedAt.getTime(),
+      }));
       if (!evaluateCircuitBreaker(recent, DEFAULT_BREAKER)) return;
-      await this.prisma.agent.update({ where: { id: principal.agentId }, data: { breakerTrippedAt: new Date() } }).catch(() => undefined);
+      await this.prisma.agent
+        .update({ where: { id: principal.agentId }, data: { breakerTrippedAt: new Date() } })
+        .catch(() => undefined);
       await this.audit.log({
         tenantId: principal.user.tenantId,
         userId: principal.user.id,
@@ -257,14 +286,38 @@ export class ProposedActionsService {
 
     // The agent must still be ACTIVE: if a human PAUSED (kill switch, rule 28) or
     // REVOKED it between enqueue and approval, its queued actions must not execute.
-    const agent = await this.prisma.agent.findUniqueOrThrow({ where: { id: proposal.agentId } });
+    const agent = await this.prisma.agent.findFirstOrThrow({
+      where: { id: proposal.agentId, tenantId },
+    });
     if (agent.status !== AgentStatus.ACTIVE) {
       throw new BadRequestException(`Agent is ${agent.status}, cannot approve its actions`);
     }
 
-    // Race-safe claim: only one approver moves PENDING -> APPROVED.
+    // Approval must not bypass the tool's authorization: the agent must STILL hold
+    // every required permission and the tenant STILL have every required module
+    // enabled (a demotion or a module toggle between enqueue and approval must
+    // block execution). Same requirements the MCP exposure gate enforced.
+    const grantedPerms = new Set(agent.permissions as string[]);
+    const missingPerm = toolRequiredPermissions(def).find((p) => !grantedPerms.has(p));
+    if (missingPerm) {
+      throw new BadRequestException(
+        `Agent no longer holds required permission "${missingPerm}" for tool "${def.name}"`,
+      );
+    }
+    const requiredModules = toolRequiredModules(def);
+    if (requiredModules.length > 0) {
+      const enabled = await this.modules.getEnabledKeys(tenantId).catch(() => new Set<string>());
+      const missingModule = requiredModules.find((m) => !enabled.has(m));
+      if (missingModule) {
+        throw new BadRequestException(
+          `Module "${missingModule}" is not enabled; cannot approve tool "${def.name}"`,
+        );
+      }
+    }
+
+    // Race-safe claim: only one approver moves PENDING -> APPROVED (tenant-scoped).
     const claimed = await this.prisma.proposedAction.updateMany({
-      where: { id, status: ProposalStatus.PENDING },
+      where: { id, tenantId, status: ProposalStatus.PENDING },
       data: { status: ProposalStatus.APPROVED, decidedById: approverId, decidedAt: new Date() },
     });
     if (claimed.count === 0) throw new BadRequestException('Proposal already decided');

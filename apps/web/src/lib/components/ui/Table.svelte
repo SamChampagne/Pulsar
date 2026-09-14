@@ -3,7 +3,8 @@
   let { head, body } = $props();
 </script>
 
-<div class={`overflow-x-auto rounded-card border border-edge-soft bg-surface shadow-sm ${$density === 'compact' ? 'tbl-compact' : ''}`}>
+<!-- Contain absolutely positioned sr-only headers within the scrolling table. -->
+<div class={`relative overflow-x-auto rounded-card border border-edge-soft bg-surface shadow-sm ${$density === 'compact' ? 'tbl-compact' : ''}`}>
   <table class="w-full border-collapse text-sm">
     <thead>
       <tr class="border-b border-edge bg-surface-muted text-left text-[11px] tracking-wide text-ink-muted uppercase">

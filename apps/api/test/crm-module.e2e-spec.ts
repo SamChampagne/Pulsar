@@ -31,6 +31,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { CrmExceptionsService } from '../src/modules/crm/crm-exceptions.service';
 import { DomainEventsService } from '../src/core/operating/domain-events.service';
+import { drainInheritedDomainEvents } from './utils/domain-events';
 import { AgentRuntimeService } from '../src/core/agents/agent-runtime.service';
 import { AgentsService } from '../src/core/agents/agents.service';
 
@@ -125,10 +126,13 @@ describe('CRM module (e2e)', () => {
   afterAll(async () => {
     if (prisma) {
       // Clean up in reverse dependency order
-      if (activityId) await prisma.crmActivity.deleteMany({ where: { id: activityId } }).catch(() => undefined);
+      if (activityId)
+        await prisma.crmActivity.deleteMany({ where: { id: activityId } }).catch(() => undefined);
       if (dealId) await prisma.crmDeal.deleteMany({ where: { id: dealId } }).catch(() => undefined);
-      if (contactId) await prisma.crmContact.deleteMany({ where: { id: contactId } }).catch(() => undefined);
-      if (companyId) await prisma.crmCompany.deleteMany({ where: { id: companyId } }).catch(() => undefined);
+      if (contactId)
+        await prisma.crmContact.deleteMany({ where: { id: contactId } }).catch(() => undefined);
+      if (companyId)
+        await prisma.crmCompany.deleteMany({ where: { id: companyId } }).catch(() => undefined);
     }
     await app.close();
   });
@@ -322,10 +326,7 @@ describe('CRM module (e2e)', () => {
     expect(body.customerId).toBeTruthy();
 
     // Verify the deal has convertedCustomerId set
-    const dealRes = await request(http)
-      .get(`/api/v1/crm/deals/${dealId}`)
-      .set(auth())
-      .expect(200);
+    const dealRes = await request(http).get(`/api/v1/crm/deals/${dealId}`).set(auth()).expect(200);
     const deal = dealRes.body as Deal;
     expect(deal.convertedCustomerId).toBe(body.customerId);
 
@@ -341,10 +342,7 @@ describe('CRM module (e2e)', () => {
   // =========================================================================
   it('re-converting a WON deal is idempotent (same customerId, no duplicate Customer)', async () => {
     // We know dealId is already converted from test 14
-    const firstRes = await request(http)
-      .get(`/api/v1/crm/deals/${dealId}`)
-      .set(auth())
-      .expect(200);
+    const firstRes = await request(http).get(`/api/v1/crm/deals/${dealId}`).set(auth()).expect(200);
     const firstCustomerId = (firstRes.body as Deal).convertedCustomerId!;
     expect(firstCustomerId).toBeTruthy();
 
@@ -390,10 +388,7 @@ describe('CRM module (e2e)', () => {
     activityId = activity.id;
 
     // Verify lastActivityAt was updated on the deal
-    const dealRes = await request(http)
-      .get(`/api/v1/crm/deals/${dealId}`)
-      .set(auth())
-      .expect(200);
+    const dealRes = await request(http).get(`/api/v1/crm/deals/${dealId}`).set(auth()).expect(200);
     const deal = dealRes.body as Deal;
     expect(deal.lastActivityAt).not.toBeNull();
   });
@@ -436,7 +431,14 @@ describe('CRM module (e2e)', () => {
       winRate: number;
       staleDealCount: number;
       dueFollowupCount: number;
-      recentActivities: { id: string; type: string; body: string; createdAt: string; dealId: string | null; companyId: string | null }[];
+      recentActivities: {
+        id: string;
+        type: string;
+        body: string;
+        createdAt: string;
+        dealId: string | null;
+        companyId: string | null;
+      }[];
     };
 
     // Shape assertions
@@ -529,10 +531,7 @@ describe('CRM module (e2e)', () => {
   // 20 — GET /crm/activities?type=NOTE → only NOTE activities.
   // =========================================================================
   it('GET /crm/activities?type=NOTE returns only NOTE type activities', async () => {
-    const res = await request(http)
-      .get('/api/v1/crm/activities?type=NOTE')
-      .set(auth())
-      .expect(200);
+    const res = await request(http).get('/api/v1/crm/activities?type=NOTE').set(auth()).expect(200);
     const body = res.body as Paginated<Activity>;
     expect(body).toHaveProperty('items');
     for (const item of body.items) {
@@ -552,7 +551,10 @@ describe('CRM module (e2e)', () => {
     expect(body).toHaveProperty('items');
     // All returned items must have doneAt = null
     for (const item of body.items) {
-      const dbRecord = await prisma.crmActivity.findUnique({ where: { id: item.id }, select: { doneAt: true } });
+      const dbRecord = await prisma.crmActivity.findUnique({
+        where: { id: item.id },
+        select: { doneAt: true },
+      });
       expect(dbRecord?.doneAt).toBeNull();
     }
   });
@@ -681,6 +683,7 @@ describe('CRM autonomous exception loop (e2e)', () => {
     prisma = app.get(PrismaService);
     crmExceptions = app.get(CrmExceptionsService);
     domainEvents = app.get(DomainEventsService);
+    await drainInheritedDomainEvents(domainEvents);
 
     const login = await request(http).post('/api/v1/auth/login').send(ADMIN).expect(200);
     token = (login.body as { accessToken: string }).accessToken;
@@ -701,9 +704,11 @@ describe('CRM autonomous exception loop (e2e)', () => {
     if (prisma) {
       // Remove the stale task(s) created by our deal so dedup doesn't bleed into other runs.
       if (loopDealId) {
-        await prisma.operationalTask.deleteMany({
-          where: { tenantId, dedupKey: `CRM_STALE_DEAL:${loopDealId}` },
-        }).catch(() => undefined);
+        await prisma.operationalTask
+          .deleteMany({
+            where: { tenantId, dedupKey: `CRM_STALE_DEAL:${loopDealId}` },
+          })
+          .catch(() => undefined);
         await prisma.crmDeal.deleteMany({ where: { id: loopDealId } }).catch(() => undefined);
       }
       if (loopCompanyId) {
@@ -729,7 +734,12 @@ describe('CRM autonomous exception loop (e2e)', () => {
         role: 'crm-sdr',
         model: 'anthropic:claude-sonnet-4-6',
         autonomyLevel: 'AUTONOMOUS',
-        permissions: ['crm.read', 'crm.manage', 'core.operating.tasks.read', 'core.operating.tasks.manage'],
+        permissions: [
+          'crm.read',
+          'crm.manage',
+          'core.operating.tasks.read',
+          'core.operating.tasks.manage',
+        ],
         caps: {
           alwaysOn: true,
           handlesCategories: ['CRM_STALE_DEAL', 'CRM_FOLLOWUP_DUE'],
@@ -763,7 +773,12 @@ describe('CRM autonomous exception loop (e2e)', () => {
     const dealRes = await request(http)
       .post('/api/v1/crm/deals')
       .set(auth())
-      .send({ title: `Stale Deal ${suffix}`, companyId: loopCompanyId, amount: 25000, currency: 'CAD' })
+      .send({
+        title: `Stale Deal ${suffix}`,
+        companyId: loopCompanyId,
+        amount: 25000,
+        currency: 'CAD',
+      })
       .expect(201);
     loopDealId = (dealRes.body as { id: string }).id;
     expect(loopDealId).toBeTruthy();
@@ -813,9 +828,11 @@ describe('CRM autonomous exception loop (e2e)', () => {
     const competitorIds = allActiveAgents
       .filter((a) => {
         const caps = (a.caps ?? {}) as { alwaysOn?: boolean; handlesCategories?: string[] };
-        return caps.alwaysOn === true
-          && (caps.handlesCategories ?? []).includes('CRM_STALE_DEAL')
-          && a.id !== loopAgentId;
+        return (
+          caps.alwaysOn === true &&
+          (caps.handlesCategories ?? []).includes('CRM_STALE_DEAL') &&
+          a.id !== loopAgentId
+        );
       })
       .map((a) => a.id);
     if (competitorIds.length > 0) {
@@ -967,13 +984,18 @@ describe('CRM Lists + Campaigns (e2e)', () => {
     if (prisma) {
       // Clean up campaign emails first (relatedId references campaignId).
       if (campaignId) {
-        await prisma.emailMessage.deleteMany({ where: { tenantId, relatedType: 'crm-campaign', relatedId: campaignId } }).catch(() => undefined);
+        await prisma.emailMessage
+          .deleteMany({ where: { tenantId, relatedType: 'crm-campaign', relatedId: campaignId } })
+          .catch(() => undefined);
         await prisma.crmCampaign.deleteMany({ where: { id: campaignId } }).catch(() => undefined);
       }
       if (listId) await prisma.crmList.deleteMany({ where: { id: listId } }).catch(() => undefined);
-      if (contact1Id) await prisma.crmContact.deleteMany({ where: { id: contact1Id } }).catch(() => undefined);
-      if (contact2Id) await prisma.crmContact.deleteMany({ where: { id: contact2Id } }).catch(() => undefined);
-      if (companyId) await prisma.crmCompany.deleteMany({ where: { id: companyId } }).catch(() => undefined);
+      if (contact1Id)
+        await prisma.crmContact.deleteMany({ where: { id: contact1Id } }).catch(() => undefined);
+      if (contact2Id)
+        await prisma.crmContact.deleteMany({ where: { id: contact2Id } }).catch(() => undefined);
+      if (companyId)
+        await prisma.crmCompany.deleteMany({ where: { id: companyId } }).catch(() => undefined);
     }
     await app.close();
   });
@@ -1052,7 +1074,12 @@ describe('CRM Lists + Campaigns (e2e)', () => {
       .get(`/api/v1/crm/lists/${listId}/members`)
       .set(auth())
       .expect(200);
-    const body = res.body as Paginated<{ id: string; contactId: string; name: string; email: string | null }>;
+    const body = res.body as Paginated<{
+      id: string;
+      contactId: string;
+      name: string;
+      email: string | null;
+    }>;
     // Must be a Paginated response, not a raw array.
     expect(body).toHaveProperty('items');
     expect(body).toHaveProperty('total');
@@ -1183,14 +1210,9 @@ describe('CRM Lists + Campaigns (e2e)', () => {
     }
 
     // At least one subject must contain a contact name (not literal '{name}').
-    const contactNames = [
-      `Alice Camp ${suffix}`,
-      `Bob Camp ${suffix}`,
-    ];
+    const contactNames = [`Alice Camp ${suffix}`, `Bob Camp ${suffix}`];
     const subjects = emails.map((e) => e.subject);
-    const hasRenderedName = subjects.some((s) =>
-      contactNames.some((name) => s.includes(name)),
-    );
+    const hasRenderedName = subjects.some((s) => contactNames.some((name) => s.includes(name)));
     expect(hasRenderedName).toBe(true);
     // None of the subjects should contain the literal placeholder.
     for (const s of subjects) {
@@ -1216,9 +1238,6 @@ describe('CRM Lists + Campaigns (e2e)', () => {
   });
 
   it('re-sending a SENT campaign returns 400', async () => {
-    await request(http)
-      .post(`/api/v1/crm/campaigns/${campaignId}/send`)
-      .set(auth())
-      .expect(400);
+    await request(http).post(`/api/v1/crm/campaigns/${campaignId}/send`).set(auth()).expect(400);
   });
 });

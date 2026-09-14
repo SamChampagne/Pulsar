@@ -12,10 +12,12 @@
     Input,
     Modal,
     PageHeader,
+    RelatedEntities,
     Select,
     Skeleton,
+    StatusTimeline,
   } from '$lib/components/ui';
-  import type { Tone } from '$lib/components/ui';
+  import type { RelatedGroup, Tone, TimelineEntry } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
 
   interface ReceiptLine {
@@ -35,6 +37,8 @@
     reference?: string | null;
     note?: string | null;
     createdAt: string;
+    // Present on the same GET (full record, no `select`) but not previously typed.
+    postedAt?: string | null;
     _count: { lines: number };
     lines: ReceiptLine[];
   }
@@ -111,6 +115,36 @@
   // Bins that belong to the receipt's location.
   const selectedBins = $derived(
     receipt ? bins.filter((b) => b.locationId === receipt!.locationId) : [],
+  );
+
+  // "Lié à" — the warehouse location has no detail route yet, so it's shown
+  // informationally (no href). `Receipt` carries no carrier/supplier reference in
+  // the schema (packages/database/prisma/schema.prisma model Receipt) — nothing to link there.
+  const relatedGroups = $derived<RelatedGroup[]>(
+    receipt
+      ? [
+          {
+            label: 'Entrepôt',
+            items: [{ label: locName(receipt.locationId) }],
+          },
+        ]
+      : [],
+  );
+
+  const timelineEntries = $derived<TimelineEntry[]>(
+    receipt
+      ? [
+          { label: 'Réception créée', timestamp: receipt.createdAt, tone: 'neutral' },
+          ...(receipt.postedAt
+            ? [{ label: 'Postée', timestamp: receipt.postedAt, tone: 'ok' as const }]
+            : []),
+          {
+            label: statusLabel(receipt.status),
+            description: 'Statut actuel',
+            tone: statusTone(receipt.status),
+          },
+        ]
+      : [],
   );
 
   async function load() {
@@ -226,35 +260,49 @@
     <a href="/wms/receiving" class="text-sm text-accent hover:underline">← Réceptions</a>
   </div>
 
-  <Card>
-    {#if receipt.reference}
-      <p class="mb-3 text-sm text-ink-muted">Réf : {receipt.reference}</p>
-    {/if}
-    {#if receipt.note}
-      <p class="mb-3 text-sm text-ink-muted">Note : {receipt.note}</p>
-    {/if}
-    <p class="mb-4 text-xs text-ink-faint">
-      Créée le {new Date(receipt.createdAt).toLocaleString()}
-    </p>
+  <div class="grid gap-4 lg:grid-cols-3">
+    <div class="lg:col-span-2">
+      <Card>
+        {#if receipt.reference}
+          <p class="mb-3 text-sm text-ink-muted">Réf : {receipt.reference}</p>
+        {/if}
+        {#if receipt.note}
+          <p class="mb-3 text-sm text-ink-muted">Note : {receipt.note}</p>
+        {/if}
+        <p class="mb-4 text-xs text-ink-faint">
+          Créée le {new Date(receipt.createdAt).toLocaleString()}
+        </p>
 
-    {#if receipt.lines.length === 0}
-      <EmptyState message="Aucune ligne." />
-    {:else}
-      <div class="divide-y divide-edge">
-        {#each receipt.lines as line (line.id)}
-          <div class="flex items-center gap-3 py-2.5 text-sm">
-            <span class="font-medium text-ink">{line.item.sku}</span>
-            <span class="text-ink-muted">{line.item.name}</span>
-            <span class="text-ink-faint">→ {line.toBin.code}</span>
-            <span class="ml-auto font-semibold text-ink">{line.qty}</span>
-            {#if receipt!.status === 'DRAFT'}
-              <Button variant="ghost" onclick={() => removeLine(line.id)}>Retirer</Button>
-            {/if}
+        {#if receipt.lines.length === 0}
+          <EmptyState message="Aucune ligne." />
+        {:else}
+          <div class="divide-y divide-edge">
+            {#each receipt.lines as line (line.id)}
+              <div class="flex items-center gap-3 py-2.5 text-sm">
+                <span class="font-medium text-ink">{line.item.sku}</span>
+                <span class="text-ink-muted">{line.item.name}</span>
+                <span class="text-ink-faint">→ {line.toBin.code}</span>
+                <span class="ml-auto font-semibold text-ink">{line.qty}</span>
+                {#if receipt!.status === 'DRAFT'}
+                  <Button variant="ghost" onclick={() => removeLine(line.id)}>Retirer</Button>
+                {/if}
+              </div>
+            {/each}
           </div>
-        {/each}
-      </div>
-    {/if}
-  </Card>
+        {/if}
+      </Card>
+    </div>
+
+    <div class="flex flex-col gap-4">
+      <Card>
+        <h2 class="mb-3 font-semibold text-ink">Historique</h2>
+        <StatusTimeline entries={timelineEntries} />
+      </Card>
+      <Card>
+        <RelatedEntities groups={relatedGroups} />
+      </Card>
+    </div>
+  </div>
 {/if}
 
 <!-- Add-line modal -->

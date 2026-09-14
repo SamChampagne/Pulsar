@@ -14,6 +14,7 @@
     Select,
     Skeleton,
     Table,
+    ErrorNotice,
   } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
 
@@ -269,7 +270,7 @@
 {#if loading}
   <Card padded={false}><Skeleton rows={8} /></Card>
 {:else if error || !order}
-  <Card><p class="text-sm text-danger">{error || 'Ordre introuvable'}</p></Card>
+  <ErrorNotice message={error || 'Ordre introuvable'} onretry={error ? load : undefined} />
 {:else}
   <PageHeader eyebrow={order.number} title={order.name}>
     {#snippet actions()}

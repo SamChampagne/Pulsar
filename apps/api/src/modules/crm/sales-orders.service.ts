@@ -1,5 +1,12 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditAction, canTransitionSalesOrder, CrmDealStage, SalesOrderStatus, sumLineItems } from '@pulsar/shared';
+import {
+  AuditAction,
+  canTransitionSalesOrder,
+  CrmDealStage,
+  deriveSalesOrderFulfillment,
+  SalesOrderStatus,
+  sumLineItems,
+} from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { SequencesService } from '../../prisma/sequences.service';
@@ -275,5 +282,60 @@ export class SalesOrdersService {
     }
 
     return this.get(tenantId, id);
+  }
+
+  /**
+   * Fulfillment bridge (TMS → CRM). Called by the `fulfill_sales_order` reaction
+   * when a source transport order completes. Transitions CONFIRMED → FULFILLED
+   * IFF every transport order derived from this sales order is terminal (all
+   * COMPLETED/CLOSED or CANCELLED) and at least one was actually delivered
+   * (rule 2 via canTransitionSalesOrder; the decision itself is the pure
+   * `deriveSalesOrderFulfillment`). Idempotent and claim-safe: a no-op if the
+   * order is not CONFIRMED (already fulfilled/invoiced/cancelled) or if the
+   * claim loses a race — never throws for those benign cases. Returns the
+   * decision so the reaction can log the reason.
+   */
+  async fulfillFromTransport(
+    tenantId: string,
+    userId: string,
+    salesOrderId: string,
+  ): Promise<{ fulfilled: boolean; reason: string }> {
+    const so = await this.prisma.salesOrder.findFirst({
+      where: { id: salesOrderId, tenantId },
+      select: { id: true, status: true },
+    });
+    if (!so) return { fulfilled: false, reason: 'not-found' };
+    if (so.status !== SalesOrderStatus.CONFIRMED) {
+      return { fulfilled: false, reason: `not-confirmed:${so.status}` };
+    }
+
+    const tos = await this.prisma.transportOrder.findMany({
+      where: { tenantId, sourceSalesOrderId: salesOrderId },
+      select: { status: true },
+    });
+    const decision = deriveSalesOrderFulfillment(tos.map((t) => t.status));
+    if (!decision.fulfill) return { fulfilled: false, reason: decision.reason };
+
+    // Rule 2: guard the transition. Rule TOCTOU: conditional claim on status.
+    if (!canTransitionSalesOrder(SalesOrderStatus.CONFIRMED, SalesOrderStatus.FULFILLED)) {
+      return { fulfilled: false, reason: 'transition-disallowed' };
+    }
+    const res = await this.prisma.salesOrder.updateMany({
+      where: { id: salesOrderId, tenantId, status: SalesOrderStatus.CONFIRMED },
+      data: { status: SalesOrderStatus.FULFILLED },
+    });
+    if (res.count === 0) return { fulfilled: false, reason: 'race' };
+
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.STATUS_CHANGE,
+      entityType: 'crm-sales-order',
+      entityId: salesOrderId,
+      before: { status: SalesOrderStatus.CONFIRMED },
+      after: { status: SalesOrderStatus.FULFILLED, via: 'transport-fulfillment' },
+    });
+
+    return { fulfilled: true, reason: decision.reason };
   }
 }

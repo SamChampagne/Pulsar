@@ -12,10 +12,12 @@
     Input,
     Modal,
     PageHeader,
+    RelatedEntities,
     Select,
     Skeleton,
+    StatusTimeline,
   } from '$lib/components/ui';
-  import type { Tone } from '$lib/components/ui';
+  import type { RelatedGroup, Tone, TimelineEntry } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
 
   interface ShipmentRef {
@@ -41,6 +43,8 @@
     reference?: string | null;
     note?: string | null;
     createdAt: string;
+    // Present on the same GET (full record, no `select`) but not previously typed.
+    completedAt?: string | null;
     shipment?: ShipmentRef | null;
     _count: { lines: number };
     lines: PickLine[];
@@ -130,6 +134,46 @@
   // Bins that belong to this order's location.
   const selectedBins = $derived(
     order ? bins.filter((b) => b.locationId === order!.locationId) : [],
+  );
+
+  // "Lié à" — only ids the page already has are linked. The warehouse location
+  // has no detail route yet, so it's shown informationally (no href). The linked
+  // shipment's `select` (picking.service.ts `get`) only returns id/number/status —
+  // no loadId/transportOrderId — so the chain up to the transport order/load can't
+  // be linked without a wider API select; shown informationally too.
+  const relatedGroups = $derived<RelatedGroup[]>(
+    order
+      ? [
+          {
+            label: 'Entrepôt',
+            items: [{ label: locName(order.locationId) }],
+          },
+          {
+            label: 'Expédition',
+            items: order.shipment
+              ? [
+                  {
+                    label: order.shipment.shipmentNumber,
+                    sublabel: statusLabel(order.shipment.status),
+                    tone: statusTone(order.shipment.status),
+                  },
+                ]
+              : [],
+          },
+        ]
+      : [],
+  );
+
+  const timelineEntries = $derived<TimelineEntry[]>(
+    order
+      ? [
+          { label: 'Pick order créé', timestamp: order.createdAt, tone: 'neutral' },
+          ...(order.completedAt
+            ? [{ label: 'Complété', timestamp: order.completedAt, tone: 'ok' as const }]
+            : []),
+          { label: statusLabel(order.status), description: 'Statut actuel', tone: statusTone(order.status) },
+        ]
+      : [],
   );
 
   async function load() {
@@ -268,38 +312,52 @@
     <a href="/wms/picking" class="text-sm text-accent hover:underline">← Prélèvements</a>
   </div>
 
-  <Card>
-    {#if order.shipment}
-      <p class="mb-3 text-sm font-medium text-accent">↔ {order.shipment.shipmentNumber}</p>
-    {/if}
-    {#if order.reference}
-      <p class="mb-3 text-sm text-ink-muted">Réf : {order.reference}</p>
-    {/if}
-    {#if order.note}
-      <p class="mb-3 text-sm text-ink-muted">Note : {order.note}</p>
-    {/if}
-    <p class="mb-4 text-xs text-ink-faint">
-      Créé le {new Date(order.createdAt).toLocaleString()}
-    </p>
+  <div class="grid gap-4 lg:grid-cols-3">
+    <div class="lg:col-span-2">
+      <Card>
+        {#if order.shipment}
+          <p class="mb-3 text-sm font-medium text-accent">↔ {order.shipment.shipmentNumber}</p>
+        {/if}
+        {#if order.reference}
+          <p class="mb-3 text-sm text-ink-muted">Réf : {order.reference}</p>
+        {/if}
+        {#if order.note}
+          <p class="mb-3 text-sm text-ink-muted">Note : {order.note}</p>
+        {/if}
+        <p class="mb-4 text-xs text-ink-faint">
+          Créé le {new Date(order.createdAt).toLocaleString()}
+        </p>
 
-    {#if order.lines.length === 0}
-      <EmptyState message="Aucune ligne." />
-    {:else}
-      <div class="divide-y divide-edge">
-        {#each order.lines as line (line.id)}
-          <div class="flex items-center gap-3 py-2.5 text-sm">
-            <span class="font-medium text-ink">{line.item.sku}</span>
-            <span class="text-ink-muted">{line.item.name}</span>
-            <span class="text-ink-faint">{line.fromBin.code} →</span>
-            <span class="ml-auto font-semibold text-ink">{line.qty}</span>
-            {#if order!.status === 'OPEN'}
-              <Button variant="ghost" onclick={() => removeLine(line.id)}>Retirer</Button>
-            {/if}
+        {#if order.lines.length === 0}
+          <EmptyState message="Aucune ligne." />
+        {:else}
+          <div class="divide-y divide-edge">
+            {#each order.lines as line (line.id)}
+              <div class="flex items-center gap-3 py-2.5 text-sm">
+                <span class="font-medium text-ink">{line.item.sku}</span>
+                <span class="text-ink-muted">{line.item.name}</span>
+                <span class="text-ink-faint">{line.fromBin.code} →</span>
+                <span class="ml-auto font-semibold text-ink">{line.qty}</span>
+                {#if order!.status === 'OPEN'}
+                  <Button variant="ghost" onclick={() => removeLine(line.id)}>Retirer</Button>
+                {/if}
+              </div>
+            {/each}
           </div>
-        {/each}
-      </div>
-    {/if}
-  </Card>
+        {/if}
+      </Card>
+    </div>
+
+    <div class="flex flex-col gap-4">
+      <Card>
+        <h2 class="mb-3 font-semibold text-ink">Historique</h2>
+        <StatusTimeline entries={timelineEntries} />
+      </Card>
+      <Card>
+        <RelatedEntities groups={relatedGroups} />
+      </Card>
+    </div>
+  </div>
 {/if}
 
 <!-- Add-line modal -->

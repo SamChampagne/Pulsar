@@ -66,6 +66,15 @@ export const REACTION_CATALOG: ReactionDescriptor[] = [
       "À la facturation d'une commande de vente (sales order INVOICED), crée un relevé client brouillon à partir des lignes de la commande (anti-double-billing).",
     argKeys: ['salesOrderId'],
   },
+  {
+    key: 'fulfill_sales_order',
+    label: 'Marquer la commande comme exécutée (livrée)',
+    module: 'crm',
+    requiredModules: ['crm'],
+    description:
+      "À la complétion d'un ordre de transport issu d'une commande de vente, passe la commande CONFIRMED → FULFILLED si tous ses ordres de transport sont terminés (livrés ou annulés) et au moins un livré.",
+    argKeys: ['salesOrderId'],
+  },
 ];
 
 const BY_KEY = new Map(REACTION_CATALOG.map((r) => [r.key, r]));

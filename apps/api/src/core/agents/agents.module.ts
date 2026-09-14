@@ -164,10 +164,15 @@ import { RuntimeConfigController } from './runtime-config.controller';
       ): ToolServices => ({
         transportOrders: {
           list: (tenantId, query) => transportOrders.list(tenantId, query as never),
+          createFromSalesOrder: (tenantId, userId, salesOrderId, dto) =>
+            transportOrders.createFromSalesOrder(tenantId, userId, salesOrderId, dto as never),
+          salesOrderFulfillmentContext: (tenantId, salesOrderId) =>
+            transportOrders.getSalesOrderFulfillmentContext(tenantId, salesOrderId),
         },
         loads: {
           get: (tenantId, id) => loads.get(tenantId, id),
           create: (tenantId, userId, dto) => loads.create(tenantId, userId, dto as never),
+          capacitySummary: (tenantId, id) => loads.capacitySummary(tenantId, id),
         },
         rating: {
           rateOptions: (tenantId, loadId) => rating.rateOptions(tenantId, loadId),
@@ -188,6 +193,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
           listForAgent: (t, a) => operationalTasks.listForAgent(t, a),
           getForTenant: (t, id) => operationalTasks.getForTenant(t, id),
           resolve: (t, id, u, note) => operationalTasks.resolve(t, id, u, note),
+          list: (t, filter) => operationalTasks.list(t, filter as never),
         },
         freightAudit: {
           audit: (t, u, id) => freightAudit.audit(t, u, id),

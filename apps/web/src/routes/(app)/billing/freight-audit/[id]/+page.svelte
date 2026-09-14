@@ -11,6 +11,7 @@
     Skeleton,
     Select,
     Input,
+    ErrorNotice,
     type Tone,
   } from '$lib/components/ui';
 
@@ -112,7 +113,7 @@
 {#if loading}
   <Card><Skeleton rows={6} /></Card>
 {:else if error}
-  <p class="text-sm text-danger">{error}</p>
+  <ErrorNotice message={error} onretry={load} />
 {:else if invoice}
   {@const inv = invoice}
   <Card>

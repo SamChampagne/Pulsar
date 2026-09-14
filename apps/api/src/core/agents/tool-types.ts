@@ -19,10 +19,20 @@ export const AGENT_TOOL_SERVICES = Symbol('AGENT_TOOL_SERVICES');
  *  - analytics.carrierScorecards(tenantId)  — plural
  */
 export interface ToolServices {
-  transportOrders: { list(tenantId: string, query: object): Promise<unknown> };
+  transportOrders: {
+    list(tenantId: string, query: object): Promise<unknown>;
+    createFromSalesOrder(
+      tenantId: string,
+      userId: string,
+      salesOrderId: string,
+      dto: object,
+    ): Promise<unknown>;
+    salesOrderFulfillmentContext(tenantId: string, salesOrderId: string): Promise<unknown>;
+  };
   loads: {
     get(tenantId: string, id: string): Promise<unknown>;
     create(tenantId: string, userId: string, dto: object): Promise<unknown>;
+    capacitySummary(tenantId: string, id: string): Promise<unknown>;
   };
   rating: { rateOptions(tenantId: string, loadId: string): Promise<unknown> };
   shipments: {
@@ -47,6 +57,11 @@ export interface ToolServices {
     listForAgent(tenantId: string, agentId: string): Promise<unknown>;
     getForTenant(tenantId: string, id: string): Promise<unknown>;
     resolve(tenantId: string, id: string, userId: string, note?: string): Promise<unknown>;
+    /** Tenant-wide task list filtered by status/category (not just tasks assigned to me). */
+    list(
+      tenantId: string,
+      filter: { status?: string; category?: string; page?: number; pageSize?: number },
+    ): Promise<unknown>;
   };
   freightAudit: {
     audit(tenantId: string, userId: string, invoiceId: string): Promise<unknown>;
@@ -60,7 +75,10 @@ export interface ToolServices {
   };
   ledger: {
     trialBalance(tenantId: string, asOf?: Date): Promise<unknown>;
-    listJournal(tenantId: string, query: { accountId?: string; page?: number; pageSize?: number }): Promise<unknown>;
+    listJournal(
+      tenantId: string,
+      query: { accountId?: string; page?: number; pageSize?: number },
+    ): Promise<unknown>;
   };
   // ── Fleet ──────────────────────────────────────────────────────────────────
   vehicles: {
@@ -84,8 +102,18 @@ export interface ToolServices {
   yardVisits: {
     list(tenantId: string, q: object): Promise<unknown>;
     get(tenantId: string, id: string): Promise<unknown>;
-    assign(tenantId: string, userId: string, visitId: string, dto: { spotId: string; note?: string }): Promise<unknown>;
-    move(tenantId: string, userId: string, visitId: string, dto: { spotId: string; note?: string }): Promise<unknown>;
+    assign(
+      tenantId: string,
+      userId: string,
+      visitId: string,
+      dto: { spotId: string; note?: string },
+    ): Promise<unknown>;
+    move(
+      tenantId: string,
+      userId: string,
+      visitId: string,
+      dto: { spotId: string; note?: string },
+    ): Promise<unknown>;
     checkOut(tenantId: string, userId: string, visitId: string): Promise<unknown>;
   };
   yardOverview: {
@@ -100,25 +128,45 @@ export interface ToolServices {
   wmsOverview: { overview(tenantId: string): Promise<unknown> };
   wmsPicking: { get(tenantId: string, id: string): Promise<unknown> };
   wmsCycleCounts: {
-    create(tenantId: string, userId: string, dto: { binId: string; note?: string }): Promise<unknown>;
+    create(
+      tenantId: string,
+      userId: string,
+      dto: { binId: string; note?: string },
+    ): Promise<unknown>;
   };
   // ── Analytics / Flow ───────────────────────────────────────────────────────
   flow: {
-    timeline(tenantId: string, opts: { days?: number; modules?: string[]; crossOnly?: boolean; limit?: number }): Promise<unknown>;
-    trace(tenantId: string, entityType: 'TRANSPORT_ORDER' | 'SHIPMENT' | 'LOAD', entityId: string): Promise<unknown>;
+    timeline(
+      tenantId: string,
+      opts: { days?: number; modules?: string[]; crossOnly?: boolean; limit?: number },
+    ): Promise<unknown>;
+    trace(
+      tenantId: string,
+      entityType: 'TRANSPORT_ORDER' | 'SHIPMENT' | 'LOAD',
+      entityId: string,
+    ): Promise<unknown>;
   };
   // ── CRM ────────────────────────────────────────────────────────────────────
   crm: {
     listDeals(tenantId: string, query: object): Promise<unknown>;
     getCompany(tenantId: string, id: string): Promise<unknown>;
     listActivities(tenantId: string, query: object): Promise<unknown>;
-    logActivity(tenantId: string, input: object, author: { agentId?: string; userId?: string }): Promise<unknown>;
+    logActivity(
+      tenantId: string,
+      input: object,
+      author: { agentId?: string; userId?: string },
+    ): Promise<unknown>;
     advanceDeal(tenantId: string, id: string, userId: string, stage: string): Promise<unknown>;
     createFollowup(tenantId: string, input: object, author: { agentId?: string }): Promise<unknown>;
     getDeal(tenantId: string, id: string): Promise<unknown>;
     listThreads(tenantId: string, query: object): Promise<unknown>;
     getThread(tenantId: string, id: string): Promise<unknown>;
-    replyThread(tenantId: string, id: string, dto: { html: string; subject?: string }, author: { agentId?: string; userId?: string }): Promise<unknown>;
+    replyThread(
+      tenantId: string,
+      id: string,
+      dto: { html: string; subject?: string },
+      author: { agentId?: string; userId?: string },
+    ): Promise<unknown>;
     linkThread(tenantId: string, id: string, dto: object, userId: string): Promise<unknown>;
     listProducts(tenantId: string, query: object): Promise<unknown>;
     listSalesOrders(tenantId: string, query: object): Promise<unknown>;
@@ -164,12 +212,34 @@ export interface ToolDef {
   name: string;
   description: string;
   tier: RiskTier;
+  /** Primary permission. The agent must hold this AND every `additionalPermissions`. */
   permission: PermissionKey;
+  /**
+   * Extra permissions the agent must ALSO hold for the tool to be exposed/run.
+   * Used by cross-module tools (e.g. the CRM→TMS bridge needs a TMS permission
+   * AND `crm.read`). ALL of them are required — never partially authorized.
+   */
+  additionalPermissions?: readonly PermissionKey[];
   /** When undefined, the tool is a core tool available regardless of enabled modules. */
   module?: ModuleKey;
+  /**
+   * Extra modules that must ALSO be enabled for the tenant. A cross-module tool
+   * touching two modules lists the second here so it is hidden unless BOTH are on.
+   */
+  additionalModules?: readonly ModuleKey[];
   inputSchema: z.ZodObject<z.ZodRawShape>;
   /** Executes the real operation. Live for READ/LOW; on approval for MUTATING/SENSITIVE. */
   run(args: Record<string, unknown>, ctx: ToolContext): Promise<unknown>;
   /** Optional monetary amount used for cap evaluation at enqueue time. */
   amountFrom?(args: Record<string, unknown>): number | undefined;
+}
+
+/** All permissions an agent must hold for `def` (primary + additional). */
+export function toolRequiredPermissions(def: ToolDef): PermissionKey[] {
+  return [def.permission, ...(def.additionalPermissions ?? [])];
+}
+
+/** All modules that must be enabled for `def` (primary + additional; empty = core tool). */
+export function toolRequiredModules(def: ToolDef): ModuleKey[] {
+  return [...(def.module ? [def.module] : []), ...(def.additionalModules ?? [])];
 }

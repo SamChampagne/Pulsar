@@ -101,6 +101,26 @@
     ]);
   }
 
+  // "Why pending" — this list is tenant-wide (no agentId in the projection, so the specific
+  // agent's autonomy/caps can't be joined in here without another backend change, which is
+  // out of scope). Give a tier-based explanation of the governance rule instead, plus the
+  // amount when the tool call carries one (both tms/billing amount-capped tools expose it as
+  // `args.amount` — see tool-registry `amountFrom`).
+  function pendingReason(p: Proposal): string {
+    const tier = p.riskTier?.toUpperCase();
+    const base =
+      tier === 'SENSITIVE'
+        ? 'Tier SENSIBLE → approbation humaine toujours requise.'
+        : tier === 'MUTATING'
+          ? "Tier MUTATION → auto-exécutable selon l'autonomie de l'agent, sinon approbation requise."
+          : '';
+    const amount = p.args && typeof p.args === 'object' ? (p.args as Record<string, unknown>).amount : undefined;
+    if (typeof amount === 'number') {
+      return `${base} Montant en jeu : ${amount}.`;
+    }
+    return base;
+  }
+
   $effect(() => {
     void load();
   });
@@ -131,6 +151,7 @@
       <th>Tool</th>
       <th>Arguments</th>
       <th>Risk</th>
+      <th>Why pending</th>
       <th>Proposed</th>
       <th>Triggered by</th>
       <th></th>
@@ -152,6 +173,7 @@
             {/if}
           </td>
           <td><Badge tone={tierTone(p.riskTier)}>{p.riskTier}</Badge></td>
+          <td class="max-w-56 text-xs text-ink-muted">{pendingReason(p)}</td>
           <td class="text-ink-muted">{formatDateTime(p.proposedAt)}</td>
           <td class="text-xs text-ink-muted">{p.triggeredByRef ?? '—'}</td>
           <td class="text-right whitespace-nowrap">

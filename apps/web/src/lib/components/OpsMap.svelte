@@ -71,7 +71,7 @@
       L.circleMarker(at, { radius: 9, color, fillColor: color, fillOpacity: 0.85 })
         .addTo(markers)
         .bindTooltip(
-          `${load.loadNumber} — ${load.carrier ?? 'no carrier'} · ${load.status}${load.isLate ? ' · LATE' : ''}`,
+          `${load.loadNumber} — ${load.carrier ?? 'aucun transporteur'} · ${load.status}${load.isLate ? ' · RETARD' : ''}`,
         )
         .on('click', () => void goto(`/loads/${load.id}`));
     }

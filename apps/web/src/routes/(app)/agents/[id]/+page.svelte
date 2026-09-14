@@ -1,7 +1,18 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { PERMISSION_CATALOG } from '@pulsar/shared';
+  import {
+    PERMISSION_CATALOG,
+    RUNTIME_PROVIDERS,
+    runtimeBlockMessage,
+    effectivePolicies,
+    evaluatePolicy,
+    RiskTier,
+    AgentAutonomy,
+    type RuntimeBlockReason,
+    type RuntimeAuthMode,
+    type PolicyRule,
+  } from '@pulsar/shared';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
@@ -16,6 +27,7 @@
     Select,
     Skeleton,
     Textarea,
+    ErrorNotice,
   } from '$lib/components/ui';
   import Conversation from '$lib/components/agents/Conversation.svelte';
 
@@ -210,13 +222,80 @@
   // Real model list for the connected provider (cached at last connection test).
   interface RuntimeModelOption { value: string; label: string }
   let models = $state<RuntimeModelOption[]>([]);
+  let runtimeProvider = $state<string | null>(null);
+  let runtimeDefaultModel = $state<string | null>(null);
   async function loadModels() {
     try {
-      const rt = await api<{ availableModels?: RuntimeModelOption[] }>('/agent-runtime');
+      const rt = await api<{ availableModels?: RuntimeModelOption[]; provider?: string; defaultModel?: string }>(
+        '/agent-runtime',
+      );
       models = rt.availableModels ?? [];
+      runtimeProvider = rt.provider ?? null;
+      runtimeDefaultModel = rt.defaultModel ?? null;
     } catch {
       models = [];
+      runtimeProvider = null;
+      runtimeDefaultModel = null;
     }
+  }
+
+  // Runtime readiness chip — proactive "can this run right now" instead of a toast after a
+  // failed "Run now" click. Best-effort: hidden entirely if the call fails.
+  interface RuntimeReadiness {
+    installed: boolean;
+    configured: boolean;
+    authMode: RuntimeAuthMode | null;
+    authReady: boolean;
+    modelReady: boolean;
+    lastTestOk: boolean | null;
+    ready: boolean;
+    blockReason: RuntimeBlockReason | null;
+  }
+  let runtimeReadiness = $state<RuntimeReadiness | null>(null);
+  async function loadRuntimeReadiness() {
+    try {
+      runtimeReadiness = await api<RuntimeReadiness>('/agent-runtime/readiness');
+    } catch {
+      runtimeReadiness = null;
+    }
+  }
+  const runtimeProviderLabel = $derived(
+    runtimeProvider ? RUNTIME_PROVIDERS.find((p) => p.id === runtimeProvider)?.label ?? runtimeProvider : null,
+  );
+  const runtimeReasonText = $derived(
+    runtimeReadiness && !runtimeReadiness.ready && runtimeReadiness.blockReason
+      ? runtimeBlockMessage(runtimeReadiness.blockReason, runtimeReadiness.authMode)
+      : '',
+  );
+
+  // "Pourquoi en attente" — reuses the exact pure policy engine the backend gate evaluates
+  // (rule 29) so the explanation on screen matches the real AUTO/PROPOSE/DENY decision as
+  // closely as data available on this page allows (amount is not part of this projection,
+  // so amount-based rule downgrades can't be reproduced here — worded accordingly).
+  function actionReasonText(action: ProposedActionSummary): string {
+    const tier = action.riskTier as RiskTier;
+    if (tier !== RiskTier.MUTATING && tier !== RiskTier.SENSITIVE) return '';
+    if (!agent) return '';
+    const rules = effectivePolicies(
+      agent.caps.policies as PolicyRule[] | undefined,
+      agent.autonomyLevel as AgentAutonomy,
+      undefined,
+    );
+    const decision = evaluatePolicy(rules, {
+      tool: action.tool,
+      tier,
+      recentExecutions: 0,
+      maxAmountPerAction: agent.caps.maxAmountPerAction,
+      maxPerMinute: agent.caps.maxActionsPerMinute,
+    });
+    const tierLabel = tier === RiskTier.SENSITIVE ? 'SENSIBLE' : 'MUTATION';
+    if (decision.effect === 'PROPOSE') {
+      return `Tier ${tierLabel} + autonomie ${agent.autonomyLevel} → approbation requise.`;
+    }
+    if (decision.effect === 'DENY') {
+      return `Tier ${tierLabel} → aurait été refusée (plafond montant dépassé).`;
+    }
+    return `Tier ${tierLabel} + autonomie ${agent.autonomyLevel} → normalement auto-exécutée (un plafond a pu s'appliquer selon le montant).`;
   }
 
   function syncForm(a: AgentDetail) {
@@ -333,7 +412,7 @@
     }
   }
 
-  async function runAction(verb: 'pause' | 'resume' | 'run-now', label: string) {
+  async function runAction(verb: 'pause' | 'resume', label: string) {
     busy = true;
     try {
       await api(`/agents/${agentId}/${verb}`, { method: 'POST' });
@@ -342,6 +421,35 @@
       await loadRuns(agentId);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Échec de l\'action');
+    } finally {
+      busy = false;
+    }
+  }
+
+  // "Run now" is honest: the backend gates on runtime availability + a connected model and
+  // returns exactly what happened. We only claim success when a run was actually created,
+  // and surface the runtime error otherwise.
+  async function runNow() {
+    busy = true;
+    try {
+      const res = await api<{ enqueued: boolean; runId: string | null; reason: string }>(
+        `/agents/${agentId}/run-now`,
+        { method: 'POST' },
+      );
+      if (res.enqueued && res.runId) {
+        toast.success(`Exécution lancée — run ${res.runId.slice(0, 8)} créé.`);
+      } else if (res.reason === 'no-open-task') {
+        toast.info('Aucune tâche ouverte à exécuter pour cet agent.');
+      } else if (res.reason === 'already-in-flight') {
+        toast.info('Une exécution est déjà en cours pour cette tâche.');
+      } else {
+        toast.info("Rien à exécuter pour le moment.");
+      }
+      await load();
+      await loadRuns(agentId);
+    } catch (e) {
+      // 503 = runtime not installed/configured/no model — a useful, actionable message.
+      toast.error(e instanceof ApiError ? e.message : "Échec de l'exécution");
     } finally {
       busy = false;
     }
@@ -426,6 +534,7 @@
     void loadKpis(agentId);
     void loadTimeline(agentId);
     void loadModels();
+    void loadRuntimeReadiness();
   });
 
   function actionStatusTone(status: string): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
@@ -462,7 +571,7 @@
     </div>
   </div>
 {:else if loadError && !agent}
-  <p class="mt-8 text-sm text-danger">{loadError}</p>
+  <ErrorNotice message={loadError} onretry={load} />
 {:else if !agent}
   <div class="space-y-4">
     <Card><Skeleton rows={3} /></Card>
@@ -765,6 +874,30 @@
     <h2 class="mb-4 text-base font-semibold text-ink">Activité 24/7</h2>
 
     <Card>
+      <!-- Runtime readiness chip — proactive: shows whether the runtime can actually run this
+           agent right now and why not, instead of only surfacing it as a toast after a failed
+           "Exécuter maintenant" click. Best-effort: hidden if the readiness call failed. -->
+      {#if runtimeReadiness}
+        <div
+          class={`mb-4 flex flex-wrap items-center gap-2 rounded-card border px-3 py-2 text-xs
+            ${runtimeReadiness.ready ? 'border-ok bg-ok-soft' : 'border-warning bg-warning-soft'}`}
+        >
+          <Badge tone={runtimeReadiness.ready ? 'ok' : 'warn'}>
+            {runtimeReadiness.ready ? 'Runtime prêt' : 'Runtime non prêt'}
+          </Badge>
+          {#if runtimeReadiness.ready}
+            <span class="text-ink-muted">
+              {#if runtimeProviderLabel}Fournisseur : <span class="font-medium text-ink">{runtimeProviderLabel}</span>{/if}
+              {#if agent.model ?? runtimeDefaultModel}
+                · Modèle : <span class="font-medium text-ink">{agent.model ?? runtimeDefaultModel}</span>
+              {/if}
+            </span>
+          {:else}
+            <span class="text-ink">{runtimeReasonText}</span>
+          {/if}
+        </div>
+      {/if}
+
       <!-- Heartbeat + controls -->
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-2">
@@ -800,7 +933,7 @@
             {:else}
               <Button
                 variant="secondary"
-                onclick={() => runAction('run-now', 'Exécution déclenchée')}
+                onclick={runNow}
                 loading={busy}
                 disabled={busy}
               >
@@ -935,6 +1068,9 @@
                   <span class="min-w-0 flex-1">
                     <span class="block truncate text-sm font-medium text-ink">{action.tool}</span>
                     <span class="text-xs text-ink-muted">{formatDateTime(action.proposedAt)}</span>
+                    {#if actionReasonText(action)}
+                      <span class="mt-0.5 block text-xs text-ink-faint">{actionReasonText(action)}</span>
+                    {/if}
                   </span>
                   <div class="flex shrink-0 items-center gap-1.5">
                     <Badge tone={riskTierTone(action.riskTier)}>{action.riskTier}</Badge>

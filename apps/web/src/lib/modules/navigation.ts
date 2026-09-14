@@ -135,7 +135,11 @@ export function navCatalogue(): NavDomain[] {
         {
           label: 'Tarification',
           links: [
-            { href: '/rate-studio', label: 'Rate Studio', perm: PERMISSIONS.TRANSPORTATION.RATES_READ },
+            {
+              href: '/rate-studio',
+              label: 'Rate Studio',
+              perm: PERMISSIONS.TRANSPORTATION.RATES_READ,
+            },
             { href: '/lanes', label: 'Voies (lanes)' },
             { href: '/rates', label: 'Tarifs' },
             { href: '/accessorials', label: 'Accessoriaux' },
@@ -308,13 +312,33 @@ export function navCatalogue(): NavDomain[] {
             { href: '/finance', label: 'Finance home' },
             { href: '/invoices', label: 'Receivables / Payables' },
             { href: '/billing/freight-audit', label: 'Freight audit' },
-            { href: '/billing/ledger', label: 'Grand livre', perm: PERMISSIONS.BILLING.LEDGER_READ },
-            { href: '/billing/reports', label: 'Rapports financiers', perm: PERMISSIONS.BILLING.LEDGER_READ },
+            {
+              href: '/billing/ledger',
+              label: 'Grand livre',
+              perm: PERMISSIONS.BILLING.LEDGER_READ,
+            },
+            {
+              href: '/billing/reports',
+              label: 'Rapports financiers',
+              perm: PERMISSIONS.BILLING.LEDGER_READ,
+            },
             { href: '/billing/banking', label: 'Banque', perm: PERMISSIONS.BILLING.LEDGER_READ },
             { href: '/billing/budgets', label: 'Budgets', perm: PERMISSIONS.BILLING.LEDGER_READ },
-            { href: '/billing/fixed-assets', label: 'Immobilisations', perm: PERMISSIONS.BILLING.ASSETS_READ },
-            { href: '/billing/subscriptions', label: 'Abonnements', perm: PERMISSIONS.BILLING.SUBSCRIPTIONS_READ },
-            { href: '/billing/payments', label: 'Paiements', perm: PERMISSIONS.BILLING.PAYMENTS_READ },
+            {
+              href: '/billing/fixed-assets',
+              label: 'Immobilisations',
+              perm: PERMISSIONS.BILLING.ASSETS_READ,
+            },
+            {
+              href: '/billing/subscriptions',
+              label: 'Abonnements',
+              perm: PERMISSIONS.BILLING.SUBSCRIPTIONS_READ,
+            },
+            {
+              href: '/billing/payments',
+              label: 'Paiements',
+              perm: PERMISSIONS.BILLING.PAYMENTS_READ,
+            },
           ],
         },
         {
@@ -392,7 +416,7 @@ export function navCatalogue(): NavDomain[] {
       home: '/analytics',
       module: MODULE_KEYS.ANALYTICS,
       anyPerms: ['analytics.read'],
-      prefixes: ['/analytics'],
+      prefixes: ['/analytics', '/workflows'],
       sections: [
         {
           links: [
@@ -400,6 +424,7 @@ export function navCatalogue(): NavDomain[] {
             { href: '/analytics/control-tower', label: 'Control Tower', perm: 'analytics.read' },
             { href: '/analytics/scorecards', label: 'Scorecards', perm: 'analytics.read' },
             { href: '/analytics/flow', label: 'Flux', perm: PERMISSIONS.ANALYTICS.READ },
+            { href: '/workflows', label: 'Dossiers connectés', perm: PERMISSIONS.ANALYTICS.READ },
             {
               href: '/analytics/carriers',
               label: 'Scorecard transporteurs',
@@ -470,9 +495,7 @@ export function navCatalogue(): NavDomain[] {
       anyPerms: [PERMISSIONS.SITES.READ],
       sections: [
         {
-          links: [
-            { href: '/sites', label: 'Pages', perm: PERMISSIONS.SITES.READ },
-          ],
+          links: [{ href: '/sites', label: 'Pages', perm: PERMISSIONS.SITES.READ }],
         },
       ],
     },
@@ -490,7 +513,11 @@ export function navCatalogue(): NavDomain[] {
         {
           links: [
             { href: '/procurement/rfps', label: "Appels d'offres", perm: 'procurement.read' },
-            { href: '/procurement/routing-guide', label: 'Guide de routage', perm: 'procurement.read' },
+            {
+              href: '/procurement/routing-guide',
+              label: 'Guide de routage',
+              perm: 'procurement.read',
+            },
           ],
         },
         {

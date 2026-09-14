@@ -9,3 +9,10 @@ onlyBuiltDependencies:
   - "@prisma/engines"
   - esbuild
   - prisma
+
+# Builds we deliberately skip. Acknowledging them here keeps a clean-environment
+# `pnpm install` from hard-failing with ERR_PNPM_IGNORED_BUILDS (pnpm 11) — the
+# Docker images build in a fresh store where nothing is pre-approved. @scarf is
+# telemetry only; its install script is safe to skip.
+ignoredBuiltDependencies:
+  - "@scarf/scarf"

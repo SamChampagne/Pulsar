@@ -41,6 +41,7 @@ import { AgentsService } from '../src/core/agents/agents.service';
 import { AgentRuntimeService } from '../src/core/agents/agent-runtime.service';
 import { HermesAcpClient, type AcpEvent } from '../src/core/agents/hermes-acp.client';
 import { DomainEventsService } from '../src/core/operating/domain-events.service';
+import { drainInheritedDomainEvents } from './utils/domain-events';
 import { AgentWorkerService } from '../src/core/operating/agent-worker.service';
 import { FakeAcpServer } from './support/fake-acp-server';
 
@@ -281,6 +282,7 @@ describe('Phase 12 — Operating Workbench (e2e)', () => {
 
     prisma = app.get(PrismaService);
     domainEvents = app.get(DomainEventsService);
+    await drainInheritedDomainEvents(domainEvents);
     runner = app.get(AgentWorkerService);
     fakeRuntime = app.get(AgentRuntimeService) as unknown as FakeAgentRuntimeService;
     fakeRuntime.http = http;
@@ -352,7 +354,11 @@ describe('Phase 12 — Operating Workbench (e2e)', () => {
         .query({ status: 'OPEN' })
         .expect(200);
 
-      const items = (res.body as { items: Array<{ category: string; assigneeType: string; subjectId: string; id: string }> }).items;
+      const items = (
+        res.body as {
+          items: Array<{ category: string; assigneeType: string; subjectId: string; id: string }>;
+        }
+      ).items;
       const task = items.find((t) => t.category === 'DELAY' && t.subjectId === stopId);
       expect(task).toBeDefined();
       expect(task!.assigneeType).toBe('UNASSIGNED');

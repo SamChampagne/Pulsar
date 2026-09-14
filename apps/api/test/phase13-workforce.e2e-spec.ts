@@ -32,6 +32,7 @@ import { AgentsService } from '../src/core/agents/agents.service';
 import { AgentRuntimeService } from '../src/core/agents/agent-runtime.service';
 import { HermesAcpClient, type AcpEvent } from '../src/core/agents/hermes-acp.client';
 import { DomainEventsService } from '../src/core/operating/domain-events.service';
+import { drainInheritedDomainEvents } from './utils/domain-events';
 import { AgentWorkerService } from '../src/core/operating/agent-worker.service';
 import { FakeAcpServer } from './support/fake-acp-server';
 
@@ -86,6 +87,15 @@ class FakeAgentRuntimeService {
 
   setScript(agentId: string, script: TurnScript): void {
     this.scripts.set(agentId, script);
+  }
+
+  /** Manual run-now readiness gate probe — the fake runtime is always ready. */
+  async readiness(): Promise<{
+    installed: boolean;
+    configured: boolean;
+    defaultModel: string | null;
+  }> {
+    return { installed: true, configured: true, defaultModel: 'fake-model' };
   }
 
   async openSession(input: {
@@ -289,6 +299,7 @@ describe('Phase 13 — 24/7 workforce (e2e)', () => {
 
     prisma = app.get(PrismaService);
     domainEvents = app.get(DomainEventsService);
+    await drainInheritedDomainEvents(domainEvents);
     runner = app.get(AgentWorkerService);
     fakeRuntime = app.get(AgentRuntimeService) as unknown as FakeAgentRuntimeService;
     fakeRuntime.http = http;
@@ -421,9 +432,7 @@ describe('Phase 13 — 24/7 workforce (e2e)', () => {
       // The SUCCEEDED ledger row is written after the proposal — poll the ledger.
       const latest = await waitFor(async () => {
         const body = await fetchRuns();
-        const succeeded = body.items.find(
-          (r) => r.taskId === taskId && r.status === 'SUCCEEDED',
-        );
+        const succeeded = body.items.find((r) => r.taskId === taskId && r.status === 'SUCCEEDED');
         return succeeded ?? undefined;
       }, 20000);
 
@@ -442,10 +451,7 @@ describe('Phase 13 — 24/7 workforce (e2e)', () => {
     });
 
     it('A4: GET /agents/:id → heartbeat set (lastSeenAt/lastRunAt) + status ACTIVE', async () => {
-      const res = await request(http)
-        .get(`/api/v1/agents/${agentId}`)
-        .set(auth())
-        .expect(200);
+      const res = await request(http).get(`/api/v1/agents/${agentId}`).set(auth()).expect(200);
       const body = res.body as {
         status: string;
         lastSeenAt: string | null;
@@ -487,10 +493,7 @@ describe('Phase 13 — 24/7 workforce (e2e)', () => {
         .expect((r) => expect([200, 201]).toContain(r.status));
       expect((res.body as { status: string }).status).toBe('PAUSED');
 
-      const got = await request(http)
-        .get(`/api/v1/agents/${agentId}`)
-        .set(auth())
-        .expect(200);
+      const got = await request(http).get(`/api/v1/agents/${agentId}`).set(auth()).expect(200);
       expect((got.body as { status: string }).status).toBe('PAUSED');
     });
 
@@ -533,10 +536,7 @@ describe('Phase 13 — 24/7 workforce (e2e)', () => {
         .expect((r) => expect([200, 201]).toContain(r.status));
       expect((res.body as { status: string }).status).toBe('ACTIVE');
 
-      const got = await request(http)
-        .get(`/api/v1/agents/${agentId}`)
-        .set(auth())
-        .expect(200);
+      const got = await request(http).get(`/api/v1/agents/${agentId}`).set(auth()).expect(200);
       expect((got.body as { status: string }).status).toBe('ACTIVE');
     });
 
@@ -629,9 +629,7 @@ describe('Phase 13 — 24/7 workforce (e2e)', () => {
         // Poll until the agent has a SKIPPED run for this task AND the task is OPEN.
         const skipped = await waitFor(async () => {
           const body = await fetchRuns({ pageSize: 100 });
-          const skip = body.items.find(
-            (r) => r.taskId === skippedTaskId && r.status === 'SKIPPED',
-          );
+          const skip = body.items.find((r) => r.taskId === skippedTaskId && r.status === 'SKIPPED');
           const fresh = await prisma.operationalTask.findFirst({ where: { id: skippedTaskId } });
           return skip && fresh?.status === 'OPEN' ? { skip, fresh } : undefined;
         }, 20000);

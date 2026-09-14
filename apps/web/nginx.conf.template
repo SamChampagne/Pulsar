@@ -1,0 +1,48 @@
+# Same-origin server config for the Pulsar web SPA (SvelteKit adapter-static,
+# ssr=false) served by nginx, WITH an /api reverse proxy to the API service so
+# the SPA's relative `/api/v1/...` calls (apps/web/src/lib/api/client.ts) resolve
+# from the same origin — no CORS, no separate ingress needed for the smoke path.
+#
+# Processed by the nginx:alpine entrypoint's envsubst (20-envsubst-on-templates.sh):
+# only ${PULSAR_API_UPSTREAM} is substituted (it's the sole env var referenced);
+# nginx runtime variables like $uri/$host are preserved. PULSAR_API_UPSTREAM
+# defaults to http://api:3000 (the compose service) and can be overridden per
+# environment.
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+    # Allow operational uploads past nginx's default 1 MB ceiling.
+    # DocumentsService remains authoritative for file validation and limits.
+    client_max_body_size 25m;
+
+    # Reverse-proxy the API from the same origin. No URI part on proxy_pass, so
+    # the full /api/v1/... path is forwarded unchanged to the API.
+    location /api/ {
+        proxy_pass ${PULSAR_API_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # SSE (agent chat/streaming, connect device-code) must not be buffered.
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+
+    # SPA fallback: try the exact file, then the exact directory, then index.html.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Long-cache the hashed build assets (SvelteKit fingerprints filenames under
+    # _app/); index.html itself must stay revalidated so deploys are picked up.
+    location /_app/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+}

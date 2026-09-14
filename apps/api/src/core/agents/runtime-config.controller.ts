@@ -67,6 +67,15 @@ export class RuntimeConfigController {
     return this.runtimeConfig.project(config);
   }
 
+  @Get('readiness')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
+  readiness(@CurrentUser() user: AuthUser) {
+    // Tenant-level readiness (no per-agent model override) — lets the UI show a proactive
+    // "can this tenant's agents actually run right now" chip instead of only surfacing the
+    // block reason as a toast after a failed "Run now" click. Pure RuntimeReadiness, no secrets.
+    return this.runtime.readiness(user.tenantId);
+  }
+
   @Post('test')
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
   test(@CurrentUser() user: AuthUser) {

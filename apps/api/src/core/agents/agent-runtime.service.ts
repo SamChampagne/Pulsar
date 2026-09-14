@@ -3,12 +3,20 @@ import {
   forwardRef,
   Inject,
   Injectable,
+  Logger,
   ServiceUnavailableException,
+  type OnModuleDestroy,
 } from '@nestjs/common';
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { getRuntimeProvider, AGENT_SYSTEM_PREAMBLE } from '@pulsar/shared';
+import {
+  getRuntimeProvider,
+  AGENT_SYSTEM_PREAMBLE,
+  deriveRuntimeReadiness,
+  type RuntimeAuthMode,
+  type RuntimeReadiness,
+} from '@pulsar/shared';
 import { HermesAcpClient, type AcpEvent, type AcpModelOption } from './hermes-acp.client';
 import { AgentsService } from './agents.service';
 import { RuntimeConfigService } from './runtime-config.service';
@@ -62,7 +70,8 @@ export interface LoginEvent {
 }
 
 @Injectable()
-export class AgentRuntimeService {
+export class AgentRuntimeService implements OnModuleDestroy {
+  private readonly logger = new Logger(AgentRuntimeService.name);
   /** One Hermes process PER conversation (isolation — spike finding). Keyed by hermes sessionId. */
   private readonly live = new Map<string, LiveSession>();
 
@@ -71,6 +80,29 @@ export class AgentRuntimeService {
     private readonly agents: AgentsService,
     private readonly runtimeConfig: RuntimeConfigService,
   ) {}
+
+  /**
+   * Nest lifecycle hook (requires `app.enableShutdownHooks()` in main.ts): on
+   * SIGTERM/SIGINT (container stop/redeploy) kill every still-live Hermes child
+   * process so none survive as orphans/zombies. Best-effort and non-throwing —
+   * mirrors the posture of `killAgentSessions` (rule 24: the agent runtime is
+   * best-effort and isolated, never allowed to block or crash teardown).
+   */
+  onModuleDestroy(): void {
+    const count = this.live.size;
+    if (count === 0) return;
+    for (const [sessionId, session] of this.live) {
+      try {
+        session.child.kill();
+      } catch (err) {
+        this.logger.warn(
+          `Failed to kill Hermes child for session ${sessionId}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+    this.live.clear();
+    this.logger.log(`Shutdown: killed ${count} live Hermes agent session(s).`);
+  }
 
   /**
    * Prepares a tenant's HERMES_HOME and spawns the ACP adapter under the
@@ -253,6 +285,32 @@ export class AgentRuntimeService {
       session.child.kill();
     }
     return victims.length;
+  }
+
+  /**
+   * Cheap readiness probe (NO spawn): can the runtime actually run an agent right now?
+   * Checks install → config → auth (apiKey stored / login connected) → model → last probe,
+   * via the pure {@link deriveRuntimeReadiness} so the first failing precondition is
+   * surfaced honestly. Used by manual "Run now" to avoid claiming a fake success. Pass the
+   * agent's model override so an agent-level model satisfies the model precondition even
+   * when the tenant config has no default. For a real connectivity check use
+   * {@link testConnection}.
+   */
+  async readiness(tenantId: string, agentModel?: string | null): Promise<RuntimeReadiness> {
+    const config = await this.runtimeConfig.get(tenantId);
+    // Prefer the provider catalog's auth mode; fall back to the stored config value.
+    const authMode: RuntimeAuthMode | null = config
+      ? getRuntimeProvider(config.provider)?.authMode ?? (config.authMode as RuntimeAuthMode)
+      : null;
+    return deriveRuntimeReadiness({
+      installed: isInstalled(),
+      configured: !!config,
+      authMode,
+      hasApiKey: !!config?.apiKeyEnc,
+      connected: !!config?.connectedAt,
+      hasModel: !!(agentModel ?? config?.defaultModel),
+      lastTestOk: config?.lastTestOk ?? null,
+    });
   }
 
   /**

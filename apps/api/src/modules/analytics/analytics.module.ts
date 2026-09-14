@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DossierService } from './dossier.service';
 import { ControlTowerController } from './control-tower.controller';
 import { ControlTowerService } from './control-tower.service';
 import { FlowController } from './flow.controller';
@@ -18,7 +19,7 @@ import { ScorecardsService } from './scorecards.service';
  */
 @Module({
   controllers: [ControlTowerController, ScorecardsController, FlowController],
-  providers: [ControlTowerService, ScorecardsService, FlowService],
+  providers: [ControlTowerService, ScorecardsService, FlowService, DossierService],
   exports: [FlowService],
 })
 export class AnalyticsModule {}

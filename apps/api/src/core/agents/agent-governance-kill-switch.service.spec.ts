@@ -55,27 +55,43 @@ function makeProposedActions(agentStatus: AgentStatus) {
   const toolName = [...TOOL_BY_NAME.keys()][0]; // any registered tool; the guard fires before run()
   const prisma = {
     proposedAction: {
-      findFirst: async () => ({ id: 'p1', tenantId: 't1', tool: toolName, agentId: 'a1', status: ProposalStatus.PENDING }),
+      findFirst: async () => ({
+        id: 'p1',
+        tenantId: 't1',
+        tool: toolName,
+        agentId: 'a1',
+        status: ProposalStatus.PENDING,
+      }),
       updateMany: async () => ({ count: 1 }),
       update: async () => ({}),
     },
     agent: {
       findUniqueOrThrow: async () => agentRow(agentStatus),
+      findFirstOrThrow: async () => agentRow(agentStatus),
     },
   } as any;
   const audit = { log: async () => undefined } as any;
   const notifications = { notify: async () => undefined } as any;
-  return { svc: new ProposedActionsService(prisma, audit, notifications), toolName };
+  return {
+    svc: new ProposedActionsService(prisma, audit, notifications, {
+      getEnabledKeys: async () => ({ has: () => true }),
+    } as any),
+    toolName,
+  };
 }
 
 describe('ProposedActionsService.approve — kill switch', () => {
-  it('refuses to execute a PAUSED agent\'s pending action', async () => {
+  it("refuses to execute a PAUSED agent's pending action", async () => {
     const { svc } = makeProposedActions(AgentStatus.PAUSED);
-    await expect(svc.approve('t1', 'p1', 'approver1', {} as any)).rejects.toThrow(/Agent is PAUSED/);
+    await expect(svc.approve('t1', 'p1', 'approver1', {} as any)).rejects.toThrow(
+      /Agent is PAUSED/,
+    );
   });
 
-  it('refuses to execute a REVOKED agent\'s pending action', async () => {
+  it("refuses to execute a REVOKED agent's pending action", async () => {
     const { svc } = makeProposedActions(AgentStatus.REVOKED);
-    await expect(svc.approve('t1', 'p1', 'approver1', {} as any)).rejects.toThrow(/Agent is REVOKED/);
+    await expect(svc.approve('t1', 'p1', 'approver1', {} as any)).rejects.toThrow(
+      /Agent is REVOKED/,
+    );
   });
 });

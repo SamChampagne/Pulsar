@@ -73,6 +73,72 @@ export const tmsTools: ToolDef[] = [
       ctx.services.loads.create(ctx.principal.user.tenantId, ctx.principal.user.id, args),
   },
   {
+    name: 'get_sales_order_fulfillment_context',
+    description:
+      'Read the fulfillment context of a CRM sales order: the order, its linked TMS customer, ' +
+      'the transport orders already derived from it, the derived fulfillment status, and the ' +
+      'logistics fields a shipment still needs. Read-only — use before proposing a shipment. ' +
+      'Requires transportation.orders.read AND crm.read, with both modules enabled.',
+    tier: RiskTier.READ,
+    permission: T.ORDERS_READ,
+    additionalPermissions: [PERMISSIONS.CRM.READ],
+    module: MODULE_KEYS.TRANSPORTATION,
+    additionalModules: [MODULE_KEYS.CRM],
+    inputSchema: z.object({ salesOrderId: z.string().min(1) }),
+    run: (args, ctx) =>
+      ctx.services.transportOrders.salesOrderFulfillmentContext(
+        ctx.principal.user.tenantId,
+        args.salesOrderId as string,
+      ),
+  },
+  {
+    name: 'create_transport_order_from_sales_order',
+    description:
+      'Prepare a shipment: create a transport order from a CONFIRMED CRM sales order. The ' +
+      'customer is derived server-side from the sales order (never provide it). You MUST supply ' +
+      'originLocationId, destinationLocationId, a mode, AND at least one physical measure > 0 ' +
+      '(totalWeightKg, totalVolumeM3 or palletCount) — NEVER infer weight/volume/pallets from ' +
+      'product quantities or commercial amounts; zero does not count. Time windows are optional. ' +
+      'Idempotent per (salesOrder, fulfillmentKey). Requires transportation.orders.manage AND ' +
+      'crm.read, with both modules enabled. PROPOSED — requires human approval.',
+    tier: RiskTier.MUTATING,
+    permission: T.ORDERS_MANAGE,
+    additionalPermissions: [PERMISSIONS.CRM.READ],
+    module: MODULE_KEYS.TRANSPORTATION,
+    additionalModules: [MODULE_KEYS.CRM],
+    inputSchema: z.object({
+      salesOrderId: z.string().min(1),
+      fulfillmentKey: z.string().optional(),
+      originLocationId: z.string().min(1),
+      destinationLocationId: z.string().min(1),
+      customerReference: z.string().optional(),
+      requestedPickupEarly: z.string().optional(),
+      requestedPickupLate: z.string().optional(),
+      requestedDeliveryEarly: z.string().optional(),
+      requestedDeliveryLate: z.string().optional(),
+      // mode is REQUIRED. At least one of the three measures must be > 0 — this
+      // cross-field rule is enforced server-side (validateFulfillmentLogistics),
+      // since a Zod .refine() would change the schema type the MCP layer needs.
+      mode: z.enum(['FTL', 'LTL', 'PARCEL']),
+      // Each measure is nonnegative; the "at least one > 0" rule is enforced
+      // server-side by validateFulfillmentLogistics (matches the HTTP DTO — a 0
+      // in one field is fine as long as another is positive).
+      totalWeightKg: z.number().nonnegative().optional(),
+      totalVolumeM3: z.number().nonnegative().optional(),
+      palletCount: z.number().int().nonnegative().optional(),
+      notes: z.string().optional(),
+    }),
+    run: (args, ctx) => {
+      const { salesOrderId, ...dto } = args;
+      return ctx.services.transportOrders.createFromSalesOrder(
+        ctx.principal.user.tenantId,
+        ctx.principal.user.id,
+        salesOrderId as string,
+        dto,
+      );
+    },
+  },
+  {
     name: 'assign_shipment',
     description: 'Assign a shipment to a load. PROPOSED — requires human approval.',
     tier: RiskTier.MUTATING,

@@ -8,11 +8,13 @@
     Field,
     Input,
     PageHeader,
+    RelatedEntities,
     Select,
     Skeleton,
     Textarea,
+    ErrorNotice,
   } from '$lib/components/ui';
-  import type { Tone } from '$lib/components/ui';
+  import type { RelatedGroup, Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
 
@@ -163,6 +165,31 @@
   const sortedWorkOrders = $derived(
     [...workOrders].sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime()),
   );
+
+  // "Lié à" — open/in-progress work orders (or the most recent one if none are
+  // active), and compliance documents that need attention (EXPIRING/EXPIRED).
+  // No detail route exists yet for a single MaintenanceOrder or ComplianceDocument,
+  // so items are informational (no href) — the full lists are already below.
+  const relatedGroups = $derived.by<RelatedGroup[]>(() => {
+    const active = sortedWorkOrders.filter(
+      (w) => w.status === 'OPEN' || w.status === 'IN_PROGRESS',
+    );
+    const woItems = (active.length > 0 ? active : sortedWorkOrders.slice(0, 1)).map((w) => ({
+      label: w.type,
+      sublabel: `${w.status} · ${fmtDate(w.openedAt)}`,
+      tone: woTone(w.status),
+    }));
+    const attentionDocs = docs.filter((d) => d.status !== 'VALID');
+    const docItems = attentionDocs.map((d) => ({
+      label: d.docType,
+      sublabel: `expire le ${fmtDate(d.expiresAt)}`,
+      tone: complianceTone(d.status),
+    }));
+    return [
+      { label: 'Maintenance', items: woItems },
+      { label: 'Conformité', items: docItems },
+    ];
+  });
 
   async function load() {
     loading = true;
@@ -356,7 +383,7 @@
     {#each Array(3) as _, i (i)}<Skeleton />{/each}
   </div>
 {:else if error}
-  <Card><p class="text-sm text-danger">{error}</p></Card>
+  <ErrorNotice message={error} onretry={load} />
 {:else if asset}
   <!-- Header -->
   <PageHeader title={asset.unitNumber}>
@@ -373,6 +400,12 @@
     {/if}
     {#if asset.year}<span>· {asset.year}</span>{/if}
     {#if asset.plate}<span>· {asset.plate}</span>{/if}
+  </div>
+
+  <div class="mb-4">
+    <Card>
+      <RelatedEntities groups={relatedGroups} />
+    </Card>
   </div>
 
   {#if editOpen}

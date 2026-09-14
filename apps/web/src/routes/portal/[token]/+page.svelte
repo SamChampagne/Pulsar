@@ -135,14 +135,10 @@
     return suggested && suggested !== request.mode ? suggested : null;
   });
 
-  const selectedOrderForChange = $derived(
-    view?.orders.find((o) => o.id === changeOrderId) ?? null,
-  );
+  const selectedOrderForChange = $derived(view?.orders.find((o) => o.id === changeOrderId) ?? null);
 
   const fmtWindow = (early: string | null, late?: string | null) =>
-    early
-      ? formatDate(early) + (late ? ' → ' + formatDate(late) : '')
-      : '—';
+    early ? formatDate(early) + (late ? ' → ' + formatDate(late) : '') : '—';
 
   function fmt(value: string | null): string {
     return value ? formatDate(value) : '—';
@@ -251,7 +247,7 @@
     } catch (e) {
       commentError = {
         ...commentError,
-        [shipmentId]: e instanceof ApiError ? e.message : 'Échec de l\'envoi',
+        [shipmentId]: e instanceof ApiError ? e.message : "Échec de l'envoi",
       };
     } finally {
       commentSending = { ...commentSending, [shipmentId]: false };
@@ -305,7 +301,7 @@
       };
       await load();
     } catch (e) {
-      requestNotice = e instanceof ApiError ? e.message : 'Échec de l\'envoi de la demande';
+      requestNotice = e instanceof ApiError ? e.message : "Échec de l'envoi de la demande";
     }
   }
 
@@ -329,7 +325,7 @@
       showTemplateSave = false;
       templateNotice = 'Modèle enregistré';
     } catch (e) {
-      templateNotice = e instanceof ApiError ? e.message : 'Échec de l\'enregistrement du modèle';
+      templateNotice = e instanceof ApiError ? e.message : "Échec de l'enregistrement du modèle";
     }
   }
 
@@ -364,7 +360,7 @@
       changeShipmentId = '';
       changeNote = '';
     } catch (e) {
-      changeError = e instanceof ApiError ? e.message : 'Échec de l\'envoi';
+      changeError = e instanceof ApiError ? e.message : "Échec de l'envoi";
     } finally {
       changeSending = false;
     }
@@ -408,23 +404,31 @@
     </div>
 
     <!-- Tab bar -->
-    <div class="mb-6 flex gap-4 border-b border-edge">
-      {#each [['orders', 'Commandes'], ['invoices', 'Factures'], ['documents', 'Documents'], ['change', 'Changement']] as [tab, label] (tab)}
-        <button
-          type="button"
-          class={`pb-2 text-sm transition-colors ${activeTab === tab ? 'border-b-2 border-accent font-semibold text-accent' : 'text-ink-muted hover:text-ink'}`}
-          onclick={() => { activeTab = tab as typeof activeTab; }}
-        >
-          {label}
-        </button>
-      {/each}
+    <div class="mb-6 overflow-x-auto border-b border-edge">
+      <div class="flex w-max gap-4">
+        {#each [['orders', 'Commandes'], ['invoices', 'Factures'], ['documents', 'Documents'], ['change', 'Changement']] as [tab, label] (tab)}
+          <button
+            type="button"
+            class={`shrink-0 pb-2 text-sm whitespace-nowrap transition-colors ${activeTab === tab ? 'border-b-2 border-accent font-semibold text-accent' : 'text-ink-muted hover:text-ink'}`}
+            onclick={() => {
+              activeTab = tab as typeof activeTab;
+            }}
+          >
+            {label}
+          </button>
+        {/each}
+      </div>
     </div>
 
     <!-- Tab: Commandes -->
     {#if activeTab === 'orders'}
       <div class="mb-4 flex items-center justify-between gap-4">
         <span></span>
-        <Button onclick={() => { showRequest = !showRequest; }}>Demande de transport</Button>
+        <Button
+          onclick={() => {
+            showRequest = !showRequest;
+          }}>Demande de transport</Button
+        >
       </div>
 
       {#if requestNotice}
@@ -450,14 +454,16 @@
                 <!-- Template delete list -->
                 <div class="mt-2 flex flex-wrap gap-2">
                   {#each templates as tpl (tpl.id)}
-                    <span class="inline-flex items-center gap-1 rounded bg-surface-muted px-2 py-0.5 text-xs text-ink-muted">
+                    <span
+                      class="inline-flex items-center gap-1 rounded bg-surface-muted px-2 py-0.5 text-xs text-ink-muted"
+                    >
                       {tpl.name}
                       <button
                         type="button"
                         class="text-danger hover:text-danger ml-1"
                         onclick={() => deleteTemplate(tpl)}
-                        aria-label="Supprimer {tpl.name}"
-                      >×</button>
+                        aria-label="Supprimer {tpl.name}">×</button
+                      >
                     </span>
                   {/each}
                 </div>
@@ -521,7 +527,9 @@
                     </Select>
                   </Field>
                   {#if portalModeSuggestion}
-                    <p class="mt-1 text-xs text-ink-muted">Suggéré : {portalModeSuggestion} selon le poids</p>
+                    <p class="mt-1 text-xs text-ink-muted">
+                      Suggéré : {portalModeSuggestion} selon le poids
+                    </p>
                   {/if}
                 </div>
               </div>
@@ -535,7 +543,9 @@
                 <button
                   type="button"
                   class="text-xs text-accent hover:underline"
-                  onclick={() => { showTemplateSave = !showTemplateSave; }}
+                  onclick={() => {
+                    showTemplateSave = !showTemplateSave;
+                  }}
                 >
                   Enregistrer comme modèle
                 </button>
@@ -575,92 +585,120 @@
                 <Badge tone={toneFor(order.status)}>{labelFor(order.status)}</Badge>
               </div>
               <p class="mb-2 text-sm text-ink-muted">
-                {order.originLocation.city}{order.originLocation.state ? `, ${order.originLocation.state}` : ''}
-                → {order.destinationLocation.city}{order.destinationLocation.state ? `, ${order.destinationLocation.state}` : ''}
+                {order.originLocation.city}{order.originLocation.state
+                  ? `, ${order.originLocation.state}`
+                  : ''}
+                → {order.destinationLocation.city}{order.destinationLocation.state
+                  ? `, ${order.destinationLocation.state}`
+                  : ''}
                 · enlèvement {fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}
                 · livraison {fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}
               </p>
               {#if order.shipments.length > 0}
-                <table class="w-full text-sm">
-                  <tbody>
-                    {#each order.shipments as shipment (shipment.shipmentNumber)}
-                      <tr class="border-b border-edge last:border-0">
-                        <td class="py-1.5 pr-3 text-ink">{shipment.shipmentNumber}</td>
-                        <td class="py-1.5 pr-3">
-                          <Badge tone={toneFor(shipment.status)}>{labelFor(shipment.status)}</Badge>
-                        </td>
-                        <td class="py-1.5 pr-3 text-ink-muted">
-                          {shipment.actualDeliveryAt ? `livré ${fmt(shipment.actualDeliveryAt)}` : ''}
-                        </td>
-                        <td class="py-1.5 text-right">
-                          <button
-                            type="button"
-                            class="text-accent hover:underline"
-                            onclick={() => toggleShipmentComments(shipment.id)}
-                          >
-                            Commentaires{#if shipmentComments[shipment.id]} ({shipmentComments[shipment.id].length}){/if}
-                          </button>
-                          {#if shipment.trackingUrl}
-                            <a href={shipment.trackingUrl} class="ml-3 text-accent hover:underline">Suivre</a>
-                          {/if}
-                        </td>
-                      </tr>
-                      {#if shipmentCommentsOpen[shipment.id]}
+                <div class="overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <tbody>
+                      {#each order.shipments as shipment (shipment.shipmentNumber)}
                         <tr class="border-b border-edge last:border-0">
-                          <td colspan="4" class="py-2">
-                            {#if shipmentCommentsLoading[shipment.id]}
-                              <p class="text-xs text-ink-muted">Chargement…</p>
-                            {:else}
-                              {#if !shipmentComments[shipment.id] || shipmentComments[shipment.id].length === 0}
-                                <p class="text-xs text-ink-muted">Aucun commentaire pour le moment.</p>
-                              {:else}
-                                <ul class="mb-3 flex flex-col gap-2">
-                                  {#each shipmentComments[shipment.id] as comment (comment.id)}
-                                    <li class="rounded bg-surface-muted px-3 py-2">
-                                      <div class="mb-1 flex items-center gap-2">
-                                        <span class="text-sm font-semibold text-ink">{comment.authorName}</span>
-                                        <Badge tone={comment.authorType === 'STAFF' ? 'info' : 'neutral'}>
-                                          {comment.authorType === 'STAFF' ? 'Équipe' : 'Client'}
-                                        </Badge>
-                                        <span class="text-xs text-ink-faint">{formatDate(comment.createdAt)}</span>
-                                      </div>
-                                      <p class="whitespace-pre-wrap text-sm text-ink">{comment.body}</p>
-                                    </li>
-                                  {/each}
-                                </ul>
-                              {/if}
-
-                              {#if commentNotice[shipment.id]}
-                                <p class="mb-2 text-sm text-ok">{commentNotice[shipment.id]}</p>
-                              {/if}
-                              {#if commentError[shipment.id]}
-                                <p class="mb-2 text-sm text-danger">{commentError[shipment.id]}</p>
-                              {/if}
-
-                              <div class="flex flex-col gap-2">
-                                <Textarea
-                                  bind:value={commentDraft[shipment.id]}
-                                  rows={2}
-                                  placeholder="Écrire un commentaire…"
-                                />
-                                <div class="flex justify-end">
-                                  <Button
-                                    type="button"
-                                    loading={commentSending[shipment.id]}
-                                    disabled={!(commentDraft[shipment.id] ?? '').trim()}
-                                    onclick={() => submitComment(shipment.id)}
-                                  >
-                                    Envoyer
-                                  </Button>
-                                </div>
-                              </div>
+                          <td class="py-1.5 pr-3 text-ink">{shipment.shipmentNumber}</td>
+                          <td class="py-1.5 pr-3">
+                            <Badge tone={toneFor(shipment.status)}
+                              >{labelFor(shipment.status)}</Badge
+                            >
+                          </td>
+                          <td class="py-1.5 pr-3 text-ink-muted">
+                            {shipment.actualDeliveryAt
+                              ? `livré ${fmt(shipment.actualDeliveryAt)}`
+                              : ''}
+                          </td>
+                          <td class="py-1.5 text-right">
+                            <button
+                              type="button"
+                              class="text-accent hover:underline"
+                              onclick={() => toggleShipmentComments(shipment.id)}
+                            >
+                              Commentaires{#if shipmentComments[shipment.id]}
+                                ({shipmentComments[shipment.id].length}){/if}
+                            </button>
+                            {#if shipment.trackingUrl}
+                              <a
+                                href={shipment.trackingUrl}
+                                class="ml-3 text-accent hover:underline">Suivre</a
+                              >
                             {/if}
                           </td>
                         </tr>
-                      {/if}
-                    {/each}
-                  </tbody>
-                </table>
+                        {#if shipmentCommentsOpen[shipment.id]}
+                          <tr class="border-b border-edge last:border-0">
+                            <td colspan="4" class="py-2">
+                              {#if shipmentCommentsLoading[shipment.id]}
+                                <p class="text-xs text-ink-muted">Chargement…</p>
+                              {:else}
+                                {#if !shipmentComments[shipment.id] || shipmentComments[shipment.id].length === 0}
+                                  <p class="text-xs text-ink-muted">
+                                    Aucun commentaire pour le moment.
+                                  </p>
+                                {:else}
+                                  <ul class="mb-3 flex flex-col gap-2">
+                                    {#each shipmentComments[shipment.id] as comment (comment.id)}
+                                      <li class="rounded bg-surface-muted px-3 py-2">
+                                        <div class="mb-1 flex items-center gap-2">
+                                          <span class="text-sm font-semibold text-ink"
+                                            >{comment.authorName}</span
+                                          >
+                                          <Badge
+                                            tone={comment.authorType === 'STAFF'
+                                              ? 'info'
+                                              : 'neutral'}
+                                          >
+                                            {comment.authorType === 'STAFF' ? 'Équipe' : 'Client'}
+                                          </Badge>
+                                          <span class="text-xs text-ink-faint"
+                                            >{formatDate(comment.createdAt)}</span
+                                          >
+                                        </div>
+                                        <p class="whitespace-pre-wrap text-sm text-ink">
+                                          {comment.body}
+                                        </p>
+                                      </li>
+                                    {/each}
+                                  </ul>
+                                {/if}
+
+                                {#if commentNotice[shipment.id]}
+                                  <p class="mb-2 text-sm text-ok">{commentNotice[shipment.id]}</p>
+                                {/if}
+                                {#if commentError[shipment.id]}
+                                  <p class="mb-2 text-sm text-danger">
+                                    {commentError[shipment.id]}
+                                  </p>
+                                {/if}
+
+                                <div class="flex flex-col gap-2">
+                                  <Textarea
+                                    bind:value={commentDraft[shipment.id]}
+                                    rows={2}
+                                    placeholder="Écrire un commentaire…"
+                                  />
+                                  <div class="flex justify-end">
+                                    <Button
+                                      type="button"
+                                      loading={commentSending[shipment.id]}
+                                      disabled={!(commentDraft[shipment.id] ?? '').trim()}
+                                      onclick={() => submitComment(shipment.id)}
+                                    >
+                                      Envoyer
+                                    </Button>
+                                  </div>
+                                </div>
+                              {/if}
+                            </td>
+                          </tr>
+                        {/if}
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
               {/if}
             </div>
           {/each}
@@ -693,9 +731,15 @@
                   <td class="py-2 pr-4">
                     <Badge tone={toneFor(invoice.status)}>{labelFor(invoice.status)}</Badge>
                   </td>
-                  <td class="py-2 pr-4 text-ink">{invoice.currency} {invoice.totalAmount.toFixed(2)}</td>
-                  <td class="py-2 pr-4 text-ink-muted">{invoice.sentAt ? formatDate(invoice.sentAt) : '—'}</td>
-                  <td class="py-2 text-ink-muted">{invoice.paidAt ? formatDate(invoice.paidAt) : '—'}</td>
+                  <td class="py-2 pr-4 text-ink"
+                    >{invoice.currency} {invoice.totalAmount.toFixed(2)}</td
+                  >
+                  <td class="py-2 pr-4 text-ink-muted"
+                    >{invoice.sentAt ? formatDate(invoice.sentAt) : '—'}</td
+                  >
+                  <td class="py-2 text-ink-muted"
+                    >{invoice.paidAt ? formatDate(invoice.paidAt) : '—'}</td
+                  >
                 </tr>
               {/each}
             </tbody>
@@ -794,7 +838,11 @@
           </Field>
         {/if}
         <Field label="Note">
-          <Textarea bind:value={changeNote} rows={3} placeholder="Décrivez le changement souhaité…" />
+          <Textarea
+            bind:value={changeNote}
+            rows={3}
+            placeholder="Décrivez le changement souhaité…"
+          />
         </Field>
         <div class="flex justify-end">
           <Button type="submit" loading={changeSending} disabled={!changeKind || !changeNote}>

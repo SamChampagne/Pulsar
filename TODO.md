@@ -506,3 +506,30 @@ config, an activity view, and a dedicated chat surface.
 ## Billing — ligne de facture libre (backlog, post Cycle 6)
 - `CustomerInvoiceLine.transportOrderId` est NOT NULL @unique FK → `TransportOrder` : impossible de représenter une ligne de produit libre. Les factures issues d'une commande de vente CRM (`createDraftFromSalesOrder`) sont donc des **en-têtes** (total correct + snapshot dans `customData.soLines`), sans `CustomerInvoiceLine` → l'envoi/PDF affiche un total mais pas de détail de lignes. Fix futur : migration billing pour un type de ligne polymorphe/libre (`transportOrderId` nullable + `source`/`description`/`amount`/`salesOrderLineId?`), puis itemiser les factures SO et rendre les lignes dans `send()`.
 - Minor: `createDraftFromSalesOrder` → `assertOwnedIfSet('customer', ...)` pour un skip propre si le Customer a été hard-deleted (sinon P2003→FAILED). Minor: retirer le `catch (BadRequestException)` mort dans `draftInvoiceFromSalesOrder`.
+
+## Operational Convergence — dette production restante (2026-07-17, après durcissement final)
+
+Contexte : stage `operational-convergence` (Waves 0→7 + Release Qualification Gates A→D + pont
+CRM SalesOrder→TMS TransportOrder + passe de durcissement P0→P2). Branche non mergée. Prêt PR.
+
+- [ ] **Multi-instance / Redis** : caches modules (30 s en mémoire), dispatcher d'agents +
+      orchestration de la file `DomainEvent` en mémoire mono-process, throttle Nominatim in-process.
+      Chemin Redis documenté dans `docs/runbook.md §6`, non implémenté. Bloque le multi-instance.
+- [ ] **Observabilité** : logs `clé=valeur` + `x-request-id` seulement ; pas de tracing distribué
+      ni de métriques agrégées.
+- [ ] **Hermes réel non qualifié** : le runtime agent est best-effort (503 si absent) ; les tests
+      utilisent le harness fake. Aucun run LLM réel dans ce gate.
+- [ ] **S3 / SMTP réels non qualifiés** : smoke en `STORAGE_DRIVER=local` + `EMAIL_DRIVER=log`.
+      Le stockage local n'est pas durable au remplacement de conteneur → S3 requis en prod.
+- [ ] **Image Docker** : dev-deps non prunées (migrate/seed passent par la même image API et ont
+      besoin de `prisma`+`tsx`) ; runtime encore root (non-root non prouvable par le smoke actuel
+      qui n'exerce pas d'écriture de stockage local). Suivi : image de migration/seed séparée +
+      non-root + volume inscriptible.
+- [ ] **Wizard « Préparer l'expédition »** : la liste des locations fetch `pageSize=100` (max API) ;
+      un tenant avec >100 locations n'en voit qu'un sous-ensemble. Prévoir un select recherché/paginé.
+- [ ] **Playwright** : les 13 parcours profonds « catalogue » restent partiels ; le pont CRM→TMS est
+      couvert (`fulfillment.spec.ts`) mais portail transporteur multi-load, tender public, portail
+      conducteur load fermé, pick WMS lié, Freight-Audit→litige, agent Run Now = couverts côté e2e
+      API, pas encore en navigateur.
+- [ ] **Nettoyage `pulsar_rc`** : base de qualif jetable ; accumulation de données de test (ex. >200
+      locations) — recréer proprement (`prisma migrate reset` + seed) avant une prochaine campagne.

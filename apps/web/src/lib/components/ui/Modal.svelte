@@ -113,7 +113,7 @@
     >
       <div class="flex items-center justify-between border-b border-edge px-4 py-3">
         <h2 id={titleId} class="text-sm font-bold text-ink">{title}</h2>
-        <button class="text-ink-faint hover:text-ink" onclick={close} aria-label="Close">
+        <button class="text-ink-faint hover:text-ink" onclick={close} aria-label="Fermer">
           <X class="size-4" />
         </button>
       </div>

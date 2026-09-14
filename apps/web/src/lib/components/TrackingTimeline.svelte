@@ -17,7 +17,7 @@
 </script>
 
 {#if events.length === 0}
-  <p class="text-sm text-ink-muted">No tracking events yet.</p>
+  <p class="text-sm text-ink-muted">Aucun événement de suivi pour l'instant.</p>
 {:else}
   <ul class="m-0 list-none p-0">
     {#each events as event (event.id)}
@@ -39,7 +39,7 @@
             <div class="mt-0.5 text-sm text-ink-muted">{event.message}</div>
           {/if}
           {#if event.recordedBy}
-            <div class="mt-0.5 text-xs text-ink-faint">by {event.recordedBy.firstName} {event.recordedBy.lastName}</div>
+            <div class="mt-0.5 text-xs text-ink-faint">par {event.recordedBy.firstName} {event.recordedBy.lastName}</div>
           {/if}
         </div>
       </li>

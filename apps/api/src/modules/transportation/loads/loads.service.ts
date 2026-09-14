@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
@@ -21,6 +26,7 @@ import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
+import { TransportOrdersService } from '../transport-orders/transport-orders.service';
 import { LoadCostService } from './load-cost.service';
 import { LoadNotificationsService } from './load-notifications.service';
 import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
@@ -81,6 +87,7 @@ export class LoadsService {
     private readonly moduleSettings: ModuleSettingsService,
     private readonly customFields: CustomFieldsService,
     private readonly notifications: LoadNotificationsService,
+    private readonly transportOrders: TransportOrdersService,
   ) {}
 
   async list(tenantId: string, query: ListQueryDto & { status?: LoadStatus }) {
@@ -180,7 +187,10 @@ export class LoadsService {
   }
 
   async get(tenantId: string, id: string) {
-    const load = await this.prisma.load.findFirst({ where: { id, tenantId }, include: loadInclude });
+    const load = await this.prisma.load.findFirst({
+      where: { id, tenantId },
+      include: loadInclude,
+    });
     if (!load) throw new NotFoundException('Load not found');
     return {
       ...load,
@@ -188,9 +198,77 @@ export class LoadsService {
     };
   }
 
+  /**
+   * READ-only capacity summary for a load: current weight/volume/pallet totals from its
+   * shipments vs. the assigned trailer's limits. Reuses the SAME pure `checkCapacity`
+   * (@pulsar/shared) as `assignResources` (rule 18) — never a re-implementation of the
+   * formula — but only reads, never mutates. Used by the `check_load_capacity` agent tool.
+   */
+  async capacitySummary(tenantId: string, id: string) {
+    const load = await this.prisma.load.findFirst({
+      where: { id, tenantId },
+      select: {
+        id: true,
+        loadNumber: true,
+        trailer: {
+          select: {
+            id: true,
+            unitNumber: true,
+            capacityWeightKg: true,
+            capacityVolumeM3: true,
+            capacityPallets: true,
+          },
+        },
+      },
+    });
+    if (!load) throw new NotFoundException('Load not found');
+
+    const shipments = await this.prisma.shipment.findMany({
+      where: { loadId: id, tenantId },
+      select: { weightKg: true, volumeM3: true, palletCount: true },
+    });
+    const sum = (values: (number | null)[]) =>
+      values.some((v) => v !== null) ? values.reduce<number>((acc, v) => acc + (v ?? 0), 0) : null;
+    const totals = {
+      weightKg: sum(shipments.map((s) => s.weightKg)),
+      volumeM3: sum(shipments.map((s) => s.volumeM3)),
+      pallets: sum(shipments.map((s) => s.palletCount)),
+    };
+    const capacities = {
+      weightKg: load.trailer?.capacityWeightKg ?? null,
+      volumeM3: load.trailer?.capacityVolumeM3 ?? null,
+      pallets: load.trailer?.capacityPallets ?? null,
+    };
+    const excesses = checkCapacity(capacities, totals);
+
+    const axes = (['weightKg', 'volumeM3', 'pallets'] as const).map((axis) => {
+      const capacity = capacities[axis];
+      const requested = totals[axis];
+      const utilizationPct =
+        capacity != null && capacity > 0 && requested != null
+          ? Math.round((requested / capacity) * 1000) / 10
+          : null;
+      return { axis, capacity, requested, utilizationPct };
+    });
+
+    return {
+      loadId: load.id,
+      loadNumber: load.loadNumber,
+      trailer: load.trailer ? { id: load.trailer.id, unitNumber: load.trailer.unitNumber } : null,
+      shipmentCount: shipments.length,
+      axes,
+      overCapacity: excesses.length > 0,
+      excesses,
+    };
+  }
+
   async create(tenantId: string, userId: string, dto: CreateLoadDto) {
     const customData = await this.customFields.validateValues(
-      'transportation', tenantId, CustomFieldEntity.LOAD, dto.customData, { partial: false },
+      'transportation',
+      tenantId,
+      CustomFieldEntity.LOAD,
+      dto.customData,
+      { partial: false },
     );
     const load = await this.prisma.load.create({
       data: {
@@ -305,7 +383,9 @@ export class LoadsService {
         select: { weightKg: true, volumeM3: true, palletCount: true },
       });
       const sum = (values: (number | null)[]) =>
-        values.some((v) => v !== null) ? values.reduce<number>((acc, v) => acc + (v ?? 0), 0) : null;
+        values.some((v) => v !== null)
+          ? values.reduce<number>((acc, v) => acc + (v ?? 0), 0)
+          : null;
       const excesses = trailer
         ? checkCapacity(
             {
@@ -324,7 +404,10 @@ export class LoadsService {
         const tmsSettings = await this.moduleSettings.resolve(tenantId, 'transportation');
         const overage = tmsSettings['capacityOverage'] as string;
         if (overage === 'BLOCK') {
-          throw new ConflictException({ message: 'Trailer capacity exceeded (blocked by tenant policy)', excesses });
+          throw new ConflictException({
+            message: 'Trailer capacity exceeded (blocked by tenant policy)',
+            excesses,
+          });
         }
         if (!force) {
           throw new BadRequestException({ message: 'Trailer capacity exceeded', excesses });
@@ -357,7 +440,9 @@ export class LoadsService {
   async setAccessorials(tenantId: string, userId: string, id: string, dto: SetLoadAccessorialsDto) {
     const load = await this.get(tenantId, id);
     if (load.status === LoadStatus.COMPLETED || load.status === LoadStatus.CANCELLED) {
-      throw new BadRequestException('Accessorials cannot be changed on a COMPLETED or CANCELLED load');
+      throw new BadRequestException(
+        'Accessorials cannot be changed on a COMPLETED or CANCELLED load',
+      );
     }
     const ids = dto.items.map((i) => i.accessorialId);
     if (new Set(ids).size !== ids.length) {
@@ -489,7 +574,11 @@ export class LoadsService {
       }),
     ]);
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.DISPATCHED);
-    await this.notifications.onDispatched(tenantId, { id, loadNumber: load.loadNumber, carrierId: load.carrierId });
+    await this.notifications.onDispatched(tenantId, {
+      id,
+      loadNumber: load.loadNumber,
+      carrierId: load.carrierId,
+    });
     return updated;
   }
 
@@ -530,18 +619,22 @@ export class LoadsService {
         where: { tenantId, loadId: id, proofOfDelivery: null },
       });
       if (shipmentsWithoutPod > 0) {
-        throw new BadRequestException('Tenant policy requires a POD on every shipment before completion');
+        throw new BadRequestException(
+          'Tenant policy requires a POD on every shipment before completion',
+        );
       }
     }
     const now = new Date();
 
     await this.prisma.$transaction([
-      this.prisma.load.update({
-        where: { id },
+      // Tenant-scoped (rule 1) even though `id` is unique — the load was already
+      // verified for this tenant by get() above; keep the invariant explicit.
+      this.prisma.load.updateMany({
+        where: { id, tenantId },
         data: { status: LoadStatus.COMPLETED, completedAt: now },
       }),
       this.prisma.shipment.updateMany({
-        where: { loadId: id },
+        where: { loadId: id, tenantId },
         data: { status: ShipmentStatus.DELIVERED, actualDeliveryAt: now },
       }),
       this.prisma.trackingEvent.create({
@@ -555,25 +648,34 @@ export class LoadsService {
       }),
     ]);
 
-    // Complete parent orders whose shipments are now all delivered.
+    // Complete parent orders whose shipments are now all delivered. The
+    // transition, its audit and the fulfillment event are centralized in
+    // TransportOrdersService.completeFromDelivery (tenant-scoped, race-safe,
+    // guarded by canTransitionTransportOrder, emits transport-order.completed
+    // exactly once). Best-effort per order (rule 27) — a background failure to
+    // complete one order never rolls back the load's delivery.
     const orderIds = [...new Set(load.shipments.map((s) => s.transportOrderId))];
     for (const orderId of orderIds) {
       const open = await this.prisma.shipment.count({
         where: {
+          tenantId,
           transportOrderId: orderId,
-          status: { notIn: [ShipmentStatus.DELIVERED, ShipmentStatus.CLOSED, ShipmentStatus.CANCELLED] },
+          status: {
+            notIn: [ShipmentStatus.DELIVERED, ShipmentStatus.CLOSED, ShipmentStatus.CANCELLED],
+          },
         },
       });
       if (open === 0) {
-        await this.prisma.transportOrder.updateMany({
-          where: { id: orderId, status: TransportOrderStatus.IN_EXECUTION },
-          data: { status: TransportOrderStatus.COMPLETED },
-        });
+        await this.transportOrders.completeFromDelivery(tenantId, userId, orderId);
       }
     }
 
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.COMPLETED);
-    await this.notifications.onCompleted(tenantId, { id, loadNumber: load.loadNumber, carrierId: load.carrierId });
+    await this.notifications.onCompleted(tenantId, {
+      id,
+      loadNumber: load.loadNumber,
+      carrierId: load.carrierId,
+    });
     return this.get(tenantId, id);
   }
 

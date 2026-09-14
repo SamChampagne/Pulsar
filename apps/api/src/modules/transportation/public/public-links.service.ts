@@ -155,11 +155,23 @@ export class PublicLinksService {
     };
   }
 
+  /**
+   * A COMPLETED (or CANCELLED) load is terminal — LOAD_TRANSITIONS has no outgoing edges
+   * (rule 2). The driver link must not mutate stops/POD once the load is closed; the state
+   * machine is the source of truth. Blocked server-side (the UI hides the actions too).
+   */
+  private assertLoadMutableByDriver(status: string): void {
+    if (status === LoadStatus.COMPLETED || status === LoadStatus.CANCELLED) {
+      throw new BadRequestException('This load is closed; no further updates are allowed.');
+    }
+  }
+
   async driverUpdateStop(token: string, stopId: string, status: StopStatus) {
     if (status !== StopStatus.ARRIVED && status !== StopStatus.DEPARTED) {
       throw new BadRequestException('Drivers can only report ARRIVED or DEPARTED');
     }
     const load = await this.loadByDriverToken(token);
+    this.assertLoadMutableByDriver(load.status);
     const stop = load.route?.stops.find((s) => s.id === stopId);
     if (!stop) throw new NotFoundException('Stop not on this load');
     return this.routes.updateStopStatus(load.tenantId, stopId, status);
@@ -170,6 +182,7 @@ export class PublicLinksService {
     input: { shipmentId: string; signedByName?: string; notes?: string },
   ) {
     const load = await this.loadByDriverToken(token);
+    this.assertLoadMutableByDriver(load.status);
     if (!load.shipments.some((s) => s.id === input.shipmentId)) {
       throw new NotFoundException('Shipment not on this load');
     }
@@ -182,6 +195,7 @@ export class PublicLinksService {
     file: { originalname: string; mimetype: string; buffer: Buffer },
   ) {
     const load = await this.loadByDriverToken(token);
+    this.assertLoadMutableByDriver(load.status);
     const shipment = load.shipments.find((s) => s.id === shipmentId);
     if (!shipment) throw new NotFoundException('Shipment not on this load');
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
@@ -250,6 +264,7 @@ export class PublicLinksService {
     if (!enabled.has(MODULE_KEYS.TRANSPORTATION)) {
       throw new ForbiddenException('Transportation is not enabled for this shipper');
     }
+    this.assertLoadMutableByDriver(load.status);
     if (!load.shipments.some((s) => s.id === shipmentId)) {
       throw new NotFoundException('Shipment not on this load');
     }

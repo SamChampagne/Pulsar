@@ -312,6 +312,8 @@ describe('Financial Reports (e2e)', () => {
   describe('3. Cash Flow: payment on invoice reflected in cash account', () => {
     let invoicePaidId2 = '';
     let paymentId = '';
+    let cashBeforePayment = 0;
+    let netBeforePayment = 0;
 
     beforeAll(async () => {
       // Create + approve another customer invoice.
@@ -353,6 +355,17 @@ describe('Financial Reports (e2e)', () => {
       paymentId = (payRes.body as { id: string }).id;
       paymentIds.push(paymentId);
 
+      // The seeded tenant is shared by suites: earlier disbursements can make
+      // its all-time cash negative. Assert this payment's exact delta, not an
+      // absolute lower bound that depends on suite order or previous runs.
+      const before = await request(http)
+        .get('/api/v1/billing/reports/cash-flow')
+        .query({ from: FROM, to: AS_OF })
+        .set(auth())
+        .expect(200);
+      cashBeforePayment = Number(before.body.accounts.find((a: { code: string }) => a.code === '1000')?.amount ?? 0);
+      netBeforePayment = Number(before.body.netChange);
+
       // Submit → posts DR Cash (1000) / CR AR (1100).
       await request(http)
         .post(`/api/v1/billing/payments/${paymentId}/submit`)
@@ -360,7 +373,7 @@ describe('Financial Reports (e2e)', () => {
         .expect((r) => expect([200, 201]).toContain(r.status));
     });
 
-    it('GET /billing/reports/cash-flow → cash account (1000) present; netChange >= AMOUNT_REV', async () => {
+    it('GET /billing/reports/cash-flow → cash account and net change increase by the payment amount', async () => {
       const res = await request(http)
         .get('/api/v1/billing/reports/cash-flow')
         .query({ from: FROM, to: AS_OF })
@@ -376,10 +389,8 @@ describe('Financial Reports (e2e)', () => {
       // Cash account 1000 must appear (cashAccountCode=1000 set in beforeAll).
       const cash = body.accounts.find((a) => a.code === '1000');
       expect(cash).toBeDefined();
-      // Payment debit on cash should be positive (net debit > 0).
-      expect(Number(cash!.amount)).toBeGreaterThanOrEqual(AMOUNT_REV);
-      // netChange must be > 0 (payments received exceed any disbursements in this test).
-      expect(Number(body.netChange)).toBeGreaterThan(0);
+      expect(Number(cash!.amount) - cashBeforePayment).toBeCloseTo(AMOUNT_REV, 2);
+      expect(Number(body.netChange) - netBeforePayment).toBeCloseTo(AMOUNT_REV, 2);
     });
   });
 

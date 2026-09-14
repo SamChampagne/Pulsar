@@ -181,10 +181,16 @@
       ? formatDateTime(early) + (late ? ' → ' + formatDateTime(late) : '')
       : '—';
 
+  // A COMPLETED/CANCELLED load is closed — the server blocks all driver mutations (state
+  // machine is source of truth), so the UI hides stop actions + POD capture to match.
+  const loadClosed = $derived(view?.status === 'COMPLETED' || view?.status === 'CANCELLED');
+
   const podCandidates = $derived(
-    view?.shipments.filter(
-      (s) => !s.proofOfDelivery && (s.status === 'IN_TRANSIT' || s.status === 'DELIVERED'),
-    ) ?? [],
+    loadClosed
+      ? []
+      : (view?.shipments.filter(
+          (s) => !s.proofOfDelivery && (s.status === 'IN_TRANSIT' || s.status === 'DELIVERED'),
+        ) ?? []),
   );
 
   // --- Position sharing (phase 10) ---------------------------------------
@@ -270,6 +276,12 @@
       </div>
     {/if}
 
+    {#if loadClosed}
+      <p class="rounded-md border border-edge bg-surface px-4 py-3 text-sm text-ink-muted">
+        Ce chargement est clôturé ({labelFor(view.status)}). Aucune action n'est possible.
+      </p>
+    {/if}
+
     {#if notice}
       <p class="rounded-md bg-danger-soft px-4 py-3 text-sm text-danger">{notice}</p>
     {/if}
@@ -293,7 +305,15 @@
         </div>
 
         <!-- Full-width tap targets using plain button for mobile -->
-        {#if stop.status === 'PENDING'}
+        {#if loadClosed}
+          <p class="text-sm text-ink-muted">
+            {stop.actualDepartureAt
+              ? `Departed ${formatDateTime(stop.actualDepartureAt)}`
+              : stop.actualArrivalAt
+                ? `Arrived ${formatDateTime(stop.actualArrivalAt)}`
+                : '—'}
+          </p>
+        {:else if stop.status === 'PENDING'}
           <button
             class="w-full rounded-md bg-accent px-3 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-accent-hover"
             disabled={busy}

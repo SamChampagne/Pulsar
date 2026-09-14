@@ -302,4 +302,48 @@ describe('Sites module (e2e)', () => {
       expect(item.tenantId).toBe(tenantId);
     }
   });
+
+  it('9. GET /sites/pages includes _count.submissions for each row (UI contract)', async () => {
+    // Create a page and publish it, then push two submissions through the public form.
+    const suffix = uniq();
+    const page = (
+      await request(srv())
+        .post('/api/v1/sites/pages')
+        .set(auth())
+        .send({ title: `Count Page ${suffix}`, slug: `count-page-${suffix}` })
+        .expect(201)
+    ).body;
+
+    await request(srv())
+      .patch(`/api/v1/sites/pages/${page.id}`)
+      .set(auth())
+      .send({ content: [{ type: 'form', fields: ['name', 'email'] }] })
+      .expect(200);
+
+    await request(srv())
+      .post(`/api/v1/sites/pages/${page.id}/publish`)
+      .set(auth())
+      .expect(201);
+
+    await request(srv())
+      .post(`/api/v1/public/sites/count-page-${suffix}/submit`)
+      .send({ name: 'Lead A', email: `a-${suffix}@example.com` })
+      .expect(201);
+    await request(srv())
+      .post(`/api/v1/public/sites/count-page-${suffix}/submit`)
+      .send({ name: 'Lead B', email: `b-${suffix}@example.com` })
+      .expect(201);
+
+    // The list endpoint (not just the detail) must carry _count.submissions — the table renders it.
+    const res = await request(srv())
+      .get('/api/v1/sites/pages')
+      .set(auth())
+      .query({ search: `count-page-${suffix}` })
+      .expect(200);
+
+    const row = res.body.items.find((p: { slug: string }) => p.slug === `count-page-${suffix}`);
+    expect(row).toBeTruthy();
+    expect(row._count).toBeDefined();
+    expect(row._count.submissions).toBe(2);
+  });
 });
