@@ -96,6 +96,7 @@ model Tenant {
   yardVisits              YardVisit[]
   yardMoves               YardMove[]
   dockAppointments        DockAppointment[]
+  yardDossierLinks        YardDossierLink[]
   inboundMessages         InboundMessage[]
   importBatches           ImportBatch[]
   importRows              ImportRow[]
@@ -981,6 +982,8 @@ model Load {
   accessorials   LoadAccessorial[]
   invoiceLine    InvoiceLine?
   legs           ShipmentLoadLeg[]
+
+  yardDossierLinks YardDossierLink[]
 
   @@unique([tenantId, loadNumber])
   @@index([tenantId, status])
@@ -2393,6 +2396,7 @@ model Receipt {
   tenant   Tenant        @relation(fields: [tenantId], references: [id])
   location Location      @relation(fields: [locationId], references: [id])
   lines    ReceiptLine[]
+  yardDossierLinks YardDossierLink[]
 
   @@unique([tenantId, number])
   @@index([tenantId, status])
@@ -2434,6 +2438,7 @@ model PickOrder {
   location Location   @relation(fields: [locationId], references: [id])
   shipment Shipment?  @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
   lines    PickLine[]
+  yardDossierLinks YardDossierLink[]
 
   @@unique([tenantId, number])
   @@index([tenantId, status])
@@ -2536,6 +2541,7 @@ model YardVisit {
   spot        YardSpot?        @relation(fields: [spotId], references: [id])
   appointment DockAppointment? @relation(fields: [appointmentId], references: [id])
   moves       YardMove[]
+  dossierLinks YardDossierLink[]
 
   @@unique([tenantId, visitNumber])
   @@index([tenantId, status])
@@ -2585,6 +2591,7 @@ model DockAppointment {
   spot     YardSpot?   @relation(fields: [spotId], references: [id])
   carrier  Carrier?    @relation(fields: [carrierId], references: [id])
   visits   YardVisit[]
+  dossierLinks YardDossierLink[]
 
   @@unique([tenantId, appointmentNumber])
   @@index([tenantId, status])
@@ -2593,6 +2600,38 @@ model DockAppointment {
 }
 
 // ============================================================================
+// Explicit operational context only; never changes stock, dispatch or workflow status.
+// A link has exactly one source and one target (CHECK constraints in the migration).
+// Visits with an appointment resolve to that appointment: no copied/diverging links.
+model YardDossierLink {
+  id            String   @id @default(cuid())
+  tenantId      String
+  visitId       String?
+  appointmentId String?
+  loadId        String?
+  receiptId     String?
+  pickOrderId   String?
+  createdAt     DateTime @default(now())
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  visit       YardVisit?       @relation(fields: [visitId], references: [id], onDelete: Restrict)
+  appointment DockAppointment? @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  load        Load?            @relation(fields: [loadId], references: [id], onDelete: Restrict)
+  receipt     Receipt?         @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  pickOrder   PickOrder?       @relation(fields: [pickOrderId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, visitId, loadId])
+  @@unique([tenantId, visitId, receiptId])
+  @@unique([tenantId, visitId, pickOrderId])
+  @@unique([tenantId, appointmentId, loadId])
+  @@unique([tenantId, appointmentId, receiptId])
+  @@unique([tenantId, appointmentId, pickOrderId])
+  @@index([tenantId, loadId])
+  @@index([tenantId, receiptId])
+  @@index([tenantId, pickOrderId])
+  @@map("yard_dossier_links")
+}
+
 // CONNECT — Ingestion / Inbox
 // ============================================================================
 

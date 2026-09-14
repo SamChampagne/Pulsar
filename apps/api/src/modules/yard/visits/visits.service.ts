@@ -16,7 +16,7 @@ import {
   canTransitionDockAppointment,
   canTransitionYardVisit,
 } from '@pulsar/shared';
-import { Prisma } from '@pulsar/database';
+import { Prisma, type DockAppointment } from '@pulsar/database';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
@@ -213,6 +213,7 @@ export class VisitsService {
 
     const created = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM locations WHERE id = ${dto.locationId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      let booked: Pick<DockAppointment, 'direction' | 'carrierId'> | null = null;
       if (dto.appointmentId) {
         const appt = await tx.dockAppointment.findFirst({
           where: { id: dto.appointmentId, tenantId, locationId: dto.locationId },
@@ -221,6 +222,9 @@ export class VisitsService {
           throw new BadRequestException('Rendez-vous indisponible ou sur un autre site.');
         if (dto.carrierId && appt.carrierId && dto.carrierId !== appt.carrierId)
           throw new BadRequestException('Le transporteur ne correspond pas au rendez-vous.');
+        if (dto.direction && dto.direction !== appt.direction)
+          throw new BadRequestException('Le sens de l’opération ne correspond pas au rendez-vous.');
+        booked = appt;
         if (
           await tx.yardVisit.count({
             where: { tenantId, appointmentId: appt.id, status: { not: YardVisitStatus.CANCELLED } },
@@ -235,9 +239,9 @@ export class VisitsService {
           locationId: dto.locationId,
           trailerId: dto.trailerId ?? null,
           trailerRef: dto.trailerRef ?? null,
-          carrierId: dto.carrierId ?? null,
+          carrierId: dto.carrierId ?? booked?.carrierId ?? null,
           driverName: dto.driverName ?? null,
-          direction: dto.direction ?? undefined,
+          direction: dto.direction ?? booked?.direction ?? undefined,
           status: YardVisitStatus.CHECKED_IN,
           appointmentId: dto.appointmentId ?? null,
           checkInAt: new Date(),

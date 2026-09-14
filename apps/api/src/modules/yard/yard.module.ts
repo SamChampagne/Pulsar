@@ -14,6 +14,8 @@ import { YardOverviewService } from './overview/yard-overview.service';
 import { YardOverviewController } from './overview/yard-overview.controller';
 import { YardWorkspaceService } from './workspace/workspace.service';
 import { YardWorkspaceController } from './workspace/workspace.controller';
+import { YardDossiersController } from './dossiers/dossiers.controller';
+import { YardDossiersService } from './dossiers/dossiers.service';
 
 /**
  * Yard Management module (spots master-data + gate visits + dock appointments +
@@ -33,6 +35,7 @@ import { YardWorkspaceController } from './workspace/workspace.controller';
     forwardRef(() => OperatingModule),
   ],
   controllers: [
+    YardDossiersController,
     YardWorkspaceController,
     YardCustomFieldsController,
     SpotsController,
@@ -41,6 +44,7 @@ import { YardWorkspaceController } from './workspace/workspace.controller';
     YardOverviewController,
   ],
   providers: [
+    YardDossiersService,
     YardWorkspaceService,
     SpotsService,
     VisitsService,

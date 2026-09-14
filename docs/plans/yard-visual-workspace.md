@@ -145,9 +145,10 @@ Pour les tests HTTP, fournir `DATABASE_URL` vers la base dédiée et
 
 ## Limites et prochain lot
 
-1. **Lier les dossiers réels** : rendez-vous/visite ↔ chargement TMS ↔ réception ou
-   préparation WMS. Concevoir les FK, permissions, projections et événements sans
-   terminer implicitement un chargement lors du départ de la cour.
+1. **Lier les dossiers réels — livré au lot suivant** : rendez-vous/visite ↔
+   chargement TMS ↔ réception ou préparation WMS, sans terminer implicitement les
+   dossiers métier. Voir [yard-connected-dossiers.md](./yard-connected-dossiers.md)
+   pour les FK, permissions, projections, tests et limites de cohérence.
 2. **Planification approfondie** : création/replanification contextuelle dans le
    planning, durée d’opération, horaires/capacité par quai et compatibilité des
    ressources. La création détaillée demeure sur `/yard/appointments`; ce lot

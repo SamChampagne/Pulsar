@@ -154,12 +154,13 @@
           /></Field
         ><Field label="Chauffeur"><Input bind:value={driverName} maxlength={100} /></Field>
         <Field label="Opération"
-          ><Select bind:value={direction}
+          ><Select bind:value={direction} disabled={!!appointment}
             >{#each ['INBOUND', 'OUTBOUND', 'OTHER'] as d (d)}<option value={d}
                 >{yardDirectionLabel(d)}</option
               >{/each}</Select
           ></Field
         >
+        {#if appointment}<p class="text-xs text-ink-muted">Sens repris du rendez-vous lié.</p>{/if}
         <Field label="Emplacement à l’arrivée"
           ><Select bind:value={spotId}
             ><option value="">File d’attente · affecter plus tard</option

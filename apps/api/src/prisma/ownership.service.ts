@@ -11,6 +11,8 @@ export type OwnedEntity =
   | 'location'
   | 'yardSpot'
   | 'dockAppointment'
+  | 'receipt'
+  | 'pickOrder'
   | 'carrier'
   | 'driver'
   | 'vehicle'

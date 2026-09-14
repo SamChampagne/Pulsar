@@ -1,4 +1,5 @@
 <script lang="ts">
+  import YardRelatedDossiers from '$lib/components/yard/YardRelatedDossiers.svelte';
   import DossierButton from '$lib/components/workflows/DossierButton.svelte';
   import { untrack } from 'svelte';
   import { page } from '$app/state';
@@ -535,7 +536,11 @@
         {/if}</RecordSection
       >
       <RecordSection id="record-related" label="Dossiers liés"
-        ><Card><RelatedEntities title="Dossiers liés" groups={relatedGroups} /></Card
+        ><Card
+          ><RelatedEntities title="Dossiers liés" groups={relatedGroups} /><YardRelatedDossiers
+            kind="load"
+            targetId={loadId}
+          /></Card
         ></RecordSection
       >
     </div>

@@ -15,6 +15,7 @@ function fixture() {
   ];
   const visit = {
     id: 'v1',
+    locationId: 'yard-site',
     visitNumber: 'YV-218',
     status: 'ASSIGNED',
     direction: 'INBOUND',
@@ -119,6 +120,25 @@ async function setup(page: Page) {
             : data,
       });
     if (path === 'custom-fields') return route.fulfill({ json: [] });
+    if (path.startsWith('dossiers/'))
+      return route.fulfill({
+        json: {
+          source: {
+            type: 'visit',
+            id: 'v1',
+            number: 'YV-218',
+            locationId: 'yard-site',
+            sharedWithAppointment: false,
+          },
+          editable: true,
+          groups: ['load', 'receipt', 'pick-order'].map((kind) => ({
+            kind,
+            available: true,
+            items: [],
+            truncated: false,
+          })),
+        },
+      });
     if (path.startsWith('visits/')) {
       const v = data.visits.find((v) => v.id === path.split('/')[1]);
       return route.fulfill({
@@ -246,6 +266,7 @@ test('dock planning identifies conflicts and links a booking to arrival without 
   await panel.getByRole('button', { name: 'Enregistrer l’arrivée', exact: true }).click();
   const arrival = page.getByRole('dialog', { name: 'Enregistrer une arrivée', exact: true });
   await expect(arrival).toContainText('DA-219');
+  await expect(arrival.getByRole('combobox', { name: 'Opération', exact: true })).toBeDisabled();
   await expect(arrival.getByRole('combobox', { name: 'Opération', exact: true })).toHaveValue(
     'OUTBOUND',
   );

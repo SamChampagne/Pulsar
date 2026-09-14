@@ -28,6 +28,7 @@ export * from './billing/tax';
 export * from './billing/reports';
 export * from './billing/banking';
 export * from './yard/workspace';
+export * from './yard/dossiers';
 export * from './billing/budget';
 export * from './billing/subscription';
 export * from './billing/fiscal';

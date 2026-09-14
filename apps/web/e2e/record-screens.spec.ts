@@ -1,5 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import { login } from './helpers';
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/yard/dossiers/related/**', (r) =>
+    r.fulfill({ json: { items: [], truncated: false } }),
+  );
+});
 
 // UI-only error injection: all record mutations below are intercepted. Real
 // CRM -> TMS integration remains covered by fulfillment.spec.ts.

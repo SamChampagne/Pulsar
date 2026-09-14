@@ -32,6 +32,7 @@
   import DockSchedule from '$lib/components/yard/DockSchedule.svelte';
   import YardContextDrawer from '$lib/components/yard/YardContextDrawer.svelte';
   import YardArrival from '$lib/components/yard/YardArrival.svelte';
+  import YardDossiers from '$lib/components/yard/YardDossiers.svelte';
 
   let sites = $state<YardWorkspace['site'][]>([]),
     siteId = $state(''),
@@ -61,6 +62,9 @@
     selectionKind = $state<'shape' | 'spot'>('spot');
   let generation = 0,
     now = $state(Date.now());
+  let pendingFocus: { site: string; visit: string | null; appointment: string | null } | null =
+    null;
+  let focusedAppointment = $state<YardWorkspaceAppointment | null>(null);
   const canManage = $derived(!!$auth?.user.permissions.includes(PERMISSIONS.YARD.MANAGE));
   const occupied = $derived(new Set(workspace?.visits.map((v) => v.spotId).filter(Boolean) ?? []));
   const freeSpots = $derived(
@@ -87,7 +91,10 @@
   );
   const selectedShape = $derived(shapes.find((s) => s.id === selection));
   const selectedSpot = $derived(draftSpots.find((s) => s.id === selection));
-  const appointment = $derived(workspace?.appointments.find((a) => a.id === appointmentId));
+  const appointment = $derived(
+    workspace?.appointments.find((a) => a.id === appointmentId) ??
+      (focusedAppointment?.id === appointmentId ? focusedAppointment : null),
+  );
   const incomplete = $derived(!!workspace && Object.values(workspace.truncated).some(Boolean));
   const disabled = $derived(busy || loading || !!refreshError || incomplete);
   const clock = (s: string) =>
@@ -105,8 +112,18 @@
       );
       sites = result.items;
       sitesTruncated = result.truncated;
-      const requested = new URL(window.location.href).searchParams.get('site');
-      siteId = sites.find((s) => s.id === requested)?.id ?? sites[0]?.id ?? '';
+      const params = new URL(window.location.href).searchParams;
+      const requested = params.get('site');
+      if (requested && !sites.some((s) => s.id === requested))
+        throw new Error('Ce site est indisponible dans la liste accessible.');
+      const selectedSite = sites.find((s) => s.id === requested)?.id ?? sites[0]?.id ?? '';
+      pendingFocus = {
+        site: selectedSite,
+        visit: params.get('visit'),
+        appointment: params.get('appointment'),
+      };
+      date = params.get('date') ?? '';
+      siteId = selectedSite;
     } catch (e) {
       error = e instanceof Error ? e.message : 'Sites indisponibles.';
     } finally {
@@ -128,7 +145,34 @@
       const data = await api<YardWorkspace>('/yard/workspace', {
         query: { locationId: id, date: day || undefined },
       });
-      if (request === generation) workspace = data;
+      if (request === generation) {
+        workspace = data;
+        if (pendingFocus?.site === id) {
+          const focus = pendingFocus;
+          pendingFocus = null;
+          if (focus.visit) visitId = focus.visit;
+          else if (focus.appointment) {
+            try {
+              const found = data.appointments.find((a) => a.id === focus.appointment);
+              const detail =
+                found ??
+                (await api<YardWorkspaceAppointment & { locationId: string }>(
+                  `/yard/appointments/${encodeURIComponent(focus.appointment)}`,
+                ));
+              if (!found && (detail as { locationId?: string }).locationId !== id)
+                throw new Error('Le rendez-vous ne correspond pas au site.');
+              if (request === generation) {
+                focusedAppointment = detail;
+                appointmentId = detail.id;
+                appointmentOpen = true;
+              }
+            } catch (e) {
+              if (request === generation)
+                actionError = e instanceof Error ? e.message : 'Rendez-vous indisponible.';
+            }
+          }
+        }
+      }
     } catch (e) {
       if (request === generation) {
         const message = e instanceof Error ? e.message : 'Site indisponible.';
@@ -679,6 +723,7 @@
 {#if workspace && visitId}<YardContextDrawer
     {visitId}
     {freeSpots}
+    siteId={workspace.site.id}
     timeZone={workspace.timeZone}
     actionsDisabled={disabled}
     onClose={() => {
@@ -776,6 +821,15 @@
           }}>Ouvrir la visite {v.visitNumber}</Button
         >
       </div>{/each}
+    <YardDossiers
+      sourceType="appointment"
+      sourceId={appointment.id}
+      disabled={loading || !!refreshError || incomplete}
+      bind:working={busy}
+      onNavigate={() => {
+        appointmentOpen = false;
+      }}
+    />
   {/if}
   <div class="mt-4"><ErrorNotice message={actionError} /></div>
   {#snippet footer()}{#if canManage && appointment}{#if appointment.status === 'SCHEDULED'}<Button

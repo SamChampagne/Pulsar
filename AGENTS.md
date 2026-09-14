@@ -283,6 +283,16 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     JAMAIS `WmsModule` ni `BillingModule` statiquement (cycle JS) ; `ReactionExecutorService`
     résout `PickingService`/`CustomerInvoicesService` via `ModuleRef.get()` + lazy `require()`.
 
+## Hard rules (continued, Yard — dossiers connectés)
+
+39. `YardDossierLink` décrit un contexte, jamais une transition : aucun stock, coût ou
+    statut TMS/WMS ne change à l'ajout/retrait. Une visite liée à un rendez-vous utilise
+    les liens du rendez-vous (pas de copie). Écritures via `YardDossiersService`, verrou
+    de site partagé avec Yard, droits de lecture de la cible et `yard.manage`, tenant/FK
+    vérifiés, compatibilité site/sens contrôlée, audit et idempotence. Un passage terminé
+    est en lecture seule. Les contraintes SQL exactement une source/une cible doivent
+    être préservées. Détail : `docs/plans/yard-connected-dossiers.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

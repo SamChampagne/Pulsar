@@ -1,4 +1,5 @@
 <script lang="ts">
+  import YardRelatedDossiers from '$lib/components/yard/YardRelatedDossiers.svelte';
   import { confirmAction } from '$lib/stores/confirmation';
   import { page } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
@@ -301,6 +302,7 @@
       </Card>
       <Card>
         <RelatedEntities groups={relatedGroups} />
+        <YardRelatedDossiers kind="receipt" targetId={receipt.id} />
       </Card>
     </div>
   </div>

@@ -6,7 +6,8 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 
 - [x] Cour & quais : poste de travail par site, plan configurable, occupation, planning et panneaux d’action ([contrats et limites](docs/plans/yard-visual-workspace.md)).
 - [x] Gardes Yard : disponibilité et même site, concurrence, départ/annulation traçables, arrivée liée sans doublon.
-- [ ] Connexions explicites visite/rendez-vous ↔ chargement TMS ↔ réception/préparation WMS.
+- [x] Connexions explicites visite/rendez-vous ↔ chargement TMS ↔ réception/préparation WMS ([contrats et limites](docs/plans/yard-connected-dossiers.md)).
+- [ ] Cohérence guidée entre lignes/expéditions des dossiers reliés; découpler les référentiels WMS des droits TMS.
 - [ ] Replanification contextuelle, horaires/capacités des quais et seuils de présence configurables.
 - [ ] WMS visuel : zones/bins et progression réception → rangement → préparation.
 - [ ] Flotte : disponibilité et planification de maintenance; Fabrication : postes et flux.

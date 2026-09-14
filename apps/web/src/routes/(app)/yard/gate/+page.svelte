@@ -160,6 +160,12 @@
     ),
   );
 
+  const selectedAppointment = $derived(siteAppointments.find((a) => a.id === formAppointmentId));
+  $effect(() => {
+    if (selectedAppointment) formDirection = selectedAppointment.direction;
+    else if (formAppointmentId) formAppointmentId = '';
+  });
+
   // Active visits only.
   const activeVisits = $derived(
     visits.filter((v) => v.status === 'CHECKED_IN' || v.status === 'ASSIGNED'),
@@ -324,10 +330,13 @@
           <Input bind:value={formDriverName} placeholder="Nom du chauffeur" />
         </Field>
         <Field label="Direction">
-          <Select bind:value={formDirection}>
+          <Select bind:value={formDirection} disabled={!!selectedAppointment}>
             {#each DIRECTIONS as d (d)}<option value={d}>{d}</option>{/each}
           </Select>
         </Field>
+        {#if selectedAppointment}<p class="mt-1 text-xs text-ink-muted">
+            Sens repris du rendez-vous lié.
+          </p>{/if}
         <Field label="Spot (optionnel)">
           <Select bind:value={formSpotId}>
             <option value="">— Aucun (placer plus tard) —</option>

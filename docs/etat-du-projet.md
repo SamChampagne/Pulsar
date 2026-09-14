@@ -6,6 +6,13 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Cour ↔ TMS ↔ WMS connectés (2026-09-14) — `codex/yard-connected-dossiers`.**
+> Associations explicites aux chargements, réceptions et préparations, partagées
+> entre rendez-vous et arrivée; navigation aller-retour depuis les fiches métier.
+> Droits croisés, compatibilité site/sens, idempotence, audit et historique protégé.
+> Aucun changement automatique de stock/statut. Suite : WMS visuel.
+> [Contrats, tests et limites](./plans/yard-connected-dossiers.md).
+>
 > **Cour & quais visuel (2026-09-14) — `codex/yard-visual-workspace`.**
 > Nouvelle priorité : approfondir chaque module avec une UI métier, bureau conservé.
 > Plan configurable, occupation et planning par site, arrivées et mouvements en

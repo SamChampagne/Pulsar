@@ -12,11 +12,13 @@
   import { Badge, Button, Drawer, ErrorNotice, Field, Select, Skeleton } from '$lib/components/ui';
   import { auth } from '$lib/stores/auth';
   import { confirmAction } from '$lib/stores/confirmation';
+  import YardDossiers from './YardDossiers.svelte';
   let {
     visitId,
     freeSpots,
     timeZone = 'UTC',
     actionsDisabled = false,
+    siteId,
     onClose,
     onMoved,
     onCheckedOut,
@@ -25,11 +27,13 @@
     freeSpots: { id: string; code: string; type: string }[];
     timeZone?: string;
     actionsDisabled?: boolean;
+    siteId: string;
     onClose: () => void;
     onMoved: () => void | Promise<void>;
     onCheckedOut: () => void | Promise<void>;
   } = $props();
   type Detail = YardWorkspaceVisit & {
+    locationId: string;
     checkOutAt: string | null;
     notes: string | null;
     spot: { code: string } | null;
@@ -49,6 +53,7 @@
     actionError = $state(''),
     moveSpotId = $state(''),
     busy = $state(false),
+    linksBusy = $state(false),
     now = $state(Date.now());
   let generation = 0;
   const canManage = $derived(
@@ -67,6 +72,8 @@
     visit = null;
     try {
       const v = await api<Detail>(`/yard/visits/${id}`);
+      if (v.locationId !== siteId)
+        throw new Error('Cette visite ne correspond pas au site sélectionné.');
       if (request === generation) visit = v;
     } catch (e) {
       if (request === generation) error = e instanceof Error ? e.message : 'Visite indisponible.';
@@ -87,7 +94,7 @@
   onDestroy(() => generation++);
   const fmt = (s: string) => new Date(s).toLocaleString('fr-CA', { timeZone });
   async function act(kind: 'move' | 'check-out') {
-    if (busy || !canManage || !active || !visit) return;
+    if (busy || linksBusy || !canManage || !active || !visit) return;
     busy = true;
     actionError = '';
     const target = freeSpots.find((s) => s.id === moveSpotId);
@@ -134,7 +141,7 @@
   bind:open
   title={visit ? `Visite ${visit.visitNumber}` : 'Dossier de visite'}
   width="lg"
-  dismissible={!busy}
+  dismissible={!busy && !linksBusy}
   onclose={onClose}
 >
   {#if loading}<Skeleton rows={5} />{:else if error}<ErrorNotice
@@ -185,7 +192,7 @@
     </ol>
     {#if canManage && active}<div class="mt-6 border-t border-edge pt-4">
         <Field label="Emplacement de destination"
-          ><Select bind:value={moveSpotId} disabled={busy}
+          ><Select bind:value={moveSpotId} disabled={busy || linksBusy}
             ><option value="">Choisir un emplacement libre</option
             >{#each freeSpots as s (s.id)}<option value={s.id}
                 >{s.code} · {yardSpotLabel(s.type)}</option
@@ -197,12 +204,20 @@
           confirmation.
         </p>
       </div>{/if}
+    <YardDossiers
+      sourceType="visit"
+      sourceId={visitId}
+      disabled={busy || actionsDisabled}
+      bind:working={linksBusy}
+      onNavigate={onClose}
+    />
   {/if}
   <div class="mt-4"><ErrorNotice message={actionError} /></div>
   {#snippet footer()}{#if canManage && active}<Button
         variant="secondary"
-        disabled={busy || !moveSpotId}
+        disabled={busy || linksBusy || !moveSpotId}
         onclick={() => act('move')}>{visit?.spotId ? 'Déplacer' : 'Affecter'}</Button
-      ><Button disabled={busy} onclick={() => act('check-out')}>Enregistrer le départ</Button
+      ><Button disabled={busy || linksBusy} onclick={() => act('check-out')}
+        >Enregistrer le départ</Button
       >{/if}{/snippet}
 </Drawer>
