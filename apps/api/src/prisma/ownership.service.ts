@@ -9,6 +9,8 @@ export type OwnedEntity =
   | 'payment'
   | 'bankAccount'
   | 'location'
+  | 'yardSpot'
+  | 'dockAppointment'
   | 'carrier'
   | 'driver'
   | 'vehicle'

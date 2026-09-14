@@ -3,7 +3,9 @@ import { SpotsService } from './spots.service';
 function layoutHarness() {
   const updated: any[] = [];
   const prisma = {
+    $queryRaw: async () => [],
     yardSpot: {
+      findMany: async () => [{ locationId: 'site1' }],
       updateMany: async ({ where, data }: any) => {
         updated.push({ id: where.id, tenantId: where.tenantId, ...data });
         return { count: where.tenantId === 't1' ? 1 : 0 };

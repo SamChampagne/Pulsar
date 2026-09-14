@@ -166,12 +166,12 @@ export const MODULE_SETTINGS_CATALOG: ModuleSettingsCatalog[] = [
       {
         key: 'spotConflictPolicy',
         label: 'Conflit d\'emplacement de cour',
-        help: 'BLOCK = refuse (409) une 2ᵉ visite active sur un spot occupé. WARN = laisse passer avec un avertissement.',
+        help: 'Un emplacement occupé est toujours bloqué (409). WARN est conservé pour compatibilité, sans autoriser la double occupation.',
         type: 'enum',
         default: 'BLOCK',
         options: [
           { value: 'BLOCK', label: 'Bloquer (refuser)' },
-          { value: 'WARN', label: 'Avertir (laisser passer)' },
+          { value: 'WARN', label: 'Historique — blocage désormais obligatoire' },
         ],
       },
     ],

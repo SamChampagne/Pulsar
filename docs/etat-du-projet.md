@@ -6,6 +6,13 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Cour & quais visuel (2026-09-14) — `codex/yard-visual-workspace`.**
+> Nouvelle priorité : approfondir chaque module avec une UI métier, bureau conservé.
+> Plan configurable, occupation et planning par site, arrivées et mouvements en
+> panneaux confirmés. Affectations concurrentes durcies; géométrie séparée des opérations.
+> Migration locale additive, aucun push/déploiement. Contrats, tests et suite :
+> [yard-visual-workspace.md](./plans/yard-visual-workspace.md).
+>
 > **Import CSV bancaire, lot 6 (2026-09-14) — `codex/bank-csv-import`.**
 > Fichier ou collage → prévisualisation → confirmation. Validation stricte, lot atomique,
 > doublons contrôlés en base et contre les mouvements historiques. Aucun virement ni rapprochement

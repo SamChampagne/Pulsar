@@ -23,6 +23,7 @@ export class SpotsController {
   }
 
   @Put('layout')
+  @Audit('yard-plan', AuditAction.UPDATE)
   @RequirePermissions(PERMISSIONS.YARD.MANAGE)
   updateLayout(@CurrentUser() user: AuthUser, @Body() dto: LayoutDto) {
     return this.spots.updateLayout(user.tenantId, user.id, dto.positions);

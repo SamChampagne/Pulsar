@@ -544,6 +544,7 @@ model Location {
   latitude     Float?
   longitude    Float?
   timezone     String?
+  yardPlan     Json?        // Display-only Yard buildings / zones; never operational state
   isActive     Boolean      @default(true)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt

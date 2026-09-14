@@ -79,7 +79,8 @@ Les fiches de facturation/paiement et les autres lots ci-dessous restent à pour
    transport → chargement → facture. Résumé persistant, sections utiles, édition
    clavier des lignes, erreurs locales et liens réciproques. Corriger les labels
    et contrôles cliquables non accessibles déjà signalés dans ces pages.
-2. **Listes spécialisées** : WMS, Yard, Fabrication et achats ; recherche/filtres
+2. **Postes de travail spécialisés** : [Cour & quais visuel](./yard-visual-workspace.md)
+   livré le 2026-09-14; poursuivre WMS, Fabrication et achats ; recherche/filtres
    cohérents, colonnes et vues sauvegardées là où les API les supportent. Préserver
    Gantt, carte, plan de cour et règles métier. Pas de contrôle décoratif sans effet.
 3. **Courriels et suivi** : ouvrir le dossier depuis un message, afficher connecteur,
@@ -223,7 +224,7 @@ période, devise et périmètre. Les droits côté API demeurent la source d’a
 | `/yard/config` | Réglages communs | Lignes, état modifié, sauvegarde, erreur conservant la saisie |
 | `/yard/gate` | Harmonisation | En-tête/libellés ; pas une refonte métier complète |
 | `/yard/spots` | Harmonisation | En-tête/libellés ; pas une refonte métier complète |
-| `/yard` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
+| `/yard` | Poste de travail spécialisé | Plan configurable, occupation, planning et actions par site; [périmètre livré](./yard-visual-workspace.md) |
 | `carrier-portal/[token]` | À reprendre | Parcours public ou console à qualifier séparément |
 | `driver/[token]` | À reprendre | Parcours public ou console à qualifier séparément |
 | `forgot-password` | À reprendre | Parcours public ou console à qualifier séparément |

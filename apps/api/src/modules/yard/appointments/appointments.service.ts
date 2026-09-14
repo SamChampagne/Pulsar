@@ -6,7 +6,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { AuditAction, CustomFieldEntity, DockAppointmentStatus, canTransitionDockAppointment } from '@pulsar/shared';
+import {
+  AuditAction,
+  CustomFieldEntity,
+  DockAppointmentStatus,
+  canTransitionDockAppointment,
+} from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
@@ -112,12 +117,19 @@ export class AppointmentsService {
     }
 
     await this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId);
+    await this.ownership.assertOwnedIfSet('yardSpot', dto.spotId, tenantId);
     if (dto.spotId) {
       const spot = await this.prisma.yardSpot.findFirst({
-        where: { id: dto.spotId, tenantId },
+        where: {
+          id: dto.spotId,
+          tenantId,
+          locationId: dto.locationId,
+          isActive: true,
+          type: 'DOCK_DOOR',
+        },
         select: { id: true },
       });
-      if (!spot) throw new NotFoundException('Spot not found');
+      if (!spot) throw new BadRequestException('Choisissez un quai actif du même site.');
     }
 
     const customData = await this.customFields.validateValues(
@@ -164,26 +176,31 @@ export class AppointmentsService {
     to: DockAppointmentStatus,
     extra?: Record<string, unknown>,
   ) {
-    const appt = await this.prisma.dockAppointment.findFirst({
-      where: { id, tenantId },
-      select: { id: true, status: true },
-    });
+    let appt = await this.prisma.dockAppointment.findFirst({ where: { id, tenantId } });
     if (!appt) throw new NotFoundException('Appointment not found');
     if (!canTransitionDockAppointment(appt.status as DockAppointmentStatus, to)) {
       throw new BadRequestException(`Cannot transition appointment from ${appt.status} to ${to}`);
     }
-    const claim = await this.prisma.dockAppointment.updateMany({
-      where: { id, tenantId, status: appt.status as DockAppointmentStatus },
-      data: { status: to, ...(extra ?? {}) },
+    const locationId = appt.locationId;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM locations WHERE id = ${locationId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      const fresh = await tx.dockAppointment.findFirst({ where: { id, tenantId } });
+      if (!fresh || !canTransitionDockAppointment(fresh.status as DockAppointmentStatus, to))
+        throw new ConflictException('Le rendez-vous a changé.');
+      appt = fresh;
+      const claim = await tx.dockAppointment.updateMany({
+        where: { id, tenantId, status: fresh.status },
+        data: { status: to, ...(extra ?? {}) },
+      });
+      if (!claim.count) throw new ConflictException('Appointment already processed');
     });
-    if (claim.count === 0) throw new ConflictException('Appointment already processed');
     await this.audit.log({
       tenantId,
       userId,
       action: AuditAction.STATUS_CHANGE,
       entityType: 'dock-appointment',
       entityId: id,
-      before: { status: appt.status },
+      before: { status: appt!.status },
       after: { status: to },
     });
     return this.get(tenantId, id);

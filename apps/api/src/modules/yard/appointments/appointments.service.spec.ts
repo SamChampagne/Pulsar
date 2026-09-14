@@ -2,11 +2,13 @@ import { DockAppointmentStatus } from '@pulsar/shared';
 import { AppointmentsService } from './appointments.service';
 
 function harness(status = DockAppointmentStatus.SCHEDULED) {
-  const appt: any = { id: 'a1', tenantId: 't1', status };
+  const appt: any = { id: 'a1', tenantId: 't1', locationId: 'loc1', status };
   const prisma = {
+    $queryRaw: async () => [],
+    $transaction: async (fn: any) => fn(prisma),
     location: { findFirst: async () => ({ id: 'loc1', tenantId: 't1' }) },
     dockAppointment: {
-      findFirst: async () => appt,
+      findFirst: async () => ({ ...appt }),
       updateMany: async ({ where, data }: any) => {
         const ok = where.status === appt.status || (where.status?.in ?? []).includes(appt.status);
         if (ok) {
@@ -22,7 +24,10 @@ function harness(status = DockAppointmentStatus.SCHEDULED) {
   const audit = { log: async () => undefined } as any;
   const domainEvents = { emit: async () => undefined } as any;
   const customFields = { validateValues: async () => undefined } as any;
-  return { svc: new AppointmentsService(prisma, sequences, ownership, audit, domainEvents, customFields), appt };
+  return {
+    svc: new AppointmentsService(prisma, sequences, ownership, audit, domainEvents, customFields),
+    appt,
+  };
 }
 
 describe('AppointmentsService transitions', () => {

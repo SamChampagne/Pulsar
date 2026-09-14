@@ -2,6 +2,16 @@
 
 Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link PRs when relevant.
 
+## Modules visuels — priorité de relance (2026-09-14)
+
+- [x] Cour & quais : poste de travail par site, plan configurable, occupation, planning et panneaux d’action ([contrats et limites](docs/plans/yard-visual-workspace.md)).
+- [x] Gardes Yard : disponibilité et même site, concurrence, départ/annulation traçables, arrivée liée sans doublon.
+- [ ] Connexions explicites visite/rendez-vous ↔ chargement TMS ↔ réception/préparation WMS.
+- [ ] Replanification contextuelle, horaires/capacités des quais et seuils de présence configurables.
+- [ ] WMS visuel : zones/bins et progression réception → rangement → préparation.
+- [ ] Flotte : disponibilité et planification de maintenance; Fabrication : postes et flux.
+- [ ] Agents : suggestions contextuelles gouvernées, motifs et résultats reliés aux dossiers.
+
 ## Relance UI — dossiers financiers connectés (2026-09-14)
 
 - [x] Association audit → facture approuvée existante, tenant-scopée et idempotente.
