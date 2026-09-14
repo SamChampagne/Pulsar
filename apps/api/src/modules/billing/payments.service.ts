@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   AuditAction,
   CustomerInvoiceStatus,
@@ -51,12 +56,46 @@ export class PaymentsService {
     private readonly modes: ModesOfPaymentService,
   ) {}
 
-  list(tenantId: string, status?: PaymentStatus, type?: PaymentType) {
-    return this.prisma.payment.findMany({
+  async list(tenantId: string, status?: PaymentStatus, type?: PaymentType) {
+    const payments = await this.prisma.payment.findMany({
       where: { tenantId, status, type },
       orderBy: { createdAt: 'desc' },
       include: { modeOfPayment: true, allocations: true },
     });
+    return this.withParties(tenantId, payments);
+  }
+
+  /** Batch explicit display projections; never resolve a polymorphic ID across tenants. */
+  private async withParties<T extends { partyType: string; partyId: string }>(
+    tenantId: string,
+    payments: T[],
+  ) {
+    const customerIds = [
+      ...new Set(payments.filter((p) => p.partyType === 'CUSTOMER').map((p) => p.partyId)),
+    ];
+    const carrierIds = [
+      ...new Set(payments.filter((p) => p.partyType === 'CARRIER').map((p) => p.partyId)),
+    ];
+    const [customers, carriers] = await Promise.all([
+      customerIds.length
+        ? this.prisma.customer.findMany({
+            where: { tenantId, id: { in: customerIds } },
+            select: { id: true, name: true },
+          })
+        : [],
+      carrierIds.length
+        ? this.prisma.carrier.findMany({
+            where: { tenantId, id: { in: carrierIds } },
+            select: { id: true, name: true },
+          })
+        : [],
+    ]);
+    const customerMap = new Map(customers.map((p) => [p.id, p]));
+    const carrierMap = new Map(carriers.map((p) => [p.id, p]));
+    return payments.map((p) => ({
+      ...p,
+      party: (p.partyType === 'CUSTOMER' ? customerMap : carrierMap).get(p.partyId) ?? null,
+    }));
   }
 
   async get(tenantId: string, id: string) {
@@ -65,7 +104,37 @@ export class PaymentsService {
       include: { modeOfPayment: true, allocations: true },
     });
     if (!p) throw new NotFoundException('Payment not found');
-    return p;
+    const customerIds = p.allocations
+      .filter((a) => a.targetType === 'CUSTOMER_INVOICE')
+      .map((a) => a.targetId);
+    const carrierIds = p.allocations
+      .filter((a) => a.targetType === 'CARRIER_INVOICE')
+      .map((a) => a.targetId);
+    const [parties, customers, carriers] = await Promise.all([
+      this.withParties(tenantId, [p]),
+      customerIds.length
+        ? this.prisma.customerInvoice.findMany({
+            where: { tenantId, id: { in: customerIds } },
+            select: { id: true, invoiceNumber: true },
+          })
+        : [],
+      carrierIds.length
+        ? this.prisma.invoice.findMany({
+            where: { tenantId, id: { in: carrierIds } },
+            select: { id: true, invoiceNumber: true },
+          })
+        : [],
+    ]);
+    const customerMap = new Map(customers.map((i) => [i.id, i]));
+    const carrierMap = new Map(carriers.map((i) => [i.id, i]));
+    return {
+      ...parties[0],
+      allocations: p.allocations.map((a) => ({
+        ...a,
+        target:
+          (a.targetType === 'CUSTOMER_INVOICE' ? customerMap : carrierMap).get(a.targetId) ?? null,
+      })),
+    };
   }
 
   /** Open invoices (outstanding > 0) of a party, for the allocation screen. */
@@ -131,11 +200,7 @@ export class PaymentsService {
    * Verify that the party belongs to the tenant.
    * Real signature: assertOwned(entity, id, tenantId) — note argument order.
    */
-  private async assertPartyOwned(
-    tenantId: string,
-    partyType: PaymentPartyType,
-    partyId: string,
-  ) {
+  private async assertPartyOwned(tenantId: string, partyType: PaymentPartyType, partyId: string) {
     if (partyType === PaymentPartyType.CUSTOMER) {
       await this.ownership.assertOwned('customer', partyId, tenantId);
     } else {
@@ -267,8 +332,14 @@ export class PaymentsService {
     // GL lines (rule 41 — balanced double-entry).
     const lines =
       payment.type === PaymentType.RECEIVE
-        ? [{ accountCode: modeAccount, debit: allocated }, { accountCode: arAccount, credit: allocated }]
-        : [{ accountCode: apAccount, debit: allocated }, { accountCode: modeAccount, credit: allocated }];
+        ? [
+            { accountCode: modeAccount, debit: allocated },
+            { accountCode: arAccount, credit: allocated },
+          ]
+        : [
+            { accountCode: apAccount, debit: allocated },
+            { accountCode: modeAccount, credit: allocated },
+          ];
 
     // Ensure the chart of accounts exists before entering the transaction
     // (ledger.postTx does not call ensureChart; we do it here so the tx stays clean).
@@ -433,8 +504,14 @@ export class PaymentsService {
     // Reversal = swap debit/credit.
     const lines =
       payment.type === PaymentType.RECEIVE
-        ? [{ accountCode: modeAccount, credit: allocated }, { accountCode: arAccount, debit: allocated }]
-        : [{ accountCode: apAccount, credit: allocated }, { accountCode: modeAccount, debit: allocated }];
+        ? [
+            { accountCode: modeAccount, credit: allocated },
+            { accountCode: arAccount, debit: allocated },
+          ]
+        : [
+            { accountCode: apAccount, credit: allocated },
+            { accountCode: modeAccount, debit: allocated },
+          ];
 
     if (wasSubmitted) {
       await this.ledger.ensureChart(tenantId);
@@ -473,10 +550,7 @@ export class PaymentsService {
               : null;
             if (willRevert && revertTarget) {
               if (
-                !canTransitionCustomerInvoice(
-                  inv.status as CustomerInvoiceStatus,
-                  revertTarget,
-                )
+                !canTransitionCustomerInvoice(inv.status as CustomerInvoiceStatus, revertTarget)
               ) {
                 throw new BadRequestException(
                   `Cannot revert customer invoice from ${inv.status} to ${revertTarget}`,
@@ -488,9 +562,7 @@ export class PaymentsService {
               where: { id: a.targetId, tenantId, amountPaid: priorPaid },
               data: {
                 amountPaid: new Prisma.Decimal(newPaid),
-                ...(willRevert && revertTarget
-                  ? { status: revertTarget, paidAt: null }
-                  : {}),
+                ...(willRevert && revertTarget ? { status: revertTarget, paidAt: null } : {}),
               },
             });
             if (claimed.count === 0)
@@ -556,7 +628,6 @@ export class PaymentsService {
           userId,
         );
       }
-
     });
 
     await this.audit.log({

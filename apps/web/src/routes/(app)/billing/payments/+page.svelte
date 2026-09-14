@@ -1,198 +1,217 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { onDestroy } from 'svelte';
+  import { PERMISSIONS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import { toast } from '$lib/stores/toast';
-  import { formatDate } from '$lib/format';
+  import { auth } from '$lib/stores/auth';
+  import { formatDate, formatMoney } from '$lib/format';
+  import {
+    type Payment,
+    postedPaymentTotals,
+    paymentStatusLabel,
+    paymentStatusTone,
+    paymentTypeLabel,
+  } from '$lib/billing/payments';
   import {
     PageHeader,
     Button,
     FilterBar,
     Select,
+    Input,
     Table,
     Badge,
     EmptyState,
     Card,
     Skeleton,
     ErrorNotice,
-    toneFor,
-    labelFor,
-    type Tone,
   } from '$lib/components/ui';
 
-  // ── Types ─────────────────────────────────────────────────────────────────────
-
-  interface AllocationRow {
-    id: string;
-    amount: string;
-  }
-
-  interface PaymentRow {
-    id: string;
-    paymentNumber: string;
-    type: 'RECEIVE' | 'PAY';
-    partyType: string;
-    partyId: string;
-    date: string;
-    totalAmount: string;
-    status: 'DRAFT' | 'SUBMITTED' | 'CANCELLED';
-    modeOfPayment: string | null;
-    allocations: AllocationRow[];
-  }
-
-  // ── State ─────────────────────────────────────────────────────────────────────
-
-  let payments = $state<PaymentRow[]>([]);
+  let payments = $state<Payment[]>([]);
   let statusFilter = $state('');
   let typeFilter = $state('');
+  let search = $state('');
   let loading = $state(true);
   let error = $state('');
-
-  // ── Derived KPI ──────────────────────────────────────────────────────────────
-
-  const submittedTotal = $derived(
-    payments
-      .filter((p) => p.status === 'SUBMITTED')
-      .reduce((sum, p) => sum + Number(p.totalAmount), 0),
+  let currentPage = $state(1);
+  let generation = 0;
+  const pageSize = 25;
+  const canManage = $derived(
+    !!$auth?.user.permissions.includes(PERMISSIONS.BILLING.PAYMENTS_MANAGE),
   );
-  const submittedCount = $derived(payments.filter((p) => p.status === 'SUBMITTED').length);
+  const filtered = $derived(
+    payments.filter((p) =>
+      [p.paymentNumber, p.party?.name, p.reference].some((v) =>
+        v?.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
+      ),
+    ),
+  );
+  const totalPages = $derived(Math.max(1, Math.ceil(filtered.length / pageSize)));
+  const visible = $derived(filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+  const totals = $derived(postedPaymentTotals(filtered));
 
-  // ── Tone map for payment type ─────────────────────────────────────────────────
-
-  function typeTone(type: 'RECEIVE' | 'PAY'): Tone {
-    return type === 'RECEIVE' ? 'ok' : 'info';
-  }
-
-  // SUBMITTED is not in the shared STATUS_TONE map; map it manually.
-  function statusTone(status: string): Tone {
-    if (status === 'SUBMITTED') return 'warn';
-    return toneFor(status);
-  }
-
-  // ── Load ──────────────────────────────────────────────────────────────────────
-
-  async function load() {
+  async function load(status = statusFilter, type = typeFilter) {
+    const request = ++generation;
     loading = true;
     error = '';
     try {
-      payments = await api<PaymentRow[]>('/billing/payments', {
-        query: {
-          status: statusFilter || undefined,
-          type: typeFilter || undefined,
-        },
+      const result = await api<Payment[]>('/billing/payments', {
+        query: { status: status || undefined, type: type || undefined },
       });
+      if (request === generation) payments = result;
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load payments';
-      toast.error(error);
+      if (request === generation)
+        error = e instanceof ApiError ? e.message : 'Impossible de charger les paiements.';
     } finally {
-      loading = false;
+      if (request === generation) loading = false;
     }
   }
-
   $effect(() => {
+    void load(statusFilter, typeFilter);
+  });
+  $effect(() => {
+    void search;
     void statusFilter;
     void typeFilter;
-    void load();
+    currentPage = 1;
+  });
+  onDestroy(() => {
+    generation++;
   });
 </script>
 
 <PageHeader
   title="Paiements"
-  subtitle="Enregistrez et suivez les encaissements clients et les décaissements fournisseurs."
+  subtitle="Des factures au grand livre : préparez, vérifiez, puis comptabilisez."
 >
   {#snippet actions()}
-    <Button onclick={() => goto('/billing/payments/new')}>Nouvelle écriture de paiement</Button>
+    <Button variant="secondary" href="/invoices">Factures et relevés</Button>
+    {#if canManage}<Button href="/billing/payments/new">Nouveau paiement</Button>{/if}
   {/snippet}
 </PageHeader>
 
-<!-- KPI cards -->
-<div class="mb-5 grid gap-3 md:grid-cols-2">
-  <Card>
-    <div class="text-xl font-bold text-ink">{payments.length}</div>
-    <div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Total paiements</div>
-    <p class="mt-1 text-xs text-ink-faint">Tous statuts confondus.</p>
-  </Card>
-  <Card>
-    <div class="text-xl font-bold text-warn">
-      {submittedTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-    </div>
-    <div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-      En attente ({submittedCount} paiement{submittedCount !== 1 ? 's' : ''} soumis)
-    </div>
-    <p class="mt-1 text-xs text-ink-faint">Montant total des paiements soumis non finalisés.</p>
-  </Card>
-</div>
-
 <FilterBar>
-  <div class="w-40">
-    <Select bind:value={statusFilter}>
-      <option value="">Tous les statuts</option>
-      <option value="DRAFT">Brouillon</option>
-      <option value="SUBMITTED">Soumis</option>
-      <option value="CANCELLED">Annulé</option>
+  <div class="min-w-40 flex-1">
+    <Input
+      bind:value={search}
+      aria-label="Rechercher un paiement"
+      placeholder="Numéro, client, transporteur, référence…"
+    />
+  </div>
+  <div class="w-44">
+    <Select bind:value={statusFilter} aria-label="Statut du paiement">
+      <option value="">Tous les statuts</option><option value="DRAFT">Brouillon</option><option
+        value="SUBMITTED">Comptabilisé</option
+      ><option value="CANCELLED">Annulé</option>
     </Select>
   </div>
-  <div class="w-36">
-    <Select bind:value={typeFilter}>
-      <option value="">Tous les types</option>
-      <option value="RECEIVE">Encaissement</option>
-      <option value="PAY">Décaissement</option>
+  <div class="w-44">
+    <Select bind:value={typeFilter} aria-label="Type de paiement">
+      <option value="">Tous les types</option><option value="RECEIVE">Encaissement</option><option
+        value="PAY">Décaissement</option
+      >
     </Select>
   </div>
 </FilterBar>
 
-<ErrorNotice message={error} onretry={load} />
-
+<ErrorNotice message={error} onretry={() => load()} />
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
-{:else}
+{:else if !error}
+  <div class="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-muted">
+    <span
+      >{filtered.length} paiement{filtered.length > 1 ? 's' : ''} dans cette vue · {filtered.filter(
+        (p) => p.status === 'DRAFT',
+      ).length} brouillon(s)</span
+    >
+    <span>Comptabilisé = allocations inscrites au grand livre.</span>
+  </div>
   <Table>
-    {#snippet head()}
-      <th>N° paiement</th>
-      <th>Type</th>
-      <th>Partie</th>
-      <th>Date</th>
-      <th>Mode</th>
-      <th class="text-right">Montant</th>
-      <th>Statut</th>
-    {/snippet}
+    {#snippet head()}<th>Paiement</th><th>Client / transporteur</th><th>Date</th><th>Mode</th><th
+        class="text-right">Montant déclaré</th
+      ><th>Statut</th>{/snippet}
     {#snippet body()}
-      {#each payments as payment (payment.id)}
+      {#each visible as payment (payment.id)}
         <tr>
-          <td class="font-mono text-sm font-semibold text-ink">{payment.paymentNumber}</td>
-          <td>
-            <Badge tone={typeTone(payment.type)}>
-              {payment.type === 'RECEIVE' ? 'Encaissement' : 'Décaissement'}
-            </Badge>
-          </td>
-          <td class="text-sm text-ink-muted">{payment.partyType} · {payment.partyId}</td>
-          <td class="text-sm">{formatDate(payment.date)}</td>
-          <td class="text-sm text-ink-muted">{payment.modeOfPayment ?? '—'}</td>
-          <td class="text-right font-mono text-sm">
-            {Number(payment.totalAmount).toLocaleString('fr-CA', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </td>
-          <td>
-            <Badge tone={statusTone(payment.status)}>{labelFor(payment.status)}</Badge>
-          </td>
+          <td
+            ><a
+              class="font-mono font-medium text-accent hover:underline"
+              href={`/billing/payments/${payment.id}`}>{payment.paymentNumber}</a
+            >
+            <div class="mt-1 text-xs text-ink-muted">{paymentTypeLabel[payment.type]}</div></td
+          >
+          <td
+            ><span class="font-medium">{payment.party?.name ?? 'Partie indisponible'}</span
+            >{#if payment.reference}<div class="mt-1 text-xs text-ink-muted">
+                {payment.reference}
+              </div>{/if}</td
+          >
+          <td class="whitespace-nowrap">{formatDate(payment.date)}</td>
+          <td>{payment.modeOfPayment?.name ?? '—'}</td>
+          <td class="whitespace-nowrap text-right font-mono"
+            >{formatMoney(payment.totalAmount, payment.currency)}</td
+          >
+          <td
+            ><Badge tone={paymentStatusTone[payment.status]}
+              >{paymentStatusLabel[payment.status]}</Badge
+            ></td
+          >
         </tr>
       {:else}
-        <tr>
-          <td colspan="7">
-            <EmptyState
-              title="Aucun paiement"
-              message="Enregistrez votre première écriture de paiement pour suivre les encaissements et décaissements."
-            >
-              {#snippet children()}
-                <Button onclick={() => goto('/billing/payments/new')}>
-                  Nouvelle écriture de paiement
-                </Button>
-              {/snippet}
-            </EmptyState>
-          </td>
-        </tr>
+        <tr
+          ><td colspan="6"
+            ><EmptyState
+              title={search || statusFilter || typeFilter ? 'Aucun résultat' : 'Aucun paiement'}
+              message={search || statusFilter || typeFilter
+                ? 'Ajustez la recherche ou les filtres.'
+                : 'Créez un brouillon à partir des factures ouvertes, puis vérifiez-le avant de le comptabiliser.'}
+            /></td
+          ></tr
+        >
       {/each}
     {/snippet}
   </Table>
+  {#if totalPages > 1}
+    <nav
+      aria-label="Pagination des paiements"
+      class="mt-3 flex flex-wrap items-center justify-end gap-2"
+    >
+      <Button
+        variant="secondary"
+        disabled={currentPage <= 1}
+        onclick={() => {
+          currentPage--;
+        }}>Précédent</Button
+      >
+      <span class="text-xs text-ink-muted">Page {currentPage} / {totalPages}</span>
+      <Button
+        variant="secondary"
+        disabled={currentPage >= totalPages}
+        onclick={() => {
+          currentPage++;
+        }}>Suivant</Button
+      >
+    </nav>
+  {/if}
+  {#if totals.length}
+    <section
+      aria-label="Montants comptabilisés dans cette vue"
+      class="mt-6 border-t border-edge pt-4"
+    >
+      <h2 class="mb-3 text-sm font-medium text-ink">Allocations comptabilisées dans cette vue</h2>
+      <div class="flex flex-wrap gap-x-10 gap-y-4">
+        {#each totals as total (total.currency)}
+          <dl class="min-w-48 space-y-1 text-sm">
+            <dt class="mb-2 text-xs font-medium text-ink-muted">{total.currency}</dt>
+            <div class="flex justify-between gap-6">
+              <dt class="text-ink-muted">Encaissements</dt>
+              <dd class="font-mono">{formatMoney(total.received, total.currency)}</dd>
+            </div>
+            <div class="flex justify-between gap-6">
+              <dt class="text-ink-muted">Décaissements</dt>
+              <dd class="font-mono">{formatMoney(total.paid, total.currency)}</dd>
+            </div>
+          </dl>
+        {/each}
+      </div>
+    </section>
+  {/if}
 {/if}

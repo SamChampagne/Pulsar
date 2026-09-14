@@ -6,6 +6,11 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Factures et paiements, lot 3 (2026-09-14) — `codex/ui-billing`.** Liste lisible,
+> allocations par devise, parcours brouillon → validation, dossiers en panneaux
+> et liens facture/ordre/chargement/paiement. Projections API tenant-scopées, sans
+> modification comptable. Périmètre, tests et limites : [ui-billing.md](./plans/ui-billing.md).
+>
 > **Fiches de travail, lot 2 (2026-09-14) — `codex/ui-records`.** Opportunité,
 > commande de vente, ordre de transport et chargement : navigation de sections,
 > éditeur CRM commun, panneaux de préparation et erreurs locales. Contrat de lecture

@@ -120,9 +120,9 @@ période, devise et périmètre. Les droits côté API demeurent la source d’a
 | `/billing/freight-audit/[id]` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/billing/freight-audit` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/billing/ledger` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
-| `/billing/payments/[id]` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
-| `/billing/payments/new` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
-| `/billing/payments` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
+| `/billing/payments/[id]` | Refonte lot 3 | Dossier, liens factures, édition en panneau et validation confirmée |
+| `/billing/payments/new` | Refonte lot 3 | Partie recherchable, allocations explicites par devise, création en brouillon |
+| `/billing/payments` | Refonte lot 3 | Noms lisibles, liens, filtres et totaux comptabilisés par devise/type |
 | `/billing/reports` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/billing/subscriptions` | Adaptation directe | Fenêtre abonnement accessible |
 | `/carriers/[id]` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
@@ -169,7 +169,7 @@ période, devise et périmètre. Les droits côté API demeurent la source d’a
 | `/framework` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/fuel-tables` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/integrations` | Adaptation directe | Catalogue allégé et éditeur en panneau latéral |
-| `/invoices` | Interaction ciblée | Confirmation intégrée ; la page complète reste à revoir |
+| `/invoices` | Dossiers lot 3 | Panneaux facture/relevé, liens sources et paiement ; génération en masse encore à reprendre |
 | `/lanes` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/loads/[id]` | Lot 2 — structure et erreurs | Navigation de sections et erreurs localisées ; sous-éditeurs à approfondir |
 | `/loads` | Harmonisation | En-tête/libellés ; pas une refonte métier complète |
