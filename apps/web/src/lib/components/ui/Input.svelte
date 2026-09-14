@@ -5,6 +5,7 @@
     placeholder = '',
     disabled = false,
     name = '',
+    'aria-label': ariaLabel = undefined as string | undefined,
     required = false,
     step = undefined as string | number | undefined,
     min = undefined as string | number | undefined,
@@ -16,7 +17,11 @@
 </script>
 
 <input
-  {type} {placeholder} {disabled} name={name || undefined}
+  aria-label={ariaLabel}
+  {type}
+  {placeholder}
+  {disabled}
+  name={name || undefined}
   {required}
   step={step !== undefined ? step : type === 'number' ? 'any' : undefined}
   min={min !== undefined ? min : undefined}

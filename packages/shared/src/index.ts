@@ -71,6 +71,8 @@ export * from './procurement/procurement.workflow';
 export * from './crm/crm.workflow';
 export * from './crm/email-thread';
 export * from './crm/sequences';
+export * from './crm/pipelines';
+export * from './integrations/connections';
 export * from './crm/deal-signals';
 export * from './crm/line-items';
 export * from './crm/sales-order.workflow';

@@ -11,8 +11,7 @@ export const crmTools: ToolDef[] = [
     permission: PERMISSIONS.CRM.READ,
     module: MODULE_KEYS.CRM,
     inputSchema: z.object({ stage: z.string().optional() }),
-    run: (args, ctx) =>
-      ctx.services.crm.listDeals(ctx.principal.user.tenantId, args),
+    run: (args, ctx) => ctx.services.crm.listDeals(ctx.principal.user.tenantId, args),
   },
   {
     name: 'crm_get_company',
@@ -26,12 +25,14 @@ export const crmTools: ToolDef[] = [
   },
   {
     name: 'crm_get_deal',
-    description: 'Get a single CRM deal with its company, contacts and recent activities — for deal analysis.',
+    description:
+      'Get a single CRM deal with its company, contacts and recent activities — for deal analysis.',
     tier: RiskTier.READ,
     permission: PERMISSIONS.CRM.READ,
     module: MODULE_KEYS.CRM,
     inputSchema: z.object({ dealId: z.string().min(1) }),
-    run: (args, ctx) => ctx.services.crm.getDeal(ctx.principal.user.tenantId, args.dealId as string),
+    run: (args, ctx) =>
+      ctx.services.crm.getDeal(ctx.principal.user.tenantId, args.dealId as string),
   },
   {
     name: 'crm_list_activities',
@@ -43,8 +44,7 @@ export const crmTools: ToolDef[] = [
       dealId: z.string().optional(),
       companyId: z.string().optional(),
     }),
-    run: (args, ctx) =>
-      ctx.services.crm.listActivities(ctx.principal.user.tenantId, args),
+    run: (args, ctx) => ctx.services.crm.listActivities(ctx.principal.user.tenantId, args),
   },
   // ── CRM MUTATING ──────────────────────────────────────────────────────────
   {
@@ -69,20 +69,26 @@ export const crmTools: ToolDef[] = [
   {
     name: 'crm_advance_deal',
     description:
-      'Advance a deal to a new stage (LEAD/QUALIFIED/PROPOSAL/WON/LOST). PROPOSED — requires human approval.',
+      'Move a deal to a configured column. Read crm_get_deal first for pipeline.stages and deal.stageRevision. Prefer pipelineStageId + expectedRevision; stage is the legacy business phase. The move triggers configured column follow-ups. Governed mutation.',
     tier: RiskTier.MUTATING,
     permission: PERMISSIONS.CRM.MANAGE,
     module: MODULE_KEYS.CRM,
-    inputSchema: z.object({
-      dealId: z.string().min(1),
-      stage: z.enum(['LEAD', 'QUALIFIED', 'PROPOSAL', 'WON', 'LOST']),
-    }),
+    inputSchema: z
+      .object({
+        dealId: z.string().min(1),
+        stage: z.enum(['LEAD', 'QUALIFIED', 'PROPOSAL', 'WON', 'LOST']).optional(),
+        pipelineStageId: z.string().min(1).optional(),
+        expectedRevision: z.number().int().min(0).optional(),
+      })
+      .refine((v) => !!v.stage !== !!v.pipelineStageId, 'Choose stage OR pipelineStageId'),
     run: (args, ctx) =>
       ctx.services.crm.advanceDeal(
         ctx.principal.user.tenantId,
         args.dealId as string,
         ctx.principal.user.id,
-        args.stage as string,
+        args.stage as string | undefined,
+        args.pipelineStageId as string | undefined,
+        args.expectedRevision as number | undefined,
       ),
   },
   {
@@ -110,7 +116,8 @@ export const crmTools: ToolDef[] = [
     permission: PERMISSIONS.CRM.READ,
     module: MODULE_KEYS.CRM,
     inputSchema: z.object({ search: z.string().optional() }),
-    run: (args, ctx) => ctx.services.crm.listProducts(ctx.principal.user.tenantId, { ...args, active: 'true' }),
+    run: (args, ctx) =>
+      ctx.services.crm.listProducts(ctx.principal.user.tenantId, { ...args, active: 'true' }),
   },
   {
     name: 'crm_list_sales_orders',
@@ -119,8 +126,7 @@ export const crmTools: ToolDef[] = [
     permission: PERMISSIONS.CRM.READ,
     module: MODULE_KEYS.CRM,
     inputSchema: z.object({ status: z.string().optional() }),
-    run: (args, ctx) =>
-      ctx.services.crm.listSalesOrders(ctx.principal.user.tenantId, args),
+    run: (args, ctx) => ctx.services.crm.listSalesOrders(ctx.principal.user.tenantId, args),
   },
   // ── CRM threads (email) ─────────────────────────────────────────────────────
   {
@@ -139,7 +145,8 @@ export const crmTools: ToolDef[] = [
     permission: PERMISSIONS.CRM.READ,
     module: MODULE_KEYS.CRM,
     inputSchema: z.object({ threadId: z.string().min(1) }),
-    run: (args, ctx) => ctx.services.crm.getThread(ctx.principal.user.tenantId, args.threadId as string),
+    run: (args, ctx) =>
+      ctx.services.crm.getThread(ctx.principal.user.tenantId, args.threadId as string),
   },
   {
     name: 'crm_reply_thread',
@@ -147,7 +154,11 @@ export const crmTools: ToolDef[] = [
     tier: RiskTier.SENSITIVE,
     permission: PERMISSIONS.CRM.MANAGE,
     module: MODULE_KEYS.CRM,
-    inputSchema: z.object({ threadId: z.string().min(1), html: z.string().min(1), subject: z.string().optional() }),
+    inputSchema: z.object({
+      threadId: z.string().min(1),
+      html: z.string().min(1),
+      subject: z.string().optional(),
+    }),
     run: (args, ctx) =>
       ctx.services.crm.replyThread(
         ctx.principal.user.tenantId,
@@ -158,7 +169,8 @@ export const crmTools: ToolDef[] = [
   },
   {
     name: 'crm_link_thread',
-    description: 'Link a CRM email thread to a contact/company/deal (or create a contact). PROPOSED — requires human approval.',
+    description:
+      'Link a CRM email thread to a contact/company/deal (or create a contact). PROPOSED — requires human approval.',
     tier: RiskTier.MUTATING,
     permission: PERMISSIONS.CRM.MANAGE,
     module: MODULE_KEYS.CRM,
@@ -171,7 +183,12 @@ export const crmTools: ToolDef[] = [
     }),
     run: (args, ctx) => {
       const { threadId, ...rest } = args;
-      return ctx.services.crm.linkThread(ctx.principal.user.tenantId, threadId as string, rest, ctx.principal.user.id);
+      return ctx.services.crm.linkThread(
+        ctx.principal.user.tenantId,
+        threadId as string,
+        rest,
+        ctx.principal.user.id,
+      );
     },
   },
 ];

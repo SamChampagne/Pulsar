@@ -13,6 +13,12 @@ import { SendTestEmailDto, UpsertEmailConfigDto } from './dto/email-config.dto';
 export class EmailConfigController {
   constructor(private readonly emailConfig: EmailConfigService) {}
 
+  @Get('connection')
+  @RequirePermissions(PERMISSIONS.EMAIL.MANAGE)
+  connection(@CurrentUser() user: AuthUser) {
+    return this.emailConfig.connectionStatus(user.tenantId);
+  }
+
   @Get()
   @RequirePermissions(PERMISSIONS.EMAIL.MANAGE)
   async get(@CurrentUser() user: AuthUser) {

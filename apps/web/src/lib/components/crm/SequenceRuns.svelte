@@ -5,7 +5,11 @@
   import { formatDateTime } from '$lib/format';
   import { Button, Field, Input, Select, ErrorNotice, Skeleton } from '$lib/components/ui';
   import { PERMISSIONS, type Paginated } from '@pulsar/shared';
-  let { contactId = '', sequenceId = '' }: { contactId?: string; sequenceId?: string } = $props();
+  let {
+    contactId = '',
+    sequenceId = '',
+    dealId = '',
+  }: { contactId?: string; sequenceId?: string; dealId?: string } = $props();
   interface Step {
     id: string;
     position: number;
@@ -62,7 +66,7 @@
     error = '';
     try {
       const result = await api<Paginated<Run>>('/crm/sequences/runs', {
-        query: { contactId, sequenceId, page, pageSize: 10 },
+        query: { contactId, sequenceId, dealId, page, pageSize: 10 },
       });
       if (request !== requestId) return;
       runs = result.items;
@@ -84,16 +88,15 @@
         api<{ email: string; consent: string; source: string | null }>(
           `/crm/contacts/${id}/email-preference`,
         ),
-        api<Paginated<{ id: string; name: string; enabled: boolean; mode: string }>>(
-          '/crm/sequences',
-          { query: { pageSize: 100 } },
-        ),
+        api<
+          Paginated<{ id: string; name: string; enabled: boolean; mode: string; trigger: string }>
+        >('/crm/sequences', { query: { pageSize: 100 } }),
       ]);
       if (contactId !== id) return;
       preference = pref;
       consent = pref.consent;
       source = pref.source ?? '';
-      scenarios = list.items.filter((s) => s.enabled);
+      scenarios = list.items.filter((s) => s.enabled && s.trigger !== 'DEAL_STAGE_ENTERED');
     } catch (e) {
       if (contactId === id) error = (e as Error).message;
     }
@@ -121,6 +124,7 @@
   $effect(() => {
     contactId;
     sequenceId;
+    dealId;
     page;
     untrack(() => void load());
   });

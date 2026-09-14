@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
@@ -16,7 +16,7 @@ export class PipelineController {
 
   @Get()
   @RequirePermissions(PERMISSIONS.CRM.READ)
-  pipeline(@CurrentUser() user: AuthUser) {
-    return this.deals.pipeline(user.tenantId);
+  pipeline(@CurrentUser() user: AuthUser, @Query('pipelineId') pipelineId?: string) {
+    return this.deals.pipeline(user.tenantId, pipelineId);
   }
 }

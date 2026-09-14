@@ -1,307 +1,429 @@
 <script lang="ts">
-  import { api, ApiError } from '$lib/api/client';
+  import { untrack } from 'svelte';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { toast } from '$lib/stores/toast';
+  import { api } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
   import {
     PageHeader,
+    Button,
     Badge,
+    Field,
+    Input,
+    Select,
     Skeleton,
     ErrorNotice,
   } from '$lib/components/ui';
-
-  // ----- Types ---------------------------------------------------------------
-
-  interface Deal {
+  import {
+    CrmDealStage,
+    isDealOpen,
+    PERMISSIONS,
+    type CrmSequenceStep,
+    type Paginated,
+  } from '@pulsar/shared';
+  import PipelineEditor from '$lib/components/crm/PipelineEditor.svelte';
+  import StageAutomation from '$lib/components/crm/StageAutomation.svelte';
+  type Stage = { id: string; name: string; kind: CrmDealStage };
+  type Pipeline = { id: string; name: string; revision: number; stages: Stage[] };
+  type Deal = {
     id: string;
     title: string;
-    companyName: string | null;
-    amount: number | null;
+    companyName: string;
+    amount: string | number | null;
     currency: string;
-    ownerUserId: string | null;
-    lastActivityAt: string | null;
-    expectedCloseDate: string | null;
+    ownerName: string | null;
+    primaryContactId: string | null;
+    stageRevision: number;
     ageDays: number;
     stale: boolean;
-  }
-
-  interface Column {
-    stage: string;
+  };
+  type Column = {
+    id: string;
+    name: string;
+    stage: CrmDealStage;
     deals: Deal[];
-  }
-
-  // ----- State ---------------------------------------------------------------
-
-  let columns = $state<Column[]>([]);
-  let loading = $state(true);
-  let error = $state('');
-
-  // Track which card is being dragged: { id, from }
-  let dragging = $state<{ id: string; from: string } | null>(null);
-  // Track which column is the current drop target (for visual feedback)
-  let dragOverStage = $state<string | null>(null);
-
-  // ----- Stage metadata ──────────────────────────────────────────────────────
-
-  const STAGES: { key: string; label: string; tone: 'neutral' | 'info' | 'warn' | 'ok' | 'danger' }[] = [
-    { key: 'LEAD',      label: 'Prospect',    tone: 'neutral' },
-    { key: 'QUALIFIED', label: 'Qualifié',    tone: 'info'    },
-    { key: 'PROPOSAL',  label: 'Proposition', tone: 'warn'    },
-    { key: 'WON',       label: 'Gagné',       tone: 'ok'      },
-    { key: 'LOST',      label: 'Perdu',       tone: 'danger'  },
-  ];
-
-  // Terminal stages: cards are not draggable out of them
-  const TERMINAL = new Set(['WON', 'LOST']);
-
-  // ----- Data loading ────────────────────────────────────────────────────────
-
-  async function load() {
+    automation: {
+      id: string;
+      enabled: boolean;
+      mode: string;
+      agentId: string | null;
+      steps: CrmSequenceStep[];
+    } | null;
+  };
+  let pipelines = $state<Pipeline[]>([]),
+    selected = $state(''),
+    columns = $state<Column[]>([]);
+  let loading = $state(true),
+    busy = $state(false),
+    error = $state(''),
+    notice = $state(''),
+    configuring = $state(false),
+    actionStage = $state('');
+  let creatingPipeline = $state(false),
+    pipelineName = $state('');
+  let createStage = $state(''),
+    dealTitle = $state(''),
+    companyId = $state(''),
+    companySearch = $state('');
+  let companies = $state<{ id: string; name: string }[]>([]),
+    companyTotal = $state(0);
+  let dragging = $state<{ id: string; from: string; revision: number } | null>(null),
+    target = $state('');
+  const pipeline = $derived(pipelines.find((p) => p.id === selected));
+  const activeStage = $derived(columns.find((c) => c.id === actionStage));
+  const manage = $derived(!!$auth?.user.permissions.includes(PERMISSIONS.CRM.MANAGE));
+  const count = $derived(columns.reduce((sum, c) => sum + c.deals.length, 0));
+  let requestId = 0;
+  async function load(id?: string) {
+    const request = ++requestId;
     loading = true;
     error = '';
     try {
-      // API returns Array<{ stage, deals[] }>; coerce Decimal amounts (string over wire)
-      const raw = await api<Array<{ stage: string; deals: Array<Omit<Deal, 'amount'> & { amount: string | number | null }> }>>(
-        '/crm/pipeline',
-      );
-      // Preserve server ordering; coerce amount to number
-      columns = raw.map((col) => ({
-        stage: col.stage,
-        deals: col.deals.map((d) => ({
-          ...d,
-          amount: d.amount == null ? null : Number(d.amount),
-        })),
-      }));
+      const list = await api<Pipeline[]>('/crm/pipelines');
+      const chosen = id || list[0]?.id;
+      const board = await api<Column[]>('/crm/pipeline', { query: { pipelineId: chosen } });
+      if (request !== requestId) return;
+      pipelines = list;
+      selected = chosen;
+      columns = board;
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Impossible de charger le pipeline';
-      toast.error(error);
+      if (request === requestId) error = (e as Error).message;
     } finally {
-      loading = false;
+      if (request === requestId) loading = false;
     }
   }
-
   $effect(() => {
-    void load();
+    const id = page.url.searchParams.get('pipelineId') ?? '';
+    untrack(() => void load(id));
   });
-
-  // ----- Drag & drop ─────────────────────────────────────────────────────────
-
-  function onDragStart(e: DragEvent, deal: Deal, fromStage: string) {
-    if (!e.dataTransfer) return;
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('application/json', JSON.stringify({ id: deal.id, from: fromStage }));
-    dragging = { id: deal.id, from: fromStage };
-  }
-
-  function onDragEnd() {
-    dragging = null;
-    dragOverStage = null;
-  }
-
-  function onDragOver(e: DragEvent, toStage: string) {
-    if (!dragging) return;
-    if (dragging.from === toStage) return; // same column — no visual hint
-    e.preventDefault();
-    dragOverStage = toStage;
-  }
-
-  function onDragLeave(e: DragEvent) {
-    // Only clear when leaving the column entirely (not a child element)
-    const related = e.relatedTarget as Node | null;
-    const current = e.currentTarget as Node;
-    if (!related || !current.contains(related)) {
-      dragOverStage = null;
-    }
-  }
-
-  async function onDrop(e: DragEvent, toStage: string) {
-    e.preventDefault();
-    dragOverStage = null;
-    dragging = null;
-
-    let payload: { id: string; from: string };
-    try {
-      payload = JSON.parse(e.dataTransfer?.getData('application/json') ?? '');
-    } catch {
-      return;
-    }
-    if (!payload?.id || payload.from === toStage) return;
-
-    // Find source column + deal
-    const srcCol = columns.find((c) => c.stage === payload.from);
-    const dstCol = columns.find((c) => c.stage === toStage);
-    if (!srcCol || !dstCol) return;
-    const card = srcCol.deals.find((d) => d.id === payload.id);
-    if (!card) return;
-
-    // Snapshot for revert
-    const snapshot = columns.map((c) => ({ ...c, deals: [...c.deals] }));
-
-    // Optimistic move: remove from source, prepend to destination
-    columns = columns.map((c) => {
-      if (c.stage === payload.from) return { ...c, deals: c.deals.filter((d) => d.id !== payload.id) };
-      if (c.stage === toStage)      return { ...c, deals: [card, ...c.deals] };
-      return c;
+  async function choose(id: string) {
+    configuring = false;
+    actionStage = '';
+    createStage = '';
+    notice = '';
+    await goto('/crm/pipeline?pipelineId=' + encodeURIComponent(id), {
+      noScroll: true,
+      keepFocus: true,
     });
-
+  }
+  async function createPipeline() {
+    busy = true;
+    error = '';
     try {
-      await api(`/crm/deals/${payload.id}/advance`, {
+      const item = await api<Pipeline>('/crm/pipelines', {
         method: 'POST',
-        body: { stage: toStage },
+        body: { name: pipelineName },
       });
-      error = '';
+      creatingPipeline = false;
+      pipelineName = '';
+      await choose(item.id);
     } catch (e) {
-      // Revert to pre-optimistic state on error (e.g. terminal stage 400)
-      columns = snapshot;
-      const msg = e instanceof ApiError ? e.message : 'Transition impossible';
-      error = msg;
-      toast.error(msg);
+      error = (e as Error).message;
+    } finally {
+      busy = false;
     }
   }
-
-  // ----- Formatting helpers ──────────────────────────────────────────────────
-
-  function formatAmount(amount: number | null, currency: string): string {
+  async function moveDeal(deal: Deal, from: string, to: string) {
+    if (busy || from === to) return;
+    busy = true;
+    error = '';
+    dragging = null;
+    target = '';
+    try {
+      await api('/crm/deals/' + deal.id + '/advance', {
+        method: 'POST',
+        body: { pipelineStageId: to, expectedRevision: deal.stageRevision },
+      });
+      notice = 'Opportunité déplacée. Les relances de l’ancienne étape sont arrêtées.';
+      await load(selected);
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      busy = false;
+    }
+  }
+  function drop(event: DragEvent, column: Column) {
+    event.preventDefault();
+    if (!dragging) return;
+    const source = columns.find((c) => c.id === dragging?.from);
+    const deal = source?.deals.find((d) => d.id === dragging?.id);
+    if (source && deal) void moveDeal(deal, source.id, column.id);
+  }
+  function totals(column: Column) {
+    const sums = new Map<string, number>();
+    for (const deal of column.deals)
+      if (deal.amount != null)
+        sums.set(deal.currency, (sums.get(deal.currency) ?? 0) + Number(deal.amount));
+    return [...sums].map(([currency, amount]) => money(amount, currency)).join(' · ');
+  }
+  function money(amount: string | number | null, currency: string) {
     if (amount == null) return '—';
-    return new Intl.NumberFormat('fr-CA', {
-      style: 'currency',
-      currency: currency || 'CAD',
-      maximumFractionDigits: 0,
-    }).format(amount);
+    try {
+      return new Intl.NumberFormat('fr-CA', {
+        style: 'currency',
+        currency,
+        maximumFractionDigits: 0,
+      }).format(Number(amount));
+    } catch {
+      return String(amount) + ' ' + currency;
+    }
   }
-
-  function colTotal(col: Column): number {
-    return col.deals.reduce((sum, d) => sum + (d.amount ?? 0), 0);
+  async function findCompanies() {
+    try {
+      const result = await api<Paginated<{ id: string; name: string }>>('/crm/companies', {
+        query: { search: companySearch, pageSize: 100 },
+      });
+      companies = result.items;
+      companyTotal = result.total;
+    } catch (e) {
+      error = (e as Error).message;
+    }
   }
-
-  /** Currency used for the column total: first non-null deal currency, or CAD */
-  function colCurrency(col: Column): string {
-    return col.deals.find((d) => d.currency)?.currency ?? 'CAD';
+  async function quickCreate() {
+    busy = true;
+    error = '';
+    try {
+      const deal = await api<{ id: string }>('/crm/deals', {
+        method: 'POST',
+        body: { title: dealTitle, companyId, pipelineId: selected, pipelineStageId: createStage },
+      });
+      await goto('/crm/deals/' + deal.id);
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      busy = false;
+    }
   }
 </script>
 
+<svelte:head><title>Pipeline CRM · Pulsar</title></svelte:head>
 <PageHeader
   title="Pipeline CRM"
-  subtitle="Glissez les opportunités entre les colonnes pour faire avancer les affaires."
-/>
-
-<ErrorNotice message={error} onretry={load} />
-
-{#if loading}
-  <div class="flex gap-4 overflow-x-auto pb-4">
-    {#each STAGES as s (s.key)}
-      <div class="w-64 shrink-0 space-y-3">
-        <Skeleton />
-        <Skeleton />
-        <Skeleton />
-      </div>
-    {/each}
+  eyebrow="Ventes"
+  subtitle="Faites avancer les opportunités. Chaque colonne porte ses propres actions de suivi."
+>
+  {#snippet actions()}<Button href="/connect" variant="secondary">Connexions</Button
+    >{#if manage}<Button
+        variant="secondary"
+        onclick={() => {
+          configuring = !configuring;
+          actionStage = '';
+        }}>Configurer les colonnes</Button
+      ><Button
+        onclick={() => {
+          creatingPipeline = !creatingPipeline;
+        }}>Nouveau pipeline</Button
+      >{/if}{/snippet}
+</PageHeader>
+<ErrorNotice message={error} />
+{#if notice}<p role="status" class="mb-4 rounded-md bg-surface-muted p-3 text-sm">{notice}</p>{/if}
+<div class="mb-5 flex flex-wrap items-end justify-between gap-3">
+  <div class="w-full max-w-xs">
+    <Field label="Pipeline actif"
+      ><Select
+        value={selected}
+        onchange={(e) => void choose(e.currentTarget.value)}
+        disabled={loading || busy}
+        >{#each pipelines as p}<option value={p.id}>{p.name}</option>{/each}</Select
+      ></Field
+    >
   </div>
-{:else}
-  <!-- Kanban board — one column per stage, horizontal scroll on small screens -->
-  <div class="flex gap-4 overflow-x-auto pb-4 items-start">
-    {#each STAGES as stage (stage.key)}
-      {@const col = columns.find((c) => c.stage === stage.key) ?? { stage: stage.key, deals: [] }}
-      {@const total = colTotal(col)}
-      {@const currency = colCurrency(col)}
-      {@const isTarget = dragOverStage === stage.key}
-      {@const isTerminal = TERMINAL.has(stage.key)}
-
-      <!-- Column drop zone -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class={`flex w-64 shrink-0 flex-col rounded-xl border transition-colors ${
-          isTarget
-            ? 'border-accent bg-accent-soft/30'
-            : 'border-edge bg-surface-muted/40'
-        }`}
-        ondragover={(e) => onDragOver(e, stage.key)}
-        ondragleave={onDragLeave}
-        ondrop={(e) => onDrop(e, stage.key)}
+  <div class="flex items-center gap-4 text-sm text-ink-muted">
+    <span class="tabular-nums">{count} opportunités · {columns.length} colonnes</span><Button
+      variant="ghost"
+      disabled={loading || busy}
+      onclick={() => void load(selected)}>Actualiser</Button
+    >
+  </div>
+</div>
+{#if creatingPipeline}
+  <form
+    class="mb-5 flex flex-wrap items-end gap-3 rounded-lg border border-edge bg-surface p-4"
+    onsubmit={(e) => {
+      e.preventDefault();
+      void createPipeline();
+    }}
+  >
+    <Field label="Nom du nouveau pipeline"
+      ><Input
+        bind:value={pipelineName}
+        required
+        maxlength={100}
+        placeholder="Ventes services, partenariats…"
+      /></Field
+    ><Button type="submit" disabled={busy}>Créer le pipeline</Button><Button
+      variant="ghost"
+      onclick={() => {
+        creatingPipeline = false;
+      }}>Annuler</Button
+    >
+  </form>
+{/if}
+{#if configuring && pipeline && manage}{#key pipeline.id + ':' + pipeline.revision}<PipelineEditor
+      {pipeline}
+      onclose={() => (configuring = false)}
+      onsaved={() => {
+        configuring = false;
+        notice = 'Pipeline enregistré';
+        void load(selected);
+      }}
+    />{/key}{/if}
+{#if activeStage}{#key activeStage.id + JSON.stringify(activeStage.automation)}<StageAutomation
+      stage={activeStage}
+      onclose={() => (actionStage = '')}
+      onsaved={() => {
+        notice = 'Actions de la colonne enregistrées';
+        void load(selected);
+      }}
+    />{/key}{/if}
+{#if createStage}
+  <form
+    class="mb-5 space-y-3 rounded-lg border border-edge bg-surface p-4"
+    onsubmit={(e) => {
+      e.preventDefault();
+      void quickCreate();
+    }}
+  >
+    <h2 class="font-semibold">
+      Nouvelle opportunité · {columns.find((c) => c.id === createStage)?.name}
+    </h2>
+    <div class="grid gap-3 md:grid-cols-2">
+      <Field label="Titre de l’opportunité"><Input bind:value={dealTitle} required /></Field><Field
+        label="Entreprise CRM"
+        ><Select bind:value={companyId} required
+          ><option value="">Choisir une entreprise</option>{#each companies as company}<option
+              value={company.id}>{company.name}</option
+            >{/each}</Select
+        ></Field
       >
-        <!-- Column header -->
-        <div class="flex items-center justify-between gap-2 border-b border-edge px-3 py-2.5">
-          <div class="flex items-center gap-2">
-            <Badge tone={stage.tone}>{stage.label}</Badge>
-            <span class="text-xs font-semibold text-ink-muted">{col.deals.length}</span>
-          </div>
-          {#if total > 0}
-            <span class="text-[11px] font-medium text-ink-faint">{formatAmount(total, currency)}</span>
-          {/if}
-        </div>
-
-        <!-- Deal cards -->
-        <div class="flex min-h-[4rem] flex-col gap-2 p-2">
-          {#if col.deals.length === 0}
-            <div
-              class={`flex-1 rounded-lg border border-dashed px-3 py-6 text-center text-xs text-ink-faint ${
-                isTarget ? 'border-accent' : 'border-edge'
-              }`}
-            >
-              {isTarget ? 'Déposer ici' : 'Aucune affaire'}
-            </div>
-          {:else}
-            {#each col.deals as deal (deal.id)}
-              {@const isDragged = dragging?.id === deal.id}
-              <div
-                class={`group relative rounded-lg border bg-surface shadow-sm transition-all ${
-                  isTerminal
-                    ? 'opacity-90'
-                    : 'hover:shadow-md'
-                } ${isDragged ? 'opacity-40 ring-2 ring-accent' : ''}`}
+    </div>
+    <div class="flex flex-wrap items-end gap-2">
+      <Field label="Rechercher une entreprise"><Input bind:value={companySearch} /></Field><Button
+        variant="secondary"
+        onclick={findCompanies}>Rechercher</Button
+      >{#if companyTotal > 100}<span class="text-xs text-ink-muted"
+          >100 sur {companyTotal} : affinez la recherche.</span
+        >{/if}
+    </div>
+    <p class="text-sm text-ink-muted">
+      Vous choisirez le contact principal sur la fiche. Aucun suivi ne démarre sans destinataire à
+      l’entrée dans une colonne.
+    </p>
+    <Button type="submit" disabled={busy}>Créer l’opportunité</Button><Button
+      variant="ghost"
+      onclick={() => {
+        createStage = '';
+      }}>Annuler</Button
+    >
+  </form>
+{/if}
+{#if loading && !columns.length}<Skeleton rows={6} />{:else}
+  <div class="max-w-full overflow-x-auto pb-4" aria-label="Tableau des opportunités">
+    <div class="flex w-max min-w-full items-start gap-3">
+      {#each columns as col (col.id)}
+        {@const open = isDealOpen(col.stage)}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <section
+          aria-label={'Colonne ' + col.name}
+          class="flex w-[18rem] shrink-0 flex-col rounded-lg border border-edge bg-surface-muted/50"
+          class:ring-2={target === col.id}
+          class:ring-accent={target === col.id}
+          ondragover={(e) => {
+            if (dragging && dragging.from !== col.id && !busy) {
+              e.preventDefault();
+              target = col.id;
+            }
+          }}
+          ondragleave={(e) => {
+            if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) target = '';
+          }}
+          ondrop={(e) => drop(e, col)}
+        >
+          <header class="border-b border-edge p-3">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="truncate font-semibold">{col.name}</h2>
+              <Badge tone={col.stage === 'WON' ? 'ok' : col.stage === 'LOST' ? 'danger' : 'neutral'}
+                >{col.deals.length}</Badge
               >
-                <!-- Draggable + clickable card body -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <div
-                  draggable={!isTerminal}
-                  ondragstart={(e) => onDragStart(e, deal, stage.key)}
-                  ondragend={onDragEnd}
-                  onclick={() => void goto(`/crm/deals/${deal.id}`)}
-                  onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') void goto(`/crm/deals/${deal.id}`); }}
-                  role="button"
-                  tabindex="0"
-                  class={`px-3 pt-2.5 pb-2 ${
-                    isTerminal ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
-                  }`}
-                >
-                  <!-- Title row -->
-                  <div class="truncate pr-6 text-sm font-semibold text-ink">{deal.title}</div>
-
-                  <!-- Company -->
-                  {#if deal.companyName}
-                    <div class="mt-0.5 truncate text-xs text-ink-muted">{deal.companyName}</div>
-                  {/if}
-
-                  <!-- Amount + age row -->
-                  <div class="mt-1.5 flex items-center justify-between gap-2">
-                    <span class={`text-xs font-semibold ${deal.amount != null ? 'text-accent' : 'text-ink-faint'}`}>
-                      {formatAmount(deal.amount, deal.currency)}
-                    </span>
-                    <div class="flex items-center gap-1">
-                      {#if deal.stale}
-                        <span class="text-[10px] font-semibold text-warn" title="Opportunité sans activité récente">⚠ Inactif</span>
-                      {/if}
-                      <span class="text-[10px] text-ink-faint">{deal.ageDays}j</span>
-                    </div>
-                  </div>
-
-                  <!-- Owner row -->
-                  <div class="mt-1 text-[10px] text-ink-faint truncate">
-                    {deal.ownerUserId ?? '—'}
-                  </div>
-                </div>
-
-                <!-- 🧠 Coach button — stop propagation so card click doesn't also fire -->
+            </div>
+            <p class="mt-1 min-h-4 text-xs tabular-nums text-ink-muted">
+              {totals(col) || 'Aucun montant'}
+            </p>
+            <button
+              class="mt-3 w-full rounded-md border border-edge bg-surface px-2 py-2 text-left text-xs transition hover:border-accent focus-visible:outline-2 focus-visible:outline-accent"
+              aria-label={'Automatisations de ' + col.name}
+              aria-expanded={actionStage === col.id}
+              onclick={() => {
+                actionStage = actionStage === col.id ? '' : col.id;
+                configuring = false;
+              }}
+            >
+              {#if col.automation?.enabled}{col.automation.steps.length} action(s) · {col.automation
+                  .mode === 'SIMULATION'
+                  ? 'Simulation'
+                  : 'Gouverné'}{:else if col.automation}Actions désactivées{:else}Configurer les
+                actions de cette étape{/if}
+            </button>
+          </header>
+          <div class="min-h-24 space-y-2 p-2">
+            {#each col.deals as deal (deal.id)}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <article
+                draggable={manage && open && !busy}
+                ondragstart={(e) => {
+                  dragging = { id: deal.id, from: col.id, revision: deal.stageRevision };
+                  e.dataTransfer?.setData('text/plain', deal.id);
+                }}
+                ondragend={() => {
+                  dragging = null;
+                  target = '';
+                }}
+                class="rounded-md border border-edge bg-surface p-3"
+                class:opacity-40={dragging?.id === deal.id}
+              >
                 <a
-                  href={`/crm/coach?dealId=${deal.id}`}
-                  class="absolute right-2 top-2 rounded p-0.5 text-sm opacity-0 transition-opacity group-hover:opacity-100 hover:bg-surface-muted"
-                  title="Coach IA"
-                  onclick={(e) => e.stopPropagation()}
-                >🧠</a>
-              </div>
-            {/each}
-          {/if}
-        </div>
-      </div>
-    {/each}
+                  href={'/crm/deals/' + deal.id}
+                  class="block font-semibold text-ink hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+                  >{deal.title}</a
+                >
+                <p class="mt-1 truncate text-xs text-ink-muted">{deal.companyName}</p>
+                <div class="mt-3 flex justify-between gap-2 text-xs">
+                  <span class="font-medium tabular-nums">{money(deal.amount, deal.currency)}</span
+                  ><span class="text-ink-muted"
+                    >{deal.ageDays} j {deal.stale ? '· Sans activité' : ''}</span
+                  >
+                </div>
+                <p class="mt-2 text-xs text-ink-muted">
+                  {deal.ownerName || 'Non attribué'}{!deal.primaryContactId
+                    ? ' · Contact à choisir'
+                    : ''}
+                </p>
+                {#if manage && open}<div class="mt-3">
+                    <Select
+                      aria-label={'Déplacer ' + deal.title}
+                      value={col.id}
+                      disabled={busy}
+                      onchange={(e) => void moveDeal(deal, col.id, e.currentTarget.value)}
+                      >{#each columns as destination}<option value={destination.id}
+                          >{destination.name}</option
+                        >{/each}</Select
+                    >
+                  </div>{/if}
+              </article>
+            {:else}<p class="py-6 text-center text-xs text-ink-muted">Aucune opportunité</p>{/each}
+            {#if manage && open}<Button
+                variant="ghost"
+                class="w-full"
+                onclick={() => {
+                  createStage = col.id;
+                  dealTitle = '';
+                  companyId = '';
+                  void findCompanies();
+                }}>Ajouter une opportunité</Button
+              >{/if}
+          </div>
+        </section>
+      {/each}
+    </div>
   </div>
 {/if}

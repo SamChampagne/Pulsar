@@ -28,6 +28,7 @@ export class SaveSequenceDto {
   @IsBoolean() enabled!: boolean;
   @IsEnum(CrmSequenceMode) mode!: CrmSequenceMode;
   @IsEnum(CrmSequenceTrigger) trigger!: CrmSequenceTrigger;
+  @IsOptional() @IsString() @MinLength(1) pipelineStageId?: string;
   @IsOptional() @IsString() @MinLength(1) agentId?: string;
   @IsArray()
   @ArrayMinSize(1)
@@ -42,6 +43,7 @@ export class EnrollSequenceDto {
 export class SequenceRunsQueryDto extends ListQueryDto {
   @IsOptional() @IsString() contactId?: string;
   @IsOptional() @IsString() sequenceId?: string;
+  @IsOptional() @IsString() dealId?: string;
 }
 export class EmailPreferenceDto {
   @IsEnum(CommunicationConsent) consent!: CommunicationConsent;

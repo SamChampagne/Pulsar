@@ -462,7 +462,7 @@ export function navCatalogue(): NavDomain[] {
           links: [
             { href: '/crm/lists', label: 'Listes', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/campaigns', label: 'Campagnes', perm: PERMISSIONS.CRM.READ },
-            { href: '/crm/sequences', label: 'Automatisations', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/sequences', label: 'Séquences de contacts', perm: PERMISSIONS.CRM.READ },
           ],
         },
         {
@@ -553,7 +553,7 @@ export function navCatalogue(): NavDomain[] {
     // ── Connect / Developer Platform ───────────────────────────────────────
     {
       key: 'connect',
-      label: 'Connect',
+      label: 'Connexions',
       icon: Cable,
       home: '/connect',
       prefixes: ['/connect', '/integrations'],
@@ -561,10 +561,15 @@ export function navCatalogue(): NavDomain[] {
       sections: [
         {
           links: [
-            { href: '/connect', label: 'Connect home' },
+            { href: '/connect', label: 'Toutes les connexions' },
             { href: '/connect/inbox', label: 'Inbox', perm: PERMISSIONS.CORE.CONNECT_READ },
             { href: '/connect/imports', label: 'Imports', perm: PERMISSIONS.CORE.CONNECT_READ },
-            { href: '/integrations', label: 'Connecteurs' },
+            { href: '/integrations', label: 'Studio avancé' },
+            {
+              href: '/connect/email',
+              label: 'Courriel SMTP / IMAP',
+              perm: PERMISSIONS.EMAIL.MANAGE,
+            },
             { href: '/settings/api-keys', label: 'Clés API' },
             { href: '/agents', label: 'MCP / agents', perm: PERMISSIONS.CORE.AGENTS_READ },
           ],

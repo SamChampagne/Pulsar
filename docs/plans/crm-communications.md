@@ -3,12 +3,17 @@
 Branche : `codex/crm-communications`. Lot 1 : courriel ; SMS et connecteurs entrants
 supplémentaires restent au lot suivant. Aucun envoi externe activé par le développement.
 
+**Mise à jour :** le lot [pipelines et connexions](./crm-pipelines-connections.md) ajoute
+les déclenchements par colonne et le suivi depuis les opportunités. Ce document décrit
+le socle initial ; sa qualification chiffrée reste celle du premier lot.
+
 ## Contrat
 
 - Scénarios désactivés à la création, mode simulation par défaut. Déclenchement manuel
   depuis un contact ou à la création d'un nouveau contact (aucun rattrapage historique).
 - De 1 à 5 étapes en texte brut, délais relatifs à la réussite de l'étape précédente.
-  Contenu et destinataire figés à l'inscription ; une seule inscription par scénario/contact.
+  Contenu et destinataire figés à l'inscription ; une seule inscription manuelle par
+  scénario/contact (les visites de colonnes ont désormais leur propre clé).
 - En mode gouverné, un agent existant doit être choisi explicitement. Le nouvel outil
   sensible passe par le registre et `handleMutatingTool` : PROPOSE/AUTO/DENY selon ses
   policies/caps. Aucun appel LLM nécessaire, aucune permission ajoutée automatiquement.
@@ -44,7 +49,7 @@ Accès depuis CRM et fiche contact ; historique + prochaines étapes au même en
 
 ## Utilisation
 
-1. CRM → Automatisations → Nouveau scénario. Conserver Simulation, personnaliser les
+1. CRM → Séquences de contacts → Nouveau scénario. Conserver Simulation, personnaliser les
    étapes (texte brut, `{{name}}` / `{{company}}`), activer puis enregistrer.
 2. CRM → Contacts → ouvrir un contact avec courriel valide → Suivis automatiques →
    choisir le scénario → Démarrer. Le worker passe chaque minute ; Actualiser les suivis
@@ -81,7 +86,7 @@ Les anciennes campagnes conservent leur enum SENT pour compatibilité, libellé 
 
 ## Limites de ce premier lot
 
-Pas de SMS réel, pipeline/devis/rendez-vous comme déclencheurs, segmentation avancée,
+Pas de SMS réel, devis/rendez-vous comme déclencheurs, segmentation avancée,
 horaires locaux d'envoi, limites budgétaires SMS ni preuve de livraison SMTP. Ne pas
 présenter ces possibilités comme livrées. Les futures règles devront réutiliser cette
 file et cette gouvernance. Le raccordement SMTP réel sera qualifié séparément.

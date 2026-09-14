@@ -6,7 +6,14 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
-> **Lot CRM communications (2026-09-14) — `codex/crm-communications`.**
+> **Lot CRM pipelines et connexions (2026-09-14) — `codex/crm-communications`.**
+> Pipelines et colonnes configurables, actions courriel à l'entrée d'une colonne,
+> contact principal explicite, arrêt sur sortie/changement de destinataire, outils agents
+> adaptés aux colonnes et page Connexions centralisée. SMTP/IA existants réutilisés ;
+> SMS/Graph/Meta et multi-comptes non livrés. Migration additive appliquée en local.
+> Contrat et qualification : [crm-pipelines-connections.md](./plans/crm-pipelines-connections.md).
+>
+> **Lot précédent CRM communications (2026-09-14) — même branche.**
 > Scénarios courriel configurables, simulation, gouvernance d'agent sans LLM obligatoire,
 > consentement/désabonnement, pause/reprise/arrêt, historique depuis les contacts. Migration
 > additive appliquée localement ; SMS et fournisseurs réels non qualifiés. Périmètre,

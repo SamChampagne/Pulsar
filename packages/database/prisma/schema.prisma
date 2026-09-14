@@ -2879,6 +2879,10 @@ model CrmDeal {
   title               String
   companyId           String
   stage               CrmDealStage @default(LEAD)
+  pipelineId          String?
+  pipelineStageId     String?
+  primaryContactId    String?
+  stageRevision       Int          @default(0)
   amount              Decimal?
   currency            String       @default("CAD")
   ownerUserId         String?
@@ -2890,10 +2894,13 @@ model CrmDeal {
   updatedAt           DateTime     @updatedAt
   tenant              Tenant       @relation(fields: [tenantId], references: [id])
   company             CrmCompany   @relation(fields: [companyId], references: [id])
+  pipeline            CrmPipeline? @relation(fields: [pipelineId], references: [id])
+  pipelineStage       CrmPipelineStage? @relation(fields: [pipelineStageId], references: [id])
   lineItems           CrmDealLineItem[]
 
   @@index([tenantId])
   @@index([tenantId, stage])
+  @@index([tenantId, pipelineId, pipelineStageId])
   @@index([tenantId, lastActivityAt])
   @@map("crm_deals")
 }
@@ -3188,6 +3195,57 @@ model EmailMessage {
   @@map("email_messages")
 }
 
+model CrmPipeline {
+  id String @id @default(cuid())
+  tenantId String
+  key String
+  name String
+  revision Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  stages CrmPipelineStage[]
+  deals CrmDeal[]
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("crm_pipelines")
+}
+
+/// Labels and ordering are configurable; kind preserves CRM business invariants.
+model CrmPipelineStage {
+  id String @id @default(cuid())
+  tenantId String
+  pipelineId String
+  name String
+  kind CrmDealStage
+  position Int
+  archived Boolean @default(false)
+  pipeline CrmPipeline @relation(fields: [pipelineId], references: [id], onDelete: Restrict)
+  deals CrmDeal[]
+  @@index([tenantId, pipelineId, archived, position])
+  @@map("crm_pipeline_stages")
+}
+
+/// Durable stage-entry outbox. Created in the same transaction as the deal move.
+model CrmStageEntry {
+  id String @id @default(cuid())
+  tenantId String
+  dealId String
+  stageId String
+  revision Int
+  contactId String?
+  sequenceId String?
+  sequenceSnapshot Json?
+  userId String
+  createdAt DateTime @default(now())
+  processedAt DateTime?
+  reason String?
+  runId String?
+  @@unique([tenantId, dealId, revision])
+  @@index([processedAt, createdAt])
+  @@index([tenantId, dealId, createdAt])
+  @@map("crm_stage_entries")
+}
+
 enum CrmSequenceMode {
   SIMULATION
   GOVERNED
@@ -3195,6 +3253,7 @@ enum CrmSequenceMode {
 enum CrmSequenceTrigger {
   MANUAL
   CONTACT_CREATED
+  DEAL_STAGE_ENTERED
 }
 enum CrmSequenceRunStatus {
   ACTIVE
@@ -3227,6 +3286,7 @@ model CrmSequence {
   mode CrmSequenceMode @default(SIMULATION)
   trigger CrmSequenceTrigger @default(MANUAL)
   agentId String?
+  pipelineStageId String? @unique
   steps Json
   createdById String
   createdAt DateTime @default(now())
@@ -3241,6 +3301,10 @@ model CrmSequenceRun {
   tenantId String
   sequenceId String
   contactId String
+  enrollmentKey String @default("manual")
+  dealId String?
+  pipelineStageId String?
+  stageRevision Int?
   email String
   mode CrmSequenceMode
   agentId String?
@@ -3251,7 +3315,8 @@ model CrmSequenceRun {
   updatedAt DateTime @updatedAt
   sequence CrmSequence @relation(fields: [sequenceId], references: [id], onDelete: Restrict)
   steps CrmSequenceStepRun[]
-  @@unique([tenantId, sequenceId, contactId])
+  @@unique([tenantId, sequenceId, contactId, enrollmentKey])
+  @@index([tenantId, dealId])
   @@index([tenantId, status])
   @@index([tenantId, contactId])
   @@map("crm_sequence_runs")

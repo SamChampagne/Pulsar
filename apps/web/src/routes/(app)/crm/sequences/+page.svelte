@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { goto } from '$app/navigation';
   import {
     PERMISSIONS,
     CRM_SEQUENCE_PRESETS,
@@ -66,6 +67,10 @@
     }
   }
   function select(s?: Scenario) {
+    if (s?.trigger === CrmSequenceTrigger.DEAL_STAGE_ENTERED) {
+      void goto('/crm/pipeline');
+      return;
+    }
     editing = true;
     notice = '';
     error = '';
@@ -119,11 +124,13 @@
 
 <svelte:head><title>Automatisations CRM · Pulsar</title></svelte:head>
 <PageHeader
-  title="Automatisations CRM"
+  title="Séquences de contacts"
   eyebrow="Communications"
-  subtitle="Définissez le suivi, vérifiez son contenu et gardez la main sur chaque envoi."
+  subtitle="Suivis hors pipeline, à démarrer depuis un contact. Les actions par colonne se configurent dans le pipeline CRM."
 >
-  {#snippet actions()}<Button href="/crm/contacts" variant="secondary">Ouvrir les contacts</Button
+  {#snippet actions()}<Button href="/crm/pipeline">Automatisations du pipeline</Button><Button
+      href="/crm/contacts"
+      variant="secondary">Ouvrir les contacts</Button
     >{#if canEdit}<Button onclick={() => select()}>Nouveau scénario</Button>{/if}{/snippet}
 </PageHeader>
 {#if error}<ErrorNotice message={error} />{/if}

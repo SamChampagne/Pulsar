@@ -6,6 +6,7 @@ export enum CrmSequenceMode {
 export enum CrmSequenceTrigger {
   MANUAL = 'MANUAL',
   CONTACT_CREATED = 'CONTACT_CREATED',
+  DEAL_STAGE_ENTERED = 'DEAL_STAGE_ENTERED',
 }
 export enum CrmSequenceRunStatus {
   ACTIVE = 'ACTIVE',

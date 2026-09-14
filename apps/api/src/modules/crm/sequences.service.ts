@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -15,6 +16,7 @@ import {
   AuditAction,
   CommunicationConsent,
   CrmSequenceMode,
+  CrmSequenceTrigger,
   CrmSequenceRunStatus,
   CrmSequenceStepStatus,
   MODULE_KEYS,
@@ -125,6 +127,26 @@ export class SequencesService implements OnModuleInit {
 
   async save(tenantId: string, userId: string, dto: SaveSequenceDto, id?: string) {
     if (!dto.name.trim()) throw new BadRequestException('Le nom du scénario est requis');
+    if (dto.trigger === CrmSequenceTrigger.DEAL_STAGE_ENTERED) {
+      if (
+        !dto.pipelineStageId ||
+        !(await this.prisma.crmPipelineStage.findFirst({
+          where: { id: dto.pipelineStageId, tenantId, archived: false },
+        }))
+      )
+        throw new BadRequestException('Choisissez une colonne active de ce tenant');
+      const linked = await this.prisma.crmSequence.findFirst({
+        where: { tenantId, pipelineStageId: dto.pipelineStageId },
+      });
+      if (linked && linked.id !== id)
+        throw new BadRequestException('Cette colonne possède déjà une automatisation');
+    } else if (dto.pipelineStageId)
+      throw new BadRequestException('Une colonne exige le déclencheur entrée dans une étape');
+    if (id) {
+      const existing = await this.get(tenantId, id);
+      if (existing.pipelineStageId !== (dto.pipelineStageId ?? null))
+        throw new BadRequestException('Le rattachement à une colonne ne peut pas être modifié');
+    }
     for (const step of dto.steps) {
       try {
         renderSequenceText(step.subject, { name: '', company: '' });
@@ -145,6 +167,7 @@ export class SequencesService implements OnModuleInit {
       mode: dto.mode,
       trigger: dto.trigger,
       agentId: dto.agentId ?? null,
+      pipelineStageId: dto.pipelineStageId ?? null,
       steps: dto.steps as unknown as Prisma.InputJsonValue,
     };
     let item;
@@ -153,9 +176,15 @@ export class SequencesService implements OnModuleInit {
       if (!updated.count) throw new NotFoundException('Scénario introuvable');
       item = await this.get(tenantId, id);
     } else {
-      item = await this.prisma.crmSequence.create({
-        data: { ...data, tenantId, createdById: userId },
-      });
+      item = await this.prisma.crmSequence
+        .create({ data: { ...data, tenantId, createdById: userId } })
+        .catch((error: unknown) => {
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
+            throw new ConflictException(
+              'Cette colonne possède déjà une automatisation. Rechargez le pipeline.',
+            );
+          throw error;
+        });
     }
     await this.audit.log({
       tenantId,
@@ -259,12 +288,37 @@ export class SequencesService implements OnModuleInit {
       await this.transition(tenantId, run.id, undefined, CrmSequenceRunStatus.STOPPED, reason);
   }
 
-  async enroll(tenantId: string, sequenceId: string, contactId: string, userId: string) {
+  async enroll(
+    tenantId: string,
+    sequenceId: string,
+    contactId: string,
+    userId: string,
+    entryId?: string,
+  ) {
     await this.assertEnabled(tenantId);
-    const [sequence, contact] = await Promise.all([
+    const [currentSequence, contact] = await Promise.all([
       this.get(tenantId, sequenceId),
       this.contact(tenantId, contactId),
     ]);
+    const entry = entryId
+      ? await this.prisma.crmStageEntry.findFirst({
+          where: { id: entryId, tenantId, sequenceId, contactId },
+        })
+      : null;
+    if (entryId && !entry) throw new BadRequestException('Entrée de pipeline introuvable');
+    if (
+      currentSequence.trigger === 'DEAL_STAGE_ENTERED' &&
+      (!entry || entry.stageId !== currentSequence.pipelineStageId)
+    )
+      throw new BadRequestException(
+        'Cette automatisation démarre uniquement depuis sa colonne du pipeline',
+      );
+    const snapshot = entry?.sequenceSnapshot as unknown as {
+      mode: CrmSequenceMode;
+      agentId: string | null;
+      steps: CrmSequenceStep[];
+    } | null;
+    const sequence = { ...currentSequence, ...(snapshot ?? {}) };
     if (!sequence.enabled) throw new BadRequestException('Activez le scénario avant de l’utiliser');
     if (sequence.mode === 'GOVERNED') {
       await this.principal(tenantId, sequence.agentId!);
@@ -273,10 +327,12 @@ export class SequencesService implements OnModuleInit {
         throw new BadRequestException('Consentement courriel explicite requis');
     }
     const steps = sequence.steps as unknown as CrmSequenceStep[];
-    const now = new Date();
+    const now = entry?.createdAt ?? new Date();
+    const enrollmentKey = entry?.id ?? 'manual';
+    const unique = { tenantId, sequenceId, contactId, enrollmentKey };
     const values = { name: contact.name, company: contact.company?.name ?? '' };
     const existing = await this.prisma.crmSequenceRun.findUnique({
-      where: { tenantId_sequenceId_contactId: { tenantId, sequenceId, contactId } },
+      where: { tenantId_sequenceId_contactId_enrollmentKey: unique },
       include: { steps: { orderBy: { position: 'asc' } } },
     });
     if (existing) return existing;
@@ -286,6 +342,10 @@ export class SequencesService implements OnModuleInit {
           tenantId,
           sequenceId,
           contactId,
+          enrollmentKey,
+          dealId: entry?.dealId,
+          pipelineStageId: entry?.stageId,
+          stageRevision: entry?.revision,
           email: contact.email,
           mode: sequence.mode,
           agentId: sequence.agentId,
@@ -308,7 +368,7 @@ export class SequencesService implements OnModuleInit {
       .catch(async (err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
           return this.prisma.crmSequenceRun.findUniqueOrThrow({
-            where: { tenantId_sequenceId_contactId: { tenantId, sequenceId, contactId } },
+            where: { tenantId_sequenceId_contactId_enrollmentKey: unique },
             include: { steps: { orderBy: { position: 'asc' } } },
           });
         }
@@ -352,6 +412,7 @@ export class SequencesService implements OnModuleInit {
       tenantId,
       ...(query.contactId ? { contactId: query.contactId } : {}),
       ...(query.sequenceId ? { sequenceId: query.sequenceId } : {}),
+      ...(query.dealId ? { dealId: query.dealId } : {}),
     };
     const [items, total] = await Promise.all([
       this.prisma.crmSequenceRun.findMany({
@@ -458,6 +519,29 @@ export class SequencesService implements OnModuleInit {
         : reply
           ? 'Réponse reçue : suivi automatique arrêté'
           : '';
+    if (!reason && run.dealId) {
+      const deal = await this.prisma.crmDeal.findFirst({
+        where: { tenantId, id: run.dealId },
+        select: {
+          pipelineStageId: true,
+          stageRevision: true,
+          primaryContactId: true,
+          companyId: true,
+        },
+      });
+      const recipient = await this.prisma.crmContact.findFirst({
+        where: { tenantId, id: run.contactId },
+        select: { companyId: true },
+      });
+      if (
+        !deal ||
+        deal.pipelineStageId !== run.pipelineStageId ||
+        deal.stageRevision !== run.stageRevision
+      )
+        reason = 'Opportunité sortie de cette étape : relances annulées';
+      else if (deal.primaryContactId !== run.contactId || recipient?.companyId !== deal.companyId)
+        reason = 'Contact principal ou entreprise modifié';
+    }
     if (!reason && run.mode === 'GOVERNED') {
       const pref = await this.prisma.crmEmailPreference.findUnique({
         where: { tenantId_email: { tenantId, email: run.email } },
@@ -540,11 +624,118 @@ export class SequencesService implements OnModuleInit {
     return { emailId: msg.id, status: msg.status };
   }
 
+  async stopDealRuns(tenantId: string, dealId: string) {
+    const deal = await this.prisma.crmDeal.findFirst({ where: { tenantId, id: dealId } });
+    const runs = await this.prisma.crmSequenceRun.findMany({
+      where: { tenantId, dealId, status: { in: ['ACTIVE', 'PAUSED'] } },
+    });
+    for (const run of runs) {
+      if (
+        !deal ||
+        run.pipelineStageId !== deal.pipelineStageId ||
+        run.stageRevision !== deal.stageRevision ||
+        run.contactId !== deal.primaryContactId
+      )
+        await this.transition(
+          tenantId,
+          run.id,
+          undefined,
+          CrmSequenceRunStatus.STOPPED,
+          'Étape ou contact principal modifié',
+        ).catch(() => undefined);
+    }
+  }
+
+  /** Idempotent durable fan-out; crash recovery reuses the stage-entry enrollment key. */
+  async processStageEntries() {
+    const entries = await this.prisma.crmStageEntry.findMany({
+      where: { processedAt: null },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    });
+    for (const entry of entries) {
+      try {
+        await this.prisma.$transaction(
+          async (tx) => {
+            const [lock] = await tx.$queryRaw<
+              { locked: boolean }[]
+            >`SELECT pg_try_advisory_xact_lock(hashtext(${`crm-entry:${entry.id}`})) AS locked`;
+            if (!lock.locked) return;
+            const fresh = await tx.crmStageEntry.findFirst({
+              where: { tenantId: entry.tenantId, id: entry.id, processedAt: null },
+            });
+            if (!fresh) return;
+            let reason: string | null = null;
+            let runId: string | null = null;
+            const deal = await tx.crmDeal.findFirst({
+              where: { tenantId: entry.tenantId, id: entry.dealId },
+            });
+            if (
+              !deal ||
+              deal.pipelineStageId !== entry.stageId ||
+              deal.stageRevision !== entry.revision
+            )
+              reason = 'Étape quittée avant le démarrage';
+            else if (!entry.contactId || deal.primaryContactId !== entry.contactId)
+              reason = 'Contact principal absent ou modifié : aucun envoi';
+            else if (!entry.sequenceId) reason = 'Aucune automatisation active à l’entrée';
+            else {
+              try {
+                const run = await this.enroll(
+                  entry.tenantId,
+                  entry.sequenceId,
+                  entry.contactId,
+                  entry.userId,
+                  entry.id,
+                );
+                runId = run.id;
+              } catch (err) {
+                if (!(err instanceof BadRequestException || err instanceof NotFoundException))
+                  throw err;
+                reason = (err as Error).message;
+              }
+            }
+            await tx.crmStageEntry.updateMany({
+              where: { tenantId: entry.tenantId, id: entry.id, processedAt: null },
+              data: { processedAt: new Date(), reason, runId },
+            });
+            await this.audit.log({
+              tenantId: entry.tenantId,
+              userId: entry.userId,
+              action: AuditAction.UPDATE,
+              entityType: 'crm-stage-entry',
+              entityId: entry.id,
+              after: { dealId: entry.dealId, runId, reason },
+            });
+          },
+          { timeout: 20000 },
+        );
+      } catch (err) {
+        this.logger.warn(`Stage entry ${entry.id}: ${(err as Error).message}`);
+      }
+    }
+  }
+
   @Cron(CronExpression.EVERY_MINUTE)
   async processDue(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     try {
+      await this.processStageEntries();
+      // Also cancel paused/non-due runs: leaving a column is not a temporary pause.
+      const contextual = await this.prisma.crmSequenceRun.findMany({
+        where: { dealId: { not: null }, status: { in: ['ACTIVE', 'PAUSED'] } },
+        orderBy: { updatedAt: 'asc' },
+        take: 100,
+        select: { tenantId: true, dealId: true, id: true },
+      });
+      for (const run of contextual) {
+        await this.stopDealRuns(run.tenantId, run.dealId!);
+        await this.prisma.crmSequenceRun.updateMany({
+          where: { tenantId: run.tenantId, id: run.id },
+          data: { updatedAt: new Date() },
+        });
+      }
       // Repair a crash between recording success and scheduling the next step.
       const successes = await this.prisma.crmSequenceStepRun.findMany({
         where: { status: { in: ['SENT', 'SIMULATED'] }, run: { status: 'ACTIVE' } },

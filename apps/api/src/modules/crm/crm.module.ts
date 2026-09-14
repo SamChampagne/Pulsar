@@ -11,6 +11,8 @@ import { ContactsController } from './contacts.controller';
 import { ContactsService } from './contacts.service';
 import { DealsController } from './deals.controller';
 import { DealsService } from './deals.service';
+import { PipelinesService } from './pipelines.service';
+import { PipelinesController } from './pipelines.controller';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
 import { PipelineController } from './pipeline.controller';
@@ -57,6 +59,7 @@ import {
     OperatingModule,
   ],
   controllers: [
+    PipelinesController,
     SequencesController,
     EmailPreferenceController,
     SequenceUnsubscribeController,
@@ -76,6 +79,7 @@ import {
     SalesOrderLineItemsController,
   ],
   providers: [
+    PipelinesService,
     SequencesService,
     CompaniesService,
     ContactsService,
