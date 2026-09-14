@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
   import {
     Badge,
@@ -170,7 +171,7 @@
   }
 
   async function deleteDoc(id: string) {
-    if (!confirm('Supprimer ce document ?')) return;
+    if (!(await confirmAction('Supprimer ce document ?'))) return;
     try {
       await api(`/fleet/compliance-documents/${id}`, { method: 'DELETE' });
       toast.success('Document supprimé');

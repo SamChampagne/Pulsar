@@ -1,66 +1,93 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
-  import { Select, Input, Button } from '$lib/components/ui';
+  import { Select, Input, Button, ErrorNotice, Skeleton, EmptyState } from '$lib/components/ui';
+  import { confirmAction } from '$lib/stores/confirmation';
 
   let { module }: { module: string } = $props();
-
-  interface SettingOption {
-    value: string;
-    label: string;
-  }
-
   interface SettingDescriptor {
     key: string;
     label: string;
     help?: string;
     type: 'enum' | 'boolean' | 'number' | 'string';
     default: string | number | boolean;
-    options?: SettingOption[];
+    options?: { value: string; label: string }[];
     min?: number;
     max?: number;
     pattern?: string;
     maxLength?: number;
   }
-
+  type Values = Record<string, string | number | boolean>;
   let descriptors = $state<SettingDescriptor[]>([]);
-  let values = $state<Record<string, string | number | boolean>>({});
+  let values = $state<Values>({});
+  let baseline = $state<Values>({});
   let loading = $state(true);
   let saving = $state(false);
   let error = $state('');
   let saved = $state(false);
+  let generation = 0;
+  const dirty = $derived(descriptors.some((d) => values[d.key] !== baseline[d.key]));
 
   async function load() {
+    const request = ++generation;
     loading = true;
+    saving = false;
     error = '';
+    saved = false;
+    descriptors = [];
     try {
-      const res = await api<{
-        descriptors: SettingDescriptor[];
-        values: Record<string, string | number | boolean>;
-      }>(`/modules/${module}/settings`);
+      const res = await api<{ descriptors: SettingDescriptor[]; values: Values }>(
+        `/modules/${module}/settings`,
+      );
+      if (request !== generation) return;
       descriptors = res.descriptors;
       values = { ...res.values };
+      baseline = { ...res.values };
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Échec du chargement';
+      if (request === generation) error = e instanceof ApiError ? e.message : 'Échec du chargement';
     } finally {
-      loading = false;
+      if (request === generation) loading = false;
     }
   }
 
   async function save() {
+    if (saving || loading || !dirty) return;
+    const request = generation;
     saving = true;
     error = '';
     saved = false;
     try {
-      const res = await api<{ values: Record<string, string | number | boolean> }>(
-        `/modules/${module}/settings`,
-        { method: 'PUT', body: { settings: values } },
-      );
+      const res = await api<{ values: Values }>(`/modules/${module}/settings`, {
+        method: 'PUT',
+        body: { settings: { ...values } },
+      });
+      if (request !== generation) return;
       values = { ...res.values };
+      baseline = { ...res.values };
       saved = true;
     } catch (e) {
-      error = e instanceof ApiError ? e.message : "Échec de l'enregistrement";
+      if (request === generation)
+        error = e instanceof ApiError ? e.message : "Échec de l'enregistrement";
     } finally {
-      saving = false;
+      if (request === generation) saving = false;
+    }
+  }
+
+  async function revert() {
+    const request = generation;
+    if (
+      await confirmAction(
+        'Revenir aux derniers réglages enregistrés ? Vos modifications locales seront perdues.',
+        {
+          title: 'Abandonner les modifications',
+          confirmLabel: 'Abandonner',
+          dangerous: false,
+        },
+      )
+    ) {
+      if (request !== generation) return;
+      values = { ...baseline };
+      error = '';
+      saved = false;
     }
   }
 
@@ -70,74 +97,91 @@
 </script>
 
 {#if loading}
-  <p class="text-sm text-ink-muted">Chargement…</p>
-{:else if error}
-  <p class="text-sm text-danger">{error}</p>
-{:else if descriptors.length === 0}
-  <p class="text-sm text-ink-muted">Aucun paramètre configurable pour ce module.</p>
+  <div aria-label="Chargement des réglages" aria-busy="true"><Skeleton rows={5} /></div>
 {:else}
-  <div class="space-y-5">
-    {#each descriptors as d (d.key)}
-      <div class="space-y-1">
-        {#if d.type === 'enum'}
-          <label class="block">
-            <span class="block text-sm font-medium text-ink">{d.label}</span>
-            {#if d.help}
-              <span class="mb-1 block text-xs text-ink-muted">{d.help}</span>
-            {/if}
-            <Select bind:value={values[d.key] as string}>
-              {#each d.options ?? [] as o (o.value)}
-                <option value={o.value}>{o.label}</option>
-              {/each}
-            </Select>
+  <ErrorNotice message={error} onretry={descriptors.length ? undefined : load} />
+  {#if descriptors.length === 0 && !error}
+    <EmptyState message="Aucun paramètre configurable pour ce module." />
+  {:else if descriptors.length > 0}
+    <form
+      aria-label="Réglages du module"
+      onsubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+      class="space-y-4"
+    >
+      <fieldset
+        disabled={saving}
+        class="divide-y divide-edge rounded-lg border border-edge bg-surface"
+      >
+        {#each descriptors as d (d.key)}
+          <label
+            class="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] md:items-center md:gap-8"
+          >
+            <span class="min-w-0">
+              <span class="block text-sm font-medium text-ink">{d.label}</span>
+              {#if d.help}<span class="mt-1 block text-xs leading-relaxed text-ink-muted"
+                  >{d.help}</span
+                >{/if}
+            </span>
+            <span class="min-w-0">
+              {#if d.type === 'enum'}
+                <Select bind:value={values[d.key] as string} aria-label={d.label}>
+                  {#each d.options ?? [] as o (o.value)}<option value={o.value}>{o.label}</option
+                    >{/each}
+                </Select>
+              {:else if d.type === 'boolean'}
+                <span class="flex min-h-9 items-center gap-3">
+                  <input
+                    type="checkbox"
+                    bind:checked={values[d.key] as boolean}
+                    aria-label={d.label}
+                    class="h-4 w-4 rounded border-edge accent-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  />
+                  <span class="text-sm text-ink-muted"
+                    >{values[d.key] ? 'Activé' : 'Désactivé'}</span
+                  >
+                </span>
+              {:else if d.type === 'string'}
+                <Input
+                  bind:value={values[d.key] as string}
+                  aria-label={d.label}
+                  maxlength={d.maxLength}
+                  pattern={d.pattern}
+                />
+              {:else}
+                <Input
+                  type="number"
+                  bind:value={values[d.key] as string | number}
+                  aria-label={d.label}
+                  min={d.min}
+                  max={d.max}
+                />
+              {/if}
+            </span>
           </label>
-        {:else if d.type === 'boolean'}
-          {#if d.help}
-            <p class="text-xs text-ink-muted">{d.help}</p>
-          {/if}
-          <label class="flex cursor-pointer items-center gap-2 text-sm text-ink" for="setting-bool-{d.key}">
-            <input
-              id="setting-bool-{d.key}"
-              type="checkbox"
-              bind:checked={values[d.key] as boolean}
-              class="h-4 w-4 rounded border-edge accent-accent"
-            />
-            {d.label}
-          </label>
-        {:else if d.type === 'string'}
-          <label class="block">
-            <span class="block text-sm font-medium text-ink">{d.label}</span>
-            {#if d.help}
-              <span class="mb-1 block text-xs text-ink-muted">{d.help}</span>
-            {/if}
-            <Input type="text" bind:value={values[d.key] as string} maxlength={d.maxLength} />
-          </label>
-        {:else}
-          <label class="block">
-            <span class="block text-sm font-medium text-ink">{d.label}</span>
-            {#if d.help}
-              <span class="mb-1 block text-xs text-ink-muted">{d.help}</span>
-            {/if}
-            <Input
-              type="number"
-              bind:value={values[d.key] as string | number}
-              min={d.min}
-              max={d.max}
-            />
-          </label>
-        {/if}
+        {/each}
+      </fieldset>
+      <div
+        class="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-edge bg-surface p-3 shadow-sm"
+      >
+        <p class="text-xs text-ink-muted" role="status">
+          {saving
+            ? 'Enregistrement…'
+            : dirty
+              ? 'Modifications non enregistrées'
+              : saved
+                ? 'Réglages enregistrés'
+                : 'Réglages à jour'}
+        </p>
+        <div class="flex items-center gap-2">
+          {#if dirty}<Button variant="secondary" disabled={saving} onclick={revert}
+              >Annuler les modifications</Button
+            >{/if}
+          <Button type="submit" loading={saving} disabled={saving || !dirty}>Enregistrer</Button>
+        </div>
       </div>
-    {/each}
-
-    {#if error}
-      <p class="text-sm text-danger">{error}</p>
-    {/if}
-
-    <div class="flex items-center gap-3 border-t border-edge pt-4">
-      <Button onclick={() => void save()} loading={saving} disabled={saving}>Enregistrer</Button>
-      {#if saved}
-        <span class="text-sm text-ok">Enregistré ✓</span>
-      {/if}
-    </div>
-  </div>
+    </form>
+  {/if}
 {/if}

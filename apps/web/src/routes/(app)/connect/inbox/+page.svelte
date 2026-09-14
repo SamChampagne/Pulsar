@@ -181,7 +181,7 @@
 </script>
 
 <PageHeader
-  title="Inbox"
+  title="Boîte de réception"
   subtitle="Messages entrants : webhooks, CSV, documents. Cliquez sur une ligne pour voir le détail."
   count={loading ? undefined : total}
 />
@@ -212,10 +212,7 @@
 {#if loading}
   <Card padded={false}><Skeleton rows={5} /></Card>
 {:else if items.length === 0}
-  <EmptyState
-    title="Aucun message"
-    message="Aucun message entrant ne correspond à ces filtres."
-  />
+  <EmptyState title="Aucun message" message="Aucun message entrant ne correspond à ces filtres." />
 {:else}
   <Table>
     {#snippet head()}
@@ -252,13 +249,19 @@
         <button
           class="rounded-md border border-edge px-3 py-1.5 hover:bg-surface-muted disabled:opacity-40"
           disabled={page <= 1}
-          onclick={() => { page -= 1; void load(); }}
-        >Préc.</button>
+          onclick={() => {
+            page -= 1;
+            void load();
+          }}>Préc.</button
+        >
         <button
           class="rounded-md border border-edge px-3 py-1.5 hover:bg-surface-muted disabled:opacity-40"
           disabled={page >= totalPages}
-          onclick={() => { page += 1; void load(); }}
-        >Suiv.</button>
+          onclick={() => {
+            page += 1;
+            void load();
+          }}>Suiv.</button
+        >
       </div>
     </div>
   {/if}
@@ -279,7 +282,9 @@
         <Badge tone={sourceTone(selected.source)}>{selected.source}</Badge>
         <Badge tone={statusTone(selected.status)}>{selected.status}</Badge>
         {#if selected.kind}
-          <span class="rounded-full bg-surface-muted px-2 py-0.5 text-xs font-semibold text-ink-muted">
+          <span
+            class="rounded-full bg-surface-muted px-2 py-0.5 text-xs font-semibold text-ink-muted"
+          >
             {selected.kind}
           </span>
         {/if}
@@ -307,7 +312,9 @@
       <!-- Parsed key-values -->
       {#if selected.parsed && parsedEntries(selected.parsed).length > 0}
         <div>
-          <p class="text-xs font-semibold uppercase tracking-wide text-ink-faint">Données parsées</p>
+          <p class="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+            Données parsées
+          </p>
           <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
             {#each parsedEntries(selected.parsed) as [key, value] (key)}
               <dt class="font-medium text-ink-muted">{key}</dt>

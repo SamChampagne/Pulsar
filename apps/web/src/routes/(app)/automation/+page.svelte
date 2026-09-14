@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import {
     AUTOMATION_EVENT_CATALOG,
     REACTION_CATALOG,
@@ -236,7 +237,7 @@
   }
 
   async function remove(rule: AutomationRule) {
-    if (!confirm(`Supprimer la règle « ${rule.name} » ?`)) return;
+    if (!(await confirmAction(`Supprimer la règle « ${rule.name} » ?`))) return;
     try {
       await api(`/automation/rules/${rule.id}`, { method: 'DELETE' });
       toast.success(`Règle « ${rule.name} » supprimée`);
@@ -421,7 +422,11 @@
       {#if error}<p class="text-sm text-danger">{error}</p>{/if}
 
       <Field label="Nom">
-        <Input bind:value={form.name} placeholder="Ex. Escalader les stops très en retard" required />
+        <Input
+          bind:value={form.name}
+          placeholder="Ex. Escalader les stops très en retard"
+          required
+        />
       </Field>
 
       <!-- Quand : événement -->
@@ -440,7 +445,9 @@
       <!-- Si : conditions -->
       <div class="rounded-card border border-edge-soft p-3">
         <div class="mb-2 flex items-center justify-between">
-          <span class="text-xs font-semibold tracking-wide text-ink-muted uppercase">Si — conditions</span>
+          <span class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
+            >Si — conditions</span
+          >
           <div class="flex items-center gap-2">
             <Select bind:value={form.match}>
               <option value="ALL">Toutes les conditions (ALL)</option>
@@ -466,7 +473,9 @@
                       {/each}
                       <!-- allow a free-text field not listed in the catalog -->
                       {#if !selectedEvent.fields.some((fl) => fl.path === condition.field)}
-                        <option value={condition.field}>{condition.field || 'Champ personnalisé'}</option>
+                        <option value={condition.field}
+                          >{condition.field || 'Champ personnalisé'}</option
+                        >
                       {/if}
                     </Select>
                   {:else}
@@ -544,7 +553,9 @@
             <Field label="Assignation">
               <Select bind:value={form.taskAssignHint}>
                 {#each ASSIGN_HINTS as hint (hint)}
-                  <option value={hint}>{hint === 'AUTO' ? 'Automatique (AUTO)' : 'Non assignée (UNASSIGNED)'}</option>
+                  <option value={hint}
+                    >{hint === 'AUTO' ? 'Automatique (AUTO)' : 'Non assignée (UNASSIGNED)'}</option
+                  >
                 {/each}
               </Select>
             </Field>
@@ -559,11 +570,13 @@
               />
             </Field>
             <p class="mt-1 text-xs text-ink-faint">
-              Utilisez <code class="font-mono">{'{chemin}'}</code> pour insérer une valeur du payload.
+              Utilisez <code class="font-mono">{'{chemin}'}</code> pour insérer une valeur du
+              payload.
               {#if selectedEvent && selectedEvent.fields.length > 0}
                 Champs disponibles :
-                {#each selectedEvent.fields as fld, idx (fld.path)}<code
-                    class="font-mono">{'{' + fld.path + '}'}</code>{#if idx < selectedEvent.fields.length - 1}<span>, </span>{/if}{/each}.
+                {#each selectedEvent.fields as fld, idx (fld.path)}<code class="font-mono"
+                    >{'{' + fld.path + '}'}</code
+                  >{#if idx < selectedEvent.fields.length - 1}<span>, </span>{/if}{/each}.
               {/if}
             </p>
           </div>
@@ -576,10 +589,7 @@
               />
             </Field>
             <Field label="Type de sujet (subjectType, optionnel)">
-              <Input
-                bind:value={form.taskSubjectType}
-                placeholder={form.eventType || 'type'}
-              />
+              <Input bind:value={form.taskSubjectType} placeholder={form.eventType || 'type'} />
             </Field>
           </div>
         {:else}
@@ -600,7 +610,9 @@
 
           {#if selectedReaction && selectedReaction.argKeys.length > 0}
             <div class="mt-3 space-y-2">
-              <span class="text-xs font-semibold text-ink-muted">Arguments (gabarits de payload)</span>
+              <span class="text-xs font-semibold text-ink-muted"
+                >Arguments (gabarits de payload)</span
+              >
               {#each selectedReaction.argKeys as argKey (argKey)}
                 <Field label={argKey}>
                   <Input
@@ -616,7 +628,8 @@
                 </Field>
               {/each}
               <p class="text-xs text-ink-faint">
-                Utilisez <code class="font-mono">{'{chemin}'}</code> pour insérer une valeur du payload événement.
+                Utilisez <code class="font-mono">{'{chemin}'}</code> pour insérer une valeur du payload
+                événement.
               </p>
             </div>
           {/if}
@@ -629,7 +642,12 @@
       </label>
 
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
-        <Button variant="secondary" onclick={() => { showForm = false; }}>Annuler</Button>
+        <Button
+          variant="secondary"
+          onclick={() => {
+            showForm = false;
+          }}>Annuler</Button
+        >
         <Button variant="primary" type="submit" loading={saving}>
           {editingId ? 'Enregistrer' : 'Créer la règle'}
         </Button>

@@ -5,6 +5,8 @@
   import { formatDate } from '$lib/format';
   import {
     PageHeader,
+    Drawer,
+    EntityPicker,
     Button,
     FilterBar,
     Select,
@@ -85,6 +87,14 @@
 
   let selected = $state<CompanyDetail | null>(null);
   let detailLoading = $state(false);
+  let detailRequest = 0;
+  let listRequest = 0;
+
+  function closeDetail() {
+    detailRequest++;
+    selected = null;
+    detailLoading = false;
+  }
   let converting = $state<string | null>(null); // dealId being converted
 
   // ── State — create modal ─────────────────────────────────────────────────────
@@ -101,39 +111,45 @@
   // ── Data loading ─────────────────────────────────────────────────────────────
 
   async function load() {
+    const request = ++listRequest;
     loading = true;
     error = '';
     try {
       const result = await api<Paginated<CompanyRow>>('/crm/companies', {
         query: { search, page, pageSize, status: statusFilter || undefined },
       });
+      if (request !== listRequest) return;
       companies = result.items;
       total = result.total;
     } catch (e) {
+      if (request !== listRequest) return;
       error = e instanceof ApiError ? e.message : 'Impossible de charger les sociétés';
     } finally {
-      loading = false;
+      if (request === listRequest) loading = false;
     }
   }
 
-  async function openDetail(company: CompanyRow) {
+  async function openDetail(company: { id: string }) {
+    const request = ++detailRequest;
     selected = null;
     detailLoading = true;
     try {
       const full = await api<CompanyDetail>(`/crm/companies/${company.id}`);
-      selected = full;
+      if (request === detailRequest) selected = full;
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Impossible de charger la société');
+      if (request === detailRequest)
+        toast.error(e instanceof ApiError ? e.message : 'Impossible de charger la société');
     } finally {
-      detailLoading = false;
+      if (request === detailRequest) detailLoading = false;
     }
   }
 
   async function refreshDetail() {
     if (!selected) return;
     try {
-      const full = await api<CompanyDetail>(`/crm/companies/${selected.id}`);
-      selected = full;
+      const id = selected.id;
+      const full = await api<CompanyDetail>(`/crm/companies/${id}`);
+      if (selected?.id === id) selected = full;
     } catch {
       // non-blocking refresh
     }
@@ -154,6 +170,7 @@
   }
 
   async function submitCreate() {
+    if (createSaving) return;
     if (!createName.trim()) {
       toast.error('Le nom est obligatoire');
       return;
@@ -202,46 +219,69 @@
 
   function statusTone(status: string): Tone {
     switch (status) {
-      case 'ACTIVE':   return 'ok';
-      case 'PROSPECT': return 'info';
-      case 'INACTIVE': return 'neutral';
-      default:         return 'neutral';
+      case 'ACTIVE':
+        return 'ok';
+      case 'PROSPECT':
+        return 'info';
+      case 'INACTIVE':
+        return 'neutral';
+      default:
+        return 'neutral';
     }
   }
 
   function statusLabel(status: string): string {
     switch (status) {
-      case 'ACTIVE':   return 'Actif';
-      case 'PROSPECT': return 'Prospect';
-      case 'INACTIVE': return 'Inactif';
-      default:         return status;
+      case 'ACTIVE':
+        return 'Actif';
+      case 'PROSPECT':
+        return 'Prospect';
+      case 'INACTIVE':
+        return 'Inactif';
+      default:
+        return status;
     }
   }
 
   function stageTone(stage: string): Tone {
     switch (stage) {
-      case 'WON':      return 'ok';
-      case 'LOST':     return 'danger';
-      case 'PROPOSAL': return 'warn';
-      case 'QUALIFIED': return 'info';
-      default:         return 'neutral';
+      case 'WON':
+        return 'ok';
+      case 'LOST':
+        return 'danger';
+      case 'PROPOSAL':
+        return 'warn';
+      case 'QUALIFIED':
+        return 'info';
+      default:
+        return 'neutral';
     }
   }
 
   function stageLabel(stage: string): string {
     switch (stage) {
-      case 'LEAD':      return 'Prospect';
-      case 'QUALIFIED': return 'Qualifié';
-      case 'PROPOSAL':  return 'Proposition';
-      case 'WON':       return 'Gagné';
-      case 'LOST':      return 'Perdu';
-      default:          return stage;
+      case 'LEAD':
+        return 'Prospect';
+      case 'QUALIFIED':
+        return 'Qualifié';
+      case 'PROPOSAL':
+        return 'Proposition';
+      case 'WON':
+        return 'Gagné';
+      case 'LOST':
+        return 'Perdu';
+      default:
+        return stage;
     }
   }
 
   function formatAmount(amount: number | null, currency: string): string {
     if (amount == null) return '—';
-    return new Intl.NumberFormat('fr-CA', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount);
+    return new Intl.NumberFormat('fr-CA', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 0,
+    }).format(amount);
   }
 
   /** A WON deal that has not yet been converted. */
@@ -273,14 +313,17 @@
 <FilterBar>
   <div class="w-64">
     <input
+      aria-label="Rechercher par nom"
       placeholder="Rechercher par nom…"
       bind:value={search}
-      onkeydown={(e) => { if (e.key === 'Enter') void load(); }}
+      onkeydown={(e) => {
+        if (e.key === 'Enter') void load();
+      }}
       class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
     />
   </div>
   <div class="w-40">
-    <Select bind:value={statusFilter}>
+    <Select bind:value={statusFilter} aria-label="Statut des sociétés">
       <option value="">Tous les statuts</option>
       <option value="PROSPECT">Prospect</option>
       <option value="ACTIVE">Actif</option>
@@ -290,9 +333,9 @@
 </FilterBar>
 
 <!-- List / panel layout -->
-<div class={`flex gap-4 ${selected || detailLoading ? 'items-start' : ''}`}>
+<div class="min-w-0">
   <!-- ── List ── -->
-  <div class={`min-w-0 flex-1 transition-all ${selected || detailLoading ? 'max-w-[55%]' : ''}`}>
+  <div class="min-w-0">
     {#if loading}
       <Card padded={false}><Skeleton rows={6} /></Card>
     {:else if companies.length === 0}
@@ -311,10 +354,20 @@
               class={`cursor-pointer transition-colors hover:bg-surface-muted ${selected?.id === company.id ? 'bg-accent-soft/20' : ''}`}
               onclick={() => void openDetail(company)}
             >
-              <td class="font-semibold text-ink">{company.name}</td>
+              <td class="font-semibold text-ink"
+                ><button
+                  type="button"
+                  class="text-left hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    void openDetail(company);
+                  }}>{company.name}</button
+                ></td
+              >
               <td class="text-ink-muted">{company.domain ?? '—'}</td>
               <td class="text-ink-muted">{company.industry ?? '—'}</td>
-              <td><Badge tone={statusTone(company.status)}>{statusLabel(company.status)}</Badge></td>
+              <td><Badge tone={statusTone(company.status)}>{statusLabel(company.status)}</Badge></td
+              >
               <td class="text-ink-muted">{formatDate(company.createdAt)}</td>
             </tr>
           {/each}
@@ -331,31 +384,43 @@
           <Button
             variant="secondary"
             disabled={page <= 1}
-            onclick={() => { page = Math.max(1, page - 1); void load(); }}
-          >Précédent</Button>
+            onclick={() => {
+              page = Math.max(1, page - 1);
+              void load();
+            }}>Précédent</Button
+          >
           <span class="font-mono text-xs">Page {page} / {totalPages}</span>
           <Button
             variant="secondary"
             disabled={page >= totalPages}
-            onclick={() => { page = Math.min(totalPages, page + 1); void load(); }}
-          >Suivant</Button>
+            onclick={() => {
+              page = Math.min(totalPages, page + 1);
+              void load();
+            }}>Suivant</Button
+          >
         </div>
       </div>
     {/if}
   </div>
+</div>
 
+<Drawer
+  open={detailLoading || !!selected}
+  title={selected?.name ?? 'Chargement de la fiche…'}
+  width="xl"
+  onclose={closeDetail}
+>
   <!-- ── Detail panel ── -->
   {#if detailLoading}
-    <div class="w-[42%] shrink-0">
+    <div class="min-w-0 space-y-4">
       <Card padded={false}><Skeleton rows={8} /></Card>
     </div>
   {:else if selected}
-    <div class="w-[42%] shrink-0">
+    <div class="min-w-0 space-y-4">
       <Card>
         <!-- Panel header -->
         <div class="mb-4 flex items-start justify-between gap-2">
           <div class="min-w-0">
-            <h2 class="truncate text-base font-bold text-ink">{selected.name}</h2>
             <Badge tone={statusTone(selected.status)}>{statusLabel(selected.status)}</Badge>
           </div>
           <div class="flex shrink-0 items-center gap-1">
@@ -366,11 +431,6 @@
             >
               Ouvrir la fiche
             </a>
-            <button
-              class="rounded p-1 text-ink-faint hover:bg-surface-muted hover:text-ink"
-              onclick={() => { selected = null; }}
-              aria-label="Fermer"
-            >✕</button>
           </div>
         </div>
 
@@ -378,23 +438,23 @@
         <div class="mb-4 grid grid-cols-2 gap-3 text-xs">
           {#if selected.domain}
             <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Domaine</div>
+              <div class="mb-0.5 font-medium text-ink-muted">Domaine</div>
               <div class="text-ink">{selected.domain}</div>
             </div>
           {/if}
           {#if selected.industry}
             <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Secteur</div>
+              <div class="mb-0.5 font-medium text-ink-muted">Secteur</div>
               <div class="text-ink">{selected.industry}</div>
             </div>
           {/if}
           <div>
-            <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Créé le</div>
+            <div class="mb-0.5 font-medium text-ink-muted">Créé le</div>
             <div class="text-ink">{formatDate(selected.createdAt)}</div>
           </div>
           {#if selected.customerId}
             <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Client</div>
+              <div class="mb-0.5 font-medium text-ink-muted">Client</div>
               <div class="font-mono text-accent text-xs">{selected.customerId.slice(0, 8)}…</div>
             </div>
           {/if}
@@ -423,7 +483,7 @@
 
         <!-- Contacts -->
         <div class="mb-4">
-          <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+          <div class="mb-1.5 text-sm font-medium text-ink-muted">
             Contacts ({selected.contacts.length})
           </div>
           {#if selected.contacts.length === 0}
@@ -444,7 +504,7 @@
 
         <!-- Deals -->
         <div class="mb-4">
-          <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+          <div class="mb-1.5 text-sm font-medium text-ink-muted">
             Affaires ({selected.deals.length})
           </div>
           {#if selected.deals.length === 0}
@@ -452,9 +512,15 @@
           {:else}
             <ul class="space-y-1">
               {#each selected.deals as deal (deal.id)}
-                <li class="flex items-center justify-between gap-2 rounded-md border border-edge bg-surface-muted px-2.5 py-2 text-xs">
+                <li
+                  class="flex items-center justify-between gap-2 rounded-md border border-edge bg-surface-muted px-2.5 py-2 text-xs"
+                >
                   <div class="min-w-0">
-                    <div class="truncate font-semibold text-ink">{deal.title}</div>
+                    <a
+                      href="/crm/deals/{deal.id}"
+                      class="block truncate font-semibold text-accent hover:underline"
+                      >{deal.title}</a
+                    >
                     <div class="text-ink-muted">{formatAmount(deal.amount, deal.currency)}</div>
                   </div>
                   <Badge tone={stageTone(deal.stage)}>{stageLabel(deal.stage)}</Badge>
@@ -466,29 +532,22 @@
 
         <!-- Activity timeline -->
         <div class="mb-4">
-          <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
-            Activités récentes
-          </div>
+          <div class="mb-1.5 text-sm font-medium text-ink-muted">Activités récentes</div>
           <ActivityTimeline activities={selected.activities} />
         </div>
 
         <!-- Log activity -->
         <div>
-          <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
-            Enregistrer une activité
-          </div>
-          <LogActivity
-            companyId={selected.id}
-            onLogged={() => void refreshDetail()}
-          />
+          <div class="mb-1.5 text-sm font-medium text-ink-muted">Enregistrer une activité</div>
+          <LogActivity companyId={selected.id} onLogged={() => void refreshDetail()} />
         </div>
       </Card>
     </div>
   {/if}
-</div>
+</Drawer>
 
 <!-- Create company modal -->
-<Modal bind:open={createOpen} title="Nouvelle société">
+<Modal dismissible={!createSaving} bind:open={createOpen} title="Nouvelle société">
   <div class="flex flex-col gap-4">
     <Field label="Nom *">
       <Input bind:value={createName} placeholder="Acme Inc." />
@@ -511,7 +570,13 @@
     {/if}
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { createOpen = false; }}>Annuler</Button>
+    <Button
+      disabled={createSaving}
+      variant="secondary"
+      onclick={() => {
+        createOpen = false;
+      }}>Annuler</Button
+    >
     <Button loading={createSaving} onclick={submitCreate}>Créer</Button>
   {/snippet}
 </Modal>

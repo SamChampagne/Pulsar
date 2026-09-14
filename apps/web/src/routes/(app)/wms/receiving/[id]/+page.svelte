@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import { page } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
@@ -227,7 +228,7 @@
 
   async function cancelReceipt() {
     if (!receipt) return;
-    if (!confirm('Annuler cette réception ?')) return;
+    if (!(await confirmAction('Annuler cette réception ?'))) return;
     try {
       await api(`/wms/receipts/${receipt.id}/cancel`, { method: 'POST' });
       toast.success('Réception annulée');

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import {
@@ -88,7 +89,13 @@
     error: string | null;
     proposedActionCount: number;
     createdAt: string;
-    task: { id: string; category: string; title: string; status: string; resolutionNote: string | null } | null;
+    task: {
+      id: string;
+      category: string;
+      title: string;
+      status: string;
+      resolutionNote: string | null;
+    } | null;
   }
 
   interface ConversationSummary {
@@ -126,7 +133,14 @@
   }
 
   type Kpis = {
-    actions: { total: number; executed: number; autoApproved: number; pending: number; rejected: number; failed: number };
+    actions: {
+      total: number;
+      executed: number;
+      autoApproved: number;
+      pending: number;
+      rejected: number;
+      failed: number;
+    };
     approvalRate: number;
     autoApprovalRate: number;
     errorRate: number;
@@ -220,15 +234,20 @@
   let fMaxRate = $state('');
 
   // Real model list for the connected provider (cached at last connection test).
-  interface RuntimeModelOption { value: string; label: string }
+  interface RuntimeModelOption {
+    value: string;
+    label: string;
+  }
   let models = $state<RuntimeModelOption[]>([]);
   let runtimeProvider = $state<string | null>(null);
   let runtimeDefaultModel = $state<string | null>(null);
   async function loadModels() {
     try {
-      const rt = await api<{ availableModels?: RuntimeModelOption[]; provider?: string; defaultModel?: string }>(
-        '/agent-runtime',
-      );
+      const rt = await api<{
+        availableModels?: RuntimeModelOption[];
+        provider?: string;
+        defaultModel?: string;
+      }>('/agent-runtime');
       models = rt.availableModels ?? [];
       runtimeProvider = rt.provider ?? null;
       runtimeDefaultModel = rt.defaultModel ?? null;
@@ -260,7 +279,9 @@
     }
   }
   const runtimeProviderLabel = $derived(
-    runtimeProvider ? RUNTIME_PROVIDERS.find((p) => p.id === runtimeProvider)?.label ?? runtimeProvider : null,
+    runtimeProvider
+      ? (RUNTIME_PROVIDERS.find((p) => p.id === runtimeProvider)?.label ?? runtimeProvider)
+      : null,
   );
   const runtimeReasonText = $derived(
     runtimeReadiness && !runtimeReadiness.ready && runtimeReadiness.blockReason
@@ -322,7 +343,7 @@
       if (e instanceof ApiError && e.statusCode === 404) {
         notFound = true;
       } else {
-        loadError = e instanceof ApiError ? e.message : 'Impossible de charger l\'agent';
+        loadError = e instanceof ApiError ? e.message : "Impossible de charger l'agent";
       }
     }
   }
@@ -336,12 +357,17 @@
       // page (e.g. to Agent actions) and coming back keeps the chat instead of
       // dropping the user on a blank conversation. Skipped if the user already
       // picked/started one, or explicitly hit "Nouvelle conversation".
-      if (autoRestoredFor !== id && chatConversationId === null && !chatReset && data.conversations.length > 0) {
+      if (
+        autoRestoredFor !== id &&
+        chatConversationId === null &&
+        !chatReset &&
+        data.conversations.length > 0
+      ) {
         autoRestoredFor = id;
         void openConversation(data.conversations[0].id, false);
       }
     } catch (e) {
-      activityError = e instanceof ApiError ? e.message : 'Impossible de charger l\'activité';
+      activityError = e instanceof ApiError ? e.message : "Impossible de charger l'activité";
     }
   }
 
@@ -402,7 +428,7 @@
         method: 'PATCH',
         body: { autonomyLevel: trust.nextLevel },
       });
-      toast.success('Niveau d\'autonomie promu');
+      toast.success("Niveau d'autonomie promu");
       await load();
       await loadTrust(agentId);
     } catch (e) {
@@ -420,7 +446,7 @@
       await load();
       await loadRuns(agentId);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Échec de l\'action');
+      toast.error(e instanceof ApiError ? e.message : "Échec de l'action");
     } finally {
       busy = false;
     }
@@ -443,7 +469,7 @@
       } else if (res.reason === 'already-in-flight') {
         toast.info('Une exécution est déjà en cours pour cette tâche.');
       } else {
-        toast.info("Rien à exécuter pour le moment.");
+        toast.info('Rien à exécuter pour le moment.');
       }
       await load();
       await loadRuns(agentId);
@@ -468,7 +494,8 @@
         });
       }
     } catch (e) {
-      if (scroll) toast.error(e instanceof ApiError ? e.message : 'Impossible de charger la conversation');
+      if (scroll)
+        toast.error(e instanceof ApiError ? e.message : 'Impossible de charger la conversation');
     } finally {
       loadingConversation = false;
     }
@@ -514,7 +541,12 @@
   }
 
   async function revoke() {
-    if (!confirm(`Révoquer l'agent "${agent?.name}" ? Sa clé cessera de fonctionner immédiatement.`)) return;
+    if (
+      !(await confirmAction(
+        `Révoquer l'agent "${agent?.name}" ? Sa clé cessera de fonctionner immédiatement.`,
+      ))
+    )
+      return;
     revoking = true;
     try {
       await api(`/agents/${agentId}`, { method: 'DELETE' });
@@ -564,7 +596,8 @@
   <div class="py-16 text-center">
     <p class="text-lg font-semibold text-ink">Agent introuvable</p>
     <p class="mt-2 text-sm text-ink-muted">
-      L'identifiant <code class="rounded bg-surface-muted px-1 text-xs">{agentId}</code> ne correspond à aucun agent.
+      L'identifiant <code class="rounded bg-surface-muted px-1 text-xs">{agentId}</code> ne correspond
+      à aucun agent.
     </p>
     <div class="mt-4">
       <Button variant="secondary" onclick={() => goto('/agents')}>Retour aux agents</Button>
@@ -581,7 +614,9 @@
   <!-- Page header: avatar + name + badges + revoke action -->
   <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center gap-3">
-      <div class="flex size-12 shrink-0 items-center justify-center rounded-full bg-accent-soft text-2xl">
+      <div
+        class="flex size-12 shrink-0 items-center justify-center rounded-full bg-accent-soft text-2xl"
+      >
         {agent.avatar ?? '🤖'}
       </div>
       <div>
@@ -600,7 +635,9 @@
         {/if}
         <Badge tone={autonomyTone(agent.autonomyLevel)}>{agent.autonomyLevel}</Badge>
         {#if agent.caps?.alwaysOn}
-          <Badge tone="info">24/7 · {(agent.caps.handlesCategories ?? []).join(', ') || 'aucune catégorie'}</Badge>
+          <Badge tone="info"
+            >24/7 · {(agent.caps.handlesCategories ?? []).join(', ') || 'aucune catégorie'}</Badge
+          >
         {/if}
       </div>
     </div>
@@ -647,7 +684,9 @@
                 {/each}
               </Select>
               {#if models.length === 0}
-                <p class="mt-1 text-xs text-ink-faint">Teste la connexion (Connexion du modèle) pour lister les modèles.</p>
+                <p class="mt-1 text-xs text-ink-faint">
+                  Teste la connexion (Connexion du modèle) pour lister les modèles.
+                </p>
               {/if}
             </Field>
           </div>
@@ -660,10 +699,15 @@
           <!-- Persona -->
           <div>
             <Field label="Persona">
-              <Textarea bind:value={fPersona} rows={4} placeholder="Personnalité et instructions système de cet employé…" />
+              <Textarea
+                bind:value={fPersona}
+                rows={4}
+                placeholder="Personnalité et instructions système de cet employé…"
+              />
             </Field>
             <p class="mt-1 text-xs text-ink-muted">
-              Personnalité + instructions système de l'employé. Définit le ton, le style de réponse et les règles métier internes.
+              Personnalité + instructions système de l'employé. Définit le ton, le style de réponse
+              et les règles métier internes.
             </p>
           </div>
 
@@ -677,15 +721,17 @@
                 <label
                   class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition
                     {fAutonomy === opt.value
-                      ? 'border-accent bg-accent-soft/30'
-                      : 'border-edge hover:border-accent'}"
+                    ? 'border-accent bg-accent-soft/30'
+                    : 'border-edge hover:border-accent'}"
                 >
                   <input
                     type="radio"
                     name="autonomy"
                     value={opt.value}
                     checked={fAutonomy === opt.value}
-                    onchange={() => { fAutonomy = opt.value; }}
+                    onchange={() => {
+                      fAutonomy = opt.value;
+                    }}
                     class="mt-0.5 shrink-0"
                   />
                   <div>
@@ -703,15 +749,16 @@
               Permissions
             </span>
             <p class="mb-2 text-xs text-ink-muted">
-              Scopes accordés à l'agent. Seules les permissions listées seront disponibles dans les outils MCP.
+              Scopes accordés à l'agent. Seules les permissions listées seront disponibles dans les
+              outils MCP.
             </p>
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {#each dispatchScopes as scope (scope.key)}
                 <label
                   class="flex cursor-pointer items-start gap-2 rounded border p-2.5 text-xs transition
                     {fPermissions.includes(scope.key)
-                      ? 'border-accent bg-accent-soft/30'
-                      : 'border-edge hover:border-accent'}"
+                    ? 'border-accent bg-accent-soft/30'
+                    : 'border-edge hover:border-accent'}"
                 >
                   <input
                     type="checkbox"
@@ -735,7 +782,8 @@
                 <Input type="number" bind:value={fMaxAmount} placeholder="Optionnel" />
               </Field>
               <p class="mt-1 text-xs text-ink-muted">
-                Plafond $/action — l'agent ne peut pas dépenser plus que ce montant en une seule action.
+                Plafond $/action — l'agent ne peut pas dépenser plus que ce montant en une seule
+                action.
               </p>
             </div>
             <div>
@@ -743,7 +791,8 @@
                 <Input type="number" bind:value={fMaxRate} placeholder="Optionnel" />
               </Field>
               <p class="mt-1 text-xs text-ink-muted">
-                Débit max/min — limite le nombre d'appels MCP que l'agent peut déclencher par minute.
+                Débit max/min — limite le nombre d'appels MCP que l'agent peut déclencher par
+                minute.
               </p>
             </div>
           </div>
@@ -769,7 +818,9 @@
           <div class="flex items-center gap-2">
             <Badge tone="danger">Circuit breaker actif</Badge>
             <span class="text-sm text-ink-muted">
-              L'agent est rétrogradé en PROPOSE — déclenché le {formatDateTime(agent.breakerTrippedAt)}.
+              L'agent est rétrogradé en PROPOSE — déclenché le {formatDateTime(
+                agent.breakerTrippedAt,
+              )}.
             </span>
           </div>
           <Button variant="secondary" onclick={resetBreaker} loading={busy} disabled={busy}>
@@ -786,7 +837,9 @@
           <div class="min-w-0">
             <div class="flex items-center gap-2">
               <span class="text-sm font-semibold text-ink">Confiance : {trust.score}/100</span>
-              <Badge tone={autonomyTone(trust.currentLevel as AutonomyLevel)}>{trust.currentLevel}</Badge>
+              <Badge tone={autonomyTone(trust.currentLevel as AutonomyLevel)}
+                >{trust.currentLevel}</Badge
+              >
             </div>
             {#if trust.readyForNext}
               <p class="mt-1 text-xs text-ink-muted">Prêt pour {trust.nextLevel}.</p>
@@ -838,14 +891,42 @@
     <div id="kpi" class="mt-10">
       <h2 class="mb-4 text-base font-semibold text-ink">KPI (30 derniers jours)</h2>
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Card><p class="text-xs text-ink-muted">Actions</p><p class="text-xl font-semibold text-ink">{kpis.actions.total}</p></Card>
-        <Card><p class="text-xs text-ink-muted">Taux d'approbation</p><p class="text-xl font-semibold text-ink">{pct(kpis.approvalRate)}</p></Card>
-        <Card><p class="text-xs text-ink-muted">Auto-approbation</p><p class="text-xl font-semibold text-ink">{pct(kpis.autoApprovalRate)}</p></Card>
-        <Card><p class="text-xs text-ink-muted">Taux d'erreur</p><p class="text-xl font-semibold text-ink">{pct(kpis.errorRate)}</p></Card>
-        <Card><p class="text-xs text-ink-muted">Runs réussis</p><p class="text-xl font-semibold text-ink">{kpis.runs.succeeded}/{kpis.runs.total}</p></Card>
-        <Card><p class="text-xs text-ink-muted">Latence moy.</p><p class="text-xl font-semibold text-ink">{kpis.avgRunLatencyMs == null ? '—' : kpis.avgRunLatencyMs + ' ms'}</p></Card>
-        <Card><p class="text-xs text-ink-muted">Tâches résolues</p><p class="text-xl font-semibold text-ink">{kpis.tasksResolved}</p></Card>
-        <Card><p class="text-xs text-ink-muted">Trips breaker</p><p class="text-xl font-semibold text-ink">{kpis.breakerTrips}</p></Card>
+        <Card
+          ><p class="text-xs text-ink-muted">Actions</p>
+          <p class="text-xl font-semibold text-ink">{kpis.actions.total}</p></Card
+        >
+        <Card
+          ><p class="text-xs text-ink-muted">Taux d'approbation</p>
+          <p class="text-xl font-semibold text-ink">{pct(kpis.approvalRate)}</p></Card
+        >
+        <Card
+          ><p class="text-xs text-ink-muted">Auto-approbation</p>
+          <p class="text-xl font-semibold text-ink">{pct(kpis.autoApprovalRate)}</p></Card
+        >
+        <Card
+          ><p class="text-xs text-ink-muted">Taux d'erreur</p>
+          <p class="text-xl font-semibold text-ink">{pct(kpis.errorRate)}</p></Card
+        >
+        <Card
+          ><p class="text-xs text-ink-muted">Runs réussis</p>
+          <p class="text-xl font-semibold text-ink">
+            {kpis.runs.succeeded}/{kpis.runs.total}
+          </p></Card
+        >
+        <Card
+          ><p class="text-xs text-ink-muted">Latence moy.</p>
+          <p class="text-xl font-semibold text-ink">
+            {kpis.avgRunLatencyMs == null ? '—' : kpis.avgRunLatencyMs + ' ms'}
+          </p></Card
+        >
+        <Card
+          ><p class="text-xs text-ink-muted">Tâches résolues</p>
+          <p class="text-xl font-semibold text-ink">{kpis.tasksResolved}</p></Card
+        >
+        <Card
+          ><p class="text-xs text-ink-muted">Trips breaker</p>
+          <p class="text-xl font-semibold text-ink">{kpis.breakerTrips}</p></Card
+        >
       </div>
     </div>
   {/if}
@@ -860,7 +941,10 @@
         <ul class="divide-y divide-edge">
           {#each timelineItems as t (t.kind + (t.ref ?? '') + t.at)}
             <li class="flex items-center justify-between gap-3 px-1 py-2 text-sm">
-              <span class="min-w-0"><Badge tone="neutral">{t.kind}</Badge> <span class="text-ink">{t.summary}</span></span>
+              <span class="min-w-0"
+                ><Badge tone="neutral">{t.kind}</Badge>
+                <span class="text-ink">{t.summary}</span></span
+              >
               <span class="shrink-0 text-ink-faint">{formatDateTime(t.at)}</span>
             </li>
           {/each}
@@ -887,9 +971,13 @@
           </Badge>
           {#if runtimeReadiness.ready}
             <span class="text-ink-muted">
-              {#if runtimeProviderLabel}Fournisseur : <span class="font-medium text-ink">{runtimeProviderLabel}</span>{/if}
+              {#if runtimeProviderLabel}Fournisseur : <span class="font-medium text-ink"
+                  >{runtimeProviderLabel}</span
+                >{/if}
               {#if agent.model ?? runtimeDefaultModel}
-                · Modèle : <span class="font-medium text-ink">{agent.model ?? runtimeDefaultModel}</span>
+                · Modèle : <span class="font-medium text-ink"
+                  >{agent.model ?? runtimeDefaultModel}</span
+                >
               {/if}
             </span>
           {:else}
@@ -931,12 +1019,7 @@
                 Reprendre
               </Button>
             {:else}
-              <Button
-                variant="secondary"
-                onclick={runNow}
-                loading={busy}
-                disabled={busy}
-              >
+              <Button variant="secondary" onclick={runNow} loading={busy} disabled={busy}>
                 Exécuter maintenant
               </Button>
               <Button
@@ -972,10 +1055,17 @@
                   {/if}
                 </span>
                 <span class="text-xs text-ink-muted">
-                  {#if run.task}<span class="font-medium text-ink-muted">{run.task.category}</span> · {/if}{run.trigger} · {run.proposedActionCount} action{run.proposedActionCount !== 1 ? 's' : ''} · {formatDateTime(run.startedAt)}
+                  {#if run.task}<span class="font-medium text-ink-muted">{run.task.category}</span> ·
+                  {/if}{run.trigger} · {run.proposedActionCount} action{run.proposedActionCount !==
+                  1
+                    ? 's'
+                    : ''} · {formatDateTime(run.startedAt)}
                 </span>
                 {#if run.task?.resolutionNote}
-                  <span class="mt-0.5 block truncate text-xs text-ink-muted" title={run.task.resolutionNote}>↳ {run.task.resolutionNote}</span>
+                  <span
+                    class="mt-0.5 block truncate text-xs text-ink-muted"
+                    title={run.task.resolutionNote}>↳ {run.task.resolutionNote}</span
+                  >
                 {/if}
                 {#if run.error}
                   <span class="mt-0.5 block truncate text-xs text-danger">{run.error}</span>
@@ -983,7 +1073,9 @@
               </span>
               <div class="flex shrink-0 items-center gap-2">
                 {#if run.task}
-                  <Badge tone={run.task.status === 'RESOLVED' ? 'ok' : 'neutral'}>{run.task.status}</Badge>
+                  <Badge tone={run.task.status === 'RESOLVED' ? 'ok' : 'neutral'}
+                    >{run.task.status}</Badge
+                  >
                 {/if}
                 <Badge tone={runStatusTone(run.status)}>{run.status}</Badge>
               </div>
@@ -1005,12 +1097,7 @@
     {#if activity}
       <!-- Stats row -->
       <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {#each [
-          { label: 'Conversations', value: activity.stats.conversations },
-          { label: 'En attente', value: activity.stats.pending },
-          { label: 'Exécutées', value: activity.stats.executed },
-          { label: 'Rejetées', value: activity.stats.rejected },
-        ] as stat (stat.label)}
+        {#each [{ label: 'Conversations', value: activity.stats.conversations }, { label: 'En attente', value: activity.stats.pending }, { label: 'Exécutées', value: activity.stats.executed }, { label: 'Rejetées', value: activity.stats.rejected }] as stat (stat.label)}
           <div class="rounded-card border border-edge bg-surface p-4 text-center">
             <p class="text-2xl font-bold text-ink">{stat.value}</p>
             <p class="mt-0.5 text-xs text-ink-muted">{stat.label}</p>
@@ -1039,7 +1126,9 @@
                       {convo.title ?? 'Sans titre'}
                     </span>
                     <span class="text-xs text-ink-muted">
-                      {convo.messageCount} message{convo.messageCount !== 1 ? 's' : ''} · {formatDateTime(convo.createdAt)}
+                      {convo.messageCount} message{convo.messageCount !== 1 ? 's' : ''} · {formatDateTime(
+                        convo.createdAt,
+                      )}
                     </span>
                   </span>
                   <span class="shrink-0 text-xs text-accent">Ouvrir ↓</span>
@@ -1055,12 +1144,12 @@
         <Card>
           <div class="mb-3 flex items-center justify-between">
             <h3 class="text-sm font-semibold text-ink">Actions proposées</h3>
-            <a href="/agent-actions" class="text-xs text-accent hover:underline">
-              Voir toutes →
-            </a>
+            <a href="/agent-actions" class="text-xs text-accent hover:underline"> Voir toutes → </a>
           </div>
           {#if activity.proposedActions.length === 0}
-            <p class="py-4 text-center text-sm text-ink-faint">Aucune action proposée pour l'instant.</p>
+            <p class="py-4 text-center text-sm text-ink-faint">
+              Aucune action proposée pour l'instant.
+            </p>
           {:else}
             <ul class="divide-y divide-edge">
               {#each activity.proposedActions as action (action.id)}
@@ -1069,7 +1158,9 @@
                     <span class="block truncate text-sm font-medium text-ink">{action.tool}</span>
                     <span class="text-xs text-ink-muted">{formatDateTime(action.proposedAt)}</span>
                     {#if actionReasonText(action)}
-                      <span class="mt-0.5 block text-xs text-ink-faint">{actionReasonText(action)}</span>
+                      <span class="mt-0.5 block text-xs text-ink-faint"
+                        >{actionReasonText(action)}</span
+                      >
                     {/if}
                   </span>
                   <div class="flex shrink-0 items-center gap-1.5">
@@ -1098,7 +1189,11 @@
             <span class="text-xs text-ink-muted">Conversation chargée depuis l'historique</span>
             <button
               class="text-xs text-accent hover:underline"
-              onclick={() => { chatConversationId = null; chatInitialMessages = []; chatReset = true; }}
+              onclick={() => {
+                chatConversationId = null;
+                chatInitialMessages = [];
+                chatReset = true;
+              }}
             >
               Nouvelle conversation
             </button>
@@ -1106,7 +1201,7 @@
         {/if}
         {#key chatConversationId}
           <Conversation
-            agentId={agentId}
+            {agentId}
             initialConversationId={chatConversationId}
             initialMessages={chatInitialMessages}
           />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import { page } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
@@ -171,7 +172,11 @@
           ...(order.completedAt
             ? [{ label: 'Complété', timestamp: order.completedAt, tone: 'ok' as const }]
             : []),
-          { label: statusLabel(order.status), description: 'Statut actuel', tone: statusTone(order.status) },
+          {
+            label: statusLabel(order.status),
+            description: 'Statut actuel',
+            tone: statusTone(order.status),
+          },
         ]
       : [],
   );
@@ -276,7 +281,7 @@
 
   async function cancelOrder() {
     if (!order) return;
-    if (!confirm('Annuler ce pick order ?')) return;
+    if (!(await confirmAction('Annuler ce pick order ?'))) return;
     try {
       await api(`/wms/pick-orders/${order.id}/cancel`, { method: 'POST' });
       toast.success('Pick order annulé');

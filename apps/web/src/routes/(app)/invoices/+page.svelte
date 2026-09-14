@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import { page as route } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
@@ -103,10 +104,18 @@
   const PAGE_SIZE = 25;
   let carrierPage = $state(1);
   const carrierTotalPages = $derived(Math.max(1, Math.ceil(invoices.length / PAGE_SIZE)));
-  const pagedInvoices = $derived(invoices.slice((carrierPage - 1) * PAGE_SIZE, carrierPage * PAGE_SIZE));
-  const disputedCarrierCount = $derived(invoices.filter((invoice) => invoice.status === 'DISPUTED').length);
-  const approvedCarrierCount = $derived(invoices.filter((invoice) => invoice.status === 'APPROVED').length);
-  const draftCarrierCount = $derived(invoices.filter((invoice) => invoice.status === 'DRAFT').length);
+  const pagedInvoices = $derived(
+    invoices.slice((carrierPage - 1) * PAGE_SIZE, carrierPage * PAGE_SIZE),
+  );
+  const disputedCarrierCount = $derived(
+    invoices.filter((invoice) => invoice.status === 'DISPUTED').length,
+  );
+  const approvedCarrierCount = $derived(
+    invoices.filter((invoice) => invoice.status === 'APPROVED').length,
+  );
+  const draftCarrierCount = $derived(
+    invoices.filter((invoice) => invoice.status === 'DRAFT').length,
+  );
 
   // Reconcile form state (per expanded invoice)
   let carrierInvoiceNumber = $state('');
@@ -209,9 +218,7 @@
             return {
               lineId: l.id,
               invoicedAmount:
-                Number.isFinite(parsed) && invoicedAmounts[l.id] !== ''
-                  ? parsed
-                  : Number(l.amount),
+                Number.isFinite(parsed) && invoicedAmounts[l.id] !== '' ? parsed : Number(l.amount),
             };
           }),
         },
@@ -266,9 +273,9 @@
 
   async function deleteInvoice(invoice: InvoiceRow) {
     if (
-      !confirm(
+      !(await confirmAction(
         `Delete draft invoice ${invoice.invoiceNumber}? This frees the loads for re-drafting.`,
-      )
+      ))
     )
       return;
     try {
@@ -377,7 +384,9 @@
 
   // Client-side pagination for the customer statements table.
   let customerPage = $state(1);
-  const customerTotalPages = $derived(Math.max(1, Math.ceil(customerStatements.length / PAGE_SIZE)));
+  const customerTotalPages = $derived(
+    Math.max(1, Math.ceil(customerStatements.length / PAGE_SIZE)),
+  );
   const pagedStatements = $derived(
     customerStatements.slice((customerPage - 1) * PAGE_SIZE, customerPage * PAGE_SIZE),
   );
@@ -457,9 +466,7 @@
         { method: 'POST', body: { customerId: selectedCustomerId } },
       );
       const currencies = [...new Set(result.invoices.map((i) => i.currency))].join(', ');
-      toast.success(
-        `${result.invoices.length} statement(s) created (${currencies})`,
-      );
+      toast.success(`${result.invoices.length} statement(s) created (${currencies})`);
       // Clear preview
       previewRatable = [];
       previewUnratable = [];
@@ -494,7 +501,12 @@
   }
 
   async function sendStatement(stmt: StatementRow) {
-    if (!confirm(`Send statement ${stmt.invoiceNumber} by email to the customer contact?`)) return;
+    if (
+      !(await confirmAction(
+        `Send statement ${stmt.invoiceNumber} by email to the customer contact?`,
+      ))
+    )
+      return;
     try {
       await api(`/billing/customer-invoices/${stmt.id}/send`, { method: 'POST' });
       toast.success(`${stmt.invoiceNumber} sent`);
@@ -516,9 +528,9 @@
 
   async function deleteStatement(stmt: StatementRow) {
     if (
-      !confirm(
+      !(await confirmAction(
         `Delete draft statement ${stmt.invoiceNumber}? This frees the orders for regeneration.`,
-      )
+      ))
     )
       return;
     try {
@@ -580,18 +592,37 @@
 </script>
 
 <PageHeader
-  title="Invoices &amp; statements"
-  subtitle="Reconcile carrier invoices, resolve variances, and generate customer billing statements from completed work."
+  title="Factures et relevés"
+  subtitle="Rapprocher les factures transporteurs et préparer la facturation client."
 />
 
 <div class="mb-5 grid gap-3 md:grid-cols-3">
-  <Card><div class="text-xl font-bold text-ink">{draftCarrierCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Draft carrier invoices</div><p class="mt-1 text-xs text-ink-faint">Generated from completed loads, waiting for invoice numbers.</p></Card>
-  <Card><div class="text-xl font-bold text-danger">{disputedCarrierCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Disputed</div><p class="mt-1 text-xs text-ink-faint">Variance decisions needed before payment.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{approvedCarrierCount}</div><div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Approved</div><p class="mt-1 text-xs text-ink-faint">Ready to mark paid or hand off to accounting.</p></Card>
+  <Card
+    ><div class="text-xl font-bold text-ink">{draftCarrierCount}</div>
+    <div class="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+      Factures transporteurs en brouillon
+    </div>
+    <p class="mt-1 text-xs text-ink-faint">
+      Issues des chargements terminés, à compléter avant approbation.
+    </p></Card
+  >
+  <Card
+    ><div class="text-xl font-bold text-danger">{disputedCarrierCount}</div>
+    <div class="text-xs font-medium text-ink-muted">En litige</div>
+    <p class="mt-1 text-xs text-ink-faint">Écarts à résoudre avant paiement.</p></Card
+  >
+  <Card
+    ><div class="text-xl font-bold text-ink">{approvedCarrierCount}</div>
+    <div class="text-xs font-medium text-ink-muted">Approuvées</div>
+    <p class="mt-1 text-xs text-ink-faint">Prêtes pour le suivi des paiements.</p></Card
+  >
 </div>
 
 <Tabs
-  tabs={[{ id: 'carrier', label: 'Carrier invoices' }, { id: 'customer', label: 'Customer statements' }]}
+  tabs={[
+    { id: 'carrier', label: 'Factures transporteurs' },
+    { id: 'customer', label: 'Relevés clients' },
+  ]}
   bind:active={activeTab}
 >
   {#snippet children()}
@@ -619,9 +650,9 @@
       </FilterBar>
 
       <p class="mb-4 text-sm text-ink-muted">
-        A draft bundles the carrier's completed, not-yet-invoiced loads at their estimated cost
-        (the expected amount). Reconcile it against the carrier's actual invoice: within tolerance
-        it is approved automatically; over tolerance it goes to dispute.
+        A draft bundles the carrier's completed, not-yet-invoiced loads at their estimated cost (the
+        expected amount). Reconcile it against the carrier's actual invoice: within tolerance it is
+        approved automatically; over tolerance it goes to dispute.
       </p>
 
       <ErrorNotice message={error} onretry={load} />
@@ -629,202 +660,246 @@
       {#if loadingCarrier}
         <Card padded={false}><Skeleton rows={6} /></Card>
       {:else}
-      <Table>
-        {#snippet head()}
-          <th>Invoice #</th><th>Carrier</th><th>Expected</th><th>Invoiced</th>
-          <th>Variance (net / gross)</th><th>Status</th><th></th>
-        {/snippet}
-        {#snippet body()}
-          {#each pagedInvoices as invoice (invoice.id)}
-            <tr>
-              <td>
-                <button
-                  class="font-semibold text-accent hover:underline bg-transparent border-none p-0 cursor-pointer text-sm"
-                  onclick={() => expand(invoice)}
-                >{invoice.invoiceNumber}</button>
-              </td>
-              <td>{invoice.carrier.name}</td>
-              <td>{Number(invoice.totalAmount).toLocaleString()} {invoice.currency}</td>
-              <td>
-                {invoice.invoicedTotal !== null
-                  ? `${Number(invoice.invoicedTotal).toLocaleString()} ${invoice.currency}`
-                  : '—'}
-              </td>
-              <td>
-                {invoice.varianceGross !== null
-                  ? `${Number(invoice.varianceTotal).toLocaleString()} / ${Number(invoice.varianceGross).toLocaleString()}`
-                  : '—'}
-              </td>
-              <td><Badge tone={toneFor(invoice.status)}>{labelFor(invoice.status)}</Badge></td>
-              <td class="text-right whitespace-nowrap">
-                {#if invoice.status === 'DRAFT'}
-                  <Button variant="secondary" onclick={() => approve(invoice)}>Approve as-is</Button>
-                  {#if allowInvoiceDeletion}
-                    <Button variant="danger" onclick={() => deleteInvoice(invoice)}>Delete draft</Button>
-                  {/if}
-                {:else if invoice.status === 'APPROVED'}
-                  <input
-                    type="date"
-                    bind:value={markPaidDate[invoice.id]}
-                    title="Payment date (optional)"
-                    class="rounded border border-edge bg-surface px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
-                  />
-                  <Button variant="secondary" onclick={() => markPaid(invoice)}>Mark paid</Button>
-                {/if}
-              </td>
-            </tr>
-            {#if expanded === invoice.id}
+        <Table>
+          {#snippet head()}
+            <th>Invoice #</th><th>Carrier</th><th>Expected</th><th>Invoiced</th>
+            <th>Variance (net / gross)</th><th>Status</th><th></th>
+          {/snippet}
+          {#snippet body()}
+            {#each pagedInvoices as invoice (invoice.id)}
               <tr>
-                <td colspan="7" class="bg-base p-0">
-                  <div class="p-4 space-y-3">
-                    <table class="w-full text-sm">
-                      <tbody>
-                        {#each invoice.lines as line (line.id)}
-                          <tr class="border-b border-edge last:border-0">
-                            <td class="py-1.5 pr-4">{line.description}</td>
-                            <td class="py-1.5 text-right pr-4 text-ink-muted">
-                              {Number(line.amount).toLocaleString()} {invoice.currency}
-                            </td>
-                            <td class="py-1.5 text-right w-40">
-                              {#if invoice.status === 'DRAFT' || invoice.status === 'DISPUTED'}
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  bind:value={invoicedAmounts[line.id]}
-                                  class="w-28 rounded border border-edge bg-surface px-2 py-0.5 text-right text-sm text-ink focus:border-accent focus:outline-none"
-                                />
-                              {:else if line.invoicedAmount !== null}
-                                {Number(line.invoicedAmount).toLocaleString()}
-                                {#if line.variance !== null && Number(line.variance) !== 0}
-                                  <span class="text-danger text-xs ml-1">
-                                    ({Number(line.variance) > 0 ? '+' : ''}{line.variance})
-                                  </span>
-                                {/if}
-                              {:else}
-                                —
-                              {/if}
-                            </td>
-                          </tr>
-                        {/each}
-                      </tbody>
-                    </table>
-
-                    {#if invoice.status === 'DRAFT' || invoice.status === 'DISPUTED'}
-                      <div class="flex gap-2 items-center flex-wrap">
-                        <Input
-                          placeholder="Carrier invoice #"
-                          bind:value={carrierInvoiceNumber}
-                        />
-                        <Button
-                          variant="primary"
-                          disabled={!carrierInvoiceNumber}
-                          onclick={() => reconcile(invoice)}
-                        >
-                          {invoice.status === 'DISPUTED' ? 'Re-reconcile (corrected invoice)' : 'Reconcile'}
-                        </Button>
-                      </div>
+                <td>
+                  <button
+                    class="font-semibold text-accent hover:underline bg-transparent border-none p-0 cursor-pointer text-sm"
+                    onclick={() => expand(invoice)}>{invoice.invoiceNumber}</button
+                  >
+                </td>
+                <td>{invoice.carrier.name}</td>
+                <td>{Number(invoice.totalAmount).toLocaleString()} {invoice.currency}</td>
+                <td>
+                  {invoice.invoicedTotal !== null
+                    ? `${Number(invoice.invoicedTotal).toLocaleString()} ${invoice.currency}`
+                    : '—'}
+                </td>
+                <td>
+                  {invoice.varianceGross !== null
+                    ? `${Number(invoice.varianceTotal).toLocaleString()} / ${Number(invoice.varianceGross).toLocaleString()}`
+                    : '—'}
+                </td>
+                <td><Badge tone={toneFor(invoice.status)}>{labelFor(invoice.status)}</Badge></td>
+                <td class="text-right whitespace-nowrap">
+                  {#if invoice.status === 'DRAFT'}
+                    <Button variant="secondary" onclick={() => approve(invoice)}
+                      >Approve as-is</Button
+                    >
+                    {#if allowInvoiceDeletion}
+                      <Button variant="danger" onclick={() => deleteInvoice(invoice)}
+                        >Delete draft</Button
+                      >
                     {/if}
-
-                    {#if invoice.status === 'DISPUTED'}
-                      <div class="flex gap-2 items-center flex-wrap">
-                        <div class="w-44">
-                          <Select bind:value={resolution}>
-                            <option value="ACCEPT_INVOICED">Pay invoiced amount</option>
-                            <option value="KEEP_EXPECTED">Pay expected amount</option>
-                          </Select>
-                        </div>
-                        <div class="w-48">
-                          <Select bind:value={reasonCode}>
-                            {#each REASON_CODES as code (code)}<option value={code}>{code}</option>{/each}
-                          </Select>
-                        </div>
-                        <div class="flex-1 min-w-40">
-                          <Input placeholder="Note (optional)" bind:value={disputeNote} />
-                        </div>
-                        <Button variant="danger" onclick={() => resolve(invoice)}>Resolve dispute</Button>
-                      </div>
-                    {/if}
-
-                    {#if invoice.disputeReasonCode}
-                      <p class="text-sm text-ink-muted">
-                        Dispute: {invoice.disputeReasonCode}{invoice.disputeNote ? ` — ${invoice.disputeNote}` : ''}
-                      </p>
-                    {/if}
-
-                    <!-- Tax breakdown / totals -->
-                    {#if Number(invoice.taxAmount) > 0 && invoice.taxDetail}
-                      {@const taxAmt = Number(invoice.taxAmount)}
-                      {@const total = Number(invoice.totalAmount)}
-                      {@const net = total - taxAmt}
-                      <div class="rounded-md border border-edge bg-surface p-3 space-y-1 text-sm">
-                        <div class="flex justify-between text-ink-muted">
-                          <span>Net</span>
-                          <span>{net.toLocaleString()} {invoice.currency}</span>
-                        </div>
-                        {#each invoice.taxDetail.lines as tl (tl.description)}
-                          <div class="flex justify-between text-ink-muted">
-                            <span>{tl.description} ({tl.rate}%)</span>
-                            <span>{Number(tl.amount).toLocaleString()} {invoice.currency}</span>
-                          </div>
-                        {/each}
-                        <div class="flex justify-between font-semibold border-t border-edge pt-1 text-ink">
-                          <span>Total</span>
-                          <span>{total.toLocaleString()} {invoice.currency}</span>
-                        </div>
-                      </div>
-                    {:else}
-                      <div class="rounded-md border border-edge bg-surface p-3 text-sm">
-                        <div class="flex justify-between font-semibold text-ink">
-                          <span>Total</span>
-                          <span>{Number(invoice.totalAmount).toLocaleString()} {invoice.currency}</span>
-                        </div>
-                      </div>
-                    {/if}
-
-                    <!-- Tax template selector (DRAFT only) -->
-                    {#if invoice.status === 'DRAFT'}
-                      <div class="flex items-center gap-2 flex-wrap">
-                        <span class="text-xs text-ink-muted">Tax template:</span>
-                        <div class="w-56">
-                          <Select
-                            value={invoice.taxTemplateId ?? ''}
-                            onchange={(e) => {
-                              const val = (e.target as HTMLSelectElement).value;
-                              void applyCarrierTax(invoice, val === '' ? null : val);
-                            }}
-                          >
-                            <option value="">Aucune taxe</option>
-                            {#each purchaseTaxTemplates as t (t.id)}
-                              <option value={t.id}>{t.name}</option>
-                            {/each}
-                          </Select>
-                        </div>
-                      </div>
-                    {/if}
-                  </div>
+                  {:else if invoice.status === 'APPROVED'}
+                    <input
+                      type="date"
+                      bind:value={markPaidDate[invoice.id]}
+                      title="Payment date (optional)"
+                      class="rounded border border-edge bg-surface px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
+                    />
+                    <Button variant="secondary" onclick={() => markPaid(invoice)}>Mark paid</Button>
+                  {/if}
                 </td>
               </tr>
-            {/if}
-          {:else}
-            <tr><td colspan="7"><EmptyState title="No carrier invoices yet" message="Generate a draft from completed loads, then reconcile it against the carrier invoice to catch variance before payment.">
-              {#snippet children()}<Button variant="secondary" href="/loads">Review completed loads</Button>{/snippet}</EmptyState></td></tr>
-          {/each}
-        {/snippet}
-      </Table>
+              {#if expanded === invoice.id}
+                <tr>
+                  <td colspan="7" class="bg-base p-0">
+                    <div class="p-4 space-y-3">
+                      <table class="w-full text-sm">
+                        <tbody>
+                          {#each invoice.lines as line (line.id)}
+                            <tr class="border-b border-edge last:border-0">
+                              <td class="py-1.5 pr-4">{line.description}</td>
+                              <td class="py-1.5 text-right pr-4 text-ink-muted">
+                                {Number(line.amount).toLocaleString()}
+                                {invoice.currency}
+                              </td>
+                              <td class="py-1.5 text-right w-40">
+                                {#if invoice.status === 'DRAFT' || invoice.status === 'DISPUTED'}
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    bind:value={invoicedAmounts[line.id]}
+                                    class="w-28 rounded border border-edge bg-surface px-2 py-0.5 text-right text-sm text-ink focus:border-accent focus:outline-none"
+                                  />
+                                {:else if line.invoicedAmount !== null}
+                                  {Number(line.invoicedAmount).toLocaleString()}
+                                  {#if line.variance !== null && Number(line.variance) !== 0}
+                                    <span class="text-danger text-xs ml-1">
+                                      ({Number(line.variance) > 0 ? '+' : ''}{line.variance})
+                                    </span>
+                                  {/if}
+                                {:else}
+                                  —
+                                {/if}
+                              </td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
 
-      {#if invoices.length > PAGE_SIZE}
-        <div class="mt-3 flex items-center justify-between text-sm text-ink-muted">
-          <span class="font-mono text-xs">{(carrierPage - 1) * PAGE_SIZE + 1}–{Math.min(carrierPage * PAGE_SIZE, invoices.length)} sur {invoices.length}</span>
-          <div class="flex items-center gap-2">
-            <Button variant="secondary" disabled={carrierPage <= 1} onclick={() => { carrierPage = Math.max(1, carrierPage - 1); }}>Précédent</Button>
-            <span class="font-mono text-xs">Page {carrierPage} / {carrierTotalPages}</span>
-            <Button variant="secondary" disabled={carrierPage >= carrierTotalPages} onclick={() => { carrierPage = Math.min(carrierTotalPages, carrierPage + 1); }}>Suivant</Button>
+                      {#if invoice.status === 'DRAFT' || invoice.status === 'DISPUTED'}
+                        <div class="flex gap-2 items-center flex-wrap">
+                          <Input
+                            placeholder="Carrier invoice #"
+                            bind:value={carrierInvoiceNumber}
+                          />
+                          <Button
+                            variant="primary"
+                            disabled={!carrierInvoiceNumber}
+                            onclick={() => reconcile(invoice)}
+                          >
+                            {invoice.status === 'DISPUTED'
+                              ? 'Re-reconcile (corrected invoice)'
+                              : 'Reconcile'}
+                          </Button>
+                        </div>
+                      {/if}
+
+                      {#if invoice.status === 'DISPUTED'}
+                        <div class="flex gap-2 items-center flex-wrap">
+                          <div class="w-44">
+                            <Select bind:value={resolution}>
+                              <option value="ACCEPT_INVOICED">Pay invoiced amount</option>
+                              <option value="KEEP_EXPECTED">Pay expected amount</option>
+                            </Select>
+                          </div>
+                          <div class="w-48">
+                            <Select bind:value={reasonCode}>
+                              {#each REASON_CODES as code (code)}<option value={code}>{code}</option
+                                >{/each}
+                            </Select>
+                          </div>
+                          <div class="flex-1 min-w-40">
+                            <Input placeholder="Note (optional)" bind:value={disputeNote} />
+                          </div>
+                          <Button variant="danger" onclick={() => resolve(invoice)}
+                            >Resolve dispute</Button
+                          >
+                        </div>
+                      {/if}
+
+                      {#if invoice.disputeReasonCode}
+                        <p class="text-sm text-ink-muted">
+                          Dispute: {invoice.disputeReasonCode}{invoice.disputeNote
+                            ? ` — ${invoice.disputeNote}`
+                            : ''}
+                        </p>
+                      {/if}
+
+                      <!-- Tax breakdown / totals -->
+                      {#if Number(invoice.taxAmount) > 0 && invoice.taxDetail}
+                        {@const taxAmt = Number(invoice.taxAmount)}
+                        {@const total = Number(invoice.totalAmount)}
+                        {@const net = total - taxAmt}
+                        <div class="rounded-md border border-edge bg-surface p-3 space-y-1 text-sm">
+                          <div class="flex justify-between text-ink-muted">
+                            <span>Net</span>
+                            <span>{net.toLocaleString()} {invoice.currency}</span>
+                          </div>
+                          {#each invoice.taxDetail.lines as tl (tl.description)}
+                            <div class="flex justify-between text-ink-muted">
+                              <span>{tl.description} ({tl.rate}%)</span>
+                              <span>{Number(tl.amount).toLocaleString()} {invoice.currency}</span>
+                            </div>
+                          {/each}
+                          <div
+                            class="flex justify-between font-semibold border-t border-edge pt-1 text-ink"
+                          >
+                            <span>Total</span>
+                            <span>{total.toLocaleString()} {invoice.currency}</span>
+                          </div>
+                        </div>
+                      {:else}
+                        <div class="rounded-md border border-edge bg-surface p-3 text-sm">
+                          <div class="flex justify-between font-semibold text-ink">
+                            <span>Total</span>
+                            <span
+                              >{Number(invoice.totalAmount).toLocaleString()}
+                              {invoice.currency}</span
+                            >
+                          </div>
+                        </div>
+                      {/if}
+
+                      <!-- Tax template selector (DRAFT only) -->
+                      {#if invoice.status === 'DRAFT'}
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span class="text-xs text-ink-muted">Tax template:</span>
+                          <div class="w-56">
+                            <Select
+                              value={invoice.taxTemplateId ?? ''}
+                              onchange={(e) => {
+                                const val = (e.target as HTMLSelectElement).value;
+                                void applyCarrierTax(invoice, val === '' ? null : val);
+                              }}
+                            >
+                              <option value="">Aucune taxe</option>
+                              {#each purchaseTaxTemplates as t (t.id)}
+                                <option value={t.id}>{t.name}</option>
+                              {/each}
+                            </Select>
+                          </div>
+                        </div>
+                      {/if}
+                    </div>
+                  </td>
+                </tr>
+              {/if}
+            {:else}
+              <tr
+                ><td colspan="7"
+                  ><EmptyState
+                    title="No carrier invoices yet"
+                    message="Generate a draft from completed loads, then reconcile it against the carrier invoice to catch variance before payment."
+                  >
+                    {#snippet children()}<Button variant="secondary" href="/loads"
+                        >Review completed loads</Button
+                      >{/snippet}</EmptyState
+                  ></td
+                ></tr
+              >
+            {/each}
+          {/snippet}
+        </Table>
+
+        {#if invoices.length > PAGE_SIZE}
+          <div class="mt-3 flex items-center justify-between text-sm text-ink-muted">
+            <span class="font-mono text-xs"
+              >{(carrierPage - 1) * PAGE_SIZE + 1}–{Math.min(
+                carrierPage * PAGE_SIZE,
+                invoices.length,
+              )} sur {invoices.length}</span
+            >
+            <div class="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                disabled={carrierPage <= 1}
+                onclick={() => {
+                  carrierPage = Math.max(1, carrierPage - 1);
+                }}>Précédent</Button
+              >
+              <span class="font-mono text-xs">Page {carrierPage} / {carrierTotalPages}</span>
+              <Button
+                variant="secondary"
+                disabled={carrierPage >= carrierTotalPages}
+                onclick={() => {
+                  carrierPage = Math.min(carrierTotalPages, carrierPage + 1);
+                }}>Suivant</Button
+              >
+            </div>
           </div>
-        </div>
-      {/if}
+        {/if}
       {/if}
 
-    <!-- ══════════════════════════════════════════════════════════ CUSTOMER TAB -->
+      <!-- ══════════════════════════════════════════════════════════ CUSTOMER TAB -->
     {:else}
       <!-- Billable preview panel -->
       <Card>
@@ -835,7 +910,8 @@
             class="rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none w-64"
           >
             <option value="" disabled>Select a customer…</option>
-            {#each customerOptions as c (c.id)}<option value={c.id}>{c.code} — {c.name}</option>{/each}
+            {#each customerOptions as c (c.id)}<option value={c.id}>{c.code} — {c.name}</option
+              >{/each}
           </select>
           <Button
             variant="secondary"
@@ -846,7 +922,9 @@
           </Button>
           {#if previewDone && previewRatable.length > 0}
             <Button onclick={generateStatements}>
-              Generate statements ({previewRatable.length} order{previewRatable.length !== 1 ? 's' : ''})
+              Generate statements ({previewRatable.length} order{previewRatable.length !== 1
+                ? 's'
+                : ''})
             </Button>
           {/if}
         </div>
@@ -862,7 +940,9 @@
                     {#each previewRatable as row (row.orderId)}
                       <tr>
                         <td>{row.orderNumber}</td>
-                        <td class="text-right">{Number(row.amount).toLocaleString()} {row.currency}</td>
+                        <td class="text-right"
+                          >{Number(row.amount).toLocaleString()} {row.currency}</td
+                        >
                       </tr>
                     {/each}
                   {/snippet}
@@ -911,193 +991,231 @@
       {#if loadingCustomer}
         <Card padded={false}><Skeleton rows={6} /></Card>
       {:else}
-      <Table>
-        {#snippet head()}
-          <th>Statement #</th><th>Customer</th><th>Status</th><th>Currency</th>
-          <th class="text-right">Total</th><th>Created</th><th></th>
-        {/snippet}
-        {#snippet body()}
-          {#each pagedStatements as stmt (stmt.id)}
-            <tr>
-              <td>
-                <button
-                  class="font-semibold text-accent hover:underline bg-transparent border-none p-0 cursor-pointer text-sm"
-                  onclick={() => expandStmt(stmt)}
-                >{stmt.invoiceNumber}</button>
-              </td>
-              <td>{stmt.customer.name}</td>
-              <td><Badge tone={toneFor(stmt.status)}>{labelFor(stmt.status)}</Badge></td>
-              <td>{stmt.currency}</td>
-              <td class="text-right">{Number(stmt.totalAmount).toLocaleString()} {stmt.currency}</td>
-              <td>{formatDate(stmt.createdAt)}</td>
-              <td class="text-right whitespace-nowrap">
-                {#if stmt.status === 'DRAFT'}
-                  <Button variant="primary" onclick={() => approveStatement(stmt)}>Approve</Button>
-                  <Button variant="danger" onclick={() => deleteStatement(stmt)}>Delete draft</Button>
-                {:else if stmt.status === 'APPROVED'}
-                  <Button variant="primary" onclick={() => sendStatement(stmt)}>Send</Button>
-                {:else if stmt.status === 'SENT'}
-                  <Button variant="secondary" onclick={() => payStatement(stmt)}>Mark paid</Button>
-                {/if}
-              </td>
-            </tr>
-
-            {#if stmtExpanded === stmt.id}
+        <Table>
+          {#snippet head()}
+            <th>Statement #</th><th>Customer</th><th>Status</th><th>Currency</th>
+            <th class="text-right">Total</th><th>Created</th><th></th>
+          {/snippet}
+          {#snippet body()}
+            {#each pagedStatements as stmt (stmt.id)}
               <tr>
-                <td colspan="7" class="bg-base p-0">
-                  <div class="p-4 space-y-3">
-                    <p class="text-xs text-ink-muted">
-                      Lines — {stmt.lines.length} order{stmt.lines.length !== 1 ? 's' : ''}
-                      {#if stmt.customer.email}
-                        · customer email: {stmt.customer.email}
-                      {/if}
-                    </p>
-                    <Table>
-                      {#snippet head()}
-                        <th>Order #</th><th>Description</th><th class="text-right">Amount</th><th></th>
-                      {/snippet}
-                      {#snippet body()}
-                        {#each stmt.lines as line (line.id)}
-                          <tr>
-                            <td>{line.transportOrder?.orderNumber ?? '—'}</td>
-                            <td>{line.description}</td>
-                            <td class="text-right">{Number(line.amount).toLocaleString()} {stmt.currency}</td>
-                            <td class="text-right">
-                              {#if line.priceDetail}
-                                <button
-                                  class="text-xs text-accent hover:underline bg-transparent border-none p-0 cursor-pointer"
-                                  onclick={() => togglePriceDetail(line.id)}
-                                >
-                                  {priceDetailExpanded[line.id] ? '▲ hide detail' : '▼ price detail'}
-                                </button>
-                              {/if}
-                            </td>
-                          </tr>
-                          {#if line.priceDetail && priceDetailExpanded[line.id]}
-                            {@const pd = line.priceDetail}
-                            <tr>
-                              <td colspan="4" class="p-3">
-                                <div class="rounded-md border border-edge bg-surface p-3 space-y-2">
-                                  <div class="flex items-center gap-2 flex-wrap">
-                                    <span class="text-xs text-ink-muted">
-                                      Price snapshot — ref. {formatDate(pd.referenceDate)}
-                                    </span>
-                                    <span class="text-xs text-ink-muted">
-                                      {pd.rate.name} · {pd.rate.rateType}
-                                    </span>
-                                  </div>
-                                  <table class="w-full text-xs">
-                                    <tbody>
-                                      {#each pd.result.lines as pline}
-                                        <tr>
-                                          <td class="py-0.5">{pline.label}</td>
-                                          <td class="py-0.5 text-right">{pline.amount.toLocaleString()} {stmt.currency}</td>
-                                        </tr>
-                                      {/each}
-                                      <tr class="border-t border-edge font-semibold">
-                                        <td class="py-0.5">Total</td>
-                                        <td class="py-0.5 text-right">{pd.result.total.toLocaleString()} {stmt.currency}</td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
-                                  {#if pd.result.appliedBreak}
-                                    {@const br = pd.result.appliedBreak}
-                                    <p class="text-xs text-ink-muted">
-                                      Break applied: ≤ {br.upToKg} kg @ {br.amount} $/CWT
-                                      {#if br.asIfApplied}
-                                        <Badge tone="warn">as-if</Badge>
-                                      {/if}
-                                    </p>
-                                  {/if}
-                                  <p class="text-xs text-ink-muted">
-                                    Fuel: {pd.rate.fuel.pct}% — {pd.rate.fuel.source}
-                                    {#if pd.rate.fuel.source === 'TABLE' && pd.rate.fuel.effectiveFrom}
-                                      (eff. {formatDate(pd.rate.fuel.effectiveFrom)})
-                                    {/if}
-                                  </p>
-                                  {#if pd.result.missingAccessorials.length > 0}
-                                    <p class="text-xs text-danger">
-                                      Missing accessorials: {pd.result.missingAccessorials.join(', ')}
-                                    </p>
-                                  {/if}
-                                </div>
-                              </td>
-                            </tr>
-                          {/if}
-                        {/each}
-                      {/snippet}
-                    </Table>
-
-                    <!-- Tax breakdown / totals -->
-                    {#if Number(stmt.taxAmount) > 0 && stmt.taxDetail}
-                      {@const taxAmt = Number(stmt.taxAmount)}
-                      {@const total = Number(stmt.totalAmount)}
-                      {@const net = total - taxAmt}
-                      <div class="rounded-md border border-edge bg-surface p-3 space-y-1 text-sm">
-                        <div class="flex justify-between text-ink-muted">
-                          <span>Net</span>
-                          <span>{net.toLocaleString()} {stmt.currency}</span>
-                        </div>
-                        {#each stmt.taxDetail.lines as tl (tl.description)}
-                          <div class="flex justify-between text-ink-muted">
-                            <span>{tl.description} ({tl.rate}%)</span>
-                            <span>{Number(tl.amount).toLocaleString()} {stmt.currency}</span>
-                          </div>
-                        {/each}
-                        <div class="flex justify-between font-semibold border-t border-edge pt-1 text-ink">
-                          <span>Total</span>
-                          <span>{total.toLocaleString()} {stmt.currency}</span>
-                        </div>
-                      </div>
-                    {:else}
-                      <div class="rounded-md border border-edge bg-surface p-3 text-sm">
-                        <div class="flex justify-between font-semibold text-ink">
-                          <span>Total</span>
-                          <span>{Number(stmt.totalAmount).toLocaleString()} {stmt.currency}</span>
-                        </div>
-                      </div>
-                    {/if}
-
-                    <!-- Tax template selector (DRAFT only) -->
-                    {#if stmt.status === 'DRAFT'}
-                      <div class="flex items-center gap-2 flex-wrap">
-                        <span class="text-xs text-ink-muted">Tax template:</span>
-                        <div class="w-56">
-                          <Select
-                            value={stmt.taxTemplateId ?? ''}
-                            onchange={(e) => {
-                              const val = (e.target as HTMLSelectElement).value;
-                              void applyTax(stmt, val === '' ? null : val);
-                            }}
-                          >
-                            <option value="">Aucune taxe</option>
-                            {#each taxTemplates as t (t.id)}
-                              <option value={t.id}>{t.name}</option>
-                            {/each}
-                          </Select>
-                        </div>
-                      </div>
-                    {/if}
-                  </div>
+                <td>
+                  <button
+                    class="font-semibold text-accent hover:underline bg-transparent border-none p-0 cursor-pointer text-sm"
+                    onclick={() => expandStmt(stmt)}>{stmt.invoiceNumber}</button
+                  >
+                </td>
+                <td>{stmt.customer.name}</td>
+                <td><Badge tone={toneFor(stmt.status)}>{labelFor(stmt.status)}</Badge></td>
+                <td>{stmt.currency}</td>
+                <td class="text-right"
+                  >{Number(stmt.totalAmount).toLocaleString()} {stmt.currency}</td
+                >
+                <td>{formatDate(stmt.createdAt)}</td>
+                <td class="text-right whitespace-nowrap">
+                  {#if stmt.status === 'DRAFT'}
+                    <Button variant="primary" onclick={() => approveStatement(stmt)}>Approve</Button
+                    >
+                    <Button variant="danger" onclick={() => deleteStatement(stmt)}
+                      >Delete draft</Button
+                    >
+                  {:else if stmt.status === 'APPROVED'}
+                    <Button variant="primary" onclick={() => sendStatement(stmt)}>Send</Button>
+                  {:else if stmt.status === 'SENT'}
+                    <Button variant="secondary" onclick={() => payStatement(stmt)}>Mark paid</Button
+                    >
+                  {/if}
                 </td>
               </tr>
-            {/if}
-          {:else}
-            <tr><td colspan="7"><EmptyState message="No customer statements yet." /></td></tr>
-          {/each}
-        {/snippet}
-      </Table>
 
-      {#if customerStatements.length > PAGE_SIZE}
-        <div class="mt-3 flex items-center justify-between text-sm text-ink-muted">
-          <span class="font-mono text-xs">{(customerPage - 1) * PAGE_SIZE + 1}–{Math.min(customerPage * PAGE_SIZE, customerStatements.length)} sur {customerStatements.length}</span>
-          <div class="flex items-center gap-2">
-            <Button variant="secondary" disabled={customerPage <= 1} onclick={() => { customerPage = Math.max(1, customerPage - 1); }}>Précédent</Button>
-            <span class="font-mono text-xs">Page {customerPage} / {customerTotalPages}</span>
-            <Button variant="secondary" disabled={customerPage >= customerTotalPages} onclick={() => { customerPage = Math.min(customerTotalPages, customerPage + 1); }}>Suivant</Button>
+              {#if stmtExpanded === stmt.id}
+                <tr>
+                  <td colspan="7" class="bg-base p-0">
+                    <div class="p-4 space-y-3">
+                      <p class="text-xs text-ink-muted">
+                        Lines — {stmt.lines.length} order{stmt.lines.length !== 1 ? 's' : ''}
+                        {#if stmt.customer.email}
+                          · customer email: {stmt.customer.email}
+                        {/if}
+                      </p>
+                      <Table>
+                        {#snippet head()}
+                          <th>Order #</th><th>Description</th><th class="text-right">Amount</th><th
+                          ></th>
+                        {/snippet}
+                        {#snippet body()}
+                          {#each stmt.lines as line (line.id)}
+                            <tr>
+                              <td>{line.transportOrder?.orderNumber ?? '—'}</td>
+                              <td>{line.description}</td>
+                              <td class="text-right"
+                                >{Number(line.amount).toLocaleString()} {stmt.currency}</td
+                              >
+                              <td class="text-right">
+                                {#if line.priceDetail}
+                                  <button
+                                    class="text-xs text-accent hover:underline bg-transparent border-none p-0 cursor-pointer"
+                                    onclick={() => togglePriceDetail(line.id)}
+                                  >
+                                    {priceDetailExpanded[line.id]
+                                      ? '▲ hide detail'
+                                      : '▼ price detail'}
+                                  </button>
+                                {/if}
+                              </td>
+                            </tr>
+                            {#if line.priceDetail && priceDetailExpanded[line.id]}
+                              {@const pd = line.priceDetail}
+                              <tr>
+                                <td colspan="4" class="p-3">
+                                  <div
+                                    class="rounded-md border border-edge bg-surface p-3 space-y-2"
+                                  >
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                      <span class="text-xs text-ink-muted">
+                                        Price snapshot — ref. {formatDate(pd.referenceDate)}
+                                      </span>
+                                      <span class="text-xs text-ink-muted">
+                                        {pd.rate.name} · {pd.rate.rateType}
+                                      </span>
+                                    </div>
+                                    <table class="w-full text-xs">
+                                      <tbody>
+                                        {#each pd.result.lines as pline}
+                                          <tr>
+                                            <td class="py-0.5">{pline.label}</td>
+                                            <td class="py-0.5 text-right"
+                                              >{pline.amount.toLocaleString()} {stmt.currency}</td
+                                            >
+                                          </tr>
+                                        {/each}
+                                        <tr class="border-t border-edge font-semibold">
+                                          <td class="py-0.5">Total</td>
+                                          <td class="py-0.5 text-right"
+                                            >{pd.result.total.toLocaleString()} {stmt.currency}</td
+                                          >
+                                        </tr>
+                                      </tbody>
+                                    </table>
+                                    {#if pd.result.appliedBreak}
+                                      {@const br = pd.result.appliedBreak}
+                                      <p class="text-xs text-ink-muted">
+                                        Break applied: ≤ {br.upToKg} kg @ {br.amount} $/CWT
+                                        {#if br.asIfApplied}
+                                          <Badge tone="warn">as-if</Badge>
+                                        {/if}
+                                      </p>
+                                    {/if}
+                                    <p class="text-xs text-ink-muted">
+                                      Fuel: {pd.rate.fuel.pct}% — {pd.rate.fuel.source}
+                                      {#if pd.rate.fuel.source === 'TABLE' && pd.rate.fuel.effectiveFrom}
+                                        (eff. {formatDate(pd.rate.fuel.effectiveFrom)})
+                                      {/if}
+                                    </p>
+                                    {#if pd.result.missingAccessorials.length > 0}
+                                      <p class="text-xs text-danger">
+                                        Missing accessorials: {pd.result.missingAccessorials.join(
+                                          ', ',
+                                        )}
+                                      </p>
+                                    {/if}
+                                  </div>
+                                </td>
+                              </tr>
+                            {/if}
+                          {/each}
+                        {/snippet}
+                      </Table>
+
+                      <!-- Tax breakdown / totals -->
+                      {#if Number(stmt.taxAmount) > 0 && stmt.taxDetail}
+                        {@const taxAmt = Number(stmt.taxAmount)}
+                        {@const total = Number(stmt.totalAmount)}
+                        {@const net = total - taxAmt}
+                        <div class="rounded-md border border-edge bg-surface p-3 space-y-1 text-sm">
+                          <div class="flex justify-between text-ink-muted">
+                            <span>Net</span>
+                            <span>{net.toLocaleString()} {stmt.currency}</span>
+                          </div>
+                          {#each stmt.taxDetail.lines as tl (tl.description)}
+                            <div class="flex justify-between text-ink-muted">
+                              <span>{tl.description} ({tl.rate}%)</span>
+                              <span>{Number(tl.amount).toLocaleString()} {stmt.currency}</span>
+                            </div>
+                          {/each}
+                          <div
+                            class="flex justify-between font-semibold border-t border-edge pt-1 text-ink"
+                          >
+                            <span>Total</span>
+                            <span>{total.toLocaleString()} {stmt.currency}</span>
+                          </div>
+                        </div>
+                      {:else}
+                        <div class="rounded-md border border-edge bg-surface p-3 text-sm">
+                          <div class="flex justify-between font-semibold text-ink">
+                            <span>Total</span>
+                            <span>{Number(stmt.totalAmount).toLocaleString()} {stmt.currency}</span>
+                          </div>
+                        </div>
+                      {/if}
+
+                      <!-- Tax template selector (DRAFT only) -->
+                      {#if stmt.status === 'DRAFT'}
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span class="text-xs text-ink-muted">Tax template:</span>
+                          <div class="w-56">
+                            <Select
+                              value={stmt.taxTemplateId ?? ''}
+                              onchange={(e) => {
+                                const val = (e.target as HTMLSelectElement).value;
+                                void applyTax(stmt, val === '' ? null : val);
+                              }}
+                            >
+                              <option value="">Aucune taxe</option>
+                              {#each taxTemplates as t (t.id)}
+                                <option value={t.id}>{t.name}</option>
+                              {/each}
+                            </Select>
+                          </div>
+                        </div>
+                      {/if}
+                    </div>
+                  </td>
+                </tr>
+              {/if}
+            {:else}
+              <tr><td colspan="7"><EmptyState message="No customer statements yet." /></td></tr>
+            {/each}
+          {/snippet}
+        </Table>
+
+        {#if customerStatements.length > PAGE_SIZE}
+          <div class="mt-3 flex items-center justify-between text-sm text-ink-muted">
+            <span class="font-mono text-xs"
+              >{(customerPage - 1) * PAGE_SIZE + 1}–{Math.min(
+                customerPage * PAGE_SIZE,
+                customerStatements.length,
+              )} sur {customerStatements.length}</span
+            >
+            <div class="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                disabled={customerPage <= 1}
+                onclick={() => {
+                  customerPage = Math.max(1, customerPage - 1);
+                }}>Précédent</Button
+              >
+              <span class="font-mono text-xs">Page {customerPage} / {customerTotalPages}</span>
+              <Button
+                variant="secondary"
+                disabled={customerPage >= customerTotalPages}
+                onclick={() => {
+                  customerPage = Math.min(customerTotalPages, customerPage + 1);
+                }}>Suivant</Button
+              >
+            </div>
           </div>
-        </div>
-      {/if}
+        {/if}
       {/if}
     {/if}
   {/snippet}

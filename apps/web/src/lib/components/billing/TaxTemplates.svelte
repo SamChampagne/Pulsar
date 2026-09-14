@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import { Badge, Button, Card, Field, Input, Modal, Table, EmptyState } from '$lib/components/ui';
@@ -35,7 +36,9 @@
   let formName = $state('');
   let formType = $state<TaxType>('SALES');
   let formIsDefault = $state(false);
-  let formLines = $state<{ description: string; rate: number | undefined; accountCode: string }[]>([]);
+  let formLines = $state<{ description: string; rate: number | undefined; accountCode: string }[]>(
+    [],
+  );
   let formSaving = $state(false);
 
   // ── State — delete ────────────────────────────────────────────────────────────
@@ -108,7 +111,9 @@
         type: formType,
         isDefault: formIsDefault,
         lines: formLines
-          .filter((l) => l.description.trim() || (l.rate !== undefined && String(l.rate).trim() !== ''))
+          .filter(
+            (l) => l.description.trim() || (l.rate !== undefined && String(l.rate).trim() !== ''),
+          )
           .map((l, i) => ({
             description: l.description.trim(),
             rate: Number(l.rate ?? 0),
@@ -135,7 +140,7 @@
   // ── Delete ────────────────────────────────────────────────────────────────────
 
   async function deleteTemplate(tpl: TaxTemplate) {
-    if (!confirm(`Supprimer « ${tpl.name} » ?`)) return;
+    if (!(await confirmAction(`Supprimer « ${tpl.name} » ?`))) return;
     deleting = tpl.id;
     deleteError = '';
     try {
@@ -169,9 +174,7 @@
 
   function linesSummary(lines: TaxTemplateLine[]): string {
     if (lines.length === 0) return '—';
-    return lines
-      .map((l) => `${l.description} ${Number(l.rate)}%`)
-      .join(' · ');
+    return lines.map((l) => `${l.description} ${Number(l.rate)}%`).join(' · ');
   }
 
   // ── Initial load ──────────────────────────────────────────────────────────────
@@ -188,7 +191,9 @@
   </div>
 
   {#if deleteError}
-    <div class="mb-3 rounded-md border border-danger bg-danger-soft/20 px-3 py-2 text-xs text-danger">
+    <div
+      class="mb-3 rounded-md border border-danger bg-danger-soft/20 px-3 py-2 text-xs text-danger"
+    >
       {deleteError}
     </div>
   {/if}
@@ -223,8 +228,8 @@
                 <Button
                   variant="danger"
                   loading={deleting === tpl.id}
-                  onclick={() => void deleteTemplate(tpl)}
-                >Supprimer</Button>
+                  onclick={() => void deleteTemplate(tpl)}>Supprimer</Button
+                >
               </div>
             </td>
           </tr>
@@ -276,10 +281,7 @@
           {#each formLines as line, i (i)}
             <div class="flex items-center gap-2 rounded-md border border-edge bg-surface-alt p-2">
               <div class="flex-1">
-                <Input
-                  bind:value={line.description}
-                  placeholder="Description (ex. : TPS)"
-                />
+                <Input bind:value={line.description} placeholder="Description (ex. : TPS)" />
               </div>
               <div class="w-24">
                 <input
@@ -291,15 +293,9 @@
                 />
               </div>
               <div class="w-28">
-                <Input
-                  bind:value={line.accountCode}
-                  placeholder="Compte"
-                />
+                <Input bind:value={line.accountCode} placeholder="Compte" />
               </div>
-              <Button
-                variant="danger"
-                onclick={() => removeLine(i)}
-              >✕</Button>
+              <Button variant="danger" onclick={() => removeLine(i)}>✕</Button>
             </div>
           {/each}
         </div>
@@ -307,7 +303,12 @@
     </div>
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { formOpen = false; }}>Annuler</Button>
+    <Button
+      variant="secondary"
+      onclick={() => {
+        formOpen = false;
+      }}>Annuler</Button
+    >
     <Button loading={formSaving} onclick={submitForm}>
       {formMode === 'create' ? 'Créer' : 'Enregistrer'}
     </Button>

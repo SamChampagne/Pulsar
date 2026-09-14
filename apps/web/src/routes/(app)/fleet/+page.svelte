@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import {
@@ -300,7 +301,7 @@
     }
   }
   async function deleteSchedule(id: string) {
-    if (!confirm("Supprimer ce plan d'entretien ?")) return;
+    if (!(await confirmAction("Supprimer ce plan d'entretien ?"))) return;
     try {
       await api(`/fleet/maintenance-schedules/${id}`, { method: 'DELETE' });
       await loadSchedules();
@@ -445,10 +446,20 @@
   ];
 </script>
 
-<PageHeader title="Fleet" subtitle="Actifs, conformité et maintenance.">
+<PageHeader title="Gestion de la flotte" subtitle="Actifs, conformité et maintenance.">
   {#snippet actions()}
-    <Button onclick={() => { showSchedule = true; }} variant="secondary">Planifier un entretien</Button>
-    <Button onclick={() => { showCreate = true; void fetchAssetFieldDefs(assetForm.kind); }}>Ajouter</Button>
+    <Button
+      onclick={() => {
+        showSchedule = true;
+      }}
+      variant="secondary">Planifier un entretien</Button
+    >
+    <Button
+      onclick={() => {
+        showCreate = true;
+        void fetchAssetFieldDefs(assetForm.kind);
+      }}>Ajouter</Button
+    >
   {/snippet}
 </PageHeader>
 
@@ -587,7 +598,12 @@
       {/if}
     </form>
     {#snippet footer()}
-      <Button variant="secondary" onclick={() => { showCreate = false; }}>Annuler</Button>
+      <Button
+        variant="secondary"
+        onclick={() => {
+          showCreate = false;
+        }}>Annuler</Button
+      >
       <Button
         variant="primary"
         loading={savingAsset}
@@ -595,8 +611,8 @@
         onclick={(e) => {
           const form = document.getElementById('asset-create-form') as HTMLFormElement | null;
           form?.requestSubmit();
-        }}
-      >Ajouter</Button>
+        }}>Ajouter</Button
+      >
     {/snippet}
   </Modal>
 
@@ -659,7 +675,12 @@
       </div>
     </form>
     {#snippet footer()}
-      <Button variant="secondary" onclick={() => { showSchedule = false; }}>Annuler</Button>
+      <Button
+        variant="secondary"
+        onclick={() => {
+          showSchedule = false;
+        }}>Annuler</Button
+      >
       <Button
         variant="primary"
         loading={savingSchedule}
@@ -667,8 +688,8 @@
         onclick={() => {
           const form = document.getElementById('schedule-create-form') as HTMLFormElement | null;
           form?.requestSubmit();
-        }}
-      >Planifier</Button>
+        }}>Planifier</Button
+      >
     {/snippet}
   </Modal>
 
@@ -678,7 +699,9 @@
       {#if pmOverdue > 0}<Badge tone="danger">{pmOverdue} en retard</Badge>{/if}
       {#if pmDue > 0}<Badge tone="warn">{pmDue} dû</Badge>{/if}
       {#if pmDueSoon > 0}<Badge tone="info">{pmDueSoon} bientôt</Badge>{/if}
-      <span class="ml-auto"><ViewToggle bind:view={mxView} views={['table', 'cards', 'kanban']} /></span>
+      <span class="ml-auto"
+        ><ViewToggle bind:view={mxView} views={['table', 'cards', 'kanban']} /></span
+      >
     </div>
 
     {#if schedules.length === 0}
@@ -765,7 +788,9 @@
       <div class="flex gap-3 overflow-x-auto pb-2">
         {#each MX_KANBAN_COLS as col (col.status)}
           {@const items = pmActionable.filter((s) => s.due.status === col.status)}
-          <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+          <div
+            class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted"
+          >
             <div class="flex items-center justify-between px-3 py-2">
               <Badge tone={scheduleTone(col.status)}>{col.label}</Badge>
               <span class="font-mono text-xs text-ink-muted">{items.length}</span>
@@ -775,11 +800,15 @@
                 <p class="px-1 py-3 text-center text-xs text-ink-faint">—</p>
               {:else}
                 {#each items as s (s.id)}
-                  <div class={`rounded-inner border border-edge-soft bg-surface p-2.5 shadow-sm ${s.isActive ? '' : 'opacity-50'}`}>
+                  <div
+                    class={`rounded-inner border border-edge-soft bg-surface p-2.5 shadow-sm ${s.isActive ? '' : 'opacity-50'}`}
+                  >
                     <div class="font-semibold text-sm text-ink">{assetLabel(s)}</div>
                     <div class="mt-0.5 truncate text-xs text-ink-muted">{s.name}</div>
                     <div class="mt-0.5 text-[11px] text-ink-faint">chaque {intervalLabel(s)}</div>
-                    <div class="mt-0.5 text-[11px] text-ink-muted">prochaine : {nextDueLabel(s)}</div>
+                    <div class="mt-0.5 text-[11px] text-ink-muted">
+                      prochaine : {nextDueLabel(s)}
+                    </div>
                     <div class="mt-1.5 flex flex-wrap gap-1">
                       {#if s.due.isDue && s.isActive}
                         <button

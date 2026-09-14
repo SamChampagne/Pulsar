@@ -12,6 +12,7 @@
     max = undefined as string | number | undefined,
     maxlength = undefined as number | undefined,
     minlength = undefined as number | undefined,
+    pattern = undefined as string | undefined,
     oninput = undefined as ((e: Event & { currentTarget: HTMLInputElement }) => void) | undefined,
   } = $props();
 </script>
@@ -23,6 +24,7 @@
   {disabled}
   name={name || undefined}
   {required}
+  {pattern}
   step={step !== undefined ? step : type === 'number' ? 'any' : undefined}
   min={min !== undefined ? min : undefined}
   max={max !== undefined ? max : undefined}

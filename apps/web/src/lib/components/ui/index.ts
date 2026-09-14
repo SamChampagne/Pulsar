@@ -3,6 +3,7 @@ export { default as Button } from './Button.svelte';
 export { default as Card } from './Card.svelte';
 export { default as EmptyState } from './EmptyState.svelte';
 export { default as ErrorNotice } from './ErrorNotice.svelte';
+export { default as EntityPicker } from './EntityPicker.svelte';
 export { default as Field } from './Field.svelte';
 export { default as FilterBar } from './FilterBar.svelte';
 export { default as Input } from './Input.svelte';
@@ -18,6 +19,10 @@ export { default as CommandPalette } from './CommandPalette.svelte';
 export { default as ViewToggle } from './ViewToggle.svelte';
 export { type ViewId } from './view';
 export { default as Drawer } from './Drawer.svelte';
-export { default as RelatedEntities, type RelatedGroup, type RelatedItem } from './RelatedEntities.svelte';
+export {
+  default as RelatedEntities,
+  type RelatedGroup,
+  type RelatedItem,
+} from './RelatedEntities.svelte';
 export { default as ExceptionBanner } from './ExceptionBanner.svelte';
 export { default as StatusTimeline, type TimelineEntry } from './StatusTimeline.svelte';

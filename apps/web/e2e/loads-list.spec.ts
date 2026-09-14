@@ -11,7 +11,7 @@ test.describe('loads list', () => {
     await login(page);
     await page.goto('/loads');
 
-    await expect(page.getByRole('heading', { name: 'Loads' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Chargements' })).toBeVisible();
 
     // Either the table renders with a header row, or the empty-state copy shows
     // up inside it — either way proves the page fetched and rendered, not stuck
@@ -19,7 +19,10 @@ test.describe('loads list', () => {
     const table = page.getByRole('table');
     await expect(table).toBeVisible();
     const hasRows = (await table.getByRole('row').count()) > 1; // >1: header row + data
-    const hasEmptyState = await page.getByText('Aucun load').isVisible().catch(() => false);
+    const hasEmptyState = await page
+      .getByText('Aucun load')
+      .isVisible()
+      .catch(() => false);
     expect(hasRows || hasEmptyState).toBe(true);
   });
 });

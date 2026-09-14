@@ -1,16 +1,9 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import { formatDateTime } from '$lib/format';
-  import {
-    PageHeader,
-    Button,
-    Table,
-    Badge,
-    EmptyState,
-    Card,
-    Skeleton,
-  } from '$lib/components/ui';
+  import { PageHeader, Button, Table, Badge, EmptyState, Card, Skeleton } from '$lib/components/ui';
   import RegisterAgentModal from '$lib/components/agents/RegisterAgentModal.svelte';
 
   type AutonomyLevel = 'PROPOSE' | 'ACT_LOW' | 'AUTONOMOUS';
@@ -48,7 +41,10 @@
   }
 
   async function revoke(agent: AgentRow) {
-    if (!confirm(`Revoke agent "${agent.name}"? Its key will stop working immediately.`)) return;
+    if (
+      !(await confirmAction(`Revoke agent "${agent.name}"? Its key will stop working immediately.`))
+    )
+      return;
     try {
       await api(`/agents/${agent.id}`, { method: 'DELETE' });
       toast.success(`${agent.name} revoked`);
@@ -65,7 +61,11 @@
 
 <PageHeader title="Agents">
   {#snippet actions()}
-    <Button onclick={() => { showForm = true; }}>Register agent</Button>
+    <Button
+      onclick={() => {
+        showForm = true;
+      }}>Register agent</Button
+    >
   {/snippet}
 </PageHeader>
 
@@ -98,7 +98,9 @@
             {#if agent.role}<span class="ml-1.5 text-xs text-ink-muted">({agent.role})</span>{/if}
           </td>
           <td><code class="text-xs text-ink-muted">{agent.prefix}…</code></td>
-          <td class="text-xs text-ink-muted">{agent.permissions.length} scope{agent.permissions.length === 1 ? '' : 's'}</td>
+          <td class="text-xs text-ink-muted"
+            >{agent.permissions.length} scope{agent.permissions.length === 1 ? '' : 's'}</td
+          >
           <td class="text-ink-muted">{formatDateTime(agent.createdAt)}</td>
           <td>
             {#if agent.revokedAt || agent.status === 'REVOKED'}
@@ -111,8 +113,11 @@
             {#if !agent.revokedAt && agent.status !== 'REVOKED'}
               <Button
                 variant="danger"
-                onclick={(e) => { e.stopPropagation(); void revoke(agent); }}
-              >Revoke</Button>
+                onclick={(e) => {
+                  e.stopPropagation();
+                  void revoke(agent);
+                }}>Revoke</Button
+              >
             {/if}
           </td>
         </tr>

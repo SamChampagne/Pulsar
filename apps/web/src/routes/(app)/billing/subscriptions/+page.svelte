@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Modal } from '$lib/components/ui';
+  import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import {
@@ -202,13 +204,28 @@
 
   async function saveSub() {
     formError = '';
-    if (!form.name.trim()) { formError = 'Le nom est requis.'; return; }
-    if (!form.customerId) { formError = 'Le client est requis.'; return; }
-    if (!form.startDate) { formError = 'La date de début est requise.'; return; }
+    if (!form.name.trim()) {
+      formError = 'Le nom est requis.';
+      return;
+    }
+    if (!form.customerId) {
+      formError = 'Le client est requis.';
+      return;
+    }
+    if (!form.startDate) {
+      formError = 'La date de début est requise.';
+      return;
+    }
     for (const [i, l] of formLines.entries()) {
-      if (!l.description.trim()) { formError = `Ligne ${i + 1} : la description est requise.`; return; }
+      if (!l.description.trim()) {
+        formError = `Ligne ${i + 1} : la description est requise.`;
+        return;
+      }
       const amt = Number(l.amount ?? '');
-      if (l.amount === null || l.amount === undefined || isNaN(amt) || amt < 0) { formError = `Ligne ${i + 1} : montant invalide.`; return; }
+      if (l.amount === null || l.amount === undefined || isNaN(amt) || amt < 0) {
+        formError = `Ligne ${i + 1} : montant invalide.`;
+        return;
+      }
     }
 
     saving = true;
@@ -218,7 +235,10 @@
         customerId: form.customerId,
         interval: form.interval,
         startDate: form.startDate,
-        lines: formLines.map((l) => ({ description: l.description.trim(), amount: Number(l.amount ?? 0) })),
+        lines: formLines.map((l) => ({
+          description: l.description.trim(),
+          amount: Number(l.amount ?? 0),
+        })),
       };
       if (editingSub) {
         await api(`/billing/subscriptions/${editingSub.id}`, { method: 'PATCH', body });
@@ -241,7 +261,7 @@
   let deletingId = $state<string | null>(null);
 
   async function deleteSub(s: Subscription) {
-    if (!confirm(`Supprimer l'abonnement « ${s.name} » ?`)) return;
+    if (!(await confirmAction(`Supprimer l'abonnement « ${s.name} » ?`))) return;
     deletingId = s.id;
     try {
       await api(`/billing/subscriptions/${s.id}`, { method: 'DELETE' });
@@ -320,7 +340,9 @@
 
 <!-- Toolbar -->
 <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
-  <span class="text-sm text-ink-muted">{subscriptions.length} abonnement{subscriptions.length !== 1 ? 's' : ''}</span>
+  <span class="text-sm text-ink-muted"
+    >{subscriptions.length} abonnement{subscriptions.length !== 1 ? 's' : ''}</span
+  >
   <div class="flex gap-2">
     <Button variant="ghost" disabled={runningDue} onclick={runDue}>
       {runningDue ? 'Traitement…' : 'Générer les abonnements dus'}
@@ -361,7 +383,9 @@
           <td class="text-right whitespace-nowrap text-xs space-x-2">
             <!-- Edit always available (except CANCELLED) -->
             {#if s.status !== 'CANCELLED'}
-              <button class="text-accent hover:underline" onclick={() => openEdit(s)}>Modifier</button>
+              <button class="text-accent hover:underline" onclick={() => openEdit(s)}
+                >Modifier</button
+              >
             {/if}
 
             <!-- ACTIVE actions -->
@@ -370,12 +394,14 @@
                 class="text-warn hover:underline disabled:opacity-40"
                 disabled={actioningId === s.id}
                 onclick={() => doAction(s, 'pause', 'Abonnement suspendu')}
-              >{actioningId === s.id ? '…' : 'Suspendre'}</button>
+                >{actioningId === s.id ? '…' : 'Suspendre'}</button
+              >
               <button
                 class="text-ok hover:underline disabled:opacity-40"
                 disabled={generatingId === s.id}
                 onclick={() => generateNow(s)}
-              >{generatingId === s.id ? '…' : 'Générer maintenant'}</button>
+                >{generatingId === s.id ? '…' : 'Générer maintenant'}</button
+              >
             {/if}
 
             <!-- PAUSED actions -->
@@ -384,7 +410,8 @@
                 class="text-ok hover:underline disabled:opacity-40"
                 disabled={actioningId === s.id}
                 onclick={() => doAction(s, 'resume', 'Abonnement repris')}
-              >{actioningId === s.id ? '…' : 'Reprendre'}</button>
+                >{actioningId === s.id ? '…' : 'Reprendre'}</button
+              >
             {/if}
 
             <!-- Cancel (ACTIVE or PAUSED) -->
@@ -393,21 +420,25 @@
                 class="text-danger hover:underline disabled:opacity-40"
                 disabled={actioningId === s.id}
                 onclick={() => doAction(s, 'cancel', 'Abonnement annulé')}
-              >{actioningId === s.id ? '…' : 'Annuler'}</button>
+                >{actioningId === s.id ? '…' : 'Annuler'}</button
+              >
             {/if}
 
             <!-- Delete (no invoices generated) -->
             <button
               class="text-ink-muted hover:text-danger hover:underline disabled:opacity-40"
               disabled={deletingId === s.id}
-              onclick={() => deleteSub(s)}
-            >{deletingId === s.id ? '…' : 'Supprimer'}</button>
+              onclick={() => deleteSub(s)}>{deletingId === s.id ? '…' : 'Supprimer'}</button
+            >
           </td>
         </tr>
       {:else}
         <tr>
           <td colspan={7}>
-            <EmptyState title="Aucun abonnement" message="Créez votre premier abonnement récurrent." />
+            <EmptyState
+              title="Aucun abonnement"
+              message="Créez votre premier abonnement récurrent."
+            />
           </td>
         </tr>
       {/each}
@@ -417,119 +448,131 @@
 
 <!-- ── Create / Edit modal ─────────────────────────────────────────────────── -->
 {#if showModal}
-  <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-    <div class="w-full max-w-xl rounded-xl bg-surface p-6 shadow-xl overflow-y-auto max-h-[90vh]">
-      <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-base font-bold text-ink">
-          {editingSub ? "Modifier l'abonnement" : 'Nouvel abonnement'}
-        </h2>
-        <button class="text-ink-muted hover:text-ink" onclick={() => { showModal = false; }}>✕</button>
+  <Modal
+    open
+    title={editingSub ? 'Modifier l’abonnement' : 'Nouvel abonnement'}
+    size="lg"
+    onclose={() => {
+      showModal = false;
+    }}
+    dismissible={!saving}
+  >
+    <div class="space-y-3">
+      <!-- Name -->
+      <div>
+        <label class="mb-1 block text-xs font-medium text-ink-muted" for="sub-name">Nom</label>
+        <input
+          id="sub-name"
+          bind:value={form.name}
+          placeholder="ex. Forfait mensuel Premium"
+          class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+        />
       </div>
 
-      <div class="space-y-3">
-        <!-- Name -->
+      <!-- Customer + Interval -->
+      <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="mb-1 block text-xs font-medium text-ink-muted" for="sub-name">Nom</label>
-          <input
-            id="sub-name"
-            bind:value={form.name}
-            placeholder="ex. Forfait mensuel Premium"
+          <label class="mb-1 block text-xs font-medium text-ink-muted" for="sub-customer"
+            >Client</label
+          >
+          <select
+            id="sub-customer"
+            bind:value={form.customerId}
             class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-          />
-        </div>
-
-        <!-- Customer + Interval -->
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="mb-1 block text-xs font-medium text-ink-muted" for="sub-customer">Client</label>
-            <select
-              id="sub-customer"
-              bind:value={form.customerId}
-              class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-            >
-              <option value="">— Sélectionner —</option>
-              {#each customers as c (c.id)}
-                <option value={c.id}>{c.name} ({c.code})</option>
-              {/each}
-            </select>
-            {#if loadingCustomers}
-              <p class="mt-0.5 text-xs text-ink-muted">Chargement…</p>
-            {/if}
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-ink-muted" for="sub-interval">Intervalle</label>
-            <select
-              id="sub-interval"
-              bind:value={form.interval}
-              class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-            >
-              <option value="WEEKLY">Hebdomadaire</option>
-              <option value="MONTHLY">Mensuel</option>
-              <option value="YEARLY">Annuel</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Start date -->
-        <div>
-          <label class="mb-1 block text-xs font-medium text-ink-muted" for="sub-start">Date de début</label>
-          <input
-            id="sub-start"
-            type="date"
-            bind:value={form.startDate}
-            class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-          />
-        </div>
-
-        <!-- Lines -->
-        <div>
-          <div class="mb-1 flex items-center justify-between">
-            <span class="text-xs font-medium text-ink-muted">Lignes</span>
-            <button class="text-xs text-accent hover:underline" onclick={addLine}>+ Ajouter une ligne</button>
-          </div>
-          <div class="space-y-2">
-            {#each formLines as line, idx (idx)}
-              <div class="flex items-center gap-2">
-                <input
-                  bind:value={line.description}
-                  placeholder="Description"
-                  class="flex-1 rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  bind:value={line.amount}
-                  placeholder="0.00"
-                  class="w-28 rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm text-right tabular-nums focus:border-accent focus:outline-none"
-                />
-                <button
-                  class="text-ink-muted hover:text-danger disabled:opacity-30"
-                  disabled={formLines.length <= 1}
-                  onclick={() => removeLine(idx)}
-                >✕</button>
-              </div>
+          >
+            <option value="">— Sélectionner —</option>
+            {#each customers as c (c.id)}
+              <option value={c.id}>{c.name} ({c.code})</option>
             {/each}
-          </div>
-          {#if formLines.length > 0}
-            {@const tot = formLines.reduce((acc, l) => acc + (Number(l.amount) || 0), 0)}
-            <p class="mt-1 text-right text-xs text-ink-muted">
-              Total / période : <span class="font-semibold tabular-nums">{money(tot)}</span>
-            </p>
+          </select>
+          {#if loadingCustomers}
+            <p class="mt-0.5 text-xs text-ink-muted">Chargement…</p>
           {/if}
         </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-muted" for="sub-interval"
+            >Intervalle</label
+          >
+          <select
+            id="sub-interval"
+            bind:value={form.interval}
+            class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+          >
+            <option value="WEEKLY">Hebdomadaire</option>
+            <option value="MONTHLY">Mensuel</option>
+            <option value="YEARLY">Annuel</option>
+          </select>
+        </div>
       </div>
 
-      {#if formError}
-        <p class="mt-3 text-sm text-danger">{formError}</p>
-      {/if}
+      <!-- Start date -->
+      <div>
+        <label class="mb-1 block text-xs font-medium text-ink-muted" for="sub-start"
+          >Date de début</label
+        >
+        <input
+          id="sub-start"
+          type="date"
+          bind:value={form.startDate}
+          class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+        />
+      </div>
 
-      <div class="mt-5 flex justify-end gap-2">
-        <Button variant="ghost" onclick={() => { showModal = false; }}>Annuler</Button>
+      <!-- Lines -->
+      <div>
+        <div class="mb-1 flex items-center justify-between">
+          <span class="text-xs font-medium text-ink-muted">Lignes</span>
+          <button class="text-xs text-accent hover:underline" onclick={addLine}
+            >+ Ajouter une ligne</button
+          >
+        </div>
+        <div class="space-y-2">
+          {#each formLines as line, idx (idx)}
+            <div class="flex items-center gap-2">
+              <input
+                bind:value={line.description}
+                placeholder="Description"
+                class="min-w-0 flex-1 rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+              />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                bind:value={line.amount}
+                placeholder="0.00"
+                class="w-28 rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm text-right tabular-nums focus:border-accent focus:outline-none"
+              />
+              <button
+                class="text-ink-muted hover:text-danger disabled:opacity-30"
+                disabled={formLines.length <= 1}
+                onclick={() => removeLine(idx)}>✕</button
+              >
+            </div>
+          {/each}
+        </div>
+        {#if formLines.length > 0}
+          {@const tot = formLines.reduce((acc, l) => acc + (Number(l.amount) || 0), 0)}
+          <p class="mt-1 text-right text-xs text-ink-muted">
+            Total / période : <span class="font-semibold tabular-nums">{money(tot)}</span>
+          </p>
+        {/if}
+      </div>
+    </div>
+
+    {#if formError}
+      <p class="mt-3 text-sm text-danger">{formError}</p>
+    {/if}
+    {#snippet footer()}<div class="flex justify-end gap-2">
+        <Button
+          disabled={saving}
+          variant="secondary"
+          onclick={() => {
+            showModal = false;
+          }}>Annuler</Button
+        >
         <Button variant="primary" disabled={saving} onclick={saveSub}>
           {saving ? 'Enregistrement…' : 'Enregistrer'}
         </Button>
-      </div>
-    </div>
-  </div>
+      </div>{/snippet}
+  </Modal>
 {/if}

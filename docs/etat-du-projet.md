@@ -6,6 +6,11 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Refonte des écrans, lot 1 (2026-09-14) — `codex/ui-screens`.** Fiches CRM,
+> réglages des modules, fenêtres Finance, accueils Agents/Flotte/Entrepôt/Intégrations,
+> confirmations et onglets harmonisés. Bureau conservé, aucune API métier modifiée.
+> Inventaire des 138 pages et reste à faire : [ui-screens.md](./plans/ui-screens.md).
+>
 > **Socle UI global (2026-09-14) — `codex/ui-workspace`.** Bureau iPhone conservé,
 > cadre et navigation stables, changement d’app rapide, composants communs harmonisés,
 > panneaux CRM, Dispatch et Finance allégés. Aucun backend ni droit modifié.

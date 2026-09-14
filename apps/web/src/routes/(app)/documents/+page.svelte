@@ -193,7 +193,7 @@
 </script>
 
 <PageHeader
-  title="Document Center"
+  title="Documents"
   eyebrow="Documents"
   subtitle="Retrouvez n'importe quel document du tenant, filtrez par catégorie, recherche ou date, et surveillez la conformité qui expire."
   count={total}
@@ -263,8 +263,8 @@
                 <button
                   type="button"
                   class="text-left font-medium text-ink transition-colors hover:text-accent hover:underline"
-                  onclick={() => openPreview(row)}
-                >{row.fileName}</button>
+                  onclick={() => openPreview(row)}>{row.fileName}</button
+                >
               </td>
               <td><Badge tone="neutral">{row.category}</Badge></td>
               <td class="text-xs text-ink-muted">
@@ -279,13 +279,15 @@
                     type="button"
                     onclick={() => openPreview(row)}
                     class="inline-flex items-center justify-center rounded-md border border-edge bg-surface px-3 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-muted"
-                  >Aperçu</button>
+                    >Aperçu</button
+                  >
                   <button
                     type="button"
                     onclick={() => download(row)}
                     disabled={downloadingId === row.id}
                     class="inline-flex items-center justify-center rounded-md border border-edge bg-surface px-3 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-muted disabled:opacity-50"
-                  >{downloadingId === row.id ? '…' : 'Télécharger'}</button>
+                    >{downloadingId === row.id ? '…' : 'Télécharger'}</button
+                  >
                 </div>
               </td>
             </tr>
@@ -380,7 +382,12 @@
 </div>
 
 <!-- Document preview -->
-<Modal bind:open={previewOpen} title={previewDoc?.fileName ?? 'Aperçu'} size="xl" onclose={closePreview}>
+<Modal
+  bind:open={previewOpen}
+  title={previewDoc?.fileName ?? 'Aperçu'}
+  size="xl"
+  onclose={closePreview}
+>
   {#if previewDoc}
     {#if previewError}
       <div class="py-10 text-center text-sm text-danger">{previewError}</div>
@@ -388,26 +395,49 @@
       <div class="flex h-[60vh] items-center justify-center"><Skeleton rows={6} /></div>
     {:else if previewKind === 'image' && previewUrl}
       <div class="flex justify-center">
-        <img src={previewUrl} alt={previewDoc.fileName} class="max-h-[70vh] max-w-full rounded-inner object-contain" />
+        <img
+          src={previewUrl}
+          alt={previewDoc.fileName}
+          class="max-h-[70vh] max-w-full rounded-inner object-contain"
+        />
       </div>
     {:else if previewKind === 'pdf' && previewUrl}
-      <iframe src={previewUrl} title={previewDoc.fileName} class="h-[70vh] w-full rounded-inner border border-edge"></iframe>
+      <iframe
+        src={previewUrl}
+        title={previewDoc.fileName}
+        class="h-[70vh] w-full rounded-inner border border-edge"
+      ></iframe>
     {:else if previewKind === 'text' && previewUrl}
-      <iframe src={previewUrl} title={previewDoc.fileName} class="h-[60vh] w-full rounded-inner border border-edge bg-white"></iframe>
+      <iframe
+        src={previewUrl}
+        title={previewDoc.fileName}
+        class="h-[60vh] w-full rounded-inner border border-edge bg-white"
+      ></iframe>
     {:else}
       <div class="flex flex-col items-center gap-3 py-12 text-center">
         <p class="text-sm text-ink-muted">
           Aperçu non disponible pour ce type de fichier ({previewDoc.mimeType || 'inconnu'}).
         </p>
-        <Button onclick={() => { if (previewDoc) void download(previewDoc); }}>Télécharger le fichier</Button>
+        <Button
+          onclick={() => {
+            if (previewDoc) void download(previewDoc);
+          }}>Télécharger le fichier</Button
+        >
       </div>
     {/if}
   {/if}
   {#snippet footer()}
     {#if previewDoc}
-      <span class="mr-auto text-xs text-ink-faint">{humanSize(previewDoc.sizeBytes)} · {previewDoc.mimeType}</span>
+      <span class="mr-auto text-xs text-ink-faint"
+        >{humanSize(previewDoc.sizeBytes)} · {previewDoc.mimeType}</span
+      >
       <Button variant="secondary" onclick={closePreview}>Fermer</Button>
-      <Button onclick={() => { if (previewDoc) void download(previewDoc); }} disabled={downloadingId === previewDoc.id}>
+      <Button
+        onclick={() => {
+          if (previewDoc) void download(previewDoc);
+        }}
+        disabled={downloadingId === previewDoc.id}
+      >
         {downloadingId === previewDoc.id ? 'Téléchargement…' : 'Télécharger'}
       </Button>
     {/if}

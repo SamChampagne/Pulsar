@@ -1,6 +1,14 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
-  import { Badge, Card, EmptyState, ErrorNotice, PageHeader, Skeleton } from '$lib/components/ui';
+  import {
+    Badge,
+    Button,
+    Card,
+    EmptyState,
+    ErrorNotice,
+    PageHeader,
+    Skeleton,
+  } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
 
   interface NegativeBin {
@@ -30,7 +38,7 @@
     try {
       overview = await api<Overview>('/wms/overview');
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load warehouse overview';
+      error = e instanceof ApiError ? e.message : 'Impossible de charger l’entrepôt';
       toast.error(error);
     } finally {
       loading = false;
@@ -50,10 +58,11 @@
   ];
 </script>
 
-<PageHeader
-  title="Warehouse"
-  subtitle="Keep receiving, inventory accuracy, picking, and bin exceptions visible from one warehouse cockpit."
-/>
+<PageHeader title="Entrepôt" subtitle="Réceptions, préparations et écarts de stock à suivre.">
+  {#snippet actions()}<Button variant="secondary" href="/wms/inventory">Inventaire</Button><Button
+      href="/wms/receiving">Réceptions</Button
+    >{/snippet}
+</PageHeader>
 
 <ErrorNotice message={error} onretry={load} />
 
@@ -62,55 +71,60 @@
     {#each Array(5) as _, i (i)}<Skeleton />{/each}
   </div>
 {:else if error}
-  <Card><EmptyState title="Warehouse data unavailable" message="The warehouse shell is still available. Retry the overview or use the navigation to inspect receiving, inventory, or picking directly." /></Card>
+  <Card
+    ><EmptyState
+      title="Données indisponibles"
+      message="Réessayez le chargement ou ouvrez directement les réceptions, l’inventaire ou les préparations."
+    /></Card
+  >
 {:else if overview}
   <!-- A. KPI cards -->
   <div class="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
     <a href="/wms/items" class="block">
       <Card>
         <div class="text-xs font-medium text-ink-muted">Articles</div>
-        <div class="mt-1 text-3xl font-bold text-ink">{overview.distinctItems}</div>
+        <div class="mt-1 text-2xl font-semibold text-ink">{overview.distinctItems}</div>
       </Card>
     </a>
     <a href="/wms/inventory" class="block">
       <Card>
-        <div class="text-xs font-medium text-ink-muted">Stock total (on-hand)</div>
-        <div class="mt-1 text-3xl font-bold text-ink">{overview.totalOnHand}</div>
+        <div class="text-xs font-medium text-ink-muted">Quantité totale en stock</div>
+        <div class="mt-1 text-2xl font-semibold text-ink">{overview.totalOnHand}</div>
       </Card>
     </a>
     <a href="/wms/receiving" class="block">
       <Card>
         <div class="text-xs font-medium text-ink-muted">Réceptions ouvertes</div>
-        <div class="mt-1 text-3xl font-bold text-ink">{overview.openReceipts}</div>
+        <div class="mt-1 text-2xl font-semibold text-ink">{overview.openReceipts}</div>
       </Card>
     </a>
     <a href="/wms/picking" class="block">
       <Card>
-        <div class="text-xs font-medium text-ink-muted">Pick orders ouverts</div>
-        <div class="mt-1 text-3xl font-bold text-ink">{overview.openPickOrders}</div>
+        <div class="text-xs font-medium text-ink-muted">Préparations ouvertes</div>
+        <div class="mt-1 text-2xl font-semibold text-ink">{overview.openPickOrders}</div>
       </Card>
     </a>
     <a href="#negative" class="block">
       <Card>
-        <div class="text-xs font-medium text-danger">Bins négatifs</div>
-        <div class="mt-1 text-3xl font-bold text-danger">{overview.negativeBins.length}</div>
+        <div class="text-xs font-medium text-danger">Emplacements en anomalie</div>
+        <div class="mt-1 text-2xl font-semibold text-danger">{overview.negativeBins.length}</div>
       </Card>
     </a>
   </div>
 
   <!-- B. Negative-bin attention list -->
   <div id="negative" class="mb-5">
-    <h2 class="mb-2 text-sm font-semibold text-ink">Bins négatifs à corriger</h2>
+    <h2 class="mb-2 text-sm font-semibold text-ink">Écarts de stock à corriger</h2>
     <Card padded={false}>
       {#if overview.negativeBins.length === 0}
-        <EmptyState message="Aucun bin négatif." />
+        <EmptyState message="Aucun stock négatif détecté." />
       {:else}
         <div class="divide-y divide-edge">
           {#each overview.negativeBins as nb (nb.id)}
             <div class="flex items-center gap-3 px-4 py-2.5 text-sm">
               <Badge tone="danger">{nb.qtyOnHand}</Badge>
               <span class="font-medium text-ink">{nb.item.sku}</span>
-              <span class="text-ink-muted">bin {nb.bin.code}</span>
+              <span class="text-ink-muted">emplacement {nb.bin.code}</span>
             </div>
           {/each}
         </div>

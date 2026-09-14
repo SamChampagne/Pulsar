@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import { onMount, onDestroy } from 'svelte';
   import { PageHeader, Card } from '$lib/components/ui';
   import { appearance, setTheme, setAccent } from '$lib/stores/appearance';
@@ -141,8 +142,8 @@
     }
   }
 
-  function resetLayout() {
-    if (!confirm('Réinitialiser entièrement la disposition du bureau ?')) return;
+  async function resetLayout() {
+    if (!(await confirmAction('Réinitialiser entièrement la disposition du bureau ?'))) return;
     save(defaultDeskLayout(domains));
   }
 </script>

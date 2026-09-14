@@ -99,6 +99,13 @@ or healthy metric counters while their data is unavailable.
   direct writes to `document.body.style.overflow` from feature components.
 - Shared tokens and components are the default. Keep the desktop's colored icons; work surfaces stay sober.
 - Financial totals must have a currency, scope and period; do not sum unlike currencies into one KPI.
+- Destructive/explicit decisions use `await confirmAction(message, options)` from
+  `$lib/stores/confirmation`, never native `confirm()`. Continue only on `true`;
+  navigation, unmount and superseding dialogs fail closed. Do not start the write before approval.
+- For related records, prefer named search (e.g. `EntityPicker`) to editable raw IDs.
+  Keep ownership and validation on the server. Paginated choices must make their search limit explicit.
+- Reuse `ModuleSettings` for module options: keep unsaved values visible after save failure,
+  and distinguish saving, dirty and saved states. Do not replace the form with its error message.
 
 ## Specialized cockpit pages
 
