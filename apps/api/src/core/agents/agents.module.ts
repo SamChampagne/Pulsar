@@ -39,6 +39,7 @@ import { ActivitiesService } from '../../modules/crm/activities.service';
 import { ThreadsService } from '../../modules/crm/threads.service';
 import { ProductsService } from '../../modules/crm/products.service';
 import { SalesOrdersService } from '../../modules/crm/sales-orders.service';
+import { SequencesService as CrmSequencesService } from '../../modules/crm/sequences.service';
 import { ManufacturingModule } from '../../modules/manufacturing/manufacturing.module';
 import { SchedulingService } from '../../modules/manufacturing/scheduling/scheduling.service';
 import { OrdersService as ManufacturingOrdersService } from '../../modules/manufacturing/orders/orders.service';
@@ -128,6 +129,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         MailService,
         SchedulingService,
         ManufacturingOrdersService,
+        CrmSequencesService,
       ],
       useFactory: (
         transportOrders: TransportOrdersService,
@@ -161,6 +163,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         mail: MailService,
         scheduling: SchedulingService,
         mfgOrders: ManufacturingOrdersService,
+        crmSequences: CrmSequencesService,
       ): ToolServices => ({
         transportOrders: {
           list: (tenantId, query) => transportOrders.list(tenantId, query as never),
@@ -197,7 +200,8 @@ import { RuntimeConfigController } from './runtime-config.controller';
         },
         freightAudit: {
           audit: (t, u, id) => freightAudit.audit(t, u, id),
-          dispute: (t, a, id, dto, agentId) => freightAudit.dispute(t, a, id, dto as never, agentId),
+          dispute: (t, a, id, dto, agentId) =>
+            freightAudit.dispute(t, a, id, dto as never, agentId),
         },
         ledger: {
           trialBalance: (tenantId, asOf) => ledger.trialBalance(tenantId, asOf),
@@ -223,22 +227,17 @@ import { RuntimeConfigController } from './runtime-config.controller';
         yardVisits: {
           list: (tenantId, q) => visits.list(tenantId, q as never),
           get: (tenantId, id) => visits.get(tenantId, id),
-          assign: (tenantId, userId, visitId, dto) =>
-            visits.assign(tenantId, userId, visitId, dto),
-          move: (tenantId, userId, visitId, dto) =>
-            visits.move(tenantId, userId, visitId, dto),
-          checkOut: (tenantId, userId, visitId) =>
-            visits.checkOut(tenantId, userId, visitId),
+          assign: (tenantId, userId, visitId, dto) => visits.assign(tenantId, userId, visitId, dto),
+          move: (tenantId, userId, visitId, dto) => visits.move(tenantId, userId, visitId, dto),
+          checkOut: (tenantId, userId, visitId) => visits.checkOut(tenantId, userId, visitId),
         },
         yardOverview: {
           overview: (tenantId) => yardOverview.overview(tenantId),
           board: (tenantId, locationId) => yardOverview.board(tenantId, locationId),
         },
         yardAppointments: {
-          create: (tenantId, userId, dto) =>
-            appointments.create(tenantId, userId, dto as never),
-          arrive: (tenantId, userId, id) =>
-            appointments.arrive(tenantId, userId, id),
+          create: (tenantId, userId, dto) => appointments.create(tenantId, userId, dto as never),
+          arrive: (tenantId, userId, id) => appointments.arrive(tenantId, userId, id),
         },
         wmsOverview: {
           overview: (tenantId) => wmsOverview.overview(tenantId),
@@ -250,10 +249,18 @@ import { RuntimeConfigController } from './runtime-config.controller';
           create: (tenantId, userId, dto) => cycleCounts.create(tenantId, userId, dto),
         },
         flow: {
-          timeline: (tenantId, opts) => flow.timeline(tenantId, { days: opts.days ?? 7, limit: opts.limit ?? 200, modules: opts.modules, crossOnly: opts.crossOnly }),
+          timeline: (tenantId, opts) =>
+            flow.timeline(tenantId, {
+              days: opts.days ?? 7,
+              limit: opts.limit ?? 200,
+              modules: opts.modules,
+              crossOnly: opts.crossOnly,
+            }),
           trace: (tenantId, entityType, entityId) => flow.trace(tenantId, entityType, entityId),
         },
         crm: {
+          sendSequenceStep: (tenantId, stepId, agentId, preview) =>
+            crmSequences.sendStep(tenantId, stepId, agentId, preview),
           listDeals: (tenantId, query) => deals.list(tenantId, query as never),
           getCompany: (tenantId, id) => companies.get(tenantId, id),
           listActivities: (tenantId, query) => activities.list(tenantId, query as never),
@@ -267,7 +274,8 @@ import { RuntimeConfigController } from './runtime-config.controller';
           listThreads: (tenantId, query) => threads.list(tenantId, query as never),
           getThread: (tenantId, id) => threads.get(tenantId, id),
           replyThread: (tenantId, id, dto, author) => threads.reply(tenantId, id, dto, author),
-          linkThread: (tenantId, id, dto, userId) => threads.link(tenantId, id, dto as never, userId),
+          linkThread: (tenantId, id, dto, userId) =>
+            threads.link(tenantId, id, dto as never, userId),
           listProducts: (tenantId, query) => products.list(tenantId, query as never),
           listSalesOrders: (tenantId, query) => salesOrders.list(tenantId, query as never),
         },

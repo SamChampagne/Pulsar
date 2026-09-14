@@ -148,6 +148,12 @@ export interface ToolServices {
   };
   // ── CRM ────────────────────────────────────────────────────────────────────
   crm: {
+    sendSequenceStep(
+      tenantId: string,
+      stepId: string,
+      agentId: string,
+      preview: { to: string; subject: string; body: string },
+    ): Promise<unknown>;
     listDeals(tenantId: string, query: object): Promise<unknown>;
     getCompany(tenantId: string, id: string): Promise<unknown>;
     listActivities(tenantId: string, query: object): Promise<unknown>;

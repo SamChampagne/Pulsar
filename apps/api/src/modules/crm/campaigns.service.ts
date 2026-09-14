@@ -74,7 +74,7 @@ export class CampaignsService {
     }
 
     const { count } = await this.prisma.crmCampaign.updateMany({
-      where: { id, tenantId },
+      where: { id, tenantId, status: 'DRAFT' },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.listId !== undefined ? { listId: dto.listId } : {}),
@@ -84,7 +84,8 @@ export class CampaignsService {
         ...(dto.ownerUserId !== undefined ? { ownerUserId: dto.ownerUserId } : {}),
       },
     });
-    if (count === 0) throw new NotFoundException('CRM campaign not found');
+    if (count === 0)
+      throw new BadRequestException('Seule une campagne brouillon peut être modifiée');
     return this.get(tenantId, id);
   }
 
@@ -141,6 +142,10 @@ export class CampaignsService {
 
     // Filter out contacts whose email is an empty string (belt-and-suspenders).
     const eligible = contacts.filter((c) => c.email && c.email.trim().length > 0);
+    await this.prisma.crmCampaign.updateMany({
+      where: { id, tenantId },
+      data: { recipientCount: eligible.length },
+    });
 
     let queued = 0;
     for (const contact of eligible) {
@@ -161,6 +166,7 @@ export class CampaignsService {
           relatedType: 'crm-campaign',
           relatedId: id,
           createdByUserId: userId,
+          dedupKey: `crm-campaign:${id}:${contact.id}`,
         });
         queued++;
       } catch {
@@ -168,13 +174,13 @@ export class CampaignsService {
       }
     }
 
-    // Mark campaign as SENT regardless of individual recipient failures.
+    // Legacy SENT = fan-out completed, NOT recipient delivery. Stats expose both layers.
     await this.prisma.crmCampaign.updateMany({
       where: { id, tenantId },
-      data: { status: 'SENT', sentAt: new Date() },
+      data: { status: 'SENT', sentAt: new Date(), enqueueFailedCount: eligible.length - queued },
     });
 
-    return { queued };
+    return { queued, enqueueFailed: eligible.length - queued };
   }
 
   /**
@@ -184,7 +190,7 @@ export class CampaignsService {
     // Verify campaign exists and belongs to tenant.
     const campaign = await this.prisma.crmCampaign.findFirst({
       where: { id, tenantId },
-      select: { id: true },
+      select: { id: true, recipientCount: true, enqueueFailedCount: true },
     });
     if (!campaign) throw new NotFoundException('CRM campaign not found');
 
@@ -205,7 +211,14 @@ export class CampaignsService {
       else if (g.status === 'QUEUED' || g.status === 'SENDING') queuedCount += n;
     }
 
-    const total = sent + failed + queuedCount;
-    return { total, sent, failed, queued: queuedCount };
+    const total = campaign.recipientCount ?? sent + failed + queuedCount;
+    return {
+      total,
+      sent,
+      failed,
+      queued: queuedCount,
+      enqueueFailed: campaign.enqueueFailedCount,
+      deliveryConfirmed: false,
+    };
   }
 }

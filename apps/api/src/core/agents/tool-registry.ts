@@ -19,6 +19,7 @@ import { yardTools } from './tools/yard.tools';
 import { wmsTools } from './tools/wms.tools';
 import { analyticsTools } from './tools/analytics.tools';
 import { crmTools } from './tools/crm.tools';
+import { crmSequenceTools } from './tools/crm-sequences.tools';
 import { emailTools } from './tools/email.tools';
 import { manufacturingTools } from './tools/manufacturing.tools';
 
@@ -33,6 +34,7 @@ export const TOOL_REGISTRY: ToolDef[] = [
   ...wmsTools,
   ...analyticsTools,
   ...crmTools,
+  ...crmSequenceTools,
   ...emailTools,
   ...manufacturingTools,
 ];

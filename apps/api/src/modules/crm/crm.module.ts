@@ -31,6 +31,12 @@ import { SalesOrdersController } from './sales-orders.controller';
 import { SalesOrdersService } from './sales-orders.service';
 import { SalesOrderLineItemsController } from './sales-order-line-items.controller';
 import { SalesOrderLineItemsService } from './sales-order-line-items.service';
+import { SequencesService } from './sequences.service';
+import {
+  SequencesController,
+  EmailPreferenceController,
+  SequenceUnsubscribeController,
+} from './sequences.controller';
 
 /**
  * CRM module (companies, contacts, deals, activities, pipeline, overview, lists, campaigns, threads).
@@ -43,8 +49,17 @@ import { SalesOrderLineItemsService } from './sales-order-line-items.service';
  * MailService comes from the @Global() EmailModule (no explicit import needed).
  */
 @Module({
-  imports: [AuditLogsModule, CustomFieldsModule, DocumentsModule, ModuleRegistryModule, OperatingModule],
+  imports: [
+    AuditLogsModule,
+    CustomFieldsModule,
+    DocumentsModule,
+    ModuleRegistryModule,
+    OperatingModule,
+  ],
   controllers: [
+    SequencesController,
+    EmailPreferenceController,
+    SequenceUnsubscribeController,
     CrmCustomFieldsController,
     CompaniesController,
     ContactsController,
@@ -60,7 +75,36 @@ import { SalesOrderLineItemsService } from './sales-order-line-items.service';
     SalesOrdersController,
     SalesOrderLineItemsController,
   ],
-  providers: [CompaniesService, ContactsService, DealsService, ActivitiesService, CrmExceptionsService, OverviewService, ListsService, CampaignsService, ThreadsService, ProductsService, LineItemsService, SalesOrdersService, SalesOrderLineItemsService],
-  exports: [CompaniesService, ContactsService, DealsService, ActivitiesService, OverviewService, ListsService, CampaignsService, ThreadsService, ProductsService, LineItemsService, SalesOrdersService, SalesOrderLineItemsService],
+  providers: [
+    SequencesService,
+    CompaniesService,
+    ContactsService,
+    DealsService,
+    ActivitiesService,
+    CrmExceptionsService,
+    OverviewService,
+    ListsService,
+    CampaignsService,
+    ThreadsService,
+    ProductsService,
+    LineItemsService,
+    SalesOrdersService,
+    SalesOrderLineItemsService,
+  ],
+  exports: [
+    SequencesService,
+    CompaniesService,
+    ContactsService,
+    DealsService,
+    ActivitiesService,
+    OverviewService,
+    ListsService,
+    CampaignsService,
+    ThreadsService,
+    ProductsService,
+    LineItemsService,
+    SalesOrdersService,
+    SalesOrderLineItemsService,
+  ],
 })
 export class CrmModule {}

@@ -3070,6 +3070,8 @@ model CrmCampaign {
   html        String
   templateKey String?
   status      CrmCampaignStatus @default(DRAFT)
+  recipientCount Int?
+  enqueueFailedCount Int @default(0)
   ownerUserId String?
   sentAt      DateTime?
   createdAt   DateTime          @default(now())
@@ -3147,6 +3149,7 @@ model TenantEmailConfig {
 model EmailMessage {
   id              String      @id @default(cuid())
   tenantId        String
+  dedupKey        String?
   toAddresses     String[]
   cc              String[]    @default([])
   subject         String
@@ -3181,7 +3184,112 @@ model EmailMessage {
   @@index([status, nextAttemptAt])
   @@index([tenantId, threadId])
   @@index([tenantId, messageId])
+  @@unique([tenantId, dedupKey])
   @@map("email_messages")
+}
+
+enum CrmSequenceMode {
+  SIMULATION
+  GOVERNED
+}
+enum CrmSequenceTrigger {
+  MANUAL
+  CONTACT_CREATED
+}
+enum CrmSequenceRunStatus {
+  ACTIVE
+  PAUSED
+  STOPPED
+  COMPLETED
+  FAILED
+}
+enum CrmSequenceStepStatus {
+  PENDING
+  PROPOSED
+  QUEUED
+  SENT
+  SIMULATED
+  CANCELLED
+  FAILED
+}
+enum CommunicationConsent {
+  UNKNOWN
+  GRANTED
+  REVOKED
+}
+
+/// Frozen on enrollment; editing a scenario never changes a running sequence.
+model CrmSequence {
+  id String @id @default(cuid())
+  tenantId String
+  name String
+  enabled Boolean @default(false)
+  mode CrmSequenceMode @default(SIMULATION)
+  trigger CrmSequenceTrigger @default(MANUAL)
+  agentId String?
+  steps Json
+  createdById String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  runs CrmSequenceRun[]
+  @@index([tenantId, enabled, trigger])
+  @@map("crm_sequences")
+}
+
+model CrmSequenceRun {
+  id String @id @default(cuid())
+  tenantId String
+  sequenceId String
+  contactId String
+  email String
+  mode CrmSequenceMode
+  agentId String?
+  status CrmSequenceRunStatus @default(ACTIVE)
+  reason String?
+  createdById String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sequence CrmSequence @relation(fields: [sequenceId], references: [id], onDelete: Restrict)
+  steps CrmSequenceStepRun[]
+  @@unique([tenantId, sequenceId, contactId])
+  @@index([tenantId, status])
+  @@index([tenantId, contactId])
+  @@map("crm_sequence_runs")
+}
+
+model CrmSequenceStepRun {
+  id String @id @default(cuid())
+  tenantId String
+  runId String
+  position Int
+  delayMinutes Int
+  subject String
+  body String
+  status CrmSequenceStepStatus @default(PENDING)
+  dueAt DateTime?
+  proposalId String?
+  emailId String?
+  detail String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  run CrmSequenceRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, runId, position])
+  @@index([tenantId, status, dueAt])
+  @@map("crm_sequence_step_runs")
+}
+
+/// Address-bound: changing a contact's address does not transfer consent.
+model CrmEmailPreference {
+  id String @id @default(cuid())
+  tenantId String
+  email String
+  consent CommunicationConsent @default(UNKNOWN)
+  source String?
+  unsubscribeToken String @unique
+  updatedById String?
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, email])
+  @@map("crm_email_preferences")
 }
 
 /// Conversation thread grouping inbound + outbound EmailMessage rows, linked to CRM entities.

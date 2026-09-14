@@ -23,6 +23,7 @@
   import LogActivity from '$lib/components/crm/LogActivity.svelte';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
   import RecordEmails from '$lib/components/crm/RecordEmails.svelte';
+  import SequenceRuns from '$lib/components/crm/SequenceRuns.svelte';
 
   // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -202,7 +203,9 @@
     <input
       placeholder="Rechercher par nom…"
       bind:value={search}
-      onkeydown={(e) => { if (e.key === 'Enter') void load(); }}
+      onkeydown={(e) => {
+        if (e.key === 'Enter') void load();
+      }}
       class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
     />
   </div>
@@ -210,16 +213,20 @@
     <input
       placeholder="Filtrer par ID société…"
       bind:value={companyIdFilter}
-      onkeydown={(e) => { if (e.key === 'Enter') void load(); }}
+      onkeydown={(e) => {
+        if (e.key === 'Enter') void load();
+      }}
       class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
     />
   </div>
 </FilterBar>
 
 <!-- List / panel layout -->
-<div class={`flex gap-4 ${selected || detailLoading ? 'items-start' : ''}`}>
+<div class={`flex flex-col gap-4 xl:flex-row ${selected || detailLoading ? 'items-start' : ''}`}>
   <!-- ── List ── -->
-  <div class={`min-w-0 flex-1 transition-all ${selected || detailLoading ? 'max-w-[55%]' : ''}`}>
+  <div
+    class={`min-w-0 w-full flex-1 transition-all ${selected || detailLoading ? 'xl:max-w-[55%]' : ''}`}
+  >
     {#if loading}
       <Card padded={false}><Skeleton rows={6} /></Card>
     {:else if contacts.length === 0}
@@ -238,7 +245,15 @@
               class={`cursor-pointer transition-colors hover:bg-surface-muted ${selected?.id === contact.id ? 'bg-accent-soft/20' : ''}`}
               onclick={() => void openDetail(contact)}
             >
-              <td class="font-semibold text-ink">{contact.name}</td>
+              <td class="font-semibold text-ink"
+                ><button
+                  class="text-left hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    void openDetail(contact);
+                  }}>{contact.name}</button
+                ></td
+              >
               <td class="text-ink-muted">{contact.title ?? '—'}</td>
               <td class="text-ink-muted">{contact.email ?? '—'}</td>
               <td class="font-mono text-ink-muted">{contact.phone ?? '—'}</td>
@@ -258,14 +273,20 @@
           <Button
             variant="secondary"
             disabled={page <= 1}
-            onclick={() => { page = Math.max(1, page - 1); void load(); }}
-          >Précédent</Button>
+            onclick={() => {
+              page = Math.max(1, page - 1);
+              void load();
+            }}>Précédent</Button
+          >
           <span class="font-mono text-xs">Page {page} / {totalPages}</span>
           <Button
             variant="secondary"
             disabled={page >= totalPages}
-            onclick={() => { page = Math.min(totalPages, page + 1); void load(); }}
-          >Suivant</Button>
+            onclick={() => {
+              page = Math.min(totalPages, page + 1);
+              void load();
+            }}>Suivant</Button
+          >
         </div>
       </div>
     {/if}
@@ -273,11 +294,11 @@
 
   <!-- ── Detail panel ── -->
   {#if detailLoading}
-    <div class="w-[42%] shrink-0">
+    <div class="min-w-0 w-full shrink-0 xl:w-[42%]">
       <Card padded={false}><Skeleton rows={8} /></Card>
     </div>
   {:else if selected}
-    <div class="w-[42%] shrink-0">
+    <div class="min-w-0 w-full shrink-0 xl:w-[42%]">
       <Card>
         <!-- Panel header -->
         <div class="mb-4 flex items-start justify-between gap-2">
@@ -289,22 +310,31 @@
           </div>
           <button
             class="shrink-0 rounded p-1 text-ink-faint hover:bg-surface-muted hover:text-ink"
-            onclick={() => { selected = null; selectedActivities = []; }}
-            aria-label="Fermer"
-          >✕</button>
+            onclick={() => {
+              selected = null;
+              selectedActivities = [];
+            }}
+            aria-label="Fermer">✕</button
+          >
         </div>
 
         <!-- Contact fields -->
         <div class="mb-4 grid grid-cols-2 gap-3 text-xs">
           {#if selected.email}
             <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Courriel</div>
-              <a href="mailto:{selected.email}" class="text-accent hover:underline">{selected.email}</a>
+              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">
+                Courriel
+              </div>
+              <a href="mailto:{selected.email}" class="text-accent hover:underline"
+                >{selected.email}</a
+              >
             </div>
           {/if}
           {#if selected.phone}
             <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Téléphone</div>
+              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">
+                Téléphone
+              </div>
               <div class="font-mono text-ink">{selected.phone}</div>
             </div>
           {/if}
@@ -339,14 +369,14 @@
           <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
             Enregistrer une activité
           </div>
-          <LogActivity
-            contactId={selected.id}
-            onLogged={() => void refreshActivities()}
-          />
+          <LogActivity contactId={selected.id} onLogged={() => void refreshActivities()} />
         </div>
       </Card>
 
       <!-- Emails panel -->
+      <div class="mt-4 rounded-lg border border-edge bg-surface p-4">
+        {#key selected.id}<SequenceRuns contactId={selected.id} />{/key}
+      </div>
       <RecordEmails
         relatedType="crm-contact"
         relatedId={selected.id}
@@ -379,7 +409,12 @@
     {/if}
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { createOpen = false; }}>Annuler</Button>
+    <Button
+      variant="secondary"
+      onclick={() => {
+        createOpen = false;
+      }}>Annuler</Button
+    >
     <Button loading={createSaving} onclick={submitCreate}>Créer</Button>
   {/snippet}
 </Modal>

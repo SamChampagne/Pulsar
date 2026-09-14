@@ -39,6 +39,7 @@
   }
 
   interface CampaignStats {
+    enqueueFailed: number;
     total: number;
     sent: number;
     failed: number;
@@ -266,24 +267,36 @@
 
   function statusTone(status: CampaignStatus): Tone {
     switch (status) {
-      case 'DRAFT':    return 'neutral';
-      case 'SENDING':  return 'warn';
-      case 'SENT':     return 'ok';
-      default:         return 'neutral';
+      case 'DRAFT':
+        return 'neutral';
+      case 'SENDING':
+        return 'warn';
+      case 'SENT':
+        return 'ok';
+      default:
+        return 'neutral';
     }
   }
 
   function statusLabel(status: CampaignStatus): string {
     switch (status) {
-      case 'DRAFT':    return 'Brouillon';
-      case 'SENDING':  return 'En cours';
-      case 'SENT':     return 'Envoyée';
-      default:         return status;
+      case 'DRAFT':
+        return 'Brouillon';
+      case 'SENDING':
+        return 'En cours';
+      case 'SENT':
+        return 'Traitement terminé';
+      default:
+        return status;
     }
   }
 
   function listName(campaign: CampaignRow): string {
-    return campaign.listName ?? availableLists.find((l) => l.id === campaign.listId)?.name ?? campaign.listId;
+    return (
+      campaign.listName ??
+      availableLists.find((l) => l.id === campaign.listId)?.name ??
+      campaign.listId
+    );
   }
 
   // ── Reactive load ─────────────────────────────────────────────────────────
@@ -316,7 +329,7 @@
     {:else}
       <Table>
         {#snippet head()}
-          <th>Nom</th><th>Liste</th><th>Sujet</th><th>Statut</th><th>Envoyée le</th>
+          <th>Nom</th><th>Liste</th><th>Sujet</th><th>Statut</th><th>Traitée le</th>
         {/snippet}
         {#snippet body()}
           {#each campaigns as campaign (campaign.id)}
@@ -328,7 +341,10 @@
               <td class="font-semibold text-ink">{campaign.name}</td>
               <td class="text-ink-muted">{listName(campaign)}</td>
               <td class="text-ink-muted truncate max-w-[160px]">{campaign.subject}</td>
-              <td><Badge tone={statusTone(campaign.status)}>{statusLabel(campaign.status)}</Badge></td>
+              <td
+                ><Badge tone={statusTone(campaign.status)}>{statusLabel(campaign.status)}</Badge
+                ></td
+              >
               <td class="text-ink-muted">{campaign.sentAt ? formatDate(campaign.sentAt) : '—'}</td>
             </tr>
           {/each}
@@ -345,14 +361,18 @@
           <Button
             variant="secondary"
             disabled={page <= 1}
-            onclick={() => { page = Math.max(1, page - 1); }}
-          >Précédent</Button>
+            onclick={() => {
+              page = Math.max(1, page - 1);
+            }}>Précédent</Button
+          >
           <span class="font-mono text-xs">Page {page} / {totalPages}</span>
           <Button
             variant="secondary"
             disabled={page >= totalPages}
-            onclick={() => { page = Math.min(totalPages, page + 1); }}
-          >Suivant</Button>
+            onclick={() => {
+              page = Math.min(totalPages, page + 1);
+            }}>Suivant</Button
+          >
         </div>
       </div>
     {/if}
@@ -372,9 +392,12 @@
           </div>
           <button
             class="shrink-0 rounded p-1 text-ink-faint hover:bg-surface-muted hover:text-ink"
-            onclick={() => { selected = null; stats = null; }}
-            aria-label="Fermer"
-          >✕</button>
+            onclick={() => {
+              selected = null;
+              stats = null;
+            }}
+            aria-label="Fermer">✕</button
+          >
         </div>
 
         <!-- Campaign metadata -->
@@ -389,7 +412,9 @@
           </div>
           {#if selected.sentAt}
             <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Envoyée le</div>
+              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">
+                Traitée le
+              </div>
               <div class="text-ink">{formatDate(selected.sentAt)}</div>
             </div>
           {/if}
@@ -408,8 +433,8 @@
           <Button
             variant="primary"
             disabled={selected.status !== 'DRAFT'}
-            onclick={() => openSendConfirm(selected!)}
-          >Envoyer</Button>
+            onclick={() => openSendConfirm(selected!)}>Envoyer</Button
+          >
         </div>
 
         <!-- Stats -->
@@ -426,17 +451,24 @@
             </div>
             <div class="rounded-md border border-edge bg-surface-muted px-3 py-2 text-center">
               <div class="text-lg font-bold text-ok">{stats.sent}</div>
-              <div class="text-ink-muted">Envoyés</div>
+              <div class="text-ink-muted">Acceptés par le transport</div>
             </div>
             <div class="rounded-md border border-edge bg-surface-muted px-3 py-2 text-center">
               <div class="text-lg font-bold text-warn">{stats.queued}</div>
               <div class="text-ink-muted">En attente</div>
             </div>
             <div class="rounded-md border border-edge bg-surface-muted px-3 py-2 text-center">
-              <div class="text-lg font-bold text-danger">{stats.failed}</div>
+              <div class="text-lg font-bold text-danger">
+                {stats.failed + (stats.enqueueFailed ?? 0)}
+              </div>
               <div class="text-ink-muted">Échecs</div>
             </div>
           </div>
+          <p class="mt-3 text-xs text-ink-muted">
+            Le traitement de la campagne ne prouve pas la livraison. Échecs de mise en file : {stats.enqueueFailed ??
+              0}. Les messages acceptés par le transport peuvent encore être rejetés par le
+            destinataire.
+          </p>
         {:else}
           <p class="text-xs text-ink-faint">Aucune statistique disponible.</p>
         {/if}
@@ -446,7 +478,10 @@
 </div>
 
 <!-- Create/Edit modal -->
-<Modal bind:open={formOpen} title={formMode === 'create' ? 'Nouvelle campagne' : 'Modifier la campagne'}>
+<Modal
+  bind:open={formOpen}
+  title={formMode === 'create' ? 'Nouvelle campagne' : 'Modifier la campagne'}
+>
   <div class="flex flex-col gap-4">
     <Field label="Nom *">
       <Input bind:value={formName} placeholder="Campagne printemps 2026" />
@@ -485,14 +520,21 @@
 
     <Field label="Contenu HTML">
       <div class="mb-1 text-[11px] text-ink-muted">
-        Variables disponibles : <span class="font-mono">{'{name}'}</span> <span class="font-mono">{'{company}'}</span> <span class="font-mono">{'{title}'}</span> <span class="font-mono">{'{email}'}</span>
+        Variables disponibles : <span class="font-mono">{'{name}'}</span>
+        <span class="font-mono">{'{company}'}</span> <span class="font-mono">{'{title}'}</span>
+        <span class="font-mono">{'{email}'}</span>
       </div>
       <Textarea bind:value={formHtml} rows={8} placeholder="<p>Bonjour {'{name}'},</p>…" />
     </Field>
 
     <!-- AI draft -->
     <div>
-      <Button variant="secondary" onclick={() => { aiPromptOpen = !aiPromptOpen; }}>
+      <Button
+        variant="secondary"
+        onclick={() => {
+          aiPromptOpen = !aiPromptOpen;
+        }}
+      >
         ✦ Rédiger avec l'IA
       </Button>
       {#if aiPromptOpen}
@@ -507,7 +549,12 @@
     </div>
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { formOpen = false; }}>Annuler</Button>
+    <Button
+      variant="secondary"
+      onclick={() => {
+        formOpen = false;
+      }}>Annuler</Button
+    >
     <Button loading={formSaving} onclick={submitForm}>
       {formMode === 'create' ? 'Créer' : 'Enregistrer'}
     </Button>
@@ -518,15 +565,21 @@
 <Modal bind:open={sendConfirmOpen} title="Confirmer l'envoi">
   <div class="flex flex-col gap-3">
     <p class="text-sm text-ink">
-      Vous êtes sur le point d'envoyer cette campagne à tous les membres de la liste associée.
-      Cette action est irréversible.
+      Vous êtes sur le point d'envoyer cette campagne à tous les membres de la liste associée. Cette
+      action est irréversible.
     </p>
     <div class="rounded-md border border-warn bg-warn-soft/20 px-3 py-2 text-xs text-warn">
       ⚠ Avant un envoi marketing réel, assurez-vous d'avoir inclus un lien de désinscription (CASL).
     </div>
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { sendConfirmOpen = false; sendingId = null; }}>Annuler</Button>
+    <Button
+      variant="secondary"
+      onclick={() => {
+        sendConfirmOpen = false;
+        sendingId = null;
+      }}>Annuler</Button
+    >
     <Button variant="primary" onclick={confirmSend}>Confirmer l'envoi</Button>
   {/snippet}
 </Modal>

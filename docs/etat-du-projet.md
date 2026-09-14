@@ -6,7 +6,13 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
-> **Relance en cours (2026-09-13) — `codex/control-center-workflows`.**
+> **Lot CRM communications (2026-09-14) — `codex/crm-communications`.**
+> Scénarios courriel configurables, simulation, gouvernance d'agent sans LLM obligatoire,
+> consentement/désabonnement, pause/reprise/arrêt, historique depuis les contacts. Migration
+> additive appliquée localement ; SMS et fournisseurs réels non qualifiés. Périmètre,
+> tests et limites : [crm-communications.md](./plans/crm-communications.md).
+>
+> **Relance précédente (2026-09-13) — `codex/control-center-workflows`.**
 > Console SaaS `/platform/operations`, diagnostics par entreprise, catalogue complet,
 > dossiers intermodules `/workflows`, vues personnelles et accès contextuels livrés sur
 > la branche. Profil OVH Linux/Docker/Nginx préparé pour `pulsar.intebec.ca` ; **pas déployé**.

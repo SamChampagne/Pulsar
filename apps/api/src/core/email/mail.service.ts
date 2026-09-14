@@ -6,12 +6,15 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DocumentsService } from '../documents/documents.service';
 import { EmailConfigService } from './email-config.service';
 import { EmailService } from './email.service';
+import { Prisma } from '@pulsar/database';
 
 const MAX_ATTEMPTS = 5;
 /** Exponential backoff in minutes: 1m, 5m, 30m, 2h, 6h */
 const BACKOFF_MINUTES = [1, 5, 30, 120, 360];
 
 export interface QueueEmailInput {
+  /** Internal idempotency key, never accepted from the public email DTO. */
+  dedupKey?: string;
   toAddresses: string[];
   cc?: string[];
   subject: string;
@@ -41,6 +44,17 @@ export interface QueueEmailInput {
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
+  private readonly deliveryGuards = new Map<
+    string,
+    (tenantId: string, relatedId: string) => Promise<'ALLOW' | 'HOLD' | 'CANCEL'>
+  >();
+
+  registerDeliveryGuard(
+    type: string,
+    guard: (tenantId: string, relatedId: string) => Promise<'ALLOW' | 'HOLD' | 'CANCEL'>,
+  ) {
+    this.deliveryGuards.set(type, guard);
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -54,6 +68,12 @@ export class MailService {
    * then fire-and-forget deliver(). Returns the persisted message.
    */
   async queue(tenantId: string, input: QueueEmailInput) {
+    if (input.dedupKey) {
+      const existing = await this.prisma.emailMessage.findUnique({
+        where: { tenantId_dedupKey: { tenantId, dedupKey: input.dedupKey } },
+      });
+      if (existing) return existing;
+    }
     const { attachments = [], ...rest } = input;
 
     // Validate each documentId is tenant-owned before persisting.
@@ -67,41 +87,56 @@ export class MailService {
       }
     }
 
-    const msg = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.emailMessage.create({
-        data: {
-          tenantId,
-          toAddresses: rest.toAddresses,
-          cc: rest.cc ?? [],
-          subject: rest.subject,
-          html: rest.html,
-          text: rest.text,
-          relatedType: rest.relatedType,
-          relatedId: rest.relatedId,
-          templateKey: rest.templateKey,
-          createdByUserId: rest.createdByUserId,
-          agentId: rest.agentId,
-          messageId: `<${randomUUID()}@pulsar.local>`,
-          direction: 'OUTBOUND',
-          threadId: rest.threadId,
-          inReplyTo: rest.inReplyTo,
-          references: rest.references,
-        },
-      });
-
-      if (attachments.length > 0) {
-        await tx.emailAttachment.createMany({
-          data: attachments.map((att) => ({
+    const msg = await this.prisma
+      .$transaction(async (tx) => {
+        const created = await tx.emailMessage.create({
+          data: {
             tenantId,
-            emailMessageId: created.id,
-            documentId: att.documentId,
-            filename: att.filename,
-          })),
+            dedupKey: rest.dedupKey,
+            toAddresses: rest.toAddresses,
+            cc: rest.cc ?? [],
+            subject: rest.subject,
+            html: rest.html,
+            text: rest.text,
+            relatedType: rest.relatedType,
+            relatedId: rest.relatedId,
+            templateKey: rest.templateKey,
+            createdByUserId: rest.createdByUserId,
+            agentId: rest.agentId,
+            messageId: `<${randomUUID()}@pulsar.local>`,
+            direction: 'OUTBOUND',
+            threadId: rest.threadId,
+            inReplyTo: rest.inReplyTo,
+            references: rest.references,
+          },
         });
-      }
 
-      return created;
-    });
+        if (attachments.length > 0) {
+          await tx.emailAttachment.createMany({
+            data: attachments.map((att) => ({
+              tenantId,
+              emailMessageId: created.id,
+              documentId: att.documentId,
+              filename: att.filename,
+            })),
+          });
+        }
+
+        return created;
+      })
+      .catch(async (err) => {
+        if (
+          input.dedupKey &&
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          const existing = await this.prisma.emailMessage.findUnique({
+            where: { tenantId_dedupKey: { tenantId, dedupKey: input.dedupKey } },
+          });
+          if (existing) return existing;
+        }
+        throw err;
+      });
 
     // Fire-and-forget — best-effort, never throws out of queue().
     void this.deliver(msg.id).catch(() => undefined);
@@ -121,6 +156,33 @@ export class MailService {
       });
       if (!msg) return;
       if (msg.status !== 'QUEUED' && msg.status !== 'FAILED') return;
+      if (msg.status === 'FAILED' && !msg.nextAttemptAt) return;
+      const guard = msg.relatedType ? this.deliveryGuards.get(msg.relatedType) : undefined;
+      let ownsClaim = false;
+      // Fail closed if a CRM worker is unavailable during application startup.
+      if (msg.relatedType === 'crm-sequence-step' && !guard) return;
+      const checkGuard = async () => {
+        if (!guard || !msg.relatedId) return true;
+        const verdict = await guard(msg.tenantId, msg.relatedId);
+        if (verdict === 'ALLOW') return true;
+        await this.prisma.emailMessage.updateMany({
+          where: {
+            id: msg.id,
+            tenantId: msg.tenantId,
+            status: { in: ownsClaim ? ['SENDING'] : ['QUEUED', 'FAILED'] },
+          },
+          data:
+            verdict === 'HOLD'
+              ? { status: 'QUEUED' }
+              : {
+                  status: 'FAILED',
+                  nextAttemptAt: null,
+                  lastError: 'CANCELLED_BY_COMMUNICATION_GUARD',
+                },
+        });
+        return false;
+      };
+      if (!(await checkGuard())) return;
 
       // Claim atomically — skip if already claimed by another runner.
       const claimed = await this.prisma.emailMessage.updateMany({
@@ -128,6 +190,7 @@ export class MailService {
         data: { status: 'SENDING' },
       });
       if (claimed.count === 0) return;
+      ownsClaim = true;
 
       // Resolve tenant SMTP transport (may be null → env/log fallback).
       const transport = await this.emailConfigService.resolve(msg.tenantId);
@@ -147,6 +210,7 @@ export class MailService {
         }
       }
 
+      if (!(await checkGuard())) return;
       const ok = await this.emailService.send(
         {
           to: msg.toAddresses.join(', '),
@@ -200,7 +264,9 @@ export class MailService {
           },
         })
         .catch((updateErr) =>
-          this.logger.error(`MailService: failed to update message ${messageId}: ${String(updateErr)}`),
+          this.logger.error(
+            `MailService: failed to update message ${messageId}: ${String(updateErr)}`,
+          ),
         );
     }
   }
@@ -238,7 +304,9 @@ export class MailService {
 function streamToBuffer(stream: Readable): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    stream.on('data', (chunk: Buffer) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    stream.on('data', (chunk: Buffer) =>
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)),
+    );
     stream.on('end', () => resolve(Buffer.concat(chunks)));
     stream.on('error', reject);
   });

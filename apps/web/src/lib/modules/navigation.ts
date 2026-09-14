@@ -462,6 +462,7 @@ export function navCatalogue(): NavDomain[] {
           links: [
             { href: '/crm/lists', label: 'Listes', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/campaigns', label: 'Campagnes', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/sequences', label: 'Automatisations', perm: PERMISSIONS.CRM.READ },
           ],
         },
         {

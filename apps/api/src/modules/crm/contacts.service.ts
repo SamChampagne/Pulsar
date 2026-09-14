@@ -6,6 +6,7 @@ import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { CustomFieldsService } from '../../core/custom-fields/custom-fields.service';
 import { paginationArgs, paginated } from '../../common/pagination';
 import { ContactListQueryDto, CreateContactDto, UpdateContactDto } from './dto/contact.dto';
+import { SequencesService } from './sequences.service';
 
 /**
  * CRM contacts service. All operations are tenant-scoped (rule 1).
@@ -19,6 +20,7 @@ export class ContactsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogsService,
     private readonly customFields: CustomFieldsService,
+    private readonly sequences: SequencesService,
   ) {}
 
   async list(tenantId: string, query: ContactListQueryDto) {
@@ -26,9 +28,7 @@ export class ContactsService {
     const where = {
       tenantId,
       ...(query.companyId ? { companyId: query.companyId } : {}),
-      ...(query.search
-        ? { name: { contains: query.search, mode: 'insensitive' as const } }
-        : {}),
+      ...(query.search ? { name: { contains: query.search, mode: 'insensitive' as const } } : {}),
     };
     const [items, total] = await Promise.all([
       this.prisma.crmContact.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take }),
@@ -47,7 +47,11 @@ export class ContactsService {
     await this.assertCompanyOwned(dto.companyId, tenantId);
 
     const customData = await this.customFields.validateValues(
-      'crm', tenantId, CustomFieldEntity.CRM_CONTACT, dto.customData, { partial: false },
+      'crm',
+      tenantId,
+      CustomFieldEntity.CRM_CONTACT,
+      dto.customData,
+      { partial: false },
     );
 
     const contact = await this.prisma.crmContact.create({
@@ -72,6 +76,9 @@ export class ContactsService {
       after: { name: contact.name, companyId: contact.companyId },
     });
 
+    // Contact creation remains successful if a scenario cannot enroll it.
+    await this.sequences.onContactCreated(tenantId, contact.id, userId).catch(() => undefined);
+
     return contact;
   }
 
@@ -79,7 +86,11 @@ export class ContactsService {
     await this.assertCompanyOwned(dto.companyId, tenantId);
 
     const customData = await this.customFields.validateValues(
-      'crm', tenantId, CustomFieldEntity.CRM_CONTACT, dto.customData, { partial: true },
+      'crm',
+      tenantId,
+      CustomFieldEntity.CRM_CONTACT,
+      dto.customData,
+      { partial: true },
     );
 
     const { count } = await this.prisma.crmContact.updateMany({
