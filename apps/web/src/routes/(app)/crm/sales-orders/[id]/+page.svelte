@@ -1,4 +1,5 @@
 <script lang="ts">
+  import DossierButton from '$lib/components/workflows/DossierButton.svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { api, ApiError } from '$lib/api/client';
@@ -549,6 +550,7 @@
     <div class="min-w-0">
       <div class="mb-1 flex items-center gap-2">
         <Button variant="secondary" onclick={() => goto('/crm/sales-orders')}>← Commandes</Button>
+        <DossierButton entityType="SALES_ORDER" entityId={order.id} />
       </div>
       <h1 class="mt-2 font-mono text-2xl font-bold text-ink">{order.number}</h1>
       <div class="mt-1 flex flex-wrap items-center gap-2">

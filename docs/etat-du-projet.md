@@ -6,7 +6,16 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
-> **Stage en cours (2026-07-17) — `operational-convergence` (branche non mergée, prête PR).**
+> **Relance en cours (2026-09-13) — `codex/control-center-workflows`.**
+> Console SaaS `/platform/operations`, diagnostics par entreprise, catalogue complet,
+> dossiers intermodules `/workflows`, vues personnelles et accès contextuels livrés sur
+> la branche. Profil OVH Linux/Docker/Nginx préparé pour `pulsar.intebec.ca` ; **pas déployé**.
+> Vérifications et limites : [control-center-workflows.md](./plans/control-center-workflows.md).
+> Installation distante : [runbook OVH](../deploy/ovh/README.md). L'emplacement réel de Nginx
+> (hôte ou conteneur) reste à inspecter avec l'accès VPS. Les garanties de juillet
+> ci-dessous sont historiques, pas une nouvelle certification de production.
+
+> **Stage précédent (2026-07-17) — `operational-convergence` (branche non mergée, prête PR).**
 > Waves 0→7 + Release Qualification (Gates A→D) + **pont CRM SalesOrder → TMS TransportOrder**
 > (« Préparer l'expédition ») + passe de durcissement finale (autorisation cross-module des outils
 > agents, complétion TransportOrder tenant-scopée/auditée/state-machine, contrat logistique aligné

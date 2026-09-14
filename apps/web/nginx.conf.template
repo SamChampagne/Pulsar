@@ -13,6 +13,9 @@ server {
     server_name _;
     root /usr/share/nginx/html;
     index index.html;
+    # Allow operational uploads past nginx's default 1 MB ceiling.
+    # DocumentsService remains authoritative for file validation and limits.
+    client_max_body_size 25m;
 
     # Reverse-proxy the API from the same origin. No URI part on proxy_pass, so
     # the full /api/v1/... path is forwarded unchanged to the API.

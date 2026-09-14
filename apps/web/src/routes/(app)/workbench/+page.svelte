@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page as route } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { auth } from '$lib/stores/auth';
@@ -126,6 +127,25 @@
   // Detail panel
   let selected = $state<OperationalTask | null>(null);
   let detailLoading = $state(false);
+  $effect(() => {
+    const id = route.url.searchParams.get('task');
+    if (!id) return;
+    let active = true;
+    detailLoading = true;
+    void api<OperationalTask>(`/operational-tasks/${encodeURIComponent(id)}`)
+      .then((task) => {
+        if (active) selected = task;
+      })
+      .catch(() => {
+        if (active) error = 'Cette tâche est introuvable ou non accessible.';
+      })
+      .finally(() => {
+        if (active) detailLoading = false;
+      });
+    return () => {
+      active = false;
+    };
+  });
 
   // ──────────────────────────────────────────────────────────
   // Derived summary counts
@@ -133,7 +153,9 @@
 
   const criticalCount = $derived(tasks.filter((t) => t.severity === 'CRITICAL').length);
   const agentAssignedCount = $derived(tasks.filter((t) => t.assigneeType === 'AGENT').length);
-  const slaBreachedCount = $derived(tasks.filter((t) => isSlaBreached(t.slaDueAt, Date.now())).length);
+  const slaBreachedCount = $derived(
+    tasks.filter((t) => isSlaBreached(t.slaDueAt, Date.now())).length,
+  );
 
   // ──────────────────────────────────────────────────────────
   // Kanban columns — derived from current tasks list
@@ -192,20 +214,29 @@
 
   function severityTone(severity: string): Tone {
     switch (severity?.toUpperCase()) {
-      case 'CRITICAL': return 'danger';
-      case 'WARNING': return 'warn';
-      case 'INFO': return 'info';
-      default: return 'neutral';
+      case 'CRITICAL':
+        return 'danger';
+      case 'WARNING':
+        return 'warn';
+      case 'INFO':
+        return 'info';
+      default:
+        return 'neutral';
     }
   }
 
   function statusTone(status: string): Tone {
     switch (status?.toUpperCase()) {
-      case 'OPEN': return 'warn';
-      case 'IN_PROGRESS': return 'info';
-      case 'RESOLVED': return 'ok';
-      case 'DISMISSED': return 'neutral';
-      default: return 'neutral';
+      case 'OPEN':
+        return 'warn';
+      case 'IN_PROGRESS':
+        return 'info';
+      case 'RESOLVED':
+        return 'ok';
+      case 'DISMISSED':
+        return 'neutral';
+      default:
+        return 'neutral';
     }
   }
 
@@ -350,7 +381,9 @@
             {#if task.slaDueAt}
               {@const sla = slaBadgeInfo(task)}
               {#if sla}
-                <span class={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${sla.cls}`}>
+                <span
+                  class={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${sla.cls}`}
+                >
                   {sla.label}
                 </span>
               {/if}
@@ -393,13 +426,20 @@
               tabindex="0"
               class="cursor-pointer rounded-card border border-edge-soft bg-surface p-3 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               onclick={() => void openDetail(task)}
-              onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); void openDetail(task); } }}
+              onkeydown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  void openDetail(task);
+                }
+              }}
             >
               <!-- Top row: severity + SLA -->
               <div class="mb-2 flex items-center justify-between gap-1">
                 <Badge tone={severityTone(task.severity)}>{task.severity}</Badge>
                 {#if sla}
-                  <span class={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${sla.cls}`}>
+                  <span
+                    class={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${sla.cls}`}
+                  >
                     ⏱ {sla.label}
                   </span>
                 {/if}
@@ -414,7 +454,9 @@
               </div>
 
               <!-- Category -->
-              <div class="mb-2 text-[11px] text-ink-muted">{task.category.replaceAll('_', ' ')}</div>
+              <div class="mb-2 text-[11px] text-ink-muted">
+                {task.category.replaceAll('_', ' ')}
+              </div>
 
               <!-- Bottom row: assignee + escalated indicator -->
               <div class="flex items-center justify-between text-[10px] text-ink-faint">
@@ -427,7 +469,9 @@
           {/each}
 
           {#if col.tasks.length === 0}
-            <div class="rounded-card border border-dashed border-edge py-6 text-center text-xs text-ink-faint">
+            <div
+              class="rounded-card border border-dashed border-edge py-6 text-center text-xs text-ink-faint"
+            >
               Aucune tâche
             </div>
           {/if}
@@ -439,7 +483,8 @@
   <!-- Kanban footnote for "attente humain" -->
   <p class="mt-2 text-xs text-ink-faint">
     Les tâches «&nbsp;En attente approbation humaine&nbsp;» (actions proposées en attente)
-    apparaissent dans la colonne «&nbsp;En analyse&nbsp;» — ouvrez la tâche pour voir le détail des actions.
+    apparaissent dans la colonne «&nbsp;En analyse&nbsp;» — ouvrez la tâche pour voir le détail des
+    actions.
   </p>
 {/if}
 
@@ -448,12 +493,16 @@
   <TaskDetailPanel
     task={selected}
     {canManage}
-    onclose={() => { selected = null; }}
+    onclose={() => {
+      selected = null;
+    }}
     onrefresh={() => void load()}
   />
 {:else if selected && detailLoading}
   <!-- Loading overlay while fetching detail -->
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-sidebar/40 backdrop-blur-[1px]">
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-sidebar/40 backdrop-blur-[1px]"
+  >
     <div class="rounded-card bg-surface px-6 py-4 shadow-pop">
       <Skeleton rows={4} />
     </div>

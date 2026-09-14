@@ -11,6 +11,7 @@
   import { loadAppearanceFrom } from '$lib/stores/appearance';
   import { Bell, LogOut, Menu, Search, UserRound, X } from 'lucide-svelte';
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
+  import WorkspaceTools from '$lib/components/workflows/WorkspaceTools.svelte';
   import AssistantPanel from '$lib/components/agents/AssistantPanel.svelte';
   import { MODULE_UNIVERSES } from '$lib/modules/universe';
   import { visibleDomains as buildVisibleDomains, type NavDomain } from '$lib/modules/navigation';
@@ -504,6 +505,11 @@
           class="min-w-0 flex-1 overflow-x-hidden p-4 lg:p-6"
           style={`background: radial-gradient(circle at top left, rgb(${activeUniverse.rgb} / 0.10), transparent 360px), var(--color-canvas);`}
         >
+          <WorkspaceTools
+            onsearch={() => {
+              paletteOpen = true;
+            }}
+          />
           {#key page.url.pathname}
             <div in:fade={{ duration: reduceMotion ? 0 : 120 }}>
               {@render children()}

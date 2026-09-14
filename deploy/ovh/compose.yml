@@ -1,0 +1,113 @@
+# Run from the repo root. See README.md: no public DB/API ports, no demo seed.
+name: pulsar-dev
+
+x-api-environment: &api-environment
+  NODE_ENV: production
+  PULSAR_ENVIRONMENT: ovh-dev
+  PULSAR_BUILD_VERSION: ${PULSAR_BUILD_VERSION:?Set the tested Git commit}
+  API_PORT: 3000
+  DATABASE_URL: postgresql://pulsar:${POSTGRES_PASSWORD:?Generate a hexadecimal DB password}@db:5432/pulsar?schema=public
+  JWT_SECRET: ${JWT_SECRET:?Generate a JWT secret}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Generate a 32-byte base64 encryption key}
+  PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:?Set the platform operator email}
+  PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:?Generate a unique operator password}
+  PLATFORM_MFA_ENFORCED: 'true'
+  CORS_ORIGINS: https://pulsar.intebec.ca
+  API_URL: https://pulsar.intebec.ca
+  WEB_URL: https://pulsar.intebec.ca
+  EMAIL_DRIVER: log
+  STORAGE_DRIVER: local
+  STORAGE_LOCAL_DIR: /app/storage
+  ROUTING_DRIVER: none
+  GEOCODING_DRIVER: none
+  APS_AUTOSTART: 'false'
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pulsar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Generate a hexadecimal DB password}
+      POSTGRES_DB: pulsar
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U pulsar -d pulsar']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # Explicit one-shot deployment steps, never an automatic demo seed on restart.
+  migrate:
+    image: pulsar-api:${PULSAR_BUILD_VERSION:?Set the tested Git commit}
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    profiles: [tools]
+    environment: *api-environment
+    depends_on:
+      db:
+        condition: service_healthy
+    command: [pnpm, --filter, '@pulsar/database', exec, prisma, migrate, deploy]
+    restart: 'no'
+    logging: *logging
+
+  bootstrap:
+    image: pulsar-api:${PULSAR_BUILD_VERSION:?Set the tested Git commit}
+    profiles: [tools]
+    environment: *api-environment
+    depends_on:
+      db:
+        condition: service_healthy
+    command: [pnpm, --filter, '@pulsar/database', exec, tsx, prisma/bootstrap-platform.ts]
+    restart: 'no'
+    logging: *logging
+
+  api:
+    image: pulsar-api:${PULSAR_BUILD_VERSION:?Set the tested Git commit}
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    init: true
+    environment: *api-environment
+    volumes:
+      - documents:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [CMD-SHELL, 'wget -qO- http://localhost:3000/api/v1/health/ready >/dev/null 2>&1 || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  web:
+    image: pulsar-web:${PULSAR_BUILD_VERSION:?Set the tested Git commit}
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    environment:
+      PULSAR_API_UPSTREAM: http://api:3000
+    # Existing HOST Nginx connects here. If Nginx is itself containerized, STOP
+    # and adapt its Docker network after inspecting the server topology.
+    ports:
+      - '127.0.0.1:8180:80'
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *logging
+
+volumes:
+  pgdata:
+  documents:

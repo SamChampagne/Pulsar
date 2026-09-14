@@ -10,7 +10,7 @@
     unlockScroll,
   } from '$lib/stores/overlay-stack';
 
-  type Width = 'sm' | 'md' | 'lg';
+  type Width = 'sm' | 'md' | 'lg' | 'xl';
   let {
     open = $bindable(false),
     title = '',
@@ -24,6 +24,7 @@
     sm: 'max-w-xs',
     md: 'max-w-md',
     lg: 'max-w-xl',
+    xl: 'max-w-3xl',
   };
 
   const reduce =
@@ -73,9 +74,7 @@
         panelEl.querySelectorAll<HTMLElement>(
           'input, select, textarea, button, [href], [tabindex]:not([tabindex="-1"])',
         ),
-      ).filter(
-        (n) => !n.hasAttribute('disabled') && n.getAttribute('aria-disabled') !== 'true',
-      );
+      ).filter((n) => !n.hasAttribute('disabled') && n.getAttribute('aria-disabled') !== 'true');
       if (nodes.length === 0) return;
       const first = nodes[0];
       const last = nodes[nodes.length - 1];

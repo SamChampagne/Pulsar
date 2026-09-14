@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { page as route } from '$app/state';
+  import DossierButton from '$lib/components/workflows/DossierButton.svelte';
   import type { Paginated } from '@pulsar/shared';
   import { PERMISSIONS } from '@pulsar/shared';
   import { auth } from '$lib/stores/auth';
@@ -83,6 +85,21 @@
   let statusFilter = $state('');
   let error = $state('');
   let selected = $state<ShipmentRow | null>(null);
+  $effect(() => {
+    const id = route.url.searchParams.get('shipment');
+    if (!id) return;
+    let active = true;
+    void api<ShipmentRow>(`/transportation/shipments/${encodeURIComponent(id)}`)
+      .then((row) => {
+        if (active) selected = row;
+      })
+      .catch(() => {
+        if (active) error = 'Cette expédition est introuvable ou non accessible.';
+      });
+    return () => {
+      active = false;
+    };
+  });
   let shipmentFieldDefs = $state<CustomFieldDef[]>([]);
 
   const canReply = $derived(
@@ -99,9 +116,7 @@
   async function loadComments(shipmentId: string) {
     commentsLoading = true;
     try {
-      comments = await api<ShipmentComment[]>(
-        `/transportation/shipments/${shipmentId}/comments`,
-      );
+      comments = await api<ShipmentComment[]>(`/transportation/shipments/${shipmentId}/comments`);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Échec du chargement des commentaires');
       comments = [];
@@ -369,7 +384,9 @@
   // Load SHIPMENT custom field definitions once on mount
   $effect(() => {
     api<CustomFieldDef[]>('/transportation/custom-fields', { query: { entityType: 'SHIPMENT' } })
-      .then((defs) => { shipmentFieldDefs = defs; })
+      .then((defs) => {
+        shipmentFieldDefs = defs;
+      })
       .catch(() => {});
   });
 </script>
@@ -580,6 +597,7 @@
     }}
   >
     <div class="mb-3">
+      <DossierButton entityType="SHIPMENT" entityId={sel.id} />
       <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Statut</div>
       <div class="text-sm text-ink">
         <Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge>
@@ -755,7 +773,9 @@
               <Badge tone={comment.authorType === 'STAFF' ? 'info' : 'neutral'}>
                 {comment.authorType === 'STAFF' ? 'Équipe' : 'Client'}
               </Badge>
-              <span class="text-xs text-ink-faint">{new Date(comment.createdAt).toLocaleString()}</span>
+              <span class="text-xs text-ink-faint"
+                >{new Date(comment.createdAt).toLocaleString()}</span
+              >
             </div>
             <p class="whitespace-pre-wrap text-sm text-ink">{comment.body}</p>
           </li>

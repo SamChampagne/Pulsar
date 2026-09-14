@@ -1,12 +1,21 @@
 <script lang="ts">
+  import DossierButton from '$lib/components/workflows/DossierButton.svelte';
   import { page } from '$app/state';
   import { api, ApiError } from '$lib/api/client';
   import {
-    Badge, Button, Card, Field, PageHeader,
-    toneFor, labelFor,
-    Skeleton, ErrorNotice,
-    RelatedEntities, StatusTimeline,
-    type RelatedGroup, type TimelineEntry as StatusEntry,
+    Badge,
+    Button,
+    Card,
+    Field,
+    PageHeader,
+    toneFor,
+    labelFor,
+    Skeleton,
+    ErrorNotice,
+    RelatedEntities,
+    StatusTimeline,
+    type RelatedGroup,
+    type TimelineEntry as StatusEntry,
   } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
@@ -94,7 +103,9 @@
         }
         toast.success(`${rows.length} shipment${rows.length > 1 ? 's' : ''} added`);
       } else {
-        const meaningful = rows.filter((r) => r.weightKg !== undefined || r.palletCount !== undefined);
+        const meaningful = rows.filter(
+          (r) => r.weightKg !== undefined || r.palletCount !== undefined,
+        );
         const body = splitRows.length > 1 || meaningful.length > 0 ? { shipments: rows } : {};
         await api(`/transportation/transport-orders/${orderId}/plan`, { method: 'POST', body });
         toast.success(`Order planned (${rows.length} shipment${rows.length > 1 ? 's' : ''})`);
@@ -153,7 +164,8 @@
 
   const fmtWindow = (early: string | null, late?: string | null) =>
     early
-      ? new Date(early).toLocaleDateString() + (late ? ' → ' + new Date(late).toLocaleDateString() : '')
+      ? new Date(early).toLocaleDateString() +
+        (late ? ' → ' + new Date(late).toLocaleDateString() : '')
       : '—';
 
   function warningText(w: WindowWarning): string {
@@ -240,12 +252,28 @@
       ? [
           { label: 'Commande créée', timestamp: order.createdAt, tone: 'neutral' },
           ...(order.requestedPickupEarly
-            ? [{ label: 'Collecte demandée', timestamp: order.requestedPickupEarly, tone: 'info' as const }]
+            ? [
+                {
+                  label: 'Collecte demandée',
+                  timestamp: order.requestedPickupEarly,
+                  tone: 'info' as const,
+                },
+              ]
             : []),
           ...(order.requestedDeliveryEarly
-            ? [{ label: 'Livraison demandée', timestamp: order.requestedDeliveryEarly, tone: 'info' as const }]
+            ? [
+                {
+                  label: 'Livraison demandée',
+                  timestamp: order.requestedDeliveryEarly,
+                  tone: 'info' as const,
+                },
+              ]
             : []),
-          { label: labelFor(order.status), description: 'Statut actuel', tone: toneFor(order.status) },
+          {
+            label: labelFor(order.status),
+            description: 'Statut actuel',
+            tone: toneFor(order.status),
+          },
         ]
       : [],
   );
@@ -256,21 +284,52 @@
 {:else if order}
   <PageHeader title={order.orderNumber}>
     {#snippet actions()}
+      <DossierButton entityType="TRANSPORT_ORDER" entityId={order!.id} />
       <Badge tone={toneFor(order!.status)}>{labelFor(order!.status)}</Badge>
       {#if order!.mode}
         <Badge tone="info">{order!.mode}</Badge>
       {/if}
 
       {#if order!.status === 'DRAFT'}
-        <Button variant="primary" onclick={() => { void action('confirm'); }}>Confirm</Button>
-        <Button variant="danger" onclick={() => { void action('cancel'); }}>Cancel</Button>
+        <Button
+          variant="primary"
+          onclick={() => {
+            void action('confirm');
+          }}>Confirm</Button
+        >
+        <Button
+          variant="danger"
+          onclick={() => {
+            void action('cancel');
+          }}>Cancel</Button
+        >
       {:else if order!.status === 'CONFIRMED'}
-        <Button variant="primary" onclick={() => { void openPlanForm(); }}>Plan…</Button>
-        <Button variant="danger" onclick={() => { void action('cancel'); }}>Cancel</Button>
+        <Button
+          variant="primary"
+          onclick={() => {
+            void openPlanForm();
+          }}>Plan…</Button
+        >
+        <Button
+          variant="danger"
+          onclick={() => {
+            void action('cancel');
+          }}>Cancel</Button
+        >
       {:else if order!.status === 'PLANNED'}
-        <Button variant="secondary" onclick={() => { void openPlanForm(); }}>Add shipment…</Button>
+        <Button
+          variant="secondary"
+          onclick={() => {
+            void openPlanForm();
+          }}>Add shipment…</Button
+        >
       {:else if order!.status === 'COMPLETED'}
-        <Button variant="primary" onclick={() => { void action('close'); }}>Close</Button>
+        <Button
+          variant="primary"
+          onclick={() => {
+            void action('close');
+          }}>Close</Button
+        >
       {/if}
     {/snippet}
   </PageHeader>
@@ -288,7 +347,6 @@
   <div class="grid gap-4 lg:grid-cols-3">
     <!-- Left 2/3: Shipments + Plan form -->
     <div class="flex flex-col gap-4 lg:col-span-2">
-
       <!-- Plan / Add shipment card -->
       {#if showPlanForm}
         <Card>
@@ -296,7 +354,8 @@
             {order.status === 'PLANNED' ? 'Add shipment' : 'Plan — split into shipments'}
           </h2>
           <p class="mb-3 text-xs text-ink-muted">
-            One shipment per row. Leave a single empty row to create one shipment with the full order quantities.
+            One shipment per row. Leave a single empty row to create one shipment with the full
+            order quantities.
           </p>
           <form onsubmit={submitPlan}>
             <div class="flex flex-col gap-2">
@@ -324,7 +383,12 @@
                   </Field>
                   {#if splitRows.length > 1}
                     <div class="mt-5">
-                      <Button variant="danger" onclick={() => { splitRows = splitRows.filter((_, i) => i !== index); }}>✕</Button>
+                      <Button
+                        variant="danger"
+                        onclick={() => {
+                          splitRows = splitRows.filter((_, i) => i !== index);
+                        }}>✕</Button
+                      >
                     </div>
                   {:else}
                     <span></span>
@@ -341,14 +405,22 @@
               <Button
                 variant="secondary"
                 type="button"
-                onclick={() => { splitRows = [...splitRows, { weightKg: null, palletCount: null }]; }}
+                onclick={() => {
+                  splitRows = [...splitRows, { weightKg: null, palletCount: null }];
+                }}
               >
                 Add shipment
               </Button>
               <Button variant="primary" type="submit">
                 {order.status === 'PLANNED' ? 'Add' : 'Plan order'}
               </Button>
-              <Button variant="secondary" type="button" onclick={() => { showPlanForm = false; }}>Cancel</Button>
+              <Button
+                variant="secondary"
+                type="button"
+                onclick={() => {
+                  showPlanForm = false;
+                }}>Cancel</Button
+              >
             </div>
           </form>
         </Card>
@@ -378,9 +450,13 @@
                     </td>
                     <td class="py-2">
                       {#if shipment.loadId}
-                        <a href={`/loads/${shipment.loadId}`} class="text-accent hover:underline">View load</a>
+                        <a href={`/loads/${shipment.loadId}`} class="text-accent hover:underline"
+                          >View load</a
+                        >
                       {:else}
-                        <a href="/shipments" class="text-accent hover:underline">Assign via Shipments</a>
+                        <a href="/shipments" class="text-accent hover:underline"
+                          >Assign via Shipments</a
+                        >
                       {/if}
                     </td>
                   </tr>
@@ -403,14 +479,16 @@
 
     <!-- Right 1/3: Summary + warnings -->
     <div class="flex flex-col gap-4">
-
       <!-- Summary card -->
       <Card>
         <h2 class="mb-3 font-semibold text-ink">Summary</h2>
         <dl class="flex flex-col gap-2 text-sm">
           <div class="flex items-start justify-between gap-2">
             <dt class="text-ink-muted shrink-0">Customer</dt>
-            <dd class="font-medium text-right">{order.customer.name} <span class="text-xs text-ink-muted">({order.customer.code})</span></dd>
+            <dd class="font-medium text-right">
+              {order.customer.name}
+              <span class="text-xs text-ink-muted">({order.customer.code})</span>
+            </dd>
           </div>
           {#if order.customerReference}
             <div class="flex items-center justify-between gap-2">
@@ -420,19 +498,27 @@
           {/if}
           <div class="flex items-start justify-between gap-2">
             <dt class="text-ink-muted shrink-0">Origin</dt>
-            <dd class="font-medium text-right">{order.originLocation.name}, {order.originLocation.city}</dd>
+            <dd class="font-medium text-right">
+              {order.originLocation.name}, {order.originLocation.city}
+            </dd>
           </div>
           <div class="flex items-start justify-between gap-2">
             <dt class="text-ink-muted shrink-0">Destination</dt>
-            <dd class="font-medium text-right">{order.destinationLocation.name}, {order.destinationLocation.city}</dd>
+            <dd class="font-medium text-right">
+              {order.destinationLocation.name}, {order.destinationLocation.city}
+            </dd>
           </div>
           <div class="flex items-center justify-between gap-2">
             <dt class="text-ink-muted">Pickup window</dt>
-            <dd class="font-medium">{fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}</dd>
+            <dd class="font-medium">
+              {fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}
+            </dd>
           </div>
           <div class="flex items-center justify-between gap-2">
             <dt class="text-ink-muted">Delivery window</dt>
-            <dd class="font-medium">{fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}</dd>
+            <dd class="font-medium">
+              {fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}
+            </dd>
           </div>
           <div class="flex items-center justify-between gap-2">
             <dt class="text-ink-muted">Mode</dt>
@@ -440,11 +526,15 @@
           </div>
           <div class="flex items-center justify-between gap-2">
             <dt class="text-ink-muted">Weight</dt>
-            <dd class="font-medium">{order.totalWeightKg != null ? `${order.totalWeightKg} kg` : '—'}</dd>
+            <dd class="font-medium">
+              {order.totalWeightKg != null ? `${order.totalWeightKg} kg` : '—'}
+            </dd>
           </div>
           <div class="flex items-center justify-between gap-2">
             <dt class="text-ink-muted">Volume</dt>
-            <dd class="font-medium">{order.totalVolumeM3 != null ? `${order.totalVolumeM3} m³` : '—'}</dd>
+            <dd class="font-medium">
+              {order.totalVolumeM3 != null ? `${order.totalVolumeM3} m³` : '—'}
+            </dd>
           </div>
           <div class="flex items-center justify-between gap-2">
             <dt class="text-ink-muted">Pallets</dt>

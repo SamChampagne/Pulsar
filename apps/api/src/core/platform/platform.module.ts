@@ -12,9 +12,13 @@ import { PlatformMfaController } from './platform-mfa.controller';
 import { PlatformMfaService } from './platform-mfa.service';
 import { PlatformTenantsController } from './platform-tenants.controller';
 import { PlatformTenantsService } from './platform-tenants.service';
+import { ApsModule } from '../aps/aps.module';
+import { PlatformOperationsController } from './platform-operations.controller';
+import { PlatformOperationsService } from './platform-operations.service';
 
 @Module({
   imports: [
+    ApsModule,
     AuditLogsModule,
     CryptoModule,
     EmailModule,
@@ -26,8 +30,14 @@ import { PlatformTenantsService } from './platform-tenants.service';
       }),
     }),
   ],
-  controllers: [PlatformAuthController, PlatformMfaController, PlatformTenantsController],
+  controllers: [
+    PlatformAuthController,
+    PlatformMfaController,
+    PlatformTenantsController,
+    PlatformOperationsController,
+  ],
   providers: [
+    PlatformOperationsService,
     PlatformAuthService,
     PlatformJwtStrategy,
     PlatformGuard,

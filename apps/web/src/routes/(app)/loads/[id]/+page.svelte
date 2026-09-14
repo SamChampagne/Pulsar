@@ -1,12 +1,18 @@
 <script lang="ts">
+  import DossierButton from '$lib/components/workflows/DossierButton.svelte';
   import { page } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import {
-    Badge, Button, PageHeader,
-    toneFor, labelFor,
-    Skeleton, ErrorNotice,
-    RelatedEntities, ExceptionBanner,
+    Badge,
+    Button,
+    PageHeader,
+    toneFor,
+    labelFor,
+    Skeleton,
+    ErrorNotice,
+    RelatedEntities,
+    ExceptionBanner,
     type RelatedGroup,
   } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
@@ -20,7 +26,11 @@
   import LoadResourcesPanel from '$lib/components/loads/LoadResourcesPanel.svelte';
   import { Card } from '$lib/components/ui';
   import type {
-    LoadDetail, RouteDetail, LoadDocument, CatalogAccessorial, Option,
+    LoadDetail,
+    RouteDetail,
+    LoadDocument,
+    CatalogAccessorial,
+    Option,
   } from '$lib/components/loads/types';
 
   const loadId = $derived(page.params.id as string);
@@ -28,7 +38,18 @@
   let detail = $state<LoadDetail | null>(null);
   let route = $state<RouteDetail | null>(null);
   let events = $state<TimelineEvent[]>([]);
-  let tenders = $state<{ id: string; status: string; token: string; message: string | null; declineReason: string | null; sentAt: string; expiresAt: string; carrier: { id: string; name: string } }[]>([]);
+  let tenders = $state<
+    {
+      id: string;
+      status: string;
+      token: string;
+      message: string | null;
+      declineReason: string | null;
+      sentAt: string;
+      expiresAt: string;
+      carrier: { id: string; name: string };
+    }[]
+  >([]);
   let error = $state('');
   let auxError = $state(false);
 
@@ -48,20 +69,27 @@
   let vehicles = $state<Option[]>([]);
   let trailers = $state<Option[]>([]);
   let rates = $state<Option[]>([]);
-  let form = $state({ carrierId: '', driverId: '', vehicleId: '', trailerId: '', rateId: '', mode: '' });
+  let form = $state({
+    carrierId: '',
+    driverId: '',
+    vehicleId: '',
+    trailerId: '',
+    rateId: '',
+    mode: '',
+  });
 
   const editable = $derived(detail?.status === 'OPEN' || detail?.status === 'PLANNED');
   const executing = $derived(detail?.status === 'DISPATCHED' || detail?.status === 'IN_TRANSIT');
   const canBol = $derived(
     detail?.status === 'DISPATCHED' ||
-    detail?.status === 'IN_TRANSIT' ||
-    detail?.status === 'COMPLETED',
+      detail?.status === 'IN_TRANSIT' ||
+      detail?.status === 'COMPLETED',
   );
   /** Simple heuristic: any DELAYED event present and load not COMPLETED → show badge + banner. */
   const isDelayed = $derived(
     detail?.status !== 'COMPLETED' &&
-    detail?.status !== 'CANCELLED' &&
-    events.some((e) => e.type === 'DELAYED'),
+      detail?.status !== 'CANCELLED' &&
+      events.some((e) => e.type === 'DELAYED'),
   );
   // Additional exception sources (e.g. capacity warnings, freight-audit disputes on this
   // load) would derive here from data this page already fetches — none cheaply available yet.
@@ -117,7 +145,9 @@
     auxError = false;
     const [docsR, routeR, eventsR, tendersR] = await Promise.allSettled([
       api<LoadDocument[]>(`/transportation/loads/${loadId}/documents`),
-      detail.route ? api<RouteDetail>(`/transportation/routes/${detail.route.id}`) : Promise.resolve(null),
+      detail.route
+        ? api<RouteDetail>(`/transportation/routes/${detail.route.id}`)
+        : Promise.resolve(null),
       api<TimelineEvent[]>('/transportation/tracking/events', { query: { loadId } }),
       api<typeof tenders>(`/transportation/loads/${loadId}/tenders`),
     ]);
@@ -140,10 +170,21 @@
 
   async function sendTender() {
     try {
-      const tender = await api<{ id: string; status: string; token: string; message: string | null; declineReason: string | null; sentAt: string; expiresAt: string; carrier: { id: string; name: string }; responseUrl: string; emailedTo: string | null }>(
-        `/transportation/loads/${loadId}/tender`,
-        { method: 'POST', body: { carrierId: form.carrierId || undefined } },
-      );
+      const tender = await api<{
+        id: string;
+        status: string;
+        token: string;
+        message: string | null;
+        declineReason: string | null;
+        sentAt: string;
+        expiresAt: string;
+        carrier: { id: string; name: string };
+        responseUrl: string;
+        emailedTo: string | null;
+      }>(`/transportation/loads/${loadId}/tender`, {
+        method: 'POST',
+        body: { carrierId: form.carrierId || undefined },
+      });
       if (tender.emailedTo) toast.success(`Tender emailed to ${tender.emailedTo}`);
       await copyToClipboard(tender.responseUrl, 'Tender link');
       await load();
@@ -247,6 +288,7 @@
   <!-- Page header with title + status badge + action buttons -->
   <PageHeader title={detail.loadNumber}>
     {#snippet actions()}
+      <DossierButton entityType="LOAD" entityId={detail!.id} />
       <Badge tone={toneFor(detail!.status)}>{labelFor(detail!.status)}</Badge>
       {#if detail!.mode}
         <Badge tone="info">{detail!.mode}</Badge>
@@ -297,41 +339,35 @@
         <div class="rounded-card bg-warn-soft text-warn p-3 text-sm">
           <strong>{w.shipmentNumber}</strong> —
           {w.field === 'pickup' ? 'pickup' : 'delivery'} planifié
-          {w.kind === 'BEFORE_EARLY' ? 'avant' : 'après'} la fenêtre demandée
-          (demandé {new Date(w.requested).toLocaleDateString()}, planifié {new Date(w.planned).toLocaleDateString()})
+          {w.kind === 'BEFORE_EARLY' ? 'avant' : 'après'} la fenêtre demandée (demandé {new Date(
+            w.requested,
+          ).toLocaleDateString()}, planifié {new Date(w.planned).toLocaleDateString()})
         </div>
       {/each}
     </div>
   {/if}
 
   {#if auxError}
-    <div class="mb-4 rounded-card bg-warn-soft p-3 text-sm text-warn">Some sections failed to load (documents, route, tracking or tenders) — reload to retry.</div>
+    <div class="mb-4 rounded-card bg-warn-soft p-3 text-sm text-warn">
+      Some sections failed to load (documents, route, tracking or tenders) — reload to retry.
+    </div>
   {/if}
 
   <!-- Main grid: 2 cols on large screens -->
   <div class="grid gap-4 lg:grid-cols-3">
     <!-- Left column: Route + Shipments + Documents + Accessorials + Tracking -->
     <div class="flex flex-col gap-4 lg:col-span-2">
-      <LoadRoutePanel
-        {loadId}
-        {detail}
-        {route}
-        {editable}
-        {executing}
-        onReload={load}
-      />
+      <LoadRoutePanel {loadId} {detail} {route} {editable} {executing} onReload={load} />
 
-      <LoadShipmentsPanel
-        shipments={detail.shipments}
-        loadStatus={detail.status}
-        onReload={load}
-      />
+      <LoadShipmentsPanel shipments={detail.shipments} loadStatus={detail.status} onReload={load} />
 
       <LoadDocumentsPanel
         {loadId}
         {documents}
         {canBol}
-        onDocumentsChange={(docs) => { documents = docs; }}
+        onDocumentsChange={(docs) => {
+          documents = docs;
+        }}
       />
 
       <LoadAccessorialsPanel
@@ -340,8 +376,12 @@
         {accessorialCatalog}
         {accessorialChecked}
         {accessorialQty}
-        onCheckedChange={(checked) => { accessorialChecked = checked; }}
-        onQtyChange={(qty) => { accessorialQty = qty; }}
+        onCheckedChange={(checked) => {
+          accessorialChecked = checked;
+        }}
+        onQtyChange={(qty) => {
+          accessorialQty = qty;
+        }}
         onReload={load}
       />
 
@@ -354,18 +394,10 @@
 
     <!-- Right column: Summary + Tender + Resources -->
     <div class="flex flex-col gap-4">
-      <LoadSummaryPanel
-        {loadId}
-        {detail}
-        {editable}
-        onReload={load}
-      />
+      <LoadSummaryPanel {loadId} {detail} {editable} onReload={load} />
 
       {#if latestTender}
-        <LoadTendersPanel
-          tender={latestTender}
-          onCopyLink={copyToClipboard}
-        />
+        <LoadTendersPanel tender={latestTender} onCopyLink={copyToClipboard} />
       {/if}
 
       <LoadResourcesPanel
@@ -377,7 +409,9 @@
         {trailers}
         {rates}
         {form}
-        onFormChange={(f) => { form = f; }}
+        onFormChange={(f) => {
+          form = f;
+        }}
         onReload={load}
       />
 
