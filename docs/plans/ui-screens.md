@@ -71,6 +71,10 @@ node scripts/ui-screen-audit.mjs
 
 ## Prochains lots : de vraies fiches de travail
 
+Mise à jour : [le lot 2 — fiches de travail](./ui-records.md) traite maintenant
+l’opportunité, la commande de vente, l’ordre de transport et le chargement.
+Les fiches de facturation/paiement et les autres lots ci-dessous restent à poursuivre.
+
 1. **Fiches longues et formulaires** : opportunité → commande de vente → ordre de
    transport → chargement → facture. Résumé persistant, sections utiles, édition
    clavier des lignes, erreurs locales et liens réciproques. Corriger les labels
@@ -137,13 +141,13 @@ période, devise et périmètre. Les droits côté API demeurent la source d’a
 | `/crm/companies` | Adaptation directe | Fiche latérale, accès clavier, réponses tardives protégées |
 | `/crm/config` | Réglages communs | Lignes, état modifié, sauvegarde, erreur conservant la saisie |
 | `/crm/contacts` | Adaptation directe | Fiche latérale et société recherchée par nom |
-| `/crm/deals/[id]` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
+| `/crm/deals/[id]` | Lot 2 — fiche de travail | Navigation de sections, éditeur partagé, pipeline configurable ; voir ui-records.md |
 | `/crm/deals` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/crm/inbox` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/crm/lists` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/crm/pipeline` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/crm/products` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
-| `/crm/sales-orders/[id]` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
+| `/crm/sales-orders/[id]` | Lot 2 — fiche de travail | Lignes, préparation transport et dossiers liés ; voir ui-records.md |
 | `/crm/sales-orders` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/crm/sequences` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/crm` | Adaptation directe | Priorités, liens vers dossiers, suppression du faux total CAD |
@@ -167,7 +171,7 @@ période, devise et périmètre. Les droits côté API demeurent la source d’a
 | `/integrations` | Adaptation directe | Catalogue allégé et éditeur en panneau latéral |
 | `/invoices` | Interaction ciblée | Confirmation intégrée ; la page complète reste à revoir |
 | `/lanes` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
-| `/loads/[id]` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
+| `/loads/[id]` | Lot 2 — structure et erreurs | Navigation de sections et erreurs localisées ; sous-éditeurs à approfondir |
 | `/loads` | Harmonisation | En-tête/libellés ; pas une refonte métier complète |
 | `/locations` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/manufacturing/boms` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
@@ -199,7 +203,7 @@ période, devise et périmètre. Les droits côté API demeurent la source d’a
 | `/shipments` | Harmonisation | En-tête/libellés ; pas une refonte métier complète |
 | `/sites/[id]` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
 | `/sites` | Harmonisation | En-tête/libellés ; pas une refonte métier complète |
-| `/transport-orders/[id]` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
+| `/transport-orders/[id]` | Lot 2 — fiche de travail | Préparation en panneau, suivi et liens source ; voir ui-records.md |
 | `/transport-orders` | Harmonisation | En-tête/libellés ; pas une refonte métier complète |
 | `/transportation/config` | Réglages communs | Lignes, état modifié, sauvegarde, erreur conservant la saisie |
 | `/wms/bins` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |

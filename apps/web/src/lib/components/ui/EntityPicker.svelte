@@ -16,12 +16,14 @@
     placeholder = 'Sélectionner…',
     value = $bindable(''),
     disabled = false,
+    filters = {},
   }: {
     endpoint: string;
     label: string;
     placeholder?: string;
     value?: string;
     disabled?: boolean;
+    filters?: Record<string, string>;
   } = $props();
   let open = $state(false);
   let search = $state('');
@@ -54,7 +56,9 @@
 
   async function load(query: string, path: string, request: number) {
     try {
-      const result = await api<Paginated<Item>>(path, { query: { search: query, pageSize: 20 } });
+      const result = await api<Paginated<Item>>(path, {
+        query: { ...filters, search: query, pageSize: 20 },
+      });
       if (request !== generation) return;
       items = result.items;
       total = result.total;

@@ -1,17 +1,24 @@
 <script lang="ts">
   import DossierButton from '$lib/components/workflows/DossierButton.svelte';
+  import { untrack } from 'svelte';
+  import { auth } from '$lib/stores/auth';
+  import LineItemsEditor, { type LineItem } from '$lib/components/crm/LineItemsEditor.svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
-  import { formatDate, formatMoney } from '$lib/format';
-  import { computeLineTotal, validateFulfillmentLogistics } from '@pulsar/shared';
+  import { confirmAction } from '$lib/stores/confirmation';
+  import { formatMoney } from '$lib/format';
+  import { PERMISSIONS, validateFulfillmentLogistics } from '@pulsar/shared';
   import {
     PageHeader,
+    RecordHeader,
+    RecordNav,
+    RecordSection,
     Button,
     Badge,
     Card,
-    Modal,
+    Drawer,
     Skeleton,
     ErrorNotice,
     RelatedEntities,
@@ -37,21 +44,6 @@
     dealId: string | null;
   }
 
-  interface LineItem {
-    id: string;
-    name: string;
-    quantity: number;
-    unitPrice: string | number;
-    discountPct: string | number;
-    productId: string | null;
-  }
-
-  interface Product {
-    id: string;
-    name: string;
-    unitPrice: string | number;
-  }
-
   // ── State ────────────────────────────────────────────────────────────────────
 
   let order = $state<SalesOrder | null>(null);
@@ -63,28 +55,7 @@
   let linesLoading = $state(false);
   let linesError = $state('');
 
-  let products = $state<Product[]>([]);
-  let productsLoading = $state(false);
-
-  // Add-line form state
-  let showAddForm = $state(false);
-  let addMode = $state<'catalog' | 'free'>('catalog');
-  let selectedProductId = $state('');
-  let addQty = $state(1);
-  let freeName = $state('');
-  let freeUnitPrice = $state(0);
-  let adding = $state(false);
-  let addError = $state('');
-
-  // Inline edit state
-  let editingCell = $state<{
-    lineId: string;
-    field: 'quantity' | 'unitPrice' | 'discountPct';
-    value: string | number | null;
-  } | null>(null);
-  let saving = $state(false);
-
-  let deletingId = $state<string | null>(null);
+  const canManage = $derived(!!$auth?.user.permissions.includes(PERMISSIONS.CRM.MANAGE));
 
   // Status action state
   let transitioning = $state(false);
@@ -105,9 +76,9 @@
     order
       ? [
           {
-            label: 'Deal',
+            label: 'Opportunité',
             items: order.dealId
-              ? [{ label: "Deal d'origine", href: `/crm/deals/${order.dealId}` }]
+              ? [{ label: 'Opportunité d’origine', href: `/crm/deals/${order.dealId}` }]
               : [],
           },
           {
@@ -129,47 +100,57 @@
   // ── Data loading ─────────────────────────────────────────────────────────────
 
   async function loadOrder() {
+    const id = page.params.id;
     loading = true;
     error = '';
     notFound = false;
     try {
-      order = await api<SalesOrder>(`/crm/sales-orders/${page.params.id}`);
+      const result = await api<SalesOrder>(`/crm/sales-orders/${id}`);
+      if (page.params.id !== id) return;
+      order = result;
+      await loadLines();
     } catch (e) {
+      if (page.params.id !== id) return;
       if (e instanceof ApiError && e.statusCode === 404) {
         notFound = true;
       } else {
         error = e instanceof ApiError ? e.message : 'Impossible de charger la commande';
       }
     } finally {
-      loading = false;
+      if (page.params.id === id) loading = false;
     }
   }
 
   async function loadLines() {
     if (!order) return;
+    const id = order.id;
     linesLoading = true;
     linesError = '';
     try {
-      const result = await api<{ items: LineItem[] }>(`/crm/sales-orders/${order.id}/line-items`);
-      lines = result.items;
+      const result = await api<LineItem[]>(`/crm/sales-orders/${id}/line-items`);
+      if (order?.id === id) lines = result;
     } catch (e) {
+      if (order?.id !== id) return;
       linesError = e instanceof ApiError ? e.message : 'Impossible de charger les lignes';
     } finally {
-      linesLoading = false;
+      if (order?.id === id) linesLoading = false;
     }
   }
 
   async function reloadAll() {
     if (!order) return;
+    const id = order.id;
+    linesError = '';
     try {
       const [freshOrder, freshLines] = await Promise.all([
         api<SalesOrder>(`/crm/sales-orders/${order.id}`),
-        api<{ items: LineItem[] }>(`/crm/sales-orders/${order.id}/line-items`),
+        api<LineItem[]>(`/crm/sales-orders/${order.id}/line-items`),
       ]);
+      if (order?.id !== id) return;
       order = freshOrder;
-      lines = freshLines.items;
+      lines = freshLines;
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Erreur lors du rechargement');
+      linesError = 'Données non actualisées. Rechargez les lignes avant de poursuivre.';
     }
   }
 
@@ -179,108 +160,6 @@
       directInvoicing = res.values?.salesOrderDirectInvoicing === true;
     } catch {
       // non-blocking — leave invoicing hidden if settings can't be read
-    }
-  }
-
-  async function loadProducts() {
-    if (products.length > 0) return;
-    productsLoading = true;
-    try {
-      const result = await api<{ items: Product[] }>('/crm/products', {
-        query: { active: 'true', pageSize: 100 },
-      });
-      products = result.items;
-    } catch {
-      // non-blocking
-    } finally {
-      productsLoading = false;
-    }
-  }
-
-  // ── Line mutations ────────────────────────────────────────────────────────────
-
-  async function addLine() {
-    if (!order) return;
-    adding = true;
-    addError = '';
-    try {
-      if (addMode === 'catalog') {
-        if (!selectedProductId) {
-          addError = 'Sélectionnez un produit.';
-          adding = false;
-          return;
-        }
-        await api(`/crm/sales-orders/${order.id}/line-items`, {
-          method: 'POST',
-          body: { productId: selectedProductId, quantity: addQty },
-        });
-      } else {
-        if (!freeName.trim()) {
-          addError = 'Le nom est requis.';
-          adding = false;
-          return;
-        }
-        if (freeUnitPrice <= 0) {
-          addError = 'Le prix unitaire doit être positif.';
-          adding = false;
-          return;
-        }
-        await api(`/crm/sales-orders/${order.id}/line-items`, {
-          method: 'POST',
-          body: { name: freeName.trim(), unitPrice: freeUnitPrice, quantity: addQty },
-        });
-      }
-      selectedProductId = '';
-      freeName = '';
-      freeUnitPrice = 0;
-      addQty = 1;
-      showAddForm = false;
-      await reloadAll();
-    } catch (e) {
-      addError = e instanceof ApiError ? e.message : "Erreur lors de l'ajout";
-    } finally {
-      adding = false;
-    }
-  }
-
-  function startEdit(line: LineItem, field: 'quantity' | 'unitPrice' | 'discountPct') {
-    if (!isDraft) return;
-    editingCell = { lineId: line.id, field, value: String(line[field]) };
-  }
-
-  async function commitEdit() {
-    if (!editingCell || !order) return;
-    const { lineId, field, value } = editingCell;
-    const parsed = Number(value);
-    if (isNaN(parsed) || parsed < 0) {
-      editingCell = null;
-      return;
-    }
-    editingCell = null;
-    saving = true;
-    try {
-      await api(`/crm/sales-orders/${order.id}/line-items/${lineId}`, {
-        method: 'PATCH',
-        body: { [field]: parsed },
-      });
-      await reloadAll();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Erreur lors de la mise à jour');
-    } finally {
-      saving = false;
-    }
-  }
-
-  async function deleteLine(lineId: string) {
-    if (!order) return;
-    deletingId = lineId;
-    try {
-      await api(`/crm/sales-orders/${order.id}/line-items/${lineId}`, { method: 'DELETE' });
-      await reloadAll();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Erreur lors de la suppression');
-    } finally {
-      deletingId = null;
     }
   }
 
@@ -307,7 +186,7 @@
         ];
       case 'CONFIRMED':
         return [
-          { verb: 'fulfill', label: 'Exécuter', variant: 'primary' },
+          { verb: 'fulfill', label: 'Marquer exécutée', variant: 'primary' },
           { verb: 'cancel', label: 'Annuler', variant: 'danger' },
         ];
       case 'FULFILLED':
@@ -318,7 +197,17 @@
   }
 
   async function doTransition(verb: TransitionVerb) {
-    if (!order) return;
+    if (!order || transitioning || !canManage) return;
+    const id = order.id;
+    if (
+      verb === 'cancel' &&
+      !(await confirmAction('Annuler cette commande de vente ?', {
+        title: 'Annuler la commande',
+        confirmLabel: 'Annuler la commande',
+      }))
+    )
+      return;
+    if (order?.id !== id || transitioning) return;
     transitioning = true;
     transitionError = '';
     try {
@@ -355,6 +244,7 @@
   // Best-effort: this needs transportation.orders.read + crm.read. A CRM-only
   // user simply won't see the shipment panel (noTransportAccess stays true).
   let noTransportAccess = $state(true);
+  let fulfillmentError = $state('');
   let fulfillment = $state<FulfillmentContext | null>(null);
   let wizardLocations = $state<LocationOption[]>([]);
 
@@ -387,14 +277,20 @@
 
   async function loadFulfillmentContext() {
     if (!order) return;
+    const id = order.id;
+    fulfillmentError = '';
     try {
-      fulfillment = await api<FulfillmentContext>(
-        `/transportation/transport-orders/from-sales-order/${order.id}/context`,
+      const result = await api<FulfillmentContext>(
+        `/transportation/transport-orders/from-sales-order/${id}/context`,
       );
+      if (order?.id !== id) return;
+      fulfillment = result;
       noTransportAccess = false;
     } catch (e) {
-      // 403 (no transportation access) or the module is off → hide the panel.
-      noTransportAccess = true;
+      if (order?.id !== id) return;
+      noTransportAccess = e instanceof ApiError && e.statusCode === 403;
+      if (!noTransportAccess)
+        fulfillmentError = 'Les expéditions liées sont temporairement indisponibles.';
       fulfillment = null;
     }
   }
@@ -410,13 +306,13 @@
         });
         wizardLocations = res.items;
       } catch {
-        // leave empty — the selects just show no options
+        wError = 'Impossible de charger les lieux. Fermez puis rouvrez le panneau pour réessayer.';
       }
     }
   }
 
   async function submitPrepareShipment() {
-    if (!order) return;
+    if (!order || wSubmitting) return;
     // Same contract as the server (source of truth): origin, destination, mode
     // and at least one strictly-positive physical measure. Zeros never satisfy it.
     const check = validateFulfillmentLogistics({
@@ -500,33 +396,20 @@
     return STATUS_TONES[status] ?? 'neutral';
   }
 
-  function lineTotal(line: LineItem): string {
-    const total = computeLineTotal({
-      quantity: Number(line.quantity),
-      unitPrice: Number(line.unitPrice),
-      discountPct: Number(line.discountPct),
-    });
-    if (isNaN(total)) return '—';
-    return formatMoney(total, order?.currency ?? 'CAD');
-  }
-
   // ── Init ─────────────────────────────────────────────────────────────────────
 
   $effect(() => {
-    void loadOrder();
+    const id = page.params.id;
+    untrack(() => {
+      order = null;
+      lines = [];
+      void loadOrder();
+    });
     void loadSettings();
   });
 
   $effect(() => {
-    if (order) void loadLines();
-  });
-
-  $effect(() => {
     if (order) void loadFulfillmentContext();
-  });
-
-  $effect(() => {
-    if (showAddForm && addMode === 'catalog') void loadProducts();
   });
 </script>
 
@@ -545,504 +428,183 @@
   <PageHeader title="Erreur" />
   <ErrorNotice message={error} onretry={loadOrder} />
 {:else if order}
-  <!-- ── Hero ───────────────────────────────────────────────────────────────────── -->
-  <div class="mb-6 flex items-start justify-between gap-4">
-    <div class="min-w-0">
-      <div class="mb-1 flex items-center gap-2">
-        <Button variant="secondary" onclick={() => goto('/crm/sales-orders')}>← Commandes</Button>
-        <DossierButton entityType="SALES_ORDER" entityId={order.id} />
-      </div>
-      <h1 class="mt-2 font-mono text-2xl font-bold text-ink">{order.number}</h1>
-      <div class="mt-1 flex flex-wrap items-center gap-2">
-        <Badge tone={statusTone(order.status)}>{statusLabel(order.status)}</Badge>
-        {#if order.company}
-          <a href="/crm/companies/{order.company.id}" class="text-sm text-accent hover:underline"
-            >{order.company.name}</a
-          >
-        {/if}
-      </div>
-    </div>
-  </div>
-
+  <RecordHeader
+    title={order!.number}
+    kind="Commande de vente"
+    backHref="/crm/sales-orders"
+    backLabel="Commandes de vente"
+  >
+    {#snippet meta()}<Badge tone={statusTone(order!.status)}>{statusLabel(order!.status)}</Badge
+      ><span class="font-mono">{formatMoney(order!.totalAmount, order!.currency)}</span
+      >{#if order!.company}<a
+          href="/crm/companies/{order!.company.id}"
+          class="hover:text-ink hover:underline">{order!.company.name}</a
+        >{/if}{/snippet}
+    {#snippet actions()}<DossierButton
+        entityType="SALES_ORDER"
+        entityId={order!.id}
+      />{#if canManage}{#each allowedActions(order!.status) as action (action.verb)}<Button
+            variant={action.variant === 'danger' ? 'ghost' : action.variant}
+            loading={transitioning}
+            onclick={() => void doTransition(action.verb)}>{action.label}</Button
+          >{/each}{/if}{/snippet}
+  </RecordHeader>
+  <ErrorNotice message={transitionError} />
+  <RecordNav
+    sections={[
+      { id: 'record-lines', label: 'Lignes' },
+      ...(!noTransportAccess ? [{ id: 'record-shipping', label: 'Expédition' }] : []),
+      { id: 'record-info', label: 'Informations' },
+      { id: 'record-related', label: 'Dossiers liés' },
+    ]}
+  />
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
     <!-- ── Left column ── -->
     <div class="space-y-6 lg:col-span-2">
-      <!-- Order meta -->
-      <Card>
-        <h2 class="mb-3 text-sm font-semibold text-ink">Informations</h2>
-        <div class="grid grid-cols-2 gap-4 text-xs sm:grid-cols-3">
-          <div>
-            <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Statut</div>
-            <Badge tone={statusTone(order.status)}>{statusLabel(order.status)}</Badge>
-          </div>
-          <div>
-            <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">
-              Montant total
-            </div>
-            <div class="text-base font-semibold text-accent">
-              {formatMoney(order.totalAmount, order.currency)}
-            </div>
-          </div>
-          {#if order.company}
-            <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Société</div>
-              <a
-                href="/crm/companies/{order.company.id}"
-                class="text-ink hover:underline hover:text-accent"
-              >
-                {order.company.name}
-              </a>
-            </div>
-          {/if}
-          {#if order.ownerUserId}
-            <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">
-                Responsable
-              </div>
-              <div class="font-mono text-xs text-ink">{order.ownerUserId.slice(0, 8)}…</div>
-            </div>
-          {/if}
-          {#if order.notes}
-            <div class="col-span-2 sm:col-span-3">
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Notes</div>
-              <div class="text-ink">{order.notes}</div>
-            </div>
-          {/if}
-        </div>
-      </Card>
-
-      <!-- Line items editor -->
-      <Card>
-        <div class="mb-3 flex items-center justify-between gap-2">
-          <h2 class="text-sm font-semibold text-ink">
-            Lignes ({lines.length})
-          </h2>
-          {#if isDraft && !showAddForm}
-            <Button
-              variant="primary"
-              onclick={() => {
-                showAddForm = true;
-                addMode = 'catalog';
-              }}
-            >
-              + Ajouter une ligne
-            </Button>
-          {/if}
-        </div>
-
-        {#if !isDraft}
-          <div
-            class="mb-3 rounded-md border border-edge bg-surface-muted/40 px-3 py-2 text-xs text-ink-muted"
-          >
-            Commande verrouillée (non DRAFT) — les lignes ne peuvent plus être modifiées.
-          </div>
-        {/if}
-
-        <!-- Add-line form (DRAFT only) -->
-        {#if showAddForm && isDraft}
-          <div class="mb-4 rounded-md border border-edge bg-surface-muted/40 p-3">
-            <div class="mb-2 flex gap-2">
-              <button
-                class={`rounded px-3 py-1 text-xs font-medium transition-colors ${addMode === 'catalog' ? 'bg-accent text-white' : 'bg-surface border border-edge text-ink-muted hover:border-accent hover:text-ink'}`}
-                onclick={() => {
-                  addMode = 'catalog';
-                  void loadProducts();
-                }}>Depuis le catalogue</button
-              >
-              <button
-                class={`rounded px-3 py-1 text-xs font-medium transition-colors ${addMode === 'free' ? 'bg-accent text-white' : 'bg-surface border border-edge text-ink-muted hover:border-accent hover:text-ink'}`}
-                onclick={() => {
-                  addMode = 'free';
-                }}>Ligne libre</button
-              >
-            </div>
-
-            {#if addMode === 'catalog'}
-              <div class="flex flex-wrap items-end gap-2">
-                <div class="flex-1 min-w-32">
-                  <label
-                    class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
-                    >Produit</label
-                  >
-                  {#if productsLoading}
-                    <div class="text-xs text-ink-faint">Chargement…</div>
-                  {:else}
-                    <select
-                      bind:value={selectedProductId}
-                      class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                    >
-                      <option value="">— Sélectionner —</option>
-                      {#each products as p (p.id)}
-                        <option value={p.id}
-                          >{p.name} ({formatMoney(p.unitPrice, order.currency)})</option
-                        >
-                      {/each}
-                    </select>
-                  {/if}
-                </div>
-                <div class="w-20">
-                  <label
-                    class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
-                    >Qté</label
-                  >
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    bind:value={addQty}
-                    class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                  />
-                </div>
-              </div>
-            {:else}
-              <div class="flex flex-wrap items-end gap-2">
-                <div class="flex-1 min-w-40">
-                  <label
-                    class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
-                    >Nom</label
-                  >
-                  <input
-                    type="text"
-                    bind:value={freeName}
-                    placeholder="Ex : Prestation sur mesure"
-                    class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                  />
-                </div>
-                <div class="w-28">
-                  <label
-                    class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
-                    >Prix unitaire</label
-                  >
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    bind:value={freeUnitPrice}
-                    class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                  />
-                </div>
-                <div class="w-20">
-                  <label
-                    class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
-                    >Qté</label
-                  >
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    bind:value={addQty}
-                    class="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                  />
-                </div>
-              </div>
-            {/if}
-
-            {#if addError}
-              <p class="mt-1.5 text-xs text-danger">{addError}</p>
-            {/if}
-
-            <div class="mt-3 flex gap-2">
-              <Button variant="primary" loading={adding} onclick={() => void addLine()}>
-                Ajouter
-              </Button>
-              <Button
-                variant="secondary"
-                onclick={() => {
-                  showAddForm = false;
-                  addError = '';
-                }}
-              >
-                Annuler
-              </Button>
-            </div>
-          </div>
-        {/if}
-
-        <!-- Lines table -->
-        {#if linesLoading}
-          <Skeleton rows={3} />
-        {:else if linesError}
-          <p class="text-xs text-danger">{linesError}</p>
-        {:else if lines.length === 0}
-          <p class="text-xs text-ink-faint">Aucune ligne pour le moment.</p>
-        {:else}
-          <div class="overflow-x-auto">
-            <table class="w-full text-xs">
-              <thead>
-                <tr class="border-b border-edge text-[11px] uppercase tracking-wide text-ink-muted">
-                  <th class="py-2 pr-3 text-left font-semibold">Désignation</th>
-                  <th class="py-2 px-2 text-right font-semibold w-20">Qté</th>
-                  <th class="py-2 px-2 text-right font-semibold w-28">Prix unit.</th>
-                  <th class="py-2 px-2 text-right font-semibold w-24">Remise %</th>
-                  <th class="py-2 pl-3 text-right font-semibold w-28">Total ligne</th>
-                  {#if isDraft}
-                    <th class="py-2 pl-2 w-10"></th>
-                  {/if}
-                </tr>
-              </thead>
-              <tbody>
-                {#each lines as line (line.id)}
-                  <tr class="border-b border-edge/50 last:border-0 hover:bg-surface-muted/40">
-                    <td class="py-2 pr-3 text-ink font-medium">{line.name}</td>
-
-                    <!-- Qty cell -->
-                    <td class="py-2 px-2 text-right">
-                      {#if isDraft && editingCell?.lineId === line.id && editingCell.field === 'quantity'}
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          class="w-16 rounded border border-accent px-1 py-0.5 text-right text-xs focus:outline-none"
-                          bind:value={editingCell.value}
-                          onblur={() => void commitEdit()}
-                          onkeydown={(e) => {
-                            if (e.key === 'Enter') void commitEdit();
-                            if (e.key === 'Escape') editingCell = null;
-                          }}
-                          autofocus
-                        />
-                      {:else}
-                        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-                        <span
-                          class={`rounded px-1 py-0.5 text-ink ${isDraft ? 'cursor-pointer hover:bg-surface-muted' : ''}`}
-                          title={isDraft ? 'Cliquer pour modifier' : undefined}
-                          onclick={() => startEdit(line, 'quantity')}>{line.quantity}</span
-                        >
-                      {/if}
-                    </td>
-
-                    <!-- unitPrice cell -->
-                    <td class="py-2 px-2 text-right">
-                      {#if isDraft && editingCell?.lineId === line.id && editingCell.field === 'unitPrice'}
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          class="w-24 rounded border border-accent px-1 py-0.5 text-right text-xs focus:outline-none"
-                          bind:value={editingCell.value}
-                          onblur={() => void commitEdit()}
-                          onkeydown={(e) => {
-                            if (e.key === 'Enter') void commitEdit();
-                            if (e.key === 'Escape') editingCell = null;
-                          }}
-                          autofocus
-                        />
-                      {:else}
-                        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-                        <span
-                          class={`rounded px-1 py-0.5 text-ink-muted ${isDraft ? 'cursor-pointer hover:bg-surface-muted' : ''}`}
-                          title={isDraft ? 'Cliquer pour modifier' : undefined}
-                          onclick={() => startEdit(line, 'unitPrice')}
-                          >{formatMoney(line.unitPrice, order.currency)}</span
-                        >
-                      {/if}
-                    </td>
-
-                    <!-- discountPct cell -->
-                    <td class="py-2 px-2 text-right">
-                      {#if isDraft && editingCell?.lineId === line.id && editingCell.field === 'discountPct'}
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.1"
-                          class="w-20 rounded border border-accent px-1 py-0.5 text-right text-xs focus:outline-none"
-                          bind:value={editingCell.value}
-                          onblur={() => void commitEdit()}
-                          onkeydown={(e) => {
-                            if (e.key === 'Enter') void commitEdit();
-                            if (e.key === 'Escape') editingCell = null;
-                          }}
-                          autofocus
-                        />
-                      {:else}
-                        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-                        <span
-                          class={`rounded px-1 py-0.5 text-ink-muted ${isDraft ? 'cursor-pointer hover:bg-surface-muted' : ''}`}
-                          title={isDraft ? 'Cliquer pour modifier' : undefined}
-                          onclick={() => startEdit(line, 'discountPct')}
-                          >{Number(line.discountPct).toFixed(1)} %</span
-                        >
-                      {/if}
-                    </td>
-
-                    <td class="py-2 pl-3 text-right font-semibold text-ink">{lineTotal(line)}</td>
-
-                    <!-- Delete (DRAFT only) -->
-                    {#if isDraft}
-                      <td class="py-2 pl-2 text-right">
-                        <button
-                          disabled={deletingId === line.id || saving}
-                          onclick={() => void deleteLine(line.id)}
-                          class="rounded p-1 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
-                          title="Supprimer la ligne">✕</button
-                        >
-                      </td>
-                    {/if}
-                  </tr>
-                {/each}
-              </tbody>
-              <tfoot>
-                <tr class="border-t border-edge">
-                  <td
-                    colspan={4}
-                    class="py-2 pr-3 text-right text-[11px] uppercase tracking-wide font-semibold text-ink-muted"
-                  >
-                    Total commande
-                  </td>
-                  <td class="py-2 pl-3 text-right text-sm font-bold text-accent">
-                    {formatMoney(order.totalAmount, order.currency)}
-                  </td>
-                  {#if isDraft}
-                    <td></td>
-                  {/if}
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        {/if}
-      </Card>
-    </div>
-
-    <!-- ── Right column ── -->
-    <div class="space-y-6">
-      <!-- Status panel -->
-      <Card>
-        <h2 class="mb-3 text-sm font-semibold text-ink">Statut</h2>
-        <div class="space-y-1.5">
-          {#each [{ key: 'DRAFT', label: 'Brouillon', tone: 'neutral' as Tone }, { key: 'CONFIRMED', label: 'Confirmée', tone: 'info' as Tone }, { key: 'FULFILLED', label: 'Exécutée', tone: 'ok' as Tone }, { key: 'INVOICED', label: 'Facturée', tone: 'info' as Tone }, { key: 'CANCELLED', label: 'Annulée', tone: 'danger' as Tone }] as const as s (s.key)}
-            <div
-              class={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs ${order.status === s.key ? 'bg-surface-muted font-semibold' : 'text-ink-faint'}`}
-            >
-              <Badge tone={s.tone}>{s.label}</Badge>
-              {#if order.status === s.key}
-                <span class="ml-auto text-[10px] font-semibold text-ink-muted">← actuel</span>
-              {/if}
-            </div>
-          {/each}
-        </div>
-      </Card>
-
-      <!-- Actions card -->
-      {#if allowedActions(order.status).length > 0}
-        <Card>
-          <h2 class="mb-2 text-sm font-semibold text-ink">Actions</h2>
-          {#if transitionError}
-            <p class="mb-2 text-xs text-danger">{transitionError}</p>
-          {/if}
-          <div class="space-y-2">
-            {#each allowedActions(order.status) as action (action.verb)}
-              <div
-                class={action.variant === 'danger'
-                  ? 'w-full border-danger/40 text-danger hover:bg-danger/10'
-                  : 'w-full'}
-              >
-                <Button
-                  variant={action.variant === 'danger' ? 'secondary' : action.variant}
-                  loading={transitioning}
-                  onclick={() => void doTransition(action.verb)}
-                >
-                  {action.label}
-                </Button>
-              </div>
-            {/each}
-          </div>
-        </Card>
-      {/if}
-
+      <RecordSection id="record-lines" label="Lignes">
+        {#key order!.id}<LineItemsEditor
+            endpoint={`/crm/sales-orders/${order!.id}/line-items`}
+            {lines}
+            currency={order!.currency}
+            total={order!.totalAmount}
+            editable={canManage && isDraft && !transitioning}
+            loading={linesLoading}
+            error={linesError}
+            onretry={reloadAll}
+            onchanged={reloadAll}
+          />{/key}
+      </RecordSection>
       <!-- Préparer l'expédition (fulfillment bridge) -->
       {#if !noTransportAccess}
-        <Card>
-          <h2 class="mb-2 text-sm font-semibold text-ink">Expédition</h2>
+        <RecordSection id="record-shipping" label="Expédition"
+          ><Card>
+            <h2 class="mb-2 text-sm font-semibold text-ink">Expédition</h2>
+            <ErrorNotice message={fulfillmentError} onretry={loadFulfillmentContext} />
 
-          {#if order.status !== 'CONFIRMED' && (!fulfillment || fulfillment.transportOrders.length === 0)}
-            <p class="text-xs text-ink-muted">
-              {#if order.status === 'DRAFT'}
-                Confirmez la commande pour pouvoir préparer une expédition.
-              {:else}
-                Aucune expédition liée.
-              {/if}
-            </p>
-          {/if}
+            {#if order!.status !== 'CONFIRMED' && (!fulfillment || fulfillment.transportOrders.length === 0)}
+              <p class="text-xs text-ink-muted">
+                {#if order!.status === 'DRAFT'}
+                  Confirmez la commande pour pouvoir préparer une expédition.
+                {:else}
+                  Aucune expédition liée.
+                {/if}
+              </p>
+            {/if}
 
-          {#if !order.customerId}
-            <p
-              class="mb-2 rounded-md border border-amber-400/40 bg-amber-50/40 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-300"
-            >
-              Aucun client lié à cette commande. Liez un client (conversion du deal) avant de
-              préparer une expédition.
-            </p>
-          {/if}
+            {#if !order!.customerId}
+              <p
+                class="mb-2 rounded-md border border-amber-400/40 bg-amber-50/40 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-300"
+              >
+                Aucun client lié à cette commande. Liez un client (conversion du deal) avant de
+                préparer une expédition.
+              </p>
+            {/if}
 
-          <!-- Linked transport orders ("Lié à" for shipments) -->
-          {#if fulfillment && fulfillment.transportOrders.length > 0}
-            <div class="mb-3 space-y-1.5">
-              {#each fulfillment.transportOrders as to (to.id)}
-                <a
-                  href="/transport-orders/{to.id}"
-                  class="flex items-center justify-between gap-2 rounded-md border border-edge bg-surface px-2.5 py-1.5 text-xs transition-colors hover:border-accent"
-                >
-                  <span class="min-w-0">
-                    <span class="font-mono text-ink">{to.orderNumber}</span>
-                    {#if to.sourceFulfillmentKey && to.sourceFulfillmentKey !== 'primary'}
-                      <span class="ml-1 text-ink-faint">· {to.sourceFulfillmentKey}</span>
-                    {/if}
-                  </span>
-                  <Badge
-                    tone={to.status === 'CANCELLED'
-                      ? 'danger'
-                      : to.status === 'COMPLETED' || to.status === 'CLOSED'
-                        ? 'ok'
-                        : 'info'}
+            <!-- Linked transport orders ("Lié à" for shipments) -->
+            {#if fulfillment && fulfillment.transportOrders.length > 0}
+              <div class="mb-3 space-y-1.5">
+                {#each fulfillment.transportOrders as to (to.id)}
+                  <a
+                    href="/transport-orders/{to.id}"
+                    class="flex items-center justify-between gap-2 rounded-md border border-edge bg-surface px-2.5 py-1.5 text-xs transition-colors hover:border-accent"
                   >
-                    {TO_STATUS_LABELS[to.status] ?? to.status}
-                  </Badge>
-                </a>
-              {/each}
-            </div>
-          {/if}
+                    <span class="min-w-0">
+                      <span class="font-mono text-ink">{to.orderNumber}</span>
+                      {#if to.sourceFulfillmentKey && to.sourceFulfillmentKey !== 'primary'}
+                        <span class="ml-1 text-ink-faint">· {to.sourceFulfillmentKey}</span>
+                      {/if}
+                    </span>
+                    <Badge
+                      tone={to.status === 'CANCELLED'
+                        ? 'danger'
+                        : to.status === 'COMPLETED' || to.status === 'CLOSED'
+                          ? 'ok'
+                          : 'info'}
+                    >
+                      {TO_STATUS_LABELS[to.status] ?? to.status}
+                    </Badge>
+                  </a>
+                {/each}
+              </div>
+            {/if}
 
-          {#if lastCreatedTO}
-            <p
-              class="mb-2 rounded-md border border-emerald-400/40 bg-emerald-50/40 px-2.5 py-1.5 text-xs text-emerald-700 dark:text-emerald-300"
-            >
-              Ordre de transport <a
-                class="font-mono underline"
-                href="/transport-orders/{lastCreatedTO.id}">{lastCreatedTO.orderNumber}</a
-              > créé.
-            </p>
-          {/if}
+            {#if lastCreatedTO}
+              <p
+                class="mb-2 rounded-md border border-emerald-400/40 bg-emerald-50/40 px-2.5 py-1.5 text-xs text-emerald-700 dark:text-emerald-300"
+              >
+                Ordre de transport <a
+                  class="font-mono underline"
+                  href="/transport-orders/{lastCreatedTO.id}">{lastCreatedTO.orderNumber}</a
+                > créé.
+              </p>
+            {/if}
 
-          {#if order.status === 'CONFIRMED' && order.customerId}
-            <Button variant="primary" onclick={openWizard}>Préparer l'expédition</Button>
-          {/if}
-        </Card>
+            {#if order!.status === 'CONFIRMED' && order!.customerId && fulfillment?.canPrepareShipment}
+              <Button variant="primary" onclick={openWizard}>Préparer l'expédition</Button>
+            {/if}
+          </Card></RecordSection
+        >
       {/if}
+    </div>
+    <aside class="space-y-5">
+      <RecordSection id="record-info" label="Informations">
+        <Card>
+          <h2 class="mb-3 text-sm font-semibold text-ink">Informations</h2>
+          <div class="grid grid-cols-1 gap-3 text-sm">
+            <div>
+              <div class="mb-0.5 font-medium text-ink-muted">Statut</div>
+              <Badge tone={statusTone(order!.status)}>{statusLabel(order!.status)}</Badge>
+            </div>
+            <div>
+              <div class="mb-0.5 font-medium text-ink-muted">Montant total</div>
+              <div class="text-base font-semibold text-accent">
+                {formatMoney(order!.totalAmount, order!.currency)}
+              </div>
+            </div>
+            {#if order!.company}
+              <div>
+                <div class="mb-0.5 font-medium text-ink-muted">Société</div>
+                <a
+                  href="/crm/companies/{order!.company.id}"
+                  class="text-ink hover:underline hover:text-accent"
+                >
+                  {order!.company.name}
+                </a>
+              </div>
+            {/if}
+            {#if order!.ownerUserId}
+              <div>
+                <div class="mb-0.5 font-medium text-ink-muted">Responsable</div>
+                <div class="font-mono text-xs text-ink">{order!.ownerUserId.slice(0, 8)}…</div>
+              </div>
+            {/if}
+            {#if order!.notes}
+              <div class="min-w-0">
+                <div class="mb-0.5 font-medium text-ink-muted">Notes</div>
+                <div class="text-ink">{order!.notes}</div>
+              </div>
+            {/if}
+          </div>
+        </Card>
+      </RecordSection>
 
       <!-- Lié à -->
-      <Card>
-        <RelatedEntities groups={relatedGroups} />
-      </Card>
-
-      <!-- Navigation -->
-      <Card>
-        <h2 class="mb-2 text-sm font-semibold text-ink">Navigation</h2>
-        <div class="space-y-2">
-          <a
-            href="/crm/sales-orders"
-            class="flex items-center gap-2 rounded-md border border-edge bg-surface px-3 py-2 text-xs text-ink transition-colors hover:border-accent hover:text-accent"
-          >
-            ← Toutes les commandes
-          </a>
-        </div>
-      </Card>
-    </div>
+      <RecordSection id="record-related" label="Dossiers liés"
+        ><Card><RelatedEntities title="Dossiers liés" groups={relatedGroups} /></Card
+        ></RecordSection
+      >
+    </aside>
   </div>
 
   <!-- Prepare-shipment wizard -->
-  <Modal bind:open={showWizard} title="Préparer l'expédition" onclose={() => (showWizard = false)}>
-    <div class="space-y-3">
-      <p class="text-xs text-ink-muted">
+  <Drawer
+    bind:open={showWizard}
+    title="Préparer l'expédition"
+    width="lg"
+    dismissible={!wSubmitting}
+  >
+    <fieldset disabled={wSubmitting} class="space-y-4">
+      <p class="text-sm text-ink-muted">
         Le client est repris de la commande. <strong>Origine, destination, mode</strong> et
         <strong>au moins une mesure physique &gt; 0</strong> (poids, volume ou palettes) sont requis —
         jamais déduits des montants ou des quantités. Les fenêtres horaires sont facultatives.
@@ -1058,9 +620,7 @@
 
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label
-            for="w-origin"
-            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+          <label for="w-origin" class="mb-1 block text-xs font-medium text-ink-muted"
             >Origine *</label
           >
           <select
@@ -1074,9 +634,7 @@
           </select>
         </div>
         <div>
-          <label
-            for="w-dest"
-            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+          <label for="w-dest" class="mb-1 block text-xs font-medium text-ink-muted"
             >Destination *</label
           >
           <select
@@ -1090,9 +648,7 @@
           </select>
         </div>
         <div>
-          <label
-            for="w-pue"
-            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+          <label for="w-pue" class="mb-1 block text-xs font-medium text-ink-muted"
             >Ramassage — au plus tôt</label
           >
           <input
@@ -1103,9 +659,7 @@
           />
         </div>
         <div>
-          <label
-            for="w-pul"
-            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+          <label for="w-pul" class="mb-1 block text-xs font-medium text-ink-muted"
             >Ramassage — au plus tard</label
           >
           <input
@@ -1116,9 +670,7 @@
           />
         </div>
         <div>
-          <label
-            for="w-dle"
-            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+          <label for="w-dle" class="mb-1 block text-xs font-medium text-ink-muted"
             >Livraison — au plus tôt</label
           >
           <input
@@ -1129,9 +681,7 @@
           />
         </div>
         <div>
-          <label
-            for="w-dll"
-            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+          <label for="w-dll" class="mb-1 block text-xs font-medium text-ink-muted"
             >Livraison — au plus tard</label
           >
           <input
@@ -1142,11 +692,7 @@
           />
         </div>
         <div>
-          <label
-            for="w-mode"
-            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
-            >Mode</label
-          >
+          <label for="w-mode" class="mb-1 block text-xs font-medium text-ink-muted">Mode</label>
           <select
             id="w-mode"
             bind:value={wMode}
@@ -1158,9 +704,7 @@
           </select>
         </div>
         <div>
-          <label
-            for="w-key"
-            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+          <label for="w-key" class="mb-1 block text-xs font-medium text-ink-muted"
             >Clé d'expédition</label
           >
           <input
@@ -1172,11 +716,7 @@
           />
         </div>
         <div>
-          <label
-            for="w-wt"
-            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
-            >Poids (kg)</label
-          >
+          <label for="w-wt" class="mb-1 block text-xs font-medium text-ink-muted">Poids (kg)</label>
           <input
             id="w-wt"
             type="number"
@@ -1186,9 +726,7 @@
           />
         </div>
         <div>
-          <label
-            for="w-vol"
-            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+          <label for="w-vol" class="mb-1 block text-xs font-medium text-ink-muted"
             >Volume (m³)</label
           >
           <input
@@ -1200,11 +738,7 @@
           />
         </div>
         <div>
-          <label
-            for="w-pal"
-            class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
-            >Palettes</label
-          >
+          <label for="w-pal" class="mb-1 block text-xs font-medium text-ink-muted">Palettes</label>
           <input
             id="w-pal"
             type="number"
@@ -1216,11 +750,7 @@
         </div>
       </div>
       <div>
-        <label
-          for="w-notes"
-          class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
-          >Notes</label
-        >
+        <label for="w-notes" class="mb-1 block text-xs font-medium text-ink-muted">Notes</label>
         <textarea
           id="w-notes"
           rows="2"
@@ -1232,6 +762,7 @@
       <div class="flex justify-end gap-2 pt-1">
         <Button
           variant="secondary"
+          disabled={wSubmitting}
           onclick={() => {
             showWizard = false;
           }}>Annuler</Button
@@ -1244,6 +775,6 @@
           Créer l'ordre de transport
         </Button>
       </div>
-    </div>
-  </Modal>
+    </fieldset>
+  </Drawer>
 {/if}

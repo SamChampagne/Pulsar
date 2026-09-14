@@ -88,7 +88,11 @@ test.describe('CRM → TMS fulfillment journey', () => {
     await expect(page.getByRole('heading', { name: 'Expédition' })).toBeVisible();
     const prepareBtn = page.getByRole('button', { name: "Préparer l'expédition" });
     await expect(prepareBtn).toBeVisible();
-    await page.screenshot({ path: `${ART}/01-sales-order-shipment-panel.png`, fullPage: true });
+    await page.screenshot({
+      path: `${ART}/01-sales-order-shipment-panel.png`,
+      fullPage: true,
+      animations: 'disabled',
+    });
 
     // 4-5. Open the wizard; check the fields/labels are present.
     await prepareBtn.click();
@@ -113,7 +117,7 @@ test.describe('CRM → TMS fulfillment journey', () => {
 
     // 7. Fill a measure and create.
     await page.getByLabel('Poids (kg)').fill('800');
-    await page.screenshot({ path: `${ART}/02-wizard-filled.png` });
+    await page.screenshot({ path: `${ART}/02-wizard-filled.png`, animations: 'disabled' });
     await page.getByRole('button', { name: "Créer l'ordre de transport" }).click();
 
     // 8-9. Success: the panel now lists the created transport order (link).
@@ -130,7 +134,11 @@ test.describe('CRM → TMS fulfillment journey', () => {
     await expect(backLink).toBeVisible();
     // Let the page settle (data fetches + any fade-in) so the capture isn't washed out.
     await page.waitForLoadState('networkidle');
-    await page.screenshot({ path: `${ART}/03-transport-order-crm-link.png`, fullPage: true });
+    await page.screenshot({
+      path: `${ART}/03-transport-order-crm-link.png`,
+      fullPage: true,
+      animations: 'disabled',
+    });
 
     // 13-15. Back to the sales order; create a SECOND shipment with a different
     // fulfillment key; both transport orders are listed, no duplicate.
@@ -171,7 +179,11 @@ test.describe('CRM → TMS fulfillment journey', () => {
     await expect(page.getByLabel('Origine *')).toBeVisible();
     await page.getByLabel('Origine *').selectOption(originId);
     await page.getByLabel('Destination *').selectOption(destId);
-    await page.screenshot({ path: `${ART}/04-wizard-tablet.png`, fullPage: true });
+    await page.screenshot({
+      path: `${ART}/04-wizard-tablet.png`,
+      fullPage: true,
+      animations: 'disabled',
+    });
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

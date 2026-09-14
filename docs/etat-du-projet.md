@@ -6,6 +6,11 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Fiches de travail, lot 2 (2026-09-14) — `codex/ui-records`.** Opportunité,
+> commande de vente, ordre de transport et chargement : navigation de sections,
+> éditeur CRM commun, panneaux de préparation et erreurs locales. Contrat de lecture
+> des lignes de commande corrigé. Périmètre, tests et suite : [ui-records.md](./plans/ui-records.md).
+>
 > **Refonte des écrans, lot 1 (2026-09-14) — `codex/ui-screens`.** Fiches CRM,
 > réglages des modules, fenêtres Finance, accueils Agents/Flotte/Entrepôt/Intégrations,
 > confirmations et onglets harmonisés. Bureau conservé, aucune API métier modifiée.

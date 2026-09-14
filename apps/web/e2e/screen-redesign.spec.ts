@@ -37,7 +37,9 @@ test('contact drawers retain the list width, close safely and return keyboard fo
   await page.setViewportSize({ width: 390, height: 844 });
   await open.click();
   await expect(dialog).toBeVisible();
-  expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(390);
+  // Chromium may report 390.000002 during the transform animation.
+  // Keep the separate document-overflow assertion below.
+  expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(390.01);
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
   ).toBeLessThanOrEqual(1);

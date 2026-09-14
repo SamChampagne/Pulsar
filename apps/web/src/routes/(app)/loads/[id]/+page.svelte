@@ -1,5 +1,6 @@
 <script lang="ts">
   import DossierButton from '$lib/components/workflows/DossierButton.svelte';
+  import { untrack } from 'svelte';
   import { page } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
@@ -7,6 +8,9 @@
     Badge,
     Button,
     PageHeader,
+    RecordHeader,
+    RecordNav,
+    RecordSection,
     toneFor,
     labelFor,
     Skeleton,
@@ -17,6 +21,7 @@
   } from '$lib/components/ui';
   import TrackingTimeline, { type TimelineEvent } from '$lib/components/TrackingTimeline.svelte';
   import { toast } from '$lib/stores/toast';
+  import { confirmAction } from '$lib/stores/confirmation';
   import LoadRoutePanel from '$lib/components/loads/LoadRoutePanel.svelte';
   import LoadShipmentsPanel from '$lib/components/loads/LoadShipmentsPanel.svelte';
   import LoadDocumentsPanel from '$lib/components/loads/LoadDocumentsPanel.svelte';
@@ -51,7 +56,12 @@
     }[]
   >([]);
   let error = $state('');
-  let auxError = $state(false);
+  let auxLoading = $state(false);
+  let sectionErrors = $state({ documents: false, route: false, tracking: false, tenders: false });
+  let resourcesError = $state('');
+  let resourcesLoading = $state(false);
+  let busy = $state(false);
+  let loadGeneration = 0;
 
   const latestTender = $derived(tenders[0] ?? null);
 
@@ -128,8 +138,14 @@
   });
 
   async function load() {
+    const generation = ++loadGeneration;
+    const id = loadId;
+    error = '';
+    auxLoading = true;
     try {
-      detail = await api<LoadDetail>(`/transportation/loads/${loadId}`);
+      const result = await api<LoadDetail>(`/transportation/loads/${loadId}`);
+      if (generation !== loadGeneration || id !== loadId) return;
+      detail = result;
       form = {
         carrierId: detail.carrier?.id ?? '',
         driverId: detail.driver?.id ?? '',
@@ -139,10 +155,11 @@
         mode: detail.mode ?? '',
       };
     } catch (e) {
-      error = e instanceof ApiError ? e.message : `Failed to load — ${String(e)}`;
+      if (generation !== loadGeneration || id !== loadId) return;
+      auxLoading = false;
+      error = e instanceof ApiError ? e.message : 'Impossible de charger le chargement';
       return;
     }
-    auxError = false;
     const [docsR, routeR, eventsR, tendersR] = await Promise.allSettled([
       api<LoadDocument[]>(`/transportation/loads/${loadId}/documents`),
       detail.route
@@ -151,11 +168,18 @@
       api<TimelineEvent[]>('/transportation/tracking/events', { query: { loadId } }),
       api<typeof tenders>(`/transportation/loads/${loadId}/tenders`),
     ]);
+    if (generation !== loadGeneration || id !== loadId) return;
     documents = docsR.status === 'fulfilled' ? docsR.value : [];
     route = routeR.status === 'fulfilled' ? routeR.value : null;
     events = eventsR.status === 'fulfilled' ? eventsR.value : [];
     tenders = tendersR.status === 'fulfilled' ? tendersR.value : [];
-    auxError = [docsR, routeR, eventsR, tendersR].some((r) => r.status === 'rejected');
+    sectionErrors = {
+      documents: docsR.status === 'rejected',
+      route: routeR.status === 'rejected',
+      tracking: eventsR.status === 'rejected',
+      tenders: tendersR.status === 'rejected',
+    };
+    auxLoading = false;
     syncAccessorialState();
   }
 
@@ -169,6 +193,8 @@
   }
 
   async function sendTender() {
+    if (busy) return;
+    busy = true;
     try {
       const tender = await api<{
         id: string;
@@ -190,10 +216,14 @@
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Failed to send tender');
+    } finally {
+      busy = false;
     }
   }
 
   async function autoTender() {
+    if (busy) return;
+    busy = true;
     try {
       const tender = await api<{ carrier: { name: string }; emailedTo: string | null }>(
         `/transportation/loads/${loadId}/auto-tender`,
@@ -206,20 +236,28 @@
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Failed to auto-tender');
+    } finally {
+      busy = false;
     }
   }
 
   async function cancelTender() {
+    if (busy) return;
+    busy = true;
     try {
       await api(`/transportation/loads/${loadId}/cancel-tender`, { method: 'POST' });
       toast.success('Tender cancelled');
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Failed to cancel tender');
+    } finally {
+      busy = false;
     }
   }
 
   async function driverLink() {
+    if (busy) return;
+    busy = true;
     try {
       const { url } = await api<{ url: string }>(`/transportation/loads/${loadId}/driver-link`, {
         method: 'POST',
@@ -227,28 +265,38 @@
       await copyToClipboard(url, 'Driver link');
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Failed to create driver link');
+    } finally {
+      busy = false;
     }
   }
 
   async function loadResourceOptions() {
-    const [c, d, v, t, r] = await Promise.all([
-      api<Paginated<Option>>('/transportation/carriers', { query: { pageSize: 100 } }),
-      api<Paginated<Option>>('/transportation/drivers', { query: { pageSize: 100 } }),
-      api<Paginated<Option>>('/transportation/vehicles', { query: { pageSize: 100 } }),
-      api<Paginated<Option>>('/transportation/trailers', { query: { pageSize: 100 } }),
-      api<Paginated<Option>>('/transportation/rates', { query: { pageSize: 100 } }),
-    ]);
-    carriers = c.items;
-    drivers = d.items;
-    vehicles = v.items;
-    trailers = t.items;
-    rates = r.items;
+    resourcesError = '';
+    resourcesLoading = true;
+    try {
+      const [c, d, v, t, r] = await Promise.all([
+        api<Paginated<Option>>('/transportation/carriers', { query: { pageSize: 100 } }),
+        api<Paginated<Option>>('/transportation/drivers', { query: { pageSize: 100 } }),
+        api<Paginated<Option>>('/transportation/vehicles', { query: { pageSize: 100 } }),
+        api<Paginated<Option>>('/transportation/trailers', { query: { pageSize: 100 } }),
+        api<Paginated<Option>>('/transportation/rates', { query: { pageSize: 100 } }),
+      ]);
+      carriers = c.items;
+      drivers = d.items;
+      vehicles = v.items;
+      trailers = t.items;
+      rates = r.items;
 
-    const catalog = await api<Paginated<CatalogAccessorial>>('/transportation/accessorials', {
-      query: { pageSize: 100 },
-    });
-    accessorialCatalog = catalog.items;
-    syncAccessorialState();
+      const catalog = await api<Paginated<CatalogAccessorial>>('/transportation/accessorials', {
+        query: { pageSize: 100 },
+      });
+      accessorialCatalog = catalog.items;
+      syncAccessorialState();
+    } catch (e) {
+      resourcesError = e instanceof ApiError ? e.message : 'Ressources et frais indisponibles';
+    } finally {
+      resourcesLoading = false;
+    }
   }
 
   function syncAccessorialState() {
@@ -265,62 +313,104 @@
   }
 
   async function action(name: 'dispatch' | 'start-transit' | 'complete' | 'cancel') {
+    if (busy) return;
+    const id = loadId;
+    if (
+      name === 'cancel' &&
+      !(await confirmAction('Annuler ce chargement ?', {
+        title: 'Annuler le chargement',
+        confirmLabel: 'Annuler le chargement',
+      }))
+    )
+      return;
+    if (loadId !== id || busy) return;
+    busy = true;
     try {
       await api(`/transportation/loads/${loadId}/${name}`, { method: 'POST' });
       toast.success(`Load ${name.replace('-', ' ')} done`);
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : `Failed to ${name}`);
+    } finally {
+      busy = false;
     }
   }
 
   $effect(() => {
-    if (loadId) {
+    loadId;
+    untrack(() => {
+      detail = null;
       void load();
       void loadResourceOptions();
-    }
+    });
   });
 </script>
 
 {#if error}
+  <RecordHeader title="Chargement" kind="Transport" backHref="/loads" backLabel="Chargements" />
   <ErrorNotice message={error} onretry={load} />
 {:else if detail}
   <!-- Page header with title + status badge + action buttons -->
-  <PageHeader title={detail.loadNumber}>
+  <RecordHeader
+    title={detail.loadNumber}
+    kind="Chargement"
+    backHref="/loads"
+    backLabel="Chargements"
+  >
+    {#snippet meta()}<Badge tone={toneFor(detail!.status)}>{labelFor(detail!.status)}</Badge
+      >{#if detail!.mode}<Badge tone="info">{detail!.mode}</Badge>{/if}{#if isDelayed}<Badge
+          tone="danger">Retard signalé</Badge
+        >{/if}<span>{detail!.shipments.length} expédition(s)</span>{/snippet}
     {#snippet actions()}
       <DossierButton entityType="LOAD" entityId={detail!.id} />
-      <Badge tone={toneFor(detail!.status)}>{labelFor(detail!.status)}</Badge>
-      {#if detail!.mode}
-        <Badge tone="info">{detail!.mode}</Badge>
-      {/if}
-      {#if isDelayed}
-        <Badge tone="danger">Delayed</Badge>
-      {/if}
-
       {#if detail!.status === 'PLANNED'}
-        <Button variant="secondary" onclick={autoTender}>Auto-tender (lane)</Button>
-        <Button variant="secondary" onclick={sendTender}>Tender to carrier</Button>
-        <Button variant="primary" onclick={() => action('dispatch')}>Dispatch</Button>
-        <Button variant="danger" onclick={() => action('cancel')}>Cancel</Button>
+        <Button disabled={busy} variant="secondary" onclick={autoTender}>Offre automatique</Button>
+        <Button disabled={busy} variant="secondary" onclick={sendTender}
+          >Offrir au transporteur</Button
+        >
+        <Button disabled={busy} variant="primary" onclick={() => action('dispatch')}
+          >Répartir</Button
+        >
+        <Button disabled={busy} variant="danger" onclick={() => action('cancel')}>Annuler</Button>
       {:else if detail!.status === 'TENDERED'}
         {#if latestTender?.status === 'ACCEPTED'}
-          <Button variant="primary" onclick={() => action('dispatch')}>Dispatch</Button>
+          <Button disabled={busy} variant="primary" onclick={() => action('dispatch')}
+            >Répartir</Button
+          >
         {/if}
         {#if latestTender?.status === 'PENDING'}
-          <Button variant="secondary" onclick={cancelTender}>Cancel tender</Button>
+          <Button disabled={busy} variant="secondary" onclick={cancelTender}>Annuler l’offre</Button
+          >
         {/if}
-        <Button variant="danger" onclick={() => action('cancel')}>Cancel load</Button>
+        <Button disabled={busy} variant="danger" onclick={() => action('cancel')}
+          >Annuler le chargement</Button
+        >
       {:else if detail!.status === 'DISPATCHED'}
-        <Button variant="primary" onclick={() => action('start-transit')}>Start transit</Button>
-        <Button variant="danger" onclick={() => action('cancel')}>Cancel</Button>
+        <Button disabled={busy} variant="primary" onclick={() => action('start-transit')}
+          >Démarrer le transport</Button
+        >
+        <Button disabled={busy} variant="danger" onclick={() => action('cancel')}>Annuler</Button>
       {:else if detail!.status === 'IN_TRANSIT'}
-        <Button variant="primary" onclick={() => action('complete')}>Complete (delivered)</Button>
+        <Button disabled={busy} variant="primary" onclick={() => action('complete')}
+          >Marquer livré</Button
+        >
       {/if}
       {#if ['PLANNED', 'TENDERED', 'DISPATCHED', 'IN_TRANSIT'].includes(detail!.status)}
-        <Button variant="secondary" onclick={driverLink}>Driver link</Button>
+        <Button disabled={busy} variant="secondary" onclick={driverLink}>Lien chauffeur</Button>
       {/if}
     {/snippet}
-  </PageHeader>
+  </RecordHeader>
+  <RecordNav
+    sections={[
+      { id: 'record-route', label: 'Itinéraire' },
+      { id: 'record-shipments', label: 'Expéditions' },
+      { id: 'record-documents', label: 'Documents' },
+      { id: 'record-resources', label: 'Ressources' },
+      { id: 'record-costs', label: 'Frais' },
+      { id: 'record-tracking', label: 'Suivi' },
+      { id: 'record-related', label: 'Dossiers liés' },
+    ]}
+  />
 
   {#if isDelayed}
     <div class="mb-4">
@@ -347,77 +437,107 @@
     </div>
   {/if}
 
-  {#if auxError}
-    <div class="mb-4 rounded-card bg-warn-soft p-3 text-sm text-warn">
-      Some sections failed to load (documents, route, tracking or tenders) — reload to retry.
-    </div>
-  {/if}
-
   <!-- Main grid: 2 cols on large screens -->
   <div class="grid gap-4 lg:grid-cols-3">
     <!-- Left column: Route + Shipments + Documents + Accessorials + Tracking -->
     <div class="flex flex-col gap-4 lg:col-span-2">
-      <LoadRoutePanel {loadId} {detail} {route} {editable} {executing} onReload={load} />
+      <RecordSection id="record-route" label="Itinéraire"
+        >{#if auxLoading}<Card><Skeleton rows={3} /></Card>{:else if sectionErrors.route}<Card
+            ><ErrorNotice message="Itinéraire indisponible" onretry={load} /></Card
+          >{:else}<LoadRoutePanel
+            {loadId}
+            {detail}
+            {route}
+            {editable}
+            {executing}
+            onReload={load}
+          />{/if}</RecordSection
+      >
 
-      <LoadShipmentsPanel shipments={detail.shipments} loadStatus={detail.status} onReload={load} />
+      <RecordSection id="record-shipments" label="Expéditions"
+        ><LoadShipmentsPanel
+          shipments={detail.shipments}
+          loadStatus={detail.status}
+          onReload={load}
+        /></RecordSection
+      >
 
-      <LoadDocumentsPanel
-        {loadId}
-        {documents}
-        {canBol}
-        onDocumentsChange={(docs) => {
-          documents = docs;
-        }}
-      />
-
-      <LoadAccessorialsPanel
-        {loadId}
-        loadStatus={detail.status}
-        {accessorialCatalog}
-        {accessorialChecked}
-        {accessorialQty}
-        onCheckedChange={(checked) => {
-          accessorialChecked = checked;
-        }}
-        onQtyChange={(qty) => {
-          accessorialQty = qty;
-        }}
-        onReload={load}
-      />
-
-      <!-- Tracking card -->
-      <Card>
-        <h2 class="mb-3 font-semibold text-ink">Tracking</h2>
-        <TrackingTimeline {events} />
-      </Card>
+      <RecordSection id="record-documents" label="Documents"
+        >{#if auxLoading}<Card><Skeleton rows={2} /></Card>{:else if sectionErrors.documents}<Card
+            ><ErrorNotice message="Documents indisponibles" onretry={load} /></Card
+          >{:else}<LoadDocumentsPanel
+            {loadId}
+            {documents}
+            {canBol}
+            onDocumentsChange={(docs) => {
+              documents = docs;
+            }}
+          />
+        {/if}</RecordSection
+      >
+      <RecordSection id="record-costs" label="Frais"
+        >{#if resourcesLoading}<Card><Skeleton rows={2} /></Card>{:else if resourcesError}<Card
+            ><ErrorNotice message={resourcesError} onretry={loadResourceOptions} /></Card
+          >{:else}<LoadAccessorialsPanel
+            {loadId}
+            loadStatus={detail.status}
+            {accessorialCatalog}
+            {accessorialChecked}
+            {accessorialQty}
+            onCheckedChange={(checked) => {
+              accessorialChecked = checked;
+            }}
+            onQtyChange={(qty) => {
+              accessorialQty = qty;
+            }}
+            onReload={load}
+          />
+        {/if}</RecordSection
+      >
+      <RecordSection id="record-tracking" label="Suivi">
+        <Card>
+          <h2 class="mb-3 font-semibold text-ink">Suivi</h2>
+          {#if auxLoading}<Skeleton rows={2} />{:else if sectionErrors.tracking}<ErrorNotice
+              message="Suivi indisponible. Aucun historique ne peut être confirmé."
+              onretry={load}
+            />{:else}<TrackingTimeline {events} />{/if}
+        </Card></RecordSection
+      >
     </div>
 
     <!-- Right column: Summary + Tender + Resources -->
     <div class="flex flex-col gap-4">
       <LoadSummaryPanel {loadId} {detail} {editable} onReload={load} />
 
-      {#if latestTender}
+      {#if sectionErrors.tenders}<Card
+          ><ErrorNotice message="Offres transporteur indisponibles" onretry={load} /></Card
+        >{:else if !auxLoading && latestTender}
         <LoadTendersPanel tender={latestTender} onCopyLink={copyToClipboard} />
       {/if}
 
-      <LoadResourcesPanel
-        {loadId}
-        {editable}
-        {carriers}
-        {drivers}
-        {vehicles}
-        {trailers}
-        {rates}
-        {form}
-        onFormChange={(f) => {
-          form = f;
-        }}
-        onReload={load}
-      />
-
-      <Card>
-        <RelatedEntities groups={relatedGroups} />
-      </Card>
+      <RecordSection id="record-resources" label="Ressources"
+        >{#if resourcesLoading}<Card><Skeleton rows={3} /></Card>{:else if resourcesError}<Card
+            ><ErrorNotice message={resourcesError} onretry={loadResourceOptions} /></Card
+          >{:else}<LoadResourcesPanel
+            {loadId}
+            {editable}
+            {carriers}
+            {drivers}
+            {vehicles}
+            {trailers}
+            {rates}
+            {form}
+            onFormChange={(f) => {
+              form = f;
+            }}
+            onReload={load}
+          />
+        {/if}</RecordSection
+      >
+      <RecordSection id="record-related" label="Dossiers liés"
+        ><Card><RelatedEntities title="Dossiers liés" groups={relatedGroups} /></Card
+        ></RecordSection
+      >
     </div>
   </div>
 {:else}
