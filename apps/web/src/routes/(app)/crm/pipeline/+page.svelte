@@ -13,6 +13,8 @@
     Select,
     Skeleton,
     ErrorNotice,
+    Drawer,
+    Modal,
   } from '$lib/components/ui';
   import {
     CrmDealStage,
@@ -69,6 +71,23 @@
     companyTotal = $state(0);
   let dragging = $state<{ id: string; from: string; revision: number } | null>(null),
     target = $state('');
+  let editorBusy = $state(false),
+    editorDirty = $state(false),
+    discardOpen = $state(false);
+  function canCloseEditor() {
+    if (editorBusy) return false;
+    if (editorDirty) {
+      discardOpen = true;
+      return false;
+    }
+    return true;
+  }
+  function closeEditor() {
+    if (canCloseEditor()) {
+      configuring = false;
+      actionStage = '';
+    }
+  }
   const pipeline = $derived(pipelines.find((p) => p.id === selected));
   const activeStage = $derived(columns.find((c) => c.id === actionStage));
   const manage = $derived(!!$auth?.user.permissions.includes(PERMISSIONS.CRM.MANAGE));
@@ -237,86 +256,140 @@
   </div>
 </div>
 {#if creatingPipeline}
-  <form
-    class="mb-5 flex flex-wrap items-end gap-3 rounded-lg border border-edge bg-surface p-4"
-    onsubmit={(e) => {
-      e.preventDefault();
-      void createPipeline();
-    }}
-  >
-    <Field label="Nom du nouveau pipeline"
-      ><Input
-        bind:value={pipelineName}
-        required
-        maxlength={100}
-        placeholder="Ventes services, partenariats…"
-      /></Field
-    ><Button type="submit" disabled={busy}>Créer le pipeline</Button><Button
-      variant="ghost"
-      onclick={() => {
-        creatingPipeline = false;
-      }}>Annuler</Button
+  <Modal bind:open={creatingPipeline} title="Nouveau pipeline" dismissible={!busy}>
+    <ErrorNotice message={error} />
+    <form
+      class="flex flex-wrap items-end gap-3"
+      onsubmit={(e) => {
+        e.preventDefault();
+        void createPipeline();
+      }}
     >
-  </form>
-{/if}
-{#if configuring && pipeline && manage}{#key pipeline.id + ':' + pipeline.revision}<PipelineEditor
-      {pipeline}
-      onclose={() => (configuring = false)}
-      onsaved={() => {
-        configuring = false;
-        notice = 'Pipeline enregistré';
-        void load(selected);
-      }}
-    />{/key}{/if}
-{#if activeStage}{#key activeStage.id + JSON.stringify(activeStage.automation)}<StageAutomation
-      stage={activeStage}
-      onclose={() => (actionStage = '')}
-      onsaved={() => {
-        notice = 'Actions de la colonne enregistrées';
-        void load(selected);
-      }}
-    />{/key}{/if}
-{#if createStage}
-  <form
-    class="mb-5 space-y-3 rounded-lg border border-edge bg-surface p-4"
-    onsubmit={(e) => {
-      e.preventDefault();
-      void quickCreate();
-    }}
-  >
-    <h2 class="font-semibold">
-      Nouvelle opportunité · {columns.find((c) => c.id === createStage)?.name}
-    </h2>
-    <div class="grid gap-3 md:grid-cols-2">
-      <Field label="Titre de l’opportunité"><Input bind:value={dealTitle} required /></Field><Field
-        label="Entreprise CRM"
-        ><Select bind:value={companyId} required
-          ><option value="">Choisir une entreprise</option>{#each companies as company}<option
-              value={company.id}>{company.name}</option
-            >{/each}</Select
-        ></Field
+      <Field label="Nom du nouveau pipeline"
+        ><Input
+          bind:value={pipelineName}
+          required
+          maxlength={100}
+          placeholder="Ventes services, partenariats…"
+        /></Field
+      ><Button type="submit" disabled={busy}>Créer le pipeline</Button><Button
+        variant="ghost"
+        onclick={() => {
+          creatingPipeline = false;
+        }}>Annuler</Button
       >
-    </div>
-    <div class="flex flex-wrap items-end gap-2">
-      <Field label="Rechercher une entreprise"><Input bind:value={companySearch} /></Field><Button
-        variant="secondary"
-        onclick={findCompanies}>Rechercher</Button
-      >{#if companyTotal > 100}<span class="text-xs text-ink-muted"
-          >100 sur {companyTotal} : affinez la recherche.</span
-        >{/if}
-    </div>
-    <p class="text-sm text-ink-muted">
-      Vous choisirez le contact principal sur la fiche. Aucun suivi ne démarre sans destinataire à
-      l’entrée dans une colonne.
-    </p>
-    <Button type="submit" disabled={busy}>Créer l’opportunité</Button><Button
-      variant="ghost"
-      onclick={() => {
-        createStage = '';
-      }}>Annuler</Button
-    >
-  </form>
+    </form>
+  </Modal>
 {/if}
+{#if pipeline && manage}
+  <Drawer
+    bind:open={configuring}
+    title="Configurer les colonnes"
+    width="xl"
+    dismissible={!editorBusy}
+    onbeforeclose={canCloseEditor}
+  >
+    {#key pipeline.id + ':' + pipeline.revision}<PipelineEditor
+        {pipeline}
+        bind:saving={editorBusy}
+        bind:dirty={editorDirty}
+        onclose={closeEditor}
+        onsaved={() => {
+          configuring = false;
+          notice = 'Pipeline enregistré';
+          void load(selected);
+        }}
+      />{/key}
+  </Drawer>
+{/if}
+{#if activeStage}
+  <Drawer
+    open={true}
+    title={'Actions · ' + activeStage.name}
+    width="xl"
+    dismissible={!editorBusy}
+    onbeforeclose={canCloseEditor}
+    onclose={() => (actionStage = '')}
+  >
+    {#key activeStage.id + JSON.stringify(activeStage.automation)}<StageAutomation
+        stage={activeStage}
+        bind:saving={editorBusy}
+        bind:dirty={editorDirty}
+        onclose={closeEditor}
+        onsaved={() => {
+          notice = 'Actions de la colonne enregistrées';
+          void load(selected);
+        }}
+      />{/key}
+  </Drawer>
+{/if}
+{#if createStage}
+  <Modal
+    open={true}
+    title={'Nouvelle opportunité · ' + (columns.find((c) => c.id === createStage)?.name ?? '')}
+    size="lg"
+    dismissible={!busy}
+    onclose={() => (createStage = '')}
+  >
+    <ErrorNotice message={error} />
+    <form
+      class="space-y-3"
+      onsubmit={(e) => {
+        e.preventDefault();
+        void quickCreate();
+      }}
+    >
+      <div class="grid gap-3 md:grid-cols-2">
+        <Field label="Titre de l’opportunité"><Input bind:value={dealTitle} required /></Field
+        ><Field label="Entreprise CRM"
+          ><Select bind:value={companyId} required
+            ><option value="">Choisir une entreprise</option>{#each companies as company}<option
+                value={company.id}>{company.name}</option
+              >{/each}</Select
+          ></Field
+        >
+      </div>
+      <div class="flex flex-wrap items-end gap-2">
+        <Field label="Rechercher une entreprise"><Input bind:value={companySearch} /></Field><Button
+          variant="secondary"
+          onclick={findCompanies}>Rechercher</Button
+        >{#if companyTotal > 100}<span class="text-xs text-ink-muted"
+            >100 sur {companyTotal} : affinez la recherche.</span
+          >{/if}
+      </div>
+      <p class="text-sm text-ink-muted">
+        Vous choisirez le contact principal sur la fiche. Aucun suivi ne démarre sans destinataire à
+        l’entrée dans une colonne.
+      </p>
+      <Button type="submit" disabled={busy}>Créer l’opportunité</Button><Button
+        variant="ghost"
+        onclick={() => {
+          createStage = '';
+        }}>Annuler</Button
+      >
+    </form>
+  </Modal>
+{/if}
+<Modal bind:open={discardOpen} title="Abandonner les modifications ?" size="sm">
+  <p class="text-sm text-ink-muted">Les changements non enregistrés de ce panneau seront perdus.</p>
+  {#snippet footer()}
+    <Button
+      variant="secondary"
+      onclick={() => {
+        discardOpen = false;
+      }}>Continuer l’édition</Button
+    >
+    <Button
+      variant="danger"
+      onclick={() => {
+        discardOpen = false;
+        configuring = false;
+        actionStage = '';
+        editorDirty = false;
+      }}>Abandonner</Button
+    >
+  {/snippet}
+</Modal>
 {#if loading && !columns.length}<Skeleton rows={6} />{:else}
   <div class="max-w-full overflow-x-auto pb-4" aria-label="Tableau des opportunités">
     <div class="flex w-max min-w-full items-start gap-3">

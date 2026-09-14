@@ -38,34 +38,39 @@
 
   --radius-card: 0.75rem;
   --radius-inner: 0.4rem;
-  --shadow-sm: 0 1px 2px rgb(40 30 20 / 0.07), 0 1px 1px rgb(40 30 20 / 0.04);
-  --shadow-card: 0 1px 3px rgb(40 30 20 / 0.06), 0 10px 26px -14px rgb(40 30 20 / 0.16);
-  --shadow-pop: 0 16px 48px -10px rgb(40 30 20 / 0.24);
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.04);
+  --shadow-card: 0 1px 3px rgb(15 23 42 / 0.05);
+  --shadow-pop: 0 16px 48px -12px rgb(15 23 42 / 0.24);
 }
 
-/* ── Thème CHAUD (défaut) — identité orange/crème ── */
+/* The persisted "warm" key remains compatible with existing preferences. */
 :root,
 [data-theme='warm'] {
   --t-sidebar: #221913;
   --t-sidebar-hover: #33271b;
   --t-sidebar-border: #3a2c1e;
-  --t-accent: #f1700f;
-  --t-accent-hover: #d65f06;
-  --t-accent-soft: #fff1e3;
+  --t-accent: #27272a;
+  --t-accent-hover: #3f3f46;
+  --t-accent-soft: #f0f0f2;
   --t-highlight: #f7b733;
-  --t-canvas: #faf6f0;
+  --t-canvas: #fafafa;
   --t-surface: #ffffff;
-  --t-surface-muted: #f6efe5;
-  --t-edge: #ebe0d2;
-  --t-edge-soft: #f2eadf;
-  --t-ink: #241c15;
-  --t-ink-muted: #6f6151;
-  --t-ink-faint: #a3917f;
-  --t-ok: #1f7a43; --t-ok-soft: #dcf3e3;
-  --t-warn: #b5730a; --t-warn-soft: #ffedc4;
-  --t-danger: #d83a2a; --t-danger-soft: #ffe1da;
-  --t-info: #2f6f9e; --t-info-soft: #dcecf7;
-  --t-neutral: #6f6151; --t-neutral-soft: #f0e8de;
+  --t-surface-muted: #f4f4f5;
+  --t-edge: #e4e4e7;
+  --t-edge-soft: #ededf0;
+  --t-ink: #18181b;
+  --t-ink-muted: #62626b;
+  --t-ink-faint: #71717a;
+  --t-ok: #1f7a43;
+  --t-ok-soft: #dcf3e3;
+  --t-warn: #b5730a;
+  --t-warn-soft: #ffedc4;
+  --t-danger: #d83a2a;
+  --t-danger-soft: #ffe1da;
+  --t-info: #2f6f9e;
+  --t-info-soft: #dcecf7;
+  --t-neutral: #62626b;
+  --t-neutral-soft: #f4f4f5;
 }
 
 /* ── Thème ARDOISE — froid, bleu/slate (l'original) ── */
@@ -84,12 +89,17 @@
   --t-edge-soft: #eef2f7;
   --t-ink: #0f172a;
   --t-ink-muted: #5b6b82;
-  --t-ink-faint: #94a3b8;
-  --t-ok: #15803d; --t-ok-soft: #dcfce7;
-  --t-warn: #a16207; --t-warn-soft: #fef9c3;
-  --t-danger: #b91c1c; --t-danger-soft: #fee2e2;
-  --t-info: #1d4ed8; --t-info-soft: #dbeafe;
-  --t-neutral: #475569; --t-neutral-soft: #f1f5f9;
+  --t-ink-faint: #64748b;
+  --t-ok: #15803d;
+  --t-ok-soft: #dcfce7;
+  --t-warn: #a16207;
+  --t-warn-soft: #fef9c3;
+  --t-danger: #b91c1c;
+  --t-danger-soft: #fee2e2;
+  --t-info: #1d4ed8;
+  --t-info-soft: #dbeafe;
+  --t-neutral: #475569;
+  --t-neutral-soft: #f1f5f9;
 }
 
 /* ── Thème NUIT — sombre chaud ── */
@@ -101,23 +111,24 @@
   --t-accent-hover: #ff8326;
   --t-accent-soft: #3a2616;
   --t-highlight: #f7b733;
-  --t-canvas: #17130f;
-  --t-surface: #211b16;
-  --t-surface-muted: #2a221c;
-  --t-edge: #382e25;
-  --t-edge-soft: #2e261f;
-  --t-ink: #f4ede4;
-  --t-ink-muted: #b6a896;
-  --t-ink-faint: #837363;
-  --t-ok: #4ade80; --t-ok-soft: #14331f;
-  --t-warn: #fbbf24; --t-warn-soft: #3a2c10;
-  --t-danger: #fb7363; --t-danger-soft: #3a1c17;
-  --t-info: #7cb3df; --t-info-soft: #16293a;
-  --t-neutral: #b6a896; --t-neutral-soft: #2a221c;
-}
-
-html {
-  scroll-behavior: smooth;
+  --t-canvas: #151517;
+  --t-surface: #1c1c1f;
+  --t-surface-muted: #26262a;
+  --t-edge: #3a3a40;
+  --t-edge-soft: #303035;
+  --t-ink: #f4f4f5;
+  --t-ink-muted: #b4b4bd;
+  --t-ink-faint: #a1a1aa;
+  --t-ok: #4ade80;
+  --t-ok-soft: #14331f;
+  --t-warn: #fbbf24;
+  --t-warn-soft: #3a2c10;
+  --t-danger: #fb7363;
+  --t-danger-soft: #3a1c17;
+  --t-info: #7cb3df;
+  --t-info-soft: #16293a;
+  --t-neutral: #b6a896;
+  --t-neutral-soft: #2a221c;
 }
 
 body {
@@ -128,8 +139,49 @@ body {
   text-rendering: optimizeLegibility;
   color: var(--color-ink);
   background-color: var(--color-canvas);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
-  background-attachment: fixed;
+}
+
+/* Shared work surfaces. Motion never changes the surrounding layout. */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+.workspace-scroll {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-edge) transparent;
+}
+
+@layer components {
+  .shell-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.5rem;
+    color: var(--color-ink-muted);
+    transition:
+      background-color 150ms,
+      color 150ms;
+  }
+  .shell-icon:hover {
+    background: var(--color-surface-muted);
+    color: var(--color-ink);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 h1,
@@ -145,4 +197,12 @@ h3 {
   text-underline-offset: 0.18em;
 }
 
-@keyframes wiggle { 0%,100%{transform:rotate(-1.2deg)} 50%{transform:rotate(1.2deg)} }
+@keyframes wiggle {
+  0%,
+  100% {
+    transform: rotate(-1.2deg);
+  }
+  50% {
+    transform: rotate(1.2deg);
+  }
+}

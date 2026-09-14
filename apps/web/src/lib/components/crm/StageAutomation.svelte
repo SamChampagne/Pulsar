@@ -16,10 +16,14 @@
     stage,
     onsaved,
     onclose,
+    saving = $bindable(false),
+    dirty = $bindable(false),
   }: {
     stage: { id: string; name: string; automation: Automation | null };
     onsaved: () => void;
     onclose: () => void;
+    saving?: boolean;
+    dirty?: boolean;
   } = $props();
   let enabled = $state(untrack(() => stage.automation?.enabled ?? false)),
     mode = $state(untrack(() => stage.automation?.mode ?? 'SIMULATION')),
@@ -35,8 +39,11 @@
     ),
   );
   let agents = $state<{ id: string; name: string; status: string }[]>([]),
-    error = $state(''),
-    saving = $state(false);
+    error = $state('');
+  const initialSnapshot = untrack(() => JSON.stringify({ enabled, mode, agentId, steps }));
+  $effect(() => {
+    dirty = JSON.stringify({ enabled, mode, agentId, steps }) !== initialSnapshot;
+  });
   const canEdit = $derived(
     !!$auth?.user.permissions.includes(PERMISSIONS.CRM.MANAGE) &&
       !!$auth?.user.permissions.includes(PERMISSIONS.EMAIL.SEND),
@@ -79,10 +86,7 @@
   }
 </script>
 
-<section
-  aria-label={`Automatisations de ${stage.name}`}
-  class="mb-5 min-w-0 rounded-lg border border-accent/40 bg-surface p-5"
->
+<section aria-label={`Automatisations de ${stage.name}`} class="min-w-0">
   <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <div>
       <p class="text-xs text-ink-muted">À l’entrée dans la colonne</p>
@@ -91,7 +95,7 @@
     <Button variant="ghost" onclick={onclose} disabled={saving}>Fermer les actions</Button>
   </div>
   <ErrorNotice message={error} />
-  <div class="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_19rem]">
+  <div class="grid min-w-0 gap-6">
     <form
       class="min-w-0 space-y-4"
       onsubmit={(e) => {

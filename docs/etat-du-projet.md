@@ -6,6 +6,11 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Socle UI global (2026-09-14) — `codex/ui-workspace`.** Bureau iPhone conservé,
+> cadre et navigation stables, changement d’app rapide, composants communs harmonisés,
+> panneaux CRM, Dispatch et Finance allégés. Aucun backend ni droit modifié.
+> Périmètre et suite : [ui-workspace.md](./plans/ui-workspace.md).
+>
 > **Lot CRM pipelines et connexions (2026-09-14) — `codex/crm-communications`.**
 > Pipelines et colonnes configurables, actions courriel à l'entrée d'une colonne,
 > contact principal explicite, arrêt sur sortie/changement de destinataire, outils agents

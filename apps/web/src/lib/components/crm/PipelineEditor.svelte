@@ -8,18 +8,25 @@
     pipeline,
     onsaved,
     onclose,
+    saving = $bindable(false),
+    dirty = $bindable(false),
   }: {
     pipeline: { id: string; name: string; revision: number; stages: Column[] };
     onsaved: () => void;
     onclose: () => void;
+    saving?: boolean;
+    dirty?: boolean;
   } = $props();
   // The parent keys this editor by pipeline + revision to preserve the edit snapshot.
   let name = $state(untrack(() => pipeline.name));
   let stages = $state<Column[]>(
     untrack(() => pipeline.stages.map((s) => ({ id: s.id, name: s.name, kind: s.kind }))),
   );
-  let error = $state(''),
-    saving = $state(false);
+  let error = $state('');
+  const initialSnapshot = untrack(() => JSON.stringify({ name, stages }));
+  $effect(() => {
+    dirty = JSON.stringify({ name, stages }) !== initialSnapshot;
+  });
   const phases: Record<string, string> = {
     LEAD: 'Prospection',
     QUALIFIED: 'Qualification',
@@ -50,10 +57,7 @@
   }
 </script>
 
-<section
-  aria-label="Configuration du pipeline"
-  class="mb-5 rounded-lg border border-edge bg-surface p-5"
->
+<section aria-label="Configuration du pipeline" class="min-w-0">
   <form
     onsubmit={(e) => {
       e.preventDefault();
@@ -62,8 +66,7 @@
     class="space-y-4"
   >
     <div class="flex items-center justify-between gap-3">
-      <h2 class="text-lg font-semibold">Configurer le pipeline</h2>
-      <Button variant="ghost" onclick={onclose} disabled={saving}>Fermer</Button>
+      <p class="text-sm text-ink-muted">Personnalisez les étapes sans quitter votre tableau.</p>
     </div>
     <ErrorNotice message={error} />
     <fieldset disabled={saving} class="min-w-0 space-y-4">
@@ -75,7 +78,7 @@
       <ol class="space-y-2">
         {#each stages as stage, i}
           <li
-            class="grid items-end gap-2 rounded-md bg-surface-muted p-3 sm:grid-cols-[minmax(0,1fr)_12rem_auto]"
+            class="grid items-end gap-2 rounded-md border border-edge bg-surface p-3 sm:grid-cols-[minmax(0,1fr)_10rem]"
           >
             <Field label={`Nom de la colonne ${i + 1}`}
               ><Input bind:value={stage.name} required maxlength={80} /></Field
@@ -86,7 +89,7 @@
                   >{/each}</Select
               ></Field
             >
-            <div class="flex gap-1">
+            <div class="flex justify-end gap-1 sm:col-span-2">
               <Button
                 variant="ghost"
                 aria-label={`Monter ${stage.name}`}
@@ -116,7 +119,8 @@
           onclick={() => {
             stages = [...stages, { name: 'Nouvelle étape', kind: CrmDealStage.QUALIFIED }];
           }}>Ajouter une colonne</Button
-        ><Button type="submit">Enregistrer le pipeline</Button>
+        ><Button type="submit" loading={saving}>Enregistrer le pipeline</Button>
+        <Button variant="ghost" onclick={onclose} disabled={saving}>Annuler</Button>
       </div>
     </fieldset>
   </form>

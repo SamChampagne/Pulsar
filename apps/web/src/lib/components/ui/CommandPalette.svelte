@@ -1,6 +1,17 @@
 <script lang="ts">
   import { Search } from 'lucide-svelte';
-  import { pushOverlay, popOverlay, isTopOverlay } from '$lib/stores/overlay-stack';
+  import {
+    pushOverlay,
+    popOverlay,
+    isTopOverlay,
+    hasOpenOverlay,
+    lockScroll,
+    unlockScroll,
+  } from '$lib/stores/overlay-stack';
+  import { fade, scale } from 'svelte/transition';
+  const reduce =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
   interface Command {
     label: string;
@@ -19,11 +30,15 @@
   let token = $state<symbol | null>(null);
   $effect(() => {
     if (open) {
+      query = '';
+      selected = 0;
       const t = pushOverlay();
       token = t;
+      lockScroll();
       return () => {
         popOverlay(t);
         token = null;
+        unlockScroll();
       };
     }
   });
@@ -33,7 +48,7 @@
     node.focus();
     return {
       destroy() {
-        previous?.focus?.();
+        if (previous?.isConnected) previous.focus({ preventScroll: true });
       },
     };
   }
@@ -41,12 +56,17 @@
   function onkeydown(e: KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
+      if (hasOpenOverlay() && (!token || !isTopOverlay(token))) return;
       open = !open;
       query = '';
       selected = 0;
     }
     if (!open || !token || !isTopOverlay(token)) return;
-    if (e.key === 'Escape' && token && isTopOverlay(token)) open = false;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      open = false;
+    }
     if (e.key === 'Tab' && panelEl) {
       const nodes = Array.from(panelEl.querySelectorAll<HTMLElement>('input, button'));
       const first = nodes[0];
@@ -80,7 +100,8 @@
 {#if open}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
-    class="fixed inset-0 z-50 flex items-start justify-center bg-sidebar/40 pt-[15vh]"
+    class="fixed inset-0 z-50 flex items-start justify-center bg-sidebar/40 px-4 pt-[15dvh] backdrop-blur-[1px]"
+    transition:fade={{ duration: reduce ? 0 : 120 }}
     onclick={(e) => {
       if (e.target === e.currentTarget) open = false;
     }}
@@ -92,6 +113,7 @@
       aria-modal="true"
       aria-label="Navigation rapide"
       class="w-full max-w-md overflow-hidden rounded-card bg-surface shadow-pop"
+      transition:scale={{ duration: reduce ? 0 : 120, start: 0.98 }}
     >
       <div class="flex items-center gap-2 border-b border-edge px-3">
         <Search class="size-4 text-ink-faint" />

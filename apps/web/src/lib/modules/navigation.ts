@@ -124,12 +124,12 @@ export function navCatalogue(): NavDomain[] {
             { href: '/dispatch', label: 'Dispatch' },
             {
               href: '/planning',
-              label: 'Planning Board',
+              label: 'Planification',
               perm: PERMISSIONS.TRANSPORTATION.PLANNING_READ,
             },
             { href: '/transport-orders', label: 'Ordres de transport' },
-            { href: '/shipments', label: 'Shipments' },
-            { href: '/loads', label: 'Loads' },
+            { href: '/shipments', label: 'Expéditions' },
+            { href: '/loads', label: 'Chargements' },
           ],
         },
         {
@@ -137,12 +137,12 @@ export function navCatalogue(): NavDomain[] {
           links: [
             {
               href: '/rate-studio',
-              label: 'Rate Studio',
+              label: 'Comparateur de tarifs',
               perm: PERMISSIONS.TRANSPORTATION.RATES_READ,
             },
-            { href: '/lanes', label: 'Voies (lanes)' },
+            { href: '/lanes', label: 'Liaisons' },
             { href: '/rates', label: 'Tarifs' },
-            { href: '/accessorials', label: 'Accessoriaux' },
+            { href: '/accessorials', label: 'Frais accessoires' },
             { href: '/fuel-tables', label: 'Carburant' },
           ],
         },
@@ -272,7 +272,7 @@ export function navCatalogue(): NavDomain[] {
     // ── Assets / Fleet ─────────────────────────────────────────────────────
     {
       key: 'fleet',
-      label: 'Assets',
+      label: 'Flotte',
       icon: Boxes,
       home: '/assets',
       module: MODULE_KEYS.FLEET,
@@ -280,8 +280,8 @@ export function navCatalogue(): NavDomain[] {
       sections: [
         {
           links: [
-            { href: '/assets', label: 'Assets home' },
-            { href: '/fleet', label: 'Fleet roster' },
+            { href: '/assets', label: 'Vue d’ensemble' },
+            { href: '/fleet', label: 'Véhicules et remorques' },
             { href: '/fleet/maintenance', label: 'Maintenance', perm: PERMISSIONS.FLEET.READ },
           ],
         },
@@ -309,9 +309,9 @@ export function navCatalogue(): NavDomain[] {
       sections: [
         {
           links: [
-            { href: '/finance', label: 'Finance home' },
-            { href: '/invoices', label: 'Receivables / Payables' },
-            { href: '/billing/freight-audit', label: 'Freight audit' },
+            { href: '/finance', label: 'Vue d’ensemble' },
+            { href: '/invoices', label: 'Factures clients et fournisseurs' },
+            { href: '/billing/freight-audit', label: 'Audit transporteur' },
             {
               href: '/billing/ledger',
               label: 'Grand livre',
@@ -381,7 +381,7 @@ export function navCatalogue(): NavDomain[] {
             { href: '/agents', label: 'Employés', perm: PERMISSIONS.CORE.AGENTS_READ },
             {
               href: '/control-tower',
-              label: 'Control Tower',
+              label: 'Supervision',
               perm: PERMISSIONS.CORE.AGENTS_READ,
             },
             {
@@ -392,7 +392,7 @@ export function navCatalogue(): NavDomain[] {
             },
             {
               href: '/workbench',
-              label: 'Workbench',
+              label: 'Mon travail',
               perm: PERMISSIONS.CORE.OPERATING_TASKS_READ,
             },
             {
@@ -411,7 +411,7 @@ export function navCatalogue(): NavDomain[] {
     // ── Analytics / Control Tower ─────────────────────────────────────────
     {
       key: 'analytics',
-      label: 'Analytics',
+      label: 'Analyses',
       icon: BarChart3,
       home: '/analytics',
       module: MODULE_KEYS.ANALYTICS,
@@ -421,13 +421,13 @@ export function navCatalogue(): NavDomain[] {
         {
           links: [
             { href: '/analytics', label: "Vue d'ensemble", perm: 'analytics.read' },
-            { href: '/analytics/control-tower', label: 'Control Tower', perm: 'analytics.read' },
-            { href: '/analytics/scorecards', label: 'Scorecards', perm: 'analytics.read' },
+            { href: '/analytics/control-tower', label: 'Supervision', perm: 'analytics.read' },
+            { href: '/analytics/scorecards', label: 'Indicateurs', perm: 'analytics.read' },
             { href: '/analytics/flow', label: 'Flux', perm: PERMISSIONS.ANALYTICS.READ },
             { href: '/workflows', label: 'Dossiers connectés', perm: PERMISSIONS.ANALYTICS.READ },
             {
               href: '/analytics/carriers',
-              label: 'Scorecard transporteurs',
+              label: 'Performance transporteurs',
               perm: 'transportation.analytics.read',
             },
           ],
@@ -449,7 +449,7 @@ export function navCatalogue(): NavDomain[] {
           links: [
             { href: '/crm', label: 'Tableau de bord', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/pipeline', label: 'Pipeline', perm: PERMISSIONS.CRM.READ },
-            { href: '/crm/deals', label: 'Deals', perm: PERMISSIONS.CRM.READ },
+            { href: '/crm/deals', label: 'Opportunités', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/companies', label: 'Sociétés', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/contacts', label: 'Contacts', perm: PERMISSIONS.CRM.READ },
             { href: '/crm/activities', label: 'Activités', perm: PERMISSIONS.CRM.READ },

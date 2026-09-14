@@ -8,6 +8,7 @@
     isTopOverlay,
     lockScroll,
     unlockScroll,
+    focusableElements,
   } from '$lib/stores/overlay-stack';
 
   type Size = 'sm' | 'md' | 'lg' | 'xl';
@@ -16,6 +17,8 @@
     title = '',
     size = 'md' as Size,
     onclose = undefined as (() => void) | undefined,
+    dismissible = true,
+    variant = 'default' as 'default' | 'folder',
     children,
     footer = undefined,
   } = $props();
@@ -38,6 +41,7 @@
   const titleId = `modal-title-${Math.random().toString(36).slice(2, 9)}`;
 
   function close() {
+    if (!dismissible) return;
     open = false;
     onclose?.();
   }
@@ -49,16 +53,13 @@
       lastFocused = document.activeElement as HTMLElement | null;
       lockScroll();
       queueMicrotask(() => {
-        const focusable = dialogEl?.querySelector<HTMLElement>(
-          'input, select, textarea, button, [href], [tabindex]:not([tabindex="-1"])',
-        );
-        focusable?.focus();
+        if (dialogEl) (focusableElements(dialogEl)[0] ?? dialogEl).focus();
       });
       return () => {
         popOverlay(t);
         token = null;
         unlockScroll();
-        lastFocused?.focus?.();
+        if (lastFocused?.isConnected) lastFocused.focus({ preventScroll: true });
       };
     }
   });
@@ -66,24 +67,30 @@
   function onkeydown(e: KeyboardEvent) {
     if (!open || !token || !isTopOverlay(token)) return;
     if (e.key === 'Escape') {
+      e.stopImmediatePropagation();
+      e.preventDefault();
       close();
       return;
     }
     if (e.key === 'Tab' && dialogEl) {
-      const nodes = Array.from(
-        dialogEl.querySelectorAll<HTMLElement>(
-          'input, select, textarea, button, [href], [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter(
-        (n) => !n.hasAttribute('disabled') && n.getAttribute('aria-disabled') !== 'true',
-      );
-      if (nodes.length === 0) return;
+      const nodes = focusableElements(dialogEl);
+      if (nodes.length === 0) {
+        e.preventDefault();
+        dialogEl.focus();
+        return;
+      }
       const first = nodes[0];
       const last = nodes[nodes.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
+      if (
+        e.shiftKey &&
+        (document.activeElement === first || !dialogEl.contains(document.activeElement))
+      ) {
         e.preventDefault();
         last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
+      } else if (
+        !e.shiftKey &&
+        (document.activeElement === last || !dialogEl.contains(document.activeElement))
+      ) {
         e.preventDefault();
         first.focus();
       }
@@ -105,21 +112,33 @@
   >
     <div
       bind:this={dialogEl}
-      class="flex max-h-[85vh] w-full {widths[size]} flex-col rounded-card bg-surface shadow-pop"
+      class="flex max-h-[calc(100dvh-2rem)] w-full {widths[size]} flex-col {variant === 'folder'
+        ? 'rounded-3xl bg-surface/95'
+        : 'rounded-card bg-surface'} shadow-pop"
+      tabindex="-1"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
-      transition:scale={{ duration: dur, start: 0.96, easing: cubicOut }}
+      transition:scale={{ duration: dur, start: 0.98, easing: cubicOut }}
     >
-      <div class="flex items-center justify-between border-b border-edge px-4 py-3">
+      <div class="flex shrink-0 items-center justify-between border-b border-edge px-4 py-3">
         <h2 id={titleId} class="text-sm font-bold text-ink">{title}</h2>
-        <button class="text-ink-faint hover:text-ink" onclick={close} aria-label="Fermer">
+        <button
+          class="shell-icon -mr-2"
+          disabled={!dismissible}
+          onclick={close}
+          aria-label="Fermer"
+        >
           <X class="size-4" />
         </button>
       </div>
-      <div class="flex-1 overflow-y-auto p-4">{@render children()}</div>
+      <div class="workspace-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
+        {@render children()}
+      </div>
       {#if footer}
-        <div class="flex justify-end gap-2 border-t border-edge px-4 py-3">{@render footer()}</div>
+        <div class="flex shrink-0 justify-end gap-2 border-t border-edge px-4 py-3">
+          {@render footer()}
+        </div>
       {/if}
     </div>
   </div>

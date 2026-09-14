@@ -19,7 +19,9 @@
   }
 </script>
 
-<div class="min-h-dvh bg-canvas text-ink">
+<div
+  class="bg-canvas text-ink {login ? 'min-h-dvh' : 'flex h-dvh min-h-0 flex-col overflow-hidden'}"
+>
   {#if login}
     {@render children()}
   {:else}
@@ -28,7 +30,7 @@
       class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-surface focus:p-3"
       >Aller au contenu</a
     >
-    <header class="border-b border-edge bg-surface">
+    <header class="shrink-0 border-b border-edge bg-surface">
       <div
         class="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6"
       >
@@ -62,7 +64,11 @@
         {/each}
       </nav>
     </header>
-    <main id="platform-content" class="mx-auto max-w-[1440px] px-4 py-6 sm:px-6">
+    <main
+      id="platform-content"
+      data-workspace-scroll
+      class="workspace-scroll mx-auto min-h-0 w-full max-w-[1440px] flex-1 overflow-auto px-4 py-6 sm:px-6"
+    >
       {@render children()}
     </main>
   {/if}

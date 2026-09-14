@@ -1,19 +1,21 @@
 <script lang="ts">
-  let { message = '', onretry = undefined } = $props<{
+  let {
+    message = '',
+    title = 'La demande n’a pas abouti.',
+    onretry = undefined,
+  } = $props<{
     message?: string;
+    title?: string;
     onretry?: (() => void | Promise<void>) | undefined;
   }>();
 </script>
 
 {#if message}
-  <div class="mb-4 rounded-card border border-danger/30 bg-danger/5 px-4 py-3 text-sm">
+  <div role="alert" class="mb-4 rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-sm">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <div class="font-semibold text-danger">Impossible de charger ces données.</div>
-        <p class="mt-1 text-ink-muted">
-          La structure de la page reste disponible. Réessayez la requête ou poursuivez depuis une autre surface opérationnelle.
-        </p>
-        <p class="mt-1 text-xs text-ink-faint">{message}</p>
+        <div class="font-medium text-danger">{title}</div>
+        <p class="mt-1 text-sm text-ink-muted">{message}</p>
       </div>
       {#if onretry}
         <button

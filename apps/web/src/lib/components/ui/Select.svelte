@@ -17,7 +17,7 @@
   name={name || undefined}
   {required}
   {onchange}
-  class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none disabled:bg-surface-muted"
+  class="min-h-9 w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none disabled:bg-surface-muted"
 >
   {@render children()}
 </select>

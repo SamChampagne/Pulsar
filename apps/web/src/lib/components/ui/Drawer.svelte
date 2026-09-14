@@ -8,6 +8,7 @@
     isTopOverlay,
     lockScroll,
     unlockScroll,
+    focusableElements,
   } from '$lib/stores/overlay-stack';
 
   type Width = 'sm' | 'md' | 'lg' | 'xl';
@@ -15,7 +16,10 @@
     open = $bindable(false),
     title = '',
     width = 'md' as Width,
+    side = 'right' as 'left' | 'right',
     onclose = undefined as (() => void) | undefined,
+    dismissible = true,
+    onbeforeclose = undefined as (() => boolean) | undefined,
     children,
     footer = undefined,
   } = $props();
@@ -38,6 +42,7 @@
   const titleId = `drawer-title-${Math.random().toString(36).slice(2, 9)}`;
 
   function close() {
+    if (!dismissible || onbeforeclose?.() === false) return;
     open = false;
     onclose?.();
   }
@@ -49,16 +54,13 @@
       lastFocused = document.activeElement as HTMLElement | null;
       lockScroll();
       queueMicrotask(() => {
-        const focusable = panelEl?.querySelector<HTMLElement>(
-          'input, select, textarea, button, [href], [tabindex]:not([tabindex="-1"])',
-        );
-        focusable?.focus();
+        if (panelEl) (focusableElements(panelEl)[0] ?? panelEl).focus();
       });
       return () => {
         popOverlay(t);
         token = null;
         unlockScroll();
-        lastFocused?.focus?.();
+        if (lastFocused?.isConnected) lastFocused.focus({ preventScroll: true });
       };
     }
   });
@@ -66,22 +68,30 @@
   function onkeydown(e: KeyboardEvent) {
     if (!open || !token || !isTopOverlay(token)) return;
     if (e.key === 'Escape') {
+      e.stopImmediatePropagation();
+      e.preventDefault();
       close();
       return;
     }
     if (e.key === 'Tab' && panelEl) {
-      const nodes = Array.from(
-        panelEl.querySelectorAll<HTMLElement>(
-          'input, select, textarea, button, [href], [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((n) => !n.hasAttribute('disabled') && n.getAttribute('aria-disabled') !== 'true');
-      if (nodes.length === 0) return;
+      const nodes = focusableElements(panelEl);
+      if (nodes.length === 0) {
+        e.preventDefault();
+        panelEl.focus();
+        return;
+      }
       const first = nodes[0];
       const last = nodes[nodes.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
+      if (
+        e.shiftKey &&
+        (document.activeElement === first || !panelEl.contains(document.activeElement))
+      ) {
         e.preventDefault();
         last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
+      } else if (
+        !e.shiftKey &&
+        (document.activeElement === last || !panelEl.contains(document.activeElement))
+      ) {
         e.preventDefault();
         first.focus();
       }
@@ -94,7 +104,9 @@
 {#if open}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
-    class="fixed inset-0 z-50 flex justify-end overflow-hidden bg-sidebar/40 backdrop-blur-[1px]"
+    class="fixed inset-0 z-50 flex {side === 'left'
+      ? 'justify-start'
+      : 'justify-end'} overflow-hidden bg-sidebar/40 backdrop-blur-[1px]"
     onclick={(e) => {
       if (e.target === e.currentTarget) close();
     }}
@@ -103,21 +115,36 @@
   >
     <div
       bind:this={panelEl}
-      class="flex h-full w-full {widths[width]} flex-col bg-surface shadow-pop"
+      class="flex h-dvh w-full {widths[width]} flex-col bg-surface shadow-pop"
+      tabindex="-1"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
-      transition:fly={{ x: 40, duration: dur, easing: cubicOut, opacity: reduce ? 1 : 0 }}
+      transition:fly={{
+        x: side === 'left' ? -40 : 40,
+        duration: dur,
+        easing: cubicOut,
+        opacity: reduce ? 1 : 0,
+      }}
     >
-      <div class="flex items-center justify-between border-b border-edge px-4 py-3">
+      <div class="flex shrink-0 items-center justify-between border-b border-edge px-4 py-3">
         <h2 id={titleId} class="text-sm font-bold text-ink">{title}</h2>
-        <button class="text-ink-faint hover:text-ink" onclick={close} aria-label="Fermer">
+        <button
+          class="shell-icon -mr-2"
+          disabled={!dismissible}
+          onclick={close}
+          aria-label="Fermer"
+        >
           <X class="size-4" />
         </button>
       </div>
-      <div class="flex-1 overflow-y-auto p-4">{@render children()}</div>
+      <div class="workspace-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
+        {@render children()}
+      </div>
       {#if footer}
-        <div class="flex justify-end gap-2 border-t border-edge px-4 py-3">{@render footer()}</div>
+        <div class="flex shrink-0 justify-end gap-2 border-t border-edge px-4 py-3">
+          {@render footer()}
+        </div>
       {/if}
     </div>
   </div>

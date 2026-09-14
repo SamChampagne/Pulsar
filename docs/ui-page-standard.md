@@ -1,18 +1,21 @@
 # Pulsar UI page standard
 
-Every Pulsar app page must answer three questions before it shows a table, form, board, or empty state.
+Every Pulsar app page must answer three questions without delaying access to its working surface.
+The iPhone-style app desktop remains the entry point. The shared workspace owns navigation,
+app switching, search and user preferences; pages must not duplicate those controls.
 
 ## The three questions
 
 1. **Where am I?**
-   - Use a concrete page title plus a one-sentence business subtitle.
+   - Use one concrete page title. Add a short business subtitle only when it clarifies the task.
    - Avoid internal implementation language, inspiration notes, or generic SaaS copy.
    - Example: `Shipments` + `Plan confirmed freight into loads and keep unplanned work visible.`
 
 2. **What matters here right now?**
-   - Surface 3–5 page-level signals: totals, open work, overdue/risk states, pending approvals, or active objects.
+   - Surface only actionable signals: open work, overdue/risk states, pending approvals or active objects.
+     There is no minimum number of metric cards. A count beside the title may be enough.
    - These are not decorative counters. They should help the operator decide where to look first.
-   - For empty data, show zero-state signals that explain the workflow rather than leaving a blank grid.
+   - Distinguish loading, unavailable data and genuinely empty data. Never represent a failed request as zero.
 
 3. **What should I do next?**
    - Provide one primary action and, when useful, one secondary route into the upstream/downstream workflow.
@@ -36,9 +39,7 @@ Use this order unless the page is a specialized cockpit like Dispatch:
 
 <ErrorNotice message={error} onretry={load} />
 
-<div class="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-  <!-- 3–5 metric cards answering: what matters here now? -->
-</div>
+<!-- Optional compact signals, only when they help decide the next action. -->
 
 <FilterBar>...</FilterBar>
 
@@ -56,12 +57,12 @@ Use this order unless the page is a specialized cockpit like Dispatch:
 
 ## CRUD page rules
 
-CRUD pages are still operational pages. Do not ship a table-only page.
+CRUD pages are operational pages. A clear header, useful filters and a table can be sufficient.
 
 Each CRUD page needs:
 
-- A business subtitle explaining the object’s role in the TMS workflow.
-- Signals derived from currently loaded rows where possible.
+- A clear object title and optional subtitle explaining its place in the business workflow.
+- Only useful signals, explicitly scoped to loaded rows if they are not totals.
 - An empty state with the upstream/downstream action:
   - Transport Orders → create order, then confirm/plan into shipments.
   - Shipments → confirm orders or send unplanned shipments to Dispatch.
@@ -84,7 +85,20 @@ Never render raw API errors alone. Use:
 <ErrorNotice message={error} onretry={load} />
 ```
 
-The page shell, header, metrics skeleton, filters, and empty-state guidance should remain visible.
+The page shell, header and safe navigation remain visible. Do not show a successful empty state
+or healthy metric counters while their data is unavailable.
+
+## Forms, panels and motion
+
+- Use a `Modal` for a short creation or confirmation; a `Drawer` for contextual details/configuration;
+  a dedicated page for a full multi-section workflow; inline editing only for small changes.
+- Never insert a long configuration form above a Kanban or expand the global navigation height.
+- Guard dismissal of dirty long forms and disable dismissal while saving. Display errors inside the active form.
+- Use opacity/transform transitions (120–200 ms); respect reduced motion. Do not animate layout dimensions.
+- Keep keyboard focus inside the top overlay and return it to its trigger. Use shared scroll locks, not
+  direct writes to `document.body.style.overflow` from feature components.
+- Shared tokens and components are the default. Keep the desktop's colored icons; work surfaces stay sober.
+- Financial totals must have a currency, scope and period; do not sum unlike currencies into one KPI.
 
 ## Specialized cockpit pages
 

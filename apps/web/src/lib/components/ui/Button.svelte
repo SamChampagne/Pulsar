@@ -17,7 +17,7 @@
     ghost: 'text-ink-muted hover:bg-surface-muted hover:text-ink',
   };
   const classes = $derived(
-    `inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition duration-150 ease-out hover:-translate-y-px active:translate-y-0 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-surface disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${variants[variant]}`,
+    `inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]}`,
   );
 </script>
 
@@ -31,6 +31,7 @@
     class={`${classes} ${className}`}
     aria-label={ariaLabel}
     disabled={disabled || loading}
+    aria-busy={loading}
     {onclick}
   >
     {#if loading}<span

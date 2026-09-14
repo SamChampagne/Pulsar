@@ -8,6 +8,7 @@
   import type { DeskLayout } from '@pulsar/shared';
   import { toast } from '$lib/stores/toast';
   import DeskCanvas from '$lib/components/desk/DeskCanvas.svelte';
+  import { Search } from 'lucide-svelte';
 
   // Build visible domains from auth caps — mirrors +layout.svelte exactly.
   const domains = $derived(
@@ -34,7 +35,10 @@
         layout = defaultDeskLayout(snap);
       } finally {
         loaded = true;
-        lastDomainSig = snap.map((d) => d.key).sort().join('|');
+        lastDomainSig = snap
+          .map((d) => d.key)
+          .sort()
+          .join('|');
       }
     })();
   });
@@ -44,7 +48,10 @@
   let lastDomainSig = $state('');
   $effect(() => {
     if (!loaded) return;
-    const sig = domains.map((d) => d.key).sort().join('|');
+    const sig = domains
+      .map((d) => d.key)
+      .sort()
+      .join('|');
     if (sig === lastDomainSig) return;
     lastDomainSig = sig;
     layout = reconcileDeskLayout(layout, domains);
@@ -61,16 +68,37 @@
     }, 500);
   }
   onDestroy(() => {
-    if (saveTimer) { clearTimeout(saveTimer); void putDeskLayout(layout).catch(() => {}); }
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      void putDeskLayout(layout).catch(() => {});
+    }
   });
 </script>
 
 <svelte:head><title>Pulsar Desk</title></svelte:head>
 
 {#snippet deskHeader()}
-  <div class="px-4 pt-14 pb-2 text-center sm:px-8 lg:px-12">
-    <p class={`text-xs font-semibold tracking-[0.26em] uppercase ${bgIsDark ? 'text-white/70 [text-shadow:0_1px_3px_rgba(0,0,0,0.55)]' : 'text-ink-faint'}`}>Pulsar Desk</p>
-    <h1 class={`mt-2 text-xl font-semibold tracking-tight ${bgIsDark ? 'text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.55)]' : 'text-ink'}`}>Toutes les pages</h1>
+  <div class="px-4 pt-8 pb-2 text-center sm:px-8 lg:px-12">
+    <p
+      class={`text-xs font-medium ${bgIsDark ? 'text-white/70 [text-shadow:0_1px_3px_rgba(0,0,0,0.55)]' : 'text-zinc-500'}`}
+    >
+      {$auth?.tenant.name ?? 'Pulsar Desk'}
+    </p>
+    <h1
+      class={`mt-1 text-xl font-semibold tracking-tight ${bgIsDark ? 'text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.55)]' : 'text-zinc-900'}`}
+    >
+      Votre bureau
+    </h1>
+    <label
+      class="mx-auto mt-4 flex max-w-xs items-center gap-2 rounded-xl bg-surface/95 px-3 py-2 text-ink shadow-sm md:hidden"
+    >
+      <Search class="size-4 text-ink-muted" /><input
+        class="min-w-0 flex-1 bg-transparent text-sm outline-none"
+        aria-label="Rechercher une app sur le bureau"
+        placeholder="Rechercher une app…"
+        bind:value={$deskSearch}
+      />
+    </label>
   </div>
 {/snippet}
 
@@ -84,7 +112,7 @@
     {domains}
     editing={false}
     search={$deskSearch}
-    minHeight="calc(100vh - 3.5rem)"
+    minHeight="calc(100dvh - 3.5rem)"
     header={deskHeader}
     onchange={persist}
   />
