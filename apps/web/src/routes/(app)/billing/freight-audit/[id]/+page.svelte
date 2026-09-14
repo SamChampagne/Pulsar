@@ -1,242 +1,373 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import { PERMISSIONS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
   import { toast } from '$lib/stores/toast';
+  import { confirmAction } from '$lib/stores/confirmation';
+  import { formatMoney, formatDate } from '$lib/format';
+  import { freightStatus, freightReasons, type FreightInvoice } from '$lib/billing/freight-audit';
   import {
-    PageHeader,
+    RecordHeader,
+    RecordNav,
+    RecordSection,
     Button,
     Card,
     Table,
     Badge,
     Skeleton,
     Select,
-    Input,
+    Textarea,
+    Field,
+    Drawer,
     ErrorNotice,
-    type Tone,
   } from '$lib/components/ui';
 
-  interface InvoiceLine {
-    id: string;
-    lineRef: string;
-    description: string | null;
-    chargedAmount: string;
-    matchedLoadId: string | null;
-    expectedAmount: string | null;
-    variance: string | null;
-  }
-  interface IncomingInvoice {
-    id: string;
-    carrierInvoiceNumber: string;
-    currency: string;
-    chargedTotal: string;
-    matchedTotal: string | null;
-    varianceTotal: string | null;
-    varianceGross: string | null;
-    recoveredAmount: string | null;
-    status: string;
-    carrier: { name: string };
-    lines: InvoiceLine[];
-  }
-
-  const REASON_CODES = [
-    'RATE_MISMATCH',
-    'QUANTITY_MISMATCH',
-    'UNEXPECTED_CHARGE',
-    'DUPLICATE_BILLING',
-    'OTHER',
-  ];
-
-  const STATUS_TONE: Record<string, Tone> = {
-    RECEIVED: 'neutral',
-    MATCHED: 'ok',
-    FLAGGED: 'warn',
-    DISPUTED: 'danger',
-    RESOLVED: 'ok',
-    PAID: 'ok',
-  };
-  function statusTone(status: string): Tone {
-    return STATUS_TONE[status] ?? 'neutral';
-  }
-
   const invoiceId = $derived(page.params.id as string);
-
-  let invoice = $state<IncomingInvoice | null>(null);
+  const canManage = $derived(
+    $auth?.user.permissions.includes(PERMISSIONS.BILLING.FREIGHT_AUDIT_MANAGE),
+  );
+  const canReadLoads = $derived(
+    $auth?.tenant.enabledModules.includes('transportation') &&
+      $auth?.user.permissions.includes(PERMISSIONS.TRANSPORTATION.PLANNING_READ),
+  );
+  let invoice = $state<FreightInvoice | null>(null);
   let loading = $state(true);
   let error = $state('');
+  let actionError = $state('');
   let busy = $state(false);
-
-  // Dispute / resolve form state
+  let panelOpen = $state(false);
+  let panelMode = $state<'dispute' | 'resolve'>('dispute');
   let reasonCode = $state('RATE_MISMATCH');
   let note = $state('');
-  let resolution = $state<'ACCEPT_CHARGED' | 'KEEP_EXPECTED'>('ACCEPT_CHARGED');
+  let resolution = $state('ACCEPT_CHARGED');
+  let generation = 0;
 
   async function load() {
+    const id = invoiceId,
+      request = ++generation;
     loading = true;
+    error = '';
     try {
-      invoice = await api<IncomingInvoice>(`/freight-audit/incoming-invoices/${invoiceId}`);
+      const result = await api<FreightInvoice>(
+        `/freight-audit/incoming-invoices/${encodeURIComponent(id)}`,
+      );
+      if (request === generation && id === invoiceId) invoice = result;
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Échec du chargement de la facture';
+      if (request === generation)
+        error = e instanceof ApiError ? e.message : 'Échec du chargement du dossier';
     } finally {
-      loading = false;
+      if (request === generation) loading = false;
     }
   }
-
   $effect(() => {
     void invoiceId;
+    invoice = null;
+    panelOpen = false;
+    actionError = '';
     void load();
   });
 
-  function money(amount: string | null, currency: string): string {
-    if (amount === null) return '—';
-    return `${Number(amount).toLocaleString()} ${currency}`;
+  function openPanel(mode: 'dispute' | 'resolve') {
+    panelMode = mode;
+    reasonCode = invoice?.disputeReasonCode || 'RATE_MISMATCH';
+    note = '';
+    resolution = 'ACCEPT_CHARGED';
+    actionError = '';
+    panelOpen = true;
   }
-
-  async function act(verb: string, body: Record<string, unknown> = {}) {
+  function closePanel() {
+    if (busy) return false;
+    if (
+      !note &&
+      resolution === 'ACCEPT_CHARGED' &&
+      reasonCode === (invoice?.disputeReasonCode || 'RATE_MISMATCH')
+    )
+      return true;
+    void confirmAction('Les modifications de ce formulaire seront perdues.', {
+      title: 'Fermer sans enregistrer ?',
+      confirmLabel: 'Abandonner',
+    }).then((accepted) => {
+      if (accepted) panelOpen = false;
+    });
+    return false;
+  }
+  async function act(verb: 'audit' | 'pay' | 'dispute' | 'resolve') {
+    if (busy || !canManage || !invoice) return;
+    const id = invoice.id;
     busy = true;
+    actionError = '';
     try {
-      await api(`/freight-audit/incoming-invoices/${invoiceId}/${verb}`, {
-        method: 'POST',
-        body,
-      });
-      toast.success('Action effectuée');
-      await load();
+      if (
+        verb === 'pay' &&
+        !(await confirmAction(
+          'Cette action met uniquement à jour le suivi d’audit. Elle ne crée aucun paiement, aucune écriture comptable et aucun transfert bancaire.',
+          {
+            title: 'Marquer cette facture réglée ?',
+            confirmLabel: 'Marquer réglée',
+            dangerous: false,
+          },
+        ))
+      )
+        return;
+      if (
+        verb === 'resolve' &&
+        !(await confirmAction(
+          resolution === 'KEEP_EXPECTED'
+            ? 'Conserver le montant attendu et enregistrer l’écart positif comme économie suivie ? Aucun avoir ni paiement ne sera créé.'
+            : 'Accepter le montant facturé et clore le litige sans économie récupérée ?',
+          {
+            title: 'Confirmer la résolution',
+            confirmLabel: 'Résoudre le litige',
+            dangerous: false,
+          },
+        ))
+      )
+        return;
+      if (id !== invoiceId) return;
+      const body =
+        verb === 'dispute' || verb === 'resolve'
+          ? {
+              reasonCode,
+              note: note.trim() || undefined,
+              ...(verb === 'resolve' ? { resolution } : {}),
+            }
+          : {};
+      const result = await api<FreightInvoice>(
+        `/freight-audit/incoming-invoices/${encodeURIComponent(id)}/${verb}`,
+        { method: 'POST', body },
+      );
+      if (id !== invoiceId) return;
+      invoice = result;
+      panelOpen = false;
+      toast.success(verb === 'audit' ? 'Rapprochement terminé' : 'Suivi du dossier mis à jour');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Échec de l’action');
+      if (id === invoiceId)
+        actionError = e instanceof ApiError ? e.message : 'Action non enregistrée. Réessayez.';
     } finally {
       busy = false;
     }
   }
+  const sections = [
+    { id: 'synthese', label: 'Synthèse' },
+    { id: 'rapprochement', label: 'Rapprochement' },
+    { id: 'suivi', label: 'Suivi et règlement' },
+  ];
 </script>
 
-<PageHeader title="Facture transporteur" />
-
+<svelte:head
+  ><title>{invoice?.carrierInvoiceNumber ?? 'Audit transporteur'} · Pulsar</title></svelte:head
+>
+<RecordHeader
+  title={invoice?.carrierInvoiceNumber ?? 'Dossier d’audit'}
+  kind="Audit transporteur"
+  backHref="/billing/freight-audit"
+  backLabel="Audit transporteur"
+>
+  {#snippet meta()}
+    {#if invoice}<span>{invoice.carrier.name}</span><Badge
+        tone={freightStatus[invoice.status]?.tone ?? 'neutral'}
+        >{freightStatus[invoice.status]?.label ?? invoice.status}</Badge
+      >{/if}
+  {/snippet}
+  {#snippet actions()}
+    {#if invoice && canManage && !loading && !error}
+      {#if ['RECEIVED', 'FLAGGED'].includes(invoice.status)}
+        <Button loading={busy} disabled={busy} onclick={() => act('audit')}
+          >Rapprocher les lignes</Button
+        >
+      {/if}
+      {#if invoice.status === 'FLAGGED'}<Button
+          variant="secondary"
+          disabled={busy}
+          onclick={() => openPanel('dispute')}>Ouvrir un litige</Button
+        >{/if}
+      {#if invoice.status === 'DISPUTED'}<Button
+          disabled={busy}
+          onclick={() => openPanel('resolve')}>Résoudre le litige</Button
+        >{/if}
+      {#if ['MATCHED', 'RESOLVED'].includes(invoice.status)}<Button
+          variant="secondary"
+          disabled={busy}
+          onclick={() => act('pay')}>Marquer réglée</Button
+        >{/if}
+    {/if}
+  {/snippet}
+</RecordHeader>
 {#if loading}
   <Card><Skeleton rows={6} /></Card>
 {:else if error}
   <ErrorNotice message={error} onretry={load} />
 {:else if invoice}
   {@const inv = invoice}
-  <Card>
-    <div class="flex flex-wrap items-start justify-between gap-3">
+  <RecordNav {sections} />
+  {#if !panelOpen}<ErrorNotice message={actionError} />{/if}
+  <div class="space-y-8">
+    <RecordSection id="synthese" label="Synthèse">
+      <Card>
+        <h2 class="mb-4 text-base font-semibold">Comparaison des montants</h2>
+        <dl class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {#each [{ label: 'Facturé', amount: invoice.chargedTotal }, { label: 'Attendu · coûts figés', amount: invoice.matchedTotal }, { label: 'Écart net', amount: invoice.varianceTotal }, { label: 'Économie suivie', amount: invoice.recoveredAmount }] as metric}
+            <div>
+              <dt class="text-xs text-ink-muted">{metric.label}</dt>
+              <dd class="mt-1 font-semibold tabular-nums">
+                {metric.amount === null
+                  ? 'Non calculé'
+                  : formatMoney(metric.amount, invoice.currency)}
+              </dd>
+            </div>
+          {/each}
+        </dl>
+        <p class="mt-5 text-sm text-ink-muted">
+          Le rapprochement compare chaque référence au coût figé du chargement. Il ne recalcule pas
+          les tarifs.
+        </p>
+      </Card>
+    </RecordSection>
+    <RecordSection id="rapprochement" label="Rapprochement">
       <div>
-        <div class="flex items-center gap-2">
-          <h2 class="text-lg font-bold text-ink">{invoice.carrierInvoiceNumber}</h2>
-          <Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge>
-        </div>
-        <p class="mt-1 text-sm text-ink-muted">{invoice.carrier.name}</p>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        {#if invoice.status === 'RECEIVED' || invoice.status === 'FLAGGED'}
-          <Button variant="primary" loading={busy} disabled={busy} onclick={() => act('audit')}>
-            Auditer
-          </Button>
-        {/if}
-        {#if invoice.status === 'MATCHED' || invoice.status === 'RESOLVED'}
-          <Button variant="primary" loading={busy} disabled={busy} onclick={() => act('pay')}>
-            Payer
-          </Button>
-        {/if}
-      </div>
-    </div>
-
-    <div class="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-      <div>
-        <p class="text-xs font-semibold tracking-wide text-ink-muted uppercase">Total facturé</p>
-        <p class="mt-0.5 text-sm text-ink">{money(invoice.chargedTotal, invoice.currency)}</p>
-      </div>
-      <div>
-        <p class="text-xs font-semibold tracking-wide text-ink-muted uppercase">Total attendu</p>
-        <p class="mt-0.5 text-sm text-ink">{money(invoice.matchedTotal, invoice.currency)}</p>
-      </div>
-      <div>
-        <p class="text-xs font-semibold tracking-wide text-ink-muted uppercase">Écart (net / brut)</p>
-        <p class="mt-0.5 text-sm text-ink">
-          {money(invoice.varianceTotal, invoice.currency)} / {money(invoice.varianceGross, invoice.currency)}
+        <h2 class="text-base font-semibold">Lignes et chargements</h2>
+        <p class="mt-1 text-sm text-ink-muted">
+          {inv.lines.filter((l) => l.matchedLoadId).length} / {inv.lines.length} lignes rapprochées ·
+          Écart brut : {inv.varianceGross === null
+            ? 'non calculé'
+            : formatMoney(inv.varianceGross, inv.currency)}
         </p>
       </div>
-      <div>
-        <p class="text-xs font-semibold tracking-wide text-ink-muted uppercase">Récupéré</p>
-        <p class="mt-0.5 text-sm text-ink">{money(invoice.recoveredAmount, invoice.currency)}</p>
-      </div>
-    </div>
-  </Card>
-
-  <!-- Dispute (FLAGGED) -->
-  {#if invoice.status === 'FLAGGED'}
-    <Card>
-      <h3 class="mb-3 text-sm font-bold text-ink">Disputer la facture</h3>
-      <div class="flex flex-wrap items-end gap-2">
-        <div class="w-48">
-          <span class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Motif</span>
-          <Select bind:value={reasonCode}>
-            {#each REASON_CODES as code (code)}<option value={code}>{code}</option>{/each}
-          </Select>
+      <Table>
+        {#snippet head()}<th>Chargement / référence</th><th>Description</th><th class="text-right"
+            >Facturé</th
+          ><th class="text-right">Attendu</th><th class="text-right">Écart</th>{/snippet}
+        {#snippet body()}
+          {#each inv.lines as line (line.id)}
+            <tr>
+              <td
+                >{#if line.matchedLoadId && canReadLoads}<a
+                    class="font-medium text-accent hover:underline"
+                    href={`/loads/${encodeURIComponent(line.matchedLoadId)}`}>{line.lineRef}</a
+                  >{:else}<span class="font-medium">{line.lineRef}</span>{/if}
+                <div class="mt-1 text-xs text-ink-muted">
+                  {line.matchedLoadId
+                    ? 'Coût figé trouvé'
+                    : inv.status === 'RECEIVED'
+                      ? 'À rapprocher'
+                      : 'Non rapproché · vérifier la référence et le coût'}
+                </div></td
+              >
+              <td>{line.description || '—'}</td>
+              <td class="text-right tabular-nums"
+                >{formatMoney(line.chargedAmount, inv.currency)}</td
+              >
+              <td class="text-right tabular-nums"
+                >{line.expectedAmount === null
+                  ? '—'
+                  : formatMoney(line.expectedAmount, inv.currency)}</td
+              >
+              <td class="text-right tabular-nums"
+                >{line.variance === null ? '—' : formatMoney(line.variance, inv.currency)}</td
+              >
+            </tr>
+          {:else}<tr><td colspan={5}>Aucune ligne dans ce dossier.</td></tr>{/each}
+        {/snippet}
+      </Table>
+    </RecordSection>
+    <RecordSection id="suivi" label="Suivi et règlement">
+      <Card>
+        <h2 class="text-base font-semibold">Suivi du dossier</h2>
+        <dl class="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt class="text-xs text-ink-muted">Reçue le</dt>
+            <dd>{invoice.receivedAt ? formatDate(invoice.receivedAt) : '—'}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-ink-muted">Résolution</dt>
+            <dd>
+              {invoice.resolution === 'KEEP_EXPECTED'
+                ? 'Montant attendu conservé'
+                : invoice.resolution === 'ACCEPT_CHARGED'
+                  ? 'Montant facturé accepté'
+                  : 'Aucune résolution'}
+            </dd>
+          </div>
+          {#if invoice.disputeReasonCode}<div>
+              <dt class="text-xs text-ink-muted">Motif</dt>
+              <dd>{freightReasons[invoice.disputeReasonCode] ?? invoice.disputeReasonCode}</dd>
+            </div>{/if}
+          {#if invoice.disputeNote}<div>
+              <dt class="text-xs text-ink-muted">Note</dt>
+              <dd class="whitespace-pre-wrap break-words">{invoice.disputeNote}</dd>
+            </div>{/if}
+          {#if invoice.resolvedAt}<div>
+              <dt class="text-xs text-ink-muted">Résolue le</dt>
+              <dd>{formatDate(invoice.resolvedAt)}</dd>
+            </div>{/if}
+          {#if invoice.paidAt}<div>
+              <dt class="text-xs text-ink-muted">Marquée réglée le</dt>
+              <dd>{formatDate(invoice.paidAt)}</dd>
+            </div>{/if}
+        </dl>
+        <div class="mt-5 border-t border-edge pt-4 text-sm text-ink-muted">
+          Ce dossier est un suivi d’audit, distinct des factures et paiements comptables. Le statut
+          « réglée » ne crée ni paiement ni écriture au grand livre. Aucun lien comptable
+          automatique n’est encore établi.
         </div>
-        <div class="min-w-40 flex-1">
-          <span class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Note</span>
-          <Input bind:value={note} placeholder="Optionnel" />
-        </div>
-        <Button
-          variant="danger"
-          loading={busy}
-          disabled={busy}
-          onclick={() => act('dispute', { reasonCode, note: note || undefined })}
-        >Disputer</Button>
-      </div>
-    </Card>
-  {/if}
-
-  <!-- Resolve (DISPUTED) -->
-  {#if invoice.status === 'DISPUTED'}
-    <Card>
-      <h3 class="mb-3 text-sm font-bold text-ink">Résoudre la dispute</h3>
-      <div class="flex flex-wrap items-end gap-2">
-        <div class="w-52">
-          <span class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Résolution</span>
-          <Select bind:value={resolution}>
-            <option value="ACCEPT_CHARGED">Accepter le montant facturé</option>
-            <option value="KEEP_EXPECTED">Conserver le montant attendu</option>
-          </Select>
-        </div>
-        <div class="w-48">
-          <span class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Motif</span>
-          <Select bind:value={reasonCode}>
-            {#each REASON_CODES as code (code)}<option value={code}>{code}</option>{/each}
-          </Select>
-        </div>
-        <div class="min-w-40 flex-1">
-          <span class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Note</span>
-          <Input bind:value={note} placeholder="Optionnel" />
-        </div>
-        <Button
-          variant="primary"
-          loading={busy}
-          disabled={busy}
-          onclick={() => act('resolve', { resolution, reasonCode, note: note || undefined })}
-        >Résoudre</Button>
-      </div>
-    </Card>
-  {/if}
-
-  <!-- Lines -->
-  <div class="mt-4">
-    <Table>
-      {#snippet head()}
-        <th>Réf.</th><th>Description</th><th class="text-right">Facturé</th>
-        <th>Load</th><th class="text-right">Attendu</th><th class="text-right">Écart</th>
-      {/snippet}
-      {#snippet body()}
-        {#each inv.lines as line (line.id)}
-          <tr>
-            <td>{line.lineRef}</td>
-            <td>{line.description ?? '—'}</td>
-            <td class="text-right">{money(line.chargedAmount, inv.currency)}</td>
-            <td>{line.matchedLoadId ?? '—'}</td>
-            <td class="text-right">{money(line.expectedAmount, inv.currency)}</td>
-            <td class="text-right">{money(line.variance, inv.currency)}</td>
-          </tr>
-        {/each}
-      {/snippet}
-    </Table>
+      </Card>
+    </RecordSection>
   </div>
 {/if}
+
+<Drawer
+  bind:open={panelOpen}
+  title={panelMode === 'dispute' ? 'Ouvrir un litige' : 'Résoudre le litige'}
+  width="md"
+  dismissible={!busy}
+  onbeforeclose={closePanel}
+>
+  <form
+    id="freight-decision"
+    class="space-y-4"
+    onsubmit={(event) => {
+      event.preventDefault();
+      void act(panelMode);
+    }}
+  >
+    <p class="text-sm text-ink-muted">{invoice?.carrierInvoiceNumber} · {invoice?.carrier.name}</p>
+    <ErrorNotice message={actionError} />
+    <fieldset disabled={busy} class="min-w-0 space-y-4">
+      {#if panelMode === 'resolve'}
+        <Field label="Décision"
+          ><Select bind:value={resolution}
+            ><option value="ACCEPT_CHARGED">Accepter le montant facturé</option><option
+              value="KEEP_EXPECTED">Conserver le montant attendu</option
+            ></Select
+          ></Field
+        >
+      {/if}
+      <Field label="Motif"
+        ><Select bind:value={reasonCode}
+          >{#each Object.entries(freightReasons) as [code, label]}<option value={code}
+              >{label}</option
+            >{/each}</Select
+        ></Field
+      >
+      <Field label="Note"
+        ><Textarea
+          bind:value={note}
+          placeholder="Contexte et justification de la décision"
+        /></Field
+      >
+    </fieldset>
+  </form>
+  {#snippet footer()}
+    <Button
+      variant="secondary"
+      disabled={busy}
+      onclick={() => {
+        if (closePanel()) panelOpen = false;
+      }}>Fermer</Button
+    >
+    <Button disabled={busy} loading={busy} onclick={() => act(panelMode)}
+      >{panelMode === 'dispute' ? 'Enregistrer le litige' : 'Confirmer la résolution'}</Button
+    >
+  {/snippet}
+</Drawer>

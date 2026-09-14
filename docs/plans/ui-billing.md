@@ -106,7 +106,9 @@ bancaire, courriel ou SMS externe, aucun déploiement OVH et aucun push GitHub.
    les gardes UI ne remplacent pas une clé d’idempotence serveur.
 5. La confirmation de fermeture protège les panneaux, pas une fermeture d’onglet
    ou un rechargement. Pas de persistance universelle des brouillons dans ce lot.
-6. Durcissement API à traiter séparément avant un usage comptable exigeant : le
+6. **Traité au [lot 4](./ui-finance-audit.md)** : contrôle de partie/facture,
+   direction du paiement, validation des anciens brouillons et concurrence
+   édition/soumission. Constat historique du lot 3 : le
    service existant vérifie la famille de cible et l’appartenance au tenant, mais
    ne compare pas explicitement la partie du paiement à la partie de chaque facture
    lors de la soumission, ni `type` à `partyType` à la création. Le nouveau formulaire

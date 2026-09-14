@@ -1,7 +1,14 @@
 <script lang="ts">
+  import { PERMISSIONS } from '@pulsar/shared';
+  import { auth } from '$lib/stores/auth';
+  import { confirmAction } from '$lib/stores/confirmation';
+  import {
+    freightStatus,
+    type FreightInvoice as IncomingInvoice,
+  } from '$lib/billing/freight-audit';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
-  import { fmtCustomValue } from '$lib/format';
+  import { fmtCustomValue, formatMoney as money } from '$lib/format';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
   import {
     PageHeader,
@@ -11,36 +18,17 @@
     Badge,
     EmptyState,
     Skeleton,
-    Modal,
+    Drawer,
+    EntityPicker,
+    Select,
     Field,
     Input,
     ErrorNotice,
     type Tone,
   } from '$lib/components/ui';
 
-  interface InvoiceLine {
-    id: string;
-    lineRef: string;
-    description: string | null;
-    chargedAmount: string;
-    matchedLoadId: string | null;
-    expectedAmount: string | null;
-    variance: string | null;
-  }
-  interface IncomingInvoice {
-    id: string;
-    carrierInvoiceNumber: string;
-    currency: string;
-    chargedTotal: string;
-    status: string;
-    varianceGross: string | null;
-    recoveredAmount: string | null;
-    carrier: { name: string };
-    lines: InvoiceLine[];
-    customData?: Record<string, unknown>;
-  }
   interface Savings {
-    tenantTotal: string;
+    byCurrency: { currency: string; recovered: number }[];
     byAgent: { agentId: string; recovered: string }[];
   }
 
@@ -53,59 +41,72 @@
     showInList: boolean;
   }
 
-  // Freight-audit status → tone. (Distinct from the shared toneFor: MATCHED here
-  // means a clean reconciliation → ok, FLAGGED is a warning, DISPUTED a danger.)
-  const STATUS_TONE: Record<string, Tone> = {
-    RECEIVED: 'neutral',
-    MATCHED: 'ok',
-    FLAGGED: 'warn',
-    DISPUTED: 'danger',
-    RESOLVED: 'ok',
-    PAID: 'ok',
-  };
   function statusTone(status: string): Tone {
-    return STATUS_TONE[status] ?? 'neutral';
+    return freightStatus[status]?.tone ?? 'neutral';
   }
-
+  const canManage = $derived(
+    $auth?.user.permissions.includes(PERMISSIONS.BILLING.FREIGHT_AUDIT_MANAGE),
+  );
+  let search = $state('');
+  let status = $state('');
+  let auxiliaryError = $state('');
+  let definitionsReady = $state(false);
   let invoices = $state<IncomingInvoice[]>([]);
+  const visible = $derived(
+    invoices.filter(
+      (invoice) =>
+        (!status || invoice.status === status) &&
+        `${invoice.carrierInvoiceNumber} ${invoice.carrier.name}`
+          .toLocaleLowerCase()
+          .includes(search.trim().toLocaleLowerCase()),
+    ),
+  );
   let savings = $state<Savings | null>(null);
   let loading = $state(true);
   let error = $state('');
   let customFieldDefs = $state<CustomFieldDef[]>([]);
 
-  const flaggedCount = $derived(invoices.filter((i) => i.status === 'FLAGGED' || i.status === 'DISPUTED').length);
+  const flaggedCount = $derived(
+    invoices.filter((i) => i.status === 'FLAGGED' || i.status === 'DISPUTED').length,
+  );
   const receivedCount = $derived(invoices.filter((i) => i.status === 'RECEIVED').length);
-  const recoveredTotal = $derived(savings ? Number(savings.tenantTotal).toLocaleString() : '—');
+  const currencySavings = $derived(savings?.byCurrency ?? []);
   const listCustomDefs = $derived(customFieldDefs.filter((d) => d.showInList));
 
   async function load() {
     loading = true;
+    error = '';
     try {
-      const [inv, sav, defs] = await Promise.all([
-        api<IncomingInvoice[]>('/freight-audit/incoming-invoices'),
-        api<Savings>('/freight-audit/savings', { query: { days: 30 } }),
-        api<CustomFieldDef[]>('/billing/custom-fields', {
-          query: { entityType: 'INCOMING_CARRIER_INVOICE' },
-        }),
-      ]);
-      invoices = inv;
-      savings = sav;
-      customFieldDefs = defs;
+      invoices = await api<IncomingInvoice[]>('/freight-audit/incoming-invoices');
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Échec du chargement des factures transporteur';
     } finally {
       loading = false;
     }
   }
-
+  async function loadAuxiliary() {
+    auxiliaryError = '';
+    const [sav, defs] = await Promise.allSettled([
+      api<Savings>('/freight-audit/savings', { query: { days: 30 } }),
+      api<CustomFieldDef[]>('/billing/custom-fields', {
+        query: { entityType: 'INCOMING_CARRIER_INVOICE' },
+      }),
+    ]);
+    if (sav.status === 'fulfilled') savings = sav.value;
+    else {
+      savings = null;
+      auxiliaryError = 'Les économies sont temporairement indisponibles. ';
+    }
+    definitionsReady = defs.status === 'fulfilled';
+    if (defs.status === 'fulfilled') customFieldDefs = defs.value;
+    else
+      auxiliaryError +=
+        'Les champs personnalisés sont indisponibles. La saisie est suspendue pour conserver leurs validations.';
+  }
   $effect(() => {
     void load();
+    void loadAuxiliary();
   });
-
-  function money(amount: string | null, currency: string): string {
-    if (amount === null) return '—';
-    return `${Number(amount).toLocaleString()} ${currency}`;
-  }
 
   // ── Manual intake form (modal) ─────────────────────────────────────────────
   interface LineDraft {
@@ -120,8 +121,34 @@
   let lines = $state<LineDraft[]>([{ lineRef: '', chargedAmount: '' }]);
   let customData = $state<Record<string, unknown>>({});
   let saving = $state(false);
+  let formError = $state('');
+  const dirty = $derived(
+    Boolean(
+      carrierId ||
+      carrierInvoiceNumber ||
+      currency ||
+      Object.keys(customData).length ||
+      lines.length > 1 ||
+      lines.some((l) => l.lineRef || String(l.chargedAmount ?? '')),
+    ),
+  );
+  function closeForm() {
+    if (saving) return false;
+    if (!dirty) return true;
+    void confirmAction('La facture non enregistrée sera abandonnée.', {
+      title: 'Fermer la saisie ?',
+      confirmLabel: 'Abandonner',
+    }).then((accepted) => {
+      if (accepted) {
+        resetForm();
+        modalOpen = false;
+      }
+    });
+    return false;
+  }
 
   function resetForm() {
+    formError = '';
     carrierId = '';
     carrierInvoiceNumber = '';
     currency = '';
@@ -138,7 +165,9 @@
   }
 
   const canSubmit = $derived(
-    carrierId.trim() !== '' &&
+    definitionsReady &&
+      canManage &&
+      carrierId.trim() !== '' &&
       carrierInvoiceNumber.trim() !== '' &&
       lines.length > 0 &&
       lines.every((l) => l.lineRef.trim() !== '' && String(l.chargedAmount ?? '').trim() !== ''),
@@ -146,7 +175,8 @@
 
   async function create(event: SubmitEvent) {
     event.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || saving) return;
+    formError = '';
     saving = true;
     try {
       await api<IncomingInvoice>('/freight-audit/incoming-invoices', {
@@ -154,7 +184,7 @@
         body: {
           carrierId: carrierId.trim(),
           carrierInvoiceNumber: carrierInvoiceNumber.trim(),
-          ...(currency.trim() ? { currency: currency.trim() } : {}),
+          ...(currency.trim() ? { currency: currency.trim().toUpperCase() } : {}),
           lines: lines.map((l) => ({
             lineRef: l.lineRef.trim(),
             chargedAmount: Number(l.chargedAmount),
@@ -167,7 +197,7 @@
       modalOpen = false;
       await load();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Échec de la saisie de la facture');
+      formError = e instanceof ApiError ? e.message : 'Échec de la saisie de la facture';
     } finally {
       saving = false;
     }
@@ -175,25 +205,71 @@
 </script>
 
 <PageHeader
-  title="Freight Audit"
-  subtitle="Match carrier invoices against load cost snapshots, flag variances, and track recovered savings."
+  title="Audit transporteur"
+  subtitle="Comparer les factures aux coûts figés, examiner les écarts et suivre les litiges."
 >
   {#snippet actions()}
-    <Button variant="primary" onclick={() => { modalOpen = true; }}>Saisir une facture</Button>
+    {#if canManage}<Button
+        variant="primary"
+        disabled={!definitionsReady}
+        onclick={() => {
+          modalOpen = true;
+        }}>Saisir une facture</Button
+      >{/if}
   {/snippet}
 </PageHeader>
 
-<div class="mb-4 grid gap-3 sm:grid-cols-3">
-  <Card><div class="text-xl font-bold text-ink">{recoveredTotal} $</div><div class="text-xs uppercase tracking-wide text-ink-muted">Recovered 30d</div><p class="mt-1 text-xs text-ink-faint">Savings attributed to invoice variance resolution.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{flaggedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Needs review</div><p class="mt-1 text-xs text-ink-faint">Flagged or disputed invoices to inspect.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{receivedCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">New intake</div><p class="mt-1 text-xs text-ink-faint">Received invoices awaiting matching.</p></Card>
+<svelte:head><title>Audit transporteur · Pulsar</title></svelte:head>
+<div class="mb-5 grid gap-4 lg:grid-cols-[2fr_1fr]">
+  <Card>
+    <h2 class="text-sm font-medium">File de travail</h2>
+    <div class="mt-3 flex flex-wrap gap-5 text-sm">
+      <span
+        ><strong class="text-xl tabular-nums">{loading || error ? '—' : receivedCount}</strong> à rapprocher</span
+      >
+      <span
+        ><strong class="text-xl tabular-nums">{loading || error ? '—' : flaggedCount}</strong> écarts
+        ou litiges</span
+      >
+    </div>
+    <p class="mt-3 text-xs text-ink-muted">
+      Comptages sur les {invoices.length} derniers dossiers chargés (50 maximum).
+    </p>
+  </Card>
+  <Card>
+    <h2 class="text-sm font-medium">Économies suivies · 30 jours</h2>
+    <div class="mt-3 space-y-1 text-lg font-semibold tabular-nums">
+      {#if !savings}—{:else}{#each currencySavings as bucket}<div>
+            {money(bucket.recovered, bucket.currency)}
+          </div>{:else}<span class="text-sm font-normal text-ink-muted"
+            >Aucune résolution sur la période</span
+          >{/each}{/if}
+    </div>
+    <p class="mt-3 text-xs text-ink-muted">
+      Montants issus des résolutions, séparés par devise. Aucun encaissement bancaire confirmé.
+    </p>
+  </Card>
+</div>
+<ErrorNotice message={auxiliaryError} onretry={loadAuxiliary} />
+<div class="mb-4 grid gap-3 sm:grid-cols-[1fr_14rem]">
+  <Field label="Rechercher dans les dossiers chargés"
+    ><Input bind:value={search} placeholder="Facture ou transporteur" /></Field
+  >
+  <Field label="Statut"
+    ><Select bind:value={status}
+      ><option value="">Tous les statuts</option
+      >{#each Object.entries(freightStatus) as [code, item]}<option value={code}
+          >{item.label}</option
+        >{/each}</Select
+    ></Field
+  >
 </div>
 
 <ErrorNotice message={error} onretry={load} />
 
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
-{:else}
+{:else if !error}
   <Table>
     {#snippet head()}
       <th>Facture #</th><th>Transporteur</th><th class="text-right">Total facturé</th>
@@ -201,91 +277,150 @@
       {#each listCustomDefs as def (def.key)}<th>{def.label}</th>{/each}
     {/snippet}
     {#snippet body()}
-      {#each invoices as invoice (invoice.id)}
+      {#each visible as invoice (invoice.id)}
         <tr>
           <td>
             <a
               href={`/billing/freight-audit/${invoice.id}`}
               class="text-sm font-semibold text-accent hover:underline"
-            >{invoice.carrierInvoiceNumber}</a>
+              >{invoice.carrierInvoiceNumber}</a
+            >
           </td>
           <td>{invoice.carrier.name}</td>
           <td class="text-right">{money(invoice.chargedTotal, invoice.currency)}</td>
-          <td><Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge></td>
-          <td class="text-right">{money(invoice.varianceGross, invoice.currency)}</td>
+          <td
+            ><Badge tone={statusTone(invoice.status)}
+              >{freightStatus[invoice.status]?.label ?? invoice.status}</Badge
+            ></td
+          >
+          <td class="text-right"
+            >{invoice.varianceGross === null
+              ? '—'
+              : money(invoice.varianceGross, invoice.currency)}</td
+          >
           {#each listCustomDefs as def (def.key)}
             <td>{fmtCustomValue(invoice.customData?.[def.key], def.type)}</td>
           {/each}
         </tr>
       {:else}
-        <tr><td colspan={5 + listCustomDefs.length}><EmptyState title="No carrier invoices yet" message="Enter a carrier invoice to compare charged lines against frozen load cost details and surface recoverable variances.">
-          {#snippet children()}<Button variant="secondary" href="/loads">Review loads</Button><Button onclick={() => { modalOpen = true; }}>Enter first invoice</Button>{/snippet}
-        </EmptyState></td></tr>
+        <tr
+          ><td colspan={5 + listCustomDefs.length}
+            ><EmptyState
+              title={invoices.length ? 'Aucun dossier correspondant' : 'Aucune facture à auditer'}
+              message={invoices.length
+                ? 'Modifiez la recherche ou le statut. Les filtres portent sur les 50 derniers dossiers.'
+                : 'Saisissez une facture et ses références de chargement pour comparer les montants.'}
+            >
+              {#snippet children()}{#if canManage}<Button
+                    disabled={!definitionsReady}
+                    onclick={() => {
+                      modalOpen = true;
+                    }}>Saisir une facture</Button
+                  >{/if}{/snippet}
+            </EmptyState></td
+          ></tr
+        >
       {/each}
     {/snippet}
   </Table>
 {/if}
 
-<Modal bind:open={modalOpen} title="Saisir une facture transporteur" onclose={resetForm}>
+<Drawer
+  bind:open={modalOpen}
+  title="Saisir une facture transporteur"
+  width="lg"
+  dismissible={!saving}
+  onbeforeclose={closeForm}
+>
   {#snippet children()}
-    <form onsubmit={create}>
-      <Field label="Carrier ID">
-        <Input bind:value={carrierId} required placeholder="ID du transporteur" />
-      </Field>
-      <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Numéro de facture transporteur">
-          <Input bind:value={carrierInvoiceNumber} required placeholder="ex. INV-12345" />
-        </Field>
-        <Field label="Devise">
-          <Input bind:value={currency} placeholder="Optionnel — ex. CAD" />
-        </Field>
-      </div>
-
-      <div class="mt-4">
-        <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase">
-          Lignes
-        </span>
-        <div class="space-y-2">
-          {#each lines as line, i (i)}
-            <div class="flex items-end gap-2">
-              <div class="flex-1">
-                <Field label="Réf. ligne">
-                  <Input bind:value={line.lineRef} placeholder="ex. L-1" />
-                </Field>
-              </div>
-              <div class="w-36">
-                <Field label="Montant facturé">
-                  <Input type="number" bind:value={line.chargedAmount} placeholder="0.00" />
-                </Field>
-              </div>
-              <Button
-                variant="ghost"
-                onclick={() => removeLine(i)}
-                disabled={lines.length === 1}
-              >Retirer</Button>
-            </div>
-          {/each}
+    <form id="freight-intake" onsubmit={create}>
+      <ErrorNotice message={formError} />
+      <fieldset class="min-w-0" disabled={saving}>
+        <EntityPicker
+          endpoint="/transportation/carriers"
+          label="Transporteur"
+          bind:value={carrierId}
+          disabled={saving}
+        />
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Numéro de facture transporteur">
+            <Input bind:value={carrierInvoiceNumber} required placeholder="ex. INV-12345" />
+          </Field>
+          <Field label="Devise">
+            <Input
+              bind:value={currency}
+              maxlength={3}
+              minlength={3}
+              pattern={'[A-Za-z]{3}'}
+              placeholder="Défaut de facturation"
+            />
+          </Field>
         </div>
-        <div class="mt-2">
-          <Button variant="secondary" onclick={addLine}>Ajouter une ligne</Button>
-        </div>
-      </div>
 
-      {#if customFieldDefs.length > 0}
         <div class="mt-4">
           <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase">
-            Champs personnalisés
+            Lignes
           </span>
-          <CustomFieldInputs definitions={customFieldDefs} bind:data={customData} />
+          <p class="mb-3 text-sm text-ink-muted">
+            La référence doit correspondre au numéro exact d’un chargement de ce transporteur. Une
+            référence inconnue restera à examiner.
+          </p>
+          <div class="space-y-3">
+            {#each lines as line, i (i)}
+              <div class="grid items-end gap-2 sm:grid-cols-[1fr_9rem_auto]">
+                <div class="flex-1">
+                  <Field label={`Chargement · ligne ${i + 1}`}>
+                    <Input bind:value={line.lineRef} required placeholder="Numéro du chargement" />
+                  </Field>
+                </div>
+                <div>
+                  <Field label={`Montant facturé · ligne ${i + 1}`}>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      required
+                      bind:value={line.chargedAmount}
+                      placeholder="0.00"
+                    />
+                  </Field>
+                </div>
+                <Button variant="ghost" onclick={() => removeLine(i)} disabled={lines.length === 1}
+                  >Retirer</Button
+                >
+              </div>
+            {/each}
+          </div>
+          <div class="mt-2">
+            <Button variant="secondary" onclick={addLine}>Ajouter une ligne</Button>
+          </div>
         </div>
-      {/if}
 
-      <div class="mt-4 flex justify-end gap-2 border-t border-edge pt-3">
-        <Button variant="secondary" onclick={() => { resetForm(); modalOpen = false; }}>Annuler</Button>
-        <Button variant="primary" type="submit" loading={saving} disabled={!canSubmit || saving}>
-          Saisir
-        </Button>
-      </div>
+        {#if customFieldDefs.length > 0}
+          <div class="mt-4">
+            <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase">
+              Champs personnalisés
+            </span>
+            <CustomFieldInputs definitions={customFieldDefs} bind:data={customData} />
+          </div>
+        {/if}
+      </fieldset>
     </form>
   {/snippet}
-</Modal>
+  {#snippet footer()}
+    <Button
+      variant="secondary"
+      disabled={saving}
+      onclick={() => {
+        if (closeForm()) modalOpen = false;
+      }}>Fermer</Button
+    >
+    <Button
+      variant="primary"
+      loading={saving}
+      disabled={!canSubmit || saving}
+      onclick={() => {
+        document.querySelector<HTMLFormElement>('#freight-intake')?.requestSubmit();
+      }}>Enregistrer la facture</Button
+    >
+  {/snippet}
+</Drawer>

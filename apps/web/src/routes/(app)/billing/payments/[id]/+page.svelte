@@ -321,7 +321,11 @@
             les soldes des factures liées.{/if}
         </p>
         <div class="mt-4 flex flex-wrap gap-2">
-          <Button variant="secondary" href="/billing/ledger">Grand livre</Button>
+          <Button
+            variant="secondary"
+            href={`/billing/ledger?sourceType=payment&sourceId=${encodeURIComponent(record.id)}`}
+            >Écritures de ce paiement</Button
+          >
           <Button variant="secondary" href="/invoices">Factures et relevés</Button>
           {#if canManage && record.status !== 'CANCELLED'}<Button
               variant="ghost"

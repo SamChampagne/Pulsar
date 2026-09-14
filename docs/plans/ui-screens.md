@@ -117,9 +117,9 @@ période, devise et périmètre. Les droits côté API demeurent la source d’a
 | `/billing/budgets` | Adaptation directe | Fenêtres budget et écarts accessibles |
 | `/billing/config` | Réglages communs | Lignes, état modifié, sauvegarde, erreur conservant la saisie |
 | `/billing/fixed-assets` | Adaptation directe | Fenêtres édition, amortissement et calendrier accessibles |
-| `/billing/freight-audit/[id]` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
-| `/billing/freight-audit` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
-| `/billing/ledger` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |
+| `/billing/freight-audit/[id]` | Lot 4 | Sections, liens chargements, litige/résolution en panneaux, règlement de suivi explicite |
+| `/billing/freight-audit` | Lot 4 | Français, filtres, économies par devise, saisie en panneau avec recherche transporteur |
+| `/billing/ledger` | Lot 4 | Onglets, filtres de source/compte/date, liens métier et panneau de comptabilisation |
 | `/billing/payments/[id]` | Refonte lot 3 | Dossier, liens factures, édition en panneau et validation confirmée |
 | `/billing/payments/new` | Refonte lot 3 | Partie recherchable, allocations explicites par devise, création en brouillon |
 | `/billing/payments` | Refonte lot 3 | Noms lisibles, liens, filtres et totaux comptabilisés par devise/type |

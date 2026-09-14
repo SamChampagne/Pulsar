@@ -139,6 +139,9 @@ export class PaymentsService {
 
   /** Open invoices (outstanding > 0) of a party, for the allocation screen. */
   async openInvoices(tenantId: string, partyType: PaymentPartyType, partyId: string) {
+    if (!partyId) throw new BadRequestException('Payment party is required');
+    if (!Object.values(PaymentPartyType).includes(partyType))
+      throw new BadRequestException('Invalid payment party type');
     if (partyType === PaymentPartyType.CUSTOMER) {
       const rows = await this.prisma.customerInvoice.findMany({
         where: { tenantId, customerId: partyId, status: { in: ['APPROVED', 'SENT'] } },
@@ -187,13 +190,66 @@ export class PaymentsService {
       partyType === PaymentPartyType.CUSTOMER
         ? PaymentTargetType.CUSTOMER_INVOICE
         : PaymentTargetType.CARRIER_INVOICE;
+    if (!allocations.length) throw new BadRequestException('Payment has no allocations');
+    const targets = new Set<string>();
     for (const a of allocations) {
+      if (targets.has(a.targetId)) throw new BadRequestException('Duplicate allocation target');
+      targets.add(a.targetId);
       if (a.targetType !== expected)
         throw new BadRequestException('Allocation target does not match party type');
-      if (a.amount <= 0) throw new BadRequestException('Allocation amount must be positive');
+      if (!Number.isFinite(a.amount) || a.amount <= 0)
+        throw new BadRequestException('Allocation amount must be positive');
     }
     const sum = allocations.reduce((s, a) => s + a.amount, 0);
     return sum;
+  }
+
+  private assertDirection(type: PaymentType, partyType: PaymentPartyType) {
+    if (
+      !(
+        (type === PaymentType.RECEIVE && partyType === PaymentPartyType.CUSTOMER) ||
+        (type === PaymentType.PAY && partyType === PaymentPartyType.CARRIER)
+      )
+    )
+      throw new BadRequestException('Payment direction does not match party type');
+  }
+
+  private async assertAllocationParties(
+    tenantId: string,
+    partyId: string,
+    allocations: AllocationInput[],
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    for (const a of allocations) {
+      const customer = a.targetType === PaymentTargetType.CUSTOMER_INVOICE;
+      await this.ownership.assertOwned(
+        customer ? 'customerInvoice' : 'invoice',
+        a.targetId,
+        tenantId,
+      );
+      const invoice = customer
+        ? await db.customerInvoice.findFirst({
+            where: { id: a.targetId, tenantId, customerId: partyId },
+            select: { id: true },
+          })
+        : await db.invoice.findFirst({
+            where: { id: a.targetId, tenantId, carrierId: partyId },
+            select: { id: true },
+          });
+      if (!invoice)
+        throw new BadRequestException('Allocated invoice does not belong to payment party');
+    }
+  }
+
+  /** Serialize editing and submission, then read the current allocations under the row lock. */
+  private async lockPayment(tx: Prisma.TransactionClient, tenantId: string, id: string) {
+    await tx.$queryRaw`SELECT id FROM payments WHERE id = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
+    const payment = await tx.payment.findFirst({
+      where: { id, tenantId },
+      include: { allocations: true },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    return payment;
   }
 
   /**
@@ -209,12 +265,14 @@ export class PaymentsService {
   }
 
   async create(tenantId: string, userId: string, input: CreatePaymentInput) {
+    this.assertDirection(input.type, input.partyType);
     await this.assertPartyOwned(tenantId, input.partyType, input.partyId);
     await this.modes.resolveAccountCode(tenantId, input.modeOfPaymentId); // validates ownership/existence
     const allocSum = this.assertPartyTargetCoherence(input.partyType, input.allocations);
     if (allocSum > input.totalAmount + 1e-9)
       throw new BadRequestException('Allocations exceed payment amount');
 
+    await this.assertAllocationParties(tenantId, input.partyId, input.allocations);
     const settings = await this.moduleSettings.resolve(tenantId, 'billing');
     const currency = input.currency ?? (settings.defaultCurrency as string);
     const paymentNumber = await this.sequences.nextNumber(tenantId, 'payment');
@@ -256,33 +314,48 @@ export class PaymentsService {
   }
 
   async update(tenantId: string, userId: string, id: string, input: Partial<CreatePaymentInput>) {
-    const existing = await this.get(tenantId, id);
-    if (existing.status !== PaymentStatus.DRAFT)
-      throw new BadRequestException('Only DRAFT payments can be edited');
-    if (input.allocations) {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const existing = await this.lockPayment(tx, tenantId, id);
+      if (existing.status !== PaymentStatus.DRAFT)
+        throw new BadRequestException('Only DRAFT payments can be edited');
+      for (const field of [
+        'type',
+        'partyType',
+        'partyId',
+        'modeOfPaymentId',
+        'currency',
+      ] as const) {
+        if (input[field] !== undefined && input[field] !== existing[field])
+          throw new BadRequestException(`Payment ${field} cannot be changed; create a new draft`);
+      }
+      this.assertDirection(existing.type as PaymentType, existing.partyType as PaymentPartyType);
+      const allocations =
+        input.allocations ??
+        existing.allocations.map((a) => ({
+          targetType: a.targetType as PaymentTargetType,
+          targetId: a.targetId,
+          amount: Number(a.amount),
+        }));
       const allocSum = this.assertPartyTargetCoherence(
         existing.partyType as PaymentPartyType,
-        input.allocations,
+        allocations,
       );
-      const effectiveTotal = input.totalAmount ?? Number(existing.totalAmount);
-      if (allocSum > effectiveTotal + 1e-9)
+      if (allocSum > (input.totalAmount ?? Number(existing.totalAmount)) + 1e-9)
         throw new BadRequestException('Allocations exceed payment amount');
-    } else if (input.totalAmount != null) {
-      // totalAmount changed without new allocations — check existing alloc sum
-      const existingSum = existing.allocations.reduce((s, a) => s + Number(a.amount), 0);
-      if (existingSum > input.totalAmount + 1e-9)
-        throw new BadRequestException('Allocations exceed payment amount');
-    }
+      await this.assertAllocationParties(tenantId, existing.partyId, allocations, tx);
 
-    const data: Prisma.PaymentUpdateInput = {};
-    if (input.totalAmount != null) data.totalAmount = new Prisma.Decimal(input.totalAmount);
-    if (input.reference !== undefined) data.reference = input.reference;
-    if (input.note !== undefined) data.note = input.note;
-    if (input.date) data.date = new Date(input.date);
-
-    const updated = await this.prisma.$transaction(async (tx: any) => {
+      const data: Prisma.PaymentUpdateManyMutationInput = {};
+      if (input.totalAmount != null) data.totalAmount = new Prisma.Decimal(input.totalAmount);
+      if (input.reference !== undefined) data.reference = input.reference;
+      if (input.note !== undefined) data.note = input.note;
+      if (input.date) data.date = new Date(input.date);
+      const claim = await tx.payment.updateMany({
+        where: { id, tenantId, status: PaymentStatus.DRAFT },
+        data,
+      });
+      if (!claim.count) throw new ConflictException('Payment is no longer DRAFT');
       if (input.allocations) {
-        await tx.paymentAllocation.deleteMany({ where: { paymentId: id } });
+        await tx.paymentAllocation.deleteMany({ where: { paymentId: id, tenantId } });
         await tx.paymentAllocation.createMany({
           data: input.allocations.map((a) => ({
             tenantId,
@@ -293,9 +366,8 @@ export class PaymentsService {
           })),
         });
       }
-      return tx.payment.update({
-        where: { id },
-        data,
+      return tx.payment.findFirstOrThrow({
+        where: { id, tenantId },
         include: { allocations: true, modeOfPayment: true },
       });
     });
@@ -327,20 +399,6 @@ export class PaymentsService {
     const modeAccount = await this.modes.resolveAccountCode(tenantId, payment.modeOfPaymentId);
     const arAccount = settings.arAccountCode as string;
     const apAccount = settings.apAccountCode as string;
-    const allocated = payment.allocations.reduce((s, a) => s + Number(a.amount), 0);
-
-    // GL lines (rule 41 — balanced double-entry).
-    const lines =
-      payment.type === PaymentType.RECEIVE
-        ? [
-            { accountCode: modeAccount, debit: allocated },
-            { accountCode: arAccount, credit: allocated },
-          ]
-        : [
-            { accountCode: apAccount, debit: allocated },
-            { accountCode: modeAccount, credit: allocated },
-          ];
-
     // Ensure the chart of accounts exists before entering the transaction
     // (ledger.postTx does not call ensureChart; we do it here so the tx stays clean).
     await this.ledger.ensureChart(tenantId);
@@ -353,7 +411,29 @@ export class PaymentsService {
       to: string;
     }> = [];
 
-    await this.prisma.$transaction(async (tx: any) => {
+    await this.prisma.$transaction(async (tx) => {
+      const payment = await this.lockPayment(tx, tenantId, id);
+      this.assertDirection(payment.type as PaymentType, payment.partyType as PaymentPartyType);
+      const allocated = this.assertPartyTargetCoherence(
+        payment.partyType as PaymentPartyType,
+        payment.allocations.map((a) => ({
+          targetType: a.targetType as PaymentTargetType,
+          targetId: a.targetId,
+          amount: Number(a.amount),
+        })),
+      );
+      if (allocated > Number(payment.totalAmount) + 1e-9)
+        throw new BadRequestException('Allocations exceed payment amount');
+      const lines =
+        payment.type === PaymentType.RECEIVE
+          ? [
+              { accountCode: modeAccount, debit: allocated },
+              { accountCode: arAccount, credit: allocated },
+            ]
+          : [
+              { accountCode: apAccount, debit: allocated },
+              { accountCode: modeAccount, credit: allocated },
+            ];
       // Claim DRAFT→SUBMITTED (TOCTOU guard).
       const claim = await tx.payment.updateMany({
         where: { id, tenantId, status: PaymentStatus.DRAFT },
@@ -365,10 +445,25 @@ export class PaymentsService {
         if (a.targetType === PaymentTargetType.CUSTOMER_INVOICE) {
           const inv = await tx.customerInvoice.findFirst({
             where: { id: a.targetId, tenantId },
-            select: { totalAmount: true, amountPaid: true, status: true, currency: true },
+            select: {
+              totalAmount: true,
+              amountPaid: true,
+              status: true,
+              currency: true,
+              customerId: true,
+            },
           });
           if (!inv) throw new BadRequestException('Allocated customer invoice not found');
-          // Finding 2: allocation-currency coherence check.
+          if (inv.customerId !== payment.partyId)
+            throw new BadRequestException('Allocated invoice does not belong to payment party');
+          if (
+            inv.status !== CustomerInvoiceStatus.APPROVED &&
+            inv.status !== CustomerInvoiceStatus.SENT
+          )
+            throw new BadRequestException(
+              'Customer invoice must be approved or sent before payment',
+            );
+          // Allocation-currency coherence check.
           if (inv.currency !== payment.currency)
             throw new BadRequestException('Allocation currency does not match payment currency');
           const priorPaid = inv.amountPaid;
@@ -390,7 +485,15 @@ export class PaymentsService {
           }
           // Finding 1: conditional-claim (TOCTOU guard) on amountPaid increment.
           const claimed = await tx.customerInvoice.updateMany({
-            where: { id: a.targetId, tenantId, amountPaid: priorPaid },
+            where: {
+              id: a.targetId,
+              tenantId,
+              amountPaid: priorPaid,
+              status: inv.status,
+              currency: inv.currency,
+              customerId: payment.partyId,
+              totalAmount: inv.totalAmount,
+            },
             data: {
               amountPaid: new Prisma.Decimal(newPaid),
               ...(willBePaid ? { status: CustomerInvoiceStatus.PAID, paidAt: new Date() } : {}),
@@ -409,10 +512,20 @@ export class PaymentsService {
         } else {
           const inv = await tx.invoice.findFirst({
             where: { id: a.targetId, tenantId },
-            select: { totalAmount: true, amountPaid: true, status: true, currency: true },
+            select: {
+              totalAmount: true,
+              amountPaid: true,
+              status: true,
+              currency: true,
+              carrierId: true,
+            },
           });
           if (!inv) throw new BadRequestException('Allocated carrier invoice not found');
-          // Finding 2: allocation-currency coherence check.
+          if (inv.carrierId !== payment.partyId)
+            throw new BadRequestException('Allocated invoice does not belong to payment party');
+          if (inv.status !== InvoiceStatus.APPROVED)
+            throw new BadRequestException('Carrier invoice must be approved before payment');
+          // Allocation-currency coherence check.
           if (inv.currency !== payment.currency)
             throw new BadRequestException('Allocation currency does not match payment currency');
           const priorPaid = inv.amountPaid;
@@ -429,7 +542,15 @@ export class PaymentsService {
           }
           // Finding 1: conditional-claim (TOCTOU guard) on amountPaid increment.
           const claimed = await tx.invoice.updateMany({
-            where: { id: a.targetId, tenantId, amountPaid: priorPaid },
+            where: {
+              id: a.targetId,
+              tenantId,
+              amountPaid: priorPaid,
+              status: inv.status,
+              currency: inv.currency,
+              carrierId: payment.partyId,
+              totalAmount: inv.totalAmount,
+            },
             data: {
               amountPaid: new Prisma.Decimal(newPaid),
               ...(willBePaid ? { status: InvoiceStatus.PAID, paidAt: new Date() } : {}),

@@ -6,6 +6,12 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Audit et traçabilité comptable, lot 4 (2026-09-14) — `codex/ui-finance-audit`.**
+> Contrôle serveur partie/facture et édition/soumission concurrentes durcis.
+> Audit transporteur en français, panneaux de saisie/litige, liens vers chargements,
+> journal filtré depuis le paiement et économies par devise. Le suivi d’audit reste
+> distinct du règlement comptable : [ui-finance-audit.md](./plans/ui-finance-audit.md).
+>
 > **Factures et paiements, lot 3 (2026-09-14) — `codex/ui-billing`.** Liste lisible,
 > allocations par devise, parcours brouillon → validation, dossiers en panneaux
 > et liens facture/ordre/chargement/paiement. Projections API tenant-scopées, sans

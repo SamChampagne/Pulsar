@@ -4,6 +4,8 @@ import { PrismaService } from './prisma.service';
 /** Tenant-scoped entities that can be referenced by id in write payloads. */
 export type OwnedEntity =
   | 'customer'
+  | 'customerInvoice'
+  | 'invoice'
   | 'location'
   | 'carrier'
   | 'driver'
@@ -37,7 +39,10 @@ export class OwnershipService {
   async assertOwned(entity: OwnedEntity, id: string, tenantId: string): Promise<void> {
     // All owned entities share the { id, tenantId } shape; the delegate lookup is dynamic.
     const delegate = this.prisma[entity] as unknown as {
-      findFirst(args: { where: { id: string; tenantId: string }; select: { id: true } }): Promise<unknown>;
+      findFirst(args: {
+        where: { id: string; tenantId: string };
+        select: { id: true };
+      }): Promise<unknown>;
     };
     const row = await delegate.findFirst({ where: { id, tenantId }, select: { id: true } });
     if (!row) {
