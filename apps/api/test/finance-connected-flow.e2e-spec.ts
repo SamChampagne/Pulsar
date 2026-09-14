@@ -383,4 +383,197 @@ describe('Connected finance flow (e2e)', () => {
       .send({ name: 'Banque renommée' })
       .expect(200);
   });
+
+  describe('CSV preview and atomic import', () => {
+    const csv = (description: string, amount = -71.23, reference = 'REF') =>
+      `date,description,amount,reference\n2026-09-20,${description},${amount},${reference}`;
+    const inspectCsv = (text: string, bankAccountId = accountId) =>
+      post('billing/bank-transactions/import/preview', { bankAccountId, csv: text });
+    const importCsv = (text: string, previewHash?: string, bankAccountId = accountId) =>
+      post('billing/bank-transactions/import', {
+        bankAccountId,
+        csv: text,
+        ...(previewHash ? { previewHash } : {}),
+      });
+    const count = () =>
+      prisma.bankTransaction.count({ where: { tenantId, bankAccountId: accountId } });
+
+    it('previews new, repeated and invalid rows without mutating anything', async () => {
+      const text = csv('PREVIEW') + '\n2026-09-20,PREVIEW,-71.23,REF\n2026-02-30,INVALIDE,10,ERR';
+      const before = await count(),
+        audits = await prisma.auditLog.count({ where: { tenantId } });
+      const response = await inspectCsv(text).expect(201);
+      expect(response.body).toMatchObject({
+        canImport: false,
+        currency: 'CAD',
+        totals: { newCount: 1, duplicateCount: 1, invalidCount: 1, credits: 0, debits: 71.23 },
+      });
+      expect(response.body.rows.map((r: any) => r.status)).toEqual(['NEW', 'DUPLICATE_FILE']);
+      expect(response.body.issues[0].line).toBe(4);
+      expect(await count()).toBe(before);
+      expect(await prisma.auditLog.count({ where: { tenantId } })).toBe(audits);
+      await importCsv(text).expect(400);
+      expect(await count()).toBe(before);
+    });
+    it('imports once, ignores a retry and audits only a safe summary', async () => {
+      const text = csv('CSV-CONFIDENTIAL-DESCRIPTION'),
+        before = await count();
+      const preview = (await inspectCsv(text).expect(201)).body;
+      const paymentsBefore = await prisma.payment.count({ where: { tenantId } });
+      const journalsBefore = await prisma.journalEntry.count({ where: { tenantId } });
+      expect((await importCsv(text, preview.previewHash).expect(201)).body).toEqual({
+        imported: 1,
+        skipped: 0,
+        errors: [],
+      });
+      expect((await importCsv(text, preview.previewHash).expect(201)).body).toEqual({
+        imported: 0,
+        skipped: 1,
+        errors: [],
+      });
+      expect(await count()).toBe(before + 1);
+      expect(await prisma.payment.count({ where: { tenantId } })).toBe(paymentsBefore);
+      expect(await prisma.journalEntry.count({ where: { tenantId } })).toBe(journalsBefore);
+      const logs = await prisma.auditLog.findMany({
+        where: { tenantId, entityType: 'bank-import', entityId: accountId },
+      });
+      expect(logs).toHaveLength(1);
+      expect(JSON.stringify(logs)).not.toContain('CSV-CONFIDENTIAL-DESCRIPTION');
+      expect(logs[0].after).toMatchObject({ imported: 1, skipped: 0, bankAccountId: accountId });
+    });
+    it('detects overlapping files, changed separators/whitespace and duplicates within a file', async () => {
+      await importCsv(csv('CSV-OVERLAP')).expect(201);
+      const text =
+        '\uFEFFdate;description;amount;reference\r\n2026-09-20; CSV-OVERLAP ;-71,23;REF\r\n2026-09-21;Nouveau;14,37;N\r\n2026-09-21;Nouveau;14,37;N';
+      const preview = (await inspectCsv(text).expect(201)).body;
+      expect(preview.rows.map((r: any) => r.status)).toEqual([
+        'DUPLICATE_EXISTING',
+        'NEW',
+        'DUPLICATE_FILE',
+      ]);
+      expect((await importCsv(text, preview.previewHash).expect(201)).body).toMatchObject({
+        imported: 1,
+        skipped: 2,
+      });
+    });
+    it('detects pre-existing legacy/manual rows, even after reconciliation', async () => {
+      const legacy = await prisma.bankTransaction.create({
+        data: {
+          tenantId,
+          bankAccountId: accountId,
+          date: new Date('2026-09-20T12:00:00Z'),
+          description: 'CSV-LEGACY',
+          amount: -71.23,
+          reference: 'REF',
+          status: 'RECONCILED',
+        },
+      });
+      expect(legacy.importFingerprint).toBeNull();
+      const response = (await inspectCsv(csv('CSV-LEGACY')).expect(201)).body;
+      expect(response.rows[0].status).toBe('DUPLICATE_EXISTING');
+      expect(response.canImport).toBe(false);
+      expect((await importCsv(csv('CSV-LEGACY')).expect(201)).body.imported).toBe(0);
+    });
+    it('keeps different dates, signs and references as distinct movements', async () => {
+      const text =
+        csv('DISTINCT') +
+        '\n2026-09-20,DISTINCT,-71.23,REF2\n2026-09-20,DISTINCT,71.23,REF\n2026-09-21,DISTINCT,-71.23,REF';
+      expect((await importCsv(text).expect(201)).body).toMatchObject({ imported: 4, skipped: 0 });
+    });
+    it('serializes concurrent imports and revalidates duplicates after preview', async () => {
+      const text = csv('CSV-RACE'),
+        before = await count();
+      const preview = (await inspectCsv(text).expect(201)).body;
+      const results = await Promise.all([
+        importCsv(text, preview.previewHash),
+        importCsv(text, preview.previewHash),
+      ]);
+      expect(results.map((r) => r.status)).toEqual([201, 201]);
+      expect(results.map((r) => r.body.imported).sort()).toEqual([0, 1]);
+      expect(await count()).toBe(before + 1);
+    });
+    it('rejects content, account and account-configuration changes after preview', async () => {
+      const bank = (
+        await post('billing/bank-accounts', {
+          name: 'CSV-preview-account',
+          currency: 'CAD',
+        }).expect(201)
+      ).body;
+      const text = csv('CSV-HASH');
+      const preview = (await inspectCsv(text, bank.id).expect(201)).body;
+      await importCsv(csv('DIFFERENT'), preview.previewHash, bank.id).expect(409);
+      await importCsv(text, preview.previewHash, accountId).expect(409);
+      await request(http)
+        .patch(`/api/v1/billing/bank-accounts/${bank.id}`)
+        .set(auth())
+        .send({ currency: 'USD' })
+        .expect(200);
+      await importCsv(text, preview.previewHash, bank.id).expect(409);
+      expect(
+        await prisma.bankTransaction.count({ where: { tenantId, bankAccountId: bank.id } }),
+      ).toBe(0);
+    });
+    it('gates preview/import by permission and tenant, rejects caller-provided tenantId', async () => {
+      const foreign = await prisma.bankAccount.create({
+        data: {
+          tenantId: otherTenantId,
+          name: 'CSV-FOREIGN',
+          currency: 'CAD',
+          glAccountCode: '1010',
+        },
+      });
+      for (const path of ['import', 'import/preview']) {
+        await request(http)
+          .post(`/api/v1/billing/bank-transactions/${path}`)
+          .set({ Authorization: `Bearer ${readToken}` })
+          .send({ bankAccountId: accountId, csv: csv('ACCESS') })
+          .expect(403);
+        await post(`billing/bank-transactions/${path}`, {
+          bankAccountId: foreign.id,
+          csv: csv('ACCESS'),
+        }).expect(400);
+        await post(`billing/bank-transactions/${path}`, {
+          bankAccountId: accountId,
+          csv: csv('ACCESS'),
+          tenantId: otherTenantId,
+        }).expect(400);
+      }
+    });
+    it('isolates fingerprints per bank account and never hides same text in another account', async () => {
+      const bank = (
+        await post('billing/bank-accounts', { name: 'CSV-SECOND', currency: 'CAD' }).expect(201)
+      ).body;
+      const text = csv('CSV-ACCOUNT-SCOPED');
+      expect((await importCsv(text).expect(201)).body.imported).toBe(1);
+      expect((await importCsv(text, undefined, bank.id).expect(201)).body.imported).toBe(1);
+    });
+    it('rejects empty, huge, malformed and over-precise batches without a partial import', async () => {
+      const before = await count();
+      for (const text of [
+        '',
+        'x'.repeat(30_001),
+        'date,description,amount\n2026-09-20,"oops,1',
+        csv('PRECISION') + '\n2026-09-20,Erreur,0.001,R',
+      ])
+        await importCsv(text).expect(400);
+      expect(await count()).toBe(before);
+    });
+    it('imports quoted fields and decimal comma without changing the signed amount', async () => {
+      const text =
+        'date;description;montant;référence\n2026-09-22;"Transport; du ""Fjord""";-135,08;FJ';
+      await importCsv(text).expect(201);
+      const row = await prisma.bankTransaction.findFirstOrThrow({
+        where: {
+          tenantId,
+          bankAccountId: accountId,
+          reference: 'FJ',
+          description: 'Transport; du "Fjord"',
+        },
+      });
+      expect(row.amount.toString()).toBe('-135.08');
+      expect(row.status).toBe('UNRECONCILED');
+      expect(row.date.toISOString()).toBe('2026-09-22T00:00:00.000Z');
+      expect(row.importFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    });
+  });
 });

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import BankCsvImport from '$lib/billing/BankCsvImport.svelte';
   import { onDestroy } from 'svelte';
   import { auth } from '$lib/stores/auth';
   import { bankMatchError, PERMISSIONS } from '@pulsar/shared';
@@ -350,7 +351,7 @@
   }
 
   async function createTransaction() {
-    if (savingTxn || importingCsv || !canManage) return;
+    if (savingTxn || csvOpen || !canManage) return;
     txnFormError = '';
     if (!selectedAccountId) {
       txnFormError = 'Sélectionnez un compte.';
@@ -393,41 +394,11 @@
     }
   }
 
-  // CSV import
-  let csvText = $state('');
-  let importingCsv = $state(false);
-  let importResult = $state<{ imported: number; errors: string[] } | null>(null);
-  let importError = $state('');
-
-  async function importCsv() {
-    if (importingCsv || savingTxn || !canManage) return;
-    importError = '';
-    importResult = null;
-    if (!selectedAccountId) {
-      importError = 'Sélectionnez un compte.';
-      return;
-    }
-    if (!csvText.trim()) {
-      importError = 'Le contenu CSV est vide.';
-      return;
-    }
-    importingCsv = true;
-    try {
-      const result = await api<{ imported: number; errors: string[] }>(
-        '/billing/bank-transactions/import',
-        { method: 'POST', body: { bankAccountId: selectedAccountId, csv: csvText } },
-      );
-      importResult = result;
-      if (result.imported > 0) {
-        toast.success(`${result.imported} transaction(s) importée(s)`);
-        csvText = '';
-        await loadTransactions();
-      }
-    } catch (e) {
-      importError = e instanceof ApiError ? e.message : "Échec de l'import";
-    } finally {
-      importingCsv = false;
-    }
+  let csvOpen = $state(false);
+  const csvAccount = $derived(accounts.find((a) => a.id === selectedAccountId));
+  async function importedCsv() {
+    await loadTransactions();
+    if (selectedAccountId) void loadBalance(selectedAccountId);
   }
 
   // ── ─── TAB: RAPPROCHEMENT ───────────────────────────────────────────────────
@@ -771,7 +742,7 @@
         <select
           id="txn-account"
           bind:value={selectedAccountId}
-          disabled={savingTxn || importingCsv}
+          disabled={savingTxn || csvOpen}
           class="rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
         >
           <option value="">— Sélectionner un compte —</option>
@@ -792,10 +763,17 @@
           <option value="RECONCILED">Réconcilié</option>
         </select>
       </div>
-      <div class="ml-auto flex gap-2 self-end">
+      <div class="ml-auto flex flex-wrap gap-2 self-end">
+        <Button
+          variant="secondary"
+          disabled={!canManage || !selectedAccountId || savingTxn}
+          onclick={() => {
+            csvOpen = true;
+          }}>Importer un CSV</Button
+        >
         <Button
           variant="ghost"
-          disabled={!canManage || savingTxn || importingCsv}
+          disabled={!canManage || savingTxn || csvOpen}
           onclick={() => {
             showTxnForm = !showTxnForm;
             resetTxnForm();
@@ -874,48 +852,6 @@
         </Card>
       </div>
     {/if}
-
-    <!-- CSV import -->
-    <div class="mb-4">
-      <Card>
-        <h3 class="mb-2 text-sm font-bold text-ink">Import CSV</h3>
-        <p class="mb-2 text-xs text-ink-muted">
-          Format : <code class="font-mono">date,description,amount[,reference]</code> (séparateur
-          <code class="font-mono">,</code>
-          ou <code class="font-mono">;</code>).
-        </p>
-        <textarea
-          bind:value={csvText}
-          rows={5}
-          placeholder="date,description,amount,reference&#10;2026-01-15,Virement client,1250.00,REF001&#10;2026-01-16,Frais bancaires,-25.00"
-          class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-2 font-mono text-xs focus:border-accent focus:outline-none"
-        ></textarea>
-        {#if importError}
-          <p class="mt-1 text-sm text-danger">{importError}</p>
-        {/if}
-        {#if importResult}
-          <div class="mt-2 rounded-lg border border-edge-soft p-3 text-sm">
-            <p class="font-medium text-ok">{importResult.imported} transaction(s) importée(s)</p>
-            {#if importResult.errors.length > 0}
-              <ul class="mt-1 space-y-0.5 text-danger">
-                {#each importResult.errors as err, i (i)}
-                  <li class="text-xs">{err}</li>
-                {/each}
-              </ul>
-            {/if}
-          </div>
-        {/if}
-        <div class="mt-2 flex justify-end">
-          <Button
-            variant="ghost"
-            disabled={importingCsv || !csvText.trim() || !canManage}
-            onclick={importCsv}
-          >
-            {importingCsv ? 'Import en cours…' : 'Importer'}
-          </Button>
-        </div>
-      </Card>
-    </div>
 
     <!-- Transaction list -->
     <ErrorNotice message={errorTxns} onretry={loadTransactions} />
@@ -1171,3 +1107,10 @@
     {/if}
   {/if}
 </Tabs>
+
+<BankCsvImport
+  bind:open={csvOpen}
+  accountId={selectedAccountId}
+  accountName={csvAccount?.name ?? 'Sélectionnez un compte'}
+  onimported={importedCsv}
+/>

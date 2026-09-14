@@ -3971,11 +3971,14 @@ model BankTransaction {
   description      String
   amount           Decimal       @db.Decimal(12, 2)   // signé
   reference        String?
+  importFingerprint String?
   status           BankTxnStatus @default(UNRECONCILED)
   matchedPaymentId String?       @unique
   createdAt        DateTime      @default(now())
   bankAccount      BankAccount   @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
   @@index([tenantId, bankAccountId, status])
+  @@index([tenantId, bankAccountId, date])
+  @@unique([tenantId, bankAccountId, importFingerprint], map: "bank_transactions_import_fingerprint_key")
   @@map("bank_transactions")
 }
 

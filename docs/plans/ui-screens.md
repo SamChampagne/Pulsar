@@ -113,7 +113,7 @@ période, devise et périmètre. Les droits côté API demeurent la source d’a
 | `/apps` | Conservé | Bureau iPhone, dossiers et préférences inchangés |
 | `/assets` | Adaptation directe | Vue flotte, liens de fiches, périmètre des compteurs explicite |
 | `/automation` | Interaction ciblée | Confirmation intégrée ; la page complète reste à revoir |
-| `/billing/banking` | Lot 5 — rapprochement | Contexte du paiement, onglets accessibles, comparaison et confirmation; import CSV à approfondir |
+| `/billing/banking` | Lots 5–6 | Contexte du paiement, rapprochement confirmé et import CSV en panneau avec prévisualisation/dédoublonnage |
 | `/billing/budgets` | Adaptation directe | Fenêtres budget et écarts accessibles |
 | `/billing/config` | Réglages communs | Lignes, état modifié, sauvegarde, erreur conservant la saisie |
 | `/billing/fixed-assets` | Adaptation directe | Fenêtres édition, amortissement et calendrier accessibles |

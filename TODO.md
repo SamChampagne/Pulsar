@@ -8,7 +8,8 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [x] Navigation facture/paiement/banque, sélection expliquée et confirmations UI.
 - [x] Rapprochement bancaire un à un : montant, sens, devise, écriture réelle, concurrence.
 - [x] Interdire annulation d’un paiement rapproché et suppression d’un compte avec mouvements.
-- [ ] Import CSV : prévisualisation, validation complète et dédoublonnage serveur.
+- [x] Import CSV : prévisualisation, validation stricte du format pris en charge et dédoublonnage serveur ([lot 6](docs/plans/bank-csv-import.md)).
+- [ ] Mapping guidé des formats bancaires et historique/correction des imports.
 - [ ] Parcours documenté de correction d’une association audit/facture.
 - [ ] Rapprochements partiels/groupés, frais, avances et FX : conception dédiée.
 - [ ] Atomicité historique du rapprochement Freight Audit/factures; grand livre multi-devises.

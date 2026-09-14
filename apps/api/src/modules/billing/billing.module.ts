@@ -9,6 +9,7 @@ import { BankAccountsController } from './banking/bank-accounts.controller';
 import { BankAccountsService } from './banking/bank-accounts.service';
 import { BankTransactionsController } from './banking/bank-transactions.controller';
 import { BankTransactionsService } from './banking/bank-transactions.service';
+import { BankCsvService } from './banking/bank-csv.service';
 import { BudgetsController } from './budgets/budgets.controller';
 import { BudgetsService } from './budgets/budgets.service';
 import { FixedAssetsController } from './assets/fixed-assets.controller';
@@ -77,6 +78,7 @@ import { TaxTemplatesService } from './tax-templates.service';
     FinancialReportsService,
     BankAccountsService,
     BankTransactionsService,
+    BankCsvService,
     BudgetsService,
     FixedAssetsService,
     SubscriptionsService,

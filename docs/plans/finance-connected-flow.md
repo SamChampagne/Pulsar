@@ -110,9 +110,9 @@ pnpm --filter @pulsar/web test:e2e finance-connected-flow.spec.ts finance-audit.
 
 ## Limites et prochaine étape
 
-1. Import CSV encore simple et non idempotent : importer deux fois crée deux mouvements.
-   Priorité suivante : prévisualisation, validation des dates/colonnes et dédoublonnage serveur,
-   avant tout connecteur bancaire. Les formulaires manuels/CSV existants ne sont pas tous refondus.
+1. Import CSV repris dans le [lot 6](./bank-csv-import.md) : panneau, prévisualisation, validation
+   stricte et dédoublonnage serveur. Mapping universel des formats bancaires et historique de lots
+   restent à concevoir; la saisie manuelle conserve son formulaire existant.
 2. Rapprochement volontairement un à un : pas de frais, avance non allouée, FX, paiement groupé
    ni rapprochement partiel. Ne pas retirer les contrôles pour « faire passer » ces cas.
 3. Plusieurs audits pour une facture, plusieurs lignes d’audit pour un chargement et dossiers

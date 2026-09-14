@@ -4,19 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  AuditAction,
-  BankTxnStatus,
-  parseBankCsv,
-  bankMatchError,
-  canTransitionBankTxn,
-} from '@pulsar/shared';
+import { AuditAction, BankTxnStatus, bankMatchError, canTransitionBankTxn } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { ModesOfPaymentService } from '../modes-of-payment.service';
-import { CreateBankTransactionDto, ImportBankCsvDto } from './dto/bank-transaction.dto';
+import { CreateBankTransactionDto } from './dto/bank-transaction.dto';
 
 @Injectable()
 export class BankTransactionsService {
@@ -50,36 +44,22 @@ export class BankTransactionsService {
 
   async create(tenantId: string, dto: CreateBankTransactionDto) {
     await this.ownership.assertOwned('bankAccount', dto.bankAccountId, tenantId);
-    return this.prisma.bankTransaction.create({
-      data: {
-        tenantId,
-        bankAccountId: dto.bankAccountId,
-        date: new Date(dto.date),
-        description: dto.description,
-        amount: new Prisma.Decimal(dto.amount),
-        reference: dto.reference,
-        status: BankTxnStatus.UNRECONCILED,
-      },
-    });
-  }
-
-  async import(tenantId: string, dto: ImportBankCsvDto) {
-    await this.ownership.assertOwned('bankAccount', dto.bankAccountId, tenantId);
-    const { rows, errors } = parseBankCsv(dto.csv);
-    if (rows.length > 0) {
-      await this.prisma.bankTransaction.createMany({
-        data: rows.map((r) => ({
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM bank_accounts WHERE id = ${dto.bankAccountId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      if (!(await tx.bankAccount.findFirst({ where: { id: dto.bankAccountId, tenantId } })))
+        throw new NotFoundException('Compte bancaire introuvable.');
+      return tx.bankTransaction.create({
+        data: {
           tenantId,
           bankAccountId: dto.bankAccountId,
-          date: new Date(r.date),
-          amount: new Prisma.Decimal(r.amount),
-          description: r.description,
-          reference: r.reference ?? null,
+          date: new Date(dto.date),
+          description: dto.description,
+          amount: new Prisma.Decimal(dto.amount),
+          reference: dto.reference,
           status: BankTxnStatus.UNRECONCILED,
-        })),
+        },
       });
-    }
-    return { imported: rows.length, errors };
+    });
   }
 
   async reconciliation(tenantId: string, bankAccountId: string) {

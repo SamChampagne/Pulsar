@@ -6,6 +6,11 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Import CSV bancaire, lot 6 (2026-09-14) — `codex/bank-csv-import`.**
+> Fichier ou collage → prévisualisation → confirmation. Validation stricte, lot atomique,
+> doublons contrôlés en base et contre les mouvements historiques. Aucun virement ni rapprochement
+> automatique. Contrats, formats et limites : [bank-csv-import.md](./plans/bank-csv-import.md).
+>
 > **Dossiers financiers connectés, lot 5 (2026-09-14) — `codex/finance-connected-flow`.**
 > Association explicite audit → facture existante, paiements et contexte bancaire reliés.
 > Rapprochement gardé par montant/sens/devise/écriture réelle, protections concurrence et annulation.
