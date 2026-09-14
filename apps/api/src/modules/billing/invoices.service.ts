@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   AuditAction,
   canTransitionInvoice,
@@ -26,6 +32,7 @@ import { TaxTemplatesService } from './tax-templates.service';
 const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 
 const invoiceInclude = {
+  incomingAudit: { select: { id: true } },
   carrier: { select: { id: true, code: true, name: true } },
   lines: {
     include: { load: { select: { id: true, loadNumber: true, completedAt: true } } },
@@ -232,7 +239,11 @@ export class InvoicesService {
       action: AuditAction.UPDATE,
       entityType: 'invoice',
       entityId: id,
-      before: { taxTemplateId: invoice.taxTemplateId, taxAmount: Number(invoice.taxAmount), totalAmount: Number(invoice.totalAmount) },
+      before: {
+        taxTemplateId: invoice.taxTemplateId,
+        taxAmount: Number(invoice.taxAmount),
+        totalAmount: Number(invoice.totalAmount),
+      },
       after: { taxTemplateId: newTemplateId, taxAmount: newTaxAmount, totalAmount: newTotal },
     });
 
@@ -271,7 +282,9 @@ export class InvoicesService {
       const apCode = (s.apAccountCode as string | undefined) ?? '2000';
       try {
         // Build input-tax debit lines from the tax breakdown (one per tax line).
-        const taxDetail = result.taxDetail as { lines?: Array<{ accountCode: string; amount: number }> } | null;
+        const taxDetail = result.taxDetail as {
+          lines?: Array<{ accountCode: string; amount: number }>;
+        } | null;
         const taxDebitLines: Array<{ accountCode: string; debit: number }> =
           taxDetail && Array.isArray(taxDetail.lines) && taxDetail.lines.length > 0
             ? taxDetail.lines.map((l) => ({ accountCode: l.accountCode, debit: l.amount }))
@@ -293,7 +306,9 @@ export class InvoicesService {
           userId,
         );
       } catch (err) {
-        this.logger.warn(`Ledger auto-post failed for invoice ${id} (approved): ${(err as Error).message}`);
+        this.logger.warn(
+          `Ledger auto-post failed for invoice ${id} (approved): ${(err as Error).message}`,
+        );
       }
     }
     return result;
@@ -412,9 +427,7 @@ export class InvoicesService {
         // audit trail (invoicedAmount/variance carry the carrier's figures).
         // Consequence: sum(lines.amount) ≠ totalAmount on such invoices —
         // never re-derive the payable from line amounts.
-        ...(dto.resolution === 'ACCEPT_INVOICED'
-          ? { totalAmount: invoice.invoicedTotal! }
-          : {}),
+        ...(dto.resolution === 'ACCEPT_INVOICED' ? { totalAmount: invoice.invoicedTotal! } : {}),
       },
     });
     if (count === 0) {
@@ -439,10 +452,18 @@ export class InvoicesService {
   async markPaid(tenantId: string, userId: string, id: string, paidAt?: string) {
     const inv = await this.prisma.invoice.findFirst({
       where: { id, tenantId },
-      select: { id: true, status: true, totalAmount: true, amountPaid: true, carrierId: true, currency: true },
+      select: {
+        id: true,
+        status: true,
+        totalAmount: true,
+        amountPaid: true,
+        carrierId: true,
+        currency: true,
+      },
     });
     if (!inv) throw new NotFoundException('Invoice not found');
-    if (inv.status !== 'APPROVED') throw new BadRequestException('Only APPROVED invoices can be paid');
+    if (inv.status !== 'APPROVED')
+      throw new BadRequestException('Only APPROVED invoices can be paid');
     const outstanding = Number(inv.totalAmount) - Number(inv.amountPaid);
     if (outstanding <= 0) throw new BadRequestException('Invoice already settled');
     const payment = await this.payments.create(tenantId, userId, {
@@ -453,7 +474,9 @@ export class InvoicesService {
       date: paidAt ?? new Date().toISOString(),
       currency: inv.currency,
       totalAmount: outstanding,
-      allocations: [{ targetType: PaymentTargetType.CARRIER_INVOICE, targetId: inv.id, amount: outstanding }],
+      allocations: [
+        { targetType: PaymentTargetType.CARRIER_INVOICE, targetId: inv.id, amount: outstanding },
+      ],
     });
     await this.payments.submit(tenantId, userId, payment.id);
     return this.get(tenantId, id);

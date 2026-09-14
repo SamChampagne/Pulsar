@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import FreightAccountingPanel from '$lib/billing/FreightAccountingPanel.svelte';
   import { PERMISSIONS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { auth } from '$lib/stores/auth';
@@ -152,6 +153,7 @@
     { id: 'synthese', label: 'Synthèse' },
     { id: 'rapprochement', label: 'Rapprochement' },
     { id: 'suivi', label: 'Suivi et règlement' },
+    { id: 'comptabilite', label: 'Dossier financier' },
   ];
 </script>
 
@@ -309,9 +311,13 @@
         <div class="mt-5 border-t border-edge pt-4 text-sm text-ink-muted">
           Ce dossier est un suivi d’audit, distinct des factures et paiements comptables. Le statut
           « réglée » ne crée ni paiement ni écriture au grand livre. Aucun lien comptable
-          automatique n’est encore établi.
+          automatique n’est effectué. Le dossier financier ci-dessous permet de retrouver les
+          documents explicitement associés.
         </div>
       </Card>
+    </RecordSection>
+    <RecordSection id="comptabilite" label="Dossier financier">
+      <FreightAccountingPanel auditId={invoice.id} auditStatus={invoice.status} />
     </RecordSection>
   </div>
 {/if}

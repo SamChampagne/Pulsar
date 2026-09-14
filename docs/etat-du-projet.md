@@ -6,6 +6,12 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Dossiers financiers connectés, lot 5 (2026-09-14) — `codex/finance-connected-flow`.**
+> Association explicite audit → facture existante, paiements et contexte bancaire reliés.
+> Rapprochement gardé par montant/sens/devise/écriture réelle, protections concurrence et annulation.
+> Migration additive appliquée localement; aucun transfert bancaire, push ou déploiement.
+> Contrats, tests et limites : [finance-connected-flow.md](./plans/finance-connected-flow.md).
+>
 > **Audit et traçabilité comptable, lot 4 (2026-09-14) — `codex/ui-finance-audit`.**
 > Contrôle serveur partie/facture et édition/soumission concurrentes durcis.
 > Audit transporteur en français, panneaux de saisie/litige, liens vers chargements,

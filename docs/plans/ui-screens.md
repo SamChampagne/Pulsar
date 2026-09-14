@@ -113,14 +113,14 @@ période, devise et périmètre. Les droits côté API demeurent la source d’a
 | `/apps` | Conservé | Bureau iPhone, dossiers et préférences inchangés |
 | `/assets` | Adaptation directe | Vue flotte, liens de fiches, périmètre des compteurs explicite |
 | `/automation` | Interaction ciblée | Confirmation intégrée ; la page complète reste à revoir |
-| `/billing/banking` | Adaptation directe | Fenêtre compte bancaire accessible |
+| `/billing/banking` | Lot 5 — rapprochement | Contexte du paiement, onglets accessibles, comparaison et confirmation; import CSV à approfondir |
 | `/billing/budgets` | Adaptation directe | Fenêtres budget et écarts accessibles |
 | `/billing/config` | Réglages communs | Lignes, état modifié, sauvegarde, erreur conservant la saisie |
 | `/billing/fixed-assets` | Adaptation directe | Fenêtres édition, amortissement et calendrier accessibles |
-| `/billing/freight-audit/[id]` | Lot 4 | Sections, liens chargements, litige/résolution en panneaux, règlement de suivi explicite |
+| `/billing/freight-audit/[id]` | Lots 4–5 | Sections, litiges en panneaux, dossier financier et association explicite à la facture comptable |
 | `/billing/freight-audit` | Lot 4 | Français, filtres, économies par devise, saisie en panneau avec recherche transporteur |
 | `/billing/ledger` | Lot 4 | Onglets, filtres de source/compte/date, liens métier et panneau de comptabilisation |
-| `/billing/payments/[id]` | Refonte lot 3 | Dossier, liens factures, édition en panneau et validation confirmée |
+| `/billing/payments/[id]` | Lots 3–5 | Dossier, liens factures/journal/banque, édition en panneau, annulation protégée si rapproché |
 | `/billing/payments/new` | Refonte lot 3 | Partie recherchable, allocations explicites par devise, création en brouillon |
 | `/billing/payments` | Refonte lot 3 | Noms lisibles, liens, filtres et totaux comptabilisés par devise/type |
 | `/billing/reports` | À reprendre | Socle partagé conservé ; revue spécifique nécessaire |

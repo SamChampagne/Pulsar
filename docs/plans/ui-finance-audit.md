@@ -121,5 +121,6 @@ pnpm --filter @pulsar/web test:e2e finance-audit.spec.ts billing-screens.spec.ts
    annulation de navigation avec formulaire modifié restent à traiter. Une réponse
    perdue au POST impose de vérifier la liste avant de recommencer.
 
-La suite utile est le **rapprochement bancaire et les dossiers financiers connectés**,
-avec ces invariants explicités avant d’étendre l’automatisation des agents.
+Suite réalisée dans le [lot 5 — dossiers financiers connectés](./finance-connected-flow.md) :
+association explicite à une facture existante et rapprochement bancaire contrôlé.
+Les limites historiques ci-dessus restent valables sauf le manque d’association documentaire.

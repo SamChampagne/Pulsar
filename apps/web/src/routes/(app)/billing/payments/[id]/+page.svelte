@@ -53,6 +53,9 @@
   const allocated = $derived(
     payment?.allocations.reduce((sum, a) => sum + Number(a.amount), 0) ?? 0,
   );
+  const canReadLedger = $derived(
+    !!$auth?.user.permissions.includes(PERMISSIONS.BILLING.LEDGER_READ),
+  );
   const draftSnapshot = () =>
     JSON.stringify([editTotal, editDate, editReference, editNote, editAmounts]);
 
@@ -315,12 +318,20 @@
             comptabilise les allocations et met à jour les factures liées, après vérification par le
             serveur.
           {:else if record.status === 'SUBMITTED'}Les allocations ont été comptabilisées au grand
-            livre et appliquées aux factures liées. Il ne s’agit pas d’un paiement bancaire en
-            attente.
+            livre et appliquées aux factures liées. La comptabilisation ne prouve pas le mouvement
+            bancaire : le rapprochement avec le relevé reste une étape distincte.
           {:else}Ce paiement est annulé. S’il avait été comptabilisé, sa contre-écriture a rétabli
             les soldes des factures liées.{/if}
         </p>
         <div class="mt-4 flex flex-wrap gap-2">
+          {#if canReadLedger && record.status === 'SUBMITTED'}
+            <Button
+              variant="secondary"
+              href={`/billing/banking?payment=${encodeURIComponent(record.id)}`}
+            >
+              {record.reconciledAt ? 'Voir le rapprochement' : 'Rapprocher avec la banque'}
+            </Button>
+          {/if}
           <Button
             variant="secondary"
             href={`/billing/ledger?sourceType=payment&sourceId=${encodeURIComponent(record.id)}`}
@@ -329,10 +340,13 @@
           <Button variant="secondary" href="/invoices">Factures et relevés</Button>
           {#if canManage && record.status !== 'CANCELLED'}<Button
               variant="ghost"
-              disabled={busy}
+              disabled={busy || !!record.reconciledAt}
               onclick={() => transition('cancel')}>Annuler le paiement</Button
             >{/if}
         </div>
+        {#if record.reconciledAt}<p class="mt-3 text-sm text-ok">
+            Rapproché avec la banque. Retirez ce rapprochement avant d’annuler le paiement.
+          </p>{/if}
         <p class="mt-3 text-xs text-ink-muted">
           Ces actions n’effectuent aucun transfert ni remboursement bancaire.
         </p>

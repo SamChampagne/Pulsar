@@ -6,11 +6,14 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { FreightAuditService } from './freight-audit.service';
+import { FreightAccountingService } from './freight-accounting.service';
+import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import {
   CreateIncomingInvoiceDto,
   FreightDisputeDto,
   FreightResolveDto,
   FreightPayDto,
+  LinkFreightInvoiceDto,
 } from './dto/freight-audit.dto';
 
 @ApiTags('billing/freight-audit')
@@ -18,7 +21,35 @@ import {
 @RequireModule(MODULE_KEYS.BILLING)
 @Controller('freight-audit')
 export class FreightAuditController {
-  constructor(private readonly service: FreightAuditService) {}
+  constructor(
+    private readonly service: FreightAuditService,
+    private readonly accounting: FreightAccountingService,
+  ) {}
+
+  @Get('incoming-invoices/:id/accounting')
+  @RequirePermissions(
+    PERMISSIONS.BILLING.FREIGHT_AUDIT_READ,
+    PERMISSIONS.BILLING.INVOICES_READ,
+    PERMISSIONS.BILLING.PAYMENTS_READ,
+    PERMISSIONS.BILLING.LEDGER_READ,
+  )
+  accountingFlow(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Query() query: ListQueryDto,
+  ) {
+    return this.accounting.read(user.tenantId, id, query);
+  }
+
+  @Post('incoming-invoices/:id/link-invoice')
+  @RequirePermissions(PERMISSIONS.BILLING.FREIGHT_AUDIT_MANAGE, PERMISSIONS.BILLING.INVOICES_READ)
+  linkInvoice(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: LinkFreightInvoiceDto,
+  ) {
+    return this.accounting.link(user.tenantId, user.id, id, dto.invoiceId);
+  }
 
   @Get('savings')
   @RequirePermissions(PERMISSIONS.BILLING.FREIGHT_AUDIT_READ)

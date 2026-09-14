@@ -646,6 +646,11 @@ export class PaymentsService {
     }> = [];
 
     await this.prisma.$transaction(async (tx: any) => {
+      const current = await this.lockPayment(tx, tenantId, id);
+      if (current.reconciledAt)
+        throw new BadRequestException(
+          'Retirez le rapprochement bancaire avant d’annuler ce paiement.',
+        );
       const claim = await tx.payment.updateMany({
         where: { id, tenantId, status: payment.status },
         data: { status: PaymentStatus.CANCELLED, cancelledAt: new Date() },

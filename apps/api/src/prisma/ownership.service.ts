@@ -6,6 +6,8 @@ export type OwnedEntity =
   | 'customer'
   | 'customerInvoice'
   | 'invoice'
+  | 'payment'
+  | 'bankAccount'
   | 'location'
   | 'carrier'
   | 'driver'

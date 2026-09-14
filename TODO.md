@@ -2,6 +2,19 @@
 
 Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link PRs when relevant.
 
+## Relance UI — dossiers financiers connectés (2026-09-14)
+
+- [x] Association audit → facture approuvée existante, tenant-scopée et idempotente.
+- [x] Navigation facture/paiement/banque, sélection expliquée et confirmations UI.
+- [x] Rapprochement bancaire un à un : montant, sens, devise, écriture réelle, concurrence.
+- [x] Interdire annulation d’un paiement rapproché et suppression d’un compte avec mouvements.
+- [ ] Import CSV : prévisualisation, validation complète et dédoublonnage serveur.
+- [ ] Parcours documenté de correction d’une association audit/facture.
+- [ ] Rapprochements partiels/groupés, frais, avances et FX : conception dédiée.
+- [ ] Atomicité historique du rapprochement Freight Audit/factures; grand livre multi-devises.
+
+Contrats, migration et preuves : [finance-connected-flow.md](docs/plans/finance-connected-flow.md).
+
 ## Phase 0 — Foundation
 
 - [x] Monorepo pnpm workspaces + root scripts

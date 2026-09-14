@@ -20,6 +20,7 @@ import { CustomerInvoicesController } from './customer-invoices.controller';
 import { CustomerInvoicesService } from './customer-invoices.service';
 import { FreightAuditController } from './freight-audit/freight-audit.controller';
 import { FreightAuditService } from './freight-audit/freight-audit.service';
+import { FreightAccountingService } from './freight-audit/freight-accounting.service';
 import { InvoicesController } from './invoices.controller';
 import { InvoicesService } from './invoices.service';
 import { LedgerController } from './ledger/ledger.controller';
@@ -40,9 +41,55 @@ import { TaxTemplatesService } from './tax-templates.service';
  * Phase 16: freight-audit (incoming carrier invoices) added.
  */
 @Module({
-  imports: [AuditLogsModule, CustomFieldsModule, EmailModule, ModuleRegistryModule, TransportationModule, forwardRef(() => OperatingModule)],
-  controllers: [InvoicesController, CustomerInvoicesController, FreightAuditController, BillingCustomFieldsController, LedgerController, ModesOfPaymentController, PaymentsController, TaxTemplatesController, ReportsController, BankAccountsController, BankTransactionsController, BudgetsController, FixedAssetsController, SubscriptionsController],
-  providers: [InvoicesService, CustomerInvoicesService, FreightAuditService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService, FinancialReportsService, BankAccountsService, BankTransactionsService, BudgetsService, FixedAssetsService, SubscriptionsService],
-  exports: [FreightAuditService, CustomerInvoicesService, LedgerService, ModesOfPaymentService, PaymentsService, TaxTemplatesService, BankAccountsService, BankTransactionsService],
+  imports: [
+    AuditLogsModule,
+    CustomFieldsModule,
+    EmailModule,
+    ModuleRegistryModule,
+    TransportationModule,
+    forwardRef(() => OperatingModule),
+  ],
+  controllers: [
+    InvoicesController,
+    CustomerInvoicesController,
+    FreightAuditController,
+    BillingCustomFieldsController,
+    LedgerController,
+    ModesOfPaymentController,
+    PaymentsController,
+    TaxTemplatesController,
+    ReportsController,
+    BankAccountsController,
+    BankTransactionsController,
+    BudgetsController,
+    FixedAssetsController,
+    SubscriptionsController,
+  ],
+  providers: [
+    InvoicesService,
+    CustomerInvoicesService,
+    FreightAuditService,
+    FreightAccountingService,
+    LedgerService,
+    ModesOfPaymentService,
+    PaymentsService,
+    TaxTemplatesService,
+    FinancialReportsService,
+    BankAccountsService,
+    BankTransactionsService,
+    BudgetsService,
+    FixedAssetsService,
+    SubscriptionsService,
+  ],
+  exports: [
+    FreightAuditService,
+    CustomerInvoicesService,
+    LedgerService,
+    ModesOfPaymentService,
+    PaymentsService,
+    TaxTemplatesService,
+    BankAccountsService,
+    BankTransactionsService,
+  ],
 })
 export class BillingModule {}

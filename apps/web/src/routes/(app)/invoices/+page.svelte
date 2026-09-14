@@ -58,6 +58,7 @@
     load?: { id: string; loadNumber: string } | null;
   }
   interface InvoiceRow {
+    incomingAudit?: { id: string } | null;
     id: string;
     invoiceNumber: string;
     status: string;
@@ -1065,6 +1066,15 @@
 >
   {#if selectedInvoice}
     {@const invoice = selectedInvoice}
+    {#if invoice.incomingAudit && $auth?.user.permissions.includes(PERMISSIONS.BILLING.FREIGHT_AUDIT_READ)}
+      <div class="mb-4">
+        <Button
+          variant="secondary"
+          href={`/billing/freight-audit/${encodeURIComponent(invoice.incomingAudit.id)}`}
+          >Ouvrir l’audit transporteur</Button
+        >
+      </div>
+    {/if}
     <div class="mb-5 flex flex-wrap items-center gap-2">
       <Badge tone={toneFor(invoice.status)}>{labelFor(invoice.status)}</Badge><span class="text-sm"
         >{invoice.carrier.name}</span

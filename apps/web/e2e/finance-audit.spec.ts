@@ -53,6 +53,15 @@ const entry = {
   ],
 };
 async function mockFinance(page: Page) {
+  await page.route('**/api/v1/freight-audit/incoming-invoices/fa-record/accounting?**', (r) =>
+    r.fulfill({
+      json: {
+        invoice: null,
+        payments: [],
+        candidates: { items: [], total: 0, page: 1, pageSize: 10 },
+      },
+    }),
+  );
   await page.route('**/api/v1/freight-audit/incoming-invoices', (r) =>
     r.fulfill({ json: [record] }),
   );

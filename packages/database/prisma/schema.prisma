@@ -1451,7 +1451,9 @@ model Invoice {
   tenant  Tenant        @relation(fields: [tenantId], references: [id])
   carrier Carrier       @relation(fields: [carrierId], references: [id])
   lines   InvoiceLine[]
+  incomingAudit IncomingCarrierInvoice?
 
+  @@unique([tenantId, id])
   @@unique([tenantId, invoiceNumber])
   @@index([tenantId, status])
   @@map("invoices")
@@ -1560,13 +1562,16 @@ model IncomingCarrierInvoice {
   disputedByAgentId    String?
   createdById          String?
   customData           Json?
+  accountingInvoiceId  String?
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
   tenant  Tenant                @relation(fields: [tenantId], references: [id])
   carrier Carrier               @relation(fields: [carrierId], references: [id])
   lines   IncomingInvoiceLine[]
+  accountingInvoice Invoice? @relation(fields: [tenantId, accountingInvoiceId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict, map: "incoming_carrier_invoices_accounting_invoice_fkey")
 
+  @@unique([tenantId, accountingInvoiceId])
   @@index([tenantId, status])
   @@map("incoming_carrier_invoices")
 }

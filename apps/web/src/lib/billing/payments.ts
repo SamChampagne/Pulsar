@@ -21,6 +21,7 @@ export interface Payment {
   reference: string | null;
   note: string | null;
   status: 'DRAFT' | 'SUBMITTED' | 'CANCELLED';
+  reconciledAt?: string | null;
   modeOfPayment: { id: string; name: string } | null;
   allocations: PaymentAllocation[];
 }
