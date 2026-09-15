@@ -69,6 +69,93 @@ def headers(tenant="tenant-a"):
     return {"X-API-Key": "test-service-key", "X-Pulsar-Tenant": tenant}
 
 
+def zoned_payload():
+    data = payload()
+    data.update(
+        bridge_version="pulsar.aps.v2",
+        time_zone="America/Toronto",
+        horizon_start="2026-01-05T05:00:00",
+        horizon_end="2026-01-06T05:00:00",
+        horizon_days=1,
+        calendar_windows={"cal": [{"start": "2026-01-05T13:00:00", "end": "2026-01-05T22:00:00"}]},
+    )
+    return data
+
+
+@pytest.mark.parametrize("strategy", ["greedy", "backward", "cpsat"])
+def test_v2_uses_captured_windows_not_local_weekly_hours(client, strategy):
+    data = zoned_payload()
+    data["strategy"] = strategy
+    result = calculate(client, data)
+    assert result["time_zone"] == "America/Toronto"
+    assert result["engine_revision"] == pulsar.ENGINE_V2
+    assert result["horizon_end"] == data["horizon_end"]
+    for a in result["assignments"]:
+        assert "2026-01-05T13:00:00" <= a["start"] < a["end"] <= "2026-01-05T22:00:00"
+
+
+def test_v2_exact_replay_and_hash_include_the_resolved_windows(client):
+    data = zoned_payload()
+    a, b = calculate(client, data), calculate(client, data)
+    assert a["assignments"] == b["assignments"]
+    assert a["input_snapshot_hash"] == b["input_snapshot_hash"]
+    data["calendar_windows"]["cal"][0]["start"] = "2026-01-05T14:00:00"
+    c = calculate(client, data)
+    assert c["input_snapshot_hash"] != a["input_snapshot_hash"]
+    assert c["assignments"][0]["start"] == "2026-01-05T14:00:00"
+
+
+def test_v2_empty_resolved_calendar_does_not_fall_back_to_weekly_shifts(client):
+    data = zoned_payload()
+    data["calendar_windows"]["cal"] = []
+    response = client.post("/internal/pulsar/run", json=data, headers=headers())
+    assert response.status_code == 422, response.text
+    assert "no working window" in response.text
+
+
+@pytest.mark.parametrize("hours", [23, 25])
+def test_explicit_horizon_can_differ_from_24_hour_days(client, hours):
+    data = zoned_payload()
+    data["horizon_end"] = f"2026-01-06T{hours - 19:02d}:00:00"
+    assert calculate(client, data)["horizon_end"] == data["horizon_end"]
+
+
+@pytest.mark.parametrize("change", ["missing", "foreign", "outside", "aware", "v1"])
+def test_v2_invalid_calendar_contract_fails_closed(client, change):
+    data = zoned_payload()
+    if change == "missing":
+        del data["calendar_windows"]
+    if change == "foreign":
+        data["calendar_windows"] = {"foreign": []}
+    if change == "outside":
+        data["calendar_windows"]["cal"][0]["start"] = "2026-01-04T00:00:00"
+    if change == "aware":
+        data["calendar_windows"]["cal"][0]["start"] += "Z"
+    if change == "v1":
+        data["bridge_version"] = pulsar.BRIDGE_VERSION
+    response = client.post("/internal/pulsar/run", json=data, headers=headers())
+    assert response.status_code == 422, response.text
+
+
+def test_review_returns_comparison_without_publishing_and_remains_tenant_scoped(client):
+    baseline, candidate = calculate(client), calculate(client)
+    candidate["metrics"]["total_lateness_minutes"] = 120
+    baseline["metrics"]["total_lateness_minutes"] = 0
+    body = {"candidate": candidate, "baseline": baseline}
+    reviewed = client.post("/internal/pulsar/review", json=body, headers=headers())
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["publish_status"] == "review"
+    assert reviewed.json()["comparison"]["metric_delta"]["total_lateness_minutes"] == 120
+    assert (
+        client.post("/internal/pulsar/check-publication", json=body, headers=headers()).status_code
+        == 422
+    )
+    assert (
+        client.post("/internal/pulsar/review", json=body, headers=headers("other")).status_code
+        == 400
+    )
+
+
 def calculate(client, data=None, tenant="tenant-a"):
     response = client.post("/internal/pulsar/run", json=data or payload(), headers=headers(tenant))
     assert response.status_code == 200, response.text

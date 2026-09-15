@@ -88,6 +88,16 @@ class PublishScenario:
             metadata=updated,
         )
 
+    def assess(self, command: PublishScenarioInput) -> dict[str, object]:
+        """Read-only preview of the exact gate used by execute; never changes lifecycle."""
+        metadata = self._load_metadata(command.schedule_id, command.organization_id)
+        assessment = self._assess(command, metadata)
+        return {
+            "publish_status": assessment.publish_status,
+            "recommendation": assessment.recommendation,
+            "comparison": assessment.comparison,
+        }
+
     def _assess(
         self,
         command: PublishScenarioInput,

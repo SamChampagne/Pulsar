@@ -12,8 +12,11 @@
 > workflow industriel. Avant la refonte visuelle : contrat moteur, replay, fuseaux,
 > publication gardée et vraie voie CI APS. **Lot A1 implémenté localement** : entrée
 > moteur isolée par requête, artefacts/rejeu historique et publication gardée; UI
-> inchangée. Le lot A complet n'est pas terminé (fuseaux d'usine, revue et parité
-> avancée restent ouverts). [Contrats et limites A1](./plans/manufacturing-aps-foundation.md).
+> inchangée en A1. **A2.1 implémenté localement** : fuseau commun explicite, fenêtres
+> UTC/DST rejouables, panneaux Pulsar de calcul/revue et confirmation versionnée.
+> Le lot A complet reste ouvert : sites distincts, baseline/actions en entrée,
+> WIP/gel avancé, matières et quotas. [Contrats A2.1](./plans/manufacturing-scenario-review.md).
+> [Contrats et limites A1](./plans/manufacturing-aps-foundation.md).
 > [Audit comparatif et lots d'intégration](./plans/manufacturing-planiadvance-integration.md).
 >
 > **Livraison regroupée (2026-09-14).** Les 14 lots récents sont désormais réunis

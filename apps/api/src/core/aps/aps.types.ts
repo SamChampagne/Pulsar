@@ -14,6 +14,8 @@
 export const APS_CONTRACT_VERSION = 'aps.canonical.v1';
 export const APS_BRIDGE_VERSION = 'pulsar.aps.v1';
 export const APS_ENGINE_REVISION = 'planiadvance-d26a8cd.pulsar-a1';
+export const APS_BRIDGE_V2 = 'pulsar.aps.v2';
+export const APS_ENGINE_V2 = 'planiadvance-d26a8cd.pulsar-a2';
 
 export interface ApsShift {
   /** 0 = Monday … 6 = Sunday. */
@@ -152,17 +154,27 @@ export interface RunScheduleResponse {
 }
 
 /** V1 is explicitly UTC. Site-specific wall-clock conversion is a later contract. */
-export interface ApsBridgeRequest extends RunFromSnapshotRequest {
+export interface ApsBridgeV1Request extends RunFromSnapshotRequest {
   bridge_version: typeof APS_BRIDGE_VERSION;
   time_zone: 'UTC';
   horizon_start: string;
 }
 
+/** Concrete UTC windows are captured, so replay does not depend on a future tz database. */
+export interface ApsBridgeV2Request extends RunFromSnapshotRequest {
+  bridge_version: typeof APS_BRIDGE_V2;
+  time_zone: string;
+  horizon_start: string;
+  horizon_end: string;
+  calendar_windows: Record<string, { start: string; end: string }[]>;
+}
+export type ApsBridgeRequest = ApsBridgeV1Request | ApsBridgeV2Request;
+
 export interface ApsBridgeResponse extends RunScheduleResponse {
-  bridge_version: typeof APS_BRIDGE_VERSION;
-  engine_revision: typeof APS_ENGINE_REVISION;
+  bridge_version: typeof APS_BRIDGE_VERSION | typeof APS_BRIDGE_V2;
+  engine_revision: typeof APS_ENGINE_REVISION | typeof APS_ENGINE_V2;
   engine_version: string;
-  time_zone: 'UTC';
+  time_zone: string;
   organization_id: string;
   horizon_start: string;
   horizon_end: string;

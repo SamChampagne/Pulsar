@@ -354,6 +354,16 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     demande invalide ni inventer un snapshot pour un ancien run. Aucun effet WMS/TMS
     à la publication. Voir `docs/plans/manufacturing-aps-foundation.md`.
 
+45. (Fabrication — scénarios A2.1) Le contrat V2 capture le fuseau IANA commun,
+    les bornes UTC et `calendar_windows` dans la requête immuable : le rejeu ne
+    recompile jamais les quarts avec les règles de fuseau courantes. Dans le moteur,
+    `resolved_windows=None` signifie hebdomadaire historique, `[]` signifie fermé;
+    une transformation future doit préserver ces fenêtres, jamais revenir
+    implicitement aux heures locales. La revue utilise `PublishScenario.assess`
+    en lecture seule. L'UI confirme avec `reviewToken`; le gate et les contrôles
+    de publication A1 restent obligatoires. Aucun contournement de `review` ou
+    `blocked` n'est exposé. Voir `docs/plans/manufacturing-scenario-review.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

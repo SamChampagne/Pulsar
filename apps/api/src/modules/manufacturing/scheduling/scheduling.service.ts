@@ -23,6 +23,8 @@ import { buildManufacturingSnapshot, type SnapshotMaterials } from './snapshot-b
 import {
   APS_BRIDGE_VERSION,
   APS_ENGINE_REVISION,
+  APS_BRIDGE_V2,
+  APS_ENGINE_V2,
   type ApsBridgeRequest,
 } from '../../../core/aps/aps.types';
 import {
@@ -32,11 +34,15 @@ import {
   validateEngineResult,
   validateSnapshot,
 } from './aps-artifact';
+import { plantWindows } from './plant-time';
 
 export interface RunSchedulingInput {
   strategy?: string;
   horizonStart?: string;
   horizonDays?: number;
+  /** V2: local start date and common plant timezone; never infer the host timezone. */
+  horizonDate?: string;
+  timeZone?: string;
   objective?: {
     makespan?: number;
     total_tardiness?: number;
@@ -220,15 +226,37 @@ export class SchedulingService {
     const warnings = [...materialWarnings, ...built.warnings];
 
     validateSnapshot(snapshot);
-    const request: ApsBridgeRequest = {
-      bridge_version: APS_BRIDGE_VERSION,
-      time_zone: 'UTC',
+    if (input.timeZone !== undefined && input.horizonStart !== undefined)
+      throw new BadRequestException(
+        'Utilisez horizonDate avec timeZone, pas horizonStart (UTC historique).',
+      );
+    if (input.horizonDate !== undefined && input.timeZone === undefined)
+      throw new BadRequestException('horizonDate exige un fuseau timeZone explicite.');
+    const common = {
       snapshot,
       strategy: input.strategy ?? 'greedy',
-      horizon_start: explicitHorizon(input.horizonStart, new Date()),
       horizon_days: input.horizonDays ?? 30,
       objective: input.objective ?? null,
     };
+    const request: ApsBridgeRequest =
+      input.timeZone !== undefined
+        ? {
+            ...common,
+            bridge_version: APS_BRIDGE_V2,
+            time_zone: input.timeZone,
+            ...plantWindows(
+              snapshot.calendars ?? [],
+              input.timeZone,
+              input.horizonDate,
+              common.horizon_days,
+            ),
+          }
+        : {
+            ...common,
+            bridge_version: APS_BRIDGE_VERSION,
+            time_zone: 'UTC',
+            horizon_start: explicitHorizon(input.horizonStart, new Date()),
+          };
     return this.execute(tenantId, userId, request, warnings, baseline?.id ?? null);
   }
 
@@ -237,8 +265,7 @@ export class SchedulingService {
     const source = await this.get(tenantId, id);
     if (
       !source.inputRequest ||
-      source.bridgeVersion !== APS_BRIDGE_VERSION ||
-      source.engineRevision !== APS_ENGINE_REVISION ||
+      !this.supportedArtifact(source) ||
       artifactHash(source.inputRequest) !== source.snapshotHash
     ) {
       throw new ConflictException(
@@ -256,6 +283,13 @@ export class SchedulingService {
       source.warnings,
       baseline?.id ?? null,
       id,
+    );
+  }
+
+  private supportedArtifact(run: { bridgeVersion: string | null; engineRevision: string | null }) {
+    return (
+      (run.bridgeVersion === APS_BRIDGE_VERSION && run.engineRevision === APS_ENGINE_REVISION) ||
+      (run.bridgeVersion === APS_BRIDGE_V2 && run.engineRevision === APS_ENGINE_V2)
     );
   }
 
@@ -365,14 +399,12 @@ export class SchedulingService {
     return run;
   }
 
-  /** Engine gate first; tenant lock + expected baseline recheck before any write. */
-  async publish(tenantId: string, userId: string, id: string) {
+  private async publicationInputs(tenantId: string, id: string) {
     const run = await this.get(tenantId, id);
-    if (run.isBaseline) return run; // Safe retry after an uncertain successful response.
     if (
       !run.inputRequest ||
       !run.engineResult ||
-      run.bridgeVersion !== APS_BRIDGE_VERSION ||
+      !this.supportedArtifact(run) ||
       artifactHash(run.inputRequest) !== run.snapshotHash
     ) {
       throw new ConflictException(
@@ -424,6 +456,67 @@ export class SchedulingService {
             })),
           }
         : null);
+    return { run, candidate, previous };
+  }
+
+  /** Read-only: uses the engine's own assessment, never a parallel scoring system. */
+  async review(tenantId: string, id: string) {
+    const { run, candidate, previous } = await this.publicationInputs(tenantId, id);
+    const assessment = await this.aps.reviewPublication(tenantId, candidate, previous);
+    if (
+      !assessment ||
+      !['publishable', 'review', 'blocked'].includes(assessment.publish_status) ||
+      typeof assessment.recommendation !== 'string'
+    )
+      throw new ServiceUnavailableException(
+        'Revue APS indisponible; aucune publication autorisée.',
+      );
+    const slice = await this.prisma.$transaction((tx) => this.planningSlice(tx, tenantId), {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    });
+    const sourceRevision = artifactHash(slice);
+    const fresh =
+      sourceRevision ===
+      (run.inputRequest as unknown as ApsBridgeRequest).snapshot.metadata?.source_revision;
+    const blockers = fresh
+      ? []
+      : ['Les ordres, postes ou calendriers ont changé. Calculez un nouveau scénario.'];
+    if (assessment.publish_status === 'review')
+      blockers.push(
+        'Ce scénario nécessite un arbitrage : ajustez puis recalculez. La publication forcée n’est pas disponible.',
+      );
+    if (assessment.publish_status === 'blocked')
+      blockers.push('Le moteur refuse ce scénario. Corrigez les contraintes avant de recalculer.');
+    const reviewToken = artifactHash({
+      id,
+      hash: run.snapshotHash,
+      baselineId: run.basedOnRunId,
+      sourceRevision,
+      assessment,
+    });
+    return {
+      runId: id,
+      baselineId: run.basedOnRunId,
+      timeZone: run.timeZone,
+      assessment,
+      blockers,
+      canPublish: blockers.length === 0,
+      reviewToken,
+    };
+  }
+
+  /** Engine gate first; tenant lock + expected baseline recheck before any write. */
+  async publish(tenantId: string, userId: string, id: string, reviewToken?: string) {
+    const existing = await this.get(tenantId, id);
+    if (existing.isBaseline) return existing; // Safe retry after an uncertain successful response.
+    if (reviewToken) {
+      const review = await this.review(tenantId, id);
+      if (!review.canPublish || review.reviewToken !== reviewToken)
+        throw new ConflictException(
+          'La revue a changé. Rechargez-la avant de confirmer la publication.',
+        );
+    }
+    const { run, candidate, previous } = await this.publicationInputs(tenantId, id);
     const assessment = await this.aps.checkPublication(tenantId, candidate, previous);
     if (
       assessment?.publish_status !== 'publishable' ||

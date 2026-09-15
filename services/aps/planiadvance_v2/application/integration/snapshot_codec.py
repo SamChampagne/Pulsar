@@ -95,6 +95,8 @@ def _calendar_to_json(calendar: CanonicalCalendar) -> dict[str, Any]:
         "name": calendar.name,
         "shifts": [_shift_to_json(s) for s in calendar.shifts],
         "extra_windows": [_time_window_to_json(w) for w in calendar.extra_windows],
+        **({"resolved_windows": [_time_window_to_json(w) for w in calendar.resolved_windows]}
+           if calendar.resolved_windows is not None else {}),
         "external_ref": calendar.external_ref,
         "site_id": calendar.site_id,
     }
@@ -110,6 +112,10 @@ def _calendar_from_json(data: dict[str, Any]) -> CanonicalCalendar:
         ),
         external_ref=data.get("external_ref"),
         site_id=data.get("site_id"),
+        resolved_windows=(
+            tuple(_time_window_from_json(w) for w in data["resolved_windows"])
+            if data.get("resolved_windows") is not None else None
+        ),
     )
 
 

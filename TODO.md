@@ -20,7 +20,8 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [ ] Flotte v2 : anciens registres/documents paginés, inspections/relevés, création idempotente; vraie réservation atelier et disponibilité prévisionnelle à concevoir.
 - [ ] Fabrication / PlaniAdvance : commencer par le contrat APS complet, les snapshots rejouables, les fuseaux, la publication gardée et la CI moteur; puis Gantt/scénarios et flux métier ([audit et lots](docs/plans/manufacturing-planiadvance-integration.md)).
 - [x] Fabrication A1 : passerelle privée isolée, workflow moteur complet, artefacts/rejeu historique, publication gardée et voie CI APS ([contrats et limites](docs/plans/manufacturing-aps-foundation.md)).
-- [ ] Fabrication A2 : fuseaux d'usine/DST, baseline/actions et revue explicite, parité WIP/gel avancée, matières par site et quotas avant Gantt interactif.
+- [x] Fabrication A2.1 : fuseau commun explicite/DST et fenêtres UTC rejouables, panneaux Pulsar de calcul/revue, comparaison moteur et confirmation versionnée ([contrats et limites](docs/plans/manufacturing-scenario-review.md)).
+- [ ] Fabrication A2 suite : baseline/actions en entrée, arbitrage humain pour `review`, parité WIP/gel avancée, sites/fuseaux distincts, nuit, matières par site et quotas avant Gantt interactif.
 - [ ] Agents : suggestions contextuelles gouvernées, motifs et résultats reliés aux dossiers.
 
 ## Relance UI — dossiers financiers connectés (2026-09-14)

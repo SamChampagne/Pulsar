@@ -141,6 +141,10 @@ La voie GitHub Actions est ajoutée mais **pas encore exécutée sur GitHub**.
 
 ## Prochain incrément : A2 avant le Gantt interactif
 
+**Mise à jour :** [A2.1 — fuseau commun et revue Pulsar](manufacturing-scenario-review.md)
+est implémenté localement. Il couvre une partie des points 1–2 ci-dessous, pas
+les sites distincts, la baseline en entrée ni la publication forcée après arbitrage.
+
 1. Fuseau par site et conversion heure d'usine ↔ instant, tests Montréal/autre
    fuseau, horaires inexistants/ambigus et shifts traversant DST.
 2. Baseline comme entrée de calcul, aperçu/actions, comparaison structurée et

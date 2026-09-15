@@ -109,6 +109,18 @@ export class ApsClient {
     );
   }
 
+  reviewPublication(tenantId: string, candidate: unknown, baseline: unknown) {
+    return this.call<{
+      publish_status: 'publishable' | 'review' | 'blocked';
+      recommendation: string;
+      comparison: Record<string, unknown> | null;
+    }>('POST', '/internal/pulsar/review', {
+      body: { candidate, baseline },
+      tenantId,
+      withKey: true,
+    });
+  }
+
   /** Liveness — fast probe (no DB). */
   health(): Promise<ApsHealth> {
     return this.call<ApsHealth>('GET', '/health', { timeoutMs: 3_000 });

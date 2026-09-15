@@ -127,6 +127,9 @@ class RunSchedulingInput:
     reschedule_mode: str = "reschedule_all"
     organization_id: str | None = None
     planner_actions: list[PlannerAction] = field(default_factory=list)
+    # Optional explicit UTC end: a local calendar day may have 23 or 25 hours.
+    horizon_end: datetime | None = None
+    snapshot_exported_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -266,7 +269,9 @@ class RunScheduling:
         horizon_start = command.horizon_start or datetime.utcnow().replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        horizon_end = horizon_start + timedelta(days=command.horizon_days)
+        horizon_end = command.horizon_end or horizon_start + timedelta(days=command.horizon_days)
+        if horizon_end <= horizon_start:
+            raise ValidationError("Planning horizon must end after its start")
         display_workspace_id = command.workspace_id or "default"
 
         raw_work_orders = list_scoped(
@@ -316,7 +321,7 @@ class RunScheduling:
             supplies=supplies,
             transfer_times=command.transfer_times,
             source_system="repository",
-            exported_at=datetime.utcnow(),
+            exported_at=command.snapshot_exported_at or datetime.utcnow(),
             metadata={
                 "organization_id": command.organization_id,
                 "workspace_id": command.workspace_id,
@@ -379,7 +384,7 @@ class RunScheduling:
             supplies=supplies,
             transfer_times=command.transfer_times,
             source_system="repository",
-            exported_at=datetime.utcnow(),
+            exported_at=command.snapshot_exported_at or datetime.utcnow(),
             metadata={
                 "organization_id": command.organization_id,
                 "workspace_id": command.workspace_id,

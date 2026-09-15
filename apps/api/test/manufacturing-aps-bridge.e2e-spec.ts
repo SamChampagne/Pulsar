@@ -9,7 +9,12 @@ import { hashSync } from 'bcryptjs';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { ApsClient } from '../src/core/aps/aps.client';
-import { APS_ENGINE_REVISION, type ApsBridgeRequest } from '../src/core/aps/aps.types';
+import {
+  APS_ENGINE_REVISION,
+  APS_ENGINE_V2,
+  APS_BRIDGE_V2,
+  type ApsBridgeRequest,
+} from '../src/core/aps/aps.types';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { TenantModulesCacheService } from '../src/prisma/tenant-modules-cache.service';
 
@@ -27,9 +32,10 @@ describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', (
         ? real.runForTenant(tenant, input)
         : {
             bridge_version: input.bridge_version,
-            engine_revision: APS_ENGINE_REVISION,
+            engine_revision:
+              input.bridge_version === APS_BRIDGE_V2 ? APS_ENGINE_V2 : APS_ENGINE_REVISION,
             engine_version: 'aps-engine.v1',
-            time_zone: 'UTC',
+            time_zone: input.time_zone,
             organization_id: tenant,
             schedule_id: randomUUID(),
             created_at: '2026-01-05T00:00:00',
@@ -38,11 +44,14 @@ describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', (
             objective_value: 0,
             wall_time_ms: 1,
             horizon_start: input.horizon_start,
-            horizon_end: new Date(
-              Date.parse(`${input.horizon_start}Z`) + (input.horizon_days ?? 30) * 86_400_000,
-            )
-              .toISOString()
-              .slice(0, 19),
+            horizon_end:
+              input.bridge_version === APS_BRIDGE_V2
+                ? input.horizon_end
+                : new Date(
+                    Date.parse(`${input.horizon_start}Z`) + (input.horizon_days ?? 30) * 86_400_000,
+                  )
+                    .toISOString()
+                    .slice(0, 19),
             metrics: { makespan_minutes: 60 },
             diagnostics: { planner_exceptions: { status: 'ready' } },
             summary: {},
@@ -64,6 +73,15 @@ describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', (
       real
         ? real.checkPublication(_tenant, _candidate, _baseline)
         : { publish_status: 'publishable', recommendation: 'Valid scenario' },
+    ),
+    reviewPublication: jest.fn(async (tenant: string, candidate: unknown, baseline: unknown) =>
+      real
+        ? real.reviewPublication(tenant, candidate, baseline)
+        : {
+            publish_status: 'publishable',
+            recommendation: 'Valid scenario',
+            comparison: null,
+          },
     ),
     health: jest.fn(async () => ({ status: 'ok' })),
   };
@@ -191,6 +209,58 @@ describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', (
     await get(`runs/${runId}`, otherToken).expect(404);
     await post(`runs/${runId}/replay`, {}, otherToken).expect(404);
     await post(`runs/${runId}/publish`, {}, otherToken).expect(404);
+    await get(`runs/${runId}/review`, reader).expect(200);
+    await get(`runs/${runId}/review`, otherToken).expect(404);
+  });
+  it('captures a zoned v2 scenario without changing v1 history', async () => {
+    const r = (
+      await post('run', {
+        timeZone: 'America/Toronto',
+        horizonDate: '2026-01-05',
+        horizonDays: 7,
+      }).expect(201)
+    ).body;
+    expect(r.bridgeVersion).toBe(APS_BRIDGE_V2);
+    expect(r.timeZone).toBe('America/Toronto');
+    expect(r.inputRequest.horizon_start).toBe('2026-01-05T05:00:00');
+    expect(Object.values(r.inputRequest.calendar_windows)[0]).toEqual([
+      { start: '2026-01-05T13:00:00', end: '2026-01-05T22:00:00' },
+    ]);
+    if (real) expect(r.assignments[0].start).toBe('2026-01-05T13:00:00.000Z');
+    const replay = (await post(`runs/${r.id}/replay`).expect(201)).body;
+    expect(replay.inputRequest).toEqual(r.inputRequest);
+    expect(replay.assignments.map((a: any) => a.start)).toEqual(
+      r.assignments.map((a: any) => a.start),
+    );
+    await post(`runs/${replay.id}/publish`).expect(409);
+    await post('run', { timeZone: 'Unknown/Zone' }).expect(400);
+    await post('run', { horizonDate: '2026-01-05' }).expect(400);
+    await post('run', { timeZone: 'UTC', horizonStart: '2026-01-05' }).expect(400);
+  });
+  it('reviews without writing and binds confirmation to the inspected evidence', async () => {
+    const before = await db.schedulingRun.count({ where: { tenantId, isBaseline: true } });
+    const r = await get(`runs/${runId}/review`).expect(200);
+    expect(r.body.canPublish).toBe(true);
+    expect(r.body.reviewToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(await db.schedulingRun.count({ where: { tenantId, isBaseline: true } })).toBe(before);
+    await post(`runs/${runId}/publish`, { reviewToken: 'a'.repeat(64) }).expect(409);
+    await post(`runs/${runId}/publish`, { allowReview: true }).expect(400);
+  });
+  it('shows a review-required assessment but never permits a forced publication', async () => {
+    engine.reviewPublication.mockResolvedValueOnce({
+      publish_status: 'review',
+      recommendation: 'Review needed',
+      comparison: null,
+    });
+    const r = await get(`runs/${runId}/review`).expect(200);
+    expect(r.body.canPublish).toBe(false);
+    expect(r.body.blockers).not.toHaveLength(0);
+    engine.reviewPublication.mockResolvedValueOnce({
+      publish_status: 'review',
+      recommendation: 'Review needed',
+      comparison: null,
+    });
+    await post(`runs/${runId}/publish`, { reviewToken: r.body.reviewToken }).expect(409);
   });
   it('replays exact captured inputs as a new historical, non-publishable candidate', async () => {
     const original = (await get(`runs/${runId}`).expect(200)).body;
@@ -226,9 +296,14 @@ describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', (
     expect(await db.schedulingRun.count({ where: { tenantId, isBaseline: true } })).toBe(0);
   });
   it('publishes and safely repeats the same request without rerunning the gate', async () => {
-    await post(`runs/${runId}/publish`).expect(201);
+    const review = await get(`runs/${runId}/review`).expect(200);
+    await post(`runs/${runId}/publish`, { reviewToken: review.body.reviewToken }).expect(201);
     const calls = engine.checkPublication.mock.calls.length;
     await post(`runs/${runId}/publish`).expect(201);
+    await request(http)
+      .post(`/api/v1/manufacturing/scheduling/runs/${runId}/publish`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
     expect(engine.checkPublication.mock.calls.length).toBe(calls);
     expect((await get('baseline').expect(200)).body.id).toBe(runId);
   });
@@ -255,6 +330,9 @@ describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', (
       where: { tenantId },
       data: { name: 'Updated production demand' },
     });
+    const review = await get(`runs/${candidate.id}/review`).expect(200);
+    expect(review.body.canPublish).toBe(false);
+    expect(review.body.blockers.join(' ')).toContain('changé');
     await post(`runs/${candidate.id}/publish`).expect(409);
     expect((await get('baseline').expect(200)).body.id).toBe(currentBaseline);
   });
@@ -262,5 +340,6 @@ describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', (
     await db.tenantModule.updateMany({ where: { tenantId }, data: { enabled: false } });
     app.get(TenantModulesCacheService).invalidate(tenantId);
     await post(`runs/${runId}/replay`).expect(403);
+    await get(`runs/${runId}/review`).expect(403);
   });
 });

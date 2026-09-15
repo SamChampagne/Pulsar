@@ -32,6 +32,7 @@ class CanonicalCalendar:
     extra_windows: tuple[CanonicalTimeWindow, ...] = ()
     external_ref: str | None = None
     site_id: str | None = None
+    resolved_windows: tuple[CanonicalTimeWindow, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)

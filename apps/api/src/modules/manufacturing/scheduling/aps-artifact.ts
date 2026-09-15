@@ -4,6 +4,8 @@ import { z } from 'zod';
 import {
   APS_BRIDGE_VERSION,
   APS_ENGINE_REVISION,
+  APS_BRIDGE_V2,
+  APS_ENGINE_V2,
   type ApsBridgeRequest,
   type ApsBridgeResponse,
   type ApsSnapshot,
@@ -109,10 +111,10 @@ const jsonObject = z.record(z.string(), z.unknown());
 const integer = z.number().int().min(0).max(2_147_483_647);
 const responseSchema = z
   .object({
-    bridge_version: z.literal(APS_BRIDGE_VERSION),
-    engine_revision: z.literal(APS_ENGINE_REVISION),
+    bridge_version: z.enum([APS_BRIDGE_VERSION, APS_BRIDGE_V2]),
+    engine_revision: z.enum([APS_ENGINE_REVISION, APS_ENGINE_V2]),
     engine_version: z.string().min(1),
-    time_zone: z.literal('UTC'),
+    time_zone: z.string().min(1),
     organization_id: z.string().min(1),
     schedule_id: z.string().min(1),
     created_at: z.string(),
@@ -151,12 +153,22 @@ export function validateEngineResult(
   try {
     const result = responseSchema.parse(raw);
     if (result.organization_id !== tenantId) throw new Error('tenant mismatch');
+    if (
+      result.bridge_version !== request.bridge_version ||
+      result.time_zone !== request.time_zone ||
+      result.engine_revision !==
+        (request.bridge_version === APS_BRIDGE_V2 ? APS_ENGINE_V2 : APS_ENGINE_REVISION)
+    )
+      throw new Error('provenance mismatch');
     parseApsUtc(result.created_at);
     const start = parseApsUtc(result.horizon_start).getTime();
     const end = parseApsUtc(result.horizon_end).getTime();
     if (
       start !== parseApsUtc(request.horizon_start).getTime() ||
-      end !== start + (request.horizon_days ?? 30) * 86_400_000
+      end !==
+        (request.bridge_version === APS_BRIDGE_V2
+          ? parseApsUtc(request.horizon_end).getTime()
+          : start + (request.horizon_days ?? 30) * 86_400_000)
     )
       throw new Error('horizon mismatch');
     const ops = new Map(

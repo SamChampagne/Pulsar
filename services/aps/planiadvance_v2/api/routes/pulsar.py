@@ -13,13 +13,14 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ...application.integration import snapshot_to_domain_inputs
 from ...application.use_cases.publish_scenario import PublishScenario, PublishScenarioInput
 from ...application.use_cases.run_scheduling import RunScheduling, RunSchedulingInput
 from ...config import get_settings
 from ...domain.entities import Schedule, ScheduledOperation
+from ...domain.value_objects import TimeWindow
 from ...infrastructure.in_memory import (
     InMemoryCalendarRepository,
     InMemoryInventoryRepository,
@@ -35,6 +36,8 @@ from .scheduling import _build_analysis_out, _build_feasibility_out, _build_summ
 
 BRIDGE_VERSION = "pulsar.aps.v1"
 ENGINE_REVISION = "planiadvance-d26a8cd.pulsar-a1"
+BRIDGE_V2 = "pulsar.aps.v2"
+ENGINE_V2 = "planiadvance-d26a8cd.pulsar-a2"
 router = APIRouter(prefix="/internal/pulsar", tags=["pulsar-internal"])
 
 
@@ -53,10 +56,50 @@ def service_tenant(
     return x_pulsar_tenant
 
 
+class UtcWindow(BaseModel):
+    start: datetime
+    end: datetime
+
+    @model_validator(mode="after")
+    def valid_window(self):
+        if self.start.tzinfo or self.end.tzinfo or self.end <= self.start:
+            raise ValueError("Calendar windows must be ordered naive UTC instants")
+        return self
+
+
 class BridgeRunRequest(RunScheduleFromSnapshotRequest):
-    bridge_version: Literal["pulsar.aps.v1"]
-    time_zone: Literal["UTC"]
+    bridge_version: Literal["pulsar.aps.v1", "pulsar.aps.v2"]
+    time_zone: str = Field(min_length=1, max_length=100)
     horizon_start: datetime
+    horizon_end: datetime | None = None
+    calendar_windows: dict[str, list[UtcWindow]] | None = None
+
+    @model_validator(mode="after")
+    def version_contract(self):
+        if self.bridge_version == BRIDGE_VERSION:
+            if (
+                self.time_zone != "UTC"
+                or self.horizon_end is not None
+                or self.calendar_windows is not None
+            ):
+                raise ValueError("V1 only supports UTC weekly calendars")
+        else:
+            if self.horizon_end is None or self.calendar_windows is None:
+                raise ValueError("V2 requires explicit horizon_end and calendar_windows")
+            if (
+                self.horizon_end.tzinfo
+                or not 0 < (self.horizon_end - self.horizon_start).total_seconds() <= 367 * 86400
+            ):
+                raise ValueError("Invalid explicit UTC horizon")
+            if set(self.calendar_windows) != {c.id for c in self.snapshot.calendars}:
+                raise ValueError("Resolved calendars must match the snapshot exactly")
+            if sum(len(w) for w in self.calendar_windows.values()) > 100_000:
+                raise ValueError("Too many resolved calendar windows")
+            for windows in self.calendar_windows.values():
+                for w in windows:
+                    if w.start < self.horizon_start or w.end > self.horizon_end:
+                        raise ValueError("Calendar window outside the captured horizon")
+        return self
 
     @field_validator("horizon_start")
     @classmethod
@@ -67,9 +110,11 @@ class BridgeRunRequest(RunScheduleFromSnapshotRequest):
 
 
 class BridgeRunResponse(RunScheduleResponse):
-    bridge_version: Literal["pulsar.aps.v1"] = BRIDGE_VERSION
-    engine_revision: Literal["planiadvance-d26a8cd.pulsar-a1"] = ENGINE_REVISION
-    time_zone: Literal["UTC"] = "UTC"
+    bridge_version: Literal["pulsar.aps.v1", "pulsar.aps.v2"] = BRIDGE_VERSION
+    engine_revision: Literal["planiadvance-d26a8cd.pulsar-a1", "planiadvance-d26a8cd.pulsar-a2"] = (
+        ENGINE_REVISION
+    )
+    time_zone: str = "UTC"
 
 
 @router.post("/run", response_model=BridgeRunResponse)
@@ -79,6 +124,16 @@ def run(payload: BridgeRunRequest, tenant: str = Depends(service_tenant)) -> Bri
     calendars, machines, resources, orders, inventory, supplies, transfers = (
         snapshot_to_domain_inputs(snapshot)
     )
+    if payload.calendar_windows is not None:
+        calendars = [
+            replace(
+                c,
+                resolved_windows=[
+                    TimeWindow(start=w.start, end=w.end) for w in payload.calendar_windows[c.id]
+                ],
+            )
+            for c in calendars
+        ]
 
     # These are newly mapped dataclasses, not shared application repositories.
     def scoped(rows):
@@ -96,6 +151,10 @@ def run(payload: BridgeRunRequest, tenant: str = Depends(service_tenant)) -> Bri
         RunSchedulingInput(
             horizon_start=payload.horizon_start,
             horizon_days=payload.horizon_days,
+            horizon_end=payload.horizon_end,
+            snapshot_exported_at=payload.snapshot.exported_at
+            if payload.bridge_version == BRIDGE_V2
+            else None,
             heuristic=payload.heuristic,
             strategy=payload.strategy,
             objective=_build_objective(payload.objective),
@@ -105,6 +164,9 @@ def run(payload: BridgeRunRequest, tenant: str = Depends(service_tenant)) -> Bri
         )
     )
     return BridgeRunResponse(
+        bridge_version=payload.bridge_version,
+        engine_revision=ENGINE_V2 if payload.bridge_version == BRIDGE_V2 else ENGINE_REVISION,
+        time_zone=payload.time_zone,
         schedule_id=result.schedule.id,
         created_at=result.schedule.created_at,
         organization_id=tenant,
@@ -143,6 +205,15 @@ class PublishCheckRequest(BaseModel):
 
 @router.post("/check-publication")
 def check_publication(payload: PublishCheckRequest, tenant: str = Depends(service_tenant)) -> dict:
+    return publication(payload, tenant, review=False)
+
+
+@router.post("/review")
+def review(payload: PublishCheckRequest, tenant: str = Depends(service_tenant)) -> dict:
+    return publication(payload, tenant, review=True)
+
+
+def publication(payload: PublishCheckRequest, tenant: str, *, review: bool) -> dict:
     repository = InMemoryScheduleRepository()
     for item in [payload.candidate, payload.baseline]:
         if item is None:
@@ -168,14 +239,10 @@ def check_publication(payload: PublishCheckRequest, tenant: str = Depends(servic
         )
     # This "publish" only changes the request-local repository. The real baseline
     # is committed by Pulsar after its optimistic/transactional concurrency check.
-    return (
-        PublishScenario(repository)
-        .execute(
-            PublishScenarioInput(
-                schedule_id=payload.candidate.schedule_id,
-                baseline_schedule_id=payload.baseline.schedule_id if payload.baseline else None,
-                organization_id=tenant,
-            )
-        )
-        .as_dict()
+    command = PublishScenarioInput(
+        schedule_id=payload.candidate.schedule_id,
+        baseline_schedule_id=payload.baseline.schedule_id if payload.baseline else None,
+        organization_id=tenant,
     )
+    use_case = PublishScenario(repository)
+    return use_case.assess(command) if review else use_case.execute(command).as_dict()

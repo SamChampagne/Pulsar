@@ -2,7 +2,18 @@ import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { AuditAction, MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
-import { IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 import { Audit } from '../../../common/decorators/audit.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
@@ -29,12 +40,18 @@ class RunSchedulingDto {
   strategy?: string;
 
   @IsOptional() @IsString() horizonStart?: string;
+  @IsOptional() @IsString() @MaxLength(100) timeZone?: string;
+  @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) horizonDate?: string;
 
   @IsOptional() @IsInt() @Min(1) @Max(365) horizonDays?: number;
 
   @IsOptional() @IsObject() objective?: Record<string, number>;
 
   @IsOptional() @IsBoolean() respectMaterials?: boolean;
+}
+
+class PublishSchedulingDto {
+  @IsOptional() @IsString() @Matches(/^[a-f0-9]{64}$/) reviewToken?: string;
 }
 
 @ApiTags('manufacturing/scheduling')
@@ -78,8 +95,18 @@ export class SchedulingController {
   @Post('runs/:id/publish')
   @Audit('scheduling-run', AuditAction.UPDATE)
   @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE)
-  publish(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.scheduling.publish(user.tenantId, user.id, id);
+  publish(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: PublishSchedulingDto,
+  ) {
+    return this.scheduling.publish(user.tenantId, user.id, id, dto?.reviewToken);
+  }
+
+  @Get('runs/:id/review')
+  @RequirePermissions(PERMISSIONS.MANUFACTURING.READ)
+  review(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.scheduling.review(user.tenantId, id);
   }
 
   @Post('runs/:id/replay')
