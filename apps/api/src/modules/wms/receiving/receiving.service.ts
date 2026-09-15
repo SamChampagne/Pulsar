@@ -1,5 +1,17 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditAction, CustomFieldEntity, DOMAIN_EVENT_TYPES, ReceiptStatus, StockMovementType, canTransitionReceipt } from '@pulsar/shared';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  AuditAction,
+  CustomFieldEntity,
+  DOMAIN_EVENT_TYPES,
+  ReceiptStatus,
+  StockMovementType,
+  canTransitionReceipt,
+} from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
@@ -8,7 +20,18 @@ import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { InventoryService } from '../inventory/inventory.service';
-import { AddReceiptLineDto, CreateReceiptDto, ReceiptListQueryDto, UpdateReceiptDto } from './dto/receipt.dto';
+import {
+  assertWmsLine,
+  lockWmsDocument,
+  nextWmsVersion,
+  readWmsDocument,
+} from '../document-operations';
+import {
+  AddReceiptLineDto,
+  CreateReceiptDto,
+  ReceiptListQueryDto,
+  UpdateReceiptDto,
+} from './dto/receipt.dto';
 
 /**
  * Inbound receipts. A DRAFT receipt accumulates lines; posting it turns each
@@ -44,19 +67,9 @@ export class ReceivingService {
   }
 
   async get(tenantId: string, id: string) {
-    const receipt = await this.prisma.receipt.findFirst({
-      where: { id, tenantId },
-      include: {
-        lines: {
-          include: {
-            item: { select: { sku: true, name: true } },
-            toBin: { select: { code: true } },
-          },
-        },
-      },
+    return this.prisma.$transaction((tx) => readWmsDocument(tx, tenantId, 'receipt', id), {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
     });
-    if (!receipt) throw new NotFoundException('Receipt not found');
-    return receipt;
   }
 
   async create(tenantId: string, userId: string, dto: CreateReceiptDto) {
@@ -65,10 +78,15 @@ export class ReceivingService {
       select: { id: true, type: true },
     });
     if (!loc) throw new NotFoundException('Location not found');
-    if (loc.type !== 'WAREHOUSE') throw new BadRequestException('Receipt requires a WAREHOUSE location');
+    if (loc.type !== 'WAREHOUSE')
+      throw new BadRequestException('Receipt requires a WAREHOUSE location');
 
     const customData = await this.customFields.validateValues(
-      'wms', tenantId, CustomFieldEntity.RECEIPT, dto.customData, { partial: false },
+      'wms',
+      tenantId,
+      CustomFieldEntity.RECEIPT,
+      dto.customData,
+      { partial: false },
     );
     const number = await this.sequences.nextNumber(tenantId, 'receipt');
     const receipt = await this.prisma.receipt.create({
@@ -95,22 +113,28 @@ export class ReceivingService {
   }
 
   async update(tenantId: string, userId: string, id: string, dto: UpdateReceiptDto) {
-    const receipt = await this.prisma.receipt.findFirst({ where: { id, tenantId }, select: { id: true, status: true } });
-    if (!receipt) throw new NotFoundException('Receipt not found');
-    if (receipt.status !== ReceiptStatus.DRAFT) throw new BadRequestException('Receipt is not editable');
-
-    const customData = await this.customFields.validateValues(
-      'wms', tenantId, CustomFieldEntity.RECEIPT, dto.customData, { partial: true },
-    );
-    const updateRes = await this.prisma.receipt.updateMany({
-      where: { id, tenantId },
-      data: {
-        ...(dto.reference !== undefined ? { reference: dto.reference } : {}),
-        ...(dto.note !== undefined ? { note: dto.note } : {}),
-        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const receipt = await lockWmsDocument(tx, tenantId, 'receipt', id, dto.expectedUpdatedAt);
+      if (receipt.status !== ReceiptStatus.DRAFT)
+        throw new ConflictException('Cette réception n’est plus modifiable.');
+      const customData = await this.customFields.validateValues(
+        'wms',
+        tenantId,
+        CustomFieldEntity.RECEIPT,
+        dto.customData,
+        { partial: true },
+      );
+      const updateRes = await tx.receipt.updateMany({
+        where: { id, tenantId, status: ReceiptStatus.DRAFT },
+        data: {
+          updatedAt: nextWmsVersion(receipt.updatedAt),
+          ...(dto.reference !== undefined ? { reference: dto.reference } : {}),
+          ...(dto.note !== undefined ? { note: dto.note } : {}),
+          ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
+        },
+      });
+      if (updateRes.count === 0) throw new NotFoundException('Receipt not found');
     });
-    if (updateRes.count === 0) throw new NotFoundException('Receipt not found');
     const updated = await this.prisma.receipt.findFirstOrThrow({ where: { id, tenantId } });
     await this.audit.log({
       tenantId,
@@ -124,38 +148,75 @@ export class ReceivingService {
   }
 
   async addLine(tenantId: string, id: string, dto: AddReceiptLineDto) {
-    const receipt = await this.prisma.receipt.findFirst({ where: { id, tenantId }, select: { id: true, status: true } });
-    if (!receipt) throw new NotFoundException('Receipt not found');
-    if (receipt.status !== ReceiptStatus.DRAFT) throw new BadRequestException('Receipt is not editable');
+    return this.writeLine(tenantId, id, dto);
+  }
 
-    const item = await this.prisma.wmsItem.findFirst({ where: { id: dto.itemId, tenantId }, select: { id: true } });
-    if (!item) throw new NotFoundException('Item not found');
-    const bin = await this.prisma.bin.findFirst({ where: { id: dto.toBinId, tenantId }, select: { id: true } });
-    if (!bin) throw new NotFoundException('Bin not found');
+  async updateLine(tenantId: string, id: string, lineId: string, dto: AddReceiptLineDto) {
+    return this.writeLine(tenantId, id, dto, lineId);
+  }
 
-    await this.prisma.receiptLine.create({
-      data: { tenantId, receiptId: id, itemId: dto.itemId, toBinId: dto.toBinId, qty: dto.qty },
+  private async writeLine(tenantId: string, id: string, dto: AddReceiptLineDto, lineId?: string) {
+    await this.ownership.assertOwned('wmsItem', dto.itemId, tenantId);
+    await this.ownership.assertOwned('bin', dto.toBinId, tenantId);
+    await this.prisma.$transaction(async (tx) => {
+      const doc = await lockWmsDocument(tx, tenantId, 'receipt', id, dto.expectedUpdatedAt);
+      if (doc.status !== 'DRAFT') throw new ConflictException('Ce document n’est plus modifiable.');
+      await assertWmsLine(tx, tenantId, doc.locationId, dto.itemId, dto.toBinId, dto.qty);
+      const data = { itemId: dto.itemId, toBinId: dto.toBinId, qty: dto.qty };
+      if (lineId) {
+        const result = await tx.receiptLine.updateMany({
+          where: { id: lineId, tenantId, receiptId: id },
+          data,
+        });
+        if (!result.count) throw new NotFoundException('Ligne introuvable dans ce document.');
+      } else {
+        await tx.receiptLine.create({ data: { ...data, tenantId, receiptId: id } });
+      }
+      await tx.receipt.updateMany({
+        where: { id, tenantId, status: 'DRAFT' },
+        data: { updatedAt: nextWmsVersion(doc.updatedAt) },
+      });
     });
     return this.get(tenantId, id);
   }
 
-  async removeLine(tenantId: string, id: string, lineId: string) {
-    const receipt = await this.prisma.receipt.findFirst({ where: { id, tenantId }, select: { id: true, status: true } });
-    if (!receipt) throw new NotFoundException('Receipt not found');
-    if (receipt.status !== ReceiptStatus.DRAFT) throw new BadRequestException('Receipt is not editable');
-
-    await this.prisma.receiptLine.deleteMany({ where: { id: lineId, tenantId, receiptId: id } });
+  async removeLine(tenantId: string, id: string, lineId: string, expectedUpdatedAt?: string) {
+    await this.prisma.$transaction(async (tx) => {
+      const doc = await lockWmsDocument(tx, tenantId, 'receipt', id, expectedUpdatedAt);
+      if (doc.status !== 'DRAFT') throw new ConflictException('Ce document n’est plus modifiable.');
+      const result = await tx.receiptLine.deleteMany({
+        where: { id: lineId, tenantId, receiptId: id },
+      });
+      if (!result.count) throw new NotFoundException('Ligne introuvable dans ce document.');
+      await tx.receipt.updateMany({
+        where: { id, tenantId, status: 'DRAFT' },
+        data: { updatedAt: nextWmsVersion(doc.updatedAt) },
+      });
+    });
     return this.get(tenantId, id);
   }
 
-  async post(tenantId: string, userId: string, id: string) {
-    const receipt = await this.get(tenantId, id);
-    if (!canTransitionReceipt(receipt.status as ReceiptStatus, ReceiptStatus.POSTED)) {
-      throw new BadRequestException(`Cannot post a receipt in status ${receipt.status}`);
-    }
-    if (receipt.lines.length === 0) throw new BadRequestException('Receipt has no lines');
-
-    await this.prisma.$transaction(async (tx) => {
+  async post(tenantId: string, userId: string, id: string, expectedUpdatedAt?: string) {
+    const receipt = await this.prisma.$transaction(async (tx) => {
+      await lockWmsDocument(tx, tenantId, 'receipt', id, expectedUpdatedAt);
+      const receipt = await tx.receipt.findFirstOrThrow({
+        where: { id, tenantId },
+        include: { lines: true },
+      });
+      if (!canTransitionReceipt(receipt.status as ReceiptStatus, ReceiptStatus.POSTED)) {
+        throw new BadRequestException(`Cannot post a receipt in status ${receipt.status}`);
+      }
+      if (receipt.lines.length === 0) throw new BadRequestException('Receipt has no lines');
+      for (const line of receipt.lines) {
+        await assertWmsLine(
+          tx,
+          tenantId,
+          receipt.locationId,
+          line.itemId,
+          line.toBinId,
+          Number(line.qty),
+        );
+      }
       const claim = await tx.receipt.updateMany({
         where: { id, tenantId, status: ReceiptStatus.DRAFT },
         data: { status: ReceiptStatus.POSTED, postedAt: new Date() },
@@ -169,10 +230,12 @@ export class ReceivingService {
           itemId: line.itemId,
           toBinId: line.toBinId,
           qty: Number(line.qty),
+          locationId: receipt.locationId,
           refType: 'receipt',
           refId: id,
         });
       }
+      return receipt;
     });
 
     await this.audit.log({
@@ -194,17 +257,19 @@ export class ReceivingService {
     return this.get(tenantId, id);
   }
 
-  async cancel(tenantId: string, userId: string, id: string) {
-    const receipt = await this.prisma.receipt.findFirst({ where: { id, tenantId }, select: { id: true, status: true } });
-    if (!receipt) throw new NotFoundException('Receipt not found');
-    if (!canTransitionReceipt(receipt.status as ReceiptStatus, ReceiptStatus.CANCELLED)) {
-      throw new BadRequestException(`Cannot cancel a receipt in status ${receipt.status}`);
-    }
-    const claim = await this.prisma.receipt.updateMany({
-      where: { id, tenantId, status: ReceiptStatus.DRAFT },
-      data: { status: ReceiptStatus.CANCELLED },
+  async cancel(tenantId: string, userId: string, id: string, expectedUpdatedAt?: string) {
+    const receipt = await this.prisma.$transaction(async (tx) => {
+      const receipt = await lockWmsDocument(tx, tenantId, 'receipt', id, expectedUpdatedAt);
+      if (!canTransitionReceipt(receipt.status as ReceiptStatus, ReceiptStatus.CANCELLED)) {
+        throw new BadRequestException(`Cannot cancel a receipt in status ${receipt.status}`);
+      }
+      const claim = await tx.receipt.updateMany({
+        where: { id, tenantId, status: ReceiptStatus.DRAFT },
+        data: { status: ReceiptStatus.CANCELLED },
+      });
+      if (claim.count === 0) throw new ConflictException('Receipt already processed');
+      return receipt;
     });
-    if (claim.count === 0) throw new ConflictException('Receipt already processed');
     await this.audit.log({
       tenantId,
       userId,

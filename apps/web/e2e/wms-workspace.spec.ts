@@ -129,7 +129,7 @@ async function setup(page: Page) {
       return r.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 100 } });
     if (path === 'receipts/receipt')
       return r.fulfill({
-        json: { ...receipt, locationId: site.id, lines: [], _count: { lines: 0 } },
+        json: { ...receipt, locationId: site.id, location: site, lines: [], _count: { lines: 0 } },
       });
     return r.fulfill({ json: [] });
   });

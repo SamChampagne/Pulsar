@@ -51,6 +51,87 @@ export class WmsWorkspaceService {
     ]);
     return { items, total, page: q.page, pageSize: q.pageSize };
   }
+  async items(tenantId: string, q: WmsSitesQuery) {
+    const search = (q.search ?? q.q)?.trim();
+    const where: Prisma.WmsItemWhereInput = {
+      tenantId,
+      isActive: true,
+      ...(search
+        ? {
+            OR: [
+              { sku: { contains: search, mode: 'insensitive' } },
+              { name: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.wmsItem.findMany({
+        where,
+        select: { id: true, sku: true, name: true, unit: true, isActive: true },
+        orderBy: [{ sku: 'asc' }, { id: 'asc' }],
+        skip: (q.page - 1) * q.pageSize,
+        take: q.pageSize,
+      }),
+      this.prisma.wmsItem.count({ where }),
+    ]);
+    return {
+      items: items.map((i) => ({ ...i, name: `${i.sku} — ${i.name} · ${i.unit}` })),
+      total,
+      page: q.page,
+      pageSize: q.pageSize,
+    };
+  }
+  async item(tenantId: string, id: string) {
+    const item = await this.prisma.wmsItem.findFirst({
+      where: { tenantId, id },
+      select: { id: true, sku: true, name: true, unit: true, isActive: true },
+    });
+    if (!item) throw new NotFoundException('Article introuvable.');
+    return { ...item, name: `${item.sku} — ${item.name} · ${item.unit}` };
+  }
+  async siteBins(tenantId: string, locationId: string, q: WmsSitesQuery) {
+    await this.site(tenantId, locationId);
+    const search = (q.search ?? q.q)?.trim();
+    const where: Prisma.BinWhereInput = {
+      tenantId,
+      locationId,
+      isActive: true,
+      ...(search
+        ? {
+            OR: [
+              { code: { contains: search, mode: 'insensitive' } },
+              { zone: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.bin.findMany({
+        where,
+        select: { ...binSelect, locationId: true },
+        orderBy: [{ code: 'asc' }, { id: 'asc' }],
+        skip: (q.page - 1) * q.pageSize,
+        take: q.pageSize,
+      }),
+      this.prisma.bin.count({ where }),
+    ]);
+    return {
+      items: items.map((b) => ({ ...b, name: [b.code, b.zone].filter(Boolean).join(' · ') })),
+      total,
+      page: q.page,
+      pageSize: q.pageSize,
+    };
+  }
+  async siteBin(tenantId: string, locationId: string, id: string) {
+    await this.site(tenantId, locationId);
+    const bin = await this.prisma.bin.findFirst({
+      where: { tenantId, locationId, id },
+      select: { ...binSelect, locationId: true },
+    });
+    if (!bin) throw new NotFoundException('Emplacement introuvable dans cet entrepôt.');
+    return { ...bin, name: [bin.code, bin.zone].filter(Boolean).join(' · ') };
+  }
   private async visualBins(
     db: Prisma.TransactionClient,
     tenantId: string,

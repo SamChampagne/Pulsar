@@ -304,6 +304,18 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     `expectedUpdatedAt` pour les zones et confirme les MOVE existants; aucune transition
     automatique des dossiers. Contrats et limites : `docs/plans/wms-visual-workspace.md`.
 
+## Hard rules (continued, WMS — documents guidés)
+
+41. Les writers de réception/préparation (lignes, métadonnées, validation, annulation)
+    prennent le verrou tenant AVANT de relire le document et ses lignes, via
+    `lockWmsDocument`. Une édition de ligne avance aussi `updatedAt` du parent via
+    `nextWmsVersion`; le client guidé transmet cette version sur chaque mutation.
+    `readiness` est une lecture, jamais une réservation : besoin cumulé Decimal par
+    article/bin, stock revérifié par le writer existant à la validation atomique.
+    Article/bin actifs et même entrepôt revérifiés en transaction; les documents
+    historiques ne sont pas recontrôlés contre le stock courant. Pas de retry après
+    réponse incertaine sans inspection. Voir `docs/plans/wms-guided-operations.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

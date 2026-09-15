@@ -6,8 +6,14 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Audit } from '../../../common/decorators/audit.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
-import { AddReceiptLineDto, CreateReceiptDto, ReceiptListQueryDto, UpdateReceiptDto } from './dto/receipt.dto';
+import {
+  AddReceiptLineDto,
+  CreateReceiptDto,
+  ReceiptListQueryDto,
+  UpdateReceiptDto,
+} from './dto/receipt.dto';
 import { ReceivingService } from './receiving.service';
+import { WmsVersionDto } from '../document-operations';
 
 @ApiTags('wms/receiving')
 @ApiBearerAuth()
@@ -43,26 +49,45 @@ export class ReceivingController {
   }
 
   @Post(':id/lines')
+  @Audit('wms-receipt-line', AuditAction.CREATE)
   @RequirePermissions(PERMISSIONS.WMS.MANAGE)
   addLine(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AddReceiptLineDto) {
     return this.receiving.addLine(user.tenantId, id, dto);
   }
 
-  @Delete(':id/lines/:lineId')
+  @Patch(':id/lines/:lineId')
+  @Audit('wms-receipt-line', AuditAction.UPDATE)
   @RequirePermissions(PERMISSIONS.WMS.MANAGE)
-  removeLine(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('lineId') lineId: string) {
-    return this.receiving.removeLine(user.tenantId, id, lineId);
+  updateLine(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('lineId') lineId: string,
+    @Body() dto: AddReceiptLineDto,
+  ) {
+    return this.receiving.updateLine(user.tenantId, id, lineId, dto);
+  }
+
+  @Delete(':id/lines/:lineId')
+  @Audit('wms-receipt-line', AuditAction.DELETE)
+  @RequirePermissions(PERMISSIONS.WMS.MANAGE)
+  removeLine(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('lineId') lineId: string,
+    @Query() q: WmsVersionDto,
+  ) {
+    return this.receiving.removeLine(user.tenantId, id, lineId, q.expectedUpdatedAt);
   }
 
   @Post(':id/post')
   @RequirePermissions(PERMISSIONS.WMS.MANAGE)
-  post(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.receiving.post(user.tenantId, user.id, id);
+  post(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: WmsVersionDto) {
+    return this.receiving.post(user.tenantId, user.id, id, dto?.expectedUpdatedAt);
   }
 
   @Post(':id/cancel')
   @RequirePermissions(PERMISSIONS.WMS.MANAGE)
-  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.receiving.cancel(user.tenantId, user.id, id);
+  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: WmsVersionDto) {
+    return this.receiving.cancel(user.tenantId, user.id, id, dto?.expectedUpdatedAt);
   }
 }

@@ -17,6 +17,16 @@ export class WmsWorkspaceController {
   sites(@CurrentUser() u: AuthUser, @Query() q: WmsSitesQuery) {
     return this.service.sites(u.tenantId, q);
   }
+  @Get('choices/items')
+  @RequirePermissions(PERMISSIONS.WMS.READ)
+  items(@CurrentUser() u: AuthUser, @Query() q: WmsSitesQuery) {
+    return this.service.items(u.tenantId, q);
+  }
+  @Get('choices/items/:id')
+  @RequirePermissions(PERMISSIONS.WMS.READ)
+  item(@CurrentUser() u: AuthUser, @Param('id') id: string) {
+    return this.service.item(u.tenantId, id);
+  }
   @Get('sites/:id')
   @RequirePermissions(PERMISSIONS.WMS.READ)
   site(@CurrentUser() u: AuthUser, @Param('id') id: string) {
@@ -26,6 +36,16 @@ export class WmsWorkspaceController {
   @RequirePermissions(PERMISSIONS.WMS.READ)
   workspace(@CurrentUser() u: AuthUser, @Query() q: WmsWorkspaceQuery) {
     return this.service.workspace(u.tenantId, q);
+  }
+  @Get('sites/:siteId/bins')
+  @RequirePermissions(PERMISSIONS.WMS.READ)
+  siteBins(@CurrentUser() u: AuthUser, @Param('siteId') id: string, @Query() q: WmsSitesQuery) {
+    return this.service.siteBins(u.tenantId, id, q);
+  }
+  @Get('sites/:siteId/bins/:id')
+  @RequirePermissions(PERMISSIONS.WMS.READ)
+  siteBin(@CurrentUser() u: AuthUser, @Param('siteId') siteId: string, @Param('id') id: string) {
+    return this.service.siteBin(u.tenantId, siteId, id);
   }
   @Get('workspace/bins/:id')
   @RequirePermissions(PERMISSIONS.WMS.READ)

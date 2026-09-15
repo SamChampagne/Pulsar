@@ -11,7 +11,10 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [ ] Cohérence guidée entre lignes/expéditions des dossiers reliés; validations des lignes et réservations de stock.
 - [ ] Replanification contextuelle, horaires/capacités des quais et seuils de présence configurables.
 - [x] WMS visuel v1 : zones/emplacements, files par site et déplacement confirmé depuis le stock ([contrats et limites](docs/plans/wms-visual-workspace.md)).
-- [ ] WMS v2 : réception/préparation guidées par lignes, putaway traçable, recherche paginée des référentiels historiques; idempotence durable des mouvements avant retry réseau.
+- [x] WMS guidé : réception/préparation par lignes, unités/stock/manque, correction en panneau, choix recherchables et validation versionnée ([contrats et limites](docs/plans/wms-guided-operations.md)).
+- [x] Sérialiser édition/validation des documents WMS; revalider site/article/bin et besoin cumulé; préserver saisie et bloquer le retry incertain.
+- [ ] WMS suite : putaway traçable, recherche paginée sur les autres référentiels historiques; idempotence durable des mouvements avant retry réseau.
+- [ ] Réception/préparation partielles, quantités attendues/réelles, scans, allocations/réservations et règles de conversion d'unités.
 - [ ] Flotte : disponibilité et planification de maintenance; Fabrication : postes et flux.
 - [ ] Agents : suggestions contextuelles gouvernées, motifs et résultats reliés aux dossiers.
 

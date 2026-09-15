@@ -136,6 +136,7 @@ async function setup(page: Page, url = '/yard') {
         json: {
           ...target,
           locationId: site.id,
+          location: { ...site, type: 'WAREHOUSE' },
           createdAt: '2026-09-14T13:00:00Z',
           lines: [],
           _count: { lines: 0 },
@@ -148,6 +149,7 @@ async function setup(page: Page, url = '/yard') {
           number: 'PK-482',
           status: 'OPEN',
           locationId: site.id,
+          location: { ...site, type: 'WAREHOUSE' },
           createdAt: '2026-09-14T13:00:00Z',
           lines: [],
           _count: { lines: 0 },

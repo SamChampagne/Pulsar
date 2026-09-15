@@ -6,6 +6,13 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **WMS guidé (2026-09-14) — `codex/wms-guided-operations`.**
+> Réception/préparation par lignes : unités, emplacements, stock physique et manque,
+> correction en panneau, validation globale confirmée et liens Cour/entrepôt.
+> Édition et validation sérialisées, versions optimistes et références revérifiées.
+> Aucun prélèvement partiel ni réservation. Suite : rangement traçable et MOVE robuste.
+> [Contrats, validation et limites](./plans/wms-guided-operations.md).
+>
 > **WMS visuel (2026-09-14) — `codex/wms-visual-workspace`.**
 > Poste de travail par entrepôt : réceptionner, ranger, préparer, finaliser;
 > zones et emplacements, stock en panneau, classement visuel et déplacement confirmé.

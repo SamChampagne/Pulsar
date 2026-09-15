@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { AuditAction, MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
@@ -8,6 +8,7 @@ import { RequireModule } from '../../../common/decorators/require-module.decorat
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { AddPickLineDto, CreatePickOrderDto, PickListQueryDto } from './dto/pick.dto';
 import { PickingService } from './picking.service';
+import { WmsVersionDto } from '../document-operations';
 
 @ApiTags('wms/picking')
 @ApiBearerAuth()
@@ -36,26 +37,45 @@ export class PickingController {
   }
 
   @Post(':id/lines')
+  @Audit('wms-pick-line', AuditAction.CREATE)
   @RequirePermissions(PERMISSIONS.WMS.MANAGE)
   addLine(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AddPickLineDto) {
     return this.picking.addLine(user.tenantId, id, dto);
   }
 
-  @Delete(':id/lines/:lineId')
+  @Patch(':id/lines/:lineId')
+  @Audit('wms-pick-line', AuditAction.UPDATE)
   @RequirePermissions(PERMISSIONS.WMS.MANAGE)
-  removeLine(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('lineId') lineId: string) {
-    return this.picking.removeLine(user.tenantId, id, lineId);
+  updateLine(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('lineId') lineId: string,
+    @Body() dto: AddPickLineDto,
+  ) {
+    return this.picking.updateLine(user.tenantId, id, lineId, dto);
+  }
+
+  @Delete(':id/lines/:lineId')
+  @Audit('wms-pick-line', AuditAction.DELETE)
+  @RequirePermissions(PERMISSIONS.WMS.MANAGE)
+  removeLine(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('lineId') lineId: string,
+    @Query() q: WmsVersionDto,
+  ) {
+    return this.picking.removeLine(user.tenantId, id, lineId, q.expectedUpdatedAt);
   }
 
   @Post(':id/complete')
   @RequirePermissions(PERMISSIONS.WMS.MANAGE)
-  complete(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.picking.complete(user.tenantId, user.id, id);
+  complete(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: WmsVersionDto) {
+    return this.picking.complete(user.tenantId, user.id, id, dto?.expectedUpdatedAt);
   }
 
   @Post(':id/cancel')
   @RequirePermissions(PERMISSIONS.WMS.MANAGE)
-  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.picking.cancel(user.tenantId, user.id, id);
+  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: WmsVersionDto) {
+    return this.picking.cancel(user.tenantId, user.id, id, dto?.expectedUpdatedAt);
   }
 }
