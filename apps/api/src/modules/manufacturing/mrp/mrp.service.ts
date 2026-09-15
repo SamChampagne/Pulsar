@@ -157,7 +157,12 @@ export class MrpService {
         },
       }),
       this.prisma.receipt.findMany({
-        where: { tenantId, locationId, status: { not: 'CANCELLED' } },
+        where: {
+          tenantId,
+          locationId,
+          status: { not: 'CANCELLED' },
+          materialPurchaseReceipt: null,
+        },
         orderBy: { createdAt: 'desc' },
         take: 100,
         select: {
@@ -325,6 +330,12 @@ export class MrpService {
           );
       }
       if (dto.receiptId) {
+        if (
+          await tx.materialPurchaseReceipt.count({ where: { tenantId, receiptId: dto.receiptId } })
+        )
+          throw new BadRequestException(
+            'Cette réception appartient déjà à un achat matières : son arrivage est calculé automatiquement.',
+          );
         const receipt = await tx.receipt.findFirst({
           where: { id: dto.receiptId, tenantId, locationId: dto.locationId },
           include: { lines: { where: { tenantId, itemId: dto.itemId } } },
@@ -540,7 +551,67 @@ export class MrpService {
       });
     }
     snapshot.demands = coverage.demands.filter((d) => d.date <= horizonEnd);
+    const purchases = await tx.materialPurchaseOrder.findMany({
+      where: {
+        tenantId,
+        status: 'CONFIRMED',
+        preparation: { tenantId, locationId },
+        expectedDate: { lte: new Date(horizonEnd) },
+      },
+      include: {
+        preparation: true,
+        receipts: {
+          where: { tenantId },
+          include: { receipt: { include: { lines: { where: { tenantId } } } } },
+        },
+      },
+      orderBy: { id: 'asc' },
+      take: 10001,
+    });
+    if (purchases.length > 10000)
+      throw new BadRequestException('Maximum 10 000 commandes matières par calcul.');
+    const materialPurchases = purchases.map((order) => {
+      const prep = order.preparation,
+        policy = byId.get(prep.itemId);
+      const received = order.receipts
+        .filter((r) => r.receipt.status === 'POSTED')
+        .reduce(
+          (sum, r) =>
+            sum.plus(
+              r.receipt.lines
+                .filter((l) => l.itemId === prep.itemId)
+                .reduce((s, l) => s.plus(l.qty), new Prisma.Decimal(0)),
+            ),
+          new Prisma.Decimal(0),
+        );
+      const remaining = Prisma.Decimal.max(0, prep.quantity.minus(received));
+      if (remaining.gt(0)) {
+        if (!policy || policy.unitSnapshot !== prep.unitSnapshot || prep.status !== 'DRAFT')
+          throw new BadRequestException(`Règle/unité incompatible avec ${order.number}.`);
+        snapshot.supplies.push({
+          id: `purchase:${order.id}`,
+          item_id: prep.itemId,
+          quantity: remaining.toFixed(),
+          date: day(order.expectedDate),
+          reference: order.number,
+        });
+      }
+      return {
+        id: order.id,
+        number: order.number,
+        itemId: prep.itemId,
+        quantity: prep.quantity.toFixed(),
+        received: received.toFixed(),
+        remaining: remaining.toFixed(),
+        unit: prep.unitSnapshot,
+        expectedDate: day(order.expectedDate),
+        receipts: order.receipts
+          .filter((r) => r.receipt.status === 'POSTED')
+          .map((r) => ({ id: r.receipt.id, number: r.receipt.number })),
+      };
+    });
     const sourceMetadata = {
+      materialPurchases,
       forecastCoverage: coverage.forecasts,
       salesDemands: coverage.sources,
       bomRevisions: policies
@@ -629,11 +700,24 @@ export class MrpService {
   }
 
   async getRun(tenantId: string, id: string, permissions: readonly string[] = []) {
+    const run = await this.assertRunAccess(tenantId, id, permissions);
+    return this.withFreshness(tenantId, run, permissions);
+  }
+
+  async assertRunAccess(tenantId: string, id: string, permissions: readonly string[]) {
     await this.gate(tenantId);
     const run = await this.prisma.mrpRun.findFirst({ where: { id, tenantId } });
     if (!run) throw new NotFoundException('Calcul MRP introuvable.');
     const metadata = run.sourceMetadata as { salesDemands?: unknown[] } | null;
     if (metadata?.salesDemands?.length) await this.demands.requireCrm(tenantId, permissions);
+    return run;
+  }
+
+  private async withFreshness(
+    tenantId: string,
+    run: Awaited<ReturnType<MrpService['assertRunAccess']>>,
+    permissions: readonly string[],
+  ) {
     let stale = true;
     let staleReason: string | null = null;
     try {

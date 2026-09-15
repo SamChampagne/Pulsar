@@ -27,6 +27,9 @@ enum TenantStatus {
 }
 
 model Tenant {
+  materialSuppliers MaterialSupplier[]
+  materialPurchaseOrders MaterialPurchaseOrder[]
+  materialPurchaseReceipts MaterialPurchaseReceipt[]
   mrpPreparations MrpPreparation[]
   mrpProductMappings MrpProductMapping[]
   mrpReviews MrpReview[]
@@ -2407,6 +2410,7 @@ model StockMovement {
 }
 
 model Receipt {
+  materialPurchaseReceipt MaterialPurchaseReceipt?
   mrpEntries MrpEntry[]
   id          String        @id @default(cuid())
   tenantId    String
@@ -4357,6 +4361,7 @@ enum MrpPreparationStatus {
 
 // Internal request (BUY) or linked OF (MAKE), never stock or confirmed supply.
 model MrpPreparation {
+  purchaseOrder MaterialPurchaseOrder?
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
   runId String @map("run_id")
@@ -4404,4 +4409,74 @@ model BomRevisionLine {
   @@index([tenantId, revisionId])
   @@index([tenantId, itemId])
   @@map("bom_revision_lines")
+}
+
+enum MaterialPurchaseStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+model MaterialSupplier {
+  id String @id @default(cuid())
+  tenantId String
+  code String
+  name String
+  email String?
+  terms String?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  orders MaterialPurchaseOrder[]
+  @@unique([tenantId, code])
+  @@index([tenantId, isActive])
+  @@map("material_suppliers")
+}
+
+// One exact BUY preparation per order in v1. No hidden unit/quantity conversion.
+model MaterialPurchaseOrder {
+  id String @id @default(cuid())
+  tenantId String
+  preparationId String @unique
+  supplierId String
+  number String
+  status MaterialPurchaseStatus @default(DRAFT)
+  supplierSnapshot Json
+  unitPrice Decimal @db.Decimal(18, 6)
+  currency String
+  expectedDate DateTime @db.Date
+  terms String?
+  supplierReference String?
+  confirmedAt DateTime?
+  operationKey String
+  fingerprint String
+  createdById String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  preparation MrpPreparation @relation(fields: [preparationId], references: [id], onDelete: Restrict)
+  supplier MaterialSupplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  receipts MaterialPurchaseReceipt[]
+  @@unique([tenantId, number])
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, status, expectedDate])
+  @@map("material_purchase_orders")
+}
+
+// Link created atomically with a draft WMS receipt; received quantity is derived.
+model MaterialPurchaseReceipt {
+  id String @id @default(cuid())
+  tenantId String
+  purchaseOrderId String
+  receiptId String @unique
+  operationKey String
+  fingerprint String
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  purchaseOrder MaterialPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, purchaseOrderId])
+  @@map("material_purchase_receipts")
 }

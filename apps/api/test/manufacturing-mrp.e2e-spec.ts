@@ -1244,6 +1244,303 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
     }).expect(409);
   });
 
+  const purchasing = (method: 'get' | 'post' | 'put', path: string, body?: object, key = token) =>
+    request(http)
+      [method](`/api/v1/manufacturing/material-purchases${path}`)
+      .set('Authorization', `Bearer ${key}`)
+      .send(body);
+  const wms = (method: 'get' | 'post' | 'patch', path: string, body?: object) =>
+    request(http)
+      [method](`/api/v1/wms/receipts/${path}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
+  let supplier: any,
+    purchase: any,
+    purchasePrep: any,
+    purchaseCreate: any,
+    firstReceipt: any,
+    secondReceipt: any;
+  let stockBeforePurchase: number;
+  it('creates tenant-scoped suppliers and one purchase per request with exact replay and frozen supplier snapshot', async () => {
+    const dto = {
+      code: 'METAL',
+      name: 'Métaux du Nord',
+      email: 'achats@example.test',
+      terms: 'Net 30',
+    };
+    await purchasing('post', '/suppliers', dto, reader).expect(403);
+    supplier = (await purchasing('post', '/suppliers', dto).expect(201)).body;
+    await purchasing('post', '/suppliers', dto).expect(409);
+    await purchasing('put', `/suppliers/${supplier.id}`, dto, other).expect(404);
+    await purchasing('put', `/suppliers/${supplier.id}`, dto).expect(409);
+    supplier = (
+      await purchasing('put', `/suppliers/${supplier.id}`, {
+        ...dto,
+        expectedUpdatedAt: supplier.updatedAt,
+      }).expect(200)
+    ).body;
+    expect(
+      (await purchasing('get', '/suppliers?search=MET&pageSize=1').expect(200)).body.total,
+    ).toBe(1);
+    const { run, body, preview } = await preparationRun('BUY', '5.25');
+    expect(preview.canPrepare).toBe(true);
+    purchasePrep = (await call('post', `runs/${run.id}/prepare`, body).expect(201)).body;
+    purchaseCreate = {
+      preparationId: purchasePrep.id,
+      expectedUpdatedAt: purchasePrep.updatedAt,
+      supplierId: supplier.id,
+      unitPrice: '1.123456',
+      currency: 'CAD',
+      expectedDate: future,
+      operationKey: randomUUID(),
+    };
+    await purchasing('post', '', purchaseCreate, reader).expect(403);
+    await purchasing('post', '', purchaseCreate, other).expect(404);
+    const [a, b] = await Promise.all([
+      purchasing('post', '', purchaseCreate).expect(201),
+      purchasing('post', '', purchaseCreate).expect(201),
+    ]);
+    expect(a.body.id).toBe(b.body.id);
+    purchase = a.body;
+    expect(purchase.subtotal).toBe('5.90');
+    expect(purchase.number).toMatch(/^MP-/);
+    expect(purchase).not.toHaveProperty('fingerprint');
+    expect(purchase).not.toHaveProperty('operationKey');
+    await purchasing('post', '', { ...purchaseCreate, unitPrice: '2' }).expect(409);
+    await purchasing('post', '', { ...purchaseCreate, operationKey: randomUUID() }).expect(409);
+    await purchasing('get', `/${purchase.id}`, undefined, reader).expect(403);
+    await purchasing('get', `/${purchase.id}`, undefined, other).expect(404);
+    await call('post', `preparations/${purchasePrep.id}/cancel`, {
+      expectedUpdatedAt: purchasePrep.updatedAt,
+    }).expect(409);
+    supplier = (
+      await purchasing('put', `/suppliers/${supplier.id}`, {
+        ...dto,
+        name: 'Nouveau nom',
+        expectedUpdatedAt: supplier.updatedAt,
+      }).expect(200)
+    ).body;
+    expect((await purchasing('get', `/${purchase.id}`).expect(200)).body.supplier.name).toBe(
+      'Métaux du Nord',
+    );
+    stockBeforePurchase = await db.stockMovement.count({ where: { tenantId } });
+    expect(
+      (await calculate().expect(201)).body.inputSnapshot.supplies.some(
+        (s: any) => s.id === `purchase:${purchase.id}`,
+      ),
+    ).toBe(false);
+  });
+  it('counts only a human-confirmed purchase as supply and reconciles the inter-run duplicate guard', async () => {
+    await purchasing('post', `/${purchase.id}/receipts`, {
+      expectedUpdatedAt: purchase.updatedAt,
+      toBinId: binId,
+      quantity: '2.25',
+      operationKey: randomUUID(),
+    }).expect(409);
+    const confirmation = {
+      expectedUpdatedAt: purchase.updatedAt,
+      supplierReference: 'SUP-ORDER-101',
+    };
+    await purchasing('post', `/${purchase.id}/confirm`, {
+      ...confirmation,
+      supplierReference: '   ',
+    }).expect(409);
+    purchase = (await purchasing('post', `/${purchase.id}/confirm`, confirmation).expect(201)).body;
+    await purchasing('post', `/${purchase.id}/confirm`, confirmation).expect(409);
+    await purchasing('put', `/${purchase.id}`, {
+      supplierId: supplier.id,
+      unitPrice: '2',
+      currency: 'CAD',
+      expectedDate: future,
+      expectedUpdatedAt: purchase.updatedAt,
+    }).expect(409);
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(stockBeforePurchase);
+    const calculated = (await calculate().expect(201)).body;
+    expect(
+      calculated.inputSnapshot.supplies.find((s: any) => s.id === `purchase:${purchase.id}`)
+        .quantity,
+    ).toBe('5.25');
+    expect((await preparationRun('BUY')).preview.canPrepare).toBe(true);
+    const brief = await app
+      .get(
+        (await import('../src/modules/manufacturing/mrp/mrp-assistance.service'))
+          .MrpAssistanceService,
+      )
+      .brief(tenantId, calculated.id, ['manufacturing.read', 'wms.read', 'crm.read']);
+    expect(brief.materialPurchases).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: purchase.id, remaining: '5.25' })]),
+    );
+  });
+  it('creates replayable receipt drafts, guards bin ownership and excludes manual double-counting', async () => {
+    const wrongBin = await db.bin.findFirstOrThrow({
+      where: { tenantId, locationId: otherSiteId },
+    });
+    const body = {
+      expectedUpdatedAt: purchase.updatedAt,
+      toBinId: binId,
+      quantity: '2.25',
+      operationKey: randomUUID(),
+    };
+    await purchasing('post', `/${purchase.id}/receipts`, { ...body, toBinId: wrongBin.id }).expect(
+      400,
+    );
+    const [a, b] = await Promise.all([
+      purchasing('post', `/${purchase.id}/receipts`, body).expect(201),
+      purchasing('post', `/${purchase.id}/receipts`, body).expect(201),
+    ]);
+    expect(a.body.receiptId).toBe(b.body.receiptId);
+    firstReceipt = (await wms('get', a.body.receiptId).expect(200)).body;
+    expect(firstReceipt.materialPurchase.remaining).toBe('5.25');
+    expect(firstReceipt.status).toBe('DRAFT');
+    const changedItem = (
+      await wms('patch', `${firstReceipt.id}/lines/${firstReceipt.lines[0].id}`, {
+        expectedUpdatedAt: firstReceipt.updatedAt,
+        itemId,
+        toBinId: binId,
+        qty: 2.25,
+      }).expect(200)
+    ).body;
+    expect(changedItem.readiness.canExecute).toBe(false);
+    // An invalid draft must not sum another item's quantity using the purchase unit.
+    const incompatibleDraft = (await purchasing('get', `/${purchase.id}`).expect(200)).body;
+    expect(incompatibleDraft.receipts.find((r: any) => r.id === firstReceipt.id).quantity).toBe(
+      '0',
+    );
+    await wms('post', `${firstReceipt.id}/post`, {
+      expectedUpdatedAt: changedItem.updatedAt,
+    }).expect(409);
+    firstReceipt = (
+      await wms('patch', `${firstReceipt.id}/lines/${firstReceipt.lines[0].id}`, {
+        expectedUpdatedAt: changedItem.updatedAt,
+        itemId: purchase.preparation.itemId,
+        toBinId: binId,
+        qty: 2.25,
+      }).expect(200)
+    ).body;
+    const manufacturingModule = await db.moduleDefinition.findUniqueOrThrow({
+      where: { key: 'manufacturing' },
+    });
+    await db.tenantModule.updateMany({
+      where: { tenantId, moduleId: manufacturingModule.id },
+      data: { enabled: false },
+    });
+    await wms('post', `${firstReceipt.id}/post`, {
+      expectedUpdatedAt: firstReceipt.updatedAt,
+    }).expect(409);
+    await db.tenantModule.updateMany({
+      where: { tenantId, moduleId: manufacturingModule.id },
+      data: { enabled: true },
+    });
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(stockBeforePurchase);
+    await purchasing('post', `/${purchase.id}/receipts`, { ...body, quantity: '3' }).expect(409);
+    await call('post', 'entries', {
+      ...entry(),
+      itemId: purchase.preparation.itemId,
+      kind: 'SUPPLY',
+      quantity: '5.25',
+      receiptId: firstReceipt.id,
+    }).expect(400);
+    expect(
+      (await call('get', `workspace?locationId=${siteId}`).expect(200)).body.receipts.some(
+        (r: any) => r.id === firstReceipt.id,
+      ),
+    ).toBe(false);
+    purchase = (await purchasing('get', `/${purchase.id}`).expect(200)).body;
+    await purchasing('post', `/${purchase.id}/cancel`, {
+      expectedUpdatedAt: purchase.updatedAt,
+    }).expect(409);
+    const second = (
+      await purchasing('post', `/${purchase.id}/receipts`, {
+        ...body,
+        expectedUpdatedAt: purchase.updatedAt,
+        quantity: '4',
+        operationKey: randomUUID(),
+      }).expect(201)
+    ).body;
+    secondReceipt = (await wms('get', second.receiptId).expect(200)).body;
+  });
+  it('receives partially via WMS and refuses concurrent over-receipt with no partial stock commits', async () => {
+    const results = await Promise.all([
+      wms('post', `${firstReceipt.id}/post`, { expectedUpdatedAt: firstReceipt.updatedAt }),
+      wms('post', `${secondReceipt.id}/post`, { expectedUpdatedAt: secondReceipt.updatedAt }),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+    const posted = results.find((r) => r.status === 201)!.body;
+    const rejectedId = posted.id === firstReceipt.id ? secondReceipt.id : firstReceipt.id;
+    const current = (await purchasing('get', `/${purchase.id}`).expect(200)).body;
+    expect(current.fulfillment).toBe('PARTIAL');
+    expect(Number(current.received) + Number(current.remaining)).toBe(5.25);
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(stockBeforePurchase + 1);
+    expect(
+      (await calculate().expect(201)).body.inputSnapshot.supplies.find(
+        (s: any) => s.id === `purchase:${purchase.id}`,
+      ).quantity,
+    ).toBe(current.remaining);
+    const rejected = (await wms('get', rejectedId).expect(200)).body;
+    expect(rejected.readiness.canExecute).toBe(false);
+    expect(rejected.readiness.lines[0].issues.join(' ')).toContain('Sur-réception');
+    const corrected = (
+      await wms('patch', `${rejectedId}/lines/${rejected.lines[0].id}`, {
+        expectedUpdatedAt: rejected.updatedAt,
+        itemId: current.preparation.itemId,
+        toBinId: binId,
+        qty: Number(current.remaining),
+      }).expect(200)
+    ).body;
+    await wms('post', `${rejectedId}/post`, { expectedUpdatedAt: corrected.updatedAt }).expect(201);
+    purchase = (await purchasing('get', `/${purchase.id}`).expect(200)).body;
+    expect(purchase.fulfillment).toBe('FULL');
+    expect(purchase.received).toBe('5.25');
+    expect(purchase.remaining).toBe('0');
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(stockBeforePurchase + 2);
+    expect(
+      (await calculate().expect(201)).body.inputSnapshot.supplies.some(
+        (s: any) => s.id === `purchase:${purchase.id}`,
+      ),
+    ).toBe(false);
+    await purchasing('post', `/${purchase.id}/cancel`, {
+      expectedUpdatedAt: purchase.updatedAt,
+    }).expect(409);
+    await purchasing('post', `/${purchase.id}/receipts`, {
+      expectedUpdatedAt: purchase.updatedAt,
+      toBinId: binId,
+      quantity: '1',
+      operationKey: randomUUID(),
+    }).expect(409);
+  });
+  it('keeps cancellation explicit, versioned and terminal, without releasing an un-reconciled request', async () => {
+    const { run, body } = await preparationRun('BUY', '1');
+    const prep = (await call('post', `runs/${run.id}/prepare`, body).expect(201)).body;
+    const dto = {
+      supplierId: supplier.id,
+      unitPrice: '10',
+      currency: 'USD',
+      expectedDate: future,
+      preparationId: prep.id,
+      expectedUpdatedAt: prep.updatedAt,
+      operationKey: randomUUID(),
+    };
+    const order = (await purchasing('post', '', dto).expect(201)).body;
+    await purchasing('post', `/${order.id}/cancel`, {
+      expectedUpdatedAt: '2000-01-01T00:00:00Z',
+    }).expect(409);
+    const cancelled = (
+      await purchasing('post', `/${order.id}/cancel`, {
+        expectedUpdatedAt: order.updatedAt,
+      }).expect(201)
+    ).body;
+    expect(cancelled.status).toBe('CANCELLED');
+    await purchasing('post', `/${order.id}/confirm`, {
+      expectedUpdatedAt: cancelled.updatedAt,
+      supplierReference: 'VOID',
+    }).expect(409);
+    expect((await preparationRun('BUY')).preview.canPrepare).toBe(false);
+    const current = (await purchasing('get', `/requests/${prep.id}`).expect(200)).body;
+    await call('post', `preparations/${prep.id}/cancel`, {
+      expectedUpdatedAt: current.updatedAt,
+    }).expect(201);
+    expect((await preparationRun('BUY')).preview.canPrepare).toBe(true);
+  });
   it('fails closed when WMS is disabled, including historical reads', async () => {
     const module = await db.moduleDefinition.findUniqueOrThrow({ where: { key: 'wms' } });
     await db.tenantModule.updateMany({
@@ -1253,5 +1550,7 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
     app.get(TenantModulesCacheService).invalidate(tenantId);
     await call('get', `runs/${runId}`).expect(403);
     await calculate().expect(403);
+    await purchasing('get', `/${purchase.id}`).expect(403);
+    await purchasing('get', '/suppliers').expect(403);
   });
 });

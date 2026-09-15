@@ -11,7 +11,8 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [x] M2.2b2 partiel : validité figée des versions BOM, site des calendriers hérité par les postes, candidats APS gardés par site ([contrats](docs/plans/manufacturing-mrp-preparation.md)).
 - [ ] M2 unités : conversions achat/stock, unités industrielles supplémentaires et quantités fractionnaires OF.
 - [x] M3a : propositions → demandes d'achat internes / OF DRAFT, prévisualisation, confirmation, idempotence, refus des doublons inter-calcul et contexte lisible par l'analyste ([contrats et limites](docs/plans/manufacturing-mrp-preparation.md)).
-- [ ] M3b : fournisseurs/conditions, commandes matières approuvées, arrivages fermes et réceptions partielles WMS; rapprochement des préparations avant de lever le blocage inter-calcul.
+- [x] M3b v1 : fournisseurs/conditions, bon mono-demande confirmé humainement, arrivages fermes et réceptions partielles WMS avec rapprochement sans double comptage ([contrats et limites](docs/plans/manufacturing-material-purchases.md)).
+- [ ] M3c achats : regroupement multi-lignes, report d’arrivée confirmée, clôture de reliquat, intake de champs personnalisés WMS, taxes/factures/retours et unités achat/stock.
 - [ ] M4 : boucle MRP–APS par site, arrivages datés, WIP, baseline/gel, impact des retards.
 - [ ] M5 : atelier, réservations, consommation/production réelle, rebut, lots et coûts réconciliés au journal WMS.
 - [ ] M6 : recettes/batchs, rendements, coproduits, conversions masse/volume contrôlées, généalogie et qualité.

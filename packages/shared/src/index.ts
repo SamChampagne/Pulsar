@@ -90,3 +90,4 @@ export * from './manufacturing/definitions';
 export * from './manufacturing/demand-coverage';
 export * from './manufacturing/unit-conversion';
 export * from './manufacturing/mrp-worker';
+export * from './manufacturing/material-purchase';

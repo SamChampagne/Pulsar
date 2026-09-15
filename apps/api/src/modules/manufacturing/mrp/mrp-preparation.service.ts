@@ -40,6 +40,7 @@ const projection = {
   updatedAt: true,
   manufacturingOrderId: true,
   manufacturingOrder: { select: { id: true, number: true, status: true } },
+  purchaseOrder: { select: { id: true, number: true, status: true } },
 } as const;
 
 @Injectable()
@@ -101,6 +102,7 @@ export class MrpPreparationService {
     });
     const blockers: string[] = [];
     let currentHash: string | null = null;
+    let coveredPurchases: string[] = [];
     try {
       const current = await this.mrp.captureInTransaction(
         tx,
@@ -111,6 +113,7 @@ export class MrpPreparationService {
         permissions,
       );
       currentHash = current.sourceHash;
+      coveredPurchases = current.sourceMetadata.materialPurchases.map((p) => p.id);
       if (currentHash !== run.sourceHash)
         blockers.push('Le calcul est périmé. Recalculez avant de préparer un document.');
     } catch (e) {
@@ -128,7 +131,11 @@ export class MrpPreparationService {
         itemId: proposal.item_id,
         runId: { not: runId },
         OR: [
-          { method: 'BUY', status: 'DRAFT' },
+          {
+            method: 'BUY',
+            status: 'DRAFT',
+            OR: [{ purchaseOrder: null }, { purchaseOrder: { id: { notIn: coveredPurchases } } }],
+          },
           { method: 'MAKE', manufacturingOrder: { tenantId, status: { not: 'CANCELLED' } } },
         ],
       },
@@ -344,6 +351,12 @@ export class MrpPreparationService {
       const current = await tx.mrpPreparation.findFirstOrThrow({ where: { id, tenantId } });
       if (current.method !== 'BUY')
         throw new BadRequestException('Annulez l’OF depuis son workflow Fabrication.');
+      if (
+        await tx.materialPurchaseOrder.count({
+          where: { tenantId, preparationId: id, status: { not: 'CANCELLED' } },
+        })
+      )
+        throw new ConflictException('Annulez d’abord la commande matières liée.');
       if (
         !canTransitionMrpPreparation(
           current.status as MrpPreparationStatus,

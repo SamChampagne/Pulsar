@@ -12,6 +12,7 @@
     updatedAt: string;
     manufacturingOrderId: string | null;
     manufacturingOrder: { status: string } | null;
+    purchaseOrder?: { id: string; number: string; status: string } | null;
   };
   type Preview = {
     proposal: MrpProposal;
@@ -216,9 +217,16 @@
                 >Ouvrir l’OF et compléter ses opérations →</a
               >
             {:else}<p class="text-sm text-ink-muted">
-                Demande conservée dans ce calcul. Aucun bon de commande fournisseur n’a été émis.
+                {view.existing.purchaseOrder
+                  ? `Commande liée : ${view.existing.purchaseOrder.number}.`
+                  : 'Demande conservée dans ce calcul, à compléter avec son fournisseur.'}
               </p>
-              {#if canManage && view.existing.status === 'DRAFT'}
+              <a
+                class="text-sm text-accent hover:underline"
+                href={`/manufacturing/purchasing?preparationId=${view.existing.id}`}
+                >Ouvrir l’achat matières et ses réceptions →</a
+              >
+              {#if canManage && view.existing.status === 'DRAFT' && (!view.existing.purchaseOrder || view.existing.purchaseOrder.status === 'CANCELLED')}
                 <label class="flex items-start gap-2 text-sm"
                   ><input
                     type="checkbox"

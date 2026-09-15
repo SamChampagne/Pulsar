@@ -2,6 +2,10 @@
 
 15 septembre 2026 · branche `codex/manufacturing-visual-workspace`.
 
+Suite livrée : [M3b v1 — achats matières et réceptions WMS](./manufacturing-material-purchases.md).
+Les limites ci-dessous décrivent M3a; le nouveau document précise le rapprochement
+BUY désormais disponible et ses limites, sans modifier les garanties MAKE.
+
 ## Parcours livré
 
 Dans **Fabrication → Calendriers**, choisir explicitement un entrepôt pour chaque

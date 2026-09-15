@@ -90,6 +90,7 @@ export class MrpAssistanceService {
           unitSnapshot: true,
           status: true,
           manufacturingOrder: { select: { id: true, status: true } },
+          purchaseOrder: { select: { id: true, number: true, status: true, expectedDate: true } },
         },
       }),
       this.prisma.mrpPreparation.count({ where: preparationWhere }),
@@ -97,6 +98,7 @@ export class MrpAssistanceService {
     const metadata = run.sourceMetadata as {
       salesDemands?: { itemId?: string }[];
       forecastCoverage?: { itemId: string }[];
+      materialPurchases?: { itemId: string }[];
     } | null;
     return {
       id: run.id,
@@ -130,8 +132,13 @@ export class MrpAssistanceService {
       totalSupplies: supplies.length,
       preparations,
       totalPreparations,
+      materialPurchases: (metadata?.materialPurchases ?? [])
+        .filter((p) => ids.has(p.itemId))
+        .slice(0, 100),
+      totalMaterialPurchases: (metadata?.materialPurchases ?? []).filter((p) => ids.has(p.itemId))
+        .length,
       preparationGuidance:
-        'Les préparations sont des brouillons, pas du stock ni des arrivages confirmés. Ne pas les recompter dans le calcul. Une nouvelle exécution exige la prévisualisation et la confirmation humaines du poste MRP; aucun outil de création achat/OF n’est exposé à ce worker.',
+        'Les préparations ne sont pas du stock. Seules les commandes matières CONFIRMED alimentent déjà les arrivages du calcul, pour leur reste non reçu. Le stock WMS contient déjà les réceptions POSTED : ne rien additionner à nouveau. Les preuves materialPurchases sont figées au calcul; les liens purchaseOrder montrent le statut courant. Aucun outil de création achat/OF ou réception n’est exposé à ce worker.',
       salesDemands: (metadata?.salesDemands ?? [])
         .filter((d) => d.itemId && ids.has(d.itemId))
         .slice(0, 100),

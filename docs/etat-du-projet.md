@@ -1,5 +1,20 @@
 # État du projet — point de reprise
 
+> **MRP M3b v1 (2026-09-15), implémenté localement.** Poste Achats matières,
+> fournisseurs versionnés, demandes BUY → bons mono-demande, confirmation humaine
+> de commande passée hors Pulsar, réceptions partielles reliées au WMS et protection
+> contre sur-réception/double comptage. Le MRP absorbe le solde confirmé; le worker
+> peut lire les preuves sans nouveau pouvoir de mutation. UI Pulsar conservée.
+> Aucun envoi fournisseur/LLM ni stock fictif ajouté dans Acme.
+> Suite : achats M3c (multi-lignes, reports/reliquats), boucle matières–capacité M4.
+> [Contrats, limites et reprise](./plans/manufacturing-material-purchases.md).
+>
+> Vérification M3b : **87 tests HTTP** (53 Fabrication/CRM avec moteur réel,
+> 34 WMS), **54 tests navigateur**, **663 tests shared** et **285 tests unitaires API**.
+> Build complet réussi, 0 erreur de type et 12 avertissements Svelte préexistants.
+> 88 migrations dev/test, aucune dérive Prisma. API prête, web 5173 accessible;
+> Acme conserve 0 demande d’achat et 0 fournisseur matières (aucune fixture ajoutée).
+
 > **MRP M2.2b2 partiel + M3a (2026-09-15), implémenté localement.** Sites explicites
 > des calendriers/postes, validité immuable des versions BOM, propositions → demandes
 > d’achat internes / OF DRAFT par prévisualisation-confirmation idempotente. Doublons

@@ -21,6 +21,9 @@ import { MrpService } from './mrp/mrp.service';
 import { MrpDemandsService } from './mrp/mrp-demands.service';
 import { MrpPreparationService } from './mrp/mrp-preparation.service';
 import { MrpPreparationController } from './mrp/mrp-preparation.controller';
+import { MaterialPurchasesService } from './purchasing/material-purchases.service';
+import { MaterialPurchasesController } from './purchasing/material-purchases.controller';
+import { WmsModule } from '../wms/wms.module';
 
 /**
  * Manufacturing / APS master-data module (sub-project 2). Pulsar owns this
@@ -32,8 +35,15 @@ import { MrpPreparationController } from './mrp/mrp-preparation.controller';
  * pattern as FleetModule / WmsModule).
  */
 @Module({
-  imports: [AuditLogsModule, ApsModule, ModuleRegistryModule, forwardRef(() => OperatingModule)],
+  imports: [
+    AuditLogsModule,
+    ApsModule,
+    WmsModule,
+    ModuleRegistryModule,
+    forwardRef(() => OperatingModule),
+  ],
   controllers: [
+    MaterialPurchasesController,
     MrpPreparationController,
     MrpController,
     CalendarsController,
@@ -44,6 +54,7 @@ import { MrpPreparationController } from './mrp/mrp-preparation.controller';
     SchedulingController,
   ],
   providers: [
+    MaterialPurchasesService,
     MrpPreparationService,
     MrpAssistanceService,
     MrpDemandsService,

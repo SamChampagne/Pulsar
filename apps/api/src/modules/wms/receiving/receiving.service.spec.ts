@@ -23,6 +23,7 @@ function harness() {
   };
   const posted: any[] = [];
   const client = {
+    materialPurchaseReceipt: { findFirst: async () => null },
     $queryRaw: async () => [],
     wmsItem: { findFirst: async () => ({ isActive: true }) },
     bin: { findFirst: async () => ({ isActive: true, locationId: 'loc1' }) },

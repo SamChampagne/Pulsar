@@ -418,6 +418,18 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     calendrier et APS filtre les candidats par site. Aucun nouvel outil mutating
     exposé au worker. Voir `docs/plans/manufacturing-mrp-preparation.md`.
 
+51. (MRP — achats matières M3b) Une commande `MaterialPurchaseOrder` cible une seule
+    préparation BUY immuable. DRAFT ne compte jamais comme supply; CONFIRMED exige
+    une confirmation humaine de commande passée hors Pulsar, jamais un envoi implicite.
+    Statuts via `canTransitionMaterialPurchase`. Écritures sous verrou tenant WMS;
+    créations achat/réception idempotentes (acteur/corps/clé), versions obligatoires.
+    Chaque réception liée revalide article/unité/site/commande active et cumul reçu
+    sous verrou au posting. Stock exclusivement via `InventoryService.postMovement`.
+    MRP compte le reste CONFIRMED, jamais les brouillons ni deux fois les réceptions;
+    une réception liée n'est pas réutilisable en SUPPLY manuel. Le blocage inter-calcul
+    BUY n'est levé que pour une commande capturée dans le snapshot courant. Aucun
+    nouvel outil mutating IA. Voir `docs/plans/manufacturing-material-purchases.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
