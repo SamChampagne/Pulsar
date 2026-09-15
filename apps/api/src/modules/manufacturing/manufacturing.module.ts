@@ -13,6 +13,8 @@ import { OrdersController } from './orders/orders.controller';
 import { OrdersService } from './orders/orders.service';
 import { SchedulingController } from './scheduling/scheduling.controller';
 import { SchedulingService } from './scheduling/scheduling.service';
+import { MrpController } from './mrp/mrp.controller';
+import { MrpService } from './mrp/mrp.service';
 
 /**
  * Manufacturing / APS master-data module (sub-project 2). Pulsar owns this
@@ -26,6 +28,7 @@ import { SchedulingService } from './scheduling/scheduling.service';
 @Module({
   imports: [AuditLogsModule, ApsModule],
   controllers: [
+    MrpController,
     CalendarsController,
     WorkCentersController,
     RoutingsController,
@@ -34,6 +37,7 @@ import { SchedulingService } from './scheduling/scheduling.service';
     SchedulingController,
   ],
   providers: [
+    MrpService,
     CalendarsService,
     WorkCentersService,
     RoutingsService,

@@ -21,6 +21,7 @@ from ...application.use_cases.run_scheduling import RunScheduling, RunScheduling
 from ...config import get_settings
 from ...domain.entities import Schedule, ScheduledOperation
 from ...domain.value_objects import TimeWindow
+from ...domain.mrp import MrpRequest, calculate_mrp
 from ...infrastructure.in_memory import (
     InMemoryCalendarRepository,
     InMemoryInventoryRepository,
@@ -54,6 +55,14 @@ def service_tenant(
     if not x_pulsar_tenant.strip():
         raise HTTPException(400, "Pulsar tenant context is required")
     return x_pulsar_tenant
+
+
+@router.post("/mrp")
+def run_mrp(request: MrpRequest, tenant_id: str = Depends(service_tenant)):
+    try:
+        return {"tenant_id": tenant_id, **calculate_mrp(request)}
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
 
 
 class UtcWindow(BaseModel):

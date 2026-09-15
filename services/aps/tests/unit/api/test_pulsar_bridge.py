@@ -69,6 +69,21 @@ def headers(tenant="tenant-a"):
     return {"X-API-Key": "test-service-key", "X-Pulsar-Tenant": tenant}
 
 
+def test_mrp_private_stateless_bridge(client):
+    body = {"version": "pulsar.mrp.v1", "as_of": "2026-09-15", "horizon_end": "2026-09-30",
+            "items": [{"id": "i", "sku": "RAW", "name": "Raw", "unit": "KG", "method": "BUY", "on_hand": "0.1"}],
+            "demands": [{"id": "d", "item_id": "i", "quantity": "0.3", "date": "2026-09-20", "reference": "Order"}], "supplies": []}
+    assert client.post("/internal/pulsar/mrp", json=body).status_code == 422
+    assert client.post("/internal/pulsar/mrp", json=body, headers={"X-Pulsar-Tenant": "one"}).status_code == 401
+    for tenant in ("one", "two"):
+        response = client.post("/internal/pulsar/mrp", json=body, headers=headers(tenant))
+        assert response.status_code == 200
+        assert response.json()["tenant_id"] == tenant
+        assert response.json()["proposals"][0]["quantity"] == "0.2"
+    body["items"][0]["method"] = "MAKE"
+    assert client.post("/internal/pulsar/mrp", json=body, headers=headers()).status_code == 422
+
+
 def zoned_payload():
     data = payload()
     data.update(

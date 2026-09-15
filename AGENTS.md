@@ -364,6 +364,15 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     de publication A1 restent obligatoires. Aucun contournement de `review` ou
     `blocked` n'est exposé. Voir `docs/plans/manufacturing-scenario-review.md`.
 
+46. (Fabrication — MRP M1) Le calcul MRP passe par le bridge privé PlaniAdvance
+    `/internal/pulsar/mrp`, Decimal et snapshot tenant/entrepôt explicite. Les règles
+    et entrées sont versionnées, les calculs immuables ; aucun stock, OF ou achat
+    n'est créé par un calcul. Une réception WMS POSTED liée réduit l'arrivage attendu
+    sans ajouter du stock. Ne jamais agréger les sites ni convertir les unités
+    implicitement. Le poste exige Fabrication + WMS activés et leurs droits de
+    lecture, y compris sur l'historique. Contrats et limites :
+    `docs/plans/manufacturing-mrp.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

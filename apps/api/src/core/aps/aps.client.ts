@@ -5,6 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { MrpResult, MrpSnapshot } from '@pulsar/shared';
 import type {
   ApsHealth,
   ApsReadiness,
@@ -98,6 +99,15 @@ export class ApsClient {
       tenantId,
       withKey: true,
       timeoutMs: 60_000,
+    });
+  }
+
+  calculateMrp(tenantId: string, body: MrpSnapshot): Promise<MrpResult> {
+    return this.call('POST', '/internal/pulsar/mrp', {
+      body,
+      tenantId,
+      withKey: true,
+      timeoutMs: 30_000,
     });
   }
 

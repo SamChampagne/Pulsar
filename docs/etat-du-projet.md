@@ -1,5 +1,12 @@
 # État du projet — point de reprise
 
+> **MRP M1 (2026-09-15), implémenté localement.** Poste `/manufacturing/mrp` :
+> règles article/entrepôt, demandes/arrivages, explosion multi-niveaux Decimal dans
+> le runtime PlaniAdvance, historique immuable et lien réception WMS sans double
+> comptage. UI Pulsar conservée. Ce lot est un calcul de besoins, **pas encore le
+> MRP complet exécutant achats/OF/atelier**. Cible confirmée : discret et procédés
+> à terme. [Contrats, limites et suite M2–M7](./plans/manufacturing-mrp.md).
+
 > 🇫🇷 Document de synthèse pour reprendre le travail (humain ou session Claude Code).
 > Mis à jour à la fin de la **phase 16** (début de l'Acte II). Détail des tâches : [TODO.md](../TODO.md) ·
 > vision : [ROADMAP.md](../ROADMAP.md) · règles de dev : [CLAUDE.md](../CLAUDE.md) ·

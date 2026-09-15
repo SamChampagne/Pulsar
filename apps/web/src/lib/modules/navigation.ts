@@ -227,6 +227,7 @@ export function navCatalogue(): NavDomain[] {
         {
           links: [
             { href: '/manufacturing', label: "Vue d'ensemble" },
+            { href: '/manufacturing/mrp', label: 'Besoins matières (MRP)' },
             { href: '/manufacturing/scheduling', label: 'Planification (Gantt)' },
             { href: '/manufacturing/orders', label: 'Ordres de fabrication' },
           ],

@@ -85,3 +85,4 @@ export * from './crm/sales-order.workflow';
 export * from './email/email.enums';
 export * from './sites/landing';
 export * from './operations/control-center';
+export * from './manufacturing/mrp';

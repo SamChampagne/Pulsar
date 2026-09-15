@@ -48,6 +48,7 @@
   });
 
   const tiles = [
+    { href: '/manufacturing/mrp', label: 'Besoins matières (MRP)', desc: 'Demande, stock par entrepôt et propositions multi-niveaux', icon: Boxes, accent: true },
     { href: '/manufacturing/scheduling', label: 'Planification (Gantt)', desc: 'Lancer et visualiser un ordonnancement APS', icon: GanttChartSquare, accent: true },
     { href: '/manufacturing/orders', label: 'Ordres de fabrication', desc: 'Demande de production et cycle de vie', icon: ClipboardList },
     { href: '/manufacturing/work-centers', label: 'Postes de charge', desc: 'Ressources de production', icon: Factory },

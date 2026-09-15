@@ -4,6 +4,7 @@ process.env.APS_AUTOSTART = 'false';
 import { randomUUID } from 'node:crypto';
 import { INestApplication, ServiceUnavailableException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { SchedulerRegistry } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { hashSync } from 'bcryptjs';
 import request from 'supertest';
@@ -108,6 +109,7 @@ describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', (
       new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }),
     );
     await app.init();
+    for (const job of app.get(SchedulerRegistry).getCronJobs().values()) job.stop();
     http = app.getHttpServer();
     db = app.get(PrismaService);
     const module = await db.moduleDefinition.findUniqueOrThrow({ where: { key: 'manufacturing' } });

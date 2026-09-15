@@ -27,6 +27,9 @@ enum TenantStatus {
 }
 
 model Tenant {
+  mrpPolicies MrpItemPolicy[]
+  mrpEntries MrpEntry[]
+  mrpRuns MrpRun[]
   id         String       @id @default(cuid())
   slug       String       @unique
   name       String
@@ -530,6 +533,9 @@ enum LocationType {
 }
 
 model Location {
+  mrpPolicies MrpItemPolicy[]
+  mrpEntries MrpEntry[]
+  mrpRuns MrpRun[]
   id           String       @id @default(cuid())
   tenantId     String
   customerId   String?
@@ -2237,6 +2243,8 @@ enum PickOrderStatus {
 }
 
 model WmsItem {
+  mrpPolicies MrpItemPolicy[]
+  mrpEntries MrpEntry[]
   id           String   @id @default(cuid())
   tenantId     String
   sku          String
@@ -2388,6 +2396,7 @@ model StockMovement {
 }
 
 model Receipt {
+  mrpEntries MrpEntry[]
   id          String        @id @default(cuid())
   tenantId    String
   number      String
@@ -3610,6 +3619,7 @@ model RoutingStep {
 }
 
 model Bom {
+  mrpPolicies MrpItemPolicy[]
   id         String   @id @default(cuid())
   tenantId   String
   code       String
@@ -4158,4 +4168,80 @@ model SubscriptionInvoice {
   @@unique([tenantId, subscriptionId, periodStart])
   @@index([tenantId, subscriptionId])
   @@map("subscription_invoices")
+}
+
+// MRP owns planning inputs and immutable calculations, never stock balances.
+enum MrpSourcingMethod {
+  BUY
+  MAKE
+}
+
+enum MrpEntryKind {
+  DEMAND
+  SUPPLY
+}
+
+model MrpItemPolicy {
+  id String @id @default(cuid())
+  tenantId String
+  locationId String
+  itemId String
+  method MrpSourcingMethod @default(BUY)
+  bomId String?
+  unitSnapshot String
+  leadDays Int @default(0)
+  safetyStock Decimal @default(0) @db.Decimal(14, 3)
+  minimumOrder Decimal @default(0) @db.Decimal(14, 3)
+  orderMultiple Decimal @default(0.001) @db.Decimal(14, 3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  location Location @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  item WmsItem @relation(fields: [itemId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  bom Bom? @relation(fields: [bomId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  @@unique([tenantId, locationId, itemId])
+  @@index([tenantId, locationId])
+  @@map("mrp_item_policies")
+}
+
+model MrpEntry {
+  id String @id @default(cuid())
+  tenantId String
+  locationId String
+  itemId String
+  kind MrpEntryKind
+  quantity Decimal @db.Decimal(14, 3)
+  unitSnapshot String
+  dueDate DateTime @db.Date
+  reference String
+  isActive Boolean @default(true)
+  receiptId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  location Location @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  item WmsItem @relation(fields: [itemId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  receipt Receipt? @relation(fields: [receiptId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  @@unique([tenantId, receiptId, itemId])
+  @@index([tenantId, locationId, isActive, dueDate])
+  @@map("mrp_entries")
+}
+
+model MrpRun {
+  id String @id @default(cuid())
+  tenantId String
+  locationId String
+  createdById String
+  asOf DateTime @db.Date
+  horizonEnd DateTime @db.Date
+  sourceHash String
+  inputSnapshot Json
+  result Json
+  proposalCount Int
+  exceptionCount Int
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  location Location @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  @@index([tenantId, locationId, createdAt])
+  @@map("mrp_runs")
 }
