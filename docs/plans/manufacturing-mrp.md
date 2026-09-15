@@ -6,6 +6,12 @@ restent la référence visuelle. Le projet PlaniAdvance original n'est pas modif
 
 ## Livraison M1 : calcul des besoins et poste de travail
 
+Mise à jour M2.1 : voir le [référentiel versionné](./manufacturing-definitions.md).
+Les politiques MAKE utilisent désormais une version publiée explicite, pas le
+brouillon. Les lignes sont Decimal(24,9), et les nouveaux OF peuvent capturer
+leur site et leurs matières à la libération. Les limites M2–M7 ci-dessous restent
+ouvertes lorsqu'elles ne sont pas explicitement couvertes par M2.1.
+
 **M1 est un module de planification, pas encore un MRP industriel de bout en bout.**
 Il ne passe pas de commande fournisseur, ne crée pas d'OF et ne consomme aucun
 stock. Cette frontière est affichée dans l'interface, pas seulement dans ce document.
@@ -71,15 +77,16 @@ articles ni leurs unités.
   Une alerte d'urgence n'est pas une preuve de faisabilité ni un ordre exécutable.
 - BOM : quantité du composant dans son unité WMS pour UNE unité WMS du parent.
   Pas de conversion implicite KG/LB, rendement, rebut, coproduit ou lot de recette.
-  La source BomLine historique reste Float ; conversion explicite de sa valeur
-  décimale sérialisée, rejet au-delà de 9 décimales, pas de précision inventée.
+  Depuis M2.1 : BomLine et versions publiées sont Decimal(24,9). La migration
+  refuse les anciennes valeurs Float non représentables sans arrondi.
 - Arrivage manuel = quantité encore attendue. Sans réception liée, l'opérateur
   doit la réduire/désactiver après réception ; sinon le résultat peut surévaluer
   la couverture. Un lien ne constitue ni réservation ni bon de commande.
 - Réception annulée liée → calcul refusé jusqu'à correction de l'arrivage.
   Une réception/article ne peut être liée qu'une fois, même à une entrée inactive.
-- Les OF existants ne sont pas encore site-scopés ni porteurs de quantités restantes
-  fiables ; ils ne sont donc pas ajoutés implicitement à l'offre ou à la demande.
+- Les OF historiques restent sans site/version connus; les nouveaux peuvent être
+  rattachés explicitement depuis M2.1. Aucune quantité restante fiable n'est encore
+  dérivée : aucun OF n'est ajouté implicitement à l'offre ou à la demande.
 - Pas de retry automatique des écritures. Après réponse incertaine, inspecter le
   poste/historique avant de ressaisir ; création d'entrée non idempotente à ce stade.
 - Limites explicites : 2 000 politiques/articles/BOM, 10 000 entrées, 50 niveaux,

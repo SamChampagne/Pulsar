@@ -373,6 +373,17 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     lecture, y compris sur l'historique. Contrats et limites :
     `docs/plans/manufacturing-mrp.md`.
 
+47. (Fabrication — MRP M2.1) `BomRevision`/lignes sont des artefacts publiés
+    append-only; aucun writer métier ne les modifie. MAKE utilise une version
+    explicite, jamais le brouillon/la dernière version implicite. SKU/unité WMS
+    utilisés sont protégés sous le verrou tenant partagé. Site/version d'un OF
+    sont choisis sur un DRAFT à jour; libération et `materialSnapshot` sont
+    atomiques, quantités/matières ensuite figées. Aucun backfill historique.
+    APS avec matières lit l'instantané et le stock du site capturé, refuse les
+    OF BOM historiques non capturés et les calculs multi-sites (jusqu'à M4).
+    Aucun stock/achat/OF n'est créé par le calcul MRP. Contrats et compatibilité :
+    `docs/plans/manufacturing-definitions.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

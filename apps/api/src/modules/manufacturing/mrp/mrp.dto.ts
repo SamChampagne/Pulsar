@@ -21,6 +21,7 @@ export class MrpPolicyDto extends MrpSiteDto {
   @IsString() @MinLength(1) @MaxLength(128) itemId!: string;
   @IsEnum(MrpSourcingMethod) method!: MrpSourcingMethod;
   @IsOptional() @IsString() @MaxLength(128) bomId?: string;
+  @IsOptional() @IsString() @MaxLength(128) bomRevisionId?: string;
   @IsInt() @Min(0) @Max(3650) leadDays!: number;
   @Matches(/^\d{1,10}(\.\d{1,3})?$/) safetyStock!: string;
   @Matches(/^\d{1,10}(\.\d{1,3})?$/) minimumOrder!: string;

@@ -136,7 +136,15 @@ async function setup(page: Page, readonly = false, empty = false) {
             { id: 'fg', sku: 'ASSEMBLAGE', name: 'Assemblage final', unit: 'EA' },
             { id: 'raw', sku: 'ACIER', name: 'Acier de structure', unit: 'KG' },
           ],
-          boms: [{ id: 'bom', code: 'BOM-FG', name: 'Assemblage', productRef: 'ASSEMBLAGE' }],
+          boms: [
+            {
+              id: 'bom',
+              code: 'BOM-FG',
+              name: 'Assemblage',
+              productRef: 'ASSEMBLAGE',
+              revisions: [{ id: 'rev1', revision: 1, outputItemId: 'fg', outputUnit: 'EA' }],
+            },
+          ],
         },
       });
     if (path === 'manufacturing/mrp/workspace')
@@ -151,6 +159,7 @@ async function setup(page: Page, readonly = false, empty = false) {
                   locationId: 'site',
                   method: 'MAKE',
                   bomId: 'bom',
+                  bomRevisionId: 'rev1',
                   leadDays: 2,
                   safetyStock: '0',
                   minimumOrder: '0',
@@ -204,6 +213,7 @@ test('policy drawer does not shift the shell and preserves optimistic version', 
   expect(state.writes[0].body.expectedUpdatedAt).toBe('2026-09-15T00:00:00Z');
   expect(state.writes[0].body.acknowledgeUnits).toBe(true);
   expect(state.writes[0].body.orderMultiple).toBe('1');
+  expect(state.writes[0].body.bomRevisionId).toBe('rev1');
   expect(errors).toEqual([]);
 });
 

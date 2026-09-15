@@ -27,6 +27,7 @@ enum TenantStatus {
 }
 
 model Tenant {
+  bomRevisions BomRevision[]
   mrpPolicies MrpItemPolicy[]
   mrpEntries MrpEntry[]
   mrpRuns MrpRun[]
@@ -533,6 +534,7 @@ enum LocationType {
 }
 
 model Location {
+  manufacturingOrders ManufacturingOrder[]
   mrpPolicies MrpItemPolicy[]
   mrpEntries MrpEntry[]
   mrpRuns MrpRun[]
@@ -2243,6 +2245,8 @@ enum PickOrderStatus {
 }
 
 model WmsItem {
+  outputBomRevisions BomRevision[]
+  bomRevisionLines BomRevisionLine[]
   mrpPolicies MrpItemPolicy[]
   mrpEntries MrpEntry[]
   id           String   @id @default(cuid())
@@ -3619,6 +3623,7 @@ model RoutingStep {
 }
 
 model Bom {
+  revisions BomRevision[]
   mrpPolicies MrpItemPolicy[]
   id         String   @id @default(cuid())
   tenantId   String
@@ -3643,7 +3648,7 @@ model BomLine {
   bomId           String
   materialRef     String
   materialName    String?
-  quantityPerUnit Float    @default(1)
+  quantityPerUnit Decimal  @default(1) @db.Decimal(24, 9)
   createdAt       DateTime @default(now())
 
   bom Bom @relation(fields: [bomId], references: [id], onDelete: Cascade)
@@ -3653,6 +3658,11 @@ model BomLine {
 }
 
 model ManufacturingOrder {
+  locationId String?
+  bomRevisionId String?
+  materialSnapshot Json?
+  location Location? @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  bomRevision BomRevision? @relation(fields: [bomRevisionId], references: [id], onDelete: Restrict)
   id          String                   @id @default(cuid())
   tenantId    String
   number      String
@@ -4182,6 +4192,8 @@ enum MrpEntryKind {
 }
 
 model MrpItemPolicy {
+  bomRevisionId String?
+  bomRevision BomRevision? @relation(fields: [bomRevisionId], references: [id], onDelete: Restrict)
   id String @id @default(cuid())
   tenantId String
   locationId String
@@ -4228,6 +4240,7 @@ model MrpEntry {
 }
 
 model MrpRun {
+  sourceMetadata Json?
   id String @id @default(cuid())
   tenantId String
   locationId String
@@ -4244,4 +4257,46 @@ model MrpRun {
   location Location @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
   @@index([tenantId, locationId, createdAt])
   @@map("mrp_runs")
+}
+
+// Published industrial definitions. Append-only; working Bom/BomLine remain editable.
+model BomRevision {
+  id String @id @default(cuid())
+  tenantId String
+  bomId String
+  revision Int
+  code String
+  name String
+  outputItemId String
+  outputSku String
+  outputName String
+  outputUnit String
+  contentHash String
+  createdById String
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  bom Bom @relation(fields: [bomId], references: [id], onDelete: Restrict)
+  outputItem WmsItem @relation(fields: [outputItemId], references: [id], onDelete: Restrict)
+  lines BomRevisionLine[]
+  policies MrpItemPolicy[]
+  orders ManufacturingOrder[]
+  @@unique([tenantId, bomId, revision])
+  @@index([tenantId, outputItemId])
+  @@map("bom_revisions")
+}
+
+model BomRevisionLine {
+  id String @id @default(cuid())
+  tenantId String
+  revisionId String
+  itemId String
+  sku String
+  name String
+  unit String
+  quantityPerUnit Decimal @db.Decimal(24, 9)
+  revision BomRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+  item WmsItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  @@index([tenantId, revisionId])
+  @@index([tenantId, itemId])
+  @@map("bom_revision_lines")
 }

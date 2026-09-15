@@ -12,6 +12,8 @@ import {
   CreateBomLineDto,
   UpdateBomDto,
   UpdateBomLineDto,
+  BomVersionDto,
+  PublishBomDto,
 } from './dto/bom.dto';
 import { BomsService } from './boms.service';
 
@@ -50,8 +52,24 @@ export class BomsController {
 
   @Delete(':id')
   @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE)
-  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.boms.remove(user.tenantId, id);
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string, @Query() dto: BomVersionDto) {
+    return this.boms.remove(user.tenantId, id, dto.expectedUpdatedAt);
+  }
+
+  @Post(':id/revisions')
+  @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE, PERMISSIONS.WMS.READ)
+  publish(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: PublishBomDto) {
+    return this.boms.publish(user.tenantId, user.id, id, dto.expectedUpdatedAt);
+  }
+
+  @Get(':id/revisions/:revisionId')
+  @RequirePermissions(PERMISSIONS.MANUFACTURING.READ)
+  revision(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('revisionId') revisionId: string,
+  ) {
+    return this.boms.revision(user.tenantId, id, revisionId);
   }
 
   @Post(':id/lines')
@@ -79,7 +97,8 @@ export class BomsController {
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Param('lineId') lineId: string,
+    @Query() dto: BomVersionDto,
   ) {
-    return this.boms.removeLine(user.tenantId, id, lineId);
+    return this.boms.removeLine(user.tenantId, id, lineId, dto.expectedUpdatedAt);
   }
 }

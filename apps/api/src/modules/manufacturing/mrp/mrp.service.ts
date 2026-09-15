@@ -22,6 +22,7 @@ import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.
 import { artifactHash } from '../scheduling/aps-artifact';
 import { MrpCalculateDto, MrpEntryDto, MrpPolicyDto } from './mrp.dto';
 import { validateMrpResult } from './mrp-result';
+import { revisionSummary } from '../boms/boms.service';
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const day = (value: Date) => value.toISOString().slice(0, 10);
@@ -89,7 +90,18 @@ export class MrpService {
       }),
       this.prisma.bom.findMany({
         where: { tenantId, isActive: true },
-        select: { id: true, code: true, name: true, productRef: true },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          productRef: true,
+          revisions: {
+            where: { tenantId },
+            orderBy: { revision: 'desc' },
+            take: 30,
+            select: revisionSummary,
+          },
+        },
         orderBy: { code: 'asc' },
         take: 2001,
       }),
@@ -150,11 +162,15 @@ export class MrpService {
     await this.ownership.assertOwned('location', dto.locationId, tenantId);
     await this.ownership.assertOwned('wmsItem', dto.itemId, tenantId);
     await this.ownership.assertOwnedIfSet('bom', dto.bomId, tenantId);
-    if ((dto.method === 'MAKE') !== Boolean(dto.bomId))
-      throw new BadRequestException('Une nomenclature est obligatoire uniquement pour Fabriquer.');
+    await this.ownership.assertOwnedIfSet('bomRevision', dto.bomRevisionId, tenantId);
+    if (dto.method === 'MAKE' ? !dto.bomId || !dto.bomRevisionId : dto.bomId || dto.bomRevisionId)
+      throw new BadRequestException(
+        'Fabriquer exige une nomenclature et une version publiée explicite. Acheter ne doit pas en référencer.',
+      );
     const data = {
       method: dto.method,
       bomId: dto.bomId ?? null,
+      bomRevisionId: dto.bomRevisionId ?? null,
       leadDays: dto.leadDays,
       safetyStock: this.quantity(dto.safetyStock),
       minimumOrder: this.quantity(dto.minimumOrder),
@@ -168,13 +184,23 @@ export class MrpService {
       });
       if (!item) throw new BadRequestException('Article inactif.');
       if (dto.bomId) {
-        const bom = await tx.bom.findFirst({
-          where: { id: dto.bomId, tenantId, isActive: true },
-          include: { lines: true },
+        const bom = await tx.bomRevision.findFirst({
+          where: {
+            id: dto.bomRevisionId,
+            bomId: dto.bomId,
+            tenantId,
+            bom: { tenantId, isActive: true },
+          },
+          include: { lines: { where: { tenantId } } },
         });
-        if (!bom || bom.productRef !== item.sku || !bom.lines.length)
+        if (
+          !bom ||
+          bom.outputItemId !== item.id ||
+          bom.outputUnit !== item.unit ||
+          !bom.lines.length
+        )
           throw new BadRequestException(
-            'La nomenclature doit être active, non vide et son produit doit correspondre exactement au SKU.',
+            'La version publiée doit correspondre à cet article et à son unité.',
           );
       }
       const key = { tenantId, locationId: dto.locationId, itemId: dto.itemId };
@@ -292,7 +318,7 @@ export class MrpService {
           where: { tenantId, locationId },
           include: {
             item: true,
-            bom: { include: { lines: { where: { tenantId }, orderBy: { id: 'asc' } } } },
+            bomRevision: { include: { lines: { where: { tenantId }, orderBy: { id: 'asc' } } } },
           },
           orderBy: { itemId: 'asc' },
           take: 2001,
@@ -326,7 +352,6 @@ export class MrpService {
         const balances = new Map(
           levels.map((level) => [level.itemId, level._sum.qtyOnHand ?? new Prisma.Decimal(0)]),
         );
-        const bySku = new Map(policies.map((p) => [p.item.sku, p]));
         const byId = new Map(policies.map((p) => [p.itemId, p]));
         const snapshot: MrpSnapshot = {
           version: 'pulsar.mrp.v1',
@@ -343,24 +368,25 @@ export class MrpService {
             );
           if (
             p.method === 'MAKE' &&
-            (!p.bom ||
-              p.bom.tenantId !== tenantId ||
-              !p.bom.isActive ||
-              p.bom.productRef !== p.item.sku ||
-              !p.bom.lines.length)
+            (!p.bomRevision ||
+              p.bomRevision.tenantId !== tenantId ||
+              p.bomRevision.bomId !== p.bomId ||
+              p.bomRevision.outputItemId !== p.itemId ||
+              p.bomRevision.outputUnit !== p.item.unit ||
+              !p.bomRevision.lines.length)
           )
-            throw new BadRequestException(`Nomenclature absente ou incompatible : ${p.item.sku}.`);
+            throw new BadRequestException(
+              `Sélectionner une version publiée compatible pour ${p.item.sku}.`,
+            );
           const onHand = balances.get(p.itemId) ?? new Prisma.Decimal(0);
-          const components = (p.method === 'MAKE' ? p.bom!.lines : []).map((line) => {
-            const child = bySku.get(line.materialRef);
-            if (!child)
+          const components = (p.method === 'MAKE' ? p.bomRevision!.lines : []).map((line) => {
+            const child = byId.get(line.itemId);
+            if (!child || child.item.unit !== line.unit)
               throw new BadRequestException(
-                `Configurer le composant ${line.materialRef} de ${p.item.sku} dans cet entrepôt.`,
+                `Configurer le composant ${line.sku} de ${p.item.sku} avec son unité publiée dans cet entrepôt.`,
               );
-            if (!Number.isFinite(line.quantityPerUnit) || line.quantityPerUnit <= 0)
-              throw new BadRequestException(
-                `Quantité de nomenclature invalide : ${line.materialRef}.`,
-              );
+            if (!line.quantityPerUnit.isFinite() || line.quantityPerUnit.lte(0))
+              throw new BadRequestException(`Quantité de nomenclature invalide : ${line.sku}.`);
             return {
               item_id: child.itemId,
               quantity: new Prisma.Decimal(line.quantityPerUnit.toString()).toFixed(),
@@ -410,7 +436,18 @@ export class MrpService {
             reference: entry.reference,
           });
         }
-        return { snapshot, sourceHash: artifactHash(snapshot) };
+        const sourceMetadata = {
+          bomRevisions: policies
+            .filter((p) => p.method === 'MAKE')
+            .map((p) => ({
+              itemId: p.itemId,
+              bomId: p.bomId,
+              revisionId: p.bomRevision!.id,
+              revision: p.bomRevision!.revision,
+              contentHash: p.bomRevision!.contentHash,
+            })),
+        };
+        return { snapshot, sourceMetadata, sourceHash: artifactHash({ snapshot, sourceMetadata }) };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 15000 },
     );
@@ -426,7 +463,7 @@ export class MrpService {
       86400000;
     if (!Number.isFinite(span) || span < 0 || span > 730)
       throw new BadRequestException('Horizon : aujourd’hui à 730 jours maximum (dates UTC).');
-    const { snapshot, sourceHash } = await this.capture(
+    const { snapshot, sourceHash, sourceMetadata } = await this.capture(
       tenantId,
       dto.locationId,
       asOf,
@@ -446,6 +483,7 @@ export class MrpService {
         horizonEnd: new Date(`${dto.horizonEnd}T00:00:00Z`),
         sourceHash,
         inputSnapshot: json(snapshot),
+        sourceMetadata: json(sourceMetadata),
         result: json(result),
         proposalCount: result.proposals.length,
         exceptionCount: result.exceptions.length,

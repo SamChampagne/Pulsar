@@ -25,6 +25,7 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
     bomId: string,
     runId: string;
   let demand: any;
+  let revisionId: string;
   const today = new Date().toISOString().slice(0, 10);
   const future = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const real =
@@ -117,6 +118,7 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
           'manufacturing.read',
           ...(mode === 'reader' ? [] : ['manufacturing.manage']),
           ...(mode === 'no-wms' ? [] : ['wms.read']),
+          ...(mode === 'manager' ? ['wms.manage'] : []),
         ];
         const perms = await db.permission.findMany({ where: { key: { in: keys } } });
         expect(perms).toHaveLength(keys.length);
@@ -203,6 +205,14 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
         },
       })
     ).id;
+    const bom = await db.bom.findFirstOrThrow({ where: { tenantId, id: bomId } });
+    revisionId = (
+      await request(http)
+        .post(`/api/v1/manufacturing/boms/${bomId}/revisions`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ expectedUpdatedAt: bom.updatedAt.toISOString(), acknowledgeUnits: true })
+        .expect(201)
+    ).body.id;
   }, 60000);
   afterAll(async () => {
     await app?.close();
@@ -265,10 +275,17 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
       ...policy(),
       method: 'MAKE',
       bomId,
+      bomRevisionId: revisionId,
       expectedUpdatedAt: p.updatedAt,
     }).expect(200);
     await db.bomLine.updateMany({ where: { tenantId, bomId }, data: { materialRef: 'MISSING' } });
+    // A working-draft edit must not alter a pinned published revision.
+    await calculate().expect(201);
+    await db.mrpItemPolicy.deleteMany({
+      where: { tenantId, locationId: siteId, itemId: componentId },
+    });
     await calculate().expect(400);
+    await call('put', 'policies', policy(componentId)).expect(200);
     await db.bomLine.updateMany({ where: { tenantId, bomId }, data: { materialRef: 'RAW' } });
     const run = (await calculate().expect(201)).body;
     expect(run.inputSnapshot.items.find((i: any) => i.id === itemId).components).toEqual([
@@ -311,6 +328,146 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
     } as any);
     await calculate().expect(503);
     expect(await db.mrpRun.count({ where: { tenantId } })).toBe(count);
+  });
+  it('publishes immutable decimal revisions, idempotently, with scoped reads and versioned drafts', async () => {
+    const path = `/api/v1/manufacturing/boms/${bomId}`;
+    const auth = { Authorization: `Bearer ${token}` };
+    const bom = (await request(http).get(path).set(auth).expect(200)).body;
+    const payload = { expectedUpdatedAt: bom.updatedAt, acknowledgeUnits: true };
+    const repeated = await Promise.all(
+      [1, 2].map(() => request(http).post(`${path}/revisions`).set(auth).send(payload).expect(201)),
+    );
+    expect(repeated[0].body.id).toBe(revisionId);
+    expect(repeated[1].body.id).toBe(revisionId);
+    await request(http)
+      .post(`${path}/revisions`)
+      .set('Authorization', `Bearer ${noWms}`)
+      .send(payload)
+      .expect(403);
+    await request(http)
+      .get(`${path}/revisions/${revisionId}`)
+      .set('Authorization', `Bearer ${other}`)
+      .expect(404);
+    await request(http)
+      .patch(`${path}/lines/${bom.lines[0].id}`)
+      .set(auth)
+      .send({ quantityPerUnit: '0.123456789', expectedUpdatedAt: bom.updatedAt })
+      .expect(200);
+    await request(http)
+      .patch(path)
+      .set(auth)
+      .send({ name: 'Lost update', expectedUpdatedAt: bom.updatedAt })
+      .expect(409);
+    const fresh = (await request(http).get(path).set(auth)).body;
+    const published = (
+      await request(http)
+        .post(`${path}/revisions`)
+        .set(auth)
+        .send({ ...payload, expectedUpdatedAt: fresh.updatedAt })
+        .expect(201)
+    ).body;
+    expect(published.revision).toBe(2);
+    expect(published.lines[0].quantityPerUnit).toBe('0.123456789');
+    const original = (
+      await request(http).get(`${path}/revisions/${revisionId}`).set(auth).expect(200)
+    ).body;
+    expect(original.lines[0].quantityPerUnit).toBe('0.5');
+    const run = (await calculate().expect(201)).body;
+    expect(run.inputSnapshot.items.find((i: any) => i.id === itemId).components[0].quantity).toBe(
+      '0.5',
+    );
+    expect(run.sourceMetadata.bomRevisions[0].revisionId).toBe(revisionId);
+    await request(http)
+      .delete(`${path}?expectedUpdatedAt=${encodeURIComponent(fresh.updatedAt)}`)
+      .set(auth)
+      .expect(409);
+  });
+  it('freezes used WMS SKU and unit without forbidding ordinary descriptive edits', async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    await request(http)
+      .patch(`/api/v1/wms/items/${componentId}`)
+      .set(auth)
+      .send({ unit: 'LB' })
+      .expect(409);
+    await request(http)
+      .patch(`/api/v1/wms/items/${componentId}`)
+      .set(auth)
+      .send({ sku: 'NEW-RAW' })
+      .expect(409);
+    await request(http)
+      .patch(`/api/v1/wms/items/${componentId}`)
+      .set(auth)
+      .send({ name: 'Renamed material' })
+      .expect(200);
+  });
+  it('binds a draft OF to a site and revision, captures exact requirements at release, and prevents drift', async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const root = '/api/v1/manufacturing/orders';
+    const order = (
+      await request(http)
+        .post(root)
+        .set(auth)
+        .send({
+          name: 'Versioned OF',
+          productRef: 'FG',
+          quantity: 3,
+          dueDate: future,
+          releaseDate: today,
+          bomId,
+        })
+        .expect(201)
+    ).body;
+    const path = `${root}/${order.id}`;
+    await request(http).post(`${path}/release`).set(auth).expect(400);
+    const body = {
+      locationId: siteId,
+      bomRevisionId: revisionId,
+      expectedUpdatedAt: order.updatedAt,
+    };
+    await request(http)
+      .post(`${path}/material-context`)
+      .set('Authorization', `Bearer ${noWms}`)
+      .send(body)
+      .expect(403);
+    await request(http)
+      .post(`${path}/material-context`)
+      .set(auth)
+      .send({ ...body, locationId: 'missing' })
+      .expect(400);
+    await request(http).post(`${path}/material-context`).set(auth).send(body).expect(201);
+    await request(http).post(`${path}/material-context`).set(auth).send(body).expect(409);
+    const released = (await request(http).post(`${path}/release`).set(auth).expect(201)).body;
+    expect(released.materialSnapshot.product.quantity).toBe('3');
+    expect(released.materialSnapshot.components[0].requiredQuantity).toBe('1.5');
+    expect(released.materialSnapshot.locationId).toBe(siteId);
+    expect(released.materialSnapshot.revision).toBe(1);
+    await request(http).patch(path).set(auth).send({ quantity: 4 }).expect(409);
+    await request(http).patch(path).set(auth).send({ productRef: 'RAW' }).expect(409);
+    await request(http)
+      .post(`${path}/material-context`)
+      .set(auth)
+      .send({ ...body, expectedUpdatedAt: released.updatedAt })
+      .expect(409);
+    await request(http).patch(path).set(auth).send({ name: 'Safe rename' }).expect(200);
+    const current = (await request(http).get(path).set(auth).expect(200)).body;
+    expect(current.materialSnapshot).toEqual(released.materialSnapshot);
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(3);
+    const legacy = await db.manufacturingOrder.create({
+      data: {
+        tenantId,
+        number: `legacy-${randomUUID()}`,
+        name: 'Historical',
+        productRef: 'FG',
+        quantity: 1,
+        dueDate: new Date(future),
+        releaseDate: new Date(today),
+        status: 'RELEASED',
+        bomId,
+      },
+    });
+    expect(
+      (await request(http).get(`${root}/${legacy.id}`).set(auth).expect(200)).body.materialSnapshot,
+    ).toBeNull();
   });
   it('fails closed when WMS is disabled, including historical reads', async () => {
     const module = await db.moduleDefinition.findUniqueOrThrow({ where: { key: 'wms' } });

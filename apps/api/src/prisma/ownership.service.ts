@@ -33,6 +33,7 @@ export type OwnedEntity =
   | 'workCenter'
   | 'routing'
   | 'bom'
+  | 'bomRevision'
   | 'manufacturingOrder';
 
 /**

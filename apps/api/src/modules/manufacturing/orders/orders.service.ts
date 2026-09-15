@@ -9,12 +9,16 @@ import {
   ManufacturingOperationStatus,
   ManufacturingOrderStatus,
   canTransitionManufacturingOrder,
+  MODULE_KEYS,
+  type ManufacturingMaterialSnapshot,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
+import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
+import { MaterialContextDto } from './dto/material-context.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
 import {
   CreateManufacturingOrderDto,
@@ -38,6 +42,7 @@ export class OrdersService {
     private readonly ownership: OwnershipService,
     private readonly sequences: SequencesService,
     private readonly audit: AuditLogsService,
+    private readonly modules: TenantModulesCacheService,
   ) {}
 
   async list(tenantId: string, query: ManufacturingOrderListQueryDto) {
@@ -56,7 +61,12 @@ export class OrdersService {
         : {}),
     };
     const [items, total] = await this.prisma.$transaction([
-      this.prisma.manufacturingOrder.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+      this.prisma.manufacturingOrder.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+      }),
       this.prisma.manufacturingOrder.count({ where }),
     ]);
     return paginated(items, total, page, pageSize);
@@ -65,7 +75,11 @@ export class OrdersService {
   async get(tenantId: string, id: string) {
     const order = await this.prisma.manufacturingOrder.findFirst({
       where: { id, tenantId },
-      include: { operations: { orderBy: { sequence: 'asc' } } },
+      include: {
+        operations: { where: { tenantId }, orderBy: { sequence: 'asc' } },
+        location: { select: { id: true, code: true, name: true } },
+        bomRevision: { include: { lines: { where: { tenantId } } } },
+      },
     });
     if (!order) throw new NotFoundException('Manufacturing order not found');
     return order;
@@ -77,25 +91,32 @@ export class OrdersService {
 
     const number = await this.sequences.nextNumber(tenantId, 'manufacturing-order');
 
-    const order = await this.prisma.manufacturingOrder.create({
-      data: {
-        tenantId,
-        number,
-        name: dto.name,
-        productRef: dto.productRef,
-        quantity: dto.quantity ?? 1,
-        dueDate: new Date(dto.dueDate),
-        releaseDate: new Date(dto.releaseDate),
-        ...(dto.priority ? { priority: dto.priority } : {}),
-        status: ManufacturingOrderStatus.DRAFT,
-        ...(dto.firmness ? { firmness: dto.firmness } : {}),
-        routingId: dto.routingId ?? null,
-        bomId: dto.bomId ?? null,
-        ...(dto.operations && dto.operations.length
-          ? { operations: { create: dto.operations.map((op) => this.operationData(tenantId, op)) } }
-          : {}),
-      },
-      include: { operations: { orderBy: { sequence: 'asc' } } },
+    const order = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+      return tx.manufacturingOrder.create({
+        data: {
+          tenantId,
+          number,
+          name: dto.name,
+          productRef: dto.productRef,
+          quantity: dto.quantity ?? 1,
+          dueDate: new Date(dto.dueDate),
+          releaseDate: new Date(dto.releaseDate),
+          ...(dto.priority ? { priority: dto.priority } : {}),
+          status: ManufacturingOrderStatus.DRAFT,
+          ...(dto.firmness ? { firmness: dto.firmness } : {}),
+          routingId: dto.routingId ?? null,
+          bomId: dto.bomId ?? null,
+          ...(dto.operations && dto.operations.length
+            ? {
+                operations: {
+                  create: dto.operations.map((op) => this.operationData(tenantId, op)),
+                },
+              }
+            : {}),
+        },
+        include: { operations: { orderBy: { sequence: 'asc' } } },
+      });
     });
 
     await this.audit.log({
@@ -131,8 +152,23 @@ export class OrdersService {
       ...(dto.routingId !== undefined ? { routingId: dto.routingId } : {}),
       ...(dto.bomId !== undefined ? { bomId: dto.bomId } : {}),
     };
-    const res = await this.prisma.manufacturingOrder.updateMany({ where: { id, tenantId }, data });
-    if (res.count === 0) throw new NotFoundException('Manufacturing order not found');
+    if (
+      (order.materialSnapshot || order.bomRevisionId) &&
+      ((dto.productRef !== undefined && dto.productRef !== order.productRef) ||
+        (dto.quantity !== undefined && order.materialSnapshot && dto.quantity !== order.quantity) ||
+        (dto.bomId !== undefined && dto.bomId !== order.bomId))
+    )
+      throw new ConflictException(
+        'Le produit et la nomenclature sont liés à une version; les quantités sont figées après libération. Créez un nouvel OF si nécessaire.',
+      );
+    const res = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+      return tx.manufacturingOrder.updateMany({
+        where: { id, tenantId, status: order.status, updatedAt: order.updatedAt },
+        data: { ...data, updatedAt: new Date(Math.max(Date.now(), order.updatedAt.getTime() + 1)) },
+      });
+    });
+    if (res.count === 0) throw new ConflictException('OF modifié simultanément. Rechargez.');
 
     await this.audit.log({
       tenantId,
@@ -151,7 +187,10 @@ export class OrdersService {
     if (order.status !== ManufacturingOrderStatus.DRAFT) {
       throw new ConflictException('Only DRAFT manufacturing orders can be deleted');
     }
-    await this.prisma.manufacturingOrder.deleteMany({ where: { id, tenantId } });
+    const deleted = await this.prisma.manufacturingOrder.deleteMany({
+      where: { id, tenantId, status: order.status, updatedAt: order.updatedAt },
+    });
+    if (!deleted.count) throw new ConflictException('OF modifié simultanément.');
     return { success: true };
   }
 
@@ -179,18 +218,42 @@ export class OrdersService {
     id: string,
     target: ManufacturingOrderStatus,
   ) {
-    const order = await this.get(tenantId, id);
-    const current = order.status as ManufacturingOrderStatus;
-    if (!canTransitionManufacturingOrder(current, target)) {
-      throw new BadRequestException(`Cannot move an order from ${current} to ${target}`);
-    }
-    const { count } = await this.prisma.manufacturingOrder.updateMany({
-      where: { id, tenantId, status: current },
-      data: { status: target },
+    const current = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+      const order = await tx.manufacturingOrder.findFirst({ where: { id, tenantId } });
+      if (!order) throw new NotFoundException('OF introuvable.');
+      const current = order.status as ManufacturingOrderStatus;
+      if (!canTransitionManufacturingOrder(current, target))
+        throw new BadRequestException(`Cannot move an order from ${current} to ${target}`);
+      let materialSnapshot: Prisma.InputJsonValue | undefined;
+      if (target === ManufacturingOrderStatus.RELEASED && order.bomId) {
+        if (!order.locationId || !order.bomRevisionId)
+          throw new BadRequestException(
+            'Choisissez un site et une version publiée avant de libérer cet OF.',
+          );
+        const snapshot = await this.materials(
+          tx,
+          tenantId,
+          order.locationId,
+          order.bomRevisionId,
+          order.productRef,
+          order.quantity,
+        );
+        if (snapshot.revisionId !== order.bomRevisionId)
+          throw new ConflictException('Version incompatible.');
+        materialSnapshot = JSON.parse(JSON.stringify(snapshot));
+      }
+      const { count } = await tx.manufacturingOrder.updateMany({
+        where: { id, tenantId, status: current, updatedAt: order.updatedAt },
+        data: {
+          status: target,
+          materialSnapshot,
+          updatedAt: new Date(Math.max(Date.now(), order.updatedAt.getTime() + 1)),
+        },
+      });
+      if (!count) throw new ConflictException('Manufacturing order changed concurrently');
+      return current;
     });
-    if (count === 0) {
-      throw new ConflictException('Manufacturing order changed concurrently');
-    }
     await this.audit.log({
       tenantId,
       userId,
@@ -199,6 +262,114 @@ export class OrdersService {
       entityId: id,
       before: { status: current },
       after: { status: target },
+    });
+    return this.get(tenantId, id);
+  }
+
+  private async materials(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    locationId: string,
+    revisionId: string,
+    productRef: string | null,
+    quantity: number,
+  ): Promise<ManufacturingMaterialSnapshot> {
+    const site = await tx.location.findFirst({
+      where: { id: locationId, tenantId, type: 'WAREHOUSE', isActive: true },
+    });
+    const revision = await tx.bomRevision.findFirst({
+      where: { id: revisionId, tenantId },
+      include: { lines: { where: { tenantId }, orderBy: { id: 'asc' } } },
+    });
+    if (!site || !revision || revision.outputSku !== productRef || !revision.lines.length)
+      throw new BadRequestException('Site, version ou produit incompatible.');
+    const items = await tx.wmsItem.findMany({
+      where: {
+        tenantId,
+        isActive: true,
+        id: { in: [revision.outputItemId, ...revision.lines.map((l) => l.itemId)] },
+      },
+    });
+    const byId = new Map(items.map((item) => [item.id, item]));
+    if (
+      byId.get(revision.outputItemId)?.unit !== revision.outputUnit ||
+      revision.lines.some((l) => byId.get(l.itemId)?.unit !== l.unit)
+    )
+      throw new BadRequestException('Article inactif ou unité différente de la version publiée.');
+    if (!Number.isFinite(quantity) || quantity <= 0)
+      throw new BadRequestException('Quantité positive requise.');
+    return {
+      version: 'pulsar.manufacturing.materials.v1',
+      revisionId,
+      revision: revision.revision,
+      contentHash: revision.contentHash,
+      locationId,
+      capturedAt: new Date().toISOString(),
+      product: {
+        itemId: revision.outputItemId,
+        sku: revision.outputSku,
+        name: revision.outputName,
+        unit: revision.outputUnit,
+        quantity: new Prisma.Decimal(quantity).toFixed(),
+      },
+      components: revision.lines.map((line) => ({
+        itemId: line.itemId,
+        sku: line.sku,
+        name: line.name,
+        unit: line.unit,
+        quantityPerUnit: line.quantityPerUnit.toFixed(),
+        requiredQuantity: line.quantityPerUnit.mul(quantity).toFixed(),
+      })),
+    };
+  }
+
+  async setMaterialContext(tenantId: string, userId: string, id: string, dto: MaterialContextDto) {
+    const enabled = await this.modules.getEnabledKeys(tenantId);
+    if (!enabled.has(MODULE_KEYS.WMS))
+      throw new BadRequestException('WMS requis pour configurer les matières.');
+    await this.ownership.assertOwned('location', dto.locationId, tenantId);
+    await this.ownership.assertOwned('bomRevision', dto.bomRevisionId, tenantId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+      const order = await tx.manufacturingOrder.findFirst({ where: { id, tenantId } });
+      if (!order) throw new NotFoundException('OF introuvable.');
+      if (
+        order.status !== ManufacturingOrderStatus.DRAFT ||
+        order.materialSnapshot ||
+        order.updatedAt.getTime() !== new Date(dto.expectedUpdatedAt).getTime()
+      )
+        throw new ConflictException('Seul un brouillon à jour peut changer de contexte matières.');
+      await this.materials(
+        tx,
+        tenantId,
+        dto.locationId,
+        dto.bomRevisionId,
+        order.productRef,
+        order.quantity,
+      );
+      const revision = await tx.bomRevision.findFirst({
+        where: { tenantId, id: dto.bomRevisionId, bom: { tenantId, isActive: true } },
+      });
+      if (!revision)
+        throw new BadRequestException('Nomenclature inactive ou version indisponible.');
+      const changed = await tx.manufacturingOrder.updateMany({
+        where: { id, tenantId, updatedAt: order.updatedAt, status: order.status },
+        data: {
+          locationId: dto.locationId,
+          bomId: revision.bomId,
+          bomRevisionId: revision.id,
+          updatedAt: new Date(Math.max(Date.now(), order.updatedAt.getTime() + 1)),
+        },
+      });
+      if (!changed.count) throw new ConflictException('OF modifié simultanément.');
+    });
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'manufacturing-order',
+      entityId: id,
+      after: { locationId: dto.locationId, bomRevisionId: dto.bomRevisionId },
     });
     return this.get(tenantId, id);
   }
@@ -229,12 +400,7 @@ export class OrdersService {
     return op;
   }
 
-  async updateOperation(
-    tenantId: string,
-    orderId: string,
-    opId: string,
-    dto: UpdateOperationDto,
-  ) {
+  async updateOperation(tenantId: string, orderId: string, opId: string, dto: UpdateOperationDto) {
     await this.assertOperationOwned(tenantId, orderId, opId);
     const data: Prisma.ManufacturingOperationUpdateInput = {
       ...(dto.sequence !== undefined ? { sequence: dto.sequence } : {}),

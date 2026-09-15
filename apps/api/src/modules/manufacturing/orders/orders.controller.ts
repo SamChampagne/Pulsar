@@ -15,6 +15,7 @@ import {
   UpdateOperationDto,
 } from './dto/order.dto';
 import { OrdersService } from './orders.service';
+import { MaterialContextDto } from './dto/material-context.dto';
 
 @ApiTags('manufacturing/orders')
 @ApiBearerAuth()
@@ -60,6 +61,16 @@ export class OrdersController {
   }
 
   // --- Lifecycle -----------------------------------------------------------
+
+  @Post(':id/material-context')
+  @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE, PERMISSIONS.WMS.READ)
+  materials(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: MaterialContextDto,
+  ) {
+    return this.orders.setMaterialContext(user.tenantId, user.id, id, dto);
+  }
 
   @Post(':id/release')
   @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE)

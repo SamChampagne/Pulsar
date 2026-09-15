@@ -12,6 +12,7 @@ import {
   ManufacturingOrderStatus,
   ManufacturingPriority,
   MODULE_KEYS,
+  type ManufacturingMaterialSnapshot,
 } from '@pulsar/shared';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
@@ -69,22 +70,45 @@ export class SchedulingService {
   ) {}
 
   /**
-   * SP5: aggregate WMS on-hand (per WmsItem.sku) + derive per-order material
-   * requirements from each order's BOM (quantityPerUnit × order.quantity).
+   * M2.1: site-scoped WMS stock + the material definition captured at OF release.
+   * Never re-read an editable BOM to reconstruct historical requirements.
    * Explicit opt-in is fail-closed: never claim material-aware planning without WMS.
    */
   private async loadMaterials(
     tenantId: string,
-    orders: { id: string; quantity: number; bomId: string | null }[],
+    orders: {
+      id: string;
+      bomId: string | null;
+      locationId: string | null;
+      materialSnapshot: Prisma.JsonValue;
+    }[],
   ): Promise<{ materials: SnapshotMaterials | undefined; warnings: string[] }> {
     const enabled = await this.modulesCache.getEnabledKeys(tenantId);
     if (!enabled.has(MODULE_KEYS.WMS)) {
       throw new BadRequestException('Material-aware planning requires the WMS module');
     }
+    const materialOrders = orders.filter((o) => o.bomId);
+    if (materialOrders.some((o) => !o.locationId || !o.materialSnapshot))
+      throw new BadRequestException(
+        'OF historique sans matières figées : planifiez sans contrainte matières ou recréez un OF avec version publiée.',
+      );
+    const sites = [...new Set(materialOrders.map((o) => o.locationId!))];
+    if (sites.length > 1)
+      throw new BadRequestException(
+        'La planification avec matières exige un seul site de fabrication dans ce lot.',
+      );
     const [items, levels] = await this.prisma.$transaction([
-      this.prisma.wmsItem.findMany({ where: { tenantId }, select: { id: true, sku: true } }),
-      this.prisma.inventoryLevel.findMany({
+      this.prisma.wmsItem.findMany({
         where: { tenantId },
+        select: { id: true, sku: true, unit: true, isActive: true },
+      }),
+      this.prisma.inventoryLevel.findMany({
+        where: {
+          tenantId,
+          ...(sites[0]
+            ? { bin: { tenantId, locationId: sites[0], isActive: true } }
+            : { itemId: { in: [] } }),
+        },
         select: { itemId: true, qtyOnHand: true },
       }),
     ]);
@@ -97,24 +121,27 @@ export class SchedulingService {
       onHand: onHandByItem.get(i.id) ?? 0,
     }));
 
-    const bomIds = [...new Set(orders.map((o) => o.bomId).filter((b): b is string => !!b))];
-    const boms = bomIds.length
-      ? await this.prisma.bom.findMany({
-          where: { tenantId, id: { in: bomIds } },
-          include: { lines: true },
-        })
-      : [];
-    const bomById = new Map(boms.map((b) => [b.id, b]));
     const byOrder: SnapshotMaterials['byOrder'] = {};
-    for (const o of orders) {
-      if (!o.bomId) continue;
-      const bom = bomById.get(o.bomId);
-      if (!bom)
-        throw new BadRequestException('A manufacturing order references an unavailable BOM');
-      byOrder[o.id] = bom.lines.map((l) => ({
-        materialRef: l.materialRef,
-        fixedQuantity: l.quantityPerUnit * o.quantity,
-      }));
+    const byId = new Map(items.map((i) => [i.id, i]));
+    for (const o of materialOrders) {
+      const snapshot = o.materialSnapshot as unknown as ManufacturingMaterialSnapshot;
+      if (
+        snapshot.version !== 'pulsar.manufacturing.materials.v1' ||
+        snapshot.locationId !== o.locationId ||
+        !Array.isArray(snapshot.components)
+      )
+        throw new BadRequestException('Instantané matières incompatible.');
+      byOrder[o.id] = snapshot.components.map((line) => {
+        const item = byId.get(line.itemId);
+        if (!item?.isActive || item.unit !== line.unit || item.sku !== line.sku)
+          throw new BadRequestException(
+            'Composant inactif ou différent de son instantané matières.',
+          );
+        const quantity = Number(line.requiredQuantity);
+        if (!Number.isFinite(quantity) || quantity <= 0)
+          throw new BadRequestException('Quantité matières invalide.');
+        return { materialRef: line.sku, fixedQuantity: quantity };
+      });
     }
     return { materials: { inventory, byOrder }, warnings: [] };
   }
@@ -170,10 +197,7 @@ export class SchedulingService {
     let materials: SnapshotMaterials | undefined;
     const materialWarnings: string[] = [];
     if (input.respectMaterials) {
-      const loaded = await this.loadMaterials(
-        tenantId,
-        orders.map((o) => ({ id: o.id, quantity: o.quantity, bomId: o.bomId })),
-      );
+      const loaded = await this.loadMaterials(tenantId, orders);
       materials = loaded.materials;
       materialWarnings.push(...loaded.warnings);
     }

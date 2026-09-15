@@ -1,5 +1,12 @@
 # État du projet — point de reprise
 
+> **MRP M2.1 (2026-09-15), implémenté localement.** Nomenclatures Decimal,
+> versions publiées figées, règles MRP attachées à une version, site et instantané
+> matières à la libération des OF. Unités/SKU WMS utilisés protégés. Panneaux et
+> style Pulsar conservés. Les anciennes règles MAKE nécessitent une sélection
+> explicite; aucun historique n'est inventé. M2 reste partiel, achats/atelier et
+> recettes encore ouverts. [Contrats et reprise](./plans/manufacturing-definitions.md).
+
 > **MRP M1 (2026-09-15), implémenté localement.** Poste `/manufacturing/mrp` :
 > règles article/entrepôt, demandes/arrivages, explosion multi-niveaux Decimal dans
 > le runtime PlaniAdvance, historique immuable et lien réception WMS sans double

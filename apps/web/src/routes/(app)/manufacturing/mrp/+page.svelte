@@ -37,6 +37,7 @@
     locationId: string;
     method: MrpSourcingMethod;
     bomId: string | null;
+    bomRevisionId: string | null;
     leadDays: number;
     safetyStock: string;
     minimumOrder: string;
@@ -77,7 +78,13 @@
   let options = $state<{
     locations: { id: string; name: string; code: string }[];
     items: Item[];
-    boms: { id: string; code: string; name: string; productRef: string | null }[];
+    boms: {
+      id: string;
+      code: string;
+      name: string;
+      productRef: string | null;
+      revisions?: { id: string; revision: number; outputItemId: string; outputUnit: string }[];
+    }[];
   }>({ locations: [], items: [], boms: [] });
   let workspace = $state<Workspace>({ policies: [], entries: [], runs: [], receipts: [] });
   let locationId = $state('');
@@ -100,6 +107,7 @@
   let method = $state(MrpSourcingMethod.BUY);
   let kind = $state(MrpEntryKind.DEMAND);
   let bomId = $state('');
+  let bomRevisionId = $state('');
   let leadDays = $state<string | number | null>(0);
   let safetyStock = $state<string | number | null>('0');
   let minimumOrder = $state<string | number | null>('0');
@@ -224,6 +232,7 @@
     formItem = policy?.itemId ?? '';
     method = policy?.method ?? MrpSourcingMethod.BUY;
     bomId = policy?.bomId ?? '';
+    bomRevisionId = policy?.bomRevisionId ?? '';
     leadDays = policy?.leadDays ?? 0;
     safetyStock = policy?.safetyStock ?? '0';
     minimumOrder = policy?.minimumOrder ?? '0';
@@ -247,7 +256,7 @@
           body: {
             ...common,
             method,
-            ...(method === 'MAKE' ? { bomId } : {}),
+            ...(method === 'MAKE' ? { bomId, bomRevisionId } : {}),
             leadDays: Number(leadDays),
             safetyStock: String(safetyStock),
             minimumOrder: String(minimumOrder),
@@ -673,16 +682,38 @@
         ></Field
       >
       {#if method === 'MAKE'}<Field label="Nomenclature du produit"
-          ><Select bind:value={bomId} disabled={busy} required
+          ><Select
+            bind:value={bomId}
+            disabled={busy}
+            required
+            onchange={() => {
+              bomRevisionId = '';
+            }}
             ><option value="">Choisir une nomenclature</option
             >{#each options.boms.filter((b) => b.productRef === itemById.get(formItem)?.sku) as bom (bom.id)}<option
                 value={bom.id}>{bom.code} · {bom.name}</option
               >{/each}</Select
           ></Field
         >
+        <Field label="Version publiée">
+          <Select bind:value={bomRevisionId} disabled={busy} required>
+            <option value="">Choisir explicitement une version</option>
+            {#each (options.boms.find((b) => b.id === bomId)?.revisions ?? []).filter((r) => r.outputItemId === formItem) as revision (revision.id)}
+              <option value={revision.id}
+                >Version {revision.revision} · par {revision.outputUnit}</option
+              >
+            {/each}
+            {#if bomRevisionId && !(options.boms.find((b) => b.id === bomId)?.revisions ?? []).some((r) => r.id === bomRevisionId)}<option
+                value={bomRevisionId}>Version sélectionnée (historique)</option
+              >{/if}
+          </Select>
+        </Field>
         <p class="text-xs leading-5 text-ink-muted">
-          Le produit de la nomenclature doit correspondre au SKU. Chaque ligne exprime les unités du
-          composant pour une unité du produit fini.
+          Le calcul utilise cette version, jamais le brouillon ni automatiquement la dernière
+          version.
+          <a href="/manufacturing/boms" class="text-accent hover:underline"
+            >Publier une nomenclature</a
+          > si aucune version n’est disponible.
         </p>{/if}
       <Field label="Délai en jours calendaires"
         ><Input

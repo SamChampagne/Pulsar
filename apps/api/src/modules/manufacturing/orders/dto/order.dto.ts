@@ -13,6 +13,7 @@ import {
   IsOptional,
   IsString,
   Min,
+  Max,
   ValidateNested,
 } from 'class-validator';
 import { ListQueryDto } from '../../../../common/dto/list-query.dto';
@@ -56,6 +57,7 @@ export class CreateManufacturingOrderDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(1_000_000_000)
   quantity?: number;
 
   @IsDateString()
