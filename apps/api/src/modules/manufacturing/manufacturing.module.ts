@@ -24,6 +24,9 @@ import { MrpPreparationController } from './mrp/mrp-preparation.controller';
 import { MaterialPurchasesService } from './purchasing/material-purchases.service';
 import { MaterialPurchasesController } from './purchasing/material-purchases.controller';
 import { WmsModule } from '../wms/wms.module';
+import { ShopFloorController } from './shop-floor/shop-floor.controller';
+import { ShopFloorService } from './shop-floor/shop-floor.service';
+import { MaterialImpactService } from './scheduling/material-impact.service';
 
 /**
  * Manufacturing / APS master-data module (sub-project 2). Pulsar owns this
@@ -43,6 +46,7 @@ import { WmsModule } from '../wms/wms.module';
     forwardRef(() => OperatingModule),
   ],
   controllers: [
+    ShopFloorController,
     MaterialPurchasesController,
     MrpPreparationController,
     MrpController,
@@ -54,6 +58,8 @@ import { WmsModule } from '../wms/wms.module';
     SchedulingController,
   ],
   providers: [
+    MaterialImpactService,
+    ShopFloorService,
     MaterialPurchasesService,
     MrpPreparationService,
     MrpAssistanceService,

@@ -17,6 +17,7 @@ import { DomainEventsService } from '../../../core/operating/domain-events.servi
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { artifactHash } from '../scheduling/aps-artifact';
 import { MrpService } from './mrp.service';
+import { MaterialImpactService } from '../scheduling/material-impact.service';
 
 export interface MrpReviewInput {
   runId: string;
@@ -34,6 +35,7 @@ export class MrpAssistanceService {
     private readonly modules: TenantModulesCacheService,
     private readonly events: DomainEventsService,
     private readonly audit: AuditLogsService,
+    private readonly impacts: MaterialImpactService,
   ) {}
 
   private requireRead(permissions: readonly string[]) {
@@ -90,7 +92,16 @@ export class MrpAssistanceService {
           unitSnapshot: true,
           status: true,
           manufacturingOrder: { select: { id: true, status: true } },
-          purchaseOrder: { select: { id: true, number: true, status: true, expectedDate: true } },
+          purchaseOrder: {
+            select: {
+              id: true,
+              number: true,
+              status: true,
+              expectedDate: true,
+              closedAt: true,
+              closedQuantity: true,
+            },
+          },
         },
       }),
       this.prisma.mrpPreparation.count({ where: preparationWhere }),
@@ -99,9 +110,34 @@ export class MrpAssistanceService {
       salesDemands?: { itemId?: string }[];
       forecastCoverage?: { itemId: string }[];
       materialPurchases?: { itemId: string }[];
+      productionDeclarations?: { evidence?: { product?: { itemId?: string } } }[];
     } | null;
     return {
       id: run.id,
+      currentMaterialImpact: await this.impacts.get(tenantId, run.locationId).then((view) => {
+        const matching = view.orders.filter((o) => o.components.some((c) => ids.has(c.itemId)));
+        return {
+          asOf: view.asOf,
+          baselineId: view.baselineId,
+          orders: matching
+            .slice(0, 50)
+            .map((o) => ({
+              ...o,
+              components: o.components
+                .slice(0, 50)
+                .map((c) => ({
+                  ...c,
+                  sources: c.sources.slice(0, 20),
+                  totalSources: c.sources.length,
+                })),
+              totalComponents: o.components.length,
+            })),
+          totalOrders: matching.length,
+          unassessedOrders: view.unassessedOrders.slice(0, 50),
+          totalUnassessedOrders: view.unassessedOrders.length,
+          guidance: view.guidance,
+        };
+      }),
       locationId: run.locationId,
       sourceHash: run.sourceHash,
       asOf: run.asOf,
@@ -132,13 +168,16 @@ export class MrpAssistanceService {
       totalSupplies: supplies.length,
       preparations,
       totalPreparations,
+      productionDeclarations: (metadata?.productionDeclarations ?? [])
+        .filter((d) => d.evidence?.product?.itemId && ids.has(d.evidence.product.itemId))
+        .slice(0, 100),
       materialPurchases: (metadata?.materialPurchases ?? [])
         .filter((p) => ids.has(p.itemId))
         .slice(0, 100),
       totalMaterialPurchases: (metadata?.materialPurchases ?? []).filter((p) => ids.has(p.itemId))
         .length,
       preparationGuidance:
-        'Les préparations ne sont pas du stock. Seules les commandes matières CONFIRMED alimentent déjà les arrivages du calcul, pour leur reste non reçu. Le stock WMS contient déjà les réceptions POSTED : ne rien additionner à nouveau. Les preuves materialPurchases sont figées au calcul; les liens purchaseOrder montrent le statut courant. Aucun outil de création achat/OF ou réception n’est exposé à ce worker.',
+        'Les préparations ne sont pas du stock. Les commandes CONFIRMED alimentent les arrivages uniquement pour leur reste non reçu et non clôturé. Une clôture ne produit aucun stock. Le WMS contient déjà les réceptions POSTED et la production bonne déclarée, moins les consommations : ne rien additionner à nouveau; un rebut ne crée aucun produit fini. materialPurchases et productionDeclarations sont figés au calcul; purchaseOrder et currentMaterialImpact décrivent le présent, pas le scénario historique. currentMaterialImpact reste consultatif et borné à 50 OF, 50 composants et 20 sources par composant; les OF non évalués empêchent une conclusion globale. La capacité exige une simulation APS et une validation humaine. Aucun outil de création achat/OF, de réception ou de déclaration atelier n’est exposé à ce worker.',
       salesDemands: (metadata?.salesDemands ?? [])
         .filter((d) => d.itemId && ids.has(d.itemId))
         .slice(0, 100),

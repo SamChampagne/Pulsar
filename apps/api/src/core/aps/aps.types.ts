@@ -104,6 +104,13 @@ export interface ApsSnapshot {
   machines?: ApsMachine[];
   work_orders?: ApsWorkOrder[];
   inventory_items?: ApsInventoryItem[];
+  supplies?: {
+    id: string;
+    material_id: string;
+    quantity: number;
+    available_at: string;
+    source_type: string;
+  }[];
   metadata?: Record<string, unknown>;
 }
 

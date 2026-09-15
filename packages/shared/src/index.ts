@@ -91,3 +91,4 @@ export * from './manufacturing/demand-coverage';
 export * from './manufacturing/unit-conversion';
 export * from './manufacturing/mrp-worker';
 export * from './manufacturing/material-purchase';
+export * from './manufacturing/material-impact';

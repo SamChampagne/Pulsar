@@ -195,7 +195,10 @@ describe('WMS putaway and movement history (HTTP)', () => {
       .patch(`/api/v1/wms/items/${i.id}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ unit: 'L' })
-      .expect(200);
+      .expect(409);
+    // M2 freezes used units via the public API. Simulate historical drift only in
+    // this isolated fixture to retain coverage of immutable ledger unit snapshots.
+    await db.wmsItem.updateMany({ where: { tenantId: tid, id: i.id }, data: { unit: 'L' } });
     const journal = (await get('inventory/movements').query({ itemId: i.id }).expect(200)).body;
     expect(journal.total).toBe(3);
     expect(journal.items.map((r: any) => r.type)).toEqual(['PICK', 'MOVE', 'RECEIPT']);

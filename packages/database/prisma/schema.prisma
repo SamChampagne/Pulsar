@@ -2227,6 +2227,8 @@ model CustomFieldDefinition {
 }
 
 enum StockMovementType {
+  CONSUMPTION
+  PRODUCTION
   RECEIPT
   MOVE
   PICK
@@ -3673,6 +3675,7 @@ model BomLine {
 }
 
 model ManufacturingOrder {
+  declarations ManufacturingDeclaration[]
   mrpPreparation MrpPreparation?
   locationId String?
   bomRevisionId String?
@@ -4436,6 +4439,9 @@ model MaterialSupplier {
 
 // One exact BUY preparation per order in v1. No hidden unit/quantity conversion.
 model MaterialPurchaseOrder {
+  closedAt DateTime?
+  closedQuantity Decimal @default(0) @db.Decimal(18, 3)
+  amendments MaterialPurchaseAmendment[]
   id String @id @default(cuid())
   tenantId String
   preparationId String @unique
@@ -4479,4 +4485,40 @@ model MaterialPurchaseReceipt {
   @@unique([tenantId, operationKey])
   @@index([tenantId, purchaseOrderId])
   @@map("material_purchase_receipts")
+}
+
+// Append-only promise/closure history. No stock side effects.
+model MaterialPurchaseAmendment {
+  id String @id @default(cuid())
+  tenantId String
+  purchaseOrderId String
+  kind String
+  reason String
+  previousDate DateTime @db.Date
+  expectedDate DateTime @db.Date
+  closedQuantity Decimal @default(0) @db.Decimal(18, 3)
+  createdById String
+  createdAt DateTime @default(now())
+  purchaseOrder MaterialPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  @@index([tenantId, purchaseOrderId, createdAt])
+  @@map("material_purchase_amendments")
+}
+
+// Atomic declaration with immutable actual consumption/movement proofs.
+model ManufacturingDeclaration {
+  id String @id @default(cuid())
+  tenantId String
+  orderId String
+  goodQuantity Int
+  scrapQuantity Int
+  note String
+  evidence Json
+  operationKey String
+  fingerprint String
+  createdById String
+  createdAt DateTime @default(now())
+  order ManufacturingOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, orderId, createdAt])
+  @@map("manufacturing_declarations")
 }

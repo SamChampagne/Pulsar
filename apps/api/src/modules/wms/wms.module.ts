@@ -63,6 +63,7 @@ import { CycleCountsController } from './cycle-counts/cycle-counts.controller';
     CycleCountsService,
   ],
   exports: [
+    InventoryService,
     ReceivingService,
     WmsOverviewService,
     PickingService,

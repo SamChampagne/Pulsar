@@ -49,6 +49,10 @@
     dirty = $state(false);
   let pending = $state<{ path: string; body: Record<string, unknown> } | null>(null);
   let epoch = 0;
+  let amendmentKind = $state<'RESCHEDULE' | 'CLOSE_REMAINDER'>('RESCHEDULE'),
+    amendmentDate = $state(''),
+    amendmentReason = $state(''),
+    amendmentConfirmed = $state(false);
   const key = $derived(
     `pulsar:material-purchase:${$auth?.tenant.id}:${$auth?.user.id}:${preparationId}`,
   );
@@ -88,6 +92,7 @@
     confirmed = false;
     cancelConfirmed = false;
     receiveConfirmed = false;
+    amendmentConfirmed = false;
     try {
       const raw = localStorage.getItem(key);
       pending = raw ? JSON.parse(raw) : null;
@@ -102,6 +107,8 @@
       unitPrice = po?.unitPrice ?? '0';
       currency = po?.currency ?? 'CAD';
       expectedDate = (po?.expectedDate ?? next.dueDate).slice(0, 10);
+      amendmentDate = expectedDate;
+      amendmentReason = '';
       terms = po?.terms ?? '';
       quantity = po?.remaining ?? '';
       reference = po?.supplierReference ?? '';
@@ -387,7 +394,79 @@
             >
           </section>
         {/if}
-        {#if order?.status === 'CONFIRMED' && Number(order.remaining) > 0 && canReceive}
+        {#if order?.status === 'CONFIRMED' && !order.closedAt && Number(order.remaining) > 0 && canManage}
+          <section
+            class="space-y-3 border-t border-edge pt-4"
+            aria-label="Modifier la promesse fournisseur"
+          >
+            <h4 class="font-medium">Gérer un changement fournisseur</h4>
+            <Field label="Modification"
+              ><Select
+                bind:value={amendmentKind}
+                disabled={locked}
+                onchange={() => {
+                  amendmentConfirmed = false;
+                }}
+                ><option value="RESCHEDULE">Reporter / avancer l’arrivée</option><option
+                  value="CLOSE_REMAINDER">Clôturer tout le reliquat</option
+                ></Select
+              ></Field
+            >
+            {#if amendmentKind === 'RESCHEDULE'}<Field label="Nouvelle date promise"
+                ><Input type="date" bind:value={amendmentDate} disabled={locked} /></Field
+              >{:else}<p class="rounded-md bg-surface-muted p-3 text-sm">
+                {order.remaining}
+                {prep.unitSnapshot} ne seront plus attendus. Les {order.received}
+                {prep.unitSnapshot} déjà reçus restent en stock. Annulez d’abord les réceptions encore
+                en brouillon.
+              </p>{/if}
+            <Field label="Motif du changement"
+              ><Input bind:value={amendmentReason} disabled={locked} /></Field
+            >
+            <label class="flex items-start gap-2 text-sm"
+              ><input type="checkbox" bind:checked={amendmentConfirmed} disabled={locked} />Je
+              confirme ce changement convenu avec le fournisseur. Le MRP et le prochain planning
+              utiliseront cette nouvelle situation.</label
+            >
+            <Button
+              disabled={locked ||
+                !amendmentConfirmed ||
+                amendmentReason.trim().length < 3 ||
+                (amendmentKind === 'RESCHEDULE' &&
+                  (!amendmentDate || amendmentDate === expectedDate))}
+              onclick={() =>
+                write(`${base}/${order!.id}/amendments`, {
+                  expectedUpdatedAt: order!.updatedAt,
+                  kind: amendmentKind,
+                  reason: amendmentReason,
+                  ...(amendmentKind === 'RESCHEDULE' ? { expectedDate: amendmentDate } : {}),
+                })}>Confirmer le changement</Button
+            >
+          </section>
+        {/if}
+        {#if order?.closedAt}<p class="rounded-md bg-surface-muted p-3 text-sm">
+            Reliquat clôturé : {order.closedQuantity}
+            {prep.unitSnapshot}. Aucune réception fictive; les quantités commandées et réellement
+            reçues sont conservées.
+          </p>{/if}
+        {#if order?.amendments?.length}<section
+            aria-label="Historique des promesses"
+            class="space-y-3 border-t border-edge pt-4"
+          >
+            <h4 class="font-medium">Historique des promesses</h4>
+            {#each order.amendments as amendment}<article
+                class="border-l-2 border-edge pl-3 text-sm"
+              >
+                <p class="font-mono text-xs text-ink-muted">{amendment.createdAt.slice(0, 10)}</p>
+                <p>
+                  {amendment.kind === 'RESCHEDULE'
+                    ? `${amendment.previousDate.slice(0, 10)} → ${amendment.expectedDate.slice(0, 10)}`
+                    : `Reliquat clôturé : ${amendment.closedQuantity} ${prep.unitSnapshot}`}
+                </p>
+                <p class="text-ink-muted">{amendment.reason}</p>
+              </article>{/each}
+          </section>{/if}
+        {#if order?.status === 'CONFIRMED' && !order.closedAt && Number(order.remaining) > 0 && canReceive}
           <section class="space-y-3 border-t border-edge pt-4">
             <h4 class="font-medium">Préparer une réception partielle</h4>
             <p class="text-sm text-ink-muted">
@@ -438,7 +517,7 @@
                 ><Badge tone="neutral">{purchaseLabel(receipt.status)}</Badge></a
               >{/each}
           </section>{/if}
-        {#if order && order.status !== 'CANCELLED' && canManage && order.receipts.every((r) => r.status === 'CANCELLED')}
+        {#if order && !order.closedAt && order.status !== 'CANCELLED' && canManage && order.receipts.every((r) => r.status === 'CANCELLED')}
           <section class="space-y-3 border-t border-edge pt-4">
             <label class="flex items-start gap-2 text-sm"
               ><input type="checkbox" bind:checked={cancelConfirmed} disabled={locked || dirty} />Je

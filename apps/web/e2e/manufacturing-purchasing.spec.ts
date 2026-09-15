@@ -143,6 +143,29 @@ async function setup(
           status: 'CONFIRMED',
           supplierReference: body.supplierReference,
         };
+      if (path.endsWith('/amendments')) {
+        const order = state.order!;
+        order.amendments = [
+          ...(order.amendments ?? []),
+          {
+            id: 'change',
+            kind: body.kind,
+            reason: body.reason,
+            previousDate: order.expectedDate,
+            expectedDate: body.expectedDate ?? order.expectedDate,
+            closedQuantity: body.kind === 'CLOSE_REMAINDER' ? order.remaining : '0',
+            createdAt: '2026-10-03',
+          },
+        ];
+        if (body.kind === 'RESCHEDULE') order.expectedDate = body.expectedDate;
+        else {
+          order.closedAt = '2026-10-03';
+          order.closedQuantity = order.remaining;
+          order.remaining = '0';
+          order.fulfillment = 'CLOSED';
+        }
+        order.updatedAt = '2026-10-03T12:00:00Z';
+      }
       if (path.endsWith('/receipts')) {
         if (!state.order!.receipts.some((r) => r.id === 'receipt-new'))
           state.order!.receipts.push({
@@ -167,6 +190,13 @@ async function setup(
         json: { items: options.empty ? [] : [currentPrep()], total: options.empty ? 0 : 1 },
       });
     if (path.endsWith('/purchase')) return route.fulfill({ json: state.order });
+    if (path.endsWith('/workspace/arrivals'))
+      return route.fulfill({
+        json: {
+          items: state.order ? [{ ...state.order, arrivalState: 'LATE' }] : [],
+          total: state.order ? 1 : 0,
+        },
+      });
     if (path.endsWith('/bins'))
       return route.fulfill({ json: { items: [{ id: 'bin', code: 'RECEPTION-A' }], total: 1 } });
     return route.fulfill({ json: path.endsWith('/notifications') ? [] : {} });
@@ -189,6 +219,48 @@ async function createPurchase(page: Page) {
   await dialog.getByRole('button', { name: 'Créer le bon d’achat brouillon' }).click();
   return dialog;
 }
+test('reschedules an arrival with explicit confirmation and retains its history', async ({
+  page,
+}) => {
+  const { state, errors } = await setup(page, { confirmed: true });
+  await page.getByRole('button', { name: 'Arrivages', exact: true }).click();
+  await expect(page.getByRole('button', { name: /MP-000001.*encore attendus/ })).toContainText(
+    'En retard',
+  );
+  await page.getByRole('button', { name: /MP-000001/ }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Nouvelle date promise').fill('2026-10-15');
+  await dialog.getByLabel('Motif du changement').fill('Retard confirmé par le fournisseur');
+  await expect(dialog.getByRole('button', { name: 'Confirmer le changement' })).toBeDisabled();
+  await dialog.getByRole('checkbox', { name: /Je confirme ce changement/ }).check();
+  await dialog.getByRole('button', { name: 'Confirmer le changement' }).click();
+  await expect(dialog.getByText('2026-10-12 → 2026-10-15')).toBeVisible();
+  expect(state.writes[0].body).toMatchObject({
+    kind: 'RESCHEDULE',
+    expectedDate: '2026-10-15',
+    expectedUpdatedAt: '2026-09-15T12:00:00Z',
+  });
+  expect(errors).toEqual([]);
+});
+
+test('closes a partial remainder without presenting it as received stock', async ({ page }) => {
+  await setup(page, { confirmed: true });
+  const dialog = await openPurchase(page);
+  await dialog
+    .getByRole('combobox', { name: 'Modification', exact: true })
+    .selectOption('CLOSE_REMAINDER');
+  await dialog.getByLabel('Motif du changement').fill('Le solde ne sera jamais livré');
+  await dialog.getByRole('checkbox', { name: /Je confirme ce changement/ }).check();
+  await dialog.getByRole('button', { name: 'Confirmer le changement' }).click();
+  await expect(dialog.locator('p').filter({ hasText: 'Aucune réception fictive' })).toContainText(
+    'Reliquat clôturé : 75.5 KG.',
+  );
+  await expect(
+    dialog.getByRole('heading', { name: 'Préparer une réception partielle' }),
+  ).toHaveCount(0);
+  await expect(dialog.getByRole('heading', { name: 'Historique des promesses' })).toBeVisible();
+});
+
 test('converts an exact request to a draft, then requires an explicit supplier-order confirmation', async ({
   page,
 }) => {

@@ -1541,6 +1541,190 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
     }).expect(201);
     expect((await preparationRun('BUY')).preview.canPrepare).toBe(true);
   });
+  it('reschedules with history, closes a partial remainder without stock and releases new needs', async () => {
+    const { run, body } = await preparationRun('BUY', '10');
+    const prep = (await call('post', `runs/${run.id}/prepare`, body).expect(201)).body;
+    let po = (
+      await purchasing('post', '', {
+        preparationId: prep.id,
+        expectedUpdatedAt: prep.updatedAt,
+        operationKey: randomUUID(),
+        supplierId: supplier.id,
+        unitPrice: '3',
+        currency: 'CAD',
+        expectedDate: today,
+      }).expect(201)
+    ).body;
+    po = (
+      await purchasing('post', `/${po.id}/confirm`, {
+        expectedUpdatedAt: po.updatedAt,
+        supplierReference: 'RELIQUAT-TEST',
+      }).expect(201)
+    ).body;
+    const before = await db.stockMovement.count({ where: { tenantId } });
+    const change = {
+      expectedUpdatedAt: po.updatedAt,
+      kind: 'RESCHEDULE',
+      expectedDate: future,
+      reason: 'Retard annoncé par fournisseur',
+    };
+    await purchasing('post', `/${po.id}/amendments`, change, reader).expect(403);
+    await purchasing('post', `/${po.id}/amendments`, change, other).expect(404);
+    await purchasing('post', `/${po.id}/amendments`, { ...change, reason: '   ' }).expect(400);
+    po = (await purchasing('post', `/${po.id}/amendments`, change).expect(201)).body;
+    await purchasing('post', `/${po.id}/amendments`, change).expect(409);
+    expect(po.amendments[0]).toMatchObject({ reason: change.reason, kind: 'RESCHEDULE' });
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(before);
+    const received = (
+      await purchasing('post', `/${po.id}/receipts`, {
+        expectedUpdatedAt: po.updatedAt,
+        operationKey: randomUUID(),
+        toBinId: binId,
+        quantity: '8',
+      }).expect(201)
+    ).body;
+    po = (await purchasing('get', `/${po.id}`).expect(200)).body;
+    await purchasing('post', `/${po.id}/amendments`, {
+      expectedUpdatedAt: po.updatedAt,
+      kind: 'CLOSE_REMAINDER',
+      reason: 'Solde non livrable',
+    }).expect(409);
+    const rc = (await wms('get', received.receiptId).expect(200)).body;
+    await wms('post', `${rc.id}/post`, { expectedUpdatedAt: rc.updatedAt }).expect(201);
+    po = (await purchasing('get', `/${po.id}`).expect(200)).body;
+    const oldRun = (await calculate().expect(201)).body;
+    po = (
+      await purchasing('post', `/${po.id}/amendments`, {
+        expectedUpdatedAt: po.updatedAt,
+        kind: 'CLOSE_REMAINDER',
+        reason: 'Solde non livrable',
+      }).expect(201)
+    ).body;
+    expect(po).toMatchObject({
+      received: '8',
+      remaining: '0',
+      closedQuantity: '2',
+      fulfillment: 'CLOSED',
+    });
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(before + 1);
+    await purchasing('post', `/${po.id}/receipts`, {
+      expectedUpdatedAt: po.updatedAt,
+      operationKey: randomUUID(),
+      toBinId: binId,
+      quantity: '1',
+    }).expect(409);
+    await purchasing('post', `/${po.id}/cancel`, { expectedUpdatedAt: po.updatedAt }).expect(409);
+    const nextRun = (await calculate().expect(201)).body;
+    expect(nextRun.inputSnapshot.supplies.some((s: any) => s.id === `purchase:${po.id}`)).toBe(
+      false,
+    );
+    expect(
+      nextRun.sourceMetadata.materialPurchases.find((p: any) => p.id === po.id).closedQuantity,
+    ).toBe('2');
+    expect((await call('get', `runs/${oldRun.id}`).expect(200)).body.stale).toBe(true);
+    expect((await preparationRun('BUY')).preview.canPrepare).toBe(true);
+    const arrivals = (await purchasing('get', '/workspace/arrivals').expect(200)).body;
+    expect(arrivals.items.find((p: any) => p.id === po.id).arrivalState).toBe('CLOSED');
+  });
+
+  it('posts actual consumption, good output and scrap atomically with durable replay and site guards', async () => {
+    const manu = (method: 'get' | 'post', path: string, body?: object, key = token) =>
+      request(http)
+        [method](`/api/v1/manufacturing/${path}`)
+        .set('Authorization', `Bearer ${key}`)
+        .send(body);
+    const item = await db.wmsItem.findFirstOrThrow({ where: { tenantId, id: itemId } });
+    let order = (
+      await manu('post', 'orders', {
+        name: 'Atelier réel',
+        productRef: item.sku,
+        quantity: 3,
+        dueDate: future,
+        releaseDate: today,
+        bomId,
+      }).expect(201)
+    ).body;
+    await manu('post', `orders/${order.id}/material-context`, {
+      expectedUpdatedAt: order.updatedAt,
+      locationId: siteId,
+      bomRevisionId: revisionId,
+    }).expect(201);
+    order = (await manu('post', `orders/${order.id}/release`).expect(201)).body;
+    order = (await manu('post', `orders/${order.id}/start`).expect(201)).body;
+    const before = await db.stockMovement.count({ where: { tenantId } });
+    const dto = {
+      operationKey: randomUUID(),
+      expectedUpdatedAt: order.updatedAt,
+      goodQuantity: 1,
+      scrapQuantity: 1,
+      toBinId: binId,
+      note: 'Un rebut constaté au contrôle',
+      consumptions: [{ itemId: componentId, fromBinId: binId, quantity: '1' }],
+    };
+    const path = `shop-floor/orders/${order.id}`;
+    await manu('post', `${path}/declarations`, dto, reader).expect(403);
+    await manu('post', `${path}/declarations`, dto, other).expect(400);
+    await manu('post', `orders/${order.id}/complete`).expect(409);
+    const wrongBin = await db.bin.create({
+      data: { tenantId, locationId: otherSiteId, code: `WRONG-${randomUUID()}` },
+    });
+    await manu('post', `${path}/declarations`, { ...dto, toBinId: wrongBin.id }).expect(409);
+    await manu('post', `${path}/declarations`, {
+      ...dto,
+      consumptions: [{ ...dto.consumptions[0], quantity: '999999999' }],
+    }).expect(409);
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(before);
+    expect(
+      await db.manufacturingDeclaration.count({ where: { tenantId, orderId: order.id } }),
+    ).toBe(0);
+    const [a, b] = await Promise.all([
+      manu('post', `${path}/declarations`, dto).expect(201),
+      manu('post', `${path}/declarations`, dto).expect(201),
+    ]);
+    expect(a.body.id).toBe(b.body.id);
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(before + 2);
+    const movements = await db.stockMovement.findMany({ where: { tenantId, refId: a.body.id } });
+    expect(movements.map((m) => m.type).sort()).toEqual(['CONSUMPTION', 'PRODUCTION']);
+    expect(movements.find((m) => m.type === 'PRODUCTION')!.qty.toFixed()).toBe('1');
+    await manu('post', `${path}/declarations`, { ...dto, goodQuantity: 2 }).expect(409);
+    let floor = (await manu('get', path).expect(200)).body;
+    expect(floor).toMatchObject({ good: 1, scrap: 1, remaining: 1 });
+    expect(floor.declarations[0]).not.toHaveProperty('fingerprint');
+    await manu('post', `orders/${order.id}/cancel`).expect(409);
+    const effects = (
+      await manu('get', `scheduling/material-impact?locationId=${siteId}`).expect(200)
+    ).body;
+    expect(effects.orders.find((o: any) => o.id === order.id).hasActuals).toBe(true);
+    await manu('get', `scheduling/material-impact?locationId=${siteId}`, undefined, noWms).expect(
+      403,
+    );
+    await manu('get', `scheduling/material-impact?locationId=${siteId}`, undefined, other).expect(
+      400,
+    );
+    await manu('post', `${path}/declarations`, {
+      ...dto,
+      operationKey: randomUUID(),
+      expectedUpdatedAt: floor.updatedAt,
+      goodQuantity: 1,
+      scrapQuantity: 0,
+      consumptions: [{ ...dto.consumptions[0], quantity: '0' }],
+      note: 'Dernière pièce avec matières déjà consommées',
+    }).expect(201);
+    const finishedEffects = (
+      await manu('get', `scheduling/material-impact?locationId=${siteId}`).expect(200)
+    ).body;
+    expect(finishedEffects.orders.find((o: any) => o.id === order.id).components[0].quantity).toBe(
+      '0',
+    );
+    await manu('post', `orders/${order.id}/complete`).expect(201);
+    floor = (await manu('get', path).expect(200)).body;
+    expect(floor).toMatchObject({ status: 'COMPLETED', good: 2, scrap: 1, remaining: 0 });
+    const calculated = (await calculate().expect(201)).body;
+    expect(
+      calculated.sourceMetadata.productionDeclarations.filter((d: any) => d.orderId === order.id),
+    ).toHaveLength(2);
+  });
+
   it('fails closed when WMS is disabled, including historical reads', async () => {
     const module = await db.moduleDefinition.findUniqueOrThrow({ where: { key: 'wms' } });
     await db.tenantModule.updateMany({

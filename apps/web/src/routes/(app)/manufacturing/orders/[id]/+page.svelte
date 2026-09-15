@@ -18,6 +18,7 @@
   } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
   import OrderMaterials from '$lib/components/manufacturing/OrderMaterials.svelte';
+  import ShopFloorDrawer from '$lib/components/manufacturing/ShopFloorDrawer.svelte';
   import type { ManufacturingMaterialSnapshot } from '@pulsar/shared';
 
   type Priority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
@@ -142,8 +143,8 @@
   let routingId = $state('');
   let routingSaving = $state(false);
 
-  async function load() {
-    loading = true;
+  async function load(quiet = false) {
+    if (!quiet) loading = true;
     error = '';
     try {
       order = await api<Order>(`/manufacturing/orders/${orderId}`);
@@ -345,6 +346,9 @@
   </Card>
 
   <OrderMaterials {order} onchange={load} />
+  {#if order.materialSnapshot}<div class="my-4">
+      <ShopFloorDrawer orderId={order.id} onchange={() => load(true)} />
+    </div>{/if}
   {#if order.mrpPreparation}<div class="my-4 rounded-md border border-edge bg-surface p-4 text-sm">
       <p>
         Cet OF provient d’une proposition MRP confirmée. Son produit, sa quantité, son site et sa

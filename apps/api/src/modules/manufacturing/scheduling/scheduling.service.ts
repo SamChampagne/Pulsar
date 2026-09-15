@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -12,6 +13,7 @@ import {
   ManufacturingOrderStatus,
   ManufacturingPriority,
   MODULE_KEYS,
+  deriveMaterialImpact,
   type ManufacturingMaterialSnapshot,
 } from '@pulsar/shared';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
@@ -36,6 +38,7 @@ import {
   validateSnapshot,
 } from './aps-artifact';
 import { plantWindows } from './plant-time';
+import { materialArrivals } from './material-arrivals';
 
 export interface RunSchedulingInput {
   strategy?: string;
@@ -81,7 +84,9 @@ export class SchedulingService {
       bomId: string | null;
       locationId: string | null;
       materialSnapshot: Prisma.JsonValue;
+      dueDate?: Date;
     }[],
+    tx: Prisma.TransactionClient = this.prisma,
   ): Promise<{ materials: SnapshotMaterials | undefined; warnings: string[] }> {
     const enabled = await this.modulesCache.getEnabledKeys(tenantId);
     if (!enabled.has(MODULE_KEYS.WMS)) {
@@ -97,12 +102,14 @@ export class SchedulingService {
       throw new BadRequestException(
         'La planification avec matières exige un seul site de fabrication dans ce lot.',
       );
-    const [items, levels] = await this.prisma.$transaction([
-      this.prisma.wmsItem.findMany({
+    const [items, levels] = await Promise.all([
+      tx.wmsItem.findMany({
         where: { tenantId },
+        orderBy: { id: 'asc' },
         select: { id: true, sku: true, unit: true, isActive: true },
       }),
-      this.prisma.inventoryLevel.findMany({
+      tx.inventoryLevel.findMany({
+        orderBy: [{ itemId: 'asc' }, { binId: 'asc' }],
         where: {
           tenantId,
           ...(sites[0]
@@ -112,13 +119,16 @@ export class SchedulingService {
         select: { itemId: true, qtyOnHand: true },
       }),
     ]);
-    const onHandByItem = new Map<string, number>();
+    const onHandByItem = new Map<string, Prisma.Decimal>();
     for (const l of levels) {
-      onHandByItem.set(l.itemId, (onHandByItem.get(l.itemId) ?? 0) + Number(l.qtyOnHand));
+      onHandByItem.set(
+        l.itemId,
+        (onHandByItem.get(l.itemId) ?? new Prisma.Decimal(0)).plus(l.qtyOnHand),
+      );
     }
     const inventory = items.map((i) => ({
       materialRef: i.sku,
-      onHand: onHandByItem.get(i.id) ?? 0,
+      onHand: (onHandByItem.get(i.id) ?? new Prisma.Decimal(0)).toNumber(),
     }));
 
     const byOrder: SnapshotMaterials['byOrder'] = {};
@@ -143,7 +153,48 @@ export class SchedulingService {
         return { materialRef: line.sku, fixedQuantity: quantity };
       });
     }
-    return { materials: { inventory, byOrder }, warnings: [] };
+    const arrivals = sites[0] ? await materialArrivals(tx, tenantId, sites[0]) : [];
+    const today = new Date().toISOString().slice(0, 10);
+    const supplies = arrivals
+      .filter((a) => a.expectedDate >= today)
+      .map((a) => ({
+        id: `purchase:${a.id}`,
+        materialRef: a.sku,
+        quantity: Number(a.quantity),
+        availableAt: `${a.expectedDate}T00:00:00`,
+      }));
+    // The engine's pre-solve gate requires enough supply at release. Feed an
+    // explicit, immutable earliest material release instead of bypassing that gate.
+    // This remains advisory allocation, not a stock reservation or an OF mutation.
+    const readiness = deriveMaterialImpact({
+      today,
+      stocks: inventory.map((i) => ({
+        itemId: i.materialRef,
+        quantity: new Prisma.Decimal(i.onHand).toFixed(),
+      })),
+      arrivals: arrivals.map((a) => ({ ...a, itemId: a.sku })),
+      orders: materialOrders.map((o) => ({
+        id: o.id,
+        dueDate: o.dueDate?.toISOString() ?? today,
+        targetDate: today,
+        components: byOrder[o.id].map((c) => ({
+          itemId: c.materialRef,
+          quantity: new Prisma.Decimal(c.fixedQuantity).toFixed(),
+        })),
+      })),
+    });
+    const readyDates = Object.fromEntries(
+      readiness.filter((r) => r.readyDate).map((r) => [r.id, `${r.readyDate}T00:00:00`]),
+    );
+    return {
+      materials: { inventory, byOrder, supplies, readyDates },
+      warnings: arrivals
+        .filter((a) => a.expectedDate < today)
+        .map(
+          (a) =>
+            `${a.number} en retard : arrivage exclu de l’APS jusqu’à nouvelle promesse ou réception physique.`,
+        ),
+    };
   }
 
   /** Passthrough so the UI only offers strategies the engine actually supports. */
@@ -171,7 +222,10 @@ export class SchedulingService {
           },
         },
         orderBy: { id: 'asc' },
-        include: { operations: { where: { tenantId }, orderBy: { id: 'asc' } } },
+        include: {
+          declarations: { where: { tenantId }, select: { id: true }, orderBy: { id: 'asc' } },
+          operations: { where: { tenantId }, orderBy: { id: 'asc' } },
+        },
       }),
     ]);
   }
@@ -179,18 +233,26 @@ export class SchedulingService {
   async run(tenantId: string, userId: string, input: RunSchedulingInput) {
     // Load the schedulable slice: active orders (RELEASED + IN_PROGRESS) with ops,
     // all work centers, and the calendars they reference.
-    const [calendars, workCenters, orders, baseline] = await this.prisma.$transaction(
-      async (tx) => {
-        const slice = await this.planningSlice(tx, tenantId);
-        const baseline = await tx.schedulingRun.findFirst({
-          where: { tenantId, isBaseline: true },
-          select: { id: true },
-        });
-        return [...slice, baseline] as const;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
+    const [calendars, workCenters, orders, baseline, loadedMaterials] =
+      await this.prisma.$transaction(
+        async (tx) => {
+          const slice = await this.planningSlice(tx, tenantId);
+          const baseline = await tx.schedulingRun.findFirst({
+            where: { tenantId, isBaseline: true },
+            select: { id: true },
+          });
+          const loaded = input.respectMaterials
+            ? await this.loadMaterials(tenantId, slice[2], tx)
+            : undefined;
+          return [...slice, baseline, loaded] as const;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      );
 
+    if (orders.some((o) => o.declarations?.length))
+      throw new BadRequestException(
+        'Un OF porte des déclarations réelles. La replanification du travail partiellement exécuté exige des temps réels par opération; terminez son exécution avant un nouveau scénario global. Consultez Impacts matières pour le restant, sans inventer une durée.',
+      );
     if (orders.length === 0) {
       throw new BadRequestException(
         'No schedulable manufacturing orders (need at least one RELEASED or IN_PROGRESS order).',
@@ -201,7 +263,7 @@ export class SchedulingService {
     let materials: SnapshotMaterials | undefined;
     const materialWarnings: string[] = [];
     if (input.respectMaterials) {
-      const loaded = await this.loadMaterials(tenantId, orders);
+      const loaded = loadedMaterials!;
       materials = loaded.materials;
       materialWarnings.push(...loaded.warnings);
     }
@@ -252,6 +314,7 @@ export class SchedulingService {
     snapshot.metadata = {
       ...snapshot.metadata,
       source_revision: artifactHash([calendars, workCenters, orders]),
+      ...(materials ? { material_revision: artifactHash(materials) } : {}),
     };
     const warnings = [...materialWarnings, ...built.warnings];
 
@@ -429,6 +492,25 @@ export class SchedulingService {
     return run;
   }
 
+  /** Historical material snapshots retain the same WMS access requirements as new runs. */
+  async requireMaterialAccess(
+    tenantId: string,
+    run: { inputRequest: Prisma.JsonValue } | null,
+    permissions: readonly string[],
+  ) {
+    const snapshot = (run?.inputRequest as unknown as ApsBridgeRequest | null)?.snapshot;
+    if (
+      !snapshot ||
+      (!snapshot.inventory_items && !snapshot.supplies && !snapshot.metadata?.material_revision)
+    )
+      return;
+    if (
+      !permissions.includes('wms.read') ||
+      !(await this.modulesCache.getEnabledKeys(tenantId)).has(MODULE_KEYS.WMS)
+    )
+      throw new ForbiddenException('Lecture et activation WMS requises pour ce scénario matières.');
+  }
+
   private async publicationInputs(tenantId: string, id: string) {
     const run = await this.get(tenantId, id);
     if (
@@ -501,16 +583,26 @@ export class SchedulingService {
       throw new ServiceUnavailableException(
         'Revue APS indisponible; aucune publication autorisée.',
       );
-    const slice = await this.prisma.$transaction((tx) => this.planningSlice(tx, tenantId), {
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
-    });
+    const { slice, materialFresh } = await this.prisma.$transaction(
+      async (tx) => {
+        const slice = await this.planningSlice(tx, tenantId);
+        return {
+          slice,
+          materialFresh: await this.materialFresh(tx, tenantId, slice[2], run.inputRequest),
+        };
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      },
+    );
     const sourceRevision = artifactHash(slice);
     const fresh =
+      materialFresh &&
       sourceRevision ===
-      (run.inputRequest as unknown as ApsBridgeRequest).snapshot.metadata?.source_revision;
+        (run.inputRequest as unknown as ApsBridgeRequest).snapshot.metadata?.source_revision;
     const blockers = fresh
       ? []
-      : ['Les ordres, postes ou calendriers ont changé. Calculez un nouveau scénario.'];
+      : ['Les ordres, postes, calendriers ou matières ont changé. Calculez un nouveau scénario.'];
     if (assessment.publish_status === 'review')
       blockers.push(
         'Ce scénario nécessite un arbitrage : ajustez puis recalculez. La publication forcée n’est pas disponible.',
@@ -567,6 +659,8 @@ export class SchedulingService {
         );
       }
       const liveSlice = await this.planningSlice(tx, tenantId);
+      if (!(await this.materialFresh(tx, tenantId, liveSlice[2], run.inputRequest)))
+        throw new ConflictException('Stock ou arrivages modifiés : recalculez avant publication.');
       const source = (run.inputRequest as unknown as ApsBridgeRequest).snapshot.metadata
         ?.source_revision;
       if (!source || artifactHash(liveSlice) !== source) {
@@ -607,5 +701,24 @@ export class SchedulingService {
       where: { tenantId, isBaseline: true },
       include: { assignments: { orderBy: { start: 'asc' } } },
     });
+  }
+
+  private async materialFresh(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    orders: Parameters<SchedulingService['loadMaterials']>[1],
+    request: Prisma.JsonValue,
+  ) {
+    const snapshot = (request as unknown as ApsBridgeRequest)?.snapshot;
+    if (!snapshot?.inventory_items?.length && !snapshot?.metadata?.material_revision) return true;
+    if (!snapshot.metadata?.material_revision) return false; // Legacy material runs were not freshness-guarded.
+    try {
+      return (
+        artifactHash((await this.loadMaterials(tenantId, orders, tx)).materials) ===
+        snapshot.metadata.material_revision
+      );
+    } catch {
+      return false;
+    }
   }
 }

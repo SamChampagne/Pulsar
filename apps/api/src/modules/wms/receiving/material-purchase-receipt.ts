@@ -30,7 +30,7 @@ export async function materialReceiptContext(
     _sum: { qty: true },
   });
   const total = received._sum.qty ?? new Prisma.Decimal(0);
-  const remaining = Prisma.Decimal.max(0, prep.quantity.minus(total));
+  const remaining = Prisma.Decimal.max(0, prep.quantity.minus(total).minus(order.closedQuantity));
   const issues: string[] = [];
   if (receipt.status === 'DRAFT') {
     if (
@@ -43,6 +43,7 @@ export async function materialReceiptContext(
       order.tenantId !== tenantId ||
       prep.tenantId !== tenantId ||
       order.status !== 'CONFIRMED' ||
+      order.closedAt ||
       prep.status !== 'DRAFT'
     )
       issues.push('La commande matières doit être confirmée et sa demande active.');

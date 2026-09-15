@@ -2,6 +2,10 @@
 
 15 septembre 2026 · branche `codex/manufacturing-visual-workspace`.
 
+> État historique M3b. Les reports d'arrivée, clôtures de reliquat, impacts APS et
+> déclarations atelier sont désormais livrés dans la
+> [boucle opérationnelle M3c/M4/M5 v1](./manufacturing-operational-loop.md).
+
 ## Parcours livré
 
 **Fabrication → Achats matières** (`/manufacturing/purchasing`) présente les

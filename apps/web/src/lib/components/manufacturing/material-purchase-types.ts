@@ -41,6 +41,17 @@ export type MaterialPurchase = {
   received: string;
   remaining: string;
   fulfillment: string;
+  closedAt?: string | null;
+  closedQuantity?: string;
+  amendments?: {
+    id: string;
+    kind: string;
+    reason: string;
+    previousDate: string;
+    expectedDate: string;
+    closedQuantity: string;
+    createdAt: string;
+  }[];
   receipts: {
     id: string;
     number: string;
@@ -50,6 +61,10 @@ export type MaterialPurchase = {
   }[];
 };
 export const purchaseLabel = (status: string) =>
-  ({ DRAFT: 'Brouillon', CONFIRMED: 'Commandé', CANCELLED: 'Annulé', POSTED: 'Stock reçu' })[
-    status
-  ] ?? status;
+  ({
+    DRAFT: 'Brouillon',
+    CONFIRMED: 'Commandé',
+    CANCELLED: 'Annulé',
+    POSTED: 'Stock reçu',
+    CLOSED: 'Reliquat clôturé',
+  })[status] ?? status;

@@ -21,7 +21,7 @@ import { TenantModulesCacheService } from '../src/prisma/tenant-modules-cache.se
 
 describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', () => {
   let app: INestApplication, db: PrismaService, http: any, tenantId: string;
-  let token: string, reader: string, otherToken: string, runId: string;
+  let token: string, reader: string, materialToken: string, otherToken: string, runId: string;
   // Optional second pass through a live private sidecar, without making CI skip.
   const real =
     process.env.PULSAR_TEST_REAL_APS === 'true'
@@ -63,9 +63,11 @@ describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', (
                 operation_id: op.id,
                 work_order_id: o.id,
                 machine_id: op.eligible_machine_ids[0],
-                setup_start: '2026-01-05T08:00:00',
-                start: '2026-01-05T08:00:00',
-                end: '2026-01-05T09:00:00',
+                setup_start: o.release_date,
+                start: o.release_date,
+                end: new Date(Date.parse(`${o.release_date}Z`) + 3600000)
+                  .toISOString()
+                  .slice(0, 19),
               })),
             ),
           },
@@ -119,10 +121,11 @@ describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', (
       await db.tenantModule.create({
         data: { tenantId: tenant.id, moduleId: module.id, enabled: true },
       });
-      for (const mode of name === 'main' ? ['manager', 'reader'] : ['manager']) {
+      for (const mode of name === 'main' ? ['manager', 'reader', 'materials'] : ['manager']) {
         const keys = [
           'manufacturing.read',
-          ...(mode === 'manager' ? ['manufacturing.manage'] : []),
+          ...(mode !== 'reader' ? ['manufacturing.manage'] : []),
+          ...(mode === 'materials' ? ['wms.read'] : []),
         ];
         const perms = await db.permission.findMany({ where: { key: { in: keys } } });
         expect(perms).toHaveLength(keys.length);
@@ -152,6 +155,7 @@ describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', (
           .expect(200);
         if (name === 'other') otherToken = auth.body.accessToken;
         else if (mode === 'reader') reader = auth.body.accessToken;
+        else if (mode === 'materials') materialToken = auth.body.accessToken;
         else {
           token = auth.body.accessToken;
           tenantId = tenant.id;
@@ -283,7 +287,7 @@ describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', (
   });
   it('requires material context and valid horizons before calling the engine', async () => {
     const before = engine.runForTenant.mock.calls.length;
-    await post('run', { respectMaterials: true }).expect(400);
+    await post('run', { respectMaterials: true }).expect(403);
     await post('run', { horizonStart: '2026-02-30' }).expect(400);
     expect(engine.runForTenant.mock.calls.length).toBe(before);
   });
@@ -338,6 +342,202 @@ describe('Manufacturing APS bridge (HTTP, durable artifacts and concurrency)', (
     await post(`runs/${candidate.id}/publish`).expect(409);
     expect((await get('baseline').expect(200)).body.id).toBe(currentBaseline);
   });
+  it('plans after a confirmed arrival, protects material history and rejects a rescheduled promise', async () => {
+    const day = (offset: number) =>
+      new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
+    const today = day(0),
+      arrival = day(2),
+      delayed = day(3);
+    const wms = await db.moduleDefinition.findUniqueOrThrow({ where: { key: 'wms' } });
+    await db.tenantModule.create({ data: { tenantId, moduleId: wms.id, enabled: true } });
+    app.get(TenantModulesCacheService).invalidate(tenantId);
+    const actor = await db.user.findFirstOrThrow({ where: { tenantId, firstName: 'APS' } });
+    // Isolated test fixture. Business mutations below use HTTP and the normal guards.
+    const site = await db.location.create({
+      data: {
+        tenantId,
+        code: 'PLANT',
+        name: 'Plant',
+        type: 'WAREHOUSE',
+        addressLine1: 'Test',
+        city: 'Test',
+      },
+    });
+    const raw = await db.wmsItem.create({
+      data: { tenantId, sku: 'RAW', name: 'Steel', unit: 'KG' },
+    });
+    const product = await db.wmsItem.create({
+      data: { tenantId, sku: 'FG', name: 'Part', unit: 'EA' },
+    });
+    const bom = await db.bom.create({
+      data: { tenantId, code: 'BOM', name: 'Part', productRef: 'FG' },
+    });
+    const cal = await db.workingCalendar.findFirstOrThrow({ where: { tenantId } });
+    await db.workingCalendar.update({
+      where: { id: cal.id },
+      data: {
+        locationId: site.id,
+        shifts: {
+          create: [1, 2, 3, 4, 5, 6].map((weekday) => ({
+            tenantId,
+            weekday,
+            startTime: '08:00',
+            endTime: '17:00',
+          })),
+        },
+      },
+    });
+    const order = await db.manufacturingOrder.findFirstOrThrow({ where: { tenantId } });
+    const materialSnapshot = {
+      version: 'pulsar.manufacturing.materials.v1',
+      revisionId: 'fixture',
+      revision: 1,
+      contentHash: 'fixture',
+      locationId: site.id,
+      capturedAt: today,
+      product: {
+        itemId: product.id,
+        sku: product.sku,
+        name: product.name,
+        unit: 'EA',
+        quantity: '1',
+      },
+      components: [
+        {
+          itemId: raw.id,
+          sku: raw.sku,
+          name: raw.name,
+          unit: raw.unit,
+          quantityPerUnit: '2',
+          requiredQuantity: '2',
+        },
+      ],
+    };
+    await db.manufacturingOrder.update({
+      where: { id: order.id },
+      data: {
+        locationId: site.id,
+        bomId: bom.id,
+        materialSnapshot,
+        releaseDate: new Date(`${today}T08:00:00Z`),
+        dueDate: new Date(`${day(6)}T17:00:00Z`),
+      },
+    });
+    const mrp = await db.mrpRun.create({
+      data: {
+        tenantId,
+        locationId: site.id,
+        createdById: actor.id,
+        asOf: new Date(today),
+        horizonEnd: new Date(day(7)),
+        sourceHash: 'fixture',
+        inputSnapshot: {},
+        result: {},
+        proposalCount: 1,
+        exceptionCount: 0,
+      },
+    });
+    const prep = await db.mrpPreparation.create({
+      data: {
+        tenantId,
+        runId: mrp.id,
+        proposalId: 'fixture',
+        operationKey: randomUUID(),
+        fingerprint: 'fixture',
+        sourceHash: 'fixture',
+        proposalSnapshot: {},
+        number: 'MR-TEST',
+        method: 'BUY',
+        locationId: site.id,
+        itemId: raw.id,
+        quantity: 2,
+        unitSnapshot: raw.unit,
+        releaseDate: new Date(today),
+        dueDate: new Date(arrival),
+        createdById: actor.id,
+      },
+    });
+    const supplier = await db.materialSupplier.create({
+      data: { tenantId, code: 'STEEL', name: 'Steel test' },
+    });
+    const po = await db.materialPurchaseOrder.create({
+      data: {
+        tenantId,
+        preparationId: prep.id,
+        supplierId: supplier.id,
+        number: 'MP-TEST',
+        status: 'CONFIRMED',
+        supplierSnapshot: { name: supplier.name },
+        unitPrice: 1,
+        currency: 'CAD',
+        expectedDate: new Date(arrival),
+        supplierReference: 'TEST',
+        confirmedAt: new Date(),
+        operationKey: randomUUID(),
+        fingerprint: 'fixture',
+        createdById: actor.id,
+      },
+    });
+    const count = await db.stockMovement.count({ where: { tenantId } });
+    // This future material scenario is independent of the January concurrency fixture.
+    await db.schedulingRun.updateMany({
+      where: { tenantId, isBaseline: true },
+      data: { isBaseline: false },
+    });
+    const candidate = (
+      await post(
+        'run',
+        { respectMaterials: true, horizonStart: today, horizonDays: 7 },
+        materialToken,
+      ).expect(201)
+    ).body;
+    expect(candidate.inputRequest.snapshot.supplies[0]).toMatchObject({
+      id: `purchase:${po.id}`,
+      quantity: 2,
+      available_at: `${arrival}T00:00:00`,
+    });
+    expect(candidate.inputRequest.snapshot.work_orders[0].release_date).toBe(`${arrival}T00:00:00`);
+    expect(Date.parse(candidate.assignments[0].start)).toBeGreaterThanOrEqual(Date.parse(arrival));
+    expect(
+      (
+        await db.manufacturingOrder.findUniqueOrThrow({ where: { id: order.id } })
+      ).releaseDate.toISOString(),
+    ).toBe(`${today}T08:00:00.000Z`);
+    await get(`runs/${candidate.id}`, token).expect(403);
+    await get(`runs/${candidate.id}/review`, reader).expect(403);
+    await post(`runs/${candidate.id}/replay`, {}, token).expect(403);
+    await post(`runs/${candidate.id}/publish`, {}, token).expect(403);
+    const review = (await get(`runs/${candidate.id}/review`, materialToken).expect(200)).body;
+    expect(review).toMatchObject({ canPublish: true });
+    await request(http)
+      .post(`/api/v1/manufacturing/material-purchases/${po.id}/amendments`)
+      .set('Authorization', `Bearer ${materialToken}`)
+      .send({
+        kind: 'RESCHEDULE',
+        reason: 'Supplier confirmed delay',
+        expectedDate: delayed,
+        expectedUpdatedAt: po.updatedAt.toISOString(),
+      })
+      .expect(201);
+    const stale = (await get(`runs/${candidate.id}/review`, materialToken).expect(200)).body;
+    expect(stale.canPublish).toBe(false);
+    expect(stale.blockers.join(' ')).toContain('matières');
+    await post(
+      `runs/${candidate.id}/publish`,
+      { reviewToken: review.reviewToken },
+      materialToken,
+    ).expect(409);
+    await post(`runs/${candidate.id}/publish`, {}, materialToken).expect(409);
+    const replay = (await post(`runs/${candidate.id}/replay`, {}, materialToken).expect(201)).body;
+    expect(replay.inputRequest).toEqual(candidate.inputRequest);
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(count);
+    await db.tenantModule.updateMany({
+      where: { tenantId, moduleId: wms.id },
+      data: { enabled: false },
+    });
+    app.get(TenantModulesCacheService).invalidate(tenantId);
+    await get(`runs/${candidate.id}`, materialToken).expect(403);
+  }, 60000);
   it('gates replay when Manufacturing is disabled', async () => {
     await db.tenantModule.updateMany({ where: { tenantId }, data: { enabled: false } });
     app.get(TenantModulesCacheService).invalidate(tenantId);

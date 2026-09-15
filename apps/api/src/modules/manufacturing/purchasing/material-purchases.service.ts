@@ -31,6 +31,7 @@ import {
   PurchaseReceiptDto,
   PurchaseListDto,
   PurchaseVersionDto,
+  AmendPurchaseDto,
 } from './material-purchases.dto';
 
 const supplierSelect = {
@@ -197,6 +198,7 @@ export class MaterialPurchasesService {
           where: { tenantId, id },
           include: {
             preparation: { select: preparationSelect },
+            amendments: { where: { tenantId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
             receipts: {
               where: { tenantId },
               orderBy: { createdAt: 'asc' },
@@ -215,7 +217,10 @@ export class MaterialPurchasesService {
               ),
             new Prisma.Decimal(0),
           );
-        const remaining = Prisma.Decimal.max(0, order.preparation.quantity.minus(received));
+        const remaining = Prisma.Decimal.max(
+          0,
+          order.preparation.quantity.minus(received).minus(order.closedQuantity),
+        );
         return {
           id: order.id,
           number: order.number,
@@ -235,8 +240,27 @@ export class MaterialPurchasesService {
           confirmedAt: order.confirmedAt,
           updatedAt: order.updatedAt,
           received: received.toFixed(),
+          closedAt: order.closedAt,
+          closedQuantity: order.closedQuantity.toFixed(),
+          amendments: order.amendments.map(
+            ({ id, kind, reason, previousDate, expectedDate, closedQuantity, createdAt }) => ({
+              id,
+              kind,
+              reason,
+              previousDate,
+              expectedDate,
+              closedQuantity: closedQuantity.toFixed(),
+              createdAt,
+            }),
+          ),
           remaining: remaining.toFixed(),
-          fulfillment: received.isZero() ? 'NONE' : remaining.isZero() ? 'FULL' : 'PARTIAL',
+          fulfillment: order.closedAt
+            ? 'CLOSED'
+            : received.isZero()
+              ? 'NONE'
+              : remaining.isZero()
+                ? 'FULL'
+                : 'PARTIAL',
           receipts: order.receipts.map((r) => ({
             id: r.receipt.id,
             number: r.receipt.number,
@@ -252,6 +276,142 @@ export class MaterialPurchasesService {
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
+  async arrivals(tenantId: string, permissions: readonly string[], query: PurchaseListDto) {
+    await this.gate(tenantId);
+    const { skip, take, page, pageSize } = paginationArgs(query);
+    const where: Prisma.MaterialPurchaseOrderWhereInput = {
+      tenantId,
+      status: 'CONFIRMED',
+      preparation: { tenantId, ...(query.locationId ? { locationId: query.locationId } : {}) },
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.materialPurchaseOrder.findMany({
+        where,
+        select: { id: true },
+        skip,
+        take,
+        orderBy: [{ expectedDate: 'asc' }, { id: 'asc' }],
+      }),
+      this.prisma.materialPurchaseOrder.count({ where }),
+    ]);
+    const today = new Date().toISOString().slice(0, 10);
+    const week = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const items = await Promise.all(
+      rows.map(async (row) => {
+        const order = await this.get(tenantId, row.id, permissions);
+        const date = order.expectedDate.toISOString().slice(0, 10);
+        return {
+          ...order,
+          arrivalState: order.closedAt
+            ? 'CLOSED'
+            : order.remaining === '0'
+              ? 'RECEIVED'
+              : date < today
+                ? 'LATE'
+                : date <= week
+                  ? 'THIS_WEEK'
+                  : 'UPCOMING',
+        };
+      }),
+    );
+    return paginated(items, total, page, pageSize);
+  }
+
+  async amend(
+    tenantId: string,
+    userId: string,
+    id: string,
+    permissions: readonly string[],
+    dto: AmendPurchaseDto,
+  ) {
+    await this.access(tenantId, id, permissions);
+    if (dto.reason.trim().length < 3) throw new BadRequestException('Expliquez la modification.');
+    const result = await this.locked(tenantId, async (tx) => {
+      const order = await tx.materialPurchaseOrder.findFirstOrThrow({
+        where: { tenantId, id },
+        include: { preparation: true },
+      });
+      this.version(order.updatedAt, dto.expectedUpdatedAt);
+      if (order.status !== 'CONFIRMED' || order.closedAt)
+        throw new ConflictException('Une commande confirmée non clôturée est requise.');
+      const receipts = await tx.receiptLine.aggregate({
+        where: {
+          tenantId,
+          itemId: order.preparation.itemId,
+          receipt: {
+            tenantId,
+            status: 'POSTED',
+            materialPurchaseReceipt: { tenantId, purchaseOrderId: id },
+          },
+        },
+        _sum: { qty: true },
+      });
+      const remaining = order.preparation.quantity.minus(receipts._sum.qty ?? 0);
+      if (remaining.lte(0))
+        throw new ConflictException('Cette commande est déjà reçue en totalité.');
+      const closing = dto.kind === 'CLOSE_REMAINDER';
+      if (
+        closing &&
+        (await tx.materialPurchaseReceipt.count({
+          where: { tenantId, purchaseOrderId: id, receipt: { tenantId, status: 'DRAFT' } },
+        }))
+      )
+        throw new ConflictException(
+          'Validez ou annulez les réceptions brouillon avant de clôturer le reliquat.',
+        );
+      if (
+        !closing &&
+        (!dto.expectedDate || new Date(dto.expectedDate).getTime() === order.expectedDate.getTime())
+      )
+        throw new BadRequestException('Choisissez une nouvelle date promise.');
+      if (closing && dto.expectedDate)
+        throw new BadRequestException('La clôture ne modifie pas la date promise.');
+      const expectedDate = closing ? order.expectedDate : new Date(dto.expectedDate!);
+      const amendment = await tx.materialPurchaseAmendment.create({
+        data: {
+          tenantId,
+          purchaseOrderId: id,
+          kind: dto.kind,
+          reason: dto.reason.trim(),
+          previousDate: order.expectedDate,
+          expectedDate,
+          closedQuantity: closing ? remaining : 0,
+          createdById: userId,
+        },
+      });
+      await tx.materialPurchaseOrder.update({
+        where: { id, tenantId },
+        data: {
+          expectedDate,
+          ...(closing ? { closedAt: new Date(), closedQuantity: remaining } : {}),
+          updatedAt: nextWmsVersion(order.updatedAt),
+        },
+      });
+      return {
+        id: amendment.id,
+        before: order.expectedDate.toISOString(),
+        after: expectedDate.toISOString(),
+        closedQuantity: amendment.closedQuantity.toFixed(),
+      };
+    });
+    await this.audit.log({
+      tenantId,
+      userId,
+      entityType: 'material-purchase',
+      entityId: id,
+      action: AuditAction.UPDATE,
+      before: { expectedDate: result.before },
+      after: {
+        amendmentId: result.id,
+        kind: dto.kind,
+        reason: dto.reason.trim(),
+        expectedDate: result.after,
+        closedQuantity: result.closedQuantity,
+      },
+    });
+    return this.get(tenantId, id, permissions);
+  }
+
   private async terms(
     tx: Prisma.TransactionClient,
     tenantId: string,
@@ -389,6 +549,7 @@ export class MaterialPurchasesService {
       this.version(order.updatedAt, dto.expectedUpdatedAt);
       if (!canTransitionMaterialPurchase(order.status as MaterialPurchaseStatus, target))
         throw new ConflictException('Transition indisponible.');
+      if (order.closedAt) throw new ConflictException('Une commande clôturée reste historique.');
       const supplierReference = 'supplierReference' in dto ? dto.supplierReference.trim() : '';
       if (
         target === MaterialPurchaseStatus.CONFIRMED &&
@@ -463,7 +624,7 @@ export class MaterialPurchasesService {
         include: { preparation: true },
       });
       this.version(order.updatedAt, dto.expectedUpdatedAt);
-      if (order.status !== 'CONFIRMED')
+      if (order.status !== 'CONFIRMED' || order.closedAt)
         throw new ConflictException('Confirmer la commande avant de recevoir.');
       const quantity = new Prisma.Decimal(dto.quantity);
       if (

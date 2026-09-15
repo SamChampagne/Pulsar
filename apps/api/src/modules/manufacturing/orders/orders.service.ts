@@ -251,6 +251,25 @@ export class OrdersService {
         throw new BadRequestException(`Cannot move an order from ${current} to ${target}`);
       let materialSnapshot: Prisma.InputJsonValue | undefined;
       if (
+        order.materialSnapshot &&
+        [ManufacturingOrderStatus.COMPLETED, ManufacturingOrderStatus.CANCELLED].includes(target)
+      ) {
+        const actuals = await tx.manufacturingDeclaration.findMany({
+          where: { tenantId, orderId: id },
+        });
+        if (target === ManufacturingOrderStatus.CANCELLED && actuals.length)
+          throw new ConflictException(
+            'Cet OF porte des mouvements réels; une annulation ne peut pas les effacer.',
+          );
+        if (
+          target === ManufacturingOrderStatus.COMPLETED &&
+          actuals.reduce((sum, d) => sum + d.goodQuantity + d.scrapQuantity, 0) !== order.quantity
+        )
+          throw new ConflictException(
+            'Déclarez la production et les rebuts de toute la quantité avant de terminer l’OF.',
+          );
+      }
+      if (
         target === ManufacturingOrderStatus.RELEASED &&
         (await tx.mrpPreparation.findFirst({ where: { tenantId, manufacturingOrderId: id } })) &&
         !(await tx.manufacturingOperation.count({ where: { tenantId, orderId: id } }))

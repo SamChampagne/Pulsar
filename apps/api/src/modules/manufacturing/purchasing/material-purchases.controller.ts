@@ -20,6 +20,7 @@ import {
   PurchaseReceiptDto,
   PurchaseListDto,
   PurchaseVersionDto,
+  AmendPurchaseDto,
 } from './material-purchases.dto';
 const read = [PERMISSIONS.MANUFACTURING.READ, PERMISSIONS.WMS.READ];
 const write = [...read, PERMISSIONS.MANUFACTURING.MANAGE];
@@ -61,6 +62,16 @@ export class MaterialPurchasesController {
   @RequirePermissions(...read)
   get(@CurrentUser() u: AuthUser, @Param('id') id: string) {
     return this.service.get(u.tenantId, id, u.permissions);
+  }
+  @Get('workspace/arrivals')
+  @RequirePermissions(...read)
+  arrivals(@CurrentUser() u: AuthUser, @Query() q: PurchaseListDto) {
+    return this.service.arrivals(u.tenantId, u.permissions, q);
+  }
+  @Post(':id/amendments')
+  @RequirePermissions(...write)
+  amend(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: AmendPurchaseDto) {
+    return this.service.amend(u.tenantId, u.id, id, u.permissions, dto);
   }
   @Post()
   @RequirePermissions(...write)

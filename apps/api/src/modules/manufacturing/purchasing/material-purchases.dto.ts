@@ -48,3 +48,11 @@ export class PurchaseReceiptDto extends PurchaseVersionDto {
 export class PurchaseListDto extends ListQueryDto {
   @IsOptional() @IsString() locationId?: string;
 }
+export class AmendPurchaseDto extends PurchaseVersionDto {
+  @IsIn(['RESCHEDULE', 'CLOSE_REMAINDER']) kind!: 'RESCHEDULE' | 'CLOSE_REMAINDER';
+  @IsString() @MinLength(3) @MaxLength(1000) reason!: string;
+  @IsOptional()
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  expectedDate?: string;
+}

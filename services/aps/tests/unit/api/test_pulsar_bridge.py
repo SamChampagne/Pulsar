@@ -69,6 +69,27 @@ def headers(tenant="tenant-a"):
     return {"X-API-Key": "test-service-key", "X-Pulsar-Tenant": tenant}
 
 
+def test_dated_material_supply_delays_scheduling_without_turning_into_on_hand(client):
+    data = payload()
+    data["snapshot"]["inventory_items"] = [{"material_id": "steel", "quantity_on_hand": 1}]
+    data["snapshot"]["supplies"] = [{"id": "purchase:one", "material_id": "steel", "quantity": 1,
+                                      "available_at": "2026-01-07T00:00:00", "source_type": "purchase"}]
+    data["snapshot"]["work_orders"][0]["operations"][0]["material_requirements"] = [
+        {"material_id": "steel", "fixed_quantity": 2}]
+    # Pulsar captures the earliest material release in its immutable input;
+    # the engine's pre-solve gate and dated ledger remain fully enforced.
+    data["snapshot"]["work_orders"][0]["release_date"] = "2026-01-07T00:00:00"
+    response = client.post("/internal/pulsar/run", json=data, headers=headers())
+    assert response.status_code == 200, response.text
+    assert response.json()["assignments"][0]["start"] >= "2026-01-07T00:00:00"
+    data["snapshot"]["supplies"][0]["available_at"] = "2026-01-08T00:00:00"
+    data["snapshot"]["work_orders"][0]["release_date"] = "2026-01-08T00:00:00"
+    later = client.post("/internal/pulsar/run", json=data, headers=headers())
+    assert later.status_code == 200, later.text
+    assert later.json()["assignments"][0]["start"] >= "2026-01-08T00:00:00"
+    assert later.json()["input_snapshot_hash"] != response.json()["input_snapshot_hash"]
+
+
 def test_mrp_private_stateless_bridge(client):
     body = {"version": "pulsar.mrp.v1", "as_of": "2026-09-15", "horizon_end": "2026-09-30",
             "items": [{"id": "i", "sku": "RAW", "name": "Raw", "unit": "KG", "method": "BUY", "on_hand": "0.1"}],

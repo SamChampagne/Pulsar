@@ -584,7 +584,10 @@ export class MrpService {
             ),
           new Prisma.Decimal(0),
         );
-      const remaining = Prisma.Decimal.max(0, prep.quantity.minus(received));
+      const remaining = Prisma.Decimal.max(
+        0,
+        prep.quantity.minus(received).minus(order.closedQuantity),
+      );
       if (remaining.gt(0)) {
         if (!policy || policy.unitSnapshot !== prep.unitSnapshot || prep.status !== 'DRAFT')
           throw new BadRequestException(`Règle/unité incompatible avec ${order.number}.`);
@@ -602,6 +605,8 @@ export class MrpService {
         itemId: prep.itemId,
         quantity: prep.quantity.toFixed(),
         received: received.toFixed(),
+        closedQuantity: order.closedQuantity.toFixed(),
+        closedAt: order.closedAt?.toISOString() ?? null,
         remaining: remaining.toFixed(),
         unit: prep.unitSnapshot,
         expectedDate: day(order.expectedDate),
@@ -610,7 +615,26 @@ export class MrpService {
           .map((r) => ({ id: r.receipt.id, number: r.receipt.number })),
       };
     });
+    const actuals = await tx.manufacturingDeclaration.findMany({
+      where: { tenantId, order: { tenantId, locationId } },
+      include: { order: { select: { id: true, number: true, status: true } } },
+      orderBy: { id: 'asc' },
+      take: 10001,
+    });
+    if (actuals.length > 10000)
+      throw new BadRequestException('Maximum 10 000 déclarations dans ce snapshot.');
+    const productionDeclarations = actuals.map((d) => ({
+      id: d.id,
+      orderId: d.orderId,
+      orderNumber: d.order.number,
+      orderStatus: d.order.status,
+      goodQuantity: d.goodQuantity,
+      scrapQuantity: d.scrapQuantity,
+      createdAt: d.createdAt.toISOString(),
+      evidence: d.evidence,
+    }));
     const sourceMetadata = {
+      productionDeclarations,
       materialPurchases,
       forecastCoverage: coverage.forecasts,
       salesDemands: coverage.sources,

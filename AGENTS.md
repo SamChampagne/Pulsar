@@ -430,6 +430,18 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     BUY n'est levé que pour une commande capturée dans le snapshot courant. Aucun
     nouvel outil mutating IA. Voir `docs/plans/manufacturing-material-purchases.md`.
 
+52. (Fabrication — boucle opérationnelle M3c/M4/M5 v1) Avenants d'achat sous verrou
+    tenant et version : clôture de reliquat distincte d'une réception, historique
+    append-only, aucun stock fictif. APS capture stock/arrivages datés et une révision
+    matières revalidée à la revue/publication; promesses échues exclues, date minimale
+    uniquement dans le snapshot. Les déclarations atelier sont append-only/idempotentes,
+    acteur/corps/clé liés; consommation explicite + production bonne passent par
+    InventoryService.postMovement dans la même transaction. Rebut ne crée pas de stock.
+    COMPLETED exige toutes les unités déclarées; pas d'annulation après déclaration.
+    Aucun APS global sur WIP déclaré sans temps par opération. Les preuves MRP sont
+    figées, le contexte IA courant est identifié; aucun nouveau pouvoir mutating.
+    Voir `docs/plans/manufacturing-operational-loop.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

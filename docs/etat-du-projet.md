@@ -1,5 +1,25 @@
 # État du projet — point de reprise
 
+> **Boucle opérationnelle Fabrication (2026-09-15), implémentée localement.**
+> M3c partiel : arrivages, reports de promesse et clôtures de reliquat historisés.
+> M4 v1 : impacts matières par site, achats datés dans PlaniAdvance et revalidation
+> du stock/arrivages avant publication. M5 v1 : consommation réelle, bons produits
+> et rebuts, preuves WMS atomiques et reprise après coupure. Le worker distingue
+> les preuves figées du MRP et les impacts courants, sans nouveaux outils de mutation.
+> Panneaux/style Pulsar conservés, aucun nouveau thème.
+> [Contrats, limites et reprise](./plans/manufacturing-operational-loop.md).
+>
+> Vérification : **94 tests HTTP** (MRP/APS avec moteur réel, CRM, WMS),
+> **61 tests navigateur**, **666 tests shared**, **287 tests unitaires API**,
+> **34 tests Python du bridge**. Build complet réussi; 0 erreur de type,
+> 12 avertissements Svelte préexistants. 89 migrations dev/test sans dérive Prisma.
+> API prête et web 5173 accessibles. Aucun envoi fournisseur ni test LLM réel.
+>
+> **Limite importante :** un OF actif avec déclaration atelier bloque encore un
+> nouveau scénario APS global. Suite prioritaire : temps réels/restants par opération,
+> gel de l'exécuté et replanification partielle (M4 WIP); ensuite achats multi-lignes,
+> corrections compensatoires/qualité et qualification du worker réel.
+
 > **MRP M3b v1 (2026-09-15), implémenté localement.** Poste Achats matières,
 > fournisseurs versionnés, demandes BUY → bons mono-demande, confirmation humaine
 > de commande passée hors Pulsar, réceptions partielles reliées au WMS et protection

@@ -12,9 +12,12 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [ ] M2 unités : conversions achat/stock, unités industrielles supplémentaires et quantités fractionnaires OF.
 - [x] M3a : propositions → demandes d'achat internes / OF DRAFT, prévisualisation, confirmation, idempotence, refus des doublons inter-calcul et contexte lisible par l'analyste ([contrats et limites](docs/plans/manufacturing-mrp-preparation.md)).
 - [x] M3b v1 : fournisseurs/conditions, bon mono-demande confirmé humainement, arrivages fermes et réceptions partielles WMS avec rapprochement sans double comptage ([contrats et limites](docs/plans/manufacturing-material-purchases.md)).
-- [ ] M3c achats : regroupement multi-lignes, report d’arrivée confirmée, clôture de reliquat, intake de champs personnalisés WMS, taxes/factures/retours et unités achat/stock.
-- [ ] M4 : boucle MRP–APS par site, arrivages datés, WIP, baseline/gel, impact des retards.
-- [ ] M5 : atelier, réservations, consommation/production réelle, rebut, lots et coûts réconciliés au journal WMS.
+- [x] M3c partiel : poste Arrivages, report d’arrivée confirmée et clôture de reliquat historisés sans stock fictif ([contrats](docs/plans/manufacturing-operational-loop.md)).
+- [ ] M3c suite : regroupement multi-lignes, intake de champs personnalisés WMS, taxes/factures/retours et unités achat/stock.
+- [x] M4 v1 : impacts matières par site, arrivages datés dans APS, date minimale capturée et fraîcheur stock/achats à la publication; contexte courant pour l'analyste ([contrats](docs/plans/manufacturing-operational-loop.md)).
+- [ ] M4 suite : WIP/temps réels par opération, baseline/gel et replanification partielle, APS multi-sites. Un OF actif avec déclarations bloque actuellement le recalcul global.
+- [x] M5 v1 : atelier, consommation explicite/production bonne/rebut, journal WMS atomique et reprise idempotente, preuves au MRP ([contrats](docs/plans/manufacturing-operational-loop.md)).
+- [ ] M5 suite : réservations, scans, correction compensatoire gouvernée, lots/généalogie et coûts réconciliés.
 - [ ] M6 : recettes/batchs, rendements, coproduits, conversions masse/volume contrôlées, généalogie et qualité.
 - [ ] M7 : pilotage et agents gouvernés ; outillage READ puis propositions approuvées, jamais d'achat externe automatique issu du calcul.
   - [x] M7a : analyste MRP, lectures bornées, tâche/worker/MCP, synthèse approuvée et recalcul sans boucle, suivi Pulsar.

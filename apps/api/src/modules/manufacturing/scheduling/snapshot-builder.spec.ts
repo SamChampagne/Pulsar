@@ -37,6 +37,30 @@ const baseOrder = (over: Partial<SnapshotOrderRow> = {}): SnapshotOrderRow => ({
 });
 
 describe('buildManufacturingSnapshot', () => {
+  it('captures material-ready release dates without mutating the original order', () => {
+    const order = baseOrder();
+    const { snapshot } = buildManufacturingSnapshot({
+      exportedAt,
+      calendars: [],
+      workCenters: [],
+      orders: [order],
+      materials: {
+        inventory: [{ materialRef: 'RAW', onHand: 0 }],
+        byOrder: { o1: [{ materialRef: 'RAW', fixedQuantity: 2 }] },
+        supplies: [
+          { id: 'purchase:p', materialRef: 'RAW', quantity: 2, availableAt: '2026-07-01T00:00:00' },
+        ],
+        readyDates: { o1: '2026-07-01T00:00:00' },
+      },
+    });
+    expect(snapshot.work_orders![0].release_date).toBe('2026-07-01T00:00:00');
+    expect(order.releaseDate.toISOString()).toBe('2026-06-29T08:00:00.000Z');
+    expect(snapshot.supplies![0]).toMatchObject({
+      id: 'purchase:p',
+      material_id: 'RAW',
+      quantity: 2,
+    });
+  });
   it('restricts sited orders to their site even when candidates are implicit', () => {
     const order = baseOrder({ locationId: 'A' });
     order.operations.forEach((op) => {

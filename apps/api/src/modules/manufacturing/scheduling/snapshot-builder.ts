@@ -64,6 +64,8 @@ function naiveIso(d: Date): string {
  * is derived from `sequence` (op N depends on the previous op id).
  */
 export interface SnapshotMaterials {
+  readyDates?: Record<string, string>;
+  supplies?: { id: string; materialRef: string; quantity: number; availableAt: string }[];
   /** Aggregated WMS on-hand per material ref (materialRef === WmsItem.sku). */
   inventory: { materialRef: string; onHand: number }[];
   /** Material requirements per order id (from the order's BOM × quantity). */
@@ -163,7 +165,11 @@ export function buildManufacturingSnapshot(input: {
       product_id: order.productRef,
       quantity: order.quantity,
       due_date: naiveIso(order.dueDate),
-      release_date: naiveIso(order.releaseDate),
+      release_date:
+        input.materials?.readyDates?.[order.id] &&
+        input.materials.readyDates[order.id] > naiveIso(order.releaseDate)
+          ? input.materials.readyDates[order.id]
+          : naiveIso(order.releaseDate),
       priority: APS_PRIORITY_WIRE[order.priority],
       firmness: APS_FIRMNESS_WIRE[order.firmness],
       operations,
@@ -183,7 +189,22 @@ export function buildManufacturingSnapshot(input: {
     machines,
     work_orders: workOrders,
     ...(inventory_items.length > 0 ? { inventory_items } : {}),
-    metadata: { tenant_orders: input.orders.length, time_zone: 'UTC' },
+    ...(input.materials?.supplies
+      ? {
+          supplies: input.materials.supplies.map((s) => ({
+            id: s.id,
+            material_id: s.materialRef,
+            quantity: s.quantity,
+            available_at: s.availableAt,
+            source_type: 'purchase',
+          })),
+        }
+      : {}),
+    metadata: {
+      tenant_orders: input.orders.length,
+      time_zone: 'UTC',
+      ...(input.materials?.readyDates ? { material_ready_dates: input.materials.readyDates } : {}),
+    },
   };
 
   return { snapshot, warnings, orderCount: workOrders.length, operationCount };

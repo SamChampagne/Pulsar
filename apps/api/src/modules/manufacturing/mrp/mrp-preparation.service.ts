@@ -124,6 +124,15 @@ export class MrpPreparationService {
       blockers.push('Cette proposition possède déjà un document. Consultez-le ci-dessous.');
     // Until production/receipts reconcile these drafts, never silently purchase or
     // manufacture twice after a new calculation. Other proposals in THIS run remain usable.
+    const reconciledOrders = (
+      (
+        run.sourceMetadata as {
+          productionDeclarations?: { orderId: string; orderStatus: string }[];
+        } | null
+      )?.productionDeclarations ?? []
+    )
+      .filter((d) => d.orderStatus === 'COMPLETED')
+      .map((d) => d.orderId);
     const pending = await tx.mrpPreparation.count({
       where: {
         tenantId,
@@ -136,7 +145,14 @@ export class MrpPreparationService {
             status: 'DRAFT',
             OR: [{ purchaseOrder: null }, { purchaseOrder: { id: { notIn: coveredPurchases } } }],
           },
-          { method: 'MAKE', manufacturingOrder: { tenantId, status: { not: 'CANCELLED' } } },
+          {
+            method: 'MAKE',
+            manufacturingOrder: {
+              tenantId,
+              status: { not: 'CANCELLED' },
+              id: { notIn: reconciledOrders },
+            },
+          },
         ],
       },
     });

@@ -107,6 +107,7 @@
 
   // Run controls
   let strategy = $state('greedy');
+  let respectMaterials = $state(false);
   let horizonDays = $state('30');
   let horizonDate = $state(new Date().toISOString().slice(0, 10));
   let timeZone = $state('UTC');
@@ -216,7 +217,13 @@
     try {
       const run = await api<Run>('/manufacturing/scheduling/run', {
         method: 'POST',
-        body: { strategy, horizonDays: Number(horizonDays), horizonDate, timeZone },
+        body: {
+          strategy,
+          horizonDays: Number(horizonDays),
+          horizonDate,
+          timeZone,
+          ...(respectMaterials ? { respectMaterials: true } : {}),
+        },
       });
       toast.success(`Planification ${run.solverStatus} — ${run.assignmentCount} affectations`);
       settingsOpen = false;
@@ -406,6 +413,19 @@
       est refusé, sans ajustement automatique. Les quarts de nuit et les fuseaux distincts par site
       ne sont pas encore pris en charge.
     </div>
+    {#if $auth?.user.permissions.includes('wms.read') && $auth?.tenant.enabledModules.includes('wms')}
+      <label class="flex items-start gap-2 text-sm"
+        ><input type="checkbox" bind:checked={respectMaterials} disabled={running} />Respecter les
+        matières : stock du site et arrivages fournisseurs confirmés.</label
+      >
+      <p class="text-xs text-ink-muted">
+        Les arrivages sont disponibles à 00:00 UTC de leur date promise. Les promesses dépassées
+        sont exclues. Un changement de stock ou de date exige un nouveau calcul avant publication. <a
+          href="/manufacturing/materials"
+          class="text-accent hover:underline">Voir les impacts matières →</a
+        >
+      </p>
+    {/if}
     {#if runError}<p role="alert" class="text-sm text-danger">{runError}</p>{/if}
   </div>
   {#snippet footer()}
