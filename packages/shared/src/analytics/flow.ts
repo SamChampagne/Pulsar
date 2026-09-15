@@ -2,7 +2,7 @@
 import { reactionByKey } from '../automation/reactions';
 
 export type FlowModule =
-  | 'TRANSPORTATION' | 'WMS' | 'YARD' | 'FLEET' | 'BILLING' | 'CUSTOMER_PORTAL' | 'CRM' | 'CORE';
+  | 'TRANSPORTATION' | 'WMS' | 'YARD' | 'FLEET' | 'BILLING' | 'CUSTOMER_PORTAL' | 'CRM' | 'MANUFACTURING' | 'CORE';
 
 export interface FlowEvent { id: string; type: string; module: FlowModule; subjectType: string | null; subjectId: string | null; at: string; }
 export interface FlowTask { id: string; category: string; status: string; severity: string; subjectType: string | null; subjectId: string | null; sourceEventId: string | null; assigneeAgentId: string | null; at: string; }
@@ -49,6 +49,7 @@ const EVENT_PREFIX_MODULE: Record<string, FlowModule> = {
   load: 'TRANSPORTATION', shipment: 'TRANSPORTATION', 'transport-order': 'TRANSPORTATION',
   'carrier-invoice': 'BILLING', invoice: 'BILLING', portal: 'CUSTOMER_PORTAL',
   crm: 'CRM',
+  manufacturing: 'MANUFACTURING',
 };
 
 export function moduleOfEventType(type: string): FlowModule {
@@ -63,6 +64,7 @@ const SUBJECT_MODULE: Record<string, FlowModule> = {
   'pick-order': 'WMS', 'wms-item': 'WMS', bin: 'WMS', 'cycle-count': 'WMS',
   invoice: 'BILLING', 'carrier-invoice': 'BILLING',
   deal: 'CRM', company: 'CRM', contact: 'CRM', 'crm-activity': 'CRM',
+  'mrp-run': 'MANUFACTURING',
 };
 
 export function moduleOfSubjectType(subjectType: string | null): FlowModule {
@@ -73,6 +75,7 @@ export function moduleOfSubjectType(subjectType: string | null): FlowModule {
 const MODULE_KEY_TO_FLOW: Record<string, FlowModule> = {
   transportation: 'TRANSPORTATION', wms: 'WMS', yard: 'YARD', fleet: 'FLEET',
   billing: 'BILLING', 'customer-portal': 'CUSTOMER_PORTAL', crm: 'CRM',
+  manufacturing: 'MANUFACTURING',
 };
 
 export function moduleOfReaction(action: string): FlowModule {

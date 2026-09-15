@@ -298,6 +298,8 @@ export class ProposedActionsService {
     // enabled (a demotion or a module toggle between enqueue and approval must
     // block execution). Same requirements the MCP exposure gate enforced.
     const grantedPerms = new Set(agent.permissions as string[]);
+    const currentCaps = (agent.caps ?? {}) as AgentPrincipal['caps'];
+    if (currentCaps.toolAllowlist && !currentCaps.toolAllowlist.includes(def.name)) throw new BadRequestException('Tool no longer allowed for this agent');
     const missingPerm = toolRequiredPermissions(def).find((p) => !grantedPerms.has(p));
     if (missingPerm) {
       throw new BadRequestException(
@@ -334,6 +336,7 @@ export class ProposedActionsService {
         permissions: agent.permissions as AgentPrincipal['user']['permissions'],
       },
       autonomyLevel: agent.autonomyLevel as AgentPrincipal['autonomyLevel'],
+      triggeredByRef: proposal.triggeredByRef ?? undefined,
     };
 
     try {

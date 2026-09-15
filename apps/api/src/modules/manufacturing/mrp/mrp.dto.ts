@@ -18,6 +18,9 @@ import { ListQueryDto } from '../../../common/dto/list-query.dto';
 export class MrpSourcesQuery extends ListQueryDto {
   @IsOptional() @IsString() @MaxLength(128) salesOrderId?: string;
 }
+export class MrpMappingsQuery extends ListQueryDto {
+  @IsOptional() @IsString() @MaxLength(128) productId?: string;
+}
 
 export class MrpSiteDto {
   @IsString() @MinLength(1) @MaxLength(128) locationId!: string;
@@ -50,6 +53,8 @@ export class MrpEntryDto extends MrpSiteDto {
   @IsOptional() @IsDateString() expectedUpdatedAt?: string;
 }
 export class MrpSalesDemandDto extends MrpSiteDto {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(128) mappingId?: string;
+  @IsOptional() @IsDateString() expectedMappingUpdatedAt?: string;
   @IsString() @MinLength(1) @MaxLength(128) itemId!: string;
   @IsString() @MinLength(1) @MaxLength(128) sourceSalesOrderLineId!: string;
   @IsDateString({ strict: true }) @Matches(/^\d{4}-\d{2}-\d{2}$/) dueDate!: string;
@@ -59,6 +64,16 @@ export class MrpSalesDemandDto extends MrpSiteDto {
   @IsOptional() @IsDateString() expectedUpdatedAt?: string;
   @Equals(true) acknowledgeUnits!: boolean;
   @IsBoolean() isActive!: boolean;
+}
+export class MrpProductMappingDto {
+  @IsString() @MinLength(1) @MaxLength(128) productId!: string;
+  @IsString() @MinLength(1) @MaxLength(128) itemId!: string;
+  @IsString() @MinLength(1) @MaxLength(40) commercialUnit!: string;
+  @Matches(/^\d{1,10}(\.\d{1,6})?$/) numerator!: string;
+  @Matches(/^\d{1,10}(\.\d{1,6})?$/) denominator!: string;
+  @IsBoolean() isActive!: boolean;
+  @Equals(true) acknowledgeUnits!: boolean;
+  @IsOptional() @IsDateString() expectedUpdatedAt?: string;
 }
 export class MrpCalculateDto extends MrpSiteDto {
   @IsDateString({ strict: true }) @Matches(/^\d{4}-\d{2}-\d{2}$/) horizonEnd!: string;

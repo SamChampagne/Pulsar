@@ -27,6 +27,8 @@ enum TenantStatus {
 }
 
 model Tenant {
+  mrpProductMappings MrpProductMapping[]
+  mrpReviews MrpReview[]
   bomRevisions BomRevision[]
   mrpPolicies MrpItemPolicy[]
   mrpEntries MrpEntry[]
@@ -2245,6 +2247,7 @@ enum PickOrderStatus {
 }
 
 model WmsItem {
+  mrpProductMappings MrpProductMapping[]
   outputBomRevisions BomRevision[]
   bomRevisionLines BomRevisionLine[]
   mrpPolicies MrpItemPolicy[]
@@ -2972,6 +2975,7 @@ model CrmDeal {
 }
 
 model CrmProduct {
+  mrpProductMappings MrpProductMapping[]
   id          String   @id @default(cuid())
   tenantId    String
   name        String
@@ -4251,6 +4255,7 @@ model MrpEntry {
 }
 
 model MrpRun {
+  reviews MrpReview[]
   sourceMetadata Json?
   id String @id @default(cuid())
   tenantId String
@@ -4268,6 +4273,45 @@ model MrpRun {
   location Location @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
   @@index([tenantId, locationId, createdAt])
   @@map("mrp_runs")
+}
+
+model MrpProductMapping {
+  id String @id @default(cuid())
+  tenantId String
+  productId String
+  itemId String
+  commercialUnit String
+  numerator Decimal @db.Decimal(18,6)
+  denominator Decimal @db.Decimal(18,6)
+  unitSnapshot String
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  product CrmProduct @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  item WmsItem @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  @@unique([tenantId, productId])
+  @@index([tenantId, itemId])
+  @@map("mrp_product_mappings")
+}
+
+model MrpReview {
+  id String @id @default(cuid())
+  tenantId String
+  runId String
+  taskId String
+  agentId String
+  createdById String
+  contentHash String
+  summary String
+  itemIds Json
+  staleAtReview Boolean
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  run MrpRun @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  @@unique([tenantId, contentHash])
+  @@index([tenantId, runId, createdAt])
+  @@map("mrp_reviews")
 }
 
 // Published industrial definitions. Append-only; working Bom/BomLine remain editable.

@@ -1,9 +1,11 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { convertMrpCommercialQuantity } from '@pulsar/shared';
   import { api } from '$lib/api/client';
   import { Button, Drawer, Field, Input, Select } from '$lib/components/ui';
   type Source = {
     id: string;
+    productId?: string | null;
     name: string;
     quantity: string;
     updatedAt: string;
@@ -20,12 +22,28 @@
     isActive: boolean;
     updatedAt: string;
     sourceSalesOrderLineId?: string | null;
+    sourceSnapshot?: { quantity?: string; mapping?: Mapping | null } | null;
     sourceSalesOrderLine?: {
       id: string;
       updatedAt: string;
       salesOrder: Source['salesOrder'];
     } | null;
   };
+  type Mapping = {
+    id: string;
+    itemId?: string;
+    numerator: string;
+    denominator: string;
+    commercialUnit: string;
+    unitSnapshot?: string;
+    unit?: string;
+    updatedAt: string;
+    isActive?: boolean;
+  };
+  let mapping = $state<Mapping | null>(null),
+    offeredMapping = $state<Mapping | null>(null),
+    mappingLoading = $state(false);
+  let mappingRequest = 0;
   let {
     open = $bindable(false),
     locationId,
@@ -65,10 +83,56 @@
     uncertain = $state(false);
   const selected = $derived(
     entry?.sourceSalesOrderLine
-      ? { ...entry.sourceSalesOrderLine, quantity: entry.quantity, name: entry.reference }
+      ? {
+          ...entry.sourceSalesOrderLine,
+          quantity: entry.sourceSnapshot?.quantity ?? entry.quantity,
+          name: entry.reference,
+          productId: null,
+        }
       : sources.find((s) => s.id === sourceId),
   );
   const item = $derived(items.find((i) => i.id === itemId));
+  const conversion = $derived.by(() => {
+    if (!selected) return { quantity: '', error: '' };
+    try {
+      return {
+        quantity: mapping
+          ? convertMrpCommercialQuantity(selected.quantity, mapping.numerator, mapping.denominator)
+          : selected.quantity,
+        error: '',
+      };
+    } catch {
+      return {
+        quantity: '',
+        error:
+          'Ce ratio ne donne pas une quantité exacte à 3 décimales. Corrigez la correspondance avant de relier la commande.',
+      };
+    }
+  });
+  async function sourceChanged() {
+    const request = ++mappingRequest;
+    mapping = null;
+    offeredMapping = null;
+    acknowledged = false;
+    forecastId = '';
+    const productId = sources.find((s) => s.id === sourceId)?.productId;
+    if (!productId) {
+      mappingLoading = false;
+      return;
+    }
+    mappingLoading = true;
+    try {
+      const result = await api<{ items: Mapping[] }>('/manufacturing/mrp/product-mappings', {
+        query: { productId, pageSize: 20 },
+      });
+      if (request === mappingRequest) offeredMapping = result.items.find((m) => m.isActive) ?? null;
+    } catch (e) {
+      if (request === mappingRequest)
+        error = e instanceof Error ? e.message : 'Correspondance indisponible';
+    } finally {
+      if (request === mappingRequest) mappingLoading = false;
+    }
+  }
   async function loadSources() {
     busy = true;
     error = '';
@@ -104,6 +168,10 @@
         acknowledged = false;
         error = '';
         uncertain = false;
+        mappingRequest++;
+        mappingLoading = false;
+        mapping = current?.sourceSnapshot?.mapping ?? null;
+        offeredMapping = null;
         search = '';
         sourcePage = 1;
         if (!current) void loadSources();
@@ -112,7 +180,7 @@
   });
   async function save(event: SubmitEvent) {
     event.preventDefault();
-    if (!selected || !acknowledged || uncertain) return;
+    if (!selected || !acknowledged || uncertain || mappingLoading || conversion.error) return;
     busy = true;
     error = '';
     try {
@@ -129,6 +197,9 @@
           expectedSourceUpdatedAt: selected.updatedAt,
           expectedOrderUpdatedAt: selected.salesOrder.updatedAt,
           ...(entry ? { expectedUpdatedAt: entry.updatedAt } : {}),
+          ...(!entry && mapping
+            ? { mappingId: mapping.id, expectedMappingUpdatedAt: mapping.updatedAt }
+            : {}),
         },
       });
       open = false;
@@ -173,7 +244,11 @@
         >
       </div>
       <Field label="Ligne de commande confirmée"
-        ><Select bind:value={sourceId} required disabled={busy || uncertain}
+        ><Select
+          bind:value={sourceId}
+          onchange={sourceChanged}
+          required
+          disabled={busy || uncertain}
           ><option value="">Choisir une ligne</option>{#each sources as source (source.id)}<option
               value={source.id}
               disabled={Boolean(source.mrpDemands?.length)}
@@ -215,8 +290,56 @@
           ici.
         </p>
       </div>{/if}
+    {#if !entry && offeredMapping && !mapping}
+      <div class="rounded-md border border-edge p-3 text-sm">
+        <p>
+          Correspondance disponible : {offeredMapping.denominator}
+          {offeredMapping.commercialUnit} = {offeredMapping.numerator}
+          {offeredMapping.unitSnapshot}.
+        </p>
+        <Button
+          variant="secondary"
+          disabled={busy || uncertain}
+          onclick={() => {
+            mapping = offeredMapping;
+            itemId = offeredMapping?.itemId ?? '';
+            forecastId = '';
+            acknowledged = false;
+          }}>Utiliser cette correspondance</Button
+        >
+      </div>
+    {/if}
+    {#if mapping}<div class="rounded-md bg-surface-muted p-3 text-sm">
+        <p>
+          {mapping.denominator}
+          {mapping.commercialUnit} = {mapping.numerator}
+          {mapping.unitSnapshot ?? mapping.unit} · ratio figé sur cette demande
+        </p>
+        {#if conversion.error}<p role="alert" class="mt-2 text-danger">
+            {conversion.error}
+          </p>{:else}<p class="mt-2 font-mono font-medium">
+            {selected?.quantity}
+            {mapping.commercialUnit} → {conversion.quantity}
+            {mapping.unitSnapshot ?? mapping.unit}
+          </p>{/if}
+        {#if !entry}<Button
+            variant="ghost"
+            disabled={busy || uncertain}
+            onclick={() => {
+              mapping = null;
+              acknowledged = false;
+            }}>Revenir au rattachement 1:1</Button
+          >{/if}
+      </div>{/if}
     <Field label="Article WMS à fournir"
-      ><Select bind:value={itemId} disabled={busy || Boolean(entry) || uncertain} required
+      ><Select
+        bind:value={itemId}
+        onchange={() => {
+          acknowledged = false;
+          forecastId = '';
+        }}
+        disabled={busy || Boolean(entry) || Boolean(mapping) || uncertain}
+        required
         ><option value="">Choisir l’article exact</option>{#each items as item (item.id)}<option
             value={item.id}>{item.sku} · {item.name} ({item.unit})</option
           >{/each}</Select
@@ -249,7 +372,9 @@
         required
         disabled={busy || uncertain}
       /><span
-        >Je confirme que 1 unité commerciale correspond à 1 {item?.unit ?? 'unité WMS'} de cet article.
+        >{mapping
+          ? `Je confirme le ratio ${mapping.denominator} ${mapping.commercialUnit} = ${mapping.numerator} ${mapping.unitSnapshot ?? mapping.unit} et la quantité convertie.`
+          : `Je confirme que 1 unité commerciale correspond à 1 ${item?.unit ?? 'unité WMS'} de cet article.`}
         Aucune conversion n’est implicite.</span
       ></label
     >
@@ -260,8 +385,12 @@
     <Button
       type="submit"
       loading={busy}
-      disabled={uncertain || !selected || !itemId || !acknowledged}
-      >Confirmer le rattachement</Button
+      disabled={uncertain ||
+        mappingLoading ||
+        Boolean(conversion.error) ||
+        !selected ||
+        !itemId ||
+        !acknowledged}>Confirmer le rattachement</Button
     >
   </form>
 </Drawer>

@@ -1,5 +1,9 @@
 # MRP M2.2a — commandes clients et consommation des prévisions
 
+> Suite livrée : [M2.2b1 + M7a](./manufacturing-mrp-units-ai.md) ajoute les ratios
+> commerciaux capturés et le worker MRP gouverné. Le présent document conserve
+> le contrat et les preuves de la tranche initiale 1:1.
+
 Livraison locale du 2026-09-15, après M2.1. Ce lot connecte CRM, Fabrication et
 WMS au calcul PlaniAdvance; il ne termine pas M2.2 ni le MRP complet. Le bureau,
 le shell, les panneaux latéraux et les composants Pulsar sont conservés.

@@ -8,6 +8,7 @@ import {
 import { Prisma } from '@pulsar/database';
 import {
   AuditAction,
+  DOMAIN_EVENT_TYPES,
   MODULE_KEYS,
   MrpSourcingMethod,
   type MrpResult,
@@ -23,6 +24,8 @@ import { MrpCalculateDto, MrpEntryDto, MrpPolicyDto } from './mrp.dto';
 import { validateMrpResult } from './mrp-result';
 import { revisionSummary } from '../boms/boms.service';
 import { MrpDemandsService } from './mrp-demands.service';
+import { DomainEventsService } from '../../../core/operating/domain-events.service';
+import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const day = (value: Date) => value.toISOString().slice(0, 10);
@@ -37,6 +40,8 @@ export class MrpService {
     private readonly aps: ApsClient,
     private readonly audit: AuditLogsService,
     private readonly demands: MrpDemandsService,
+    private readonly events: DomainEventsService,
+    private readonly settings: ModuleSettingsService,
   ) {}
 
   private async gate(tenantId: string) {
@@ -531,6 +536,7 @@ export class MrpService {
     userId: string,
     dto: MrpCalculateDto,
     permissions: readonly string[] = [],
+    notifyReview = true,
   ) {
     await this.gate(tenantId);
     await this.ownership.assertOwned('location', dto.locationId, tenantId);
@@ -576,6 +582,24 @@ export class MrpService {
       entityId: run.id,
       after: { sourceHash, proposalCount: run.proposalCount },
     });
+    // Opt-in, best-effort. An agent-triggered recalculation never wakes itself again.
+    if (notifyReview && run.exceptionCount > 0) {
+      const settings = await this.settings.resolve(tenantId, 'manufacturing').catch(() => ({}));
+      if ('mrpAutomaticReview' in settings && settings.mrpAutomaticReview === true) {
+        await this.events.emit(
+          tenantId,
+          DOMAIN_EVENT_TYPES.MRP_REVIEW_REQUESTED,
+          { type: 'mrp-run', id: run.id },
+          {
+            runId: run.id,
+            exceptionCount: run.exceptionCount,
+            requiresCrm: Boolean(
+              (sourceMetadata as { salesDemands?: unknown[] }).salesDemands?.length,
+            ),
+          },
+        );
+      }
+    }
     return this.getRun(tenantId, run.id, permissions);
   }
 

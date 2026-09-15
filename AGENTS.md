@@ -386,13 +386,25 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
 
 48. (Fabrication — MRP M2.2a) Une demande CRM est un rattachement explicite unique
     par `(tenantId, sourceSalesOrderLineId)` : article/site/source immuables,
-    quantité serveur et unité 1:1 reconnue. Ne jamais mapper par nom/SKU implicite.
+    quantité serveur et unité 1:1 reconnue ou ratio explicite capturé (règle 49).
+    Ne jamais mapper par nom/SKU implicite.
     La consommation de prévision passe par `deriveDemandCoverage` (pur/exact);
     FULFILLED/INVOICED continuent de consommer, CANCELLED restitue la prévision.
     Historique/provenance figés et droits CRM revérifiés sur toute lecture dérivée.
     Les writers de lignes CRM relisent DRAFT sous le verrou tenant partagé avec
     confirmation et rattachement MRP. Aucun stock/achat/OF n'est créé par le calcul.
     Contrats et limites : `docs/plans/manufacturing-demand-sources.md`.
+
+49. (MRP — unités commerciales et worker) `MrpProductMapping` ne convertit que les
+    nouvelles demandes, par ratio explicite exact via `convertMrpCommercialQuantity`.
+    Quantité source/convertie et ratio sont capturés; pas d'arrondi ni de réécriture
+    rétroactive. Les revues MRP utilisent DomainEvents → OperationalTask →
+    AgentWorkerService et le registre MCP, jamais un appel LLM dans le calcul.
+    `submit_mrp_review` et `recalculate_mrp` sont MUTATING, passent par la gouvernance;
+    la synthèse exige le contexte signé `task:<id>`, l'affectation et le service-user
+    valides. `MrpReview` est append-only/idempotent. Le preset PROPOSE n'expose pas
+    `resolve_task`. Revue automatique opt-in, jamais réémise par un recalcul agent.
+    Aucun stock/achat/OF créé. Voir `docs/plans/manufacturing-mrp-units-ai.md`.
 
 ## Adding a business module (the recipe)
 

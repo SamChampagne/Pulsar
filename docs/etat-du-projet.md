@@ -1,5 +1,13 @@
 # État du projet — point de reprise
 
+> **MRP M2.2b1 + M7a (2026-09-15), implémenté localement.** Correspondances
+> produits CRM/articles WMS et ratios commerciaux exacts capturés par demande.
+> Premier worker analyste MRP via les tâches, MCP et approbations existants;
+> synthèses liées au calcul, recalcul gouverné, revue automatique opt-in sans boucle.
+> Panneaux Pulsar conservés. Pas d'achat/OF/stock automatique ni de test LLM réel.
+> Suite : validité/sites M2.2b2, exécution M3, qualification worker M7b.
+> [Contrats, activation et preuves](./plans/manufacturing-mrp-units-ai.md).
+
 > **MRP M2.2a (2026-09-15), implémenté localement.** Commandes CRM confirmées
 > reliées explicitement aux articles/sites/dates MRP, prévisions par période et
 > consommation sans double comptage. Exécution/annulation CRM prises en compte,

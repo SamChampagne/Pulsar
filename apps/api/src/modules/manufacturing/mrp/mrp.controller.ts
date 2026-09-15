@@ -12,9 +12,12 @@ import {
   MrpSiteDto,
   MrpSalesDemandDto,
   MrpSourcesQuery,
+  MrpProductMappingDto,
+  MrpMappingsQuery,
 } from './mrp.dto';
 import { MrpService } from './mrp.service';
 import { MrpDemandsService } from './mrp-demands.service';
+import { MrpAssistanceService } from './mrp-assistance.service';
 
 @ApiTags('manufacturing/mrp')
 @ApiBearerAuth()
@@ -24,7 +27,38 @@ export class MrpController {
   constructor(
     private readonly service: MrpService,
     private readonly demands: MrpDemandsService,
+    private readonly assistance: MrpAssistanceService,
   ) {}
+  @Get('runs/:id/assistance')
+  @RequirePermissions(
+    PERMISSIONS.MANUFACTURING.READ,
+    PERMISSIONS.WMS.READ,
+    PERMISSIONS.CORE.OPERATING_TASKS_READ,
+  )
+  assistanceState(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.assistance.state(user.tenantId, id, user.permissions);
+  }
+  @Post('runs/:id/request-review')
+  @RequirePermissions(
+    PERMISSIONS.MANUFACTURING.READ,
+    PERMISSIONS.WMS.READ,
+    PERMISSIONS.CORE.OPERATING_TASKS_READ,
+    PERMISSIONS.CORE.OPERATING_TASKS_MANAGE,
+  )
+  requestReview(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.assistance.request(user.tenantId, user.id, id, user.permissions);
+  }
+  @Get('product-mappings')
+  @RequirePermissions(PERMISSIONS.MANUFACTURING.READ, PERMISSIONS.WMS.READ, PERMISSIONS.CRM.READ)
+  mappings(@CurrentUser() user: AuthUser, @Query() query: MrpMappingsQuery) {
+    return this.demands.mappings(user.tenantId, user.permissions, query);
+  }
+  @Put('product-mappings')
+  @Audit('mrp-product-mapping', AuditAction.UPDATE)
+  @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE, PERMISSIONS.WMS.READ, PERMISSIONS.CRM.READ)
+  mapping(@CurrentUser() user: AuthUser, @Body() dto: MrpProductMappingDto) {
+    return this.demands.saveMapping(user.tenantId, user.id, user.permissions, dto);
+  }
   @Get('sales-sources')
   @RequirePermissions(PERMISSIONS.MANUFACTURING.READ, PERMISSIONS.WMS.READ, PERMISSIONS.CRM.READ)
   sources(@CurrentUser() user: AuthUser, @Query() query: MrpSourcesQuery) {

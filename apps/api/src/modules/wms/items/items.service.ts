@@ -109,6 +109,7 @@ export class ItemsService {
             tx.pickLine.count({ where: { tenantId, itemId: id } }),
             tx.mrpItemPolicy.count({ where: { tenantId, itemId: id } }),
             tx.mrpEntry.count({ where: { tenantId, itemId: id } }),
+            tx.mrpProductMapping.count({ where: { tenantId, itemId: id } }),
             tx.bomRevision.count({ where: { tenantId, outputItemId: id } }),
             tx.bomRevisionLine.count({ where: { tenantId, itemId: id } }),
             tx.bom.count({ where: { tenantId, productRef: current.sku } }),

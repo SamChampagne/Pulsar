@@ -2,7 +2,9 @@
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import MrpSalesDemandDrawer from '$lib/components/manufacturing/MrpSalesDemandDrawer.svelte';
-  import type { ForecastCoverage } from '@pulsar/shared';
+  import MrpMappingsDrawer from '$lib/components/manufacturing/MrpMappingsDrawer.svelte';
+  import MrpAssistancePanel from '$lib/components/manufacturing/MrpAssistancePanel.svelte';
+  import type { ForecastCoverage, PermissionKey } from '@pulsar/shared';
   import {
     MrpEntryKind,
     MrpSourcingMethod,
@@ -75,6 +77,7 @@
     exceptionCount: number;
   };
   type Detail = Run & {
+    locationId: string;
     result: MrpResult;
     stale: boolean;
     staleReason: string | null;
@@ -138,6 +141,8 @@
     forecastId = $state('');
   let salesOpen = $state(false),
     salesEntry = $state<Entry | null>(null);
+  let mappingsOpen = $state(false);
+  const has = (permission: PermissionKey) => Boolean($auth?.user.permissions.includes(permission));
   const canReadCrm = $derived(
     Boolean(
       $auth?.user.permissions.includes('crm.read') && $auth.tenant.enabledModules.includes('crm'),
@@ -208,6 +213,17 @@
       options = await api('/manufacturing/mrp/options');
       locationId = options.locations[0]?.id ?? '';
       await loadSite();
+      const requestedRun = page.url.searchParams.get('runId');
+      if (requestedRun) {
+        const run = await api<Detail>(
+          `/manufacturing/mrp/runs/${encodeURIComponent(requestedRun)}`,
+        );
+        if (locationId !== run.locationId) {
+          locationId = run.locationId;
+          await loadSite();
+        }
+        selectedRun = run;
+      }
       if (page.url.searchParams.has('salesOrderId')) tab = 'demand';
     } catch (e) {
       error = problem(e);
@@ -422,6 +438,26 @@
     </div></Card
   >
 {:else if tab === 'plan'}
+  {#if selectedRun && has('core.operating.tasks.read')}
+    <details class="mb-4 rounded-md border border-edge bg-surface">
+      <summary
+        class="cursor-pointer px-4 py-3 text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-accent"
+        >Assistance IA du calcul <span class="ml-2 text-xs font-normal text-ink-muted"
+          >Workers · revues · approbations</span
+        ></summary
+      >
+      <MrpAssistancePanel
+        runId={selectedRun.id}
+        canRequest={has('core.operating.tasks.manage')}
+        canReadAgents={has('core.agents.read')}
+        canReadApprovals={has('core.agents.actions.read')}
+        onitem={(id) => {
+          selectedItem = id;
+          detailOpen = true;
+        }}
+      />
+    </details>
+  {/if}
   {#if !selectedRun}
     <Card>
       <div class="max-w-2xl py-6">
@@ -669,6 +705,12 @@
               : 'Saisir uniquement des quantités encore attendues. Rattachez une réception WMS pour éviter de la compter à nouveau après validation.'}
         </p>
       </div>
+      {#if tab === 'demand' && canReadCrm}<Button
+          variant="secondary"
+          onclick={() => {
+            mappingsOpen = true;
+          }}>Produits et unités</Button
+        >{/if}
       {#if tab === 'demand' && canManage && canReadCrm}<Button
           variant="secondary"
           onclick={() => {
@@ -976,6 +1018,11 @@
   salesOrderId={page.url.searchParams.get('salesOrderId') ?? ''}
   onchange={loadSite}
 />
+{#if canReadCrm}<MrpMappingsDrawer
+    bind:open={mappingsOpen}
+    items={options.items}
+    {canManage}
+  />{/if}
 
 <Drawer
   bind:open={detailOpen}

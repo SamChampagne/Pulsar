@@ -12,6 +12,12 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { TenantModulesCacheService } from '../src/prisma/tenant-modules-cache.service';
 import { InventoryService } from '../src/modules/wms/inventory/inventory.service';
 import { ReceivingService } from '../src/modules/wms/receiving/receiving.service';
+import { AgentsService } from '../src/core/agents/agents.service';
+import { AgentRuntimeService } from '../src/core/agents/agent-runtime.service';
+import { AgentWorkerService } from '../src/core/operating/agent-worker.service';
+import { DomainEventsService } from '../src/core/operating/domain-events.service';
+import { AGENT_ROLE_PRESETS } from '@pulsar/shared';
+import { ModuleSettingsService } from '../src/core/module-registry/module-settings.service';
 import { StockMovementType, type MrpSnapshot } from '@pulsar/shared';
 
 describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
@@ -27,6 +33,61 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
   let demand: any;
   let revisionId: string;
   let forecast: any, salesDemand: any, salesOrder: any, salesLine: any, crmRun: any;
+  let workerId: string, workerToken: string, workerProposal: any;
+  let workerCalls = 0;
+  let withExceptions = false;
+  const runtime = {
+    openSession: jest.fn(async (input: any) => {
+      if (input.agent.id !== workerId)
+        throw new ServiceUnavailableException('Test runtime restricted to fixture worker');
+      workerToken = app
+        .get(AgentsService)
+        .mintSessionToken(input.agent.id, 300, input.triggeredByRef);
+      return input.triggeredByRef;
+    }),
+    sendTurn: async function* (session: string) {
+      const taskId = session.slice(5);
+      const task = await db.operationalTask.findFirstOrThrow({ where: { tenantId, id: taskId } });
+      const brief = await mcp('get_mrp_run', { runId: task.subjectId });
+      expect(brief.id).toBe(task.subjectId);
+      workerProposal = await mcp('submit_mrp_review', {
+        runId: task.subjectId,
+        taskId,
+        summary: 'Revue de test : vérifier les besoins référencés avant toute décision.',
+        itemIds: [itemId],
+      });
+      workerCalls++;
+      yield { type: 'end' as const };
+    },
+    closeSession: jest.fn(async () => undefined),
+    killAgentSessions: jest.fn(async () => 0),
+  };
+  async function mcp(name: string, args: unknown, key = workerToken) {
+    const response = await request(http)
+      .post('/api/v1/mcp')
+      .set('X-Agent-Key', key)
+      .set('Accept', 'application/json, text/event-stream')
+      .send({
+        jsonrpc: '2.0',
+        id: randomUUID(),
+        method: 'tools/call',
+        params: { name, arguments: args },
+      })
+      .expect(200);
+    const envelope = response.body?.result
+      ? response.body
+      : response.text
+          .split(/\r?\n/)
+          .filter((line: string) => line.startsWith('data:'))
+          .map((line: string) => JSON.parse(line.slice(5)))
+          .find((value: any) => value.result || value.error);
+    if (!envelope?.result?.content) throw new Error(JSON.stringify(envelope));
+    return JSON.parse(envelope.result.content[0].text);
+  }
+  const approve = (id: string) =>
+    request(http)
+      .post(`/api/v1/agent-actions/${id}/approve`)
+      .set('Authorization', `Bearer ${token}`);
   const today = new Date().toISOString().slice(0, 10);
   const future = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const real =
@@ -45,7 +106,17 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
             as_of: snapshot.as_of,
             horizon_end: snapshot.horizon_end,
             proposals: [],
-            exceptions: [],
+            exceptions: withExceptions
+              ? [
+                  {
+                    code: 'LATE_RELEASE',
+                    item_id: itemId,
+                    source: 'fixture',
+                    date: snapshot.as_of,
+                    quantity: '10',
+                  },
+                ]
+              : [],
             assumptions: [],
             items: snapshot.items.map((i) => ({
               item_id: i.id,
@@ -94,6 +165,8 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
     const mod = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(ApsClient)
       .useValue(engine)
+      .overrideProvider(AgentRuntimeService)
+      .useValue(runtime)
       .compile();
     app = mod.createNestApplication();
     app.setGlobalPrefix('api/v1');
@@ -121,6 +194,16 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
           ...(mode === 'no-wms' ? [] : ['wms.read']),
           ...(mode === 'manager' ? ['wms.manage'] : []),
           ...(mode === 'manager' ? ['crm.read', 'crm.manage'] : []),
+          ...(mode === 'manager'
+            ? [
+                'core.operating.tasks.read',
+                'core.operating.tasks.manage',
+                'core.agents.read',
+                'core.agents.manage',
+                'core.agents.actions.read',
+                'core.agents.actions.approve',
+              ]
+            : []),
         ];
         const perms = await db.permission.findMany({ where: { key: { in: keys } } });
         expect(perms).toHaveLength(keys.length);
@@ -471,7 +554,7 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
       (await request(http).get(`${root}/${legacy.id}`).set(auth).expect(200)).body.materialSnapshot,
     ).toBeNull();
   });
-  const createSalesOrder = async (quantity = 30) => {
+  const createSalesOrder = async (quantity = 30, productId?: string) => {
     const company = await db.crmCompany.create({
       data: { tenantId, name: `MRP customer ${randomUUID()}` },
     });
@@ -487,7 +570,7 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
       await request(http)
         .post(`/api/v1/crm/sales-orders/${order.id}/line-items`)
         .set(auth)
-        .send({ name: 'Finished assemblies', quantity })
+        .send({ name: 'Finished assemblies', quantity, ...(productId ? { productId } : {}) })
         .expect(201)
     ).body;
     const confirmed = (
@@ -692,6 +775,235 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
       .send({ name: 'Late line', quantity: 1 })
       .expect(409);
     await request(http).delete(`${linesUrl}/${line.id}`).set(auth).expect(409);
+  });
+  it('captures exact product ratios and never rewrites existing demand after a mapping edit', async () => {
+    const product = await db.crmProduct.create({
+      data: { tenantId, name: 'Box of finished assemblies', unitPrice: 12 },
+    });
+    const mappingBody = {
+      productId: product.id,
+      itemId,
+      commercialUnit: 'boîte',
+      numerator: '12',
+      denominator: '1',
+      isActive: true,
+      acknowledgeUnits: true,
+    };
+    await call('put', 'product-mappings', mappingBody, reader).expect(403);
+    await call('put', 'product-mappings', mappingBody, other).expect(400);
+    await call('put', 'product-mappings', { ...mappingBody, denominator: '0' }).expect(400);
+    const mapping = (await call('put', 'product-mappings', mappingBody).expect(200)).body;
+    const source = await createSalesOrder(2.5, product.id);
+    const body = {
+      ...salesBody(source.line, source.order),
+      mappingId: mapping.id,
+      expectedMappingUpdatedAt: mapping.updatedAt,
+    };
+    await call('post', 'sales-demands', {
+      ...body,
+      expectedMappingUpdatedAt: '2000-01-01T00:00:00Z',
+    }).expect(409);
+    const linked = (await call('post', 'sales-demands', body).expect(201)).body;
+    expect(linked.quantity).toBe('30');
+    expect(linked.sourceSnapshot).toMatchObject({
+      quantity: '2.5',
+      convertedQuantity: '30',
+      mapping: { numerator: '12', denominator: '1' },
+    });
+    await call('put', 'product-mappings', {
+      ...mappingBody,
+      numerator: '24',
+      expectedUpdatedAt: mapping.updatedAt,
+    }).expect(200);
+    await call('put', 'product-mappings', {
+      ...mappingBody,
+      expectedUpdatedAt: mapping.updatedAt,
+    }).expect(409);
+    const replay = (await call('post', 'sales-demands', body).expect(201)).body;
+    expect(replay.id).toBe(linked.id);
+    expect(replay.quantity).toBe('30');
+    const changedDate = (
+      await call('put', `sales-demands/${linked.id}`, {
+        ...body,
+        expectedUpdatedAt: linked.updatedAt,
+      }).expect(200)
+    ).body;
+    expect(changedDate.quantity).toBe('30');
+    const run = (await calculate().expect(201)).body;
+    expect(run.inputSnapshot.demands.find((d: any) => d.id === linked.id).quantity).toBe('30');
+    expect(run.sourceMetadata.forecastCoverage[0].remaining).toBe('40');
+    const current = (await call('get', `product-mappings?productId=${product.id}`).expect(200)).body
+      .items[0];
+    const third = await createSalesOrder(1, product.id);
+    const fractional = (
+      await call('put', 'product-mappings', {
+        ...mappingBody,
+        numerator: '1',
+        denominator: '3',
+        expectedUpdatedAt: current.updatedAt,
+      }).expect(200)
+    ).body;
+    await call('post', 'sales-demands', {
+      ...salesBody(third.line, third.order),
+      mappingId: mapping.id,
+      expectedMappingUpdatedAt: fractional.updatedAt,
+    }).expect(400);
+    const unrelated = await createSalesOrder(1);
+    await call('post', 'sales-demands', {
+      ...salesBody(unrelated.line, unrelated.order),
+      mappingId: mapping.id,
+      expectedMappingUpdatedAt: fractional.updatedAt,
+    }).expect(400);
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(3);
+  });
+  it('dispatches an MRP review through the real task worker and MCP, then waits for human approval', async () => {
+    const preset = AGENT_ROLE_PRESETS.find((p) => p.id === 'mrp-analyst')!;
+    const caps = {
+      alwaysOn: true,
+      handlesCategories: ['MRP_REVIEW'],
+      toolAllowlist: preset.suggestedToolAllowlist,
+      maxActionsPerHour: 50,
+    };
+    const agent = (
+      await request(http)
+        .post('/api/v1/agents')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'MRP worker fixture',
+          permissions: preset.suggestedPermissions,
+          persona: preset.persona,
+          autonomyLevel: 'PROPOSE',
+          caps,
+        })
+        .expect(201)
+    ).body;
+    workerId = agent.id;
+    const run = (await calculate().expect(201)).body;
+    expect(
+      await db.domainEvent.count({
+        where: { tenantId, subjectId: run.id, type: 'manufacturing.mrp.review-requested' },
+      }),
+    ).toBe(0);
+    await call('post', `runs/${run.id}/request-review`, {}, reader).expect(403);
+    await call('post', `runs/${run.id}/request-review`, {}, other).expect(404);
+    await call('post', `runs/${run.id}/request-review`, {}).expect(201);
+    await call('post', `runs/${run.id}/request-review`, {}).expect(201);
+    expect(
+      await db.domainEvent.count({
+        where: { tenantId, subjectId: run.id, type: 'manufacturing.mrp.review-requested' },
+      }),
+    ).toBe(1);
+    for (let i = 0; i < 30; i++) {
+      await app.get(DomainEventsService).processPending(100);
+      if (await db.operationalTask.count({ where: { tenantId, dedupKey: `MRP_REVIEW:${run.id}` } }))
+        break;
+    }
+    for (let i = 0; i < 100 && !workerCalls; i++)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(workerCalls).toBe(1);
+    expect(workerProposal).toMatchObject({ queued: true, status: 'PENDING' });
+    expect(await db.mrpReview.count({ where: { tenantId, runId: run.id } })).toBe(0);
+    const state = (await call('get', `runs/${run.id}/assistance`).expect(200)).body;
+    expect(state.task.assigneeAgentId).toBe(workerId);
+    expect(state.task.status).toBe('IN_PROGRESS');
+    expect(state.workers[0]).not.toHaveProperty('permissions');
+    const task = await db.operationalTask.findFirstOrThrow({
+      where: { tenantId, id: state.task.id },
+    });
+    expect(task.details).toEqual({ runId: run.id, requiresCrm: true });
+    const proposal = await db.proposedAction.findFirstOrThrow({
+      where: {
+        tenantId,
+        agentId: workerId,
+        tool: 'submit_mrp_review',
+        triggeredByRef: `task:${task.id}`,
+      },
+    });
+    const [a, b] = await Promise.all([approve(proposal.id), approve(proposal.id)]);
+    expect([a.status, b.status].sort()).toEqual([201, 400]);
+    expect([a, b].find((r) => r.status === 201)?.body.status).toBe('EXECUTED');
+    const review = await db.mrpReview.findFirstOrThrow({ where: { tenantId, runId: run.id } });
+    expect(review.taskId).toBe(task.id);
+    expect(await db.mrpReview.count({ where: { tenantId, runId: run.id } })).toBe(1);
+    expect((await call('get', `runs/${run.id}/assistance`).expect(200)).body.reviews).toHaveLength(
+      1,
+    );
+    await call('get', `runs/${run.id}/assistance`, undefined, reader).expect(403);
+    const next = await mcp('recalculate_mrp', { runId: run.id });
+    expect(next.queued).toBe(true);
+    const recalc = await db.proposedAction.findFirstOrThrow({
+      where: { tenantId, agentId: workerId, tool: 'recalculate_mrp' },
+    });
+    await db.agent.updateMany({
+      where: { id: workerId, tenantId },
+      data: { caps: { ...caps, toolAllowlist: ['get_task', 'get_mrp_run', 'submit_mrp_review'] } },
+    });
+    await approve(recalc.id).expect(400);
+    await db.agent.updateMany({
+      where: { id: workerId, tenantId },
+      data: { caps, permissions: preset.suggestedPermissions.filter((p) => p !== 'crm.read') },
+    });
+    expect((await approve(recalc.id).expect(201)).body.status).toBe('FAILED');
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(3);
+  });
+  it('opts into automatic review only for human calculations and suppresses recursive agent wakeups', async () => {
+    withExceptions = true;
+    await call('post', 'entries', {
+      ...entry(),
+      dueDate: today,
+      quantity: '100',
+      reference: 'Urgent requirement',
+    }).expect(201);
+    await app
+      .get(ModuleSettingsService)
+      .update(tenantId, 'manufacturing', { mrpAutomaticReview: true });
+    const base = (await calculate().expect(201)).body;
+    expect(base.exceptionCount).toBeGreaterThan(0);
+    expect(
+      await db.domainEvent.count({
+        where: { tenantId, subjectId: base.id, type: 'manufacturing.mrp.review-requested' },
+      }),
+    ).toBe(1);
+    const preset = AGENT_ROLE_PRESETS.find((p) => p.id === 'mrp-analyst')!;
+    await db.agent.updateMany({
+      where: { tenantId, id: workerId },
+      data: { permissions: preset.suggestedPermissions },
+    });
+    const queued = await mcp('recalculate_mrp', { runId: base.id });
+    expect(queued.queued).toBe(true);
+    await db.agent.updateMany({ where: { tenantId, id: workerId }, data: { status: 'PAUSED' } });
+    await approve(queued.proposalId).expect(400);
+    await db.agent.updateMany({ where: { tenantId, id: workerId }, data: { status: 'ACTIVE' } });
+    const approved = (await approve(queued.proposalId).expect(201)).body;
+    expect(approved.status).toBe('EXECUTED');
+    expect(approved.result.automaticReviewSuppressed).toBe(true);
+    expect(approved.result.id).not.toBe(base.id);
+    expect(
+      await db.domainEvent.count({
+        where: {
+          tenantId,
+          subjectId: approved.result.id,
+          type: 'manufacturing.mrp.review-requested',
+        },
+      }),
+    ).toBe(0);
+    const unscoped = app.get(AgentsService).mintSessionToken(workerId);
+    const existingTask = await db.operationalTask.findFirstOrThrow({
+      where: { tenantId, assigneeAgentId: workerId, category: 'MRP_REVIEW' },
+    });
+    const invalid = await mcp(
+      'submit_mrp_review',
+      {
+        runId: existingTask.subjectId,
+        taskId: existingTask.id,
+        itemIds: [itemId],
+        summary: 'Missing worker session context must be refused.',
+      },
+      unscoped,
+    );
+    expect((await approve(invalid.proposalId).expect(201)).body.status).toBe('FAILED');
+    expect(await db.mrpReview.count({ where: { tenantId } })).toBe(1);
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(3);
   });
   it('fails closed when WMS is disabled, including historical reads', async () => {
     const module = await db.moduleDefinition.findUniqueOrThrow({ where: { key: 'wms' } });

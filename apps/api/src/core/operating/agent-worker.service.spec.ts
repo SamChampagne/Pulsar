@@ -45,11 +45,20 @@ function harness(
   const tasks = {
     start: overrides.start ?? (async () => { task.status = OperationalTaskStatus.IN_PROGRESS; return task; }),
   } as any;
-  const svc = new AgentWorkerService(prisma, runtime, tasks, ledger);
+  const svc = new AgentWorkerService(prisma, runtime, tasks, ledger, undefined, { getEnabledKeys: async () => new Set(['manufacturing', 'wms', 'crm']) } as any);
   return { svc, calls, runs, task, agent, revertCalls };
 }
 
 describe('AgentWorkerService', () => {
+  it('skips an ineligible MRP worker before claiming the task or opening Hermes', async () => {
+    const h = harness();
+    h.task.category = 'MRP_REVIEW';
+    expect(await h.svc.tick('http://x/mcp', 10)).toBe(0);
+    expect(h.task.status).toBe('OPEN');
+    expect(h.calls).toEqual([]);
+    expect(h.runs[0].status).toBe('SKIPPED');
+    expect(h.revertCalls).toEqual([]);
+  });
   it('tick() drives an OPEN task to SUCCEEDED and records the run', async () => {
     const h = harness();
     const driven = await h.svc.tick('http://x/mcp', 10);

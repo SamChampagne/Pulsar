@@ -35,6 +35,11 @@ export type OwnedEntity =
   | 'bom'
   | 'bomRevision'
   | 'mrpEntry'
+  | 'mrpRun'
+  | 'mrpProductMapping'
+  | 'crmProduct'
+  | 'agent'
+  | 'operationalTask'
   | 'salesOrderLineItem'
   | 'manufacturingOrder';
 

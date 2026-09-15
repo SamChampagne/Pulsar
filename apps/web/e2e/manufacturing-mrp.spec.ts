@@ -1,10 +1,18 @@
 import { test, expect, type Page } from '@playwright/test';
 
-async function setup(page: Page, readonly = false, empty = false, crm = false, salesOrderId = '') {
+async function setup(
+  page: Page,
+  readonly = false,
+  empty = false,
+  crm = false,
+  salesOrderId = '',
+  ai = false,
+  mapped = false,
+) {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(
-    ({ readonly, crm }) =>
+    ({ readonly, crm, ai }) =>
       localStorage.setItem(
         'pulsar.auth',
         JSON.stringify({
@@ -20,6 +28,15 @@ async function setup(page: Page, readonly = false, empty = false, crm = false, s
               'wms.read',
               ...(crm ? ['crm.read'] : []),
               ...(readonly ? [] : ['manufacturing.manage']),
+              ...(ai
+                ? [
+                    'core.operating.tasks.read',
+                    'core.operating.tasks.manage',
+                    'core.agents.read',
+                    'core.agents.manage',
+                    'core.agents.actions.read',
+                  ]
+                : []),
             ],
           },
           tenant: {
@@ -30,14 +47,50 @@ async function setup(page: Page, readonly = false, empty = false, crm = false, s
           },
         }),
       ),
-    { readonly, crm },
+    { readonly, crm, ai },
   );
   const state = {
     writes: [] as { path: string; body: any }[],
     reads: [] as string[],
     fail: false,
     stale: false,
+    reviewed: false,
   };
+  const mapping = {
+    id: 'mapping1',
+    productId: 'product1',
+    itemId: 'fg',
+    numerator: '12',
+    denominator: '1',
+    commercialUnit: 'boîte',
+    unitSnapshot: 'EA',
+    isActive: true,
+    updatedAt: '2026-09-15T12:00:00Z',
+    product: { name: 'Carton assemblages' },
+    item: { sku: 'ASSEMBLAGE' },
+  };
+  const assistance = () => ({
+    stale: state.stale,
+    task: state.writes.some((w) => w.path.endsWith('request-review'))
+      ? { id: 'task', status: 'OPEN', assigneeAgentId: null }
+      : null,
+    event: null,
+    workers: [],
+    runs: [],
+    proposals: [],
+    reviews: state.reviewed
+      ? [
+          {
+            id: 'review1',
+            summary: 'Vérifier la disponibilité de l’acier. <script>unsafe</script>',
+            itemIds: ['raw'],
+            staleAtReview: true,
+            createdAt: '2026-09-15T12:00:00Z',
+            agentId: 'agent1',
+          },
+        ]
+      : [],
+  });
   const forecast = {
     id: 'f1',
     locationId: 'site',
@@ -140,6 +193,7 @@ async function setup(page: Page, readonly = false, empty = false, crm = false, s
   };
   const run = {
     id: 'run',
+    locationId: 'site',
     createdAt: '2026-09-15T12:00:00Z',
     horizonEnd: '2026-10-15',
     proposalCount: 2,
@@ -157,6 +211,7 @@ async function setup(page: Page, readonly = false, empty = false, crm = false, s
           status: 409,
           json: { message: 'Ces données ont changé. Rechargez avant de les modifier.' },
         });
+      if (path.endsWith('request-review')) return route.fulfill({ json: assistance() });
       return route.fulfill({ json: { ...run, stale: false } });
     }
     if (path === 'manufacturing/mrp/options')
@@ -210,8 +265,9 @@ async function setup(page: Page, readonly = false, empty = false, crm = false, s
           items: [
             {
               id: 'line1',
+              productId: mapped ? 'product1' : null,
               name: 'Assemblage client',
-              quantity: '30',
+              quantity: mapped ? '2.5' : '30',
               updatedAt: '2026-09-15T09:00:00Z',
               salesOrder: {
                 id: 'so1',
@@ -227,6 +283,15 @@ async function setup(page: Page, readonly = false, empty = false, crm = false, s
           pageSize: 20,
         },
       });
+    if (path.endsWith('/assistance')) return route.fulfill({ json: assistance() });
+    if (path === 'agents/control-tower')
+      return route.fulfill({ json: { items: [], rollup: null } });
+    if (path === 'manufacturing/mrp/product-mappings')
+      return route.fulfill({ json: { items: mapped ? [mapping] : [], total: mapped ? 1 : 0 } });
+    if (path === 'crm/products')
+      return route.fulfill({
+        json: { items: [{ id: 'product1', name: 'Carton assemblages', sku: 'BOX' }], total: 1 },
+      });
     if (path === 'manufacturing/mrp/runs/run')
       return route.fulfill({
         json: { ...run, stale: state.stale, staleReason: 'Les données ont changé. Recalculer.' },
@@ -237,6 +302,123 @@ async function setup(page: Page, readonly = false, empty = false, crm = false, s
   await expect(page.getByRole('heading', { name: 'Besoins matières', exact: true })).toBeVisible();
   return { state, errors };
 }
+
+test('MRP role registration includes its worker category and restricted tool allowlist', async ({
+  page,
+}) => {
+  const { state, errors } = await setup(page, false, false, false, '', true);
+  await page.goto('/agents');
+  await page.getByRole('button', { name: 'Nouvel agent' }).click();
+  await page.getByRole('button', { name: /Analyste MRP \(worker\)/ }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText(/Fabrication et WMS en lecture/)).toBeVisible();
+  await dialog.getByLabel('Nom', { exact: true }).fill('Analyste matières');
+  await dialog.getByRole('button', { name: "Créer l'agent", exact: true }).click();
+  await expect.poll(() => state.writes.filter((w) => w.path === 'agents').length).toBe(1);
+  const body = state.writes.find((w) => w.path === 'agents')!.body;
+  expect(body.autonomyLevel).toBe('PROPOSE');
+  expect(body.caps).toMatchObject({ alwaysOn: true, handlesCategories: ['MRP_REVIEW'] });
+  expect(body.caps.toolAllowlist).toContain('submit_mrp_review');
+  expect(body.caps.toolAllowlist).not.toContain('resolve_task');
+  expect(body.permissions).toContain('crm.read');
+  expect(errors).toEqual([]);
+});
+
+test('commercial mapping previews exact quantities and sends the captured mapping version', async ({
+  page,
+}) => {
+  const { state, errors } = await setup(page, false, false, true, '', false, true);
+  await page.getByRole('button', { name: /^Demande/ }).click();
+  await page.getByRole('button', { name: 'Relier une commande client' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog
+    .getByRole('combobox', { name: 'Ligne de commande confirmée', exact: true })
+    .selectOption('line1');
+  await dialog.getByRole('button', { name: 'Utiliser cette correspondance' }).click();
+  await expect(dialog.getByText('2.5 boîte → 30 EA', { exact: true })).toBeVisible();
+  await expect(
+    dialog.getByRole('combobox', { name: 'Article WMS à fournir', exact: true }),
+  ).toBeDisabled();
+  await dialog.getByLabel('Date du besoin (UTC)').fill('2026-10-12');
+  await dialog.getByLabel(/Je confirme le ratio/).check();
+  await page.screenshot({ path: 'test-results/mrp-commercial-ratio.png', fullPage: true });
+  await dialog.getByRole('button', { name: 'Confirmer le rattachement' }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(state.writes[0].body).toMatchObject({
+    mappingId: 'mapping1',
+    expectedMappingUpdatedAt: '2026-09-15T12:00:00Z',
+    itemId: 'fg',
+  });
+  expect(state.writes[0].body).not.toHaveProperty('quantity');
+  expect(errors).toEqual([]);
+});
+
+test('mapping configuration remains a Pulsar drawer and versions edits', async ({ page }) => {
+  const { state, errors } = await setup(page, false, false, true, '', false, true);
+  await page.getByRole('button', { name: /^Demande/ }).click();
+  const before = await page
+    .getByRole('heading', { name: 'Besoins matières', exact: true })
+    .boundingBox();
+  await page.getByRole('button', { name: 'Produits et unités' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('1 boîte = 12 EA', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Modifier le ratio' }).click();
+  await dialog.getByLabel('Équivalent WMS (EA)').fill('24');
+  await dialog.getByLabel(/Je confirme ce produit/).check();
+  await dialog.getByRole('button', { name: 'Enregistrer la correspondance' }).click();
+  await expect(dialog.getByRole('button', { name: 'Nouvelle correspondance' })).toBeVisible();
+  expect(state.writes[0].body).toMatchObject({
+    numerator: '24',
+    denominator: '1',
+    expectedUpdatedAt: '2026-09-15T12:00:00Z',
+  });
+  expect(
+    (await page.getByRole('heading', { name: 'Besoins matières', exact: true }).boundingBox())?.y,
+  ).toBe(before?.y);
+  expect(errors).toEqual([]);
+});
+
+test('MRP assistance shows truthful stages and links an approved review to its source item', async ({
+  page,
+}) => {
+  const { state, errors } = await setup(page, false, false, true, '', true);
+  await expect(page.getByRole('heading', { name: 'Couverture par article' })).toBeVisible();
+  await page.getByText('Assistance IA du calcul', { exact: false }).click();
+  await expect(page.getByRole('heading', { name: 'Assistance MRP' })).toBeVisible();
+  await expect(page.getByText('Aucune synthèse', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Demander une revue IA' }).click();
+  await expect(page.getByText('À traiter', { exact: true })).toBeVisible();
+  await expect(page.getByText('Aucune exécution', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Demander une revue IA' })).toHaveCount(0);
+  state.reviewed = true;
+  await page.getByRole('button', { name: 'Actualiser le suivi IA' }).click();
+  await expect(
+    page.getByText('Vérifier la disponibilité de l’acier. <script>unsafe</script>', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.screenshot({ path: 'test-results/mrp-ai-assistance-desktop.png', fullPage: true });
+  await page.getByRole('button', { name: 'Voir l’article cité 1' }).click();
+  await expect(
+    page.getByRole('dialog').getByText('0.5 KG à acheter', { exact: true }),
+  ).toBeVisible();
+  expect(state.writes).toHaveLength(1);
+  expect(errors).toEqual([]);
+});
+
+test('MRP assistance handles uncertain requests and fits a mobile viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { state, errors } = await setup(page, false, false, false, '', true);
+  await page.getByText('Assistance IA du calcul', { exact: false }).click();
+  state.fail = true;
+  await page.getByRole('button', { name: 'Demander une revue IA' }).click();
+  await expect(page.getByRole('button', { name: 'Demander une revue IA' })).toBeDisabled();
+  await expect(page.getByRole('alert')).toContainText('Actualisez le suivi');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: 'test-results/mrp-ai-assistance-mobile.png', fullPage: true });
+  expect(state.writes).toHaveLength(1);
+  expect(errors).toEqual([]);
+});
 
 test('forecast keeps an explicit period and displays firm consumption without double counting', async ({
   page,

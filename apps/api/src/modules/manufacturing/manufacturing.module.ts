@@ -1,4 +1,7 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
+import { OperatingModule } from '../../core/operating/operating.module';
+import { ModuleRegistryModule } from '../../core/module-registry/module-registry.module';
+import { MrpAssistanceService } from './mrp/mrp-assistance.service';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { ApsModule } from '../../core/aps/aps.module';
 import { CalendarsController } from './calendars/calendars.controller';
@@ -27,7 +30,7 @@ import { MrpDemandsService } from './mrp/mrp-demands.service';
  * pattern as FleetModule / WmsModule).
  */
 @Module({
-  imports: [AuditLogsModule, ApsModule],
+  imports: [AuditLogsModule, ApsModule, ModuleRegistryModule, forwardRef(() => OperatingModule)],
   controllers: [
     MrpController,
     CalendarsController,
@@ -38,6 +41,7 @@ import { MrpDemandsService } from './mrp/mrp-demands.service';
     SchedulingController,
   ],
   providers: [
+    MrpAssistanceService,
     MrpDemandsService,
     MrpService,
     CalendarsService,
@@ -48,6 +52,8 @@ import { MrpDemandsService } from './mrp/mrp-demands.service';
     SchedulingService,
   ],
   exports: [
+    MrpAssistanceService,
+    MrpService,
     CalendarsService,
     WorkCentersService,
     RoutingsService,
