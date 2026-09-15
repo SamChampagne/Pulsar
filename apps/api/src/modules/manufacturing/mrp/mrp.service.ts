@@ -9,7 +9,6 @@ import { Prisma } from '@pulsar/database';
 import {
   AuditAction,
   MODULE_KEYS,
-  MrpEntryKind,
   MrpSourcingMethod,
   type MrpResult,
   type MrpSnapshot,
@@ -23,6 +22,7 @@ import { artifactHash } from '../scheduling/aps-artifact';
 import { MrpCalculateDto, MrpEntryDto, MrpPolicyDto } from './mrp.dto';
 import { validateMrpResult } from './mrp-result';
 import { revisionSummary } from '../boms/boms.service';
+import { MrpDemandsService } from './mrp-demands.service';
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const day = (value: Date) => value.toISOString().slice(0, 10);
@@ -36,6 +36,7 @@ export class MrpService {
     private readonly modules: TenantModulesCacheService,
     private readonly aps: ApsClient,
     private readonly audit: AuditLogsService,
+    private readonly demands: MrpDemandsService,
   ) {}
 
   private async gate(tenantId: string) {
@@ -113,7 +114,7 @@ export class MrpService {
     return { locations, items, boms };
   }
 
-  async workspace(tenantId: string, locationId: string) {
+  async workspace(tenantId: string, locationId: string, permissions: readonly string[] = []) {
     await this.gate(tenantId);
     await this.site(this.prisma, tenantId, locationId);
     const [policies, entries, runs, receipts] = await Promise.all([
@@ -124,6 +125,15 @@ export class MrpService {
       }),
       this.prisma.mrpEntry.findMany({
         where: { tenantId, locationId },
+        include: {
+          sourceSalesOrderLine: {
+            select: {
+              id: true,
+              updatedAt: true,
+              salesOrder: { select: { id: true, number: true, status: true, updatedAt: true } },
+            },
+          },
+        },
         orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
         take: 10001,
       }),
@@ -154,7 +164,17 @@ export class MrpService {
     ]);
     if (policies.length > 2000 || entries.length > 10000)
       throw new BadRequestException('Périmètre MRP trop volumineux.');
-    return { policies, entries, runs, receipts };
+    if (entries.some((e) => e.sourceSalesOrderLineId))
+      await this.demands.requireCrm(tenantId, permissions);
+    let coverage = null,
+      coverageError: string | null = null;
+    try {
+      coverage = await this.demands.compose(this.prisma, tenantId, entries, permissions);
+    } catch (e) {
+      coverageError =
+        e instanceof BadRequestException ? e.message : 'Couverture des prévisions indisponible.';
+    }
+    return { policies, entries, runs, receipts, coverage, coverageError };
   }
 
   async savePolicy(tenantId: string, userId: string, dto: MrpPolicyDto) {
@@ -234,9 +254,20 @@ export class MrpService {
     await this.ownership.assertOwned('location', dto.locationId, tenantId);
     await this.ownership.assertOwned('wmsItem', dto.itemId, tenantId);
     await this.ownership.assertOwnedIfSet('receipt', dto.receiptId, tenantId);
+    await this.ownership.assertOwnedIfSet('mrpEntry', dto.forecastId, tenantId);
     const quantity = this.quantity(dto.quantity, true);
     if (dto.receiptId && dto.kind !== 'SUPPLY')
       throw new BadRequestException('Seul un arrivage peut référencer une réception.');
+    if (dto.forecastId && dto.kind !== 'DEMAND')
+      throw new BadRequestException('Seule une demande ferme peut consommer une prévision.');
+    if (
+      dto.kind === 'FORECAST'
+        ? !dto.forecastStart || dto.forecastStart > dto.dueDate
+        : dto.forecastStart
+    )
+      throw new BadRequestException(
+        'Une prévision exige une période valide; les autres entrées n’ont pas de début de prévision.',
+      );
     const result = await this.prisma.$transaction(async (tx) => {
       // Same tenant lock as WMS document writers: receipt proof and quantity are read coherently.
       await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
@@ -247,6 +278,10 @@ export class MrpService {
       if (!item) throw new BadRequestException('Article inactif.');
       const current = id ? await tx.mrpEntry.findFirst({ where: { id, tenantId } }) : null;
       if (id && !current) throw new NotFoundException('Entrée MRP introuvable.');
+      if (current?.sourceSalesOrderLineId)
+        throw new ConflictException(
+          'Utilisez le parcours de demande CRM : la quantité source ne se modifie pas manuellement.',
+        );
       this.checkVersion(current?.updatedAt, dto.expectedUpdatedAt);
       if (
         current &&
@@ -257,6 +292,32 @@ export class MrpService {
         throw new BadRequestException(
           'Article, type et entrepôt sont immuables. Désactivez cette entrée et créez-en une autre.',
         );
+      if (dto.isActive)
+        await this.demands.validateForecast(
+          tx,
+          tenantId,
+          dto.locationId,
+          dto.itemId,
+          dto.dueDate,
+          dto.forecastId,
+        );
+      if (current?.kind === 'FORECAST' && dto.isActive) {
+        const incompatible = await tx.mrpEntry.count({
+          where: {
+            tenantId,
+            forecastId: current.id,
+            isActive: true,
+            OR: [
+              { dueDate: { lt: new Date(`${dto.forecastStart}T00:00:00Z`) } },
+              { dueDate: { gt: new Date(`${dto.dueDate}T00:00:00Z`) } },
+            ],
+          },
+        });
+        if (incompatible)
+          throw new ConflictException(
+            'Cette période exclurait une demande liée. Modifiez d’abord ses rattachements.',
+          );
+      }
       if (dto.receiptId) {
         const receipt = await tx.receipt.findFirst({
           where: { id: dto.receiptId, tenantId, locationId: dto.locationId },
@@ -279,6 +340,8 @@ export class MrpService {
       }
       const data = {
         locationId: dto.locationId,
+        forecastId: dto.forecastId ?? null,
+        forecastStart: dto.forecastStart ? new Date(`${dto.forecastStart}T00:00:00Z`) : null,
         itemId: dto.itemId,
         kind: dto.kind,
         quantity,
@@ -310,7 +373,13 @@ export class MrpService {
   }
 
   /** Repeatable-read snapshot, scoped to ONE warehouse. No mutations or stock reservations. */
-  private async capture(tenantId: string, locationId: string, asOf: string, horizonEnd: string) {
+  private async capture(
+    tenantId: string,
+    locationId: string,
+    asOf: string,
+    horizonEnd: string,
+    permissions: readonly string[],
+  ) {
     return this.prisma.$transaction(
       async (tx) => {
         await this.site(tx, tenantId, locationId);
@@ -330,7 +399,6 @@ export class MrpService {
             tenantId,
             locationId,
             isActive: true,
-            dueDate: { lte: new Date(`${horizonEnd}T00:00:00Z`) },
           },
           include: {
             receipt: { include: { lines: { where: { tenantId }, orderBy: { id: 'asc' } } } },
@@ -340,6 +408,7 @@ export class MrpService {
         });
         if (entries.length > 10000)
           throw new BadRequestException('Maximum 10 000 entrées actives par calcul.');
+        const coverage = await this.demands.compose(tx, tenantId, entries, permissions);
         const levels = await tx.inventoryLevel.groupBy({
           by: ['itemId'],
           where: {
@@ -412,6 +481,7 @@ export class MrpService {
             throw new BadRequestException(
               `Règle absente ou unité modifiée pour l'entrée « ${entry.reference} ».`,
             );
+          if (entry.kind !== 'SUPPLY' || day(entry.dueDate) > horizonEnd) continue;
           let quantity = entry.quantity;
           if (entry.receipt) {
             if (entry.receipt.tenantId !== tenantId || entry.receipt.locationId !== locationId)
@@ -428,7 +498,7 @@ export class MrpService {
             }
           }
           if (quantity.isZero()) continue;
-          snapshot[entry.kind === MrpEntryKind.DEMAND ? 'demands' : 'supplies'].push({
+          snapshot.supplies.push({
             id: entry.id,
             item_id: entry.itemId,
             quantity: quantity.toFixed(),
@@ -436,7 +506,10 @@ export class MrpService {
             reference: entry.reference,
           });
         }
+        snapshot.demands = coverage.demands.filter((d) => d.date <= horizonEnd);
         const sourceMetadata = {
+          forecastCoverage: coverage.forecasts,
+          salesDemands: coverage.sources,
           bomRevisions: policies
             .filter((p) => p.method === 'MAKE')
             .map((p) => ({
@@ -453,7 +526,12 @@ export class MrpService {
     );
   }
 
-  async calculate(tenantId: string, userId: string, dto: MrpCalculateDto) {
+  async calculate(
+    tenantId: string,
+    userId: string,
+    dto: MrpCalculateDto,
+    permissions: readonly string[] = [],
+  ) {
     await this.gate(tenantId);
     await this.ownership.assertOwned('location', dto.locationId, tenantId);
     const asOf = day(new Date());
@@ -468,6 +546,7 @@ export class MrpService {
       dto.locationId,
       asOf,
       dto.horizonEnd,
+      permissions,
     );
     const result = validateMrpResult(
       await this.aps.calculateMrp(tenantId, snapshot),
@@ -497,13 +576,15 @@ export class MrpService {
       entityId: run.id,
       after: { sourceHash, proposalCount: run.proposalCount },
     });
-    return this.getRun(tenantId, run.id);
+    return this.getRun(tenantId, run.id, permissions);
   }
 
-  async getRun(tenantId: string, id: string) {
+  async getRun(tenantId: string, id: string, permissions: readonly string[] = []) {
     await this.gate(tenantId);
     const run = await this.prisma.mrpRun.findFirst({ where: { id, tenantId } });
     if (!run) throw new NotFoundException('Calcul MRP introuvable.');
+    const metadata = run.sourceMetadata as { salesDemands?: unknown[] } | null;
+    if (metadata?.salesDemands?.length) await this.demands.requireCrm(tenantId, permissions);
     let stale = true;
     let staleReason: string | null = null;
     try {
@@ -512,6 +593,7 @@ export class MrpService {
         run.locationId,
         day(new Date()),
         day(run.horizonEnd),
+        permissions,
       );
       stale = current.sourceHash !== run.sourceHash;
       if (stale)

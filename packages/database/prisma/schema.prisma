@@ -3075,6 +3075,7 @@ model SalesOrder {
 }
 
 model SalesOrderLineItem {
+  mrpDemands MrpEntry[]
   id           String   @id @default(cuid())
   tenantId     String
   salesOrderId String
@@ -4189,6 +4190,7 @@ enum MrpSourcingMethod {
 enum MrpEntryKind {
   DEMAND
   SUPPLY
+  FORECAST
 }
 
 model MrpItemPolicy {
@@ -4217,6 +4219,13 @@ model MrpItemPolicy {
 }
 
 model MrpEntry {
+  forecastStart DateTime? @db.Date
+  forecastId String?
+  forecast MrpEntry? @relation("MrpForecastConsumption", fields: [forecastId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  consumingDemands MrpEntry[] @relation("MrpForecastConsumption")
+  sourceSalesOrderLineId String?
+  sourceSalesOrderLine SalesOrderLineItem? @relation(fields: [sourceSalesOrderLineId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sourceSnapshot Json?
   id String @id @default(cuid())
   tenantId String
   locationId String
@@ -4235,6 +4244,8 @@ model MrpEntry {
   item WmsItem @relation(fields: [itemId], references: [id], onUpdate: NoAction, onDelete: NoAction)
   receipt Receipt? @relation(fields: [receiptId], references: [id], onUpdate: NoAction, onDelete: NoAction)
   @@unique([tenantId, receiptId, itemId])
+  @@unique([tenantId, sourceSalesOrderLineId])
+  @@index([tenantId, forecastId])
   @@index([tenantId, locationId, isActive, dueDate])
   @@map("mrp_entries")
 }

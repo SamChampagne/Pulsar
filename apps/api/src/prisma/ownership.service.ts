@@ -34,6 +34,8 @@ export type OwnedEntity =
   | 'routing'
   | 'bom'
   | 'bomRevision'
+  | 'mrpEntry'
+  | 'salesOrderLineItem'
   | 'manufacturingOrder';
 
 /**

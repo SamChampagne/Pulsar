@@ -6,6 +6,10 @@ restent la référence visuelle. Le projet PlaniAdvance original n'est pas modif
 
 ## Livraison M1 : calcul des besoins et poste de travail
 
+Mise à jour M2.2a : [commandes CRM et consommation des prévisions](./manufacturing-demand-sources.md)
+livrées avec rattachements explicites, provenance et droits croisés. Les conversions
+d'unités, achats et exécution atelier restent des lots suivants.
+
 Mise à jour M2.1 : voir le [référentiel versionné](./manufacturing-definitions.md).
 Les politiques MAKE utilisent désormais une version publiée explicite, pas le
 brouillon. Les lignes sont Decimal(24,9), et les nouveaux OF peuvent capturer

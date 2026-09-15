@@ -26,6 +26,7 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
     runId: string;
   let demand: any;
   let revisionId: string;
+  let forecast: any, salesDemand: any, salesOrder: any, salesLine: any, crmRun: any;
   const today = new Date().toISOString().slice(0, 10);
   const future = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const real =
@@ -107,7 +108,7 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
       const slug = `mrp-${name}-${randomUUID()}`;
       const tenant = await db.tenant.create({ data: { slug, name: slug } });
       const modules = await db.moduleDefinition.findMany({
-        where: { key: { in: ['manufacturing', 'wms'] } },
+        where: { key: { in: ['manufacturing', 'wms', 'crm'] } },
       });
       for (const module of modules)
         await db.tenantModule.create({
@@ -119,6 +120,7 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
           ...(mode === 'reader' ? [] : ['manufacturing.manage']),
           ...(mode === 'no-wms' ? [] : ['wms.read']),
           ...(mode === 'manager' ? ['wms.manage'] : []),
+          ...(mode === 'manager' ? ['crm.read', 'crm.manage'] : []),
         ];
         const perms = await db.permission.findMany({ where: { key: { in: keys } } });
         expect(perms).toHaveLength(keys.length);
@@ -468,6 +470,228 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
     expect(
       (await request(http).get(`${root}/${legacy.id}`).set(auth).expect(200)).body.materialSnapshot,
     ).toBeNull();
+  });
+  const createSalesOrder = async (quantity = 30) => {
+    const company = await db.crmCompany.create({
+      data: { tenantId, name: `MRP customer ${randomUUID()}` },
+    });
+    const auth = { Authorization: `Bearer ${token}` };
+    const order = (
+      await request(http)
+        .post('/api/v1/crm/sales-orders')
+        .set(auth)
+        .send({ companyId: company.id })
+        .expect(201)
+    ).body;
+    const line = (
+      await request(http)
+        .post(`/api/v1/crm/sales-orders/${order.id}/line-items`)
+        .set(auth)
+        .send({ name: 'Finished assemblies', quantity })
+        .expect(201)
+    ).body;
+    const confirmed = (
+      await request(http).post(`/api/v1/crm/sales-orders/${order.id}/confirm`).set(auth).expect(200)
+    ).body;
+    return { order: confirmed, line };
+  };
+  const salesBody = (line = salesLine, order = salesOrder) => ({
+    locationId: siteId,
+    itemId,
+    sourceSalesOrderLineId: line.id,
+    dueDate: future,
+    forecastId: forecast.id,
+    acknowledgeUnits: true,
+    isActive: true,
+    expectedSourceUpdatedAt: line.updatedAt,
+    expectedOrderUpdatedAt: order.updatedAt,
+  });
+
+  it('validates forecast periods and explicit firm-demand consumption', async () => {
+    await call('post', 'entries', {
+      ...entry('FORECAST'),
+      forecastStart: future,
+      dueDate: today,
+    }).expect(400);
+    await call('post', 'entries', entry('FORECAST')).expect(400);
+    forecast = (
+      await call('post', 'entries', {
+        ...entry('FORECAST'),
+        quantity: '100',
+        forecastStart: today,
+        reference: 'Monthly forecast',
+      }).expect(201)
+    ).body;
+    await call('post', 'entries', {
+      ...entry(),
+      itemId: componentId,
+      forecastId: forecast.id,
+    }).expect(400);
+    await call('put', `entries/${forecast.id}`, {
+      ...entry(),
+      expectedUpdatedAt: forecast.updatedAt,
+    }).expect(400);
+    await call('post', 'entries', { ...entry(), forecastId: 'foreign' }).expect(400);
+  });
+  it('imports a confirmed sales line once with authoritative quantity and explicit units', async () => {
+    ({ order: salesOrder, line: salesLine } = await createSalesOrder());
+    await call('get', 'sales-sources', undefined, reader).expect(403);
+    const sources = (
+      await call('get', `sales-sources?salesOrderId=${salesOrder.id}&pageSize=10`).expect(200)
+    ).body;
+    expect(sources.items[0].quantity).toBe('30');
+    expect(sources.items[0]).not.toHaveProperty('unitPrice');
+    await call('post', 'sales-demands', { ...salesBody(), quantity: '1' }).expect(400);
+    await call('post', 'sales-demands', { ...salesBody(), acknowledgeUnits: false }).expect(400);
+    await call('post', 'sales-demands', salesBody(), other).expect(400);
+    await call('post', 'sales-demands', {
+      ...salesBody(),
+      expectedOrderUpdatedAt: '2000-01-01T00:00:00Z',
+    }).expect(409);
+    const [a, b] = await Promise.all([
+      call('post', 'sales-demands', salesBody()).expect(201),
+      call('post', 'sales-demands', salesBody()).expect(201),
+    ]);
+    expect(a.body.id).toBe(b.body.id);
+    salesDemand = a.body;
+    expect(salesDemand.quantity).toBe('30');
+    expect(salesDemand.unitSnapshot).toBe('EA');
+    await call('post', 'sales-demands', { ...salesBody(), locationId: otherSiteId }).expect(409);
+    await call('put', `entries/${salesDemand.id}`, {
+      ...entry(),
+      quantity: '1',
+      expectedUpdatedAt: salesDemand.updatedAt,
+    }).expect(409);
+    expect(
+      await db.mrpEntry.count({ where: { tenantId, sourceSalesOrderLineId: salesLine.id } }),
+    ).toBe(1);
+    crmRun = (await calculate().expect(201)).body;
+    expect(crmRun.inputSnapshot.demands.find((d: any) => d.id === forecast.id).quantity).toBe('70');
+    expect(crmRun.inputSnapshot.demands.find((d: any) => d.id === salesDemand.id).quantity).toBe(
+      '30',
+    );
+    expect(crmRun.sourceMetadata.forecastCoverage[0].consumed).toBe('30');
+    expect(crmRun.sourceMetadata.salesDemands[0].salesOrderId).toBe(salesOrder.id);
+  });
+  it('gates CRM-derived workspace and history, and freezes the confirmed source', async () => {
+    await call('get', `workspace?locationId=${siteId}`, undefined, reader).expect(403);
+    await call('get', `runs/${crmRun.id}`, undefined, reader).expect(403);
+    await request(http)
+      .patch(`/api/v1/crm/sales-orders/${salesOrder.id}/line-items/${salesLine.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ quantity: 99 })
+      .expect(409);
+    await call('put', `entries/${forecast.id}`, {
+      ...entry('FORECAST'),
+      quantity: '100',
+      forecastStart: today,
+      dueDate: today,
+      reference: 'Monthly forecast',
+      expectedUpdatedAt: forecast.updatedAt,
+    }).expect(409);
+    const module = await db.moduleDefinition.findUniqueOrThrow({ where: { key: 'crm' } });
+    await db.tenantModule.updateMany({
+      where: { tenantId, moduleId: module.id },
+      data: { enabled: false },
+    });
+    app.get(TenantModulesCacheService).invalidate(tenantId);
+    await calculate().expect(403);
+    await call('get', `runs/${crmRun.id}`).expect(403);
+    await db.tenantModule.updateMany({
+      where: { tenantId, moduleId: module.id },
+      data: { enabled: true },
+    });
+    app.get(TenantModulesCacheService).invalidate(tenantId);
+  });
+  it('versions demand edits and makes disabling consumption explicit', async () => {
+    await call('put', `sales-demands/${salesDemand.id}`, {
+      ...salesBody(),
+      expectedUpdatedAt: '2000-01-01T00:00:00Z',
+    }).expect(409);
+    const disabled = (
+      await call('put', `sales-demands/${salesDemand.id}`, {
+        ...salesBody(),
+        isActive: false,
+        expectedUpdatedAt: salesDemand.updatedAt,
+      }).expect(200)
+    ).body;
+    expect((await calculate().expect(201)).body.sourceMetadata.forecastCoverage[0].remaining).toBe(
+      '100',
+    );
+    salesDemand = (
+      await call('put', `sales-demands/${salesDemand.id}`, {
+        ...salesBody(),
+        expectedUpdatedAt: disabled.updatedAt,
+      }).expect(200)
+    ).body;
+    expect((await calculate().expect(201)).body.sourceMetadata.forecastCoverage[0].remaining).toBe(
+      '70',
+    );
+  });
+  it('keeps fulfilled demand consumed, restores cancelled demand and marks old runs stale', async () => {
+    await request(http)
+      .post(`/api/v1/crm/sales-orders/${salesOrder.id}/fulfill`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const after = (await calculate().expect(201)).body;
+    expect(after.inputSnapshot.demands.some((d: any) => d.id === salesDemand.id)).toBe(false);
+    expect(after.inputSnapshot.demands.find((d: any) => d.id === forecast.id).quantity).toBe('70');
+    const second = await createSalesOrder(20);
+    await call('post', 'sales-demands', salesBody(second.line, second.order)).expect(201);
+    expect((await calculate().expect(201)).body.sourceMetadata.forecastCoverage[0].remaining).toBe(
+      '50',
+    );
+    await request(http)
+      .post(`/api/v1/crm/sales-orders/${second.order.id}/cancel`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect((await calculate().expect(201)).body.sourceMetadata.forecastCoverage[0].remaining).toBe(
+      '70',
+    );
+    const historical = (await call('get', `runs/${crmRun.id}`).expect(200)).body;
+    expect(historical.stale).toBe(true);
+    expect(historical.sourceMetadata.forecastCoverage[0].remaining).toBe('70');
+    expect(
+      historical.inputSnapshot.demands.find((d: any) => d.id === salesDemand.id).quantity,
+    ).toBe('30');
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(3);
+  });
+  it('serializes CRM confirmation with line editing and refuses all confirmed line writers', async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const company = await db.crmCompany.create({
+      data: { tenantId, name: 'MRP concurrency fixture' },
+    });
+    const order = (
+      await request(http)
+        .post('/api/v1/crm/sales-orders')
+        .set(auth)
+        .send({ companyId: company.id })
+        .expect(201)
+    ).body;
+    const linesUrl = `/api/v1/crm/sales-orders/${order.id}/line-items`;
+    const line = (
+      await request(http)
+        .post(linesUrl)
+        .set(auth)
+        .send({ name: 'Immutable quantity', quantity: 1 })
+        .expect(201)
+    ).body;
+    const [edited, confirmed] = await Promise.all([
+      request(http).patch(`${linesUrl}/${line.id}`).set(auth).send({ quantity: 2 }),
+      request(http).post(`/api/v1/crm/sales-orders/${order.id}/confirm`).set(auth),
+    ]);
+    expect([200, 409]).toContain(edited.status);
+    expect(confirmed.status).toBe(200);
+    const final = await db.salesOrderLineItem.findFirstOrThrow({
+      where: { tenantId, id: line.id },
+    });
+    expect(final.quantity.toFixed()).toBe(confirmed.body.lineItems[0].quantity);
+    await request(http)
+      .post(linesUrl)
+      .set(auth)
+      .send({ name: 'Late line', quantity: 1 })
+      .expect(409);
+    await request(http).delete(`${linesUrl}/${line.id}`).set(auth).expect(409);
   });
   it('fails closed when WMS is disabled, including historical reads', async () => {
     const module = await db.moduleDefinition.findUniqueOrThrow({ where: { key: 'wms' } });

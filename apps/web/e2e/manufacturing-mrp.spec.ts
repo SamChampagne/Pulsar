@@ -1,10 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 
-async function setup(page: Page, readonly = false, empty = false) {
+async function setup(page: Page, readonly = false, empty = false, crm = false, salesOrderId = '') {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(
-    ({ readonly }) =>
+    ({ readonly, crm }) =>
       localStorage.setItem(
         'pulsar.auth',
         JSON.stringify({
@@ -18,6 +18,7 @@ async function setup(page: Page, readonly = false, empty = false) {
             permissions: [
               'manufacturing.read',
               'wms.read',
+              ...(crm ? ['crm.read'] : []),
               ...(readonly ? [] : ['manufacturing.manage']),
             ],
           },
@@ -25,13 +26,41 @@ async function setup(page: Page, readonly = false, empty = false) {
             id: 'fixture',
             name: 'Atelier test',
             slug: 'fixture',
-            enabledModules: ['manufacturing', 'wms'],
+            enabledModules: ['manufacturing', 'wms', ...(crm ? ['crm'] : [])],
           },
         }),
       ),
-    { readonly },
+    { readonly, crm },
   );
-  const state = { writes: [] as { path: string; body: any }[], fail: false, stale: false };
+  const state = {
+    writes: [] as { path: string; body: any }[],
+    reads: [] as string[],
+    fail: false,
+    stale: false,
+  };
+  const forecast = {
+    id: 'f1',
+    locationId: 'site',
+    itemId: 'fg',
+    kind: 'FORECAST',
+    quantity: '100',
+    reference: 'Assemblages octobre',
+    forecastStart: '2026-10-01',
+    dueDate: '2026-10-31',
+    isActive: true,
+    updatedAt: '2026-09-15T00:00:00Z',
+  };
+  const coverage = {
+    forecastId: 'f1',
+    itemId: 'fg',
+    reference: forecast.reference,
+    quantity: '100',
+    consumed: '30',
+    remaining: '70',
+    periodStart: '2026-10-01',
+    periodEnd: '2026-10-31',
+    orders: [],
+  };
   const result = {
     as_of: '2026-09-15',
     horizon_end: '2026-10-15',
@@ -116,9 +145,11 @@ async function setup(page: Page, readonly = false, empty = false) {
     proposalCount: 2,
     exceptionCount: 0,
     result,
+    ...(crm ? { sourceMetadata: { forecastCoverage: [coverage] } } : {}),
   };
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace('/api/v1/', '');
+    if (route.request().method() === 'GET') state.reads.push(route.request().url());
     if (route.request().method() !== 'GET') {
       state.writes.push({ path, body: route.request().postDataJSON() });
       if (state.fail)
@@ -167,9 +198,33 @@ async function setup(page: Page, readonly = false, empty = false) {
                   updatedAt: '2026-09-15T00:00:00Z',
                 },
               ],
-          entries: [],
+          entries: crm ? [forecast] : [],
+          coverage: { forecasts: crm ? [coverage] : [] },
           receipts: [],
           runs: empty ? [] : [run],
+        },
+      });
+    if (path === 'manufacturing/mrp/sales-sources')
+      return route.fulfill({
+        json: {
+          items: [
+            {
+              id: 'line1',
+              name: 'Assemblage client',
+              quantity: '30',
+              updatedAt: '2026-09-15T09:00:00Z',
+              salesOrder: {
+                id: 'so1',
+                number: 'SO-001',
+                status: 'CONFIRMED',
+                updatedAt: '2026-09-15T10:00:00Z',
+              },
+              mrpDemands: [],
+            },
+          ],
+          total: 1,
+          page: 1,
+          pageSize: 20,
         },
       });
     if (path === 'manufacturing/mrp/runs/run')
@@ -178,10 +233,113 @@ async function setup(page: Page, readonly = false, empty = false) {
       });
     return route.fulfill({ json: path === 'notifications' ? [] : {} });
   });
-  await page.goto('/manufacturing/mrp');
+  await page.goto(`/manufacturing/mrp${salesOrderId ? `?salesOrderId=${salesOrderId}` : ''}`);
   await expect(page.getByRole('heading', { name: 'Besoins matières', exact: true })).toBeVisible();
   return { state, errors };
 }
+
+test('forecast keeps an explicit period and displays firm consumption without double counting', async ({
+  page,
+}) => {
+  const { state, errors } = await setup(page, false, false, true);
+  await page.getByText('Prévisions retenues dans ce calcul', { exact: true }).click();
+  await expect(
+    page.getByText('100 prévu · 30 remplacé · 70 restant EA', { exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: /^Prévisions/ }).click();
+  await expect(page.getByText('70 restant', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('progressbar', { name: 'Couverture Assemblages octobre' }),
+  ).toHaveAttribute('value', '30');
+  await page.screenshot({ path: 'test-results/mrp-forecast-desktop.png', fullPage: true });
+  await page.getByRole('button', { name: 'Ajouter une prévision' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('combobox', { name: 'Article WMS', exact: true }).selectOption('fg');
+  await dialog.getByLabel('Quantité (EA)').fill('100.125');
+  await dialog.getByLabel('Début de période (UTC)').fill('2026-10-01');
+  await dialog.getByLabel('Fin de période (UTC)').fill('2026-10-31');
+  await dialog.getByLabel('Référence métier').fill('Prévision octobre');
+  await dialog.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(state.writes[0].body).toMatchObject({
+    kind: 'FORECAST',
+    quantity: '100.125',
+    forecastStart: '2026-10-01',
+    dueDate: '2026-10-31',
+  });
+  expect(errors).toEqual([]);
+});
+
+async function fillSalesDemand(page: Page) {
+  await page.getByRole('button', { name: 'Relier une commande client' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Ligne de commande confirmée').selectOption('line1');
+  await dialog.getByLabel('Article WMS à fournir').selectOption('fg');
+  await dialog.getByLabel('Date du besoin (UTC)').fill('2026-10-12');
+  await dialog.getByLabel('Prévision remplacée (facultatif)').selectOption('f1');
+  await expect(dialog.getByRole('button', { name: 'Confirmer le rattachement' })).toBeDisabled();
+  await dialog.getByRole('checkbox', { name: /Je confirme/ }).check();
+  return dialog;
+}
+
+test('CRM deep link imports authoritative quantity with explicit units and source versions', async ({
+  page,
+}) => {
+  const { state, errors } = await setup(page, false, false, true, 'so1');
+  const header = page.getByRole('heading', { name: 'Besoins matières', exact: true });
+  const before = await header.boundingBox();
+  const dialog = await fillSalesDemand(page);
+  expect((await header.boundingBox())?.y).toBe(before?.y);
+  await expect(dialog.getByText(/30 unités commerciales/)).toBeVisible();
+  expect(
+    state.reads.some((url) => url.includes('sales-sources') && url.includes('salesOrderId=so1')),
+  ).toBe(true);
+  await dialog.getByRole('button', { name: 'Confirmer le rattachement' }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(state.writes[0]).toEqual({
+    path: 'manufacturing/mrp/sales-demands',
+    body: {
+      locationId: 'site',
+      itemId: 'fg',
+      sourceSalesOrderLineId: 'line1',
+      dueDate: '2026-10-12',
+      forecastId: 'f1',
+      isActive: true,
+      acknowledgeUnits: true,
+      expectedSourceUpdatedAt: '2026-09-15T09:00:00Z',
+      expectedOrderUpdatedAt: '2026-09-15T10:00:00Z',
+    },
+  });
+  expect(errors).toEqual([]);
+});
+
+test('CRM drawer remains usable on narrow screens and prevents resending after conflict', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { state, errors } = await setup(page, false, false, true, 'so1');
+  const dialog = await fillSalesDemand(page);
+  state.fail = true;
+  await dialog.getByRole('button', { name: 'Confirmer le rattachement' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Ces données ont changé');
+  await expect(dialog.getByRole('button', { name: 'Confirmer le rattachement' })).toBeDisabled();
+  await expect(dialog.getByLabel('Date du besoin (UTC)')).toHaveValue('2026-10-12');
+  await expect(dialog).toHaveCSS('opacity', '1');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: 'test-results/mrp-sales-demand-mobile.png', fullPage: true });
+  expect(state.writes).toHaveLength(1);
+  expect(errors).toEqual([]);
+});
+
+test('CRM entry points require CRM access and manufacturing management', async ({ page }) => {
+  await setup(page);
+  await page.getByRole('button', { name: /^Demande/ }).click();
+  await expect(page.getByRole('button', { name: 'Relier une commande client' })).toHaveCount(0);
+  await page.unroute('**/api/v1/**');
+  await setup(page, true, false, true);
+  await page.getByRole('button', { name: /^Demande/ }).click();
+  await expect(page.getByRole('button', { name: 'Relier une commande client' })).toHaveCount(0);
+});
 
 test('explains net requirements and navigates to the parent demand', async ({ page }) => {
   const { errors } = await setup(page);

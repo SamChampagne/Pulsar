@@ -462,6 +462,19 @@
     <!-- ── Left column ── -->
     <div class="space-y-6 lg:col-span-2">
       <RecordSection id="record-lines" label="Lignes">
+        {#if order?.status === 'CONFIRMED' && $auth?.tenant.enabledModules.includes('manufacturing') && $auth?.tenant.enabledModules.includes('wms') && $auth?.user.permissions.includes('manufacturing.read') && $auth?.user.permissions.includes('wms.read')}
+          <div class="mb-3 rounded-md border border-edge p-3 text-sm">
+            <a
+              class="font-medium text-accent hover:underline"
+              href={`/manufacturing/mrp?salesOrderId=${order.id}`}
+              >Planifier les besoins matières de cette commande →</a
+            >
+            <p class="mt-1 text-xs text-ink-muted">
+              Rattachement explicite des lignes aux articles WMS, au site et aux prévisions; aucun
+              OF automatique.
+            </p>
+          </div>
+        {/if}
         {#key order!.id}<LineItemsEditor
             endpoint={`/crm/sales-orders/${order!.id}/line-items`}
             {lines}

@@ -93,8 +93,9 @@ automatique n'est ajouté. La publication répétée du même contenu est idempo
 
 ## Suite
 
-M2.2 : conversions d'unités contrôlées, sites des postes/calendriers, validité des
-versions et sources commandes/prévisions avec consommation de prévision. M3 :
+M2.2a livré : [sources commandes/prévisions et consommation](./manufacturing-demand-sources.md).
+M2.2b : conversions d'unités contrôlées, sites des postes/calendriers, validité des
+versions et mappings produits/articles réutilisables. M3 :
 achats matières puis conversion idempotente des propositions vers achats/OF, avec
 prévisualisation et confirmation. Les recettes/batchs, rendements, coproduits,
 généalogie, exécution atelier et coûts restent dans M5/M6. Ne pas présenter M2.1

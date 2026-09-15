@@ -384,6 +384,16 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     Aucun stock/achat/OF n'est créé par le calcul MRP. Contrats et compatibilité :
     `docs/plans/manufacturing-definitions.md`.
 
+48. (Fabrication — MRP M2.2a) Une demande CRM est un rattachement explicite unique
+    par `(tenantId, sourceSalesOrderLineId)` : article/site/source immuables,
+    quantité serveur et unité 1:1 reconnue. Ne jamais mapper par nom/SKU implicite.
+    La consommation de prévision passe par `deriveDemandCoverage` (pur/exact);
+    FULFILLED/INVOICED continuent de consommer, CANCELLED restitue la prévision.
+    Historique/provenance figés et droits CRM revérifiés sur toute lecture dérivée.
+    Les writers de lignes CRM relisent DRAFT sous le verrou tenant partagé avec
+    confirmation et rattachement MRP. Aucun stock/achat/OF n'est créé par le calcul.
+    Contrats et limites : `docs/plans/manufacturing-demand-sources.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

@@ -6,6 +6,7 @@ export enum MrpSourcingMethod {
 export enum MrpEntryKind {
   DEMAND = 'DEMAND',
   SUPPLY = 'SUPPLY',
+  FORECAST = 'FORECAST',
 }
 export interface MrpFlow {
   id: string;

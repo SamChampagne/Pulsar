@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { page } from '$app/state';
+  import MrpSalesDemandDrawer from '$lib/components/manufacturing/MrpSalesDemandDrawer.svelte';
+  import type { ForecastCoverage } from '@pulsar/shared';
   import {
     MrpEntryKind,
     MrpSourcingMethod,
@@ -45,6 +48,14 @@
     updatedAt: string;
   };
   type Entry = {
+    forecastStart?: string | null;
+    forecastId?: string | null;
+    sourceSalesOrderLineId?: string | null;
+    sourceSalesOrderLine?: {
+      id: string;
+      updatedAt: string;
+      salesOrder: { id: string; number: string; status: string; updatedAt: string };
+    } | null;
     id: string;
     itemId: string;
     locationId: string;
@@ -63,8 +74,15 @@
     proposalCount: number;
     exceptionCount: number;
   };
-  type Detail = Run & { result: MrpResult; stale: boolean; staleReason: string | null };
+  type Detail = Run & {
+    result: MrpResult;
+    stale: boolean;
+    staleReason: string | null;
+    sourceMetadata?: { forecastCoverage?: ForecastCoverage[] };
+  };
   type Workspace = {
+    coverage?: { forecasts: ForecastCoverage[] } | null;
+    coverageError?: string | null;
     policies: Policy[];
     entries: Entry[];
     runs: Run[];
@@ -116,6 +134,16 @@
   let dueDate = $state(new Date().toISOString().slice(0, 10));
   let reference = $state('');
   let receiptId = $state('');
+  let forecastStart = $state(''),
+    forecastId = $state('');
+  let salesOpen = $state(false),
+    salesEntry = $state<Entry | null>(null);
+  const canReadCrm = $derived(
+    Boolean(
+      $auth?.user.permissions.includes('crm.read') && $auth.tenant.enabledModules.includes('crm'),
+    ),
+  );
+  const forecasts = $derived(workspace.entries.filter((e) => e.kind === 'FORECAST'));
   let isActive = $state(true);
   let acknowledged = $state(false);
   let generation = 0;
@@ -139,7 +167,10 @@
     selectedRun?.result.proposals.filter((p) => p.item_id === selectedItem) ?? [],
   );
   const visibleEntries = $derived(
-    workspace.entries.filter((entry) => entry.kind === (tab === 'demand' ? 'DEMAND' : 'SUPPLY')),
+    workspace.entries.filter(
+      (entry) =>
+        entry.kind === (tab === 'demand' ? 'DEMAND' : tab === 'forecast' ? 'FORECAST' : 'SUPPLY'),
+    ),
   );
   const date = (value: string) => value.slice(0, 10);
   const problem = (e: unknown) => (e instanceof Error ? e.message : 'Une erreur est survenue.');
@@ -177,6 +208,7 @@
       options = await api('/manufacturing/mrp/options');
       locationId = options.locations[0]?.id ?? '';
       await loadSite();
+      if (page.url.searchParams.has('salesOrderId')) tab = 'demand';
     } catch (e) {
       error = problem(e);
       loading = false;
@@ -213,6 +245,11 @@
     }
   }
   function openEntry(entry?: Entry, requestedKind = MrpEntryKind.DEMAND) {
+    if (entry?.sourceSalesOrderLineId) {
+      salesEntry = entry;
+      salesOpen = true;
+      return;
+    }
     editing = entry ?? null;
     editMode = 'entry';
     formError = '';
@@ -222,6 +259,8 @@
     dueDate = entry ? date(entry.dueDate) : new Date().toISOString().slice(0, 10);
     reference = entry?.reference ?? '';
     receiptId = entry?.receiptId ?? '';
+    forecastId = entry?.forecastId ?? '';
+    forecastStart = entry?.forecastStart?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
     isActive = entry?.isActive ?? true;
     editOpen = true;
   }
@@ -274,6 +313,8 @@
             dueDate,
             reference,
             isActive,
+            ...(kind === 'FORECAST' ? { forecastStart } : {}),
+            ...(kind === 'DEMAND' && forecastId ? { forecastId } : {}),
             ...(receiptId ? { receiptId } : {}),
           },
         });
@@ -352,7 +393,7 @@
 </Card>
 
 <nav aria-label="Sections MRP" class="my-4 flex flex-wrap gap-1 border-b border-edge pb-2">
-  {#each [{ key: 'plan', label: 'Plan matières' }, { key: 'demand', label: 'Demande', count: activeEntries.filter((e) => e.kind === 'DEMAND').length }, { key: 'supply', label: 'Arrivages', count: activeEntries.filter((e) => e.kind === 'SUPPLY').length }, { key: 'policies', label: 'Règles articles', count: workspace.policies.length }, { key: 'history', label: 'Historique' }] as section (section.key)}
+  {#each [{ key: 'plan', label: 'Plan matières' }, { key: 'demand', label: 'Demande', count: activeEntries.filter((e) => e.kind === 'DEMAND').length }, { key: 'forecast', label: 'Prévisions', count: activeEntries.filter((e) => e.kind === 'FORECAST').length }, { key: 'supply', label: 'Arrivages', count: activeEntries.filter((e) => e.kind === 'SUPPLY').length }, { key: 'policies', label: 'Règles articles', count: workspace.policies.length }, { key: 'history', label: 'Historique' }] as section (section.key)}
     <button
       class="rounded-md px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-accent {tab ===
       section.key
@@ -519,6 +560,36 @@
           Aucun article ne correspond à ce filtre.
         </p>{/if}
     </Card>
+    {#if selectedRun.sourceMetadata?.forecastCoverage?.length}
+      <Card>
+        <details>
+          <summary class="cursor-pointer text-sm font-medium text-ink"
+            >Prévisions retenues dans ce calcul</summary
+          >
+          <p class="mt-2 text-xs text-ink-muted">
+            Photographie au moment du calcul, sans mélange d’unités. Le solde est daté en fin de
+            période; au-delà de l’horizon, il n’entre pas encore dans les besoins calculés.
+          </p>
+          <div class="mt-3 divide-y divide-edge">
+            {#each selectedRun.sourceMetadata.forecastCoverage as coverage (coverage.forecastId)}
+              {@const snapshotItem = selectedRun.result.items.find(
+                (item) => item.item_id === coverage.itemId,
+              )}
+              <div class="py-3 text-sm">
+                <p class="font-medium text-ink">{coverage.reference}</p>
+                <p class="mt-1 text-xs text-ink-muted">
+                  {snapshotItem?.sku ?? 'Article hors horizon'} · {coverage.periodStart} → {coverage.periodEnd}
+                </p>
+                <p class="mt-1 font-mono text-xs">
+                  {coverage.quantity} prévu · {coverage.consumed} remplacé · {coverage.remaining} restant
+                  {snapshotItem?.unit ?? ''}
+                </p>
+              </div>
+            {/each}
+          </div>
+        </details>
+      </Card>
+    {/if}
     {#if selectedRun.result.exceptions.length}<Card
         ><h2 class="mb-3 font-medium text-ink">À arbitrer avant d’exécuter le plan</h2>
         <div class="space-y-2">
@@ -579,26 +650,53 @@
         </div>{/each}
     </div>
   </Card>
-{:else if tab === 'demand' || tab === 'supply'}
+{:else if tab === 'demand' || tab === 'supply' || tab === 'forecast'}
   <Card
     ><div class="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 class="font-medium text-ink">
-          {tab === 'demand' ? 'Demande indépendante' : 'Arrivages attendus'}
+          {tab === 'demand'
+            ? 'Demandes fermes'
+            : tab === 'forecast'
+              ? 'Prévisions et couverture commerciale'
+              : 'Arrivages attendus'}
         </h2>
         <p class="mt-1 max-w-2xl text-sm text-ink-muted">
           {tab === 'demand'
-            ? 'Besoins saisis explicitement. Les commandes CRM et les OF ne sont pas importés automatiquement.'
-            : 'Saisir uniquement des quantités encore attendues. Rattachez une réception WMS pour éviter de la compter à nouveau après validation.'}
+            ? 'Reliez les lignes CRM confirmées, ou saisissez un besoin indépendant. Aucun import automatique et aucune déduction par simple ressemblance de nom.'
+            : tab === 'forecast'
+              ? 'Prévision initiale moins commandes explicitement liées. Les unités et sites restent distincts; le solde prévisionnel est placé en fin de période.'
+              : 'Saisir uniquement des quantités encore attendues. Rattachez une réception WMS pour éviter de la compter à nouveau après validation.'}
         </p>
       </div>
+      {#if tab === 'demand' && canManage && canReadCrm}<Button
+          variant="secondary"
+          onclick={() => {
+            salesEntry = null;
+            salesOpen = true;
+          }}>Relier une commande client</Button
+        >{/if}
       {#if canManage}<Button
           onclick={() =>
-            openEntry(undefined, tab === 'demand' ? MrpEntryKind.DEMAND : MrpEntryKind.SUPPLY)}
+            openEntry(
+              undefined,
+              tab === 'demand'
+                ? MrpEntryKind.DEMAND
+                : tab === 'forecast'
+                  ? MrpEntryKind.FORECAST
+                  : MrpEntryKind.SUPPLY,
+            )}
           ><Plus size={16} />
-          {tab === 'demand' ? 'Ajouter un besoin' : 'Ajouter un arrivage'}</Button
+          {tab === 'demand'
+            ? 'Ajouter un besoin'
+            : tab === 'forecast'
+              ? 'Ajouter une prévision'
+              : 'Ajouter un arrivage'}</Button
         >{/if}
     </div>
+    {#if workspace.coverageError}<p role="alert" class="mb-3 text-sm text-danger">
+        {workspace.coverageError}
+      </p>{/if}
     {#if !visibleEntries.length}<p class="py-8 text-sm text-ink-muted">
         Aucune entrée pour cet entrepôt.
       </p>{/if}
@@ -617,7 +715,36 @@
               {itemById.get(entry.itemId)?.sku ?? 'Article indisponible'} · {entry.quantity}
               {itemById.get(entry.itemId)?.unit} · {date(entry.dueDate)}
               {#if entry.receiptId}· Réception WMS liée{/if}
+              {#if entry.forecastId}· Prévision : {workspace.entries.find(
+                  (e) => e.id === entry.forecastId,
+                )?.reference ?? 'historique'}{/if}
             </p>
+            {#if entry.sourceSalesOrderLine}<a
+                href={`/crm/sales-orders/${entry.sourceSalesOrderLine.salesOrder.id}`}
+                class="text-xs text-accent hover:underline"
+                >{entry.sourceSalesOrderLine.salesOrder.number} · {entry.sourceSalesOrderLine
+                  .salesOrder.status}</a
+              >{/if}
+            {#if entry.kind === 'FORECAST'}
+              {@const coverage = workspace.coverage?.forecasts.find(
+                (f) => f.forecastId === entry.id,
+              )}
+              <p class="mt-2 text-xs text-ink-muted">
+                Période : {entry.forecastStart?.slice(0, 10)} → {date(entry.dueDate)}
+              </p>
+              {#if coverage}<div class="mt-2 flex flex-wrap gap-3 text-sm font-mono">
+                  <span>{coverage.quantity} prévu</span><span>{coverage.consumed} remplacé</span
+                  ><span class="font-semibold">{coverage.remaining} restant</span><span
+                    >{itemById.get(entry.itemId)?.unit}</span
+                  >
+                </div>
+                <progress
+                  class="forecast-progress mt-2 h-1.5 w-full"
+                  aria-label={`Couverture ${entry.reference}`}
+                  max={Number(coverage.quantity) || 1}
+                  value={Number(coverage.consumed)}
+                ></progress>{/if}
+            {/if}
           </div>
           {#if canManage}<Button variant="ghost" onclick={() => openEntry(entry)}>Modifier</Button
             >{/if}
@@ -660,7 +787,9 @@
     ? 'Règle de planification'
     : kind === 'DEMAND'
       ? 'Besoin daté'
-      : 'Arrivage attendu'}
+      : kind === 'FORECAST'
+        ? 'Prévision sur une période'
+        : 'Arrivage attendu'}
   dismissible={!busy}
 >
   <form onsubmit={save} class="space-y-4">
@@ -771,15 +900,36 @@
           disabled={busy}
         /></Field
       >
-      <Field label={kind === 'DEMAND' ? 'Date du besoin (UTC)' : 'Date d’arrivée confirmée (UTC)'}
+      {#if kind === 'FORECAST'}<Field label="Début de période (UTC)"
+          ><Input type="date" bind:value={forecastStart} required disabled={busy} /></Field
+        >{/if}
+      <Field
+        label={kind === 'DEMAND'
+          ? 'Date du besoin (UTC)'
+          : kind === 'FORECAST'
+            ? 'Fin de période (UTC)'
+            : 'Date d’arrivée confirmée (UTC)'}
         ><Input type="date" bind:value={dueDate} required disabled={busy} /></Field
       >
+      {#if kind === 'DEMAND'}<Field label="Prévision remplacée (facultatif)"
+          ><Select bind:value={forecastId} disabled={busy}
+            ><option value="">Aucune — demande indépendante</option
+            >{#each forecasts.filter((f) => f.itemId === formItem && f.isActive) as forecast (forecast.id)}<option
+                value={forecast.id}
+                >{forecast.reference} · {forecast.forecastStart?.slice(0, 10)} → {date(
+                  forecast.dueDate,
+                )}</option
+              >{/each}</Select
+          ></Field
+        >{/if}
       <Field label="Référence métier"
         ><Input
           bind:value={reference}
           placeholder={kind === 'DEMAND'
-            ? 'Commande client, prévision…'
-            : 'Confirmation fournisseur…'}
+            ? 'Besoin indépendant…'
+            : kind === 'FORECAST'
+              ? 'Prévision commerciale…'
+              : 'Confirmation fournisseur…'}
           maxlength={200}
           required
           disabled={busy}
@@ -816,6 +966,16 @@
     </div>
   </form>
 </Drawer>
+
+<MrpSalesDemandDrawer
+  bind:open={salesOpen}
+  {locationId}
+  items={options.items}
+  {forecasts}
+  entry={salesEntry}
+  salesOrderId={page.url.searchParams.get('salesOrderId') ?? ''}
+  onchange={loadSite}
+/>
 
 <Drawer
   bind:open={detailOpen}
@@ -904,3 +1064,22 @@
     </div>
   {/if}
 </Drawer>
+
+<style>
+  .forecast-progress {
+    appearance: none;
+    border: 0;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--color-edge);
+  }
+  .forecast-progress::-webkit-progress-bar {
+    background: var(--color-edge);
+  }
+  .forecast-progress::-webkit-progress-value {
+    background: var(--color-accent);
+  }
+  .forecast-progress::-moz-progress-bar {
+    background: var(--color-accent);
+  }
+</style>

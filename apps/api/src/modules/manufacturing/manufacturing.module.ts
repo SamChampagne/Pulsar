@@ -15,6 +15,7 @@ import { SchedulingController } from './scheduling/scheduling.controller';
 import { SchedulingService } from './scheduling/scheduling.service';
 import { MrpController } from './mrp/mrp.controller';
 import { MrpService } from './mrp/mrp.service';
+import { MrpDemandsService } from './mrp/mrp-demands.service';
 
 /**
  * Manufacturing / APS master-data module (sub-project 2). Pulsar owns this
@@ -37,6 +38,7 @@ import { MrpService } from './mrp/mrp.service';
     SchedulingController,
   ],
   providers: [
+    MrpDemandsService,
     MrpService,
     CalendarsService,
     WorkCentersService,

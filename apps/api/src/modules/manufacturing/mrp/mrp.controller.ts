@@ -5,15 +5,45 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { Audit } from '../../../common/decorators/audit.decorator';
-import { MrpCalculateDto, MrpEntryDto, MrpPolicyDto, MrpSiteDto } from './mrp.dto';
+import {
+  MrpCalculateDto,
+  MrpEntryDto,
+  MrpPolicyDto,
+  MrpSiteDto,
+  MrpSalesDemandDto,
+  MrpSourcesQuery,
+} from './mrp.dto';
 import { MrpService } from './mrp.service';
+import { MrpDemandsService } from './mrp-demands.service';
 
 @ApiTags('manufacturing/mrp')
 @ApiBearerAuth()
 @RequireModule(MODULE_KEYS.MANUFACTURING)
 @Controller('manufacturing/mrp')
 export class MrpController {
-  constructor(private readonly service: MrpService) {}
+  constructor(
+    private readonly service: MrpService,
+    private readonly demands: MrpDemandsService,
+  ) {}
+  @Get('sales-sources')
+  @RequirePermissions(PERMISSIONS.MANUFACTURING.READ, PERMISSIONS.WMS.READ, PERMISSIONS.CRM.READ)
+  sources(@CurrentUser() user: AuthUser, @Query() query: MrpSourcesQuery) {
+    return this.demands.sources(user.tenantId, user.permissions, query, query.salesOrderId);
+  }
+  @Post('sales-demands')
+  @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE, PERMISSIONS.WMS.READ, PERMISSIONS.CRM.READ)
+  salesDemand(@CurrentUser() user: AuthUser, @Body() dto: MrpSalesDemandDto) {
+    return this.demands.save(user.tenantId, user.id, user.permissions, dto);
+  }
+  @Put('sales-demands/:id')
+  @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE, PERMISSIONS.WMS.READ, PERMISSIONS.CRM.READ)
+  updateSalesDemand(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: MrpSalesDemandDto,
+  ) {
+    return this.demands.save(user.tenantId, user.id, user.permissions, dto, id);
+  }
   @Get('options')
   @RequirePermissions(PERMISSIONS.MANUFACTURING.READ, PERMISSIONS.WMS.READ)
   options(@CurrentUser() user: AuthUser) {
@@ -22,7 +52,7 @@ export class MrpController {
   @Get('workspace')
   @RequirePermissions(PERMISSIONS.MANUFACTURING.READ, PERMISSIONS.WMS.READ)
   workspace(@CurrentUser() user: AuthUser, @Query() query: MrpSiteDto) {
-    return this.service.workspace(user.tenantId, query.locationId);
+    return this.service.workspace(user.tenantId, query.locationId, user.permissions);
   }
   @Put('policies')
   @Audit('mrp-policy', AuditAction.UPDATE)
@@ -45,11 +75,11 @@ export class MrpController {
   @Post('runs')
   @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE, PERMISSIONS.WMS.READ)
   calculate(@CurrentUser() user: AuthUser, @Body() dto: MrpCalculateDto) {
-    return this.service.calculate(user.tenantId, user.id, dto);
+    return this.service.calculate(user.tenantId, user.id, dto, user.permissions);
   }
   @Get('runs/:id')
   @RequirePermissions(PERMISSIONS.MANUFACTURING.READ, PERMISSIONS.WMS.READ)
   run(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.service.getRun(user.tenantId, id);
+    return this.service.getRun(user.tenantId, id, user.permissions);
   }
 }

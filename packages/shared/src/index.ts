@@ -87,3 +87,4 @@ export * from './sites/landing';
 export * from './operations/control-center';
 export * from './manufacturing/mrp';
 export * from './manufacturing/definitions';
+export * from './manufacturing/demand-coverage';

@@ -1,5 +1,12 @@
 # État du projet — point de reprise
 
+> **MRP M2.2a (2026-09-15), implémenté localement.** Commandes CRM confirmées
+> reliées explicitement aux articles/sites/dates MRP, prévisions par période et
+> consommation sans double comptage. Exécution/annulation CRM prises en compte,
+> provenance figée par calcul, droits croisés et concurrence de confirmation
+> durcie. UI Pulsar conservée. Pas de conversion d'unités ni d'exécution achats/OF
+> automatique. Suite : M2.2b puis M3. [Contrats et reprise](./plans/manufacturing-demand-sources.md).
+
 > **MRP M2.1 (2026-09-15), implémenté localement.** Nomenclatures Decimal,
 > versions publiées figées, règles MRP attachées à une version, site et instantané
 > matières à la libération des OF. Unités/SKU WMS utilisés protégés. Panneaux et

@@ -6,7 +6,8 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 
 - [x] M1 : poste Pulsar, politiques par entrepôt, demandes/arrivages, explosion multi-niveaux Decimal, snapshots immuables, garde unités et réception WMS non doublée ([contrats et trajectoire](docs/plans/manufacturing-mrp.md)).
 - [x] M2.1 : BOM Decimal et versions publiées, sélection explicite MRP, unité/SKU après usage figés, site/version et instantané matières des OF ([contrats](docs/plans/manufacturing-definitions.md)).
-- [ ] M2.2 : conversions d'unités contrôlées, validité des versions, sites/postes et mapping demande CRM/prévisions sans double comptage.
+- [x] M2.2a : commandes CRM → demandes MRP explicites, prévisions par période consommées sans double comptage, historique et droits croisés ([contrats](docs/plans/manufacturing-demand-sources.md)).
+- [ ] M2.2b : conversions d'unités contrôlées, mappings produits/articles réutilisables, validité des versions et sites/postes/calendriers.
 - [ ] M3 : achats matières et conversion transactionnelle/idempotente des propositions vers demandes d'achat et OF ; réception partielle.
 - [ ] M4 : boucle MRP–APS par site, arrivages datés, WIP, baseline/gel, impact des retards.
 - [ ] M5 : atelier, réservations, consommation/production réelle, rebut, lots et coûts réconciliés au journal WMS.

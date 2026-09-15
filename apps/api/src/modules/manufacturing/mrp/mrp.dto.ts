@@ -13,6 +13,11 @@ import {
   MinLength,
 } from 'class-validator';
 import { MrpEntryKind, MrpSourcingMethod } from '@pulsar/shared';
+import { ListQueryDto } from '../../../common/dto/list-query.dto';
+
+export class MrpSourcesQuery extends ListQueryDto {
+  @IsOptional() @IsString() @MaxLength(128) salesOrderId?: string;
+}
 
 export class MrpSiteDto {
   @IsString() @MinLength(1) @MaxLength(128) locationId!: string;
@@ -30,6 +35,11 @@ export class MrpPolicyDto extends MrpSiteDto {
   @IsOptional() @IsDateString() expectedUpdatedAt?: string;
 }
 export class MrpEntryDto extends MrpSiteDto {
+  @IsOptional()
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  forecastStart?: string;
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(128) forecastId?: string;
   @IsString() @MinLength(1) @MaxLength(128) itemId!: string;
   @IsEnum(MrpEntryKind) kind!: MrpEntryKind;
   @Matches(/^\d{1,10}(\.\d{1,3})?$/) quantity!: string;
@@ -38,6 +48,17 @@ export class MrpEntryDto extends MrpSiteDto {
   @IsOptional() @IsString() @MinLength(1) @MaxLength(128) receiptId?: string;
   @IsBoolean() isActive!: boolean;
   @IsOptional() @IsDateString() expectedUpdatedAt?: string;
+}
+export class MrpSalesDemandDto extends MrpSiteDto {
+  @IsString() @MinLength(1) @MaxLength(128) itemId!: string;
+  @IsString() @MinLength(1) @MaxLength(128) sourceSalesOrderLineId!: string;
+  @IsDateString({ strict: true }) @Matches(/^\d{4}-\d{2}-\d{2}$/) dueDate!: string;
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(128) forecastId?: string;
+  @IsDateString() expectedSourceUpdatedAt!: string;
+  @IsDateString() expectedOrderUpdatedAt!: string;
+  @IsOptional() @IsDateString() expectedUpdatedAt?: string;
+  @Equals(true) acknowledgeUnits!: boolean;
+  @IsBoolean() isActive!: boolean;
 }
 export class MrpCalculateDto extends MrpSiteDto {
   @IsDateString({ strict: true }) @Matches(/^\d{4}-\d{2}-\d{2}$/) horizonEnd!: string;
