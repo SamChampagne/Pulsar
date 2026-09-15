@@ -110,6 +110,7 @@ export class OrdersController {
   }
 
   @Patch(':id/operations/:opId')
+  @Audit('manufacturing-operation', AuditAction.UPDATE)
   @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE)
   updateOperation(
     @CurrentUser() user: AuthUser,
@@ -121,6 +122,7 @@ export class OrdersController {
   }
 
   @Delete(':id/operations/:opId')
+  @Audit('manufacturing-operation', AuditAction.DELETE)
   @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE)
   removeOperation(
     @CurrentUser() user: AuthUser,

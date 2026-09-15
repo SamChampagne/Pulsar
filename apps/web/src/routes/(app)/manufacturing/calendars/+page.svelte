@@ -25,6 +25,9 @@
   }
 
   interface Calendar {
+    locationId?: string | null;
+    location?: { name: string; code: string } | null;
+    updatedAt: string;
     id: string;
     code: string;
     name: string;
@@ -46,6 +49,10 @@
   let formCode = $state('');
   let formName = $state('');
   let formActive = $state(true);
+  let sites = $state<{ id: string; name: string; code: string }[]>([]);
+  let formSite = $state(''),
+    fixedSite = $state(false),
+    expectedUpdatedAt = $state('');
   let saving = $state(false);
 
   // Shift editor (edit mode only)
@@ -64,6 +71,7 @@
       });
       calendars = res.items;
       total = res.total;
+      sites = await api('/manufacturing/calendars/sites');
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Échec du chargement des calendriers';
       toast.error(error);
@@ -77,6 +85,9 @@
   });
 
   function openCreate() {
+    formSite = '';
+    fixedSite = false;
+    expectedUpdatedAt = '';
     editId = null;
     formCode = '';
     formName = '';
@@ -86,6 +97,9 @@
   }
 
   async function openEdit(cal: Calendar) {
+    formSite = cal.locationId ?? '';
+    fixedSite = Boolean(cal.locationId);
+    expectedUpdatedAt = cal.updatedAt;
     editId = cal.id;
     formCode = cal.code;
     formName = cal.name;
@@ -103,6 +117,7 @@
     try {
       const cal = await api<Calendar>(`/manufacturing/calendars/${editId}`);
       shifts = cal.shifts ?? [];
+      expectedUpdatedAt = cal.updatedAt;
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Échec du chargement des quarts');
     }
@@ -119,6 +134,8 @@
         code: formCode.trim(),
         name: formName.trim(),
         isActive: formActive,
+        locationId: formSite || undefined,
+        ...(editId ? { expectedUpdatedAt } : {}),
       };
       if (editId) {
         await api(`/manufacturing/calendars/${editId}`, { method: 'PATCH', body });
@@ -207,13 +224,14 @@
 {:else}
   <Table>
     {#snippet head()}
-      <th>Code</th><th>Nom</th><th class="text-right">Nb quarts</th><th>Statut</th>
+      <th>Code</th><th>Nom</th><th>Site</th><th class="text-right">Nb quarts</th><th>Statut</th>
     {/snippet}
     {#snippet body()}
       {#each calendars as cal (cal.id)}
         <tr class="cursor-pointer" onclick={() => openEdit(cal)}>
           <td class="font-mono font-semibold text-ink">{cal.code}</td>
           <td>{cal.name}</td>
+          <td>{cal.location?.name ?? 'Non attribué'}</td>
           <td class="text-right text-ink-muted">{(cal.shifts ?? []).length}</td>
           <td
             ><Badge tone={cal.isActive ? 'ok' : 'neutral'}
@@ -238,6 +256,17 @@
       </Field>
       <Field label="Nom">
         <Input bind:value={formName} placeholder="Désignation" />
+      </Field>
+      <Field label="Site de fabrication">
+        <Select bind:value={formSite} disabled={fixedSite || saving}>
+          <option value="">Non attribué · historique</option>
+          {#each sites as site (site.id)}<option value={site.id}>{site.code} · {site.name}</option
+            >{/each}
+        </Select>
+        <p class="mt-1 text-xs text-ink-muted">
+          Les postes héritent de ce site. Une fois choisi, il est fixe; les OF d’autres sites ne
+          pourront pas utiliser ces postes.
+        </p>
       </Field>
       <Field label="Actif">
         <label class="flex items-center gap-2 text-sm text-ink">

@@ -406,6 +406,18 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     `resolve_task`. Revue automatique opt-in, jamais réémise par un recalcul agent.
     Aucun stock/achat/OF créé. Voir `docs/plans/manufacturing-mrp-units-ai.md`.
 
+50. (MRP — préparation M3a) Un calcul reste une lecture sans effet opérationnel.
+    La préparation humaine utilise `MrpPreparationService` : prévisualisation,
+    hash recontrôlé sous verrou tenant, opération idempotente liée à l'acteur,
+    numéro/document/provenance atomiques. Une proposition ne produit qu'un seul
+    document. Préparation non annulée d'un autre calcul ⇒ blocage conservateur
+    article/site, jamais double achat/OF. BUY reste une demande INTERNE, jamais
+    stock/SUPPLY/commande fournisseur. MAKE réutilise OrdersService et son workflow;
+    pas d'arrondi fractionnaire ni de suppression du lien. Les dates BOM publiées
+    sont figées; aucune sélection automatique. Les postes héritent du site du
+    calendrier et APS filtre les candidats par site. Aucun nouvel outil mutating
+    exposé au worker. Voir `docs/plans/manufacturing-mrp-preparation.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

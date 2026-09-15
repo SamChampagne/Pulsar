@@ -5,9 +5,11 @@ import {
   ManufacturingPriority,
 } from '@pulsar/shared';
 import { APS_CONTRACT_VERSION, type ApsSnapshot } from '../../../core/aps/aps.types';
+import { BadRequestException } from '@nestjs/common';
 
 /** Plain row shapes the builder consumes (tenant pre-filtered by the caller). */
 export interface SnapshotCalendarRow {
+  locationId?: string | null;
   id: string;
   name: string;
   shifts: { weekday: number; startTime: string; endTime: string }[];
@@ -30,6 +32,7 @@ export interface SnapshotOperationRow {
   dependsOn: string[];
 }
 export interface SnapshotOrderRow {
+  locationId?: string | null;
   id: string;
   name: string;
   productRef: string;
@@ -76,6 +79,8 @@ export function buildManufacturingSnapshot(input: {
   materials?: SnapshotMaterials;
 }): SnapshotBuildResult {
   const warnings: string[] = [];
+  const siteAware =
+    input.calendars.some((c) => c.locationId) || input.orders.some((o) => o.locationId);
   const onHand = new Map((input.materials?.inventory ?? []).map((i) => [i.materialRef, i.onHand]));
 
   const calendars = input.calendars.map((c) => ({
@@ -111,6 +116,24 @@ export function buildManufacturingSnapshot(input: {
       }
     }
     const operations = usable.map((op, idx) => {
+      // Never interpret an empty candidate list as "all sites". Legacy unsited
+      // orders keep working with unsited calendars only, without inventing a site.
+      const eligible = !siteAware
+        ? op.eligibleWorkCenterIds
+        : input.workCenters
+            .filter((w) => {
+              const calendar = input.calendars.find((c) => c.id === w.calendarId);
+              return (
+                calendar &&
+                (calendar.locationId ?? null) === (order.locationId ?? null) &&
+                (!op.eligibleWorkCenterIds.length || op.eligibleWorkCenterIds.includes(w.id))
+              );
+            })
+            .map((w) => w.id);
+      if (siteAware && !eligible.length)
+        throw new BadRequestException(
+          `OF ${order.name} · ${op.name} : aucun poste compatible avec son site. Configurez les calendriers et les postes.`,
+        );
       const dependencies =
         op.dependsOn.length > 0 ? op.dependsOn : idx > 0 ? [usable[idx - 1].id] : [];
       return {
@@ -120,7 +143,7 @@ export function buildManufacturingSnapshot(input: {
         name: op.name,
         status: op.status?.toLowerCase() ?? 'pending',
         duration_minutes: op.durationMinutes,
-        eligible_machine_ids: op.eligibleWorkCenterIds,
+        eligible_machine_ids: eligible,
         setup_minutes: op.setupMinutes,
         dependencies,
         ...(idx === 0 && reqs.length > 0

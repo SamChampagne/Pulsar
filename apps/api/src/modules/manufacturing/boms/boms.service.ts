@@ -24,6 +24,8 @@ export const revisionSummary = {
   outputSku: true,
   outputName: true,
   outputUnit: true,
+  validFrom: true,
+  validUntil: true,
   createdAt: true,
   contentHash: true,
 } as const;
@@ -245,7 +247,15 @@ export class BomsService {
     });
   }
 
-  async publish(tenantId: string, userId: string, id: string, expected?: string) {
+  async publish(
+    tenantId: string,
+    userId: string,
+    id: string,
+    expected?: string,
+    validity: { validFrom?: string; validUntil?: string } = {},
+  ) {
+    if (validity.validFrom && validity.validUntil && validity.validFrom > validity.validUntil)
+      throw new BadRequestException('La fin de validité doit suivre le début.');
     const enabled = await this.modules.getEnabledKeys(tenantId);
     if (!enabled.has(MODULE_KEYS.WMS) || !enabled.has(MODULE_KEYS.MANUFACTURING))
       throw new ForbiddenException('Fabrication et WMS requis pour publier.');
@@ -285,6 +295,8 @@ export class BomsService {
         };
       });
       const header = {
+        validFrom: validity.validFrom ? new Date(validity.validFrom) : null,
+        validUntil: validity.validUntil ? new Date(validity.validUntil) : null,
         code: bom.code,
         name: bom.name,
         outputItemId: output.id,

@@ -41,7 +41,8 @@ export type OwnedEntity =
   | 'agent'
   | 'operationalTask'
   | 'salesOrderLineItem'
-  | 'manufacturingOrder';
+  | 'manufacturingOrder'
+  | 'manufacturingOperation';
 
 /**
  * Write-path referential guard: every foreign key accepted from a request body

@@ -1005,6 +1005,245 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
     expect(await db.mrpReview.count({ where: { tenantId } })).toBe(1);
     expect(await db.stockMovement.count({ where: { tenantId } })).toBe(3);
   });
+  // HTTP preparation tests use controlled proposal outputs, but real snapshot
+  // capture/freshness, transactions, authorization and document writers.
+  async function preparationRun(method: 'BUY' | 'MAKE', quantity = '5') {
+    const original = engine.calculateMrp.getMockImplementation()!;
+    engine.calculateMrp.mockImplementationOnce(async (tenant, snapshot) => {
+      const result = await original(tenant, snapshot);
+      const target = snapshot.items.find((i) => i.method === method)!;
+      expect(target).toBeDefined();
+      return {
+        ...result,
+        proposals: [
+          {
+            id: `prep-${randomUUID()}`,
+            item_id: target.id,
+            method,
+            quantity,
+            net_requirement: quantity,
+            receipt_date: future,
+            release_date: today,
+            expedite: false,
+            level: 0,
+            safety_stock: '0',
+            reasons: [],
+          },
+        ],
+      } as any;
+    });
+    const run = (await calculate().expect(201)).body;
+    const proposalId = run.result.proposals[0].id;
+    const preview = (
+      await call('get', `runs/${run.id}/preparation?proposalId=${proposalId}`).expect(200)
+    ).body;
+    return {
+      run,
+      preview,
+      body: { proposalId, reviewToken: preview.reviewToken, operationKey: randomUUID() },
+    };
+  }
+
+  it('prepares one internal request atomically, refuses duplicates and supports exact replay', async () => {
+    const { run, preview, body } = await preparationRun('BUY', '5.25');
+    expect(preview.canPrepare).toBe(true);
+    const movements = await db.stockMovement.count({ where: { tenantId } });
+    const path = `runs/${run.id}/prepare`;
+    await call('post', path, body, reader).expect(403);
+    await call('post', path, body, noWms).expect(403);
+    await call('post', path, body, other).expect(404);
+    await call('post', path, { ...body, reviewToken: '0'.repeat(64) }).expect(409);
+    const [a, b] = await Promise.all([
+      call('post', path, body).expect(201),
+      call('post', path, body).expect(201),
+    ]);
+    expect(a.body.id).toBe(b.body.id);
+    expect(a.body.number).toMatch(/^MR-/);
+    expect(a.body).toMatchObject({
+      quantity: '5.25',
+      method: 'BUY',
+      status: 'DRAFT',
+      manufacturingOrderId: null,
+    });
+    expect(await db.mrpPreparation.count({ where: { tenantId, runId: run.id } })).toBe(1);
+    expect(await db.stockMovement.count({ where: { tenantId } })).toBe(movements);
+    await call('post', path, { ...body, operationKey: randomUUID() }).expect(409);
+    await call('post', path, { ...body, reviewToken: '1'.repeat(64) }).expect(409);
+    const next = await preparationRun('BUY');
+    expect(next.preview.canPrepare).toBe(false);
+    expect(next.preview.blockers.join(' ')).toMatch(/autre calcul/);
+    await call('post', `runs/${next.run.id}/prepare`, next.body).expect(409);
+    await call('post', `preparations/${a.body.id}/cancel`, {
+      expectedUpdatedAt: '2000-01-01T00:00:00Z',
+    }).expect(409);
+    await call('post', `preparations/${a.body.id}/cancel`, {
+      expectedUpdatedAt: a.body.updatedAt,
+    }).expect(201);
+    const replay = await call('post', path, body).expect(201);
+    expect(replay.body.status).toBe('CANCELLED');
+    expect(
+      (
+        await call(
+          'get',
+          `runs/${next.run.id}/preparation?proposalId=${next.body.proposalId}`,
+        ).expect(200)
+      ).body.canPrepare,
+    ).toBe(true);
+  });
+
+  it('rejects changed inputs between preview and confirmation without creating documents', async () => {
+    const { run, body } = await preparationRun('BUY');
+    const current = await db.mrpItemPolicy.findFirstOrThrow({
+      where: { tenantId, locationId: siteId, itemId: componentId },
+    });
+    await call('put', 'policies', {
+      ...policy(componentId),
+      leadDays: current.leadDays + 1,
+      expectedUpdatedAt: current.updatedAt.toISOString(),
+    }).expect(200);
+    await call('post', `runs/${run.id}/prepare`, body).expect(409);
+    expect(await db.mrpPreparation.count({ where: { tenantId, runId: run.id } })).toBe(0);
+  });
+
+  it('creates a linked DRAFT OF with exact context and leaves release to its guarded workflow', async () => {
+    const fractional = await preparationRun('MAKE', '1.5');
+    expect(fractional.preview.canPrepare).toBe(false);
+    expect(fractional.preview.blockers.join(' ')).toMatch(/entière/);
+    await call('post', `runs/${fractional.run.id}/prepare`, fractional.body).expect(409);
+    const { run, preview, body } = await preparationRun('MAKE');
+    expect(preview.canPrepare).toBe(true);
+    const doc = (await call('post', `runs/${run.id}/prepare`, body).expect(201)).body;
+    const order = await db.manufacturingOrder.findFirstOrThrow({
+      where: { tenantId, id: doc.manufacturingOrderId },
+    });
+    expect(order).toMatchObject({
+      status: 'DRAFT',
+      quantity: 5,
+      locationId: siteId,
+      bomRevisionId: revisionId,
+      materialSnapshot: null,
+    });
+    const path = `/api/v1/manufacturing/orders/${order.id}`;
+    await request(http).post(`${path}/release`).set('Authorization', `Bearer ${token}`).expect(400);
+    await request(http)
+      .patch(path)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ quantity: 6 })
+      .expect(409);
+    await request(http).delete(path).set('Authorization', `Bearer ${token}`).expect(409);
+    const op = (
+      await request(http)
+        .post(`${path}/operations`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ sequence: 1, name: 'Préparation', durationMinutes: 10 })
+        .expect(201)
+    ).body;
+    const withOp = await db.manufacturingOrder.findFirstOrThrow({
+      where: { id: order.id, tenantId },
+    });
+    expect(withOp.updatedAt.getTime()).toBeGreaterThan(order.updatedAt.getTime());
+    await request(http).post(`${path}/release`).set('Authorization', `Bearer ${token}`).expect(201);
+    expect(
+      (await db.manufacturingOrder.findFirstOrThrow({ where: { id: order.id } })).materialSnapshot,
+    ).not.toBeNull();
+    const brief = await mcp('get_mrp_run', { runId: run.id });
+    expect(brief.preparations[0].manufacturingOrder.id).toBe(order.id);
+    expect(brief.totalPreparations).toBe(1);
+    await request(http).post(`${path}/cancel`).set('Authorization', `Bearer ${token}`).expect(201);
+    await request(http)
+      .patch(`${path}/operations/${op.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Forbidden after cancellation' })
+      .expect(409);
+    await request(http)
+      .delete(`${path}/operations/${op.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(409);
+    expect(
+      (await call('get', `runs/${run.id}/preparations`).expect(200)).body.items[0]
+        .manufacturingOrder.status,
+    ).toBe('CANCELLED');
+    // Historical CRM context remains protected on new preparation endpoints.
+    await call('get', `runs/${run.id}/preparations`, undefined, reader).expect(403);
+  });
+
+  it('captures immutable validity and rejects an MRP horizon outside it', async () => {
+    const bom = await db.bom.findFirstOrThrow({ where: { id: bomId, tenantId } });
+    const publish = (dates: unknown) =>
+      request(http)
+        .post(`/api/v1/manufacturing/boms/${bomId}/revisions`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          expectedUpdatedAt: bom.updatedAt.toISOString(),
+          acknowledgeUnits: true,
+          ...(dates as object),
+        });
+    await publish({ validFrom: future, validUntil: today }).expect(400);
+    await publish({ validFrom: '2026-02-30' }).expect(400);
+    const rev = (await publish({ validFrom: future, validUntil: future }).expect(201)).body;
+    expect(rev.validFrom.slice(0, 10)).toBe(future);
+    const old = await db.bomRevision.findFirstOrThrow({ where: { id: revisionId, tenantId } });
+    expect(old.validFrom).toBeNull();
+    const current = await db.mrpItemPolicy.findFirstOrThrow({
+      where: { tenantId, locationId: siteId, itemId },
+    });
+    await call('put', 'policies', {
+      ...policy(),
+      method: 'MAKE',
+      bomId,
+      bomRevisionId: rev.id,
+      expectedUpdatedAt: current.updatedAt.toISOString(),
+    }).expect(200);
+    await calculate().expect(400);
+    const updated = await db.mrpItemPolicy.findFirstOrThrow({ where: { id: current.id } });
+    await call('put', 'policies', {
+      ...policy(),
+      method: 'MAKE',
+      bomId,
+      bomRevisionId: revisionId,
+      expectedUpdatedAt: updated.updatedAt.toISOString(),
+    }).expect(200);
+  });
+
+  it('binds legacy calendars explicitly and prevents moving a bound work center to another site', async () => {
+    const base = '/api/v1/manufacturing';
+    const post = (path: string, body: object) =>
+      request(http).post(`${base}/${path}`).set('Authorization', `Bearer ${token}`).send(body);
+    const patch = (path: string, body: object) =>
+      request(http).patch(`${base}/${path}`).set('Authorization', `Bearer ${token}`).send(body);
+    const calendar = (
+      await post('calendars', { code: 'SITE-CAL', name: 'Site calendar' }).expect(201)
+    ).body;
+    await patch(`calendars/${calendar.id}`, { locationId: siteId }).expect(409);
+    const assigned = (
+      await patch(`calendars/${calendar.id}`, {
+        locationId: siteId,
+        expectedUpdatedAt: calendar.updatedAt,
+      }).expect(200)
+    ).body;
+    await patch(`calendars/${calendar.id}`, {
+      locationId: otherSiteId,
+      expectedUpdatedAt: assigned.updatedAt,
+    }).expect(409);
+    const second = (
+      await post('calendars', {
+        code: 'SITE-B-CAL',
+        name: 'Site B',
+        locationId: otherSiteId,
+      }).expect(201)
+    ).body;
+    const wc = (
+      await post('work-centers', { code: 'SITE-WC', name: 'WC', calendarId: calendar.id }).expect(
+        201,
+      )
+    ).body;
+    await patch(`work-centers/${wc.id}`, { calendarId: second.id }).expect(409);
+    await patch(`calendars/${calendar.id}`, {
+      name: 'Stale edit',
+      expectedUpdatedAt: calendar.updatedAt,
+    }).expect(409);
+  });
+
   it('fails closed when WMS is disabled, including historical reads', async () => {
     const module = await db.moduleDefinition.findUniqueOrThrow({ where: { key: 'wms' } });
     await db.tenantModule.updateMany({

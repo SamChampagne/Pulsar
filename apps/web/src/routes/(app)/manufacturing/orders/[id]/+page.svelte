@@ -59,6 +59,7 @@
       lines: { id: string; sku: string; unit: string; quantityPerUnit: string }[];
     } | null;
     materialSnapshot?: ManufacturingMaterialSnapshot | null;
+    mrpPreparation?: { id: string; runId: string; proposalId: string } | null;
   }
 
   interface WorkCenter {
@@ -344,6 +345,20 @@
   </Card>
 
   <OrderMaterials {order} onchange={load} />
+  {#if order.mrpPreparation}<div class="my-4 rounded-md border border-edge bg-surface p-4 text-sm">
+      <p>
+        Cet OF provient d’une proposition MRP confirmée. Son produit, sa quantité, son site et sa
+        version restent liés à cette préparation.
+      </p>
+      <a
+        class="mt-2 inline-block text-accent hover:underline"
+        href={`/manufacturing/mrp?runId=${order.mrpPreparation.runId}`}
+        >Revenir au calcul et à ses besoins →</a
+      >
+      {#if order.status === 'DRAFT' && !order.operations.length}<p class="mt-2 text-ink-muted">
+          Prochaine étape : importer une gamme ou ajouter les opérations avant de libérer l’OF.
+        </p>{/if}
+    </div>{/if}
 
   <div class="mt-5 mb-3 flex items-center justify-between">
     <h2 class="text-lg font-semibold text-ink">Opérations</h2>

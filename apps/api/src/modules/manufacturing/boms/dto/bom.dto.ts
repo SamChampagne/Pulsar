@@ -38,6 +38,16 @@ export class BomVersionDto {
 }
 
 export class PublishBomDto extends BomVersionDto {
+  @IsOptional()
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  validFrom?: string;
+
+  @IsOptional()
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  validUntil?: string;
+
   @Equals(true)
   acknowledgeUnits!: boolean;
 }

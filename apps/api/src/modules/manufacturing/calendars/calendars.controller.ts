@@ -23,6 +23,12 @@ export class CalendarsController {
     return this.calendars.list(user.tenantId, query);
   }
 
+  @Get('sites')
+  @RequirePermissions(PERMISSIONS.MANUFACTURING.READ)
+  sites(@CurrentUser() user: AuthUser) {
+    return this.calendars.sites(user.tenantId);
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.MANUFACTURING.READ)
   get(@CurrentUser() user: AuthUser, @Param('id') id: string) {

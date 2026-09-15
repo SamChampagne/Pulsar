@@ -37,6 +37,32 @@ const baseOrder = (over: Partial<SnapshotOrderRow> = {}): SnapshotOrderRow => ({
 });
 
 describe('buildManufacturingSnapshot', () => {
+  it('restricts sited orders to their site even when candidates are implicit', () => {
+    const order = baseOrder({ locationId: 'A' });
+    order.operations.forEach((op) => {
+      op.eligibleWorkCenterIds = [];
+    });
+    const input = {
+      exportedAt,
+      orders: [order],
+      calendars: [
+        { id: 'ca', name: 'A', locationId: 'A', shifts: [] },
+        { id: 'cb', name: 'B', locationId: 'B', shifts: [] },
+      ],
+      workCenters: [
+        { id: 'a', name: 'A', calendarId: 'ca', capabilities: [], efficiency: 1 },
+        { id: 'b', name: 'B', calendarId: 'cb', capabilities: [], efficiency: 1 },
+      ],
+    };
+    expect(
+      buildManufacturingSnapshot(input).snapshot.work_orders![0].operations[0].eligible_machine_ids,
+    ).toEqual(['a']);
+    order.operations[0].eligibleWorkCenterIds = ['b'];
+    expect(() => buildManufacturingSnapshot(input)).toThrow(/aucun poste compatible/);
+    order.locationId = null;
+    order.operations[0].eligibleWorkCenterIds = [];
+    expect(() => buildManufacturingSnapshot(input)).toThrow(/aucun poste compatible/);
+  });
   it('maps calendars, machines and orders to the canonical contract', () => {
     const { snapshot } = buildManufacturingSnapshot({
       exportedAt,

@@ -27,6 +27,7 @@ enum TenantStatus {
 }
 
 model Tenant {
+  mrpPreparations MrpPreparation[]
   mrpProductMappings MrpProductMapping[]
   mrpReviews MrpReview[]
   bomRevisions BomRevision[]
@@ -536,6 +537,8 @@ enum LocationType {
 }
 
 model Location {
+  workingCalendars WorkingCalendar[]
+  mrpPreparations MrpPreparation[]
   manufacturingOrders ManufacturingOrder[]
   mrpPolicies MrpItemPolicy[]
   mrpEntries MrpEntry[]
@@ -2247,6 +2250,7 @@ enum PickOrderStatus {
 }
 
 model WmsItem {
+  mrpPreparations MrpPreparation[]
   mrpProductMappings MrpProductMapping[]
   outputBomRevisions BomRevision[]
   bomRevisionLines BomRevisionLine[]
@@ -3540,6 +3544,8 @@ enum ManufacturingFirmness {
 }
 
 model WorkingCalendar {
+  locationId String? @map("location_id")
+  location Location? @relation(fields: [locationId], references: [id], onDelete: Restrict)
   id        String   @id @default(cuid())
   tenantId  String
   code      String
@@ -3663,6 +3669,7 @@ model BomLine {
 }
 
 model ManufacturingOrder {
+  mrpPreparation MrpPreparation?
   locationId String?
   bomRevisionId String?
   materialSnapshot Json?
@@ -4255,6 +4262,7 @@ model MrpEntry {
 }
 
 model MrpRun {
+  preparations MrpPreparation[]
   reviews MrpReview[]
   sourceMetadata Json?
   id String @id @default(cuid())
@@ -4316,6 +4324,8 @@ model MrpReview {
 
 // Published industrial definitions. Append-only; working Bom/BomLine remain editable.
 model BomRevision {
+  validFrom DateTime? @db.Date @map("valid_from")
+  validUntil DateTime? @db.Date @map("valid_until")
   id String @id @default(cuid())
   tenantId String
   bomId String
@@ -4338,6 +4348,46 @@ model BomRevision {
   @@unique([tenantId, bomId, revision])
   @@index([tenantId, outputItemId])
   @@map("bom_revisions")
+}
+
+enum MrpPreparationStatus {
+  DRAFT
+  CANCELLED
+}
+
+// Internal request (BUY) or linked OF (MAKE), never stock or confirmed supply.
+model MrpPreparation {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  runId String @map("run_id")
+  proposalId String @map("proposal_id")
+  operationKey String @map("operation_key")
+  fingerprint String
+  sourceHash String @map("source_hash")
+  proposalSnapshot Json @map("proposal_snapshot")
+  number String
+  method MrpSourcingMethod
+  status MrpPreparationStatus @default(DRAFT)
+  locationId String @map("location_id")
+  itemId String @map("item_id")
+  quantity Decimal @db.Decimal(14, 3)
+  unitSnapshot String @map("unit_snapshot")
+  releaseDate DateTime @db.Date @map("release_date")
+  dueDate DateTime @db.Date @map("due_date")
+  manufacturingOrderId String? @unique @map("manufacturing_order_id")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  run MrpRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  item WmsItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  manufacturingOrder ManufacturingOrder? @relation(fields: [manufacturingOrderId], references: [id], onDelete: Restrict)
+  @@unique([tenantId, runId, proposalId])
+  @@unique([tenantId, operationKey])
+  @@unique([tenantId, number])
+  @@index([tenantId, locationId, itemId])
+  @@map("mrp_preparations")
 }
 
 model BomRevisionLine {

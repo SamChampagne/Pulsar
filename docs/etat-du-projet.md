@@ -1,5 +1,18 @@
 # État du projet — point de reprise
 
+> **MRP M2.2b2 partiel + M3a (2026-09-15), implémenté localement.** Sites explicites
+> des calendriers/postes, validité immuable des versions BOM, propositions → demandes
+> d’achat internes / OF DRAFT par prévisualisation-confirmation idempotente. Doublons
+> inter-calcul bloqués; préparations lisibles par le worker, sans nouvel outil de
+> mutation IA. UI Pulsar conservée. Ni commande fournisseur ni stock/arrivage créé.
+> Suite : achats matières M3b et rapprochement réceptions, puis boucle APS M4.
+> [Contrats, limites et reprise](./plans/manufacturing-mrp-preparation.md).
+>
+> Vérification locale M3a : 48 tests HTTP (MRP/APS/CRM, voie moteur réel),
+> 32 tests navigateur à API contrôlée, 661 tests shared et 285 tests unitaires API.
+> Build complet réussi. Typecheck : 0 erreur, 12 avertissements Svelte préexistants hors de ce lot.
+> Schémas Prisma dev/test sans dérive; API prête et web 5173 accessibles.
+
 > **MRP M2.2b1 + M7a (2026-09-15), implémenté localement.** Correspondances
 > produits CRM/articles WMS et ratios commerciaux exacts capturés par demande.
 > Premier worker analyste MRP via les tâches, MCP et approbations existants;

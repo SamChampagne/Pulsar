@@ -8,6 +8,7 @@ import {
 import { Prisma } from '@pulsar/database';
 import {
   AuditAction,
+  coversManufacturingPeriod,
   DOMAIN_EVENT_TYPES,
   MODULE_KEYS,
   MrpSourcingMethod,
@@ -386,149 +387,173 @@ export class MrpService {
     permissions: readonly string[],
   ) {
     return this.prisma.$transaction(
-      async (tx) => {
-        await this.site(tx, tenantId, locationId);
-        const policies = await tx.mrpItemPolicy.findMany({
-          where: { tenantId, locationId },
-          include: {
-            item: true,
-            bomRevision: { include: { lines: { where: { tenantId }, orderBy: { id: 'asc' } } } },
-          },
-          orderBy: { itemId: 'asc' },
-          take: 2001,
-        });
-        if (!policies.length || policies.length > 2000)
-          throw new BadRequestException('Configurer de 1 à 2 000 articles MRP pour cet entrepôt.');
-        const entries = await tx.mrpEntry.findMany({
-          where: {
-            tenantId,
-            locationId,
-            isActive: true,
-          },
-          include: {
-            receipt: { include: { lines: { where: { tenantId }, orderBy: { id: 'asc' } } } },
-          },
-          orderBy: { id: 'asc' },
-          take: 10001,
-        });
-        if (entries.length > 10000)
-          throw new BadRequestException('Maximum 10 000 entrées actives par calcul.');
-        const coverage = await this.demands.compose(tx, tenantId, entries, permissions);
-        const levels = await tx.inventoryLevel.groupBy({
-          by: ['itemId'],
-          where: {
-            tenantId,
-            itemId: { in: policies.map((p) => p.itemId) },
-            bin: { tenantId, locationId, isActive: true },
-          },
-          _sum: { qtyOnHand: true },
-        });
-        const balances = new Map(
-          levels.map((level) => [level.itemId, level._sum.qtyOnHand ?? new Prisma.Decimal(0)]),
-        );
-        const byId = new Map(policies.map((p) => [p.itemId, p]));
-        const snapshot: MrpSnapshot = {
-          version: 'pulsar.mrp.v1',
-          as_of: asOf,
-          horizon_end: horizonEnd,
-          demands: [],
-          supplies: [],
-          items: [],
-        };
-        for (const p of policies) {
-          if (p.item.tenantId !== tenantId || !p.item.isActive || p.unitSnapshot !== p.item.unit)
-            throw new BadRequestException(
-              `Article inactif ou unité modifiée : ${p.item.sku}. Revalider sa règle.`,
-            );
-          if (
-            p.method === 'MAKE' &&
-            (!p.bomRevision ||
-              p.bomRevision.tenantId !== tenantId ||
-              p.bomRevision.bomId !== p.bomId ||
-              p.bomRevision.outputItemId !== p.itemId ||
-              p.bomRevision.outputUnit !== p.item.unit ||
-              !p.bomRevision.lines.length)
-          )
-            throw new BadRequestException(
-              `Sélectionner une version publiée compatible pour ${p.item.sku}.`,
-            );
-          const onHand = balances.get(p.itemId) ?? new Prisma.Decimal(0);
-          const components = (p.method === 'MAKE' ? p.bomRevision!.lines : []).map((line) => {
-            const child = byId.get(line.itemId);
-            if (!child || child.item.unit !== line.unit)
-              throw new BadRequestException(
-                `Configurer le composant ${line.sku} de ${p.item.sku} avec son unité publiée dans cet entrepôt.`,
-              );
-            if (!line.quantityPerUnit.isFinite() || line.quantityPerUnit.lte(0))
-              throw new BadRequestException(`Quantité de nomenclature invalide : ${line.sku}.`);
-            return {
-              item_id: child.itemId,
-              quantity: new Prisma.Decimal(line.quantityPerUnit.toString()).toFixed(),
-            };
-          });
-          snapshot.items.push({
-            id: p.itemId,
-            sku: p.item.sku,
-            name: p.item.name,
-            unit: p.item.unit,
-            method: p.method as MrpSourcingMethod,
-            on_hand: onHand.toFixed(),
-            safety_stock: p.safetyStock.toFixed(),
-            minimum_order: p.minimumOrder.toFixed(),
-            order_multiple: p.orderMultiple.toFixed(),
-            lead_days: p.leadDays,
-            components,
-          });
-        }
-        for (const entry of entries) {
-          const p = byId.get(entry.itemId);
-          if (!p || p.item.unit !== entry.unitSnapshot)
-            throw new BadRequestException(
-              `Règle absente ou unité modifiée pour l'entrée « ${entry.reference} ».`,
-            );
-          if (entry.kind !== 'SUPPLY' || day(entry.dueDate) > horizonEnd) continue;
-          let quantity = entry.quantity;
-          if (entry.receipt) {
-            if (entry.receipt.tenantId !== tenantId || entry.receipt.locationId !== locationId)
-              throw new BadRequestException('Réception liée incompatible.');
-            if (entry.receipt.status === 'CANCELLED')
-              throw new BadRequestException(
-                `Réception annulée pour « ${entry.reference} ». Corriger l'arrivage.`,
-              );
-            if (entry.receipt.status === 'POSTED') {
-              const received = entry.receipt.lines
-                .filter((l) => l.itemId === entry.itemId)
-                .reduce((sum, l) => sum.plus(l.qty), new Prisma.Decimal(0));
-              quantity = Prisma.Decimal.max(0, quantity.minus(received));
-            }
-          }
-          if (quantity.isZero()) continue;
-          snapshot.supplies.push({
-            id: entry.id,
-            item_id: entry.itemId,
-            quantity: quantity.toFixed(),
-            date: day(entry.dueDate),
-            reference: entry.reference,
-          });
-        }
-        snapshot.demands = coverage.demands.filter((d) => d.date <= horizonEnd);
-        const sourceMetadata = {
-          forecastCoverage: coverage.forecasts,
-          salesDemands: coverage.sources,
-          bomRevisions: policies
-            .filter((p) => p.method === 'MAKE')
-            .map((p) => ({
-              itemId: p.itemId,
-              bomId: p.bomId,
-              revisionId: p.bomRevision!.id,
-              revision: p.bomRevision!.revision,
-              contentHash: p.bomRevision!.contentHash,
-            })),
-        };
-        return { snapshot, sourceMetadata, sourceHash: artifactHash({ snapshot, sourceMetadata }) };
-      },
+      (tx) => this.captureInTransaction(tx, tenantId, locationId, asOf, horizonEnd, permissions),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 15000 },
     );
+  }
+
+  /** Caller must use a repeatable read, or hold the shared tenant writer lock. */
+  async captureInTransaction(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    locationId: string,
+    asOf: string,
+    horizonEnd: string,
+    permissions: readonly string[],
+  ) {
+    await this.site(tx, tenantId, locationId);
+    const policies = await tx.mrpItemPolicy.findMany({
+      where: { tenantId, locationId },
+      include: {
+        item: true,
+        bomRevision: { include: { lines: { where: { tenantId }, orderBy: { id: 'asc' } } } },
+      },
+      orderBy: { itemId: 'asc' },
+      take: 2001,
+    });
+    if (!policies.length || policies.length > 2000)
+      throw new BadRequestException('Configurer de 1 à 2 000 articles MRP pour cet entrepôt.');
+    const entries = await tx.mrpEntry.findMany({
+      where: {
+        tenantId,
+        locationId,
+        isActive: true,
+      },
+      include: {
+        receipt: { include: { lines: { where: { tenantId }, orderBy: { id: 'asc' } } } },
+      },
+      orderBy: { id: 'asc' },
+      take: 10001,
+    });
+    if (entries.length > 10000)
+      throw new BadRequestException('Maximum 10 000 entrées actives par calcul.');
+    const coverage = await this.demands.compose(tx, tenantId, entries, permissions);
+    const levels = await tx.inventoryLevel.groupBy({
+      by: ['itemId'],
+      where: {
+        tenantId,
+        itemId: { in: policies.map((p) => p.itemId) },
+        bin: { tenantId, locationId, isActive: true },
+      },
+      _sum: { qtyOnHand: true },
+    });
+    const balances = new Map(
+      levels.map((level) => [level.itemId, level._sum.qtyOnHand ?? new Prisma.Decimal(0)]),
+    );
+    const byId = new Map(policies.map((p) => [p.itemId, p]));
+    const snapshot: MrpSnapshot = {
+      version: 'pulsar.mrp.v1',
+      as_of: asOf,
+      horizon_end: horizonEnd,
+      demands: [],
+      supplies: [],
+      items: [],
+    };
+    for (const p of policies) {
+      if (p.item.tenantId !== tenantId || !p.item.isActive || p.unitSnapshot !== p.item.unit)
+        throw new BadRequestException(
+          `Article inactif ou unité modifiée : ${p.item.sku}. Revalider sa règle.`,
+        );
+      if (
+        p.method === 'MAKE' &&
+        (!p.bomRevision ||
+          p.bomRevision.tenantId !== tenantId ||
+          p.bomRevision.bomId !== p.bomId ||
+          p.bomRevision.outputItemId !== p.itemId ||
+          p.bomRevision.outputUnit !== p.item.unit ||
+          !p.bomRevision.lines.length)
+      )
+        throw new BadRequestException(
+          `Sélectionner une version publiée compatible pour ${p.item.sku}.`,
+        );
+      const onHand = balances.get(p.itemId) ?? new Prisma.Decimal(0);
+      if (
+        p.method === 'MAKE' &&
+        !coversManufacturingPeriod(
+          {
+            validFrom: p.bomRevision!.validFrom?.toISOString(),
+            validUntil: p.bomRevision!.validUntil?.toISOString(),
+          },
+          asOf,
+          horizonEnd,
+        )
+      )
+        throw new BadRequestException(
+          `La version de ${p.item.sku} ne couvre pas tout l'horizon. Choisir une version ou réduire la période.`,
+        );
+      const components = (p.method === 'MAKE' ? p.bomRevision!.lines : []).map((line) => {
+        const child = byId.get(line.itemId);
+        if (!child || child.item.unit !== line.unit)
+          throw new BadRequestException(
+            `Configurer le composant ${line.sku} de ${p.item.sku} avec son unité publiée dans cet entrepôt.`,
+          );
+        if (!line.quantityPerUnit.isFinite() || line.quantityPerUnit.lte(0))
+          throw new BadRequestException(`Quantité de nomenclature invalide : ${line.sku}.`);
+        return {
+          item_id: child.itemId,
+          quantity: new Prisma.Decimal(line.quantityPerUnit.toString()).toFixed(),
+        };
+      });
+      snapshot.items.push({
+        id: p.itemId,
+        sku: p.item.sku,
+        name: p.item.name,
+        unit: p.item.unit,
+        method: p.method as MrpSourcingMethod,
+        on_hand: onHand.toFixed(),
+        safety_stock: p.safetyStock.toFixed(),
+        minimum_order: p.minimumOrder.toFixed(),
+        order_multiple: p.orderMultiple.toFixed(),
+        lead_days: p.leadDays,
+        components,
+      });
+    }
+    for (const entry of entries) {
+      const p = byId.get(entry.itemId);
+      if (!p || p.item.unit !== entry.unitSnapshot)
+        throw new BadRequestException(
+          `Règle absente ou unité modifiée pour l'entrée « ${entry.reference} ».`,
+        );
+      if (entry.kind !== 'SUPPLY' || day(entry.dueDate) > horizonEnd) continue;
+      let quantity = entry.quantity;
+      if (entry.receipt) {
+        if (entry.receipt.tenantId !== tenantId || entry.receipt.locationId !== locationId)
+          throw new BadRequestException('Réception liée incompatible.');
+        if (entry.receipt.status === 'CANCELLED')
+          throw new BadRequestException(
+            `Réception annulée pour « ${entry.reference} ». Corriger l'arrivage.`,
+          );
+        if (entry.receipt.status === 'POSTED') {
+          const received = entry.receipt.lines
+            .filter((l) => l.itemId === entry.itemId)
+            .reduce((sum, l) => sum.plus(l.qty), new Prisma.Decimal(0));
+          quantity = Prisma.Decimal.max(0, quantity.minus(received));
+        }
+      }
+      if (quantity.isZero()) continue;
+      snapshot.supplies.push({
+        id: entry.id,
+        item_id: entry.itemId,
+        quantity: quantity.toFixed(),
+        date: day(entry.dueDate),
+        reference: entry.reference,
+      });
+    }
+    snapshot.demands = coverage.demands.filter((d) => d.date <= horizonEnd);
+    const sourceMetadata = {
+      forecastCoverage: coverage.forecasts,
+      salesDemands: coverage.sources,
+      bomRevisions: policies
+        .filter((p) => p.method === 'MAKE')
+        .map((p) => ({
+          itemId: p.itemId,
+          bomId: p.bomId,
+          revisionId: p.bomRevision!.id,
+          revision: p.bomRevision!.revision,
+          contentHash: p.bomRevision!.contentHash,
+        })),
+    };
+    return { snapshot, sourceMetadata, sourceHash: artifactHash({ snapshot, sourceMetadata }) };
   }
 
   async calculate(

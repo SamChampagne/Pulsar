@@ -59,7 +59,7 @@ export class BomsController {
   @Post(':id/revisions')
   @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE, PERMISSIONS.WMS.READ)
   publish(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: PublishBomDto) {
-    return this.boms.publish(user.tenantId, user.id, id, dto.expectedUpdatedAt);
+    return this.boms.publish(user.tenantId, user.id, id, dto.expectedUpdatedAt, dto);
   }
 
   @Get(':id/revisions/:revisionId')

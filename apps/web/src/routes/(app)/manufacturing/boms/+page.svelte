@@ -37,6 +37,8 @@
   }
 
   type Revision = {
+    validFrom?: string | null;
+    validUntil?: string | null;
     id: string;
     revision: number;
     outputSku: string;
@@ -50,6 +52,8 @@
   let revisions = $state<Revision[]>([]);
   let viewed = $state<Revision | null>(null);
   let acknowledged = $state(false);
+  let validFrom = $state(''),
+    validUntil = $state('');
   let panelError = $state('');
   let fetching = $state(false);
   let items = $state<{ sku: string; name: string; unit: string }[]>([]);
@@ -121,6 +125,8 @@
   }
 
   async function openEdit(b: Bom) {
+    validFrom = '';
+    validUntil = '';
     panelError = '';
     viewed = null;
     acknowledged = false;
@@ -279,7 +285,12 @@
     try {
       viewed = await api<Revision>(`/manufacturing/boms/${editId}/revisions`, {
         method: 'POST',
-        body: { expectedUpdatedAt, acknowledgeUnits: true },
+        body: {
+          expectedUpdatedAt,
+          acknowledgeUnits: true,
+          validFrom: validFrom || undefined,
+          validUntil: validUntil || undefined,
+        },
       });
       await refetchOne(editId);
       await load();
@@ -431,6 +442,12 @@
       {#if viewed}<section class="space-y-2 rounded-md border border-accent/20 bg-accent/5 p-3">
           <h3 class="font-semibold">Version {viewed.revision} · lecture seule</h3>
           <p class="text-xs text-ink-muted">
+            Validité : {viewed.validFrom?.slice(0, 10) ?? 'sans début imposé'} → {viewed.validUntil?.slice(
+              0,
+              10,
+            ) ?? 'sans fin imposée'}
+          </p>
+          <p class="text-xs text-ink-muted">
             Quantités par 1 {viewed.outputUnit} de {viewed.outputSku}.
           </p>
           {#each viewed.lines ?? [] as line (line.id)}<div
@@ -530,6 +547,18 @@
       </fieldset>
       {#if editId && canPublish}<section class="space-y-3 border-t border-edge pt-4">
           <h3 class="text-sm font-semibold">Publier une version</h3>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <Field label="Valide à partir du"
+              ><Input type="date" bind:value={validFrom} disabled={busy} /></Field
+            >
+            <Field label="Valide jusqu’au (inclus)"
+              ><Input type="date" bind:value={validUntil} disabled={busy} /></Field
+            >
+          </div>
+          <p class="text-xs text-ink-muted">
+            Dates facultatives, figées avec la version. Le MRP exige une version couvrant tout
+            l’horizon; il ne la remplace jamais automatiquement.
+          </p>
           <p class="text-xs text-ink-muted">
             La publication capture le brouillon enregistré, les SKU et unités WMS. Enregistrez vos
             changements d’en-tête avant de publier. Aucune règle MRP ni aucun OF n’est modifié

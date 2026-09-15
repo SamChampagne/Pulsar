@@ -19,6 +19,8 @@ import { SchedulingService } from './scheduling/scheduling.service';
 import { MrpController } from './mrp/mrp.controller';
 import { MrpService } from './mrp/mrp.service';
 import { MrpDemandsService } from './mrp/mrp-demands.service';
+import { MrpPreparationService } from './mrp/mrp-preparation.service';
+import { MrpPreparationController } from './mrp/mrp-preparation.controller';
 
 /**
  * Manufacturing / APS master-data module (sub-project 2). Pulsar owns this
@@ -32,6 +34,7 @@ import { MrpDemandsService } from './mrp/mrp-demands.service';
 @Module({
   imports: [AuditLogsModule, ApsModule, ModuleRegistryModule, forwardRef(() => OperatingModule)],
   controllers: [
+    MrpPreparationController,
     MrpController,
     CalendarsController,
     WorkCentersController,
@@ -41,6 +44,7 @@ import { MrpDemandsService } from './mrp/mrp-demands.service';
     SchedulingController,
   ],
   providers: [
+    MrpPreparationService,
     MrpAssistanceService,
     MrpDemandsService,
     MrpService,

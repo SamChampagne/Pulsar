@@ -154,7 +154,11 @@ export class SchedulingService {
   private planningSlice(tx: Prisma.TransactionClient, tenantId: string) {
     return Promise.all([
       tx.workingCalendar.findMany({
-        where: { tenantId, isActive: true },
+        where: {
+          tenantId,
+          isActive: true,
+          OR: [{ locationId: null }, { location: { tenantId, isActive: true, type: 'WAREHOUSE' } }],
+        },
         orderBy: { id: 'asc' },
         include: { shifts: { where: { tenantId }, orderBy: { id: 'asc' } } },
       }),
@@ -206,6 +210,7 @@ export class SchedulingService {
       exportedAt: new Date(),
       materials,
       calendars: calendars.map((c) => ({
+        locationId: c.locationId,
         id: c.id,
         name: c.name,
         shifts: c.shifts.map((s) => ({
@@ -222,6 +227,7 @@ export class SchedulingService {
         efficiency: w.efficiency,
       })),
       orders: orders.map((o) => ({
+        locationId: o.locationId,
         id: o.id,
         name: o.name,
         productRef: o.productRef,
@@ -552,6 +558,7 @@ export class SchedulingService {
     }
     const changed = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`manufacturing-baseline:${tenantId}`}, 0))`;
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
       const current = await tx.schedulingRun.findFirst({ where: { tenantId, isBaseline: true } });
       if (current?.id === id) return false;
       if ((current?.id ?? null) !== run.basedOnRunId) {

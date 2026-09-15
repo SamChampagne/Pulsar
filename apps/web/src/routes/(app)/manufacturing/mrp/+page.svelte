@@ -4,6 +4,7 @@
   import MrpSalesDemandDrawer from '$lib/components/manufacturing/MrpSalesDemandDrawer.svelte';
   import MrpMappingsDrawer from '$lib/components/manufacturing/MrpMappingsDrawer.svelte';
   import MrpAssistancePanel from '$lib/components/manufacturing/MrpAssistancePanel.svelte';
+  import MrpPreparationDrawer from '$lib/components/manufacturing/MrpPreparationDrawer.svelte';
   import type { ForecastCoverage, PermissionKey } from '@pulsar/shared';
   import {
     MrpEntryKind,
@@ -119,6 +120,9 @@
   let filter = $state('ALL');
   let search = $state('');
   let detailOpen = $state(false);
+  let preparationOpen = $state(false),
+    preparationProposal = $state(''),
+    preparationRun = $state('');
   let selectedItem = $state('');
   let editOpen = $state(false);
   let editMode = $state<'policy' | 'entry'>('entry');
@@ -1024,6 +1028,13 @@
     {canManage}
   />{/if}
 
+<MrpPreparationDrawer
+  bind:open={preparationOpen}
+  runId={preparationRun}
+  proposalId={preparationProposal}
+  {canManage}
+/>
+
 <Drawer
   bind:open={detailOpen}
   title={detail ? `${detail.sku} · ${detail.name}` : 'Détail article'}
@@ -1061,6 +1072,17 @@
             selon la règle article
           </p>
           <div class="mt-3 border-t border-edge pt-3">
+            <div class="mb-3">
+              <Button
+                variant="secondary"
+                onclick={() => {
+                  preparationRun = selectedRun!.id;
+                  preparationProposal = proposal.id;
+                  detailOpen = false;
+                  preparationOpen = true;
+                }}>Préparer / voir le document</Button
+              >
+            </div>
             <h4 class="mb-2 text-xs font-medium text-ink-muted">Besoins à l’origine</h4>
             {#each proposal.reasons as reason, i (`${reason.source}:${i}`)}{@const parent =
                 parentOf(proposal, reason.source)}

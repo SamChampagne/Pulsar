@@ -523,6 +523,146 @@ test('CRM entry points require CRM access and manufacturing management', async (
   await expect(page.getByRole('button', { name: 'Relier une commande client' })).toHaveCount(0);
 });
 
+async function preparationFixture(
+  page: Page,
+  options: { readonly?: boolean; stale?: boolean; lose?: boolean; commitBeforeLoss?: boolean } = {},
+) {
+  const base = await setup(page, options.readonly);
+  let document: any = null;
+  const confirmations: any[] = [];
+  await page.route('**/manufacturing/mrp/runs/run/preparation?*', (route) =>
+    route.fulfill({
+      json: {
+        proposal: {
+          id: 'raw:2026-09-20',
+          item_id: 'raw',
+          method: 'BUY',
+          quantity: '0.5',
+          release_date: '2026-09-18',
+          receipt_date: '2026-09-20',
+        },
+        item: { sku: 'ACIER', name: 'Acier de structure', unit: 'KG' },
+        site: { name: 'Montréal' },
+        revision: null,
+        existing: document,
+        reviewToken: 'a'.repeat(64),
+        canPrepare: !options.stale && !document,
+        blockers: options.stale
+          ? ['Le calcul est périmé. Recalculez avant de préparer un document.']
+          : [],
+        notice: 'Demande interne uniquement. Aucun fournisseur contacté ni mouvement de stock.',
+      },
+    }),
+  );
+  await page.route('**/manufacturing/mrp/runs/run/prepare', async (route) => {
+    confirmations.push(route.request().postDataJSON());
+    if (!options.lose || confirmations.length > 1 || options.commitBeforeLoss)
+      document = {
+        id: 'prepared',
+        number: 'MR-000001',
+        method: 'BUY',
+        status: 'DRAFT',
+        manufacturingOrderId: null,
+        manufacturingOrder: null,
+        updatedAt: '2026-09-15T15:00:00Z',
+      };
+    if (options.lose && confirmations.length === 1) return route.abort('failed');
+    return route.fulfill({ json: document });
+  });
+  await page.route('**/manufacturing/mrp/preparations/prepared/cancel', (route) => {
+    document = { ...document, status: 'CANCELLED' };
+    return route.fulfill({ json: document });
+  });
+  async function open() {
+    await page.getByRole('button', { name: 'Expliquer ACIER' }).click();
+    await page.getByRole('button', { name: 'Préparer / voir le document' }).click();
+    await expect(page.getByRole('dialog', { name: 'Préparer un document MRP' })).toBeVisible();
+    await expect(
+      page.getByRole('dialog').getByText('Demande d’achat interne', { exact: true }),
+    ).toBeVisible();
+  }
+  await open();
+  return { ...base, confirmations, open };
+}
+
+test('preparation needs explicit confirmation, shows the durable request and guards cancellation', async ({
+  page,
+}) => {
+  const { confirmations, errors } = await preparationFixture(page);
+  const dialog = page.getByRole('dialog', { name: 'Préparer un document MRP' });
+  const create = dialog.getByRole('button', { name: 'Créer le brouillon confirmé' });
+  await expect(create).toBeDisabled();
+  await dialog.getByRole('checkbox', { name: /Je confirme la quantité/ }).check();
+  await create.click();
+  await expect(dialog.getByText('MR-000001', { exact: true })).toBeVisible();
+  expect(confirmations).toHaveLength(1);
+  expect(confirmations[0].operationKey).toMatch(/^[a-f0-9-]{36}$/);
+  expect(confirmations[0]).not.toHaveProperty('quantity');
+  await expect(dialog.getByRole('button', { name: 'Annuler la demande' })).toBeDisabled();
+  await dialog.getByLabel(/Je confirme l’annulation/).check();
+  await dialog.getByRole('button', { name: 'Annuler la demande' }).click();
+  await expect(dialog.getByRole('region', { name: 'Document préparé' })).toContainText('Annulé');
+  await page.screenshot({ path: 'test-results/mrp-preparation-desktop.png', fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test('preparation resumes the exact persisted confirmation after a network loss and reload', async ({
+  page,
+}) => {
+  const { confirmations, open, errors } = await preparationFixture(page, { lose: true });
+  await page.getByRole('checkbox', { name: /Je confirme la quantité/ }).check();
+  await page.getByRole('button', { name: 'Créer le brouillon confirmé' }).click();
+  await expect(page.getByRole('button', { name: 'Reprendre la même confirmation' })).toBeVisible();
+  await page.reload();
+  await open();
+  await page.getByRole('button', { name: 'Reprendre la même confirmation' }).click();
+  await expect(page.getByText('MR-000001', { exact: true })).toBeVisible();
+  expect(confirmations).toHaveLength(2);
+  expect(confirmations[1]).toEqual(confirmations[0]);
+  expect(errors).toEqual([]);
+});
+
+test('lost successful response is resolved by reading the existing document without another write', async ({
+  page,
+}) => {
+  const { confirmations, open } = await preparationFixture(page, {
+    lose: true,
+    commitBeforeLoss: true,
+  });
+  await page.getByRole('checkbox', { name: /Je confirme la quantité/ }).check();
+  await page.getByRole('button', { name: 'Créer le brouillon confirmé' }).click();
+  await expect(page.getByRole('button', { name: 'Reprendre la même confirmation' })).toBeVisible();
+  await page.reload();
+  await open();
+  await expect(page.getByText('MR-000001', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reprendre la même confirmation' })).toHaveCount(0);
+  expect(confirmations).toHaveLength(1);
+});
+
+test('stale preparation is blocked on mobile without horizontal overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { confirmations, errors } = await preparationFixture(page, { stale: true });
+  await expect(page.getByRole('button', { name: 'Créer le brouillon confirmé' })).toBeDisabled();
+  await expect(page.getByText(/Le calcul est périmé/)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(page.getByRole('dialog', { name: 'Préparer un document MRP' })).toHaveCSS(
+    'opacity',
+    '1',
+  );
+  await expect(page.getByRole('dialog')).toHaveCount(1);
+  await page.screenshot({ path: 'test-results/mrp-preparation-mobile.png', fullPage: true });
+  expect(confirmations).toHaveLength(0);
+  expect(errors).toEqual([]);
+});
+
+test('read-only users can inspect a preparation but cannot create or cancel', async ({ page }) => {
+  const { confirmations, errors } = await preparationFixture(page, { readonly: true });
+  await expect(page.getByRole('button', { name: 'Créer le brouillon confirmé' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Annuler la demande' })).toHaveCount(0);
+  expect(confirmations).toHaveLength(0);
+  expect(errors).toEqual([]);
+});
+
 test('explains net requirements and navigates to the parent demand', async ({ page }) => {
   const { errors } = await setup(page);
   await page.getByRole('button', { name: 'Expliquer ACIER' }).click();

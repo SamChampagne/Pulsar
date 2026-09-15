@@ -74,6 +74,26 @@ export class MrpAssistanceService {
     const input = run.inputSnapshot as unknown as MrpSnapshot;
     const demands = input.demands.filter((d) => ids.has(d.item_id));
     const supplies = input.supplies.filter((s) => ids.has(s.item_id));
+    const preparationWhere = { tenantId, runId, itemId: { in: [...ids] } };
+    const [preparations, totalPreparations] = await Promise.all([
+      this.prisma.mrpPreparation.findMany({
+        where: preparationWhere,
+        take: 100,
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          proposalId: true,
+          itemId: true,
+          method: true,
+          number: true,
+          quantity: true,
+          unitSnapshot: true,
+          status: true,
+          manufacturingOrder: { select: { id: true, status: true } },
+        },
+      }),
+      this.prisma.mrpPreparation.count({ where: preparationWhere }),
+    ]);
     const metadata = run.sourceMetadata as {
       salesDemands?: { itemId?: string }[];
       forecastCoverage?: { itemId: string }[];
@@ -88,13 +108,11 @@ export class MrpAssistanceService {
       staleReason: run.staleReason,
       items: visible.map((item) => ({
         ...item,
-        timeline: item.timeline
-          .slice(0, 31)
-          .map((point) => ({
-            ...point,
-            sources: point.sources.slice(0, 20),
-            totalSources: point.sources.length,
-          })),
+        timeline: item.timeline.slice(0, 31).map((point) => ({
+          ...point,
+          sources: point.sources.slice(0, 20),
+          totalSources: point.sources.length,
+        })),
         totalTimelinePoints: item.timeline.length,
       })),
       totalItems: items.length,
@@ -110,6 +128,10 @@ export class MrpAssistanceService {
       totalDemands: demands.length,
       supplies: supplies.slice(0, 100),
       totalSupplies: supplies.length,
+      preparations,
+      totalPreparations,
+      preparationGuidance:
+        'Les préparations sont des brouillons, pas du stock ni des arrivages confirmés. Ne pas les recompter dans le calcul. Une nouvelle exécution exige la prévisualisation et la confirmation humaines du poste MRP; aucun outil de création achat/OF n’est exposé à ce worker.',
       salesDemands: (metadata?.salesDemands ?? [])
         .filter((d) => d.itemId && ids.has(d.itemId))
         .slice(0, 100),
