@@ -20,6 +20,7 @@ export interface SnapshotWorkCenterRow {
   efficiency: number;
 }
 export interface SnapshotOperationRow {
+  status?: string;
   id: string;
   sequence: number;
   name: string;
@@ -55,9 +56,8 @@ function naiveIso(d: Date): string {
 /**
  * Pure mapping of Pulsar manufacturing rows → the APS canonical snapshot
  * (contract validated in SP1). Deterministic: same inputs + `exportedAt` →
- * same snapshot. Orders with no operations, and operations with no eligible
- * work center, are dropped with a recorded warning so demand is never silently
- * lost. When an operation has no explicit `dependsOn`, a finish-to-start chain
+ * same snapshot. Never removes demand: invalid references are rejected by the
+ * service before calling the engine. With no explicit `dependsOn`, a finish-to-start chain
  * is derived from `sequence` (op N depends on the previous op id).
  */
 export interface SnapshotMaterials {
@@ -100,19 +100,7 @@ export function buildManufacturingSnapshot(input: {
 
   for (const order of input.orders) {
     const sorted = order.operations.slice().sort((a, b) => a.sequence - b.sequence);
-    const usable = sorted.filter((op) => {
-      if (op.eligibleWorkCenterIds.length === 0) {
-        warnings.push(
-          `Operation "${op.name}" (order ${order.name}) has no eligible work center — skipped.`,
-        );
-        return false;
-      }
-      return true;
-    });
-    if (usable.length === 0) {
-      warnings.push(`Order "${order.name}" has no schedulable operations — skipped.`);
-      continue;
-    }
+    const usable = sorted;
     // Material requirements (SP5): the order's BOM-derived needs attach to op 1.
     const reqs = input.materials?.byOrder[order.id] ?? [];
     for (const r of reqs) {
@@ -130,12 +118,18 @@ export function buildManufacturingSnapshot(input: {
         work_order_id: order.id,
         sequence: op.sequence,
         name: op.name,
+        status: op.status?.toLowerCase() ?? 'pending',
         duration_minutes: op.durationMinutes,
         eligible_machine_ids: op.eligibleWorkCenterIds,
         setup_minutes: op.setupMinutes,
         dependencies,
         ...(idx === 0 && reqs.length > 0
-          ? { material_requirements: reqs.map((r) => ({ material_id: r.materialRef, fixed_quantity: r.fixedQuantity })) }
+          ? {
+              material_requirements: reqs.map((r) => ({
+                material_id: r.materialRef,
+                fixed_quantity: r.fixedQuantity,
+              })),
+            }
           : {}),
       };
     });
@@ -166,7 +160,7 @@ export function buildManufacturingSnapshot(input: {
     machines,
     work_orders: workOrders,
     ...(inventory_items.length > 0 ? { inventory_items } : {}),
-    metadata: { tenant_orders: input.orders.length },
+    metadata: { tenant_orders: input.orders.length, time_zone: 'UTC' },
   };
 
   return { snapshot, warnings, orderCount: workOrders.length, operationCount };

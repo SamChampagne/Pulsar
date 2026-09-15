@@ -13,7 +13,19 @@ import { SchedulingService } from './scheduling.service';
 class RunSchedulingDto {
   @IsOptional()
   @IsString()
-  @IsIn(['greedy', 'backward', 'hybrid', 'cpsat', 'infinite', 'sa', 'tabu', 'ga', 'lns', 'multi', 'auto'])
+  @IsIn([
+    'greedy',
+    'backward',
+    'hybrid',
+    'cpsat',
+    'infinite',
+    'sa',
+    'tabu',
+    'ga',
+    'lns',
+    'multi',
+    'auto',
+  ])
   strategy?: string;
 
   @IsOptional() @IsString() horizonStart?: string;
@@ -68,5 +80,11 @@ export class SchedulingController {
   @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE)
   publish(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.scheduling.publish(user.tenantId, user.id, id);
+  }
+
+  @Post('runs/:id/replay')
+  @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE)
+  replay(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.scheduling.replay(user.tenantId, user.id, id);
   }
 }

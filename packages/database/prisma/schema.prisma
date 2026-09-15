@@ -3691,24 +3691,34 @@ model ManufacturingOperation {
 // --- Manufacturing scheduling (sub-project 3) — persisted APS run results ---
 
 model SchedulingRun {
-  id              String    @id @default(cuid())
-  tenantId        String
-  apsScheduleId   String?
-  strategy        String
-  solverStatus    String
-  objectiveValue  Int       @default(0)
-  wallTimeMs      Int       @default(0)
-  horizonStart    DateTime?
-  horizonEnd      DateTime?
-  orderCount      Int       @default(0)
-  operationCount  Int       @default(0)
-  assignmentCount Int       @default(0)
-  isBaseline      Boolean   @default(false)
-  snapshotHash    String?
-  warnings        String[]  @default([])
-  diagnostics     Json?
-  createdById     String?
-  createdAt       DateTime  @default(now())
+  id               String    @id @default(cuid())
+  tenantId         String
+  apsScheduleId    String?
+  strategy         String
+  solverStatus     String
+  objectiveValue   Int       @default(0)
+  wallTimeMs       Int       @default(0)
+  horizonStart     DateTime?
+  horizonEnd       DateTime?
+  orderCount       Int       @default(0)
+  operationCount   Int       @default(0)
+  assignmentCount  Int       @default(0)
+  isBaseline       Boolean   @default(false)
+  snapshotHash     String?
+  // Immutable bridge artifacts; NULL for legacy runs (never fabricated/backfilled).
+  inputRequest     Json?
+  engineResult     Json?
+  bridgeVersion    String?
+  engineRevision   String?
+  timeZone         String?
+  basedOnRunId     String?
+  replayedFromId   String?
+  publishedAt      DateTime?
+  publicationCheck Json?
+  warnings         String[]  @default([])
+  diagnostics      Json?
+  createdById      String?
+  createdAt        DateTime  @default(now())
 
   tenant      Tenant                            @relation(fields: [tenantId], references: [id])
   assignments ScheduledManufacturingOperation[]

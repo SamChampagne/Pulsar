@@ -342,6 +342,18 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     d’atelier ou une disponibilité TMS. Le contexte transport du poste Flotte exige
     Transportation activé ET `transportation.planning.read`.
 
+## Hard rules (continued, Fabrication — passerelle APS)
+
+44. (Fabrication — passerelle APS A1) Les nouveaux calculs métier passent par
+    `/internal/pulsar/run` : clé de service + tenant serveur, repositories mémoire
+    par requête, use cases PlaniAdvance existants. `inputRequest`/`engineResult`
+    sont immuables; le hash couvre la requête exacte. Le contrat A1 est UTC seulement.
+    Le replay produit une simulation historique non publiable. Publication via le
+    gate moteur, baseline attendue, révision des dossiers et verrou transactionnel
+    tenant; préserver l'index partiel unique de baseline. Ne jamais supprimer de
+    demande invalide ni inventer un snapshot pour un ancien run. Aucun effet WMS/TMS
+    à la publication. Voir `docs/plans/manufacturing-aps-foundation.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

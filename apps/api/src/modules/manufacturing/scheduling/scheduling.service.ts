@@ -1,4 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { Prisma } from '@pulsar/database';
 import {
   AuditAction,
   ManufacturingFirmness,
@@ -13,6 +20,18 @@ import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.
 import { ApsClient } from '../../../core/aps/aps.client';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { buildManufacturingSnapshot, type SnapshotMaterials } from './snapshot-builder';
+import {
+  APS_BRIDGE_VERSION,
+  APS_ENGINE_REVISION,
+  type ApsBridgeRequest,
+} from '../../../core/aps/aps.types';
+import {
+  artifactHash,
+  explicitHorizon,
+  parseApsUtc,
+  validateEngineResult,
+  validateSnapshot,
+} from './aps-artifact';
 
 export interface RunSchedulingInput {
   strategy?: string;
@@ -46,7 +65,7 @@ export class SchedulingService {
   /**
    * SP5: aggregate WMS on-hand (per WmsItem.sku) + derive per-order material
    * requirements from each order's BOM (quantityPerUnit × order.quantity).
-   * Returns null with a warning when WMS is not enabled. Best-effort.
+   * Explicit opt-in is fail-closed: never claim material-aware planning without WMS.
    */
   private async loadMaterials(
     tenantId: string,
@@ -54,11 +73,14 @@ export class SchedulingService {
   ): Promise<{ materials: SnapshotMaterials | undefined; warnings: string[] }> {
     const enabled = await this.modulesCache.getEnabledKeys(tenantId);
     if (!enabled.has(MODULE_KEYS.WMS)) {
-      return { materials: undefined, warnings: ['respectMaterials ignored — the WMS module is not enabled.'] };
+      throw new BadRequestException('Material-aware planning requires the WMS module');
     }
     const [items, levels] = await this.prisma.$transaction([
       this.prisma.wmsItem.findMany({ where: { tenantId }, select: { id: true, sku: true } }),
-      this.prisma.inventoryLevel.findMany({ where: { tenantId }, select: { itemId: true, qtyOnHand: true } }),
+      this.prisma.inventoryLevel.findMany({
+        where: { tenantId },
+        select: { itemId: true, qtyOnHand: true },
+      }),
     ]);
     const onHandByItem = new Map<string, number>();
     for (const l of levels) {
@@ -71,14 +93,18 @@ export class SchedulingService {
 
     const bomIds = [...new Set(orders.map((o) => o.bomId).filter((b): b is string => !!b))];
     const boms = bomIds.length
-      ? await this.prisma.bom.findMany({ where: { tenantId, id: { in: bomIds } }, include: { lines: true } })
+      ? await this.prisma.bom.findMany({
+          where: { tenantId, id: { in: bomIds } },
+          include: { lines: true },
+        })
       : [];
     const bomById = new Map(boms.map((b) => [b.id, b]));
     const byOrder: SnapshotMaterials['byOrder'] = {};
     for (const o of orders) {
       if (!o.bomId) continue;
       const bom = bomById.get(o.bomId);
-      if (!bom) continue;
+      if (!bom)
+        throw new BadRequestException('A manufacturing order references an unavailable BOM');
       byOrder[o.id] = bom.lines.map((l) => ({
         materialRef: l.materialRef,
         fixedQuantity: l.quantityPerUnit * o.quantity,
@@ -92,25 +118,41 @@ export class SchedulingService {
     return this.aps.listStrategies();
   }
 
-  async run(tenantId: string, userId: string, input: RunSchedulingInput) {
-    // Load the schedulable slice: active orders (RELEASED + IN_PROGRESS) with ops,
-    // all work centers, and the calendars they reference.
-    const [calendars, workCenters, orders] = await this.prisma.$transaction([
-      this.prisma.workingCalendar.findMany({
-        where: { tenantId },
-        include: { shifts: true },
+  private planningSlice(tx: Prisma.TransactionClient, tenantId: string) {
+    return Promise.all([
+      tx.workingCalendar.findMany({
+        where: { tenantId, isActive: true },
+        orderBy: { id: 'asc' },
+        include: { shifts: { where: { tenantId }, orderBy: { id: 'asc' } } },
       }),
-      this.prisma.workCenter.findMany({ where: { tenantId, isActive: true } }),
-      this.prisma.manufacturingOrder.findMany({
+      tx.workCenter.findMany({ where: { tenantId, isActive: true }, orderBy: { id: 'asc' } }),
+      tx.manufacturingOrder.findMany({
         where: {
           tenantId,
           status: {
             in: [ManufacturingOrderStatus.RELEASED, ManufacturingOrderStatus.IN_PROGRESS],
           },
         },
-        include: { operations: true },
+        orderBy: { id: 'asc' },
+        include: { operations: { where: { tenantId }, orderBy: { id: 'asc' } } },
       }),
     ]);
+  }
+
+  async run(tenantId: string, userId: string, input: RunSchedulingInput) {
+    // Load the schedulable slice: active orders (RELEASED + IN_PROGRESS) with ops,
+    // all work centers, and the calendars they reference.
+    const [calendars, workCenters, orders, baseline] = await this.prisma.$transaction(
+      async (tx) => {
+        const slice = await this.planningSlice(tx, tenantId);
+        const baseline = await tx.schedulingRun.findFirst({
+          where: { tenantId, isBaseline: true },
+          select: { id: true },
+        });
+        return [...slice, baseline] as const;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
 
     if (orders.length === 0) {
       throw new BadRequestException(
@@ -162,6 +204,7 @@ export class SchedulingService {
           id: op.id,
           sequence: op.sequence,
           name: op.name,
+          status: op.status,
           durationMinutes: op.durationMinutes,
           setupMinutes: op.setupMinutes,
           eligibleWorkCenterIds: op.eligibleWorkCenterIds,
@@ -169,23 +212,69 @@ export class SchedulingService {
         })),
       })),
     });
-    const { snapshot, orderCount, operationCount } = built;
+    const { snapshot } = built;
+    snapshot.metadata = {
+      ...snapshot.metadata,
+      source_revision: artifactHash([calendars, workCenters, orders]),
+    };
     const warnings = [...materialWarnings, ...built.warnings];
 
-    if (orderCount === 0) {
-      throw new BadRequestException(
-        `Nothing to schedule: ${warnings.join(' ') || 'all orders were skipped'}`,
-      );
-    }
-
-    // Call the engine (best-effort → 503 on failure, no DB writes yet).
-    const result = await this.aps.runFromSnapshot({
+    validateSnapshot(snapshot);
+    const request: ApsBridgeRequest = {
+      bridge_version: APS_BRIDGE_VERSION,
+      time_zone: 'UTC',
       snapshot,
       strategy: input.strategy ?? 'greedy',
-      horizon_start: input.horizonStart ?? null,
+      horizon_start: explicitHorizon(input.horizonStart, new Date()),
       horizon_days: input.horizonDays ?? 30,
       objective: input.objective ?? null,
+    };
+    return this.execute(tenantId, userId, request, warnings, baseline?.id ?? null);
+  }
+
+  /** Reuses captured inputs, never rebuilds historical demand from live rows. */
+  async replay(tenantId: string, userId: string, id: string) {
+    const source = await this.get(tenantId, id);
+    if (
+      !source.inputRequest ||
+      source.bridgeVersion !== APS_BRIDGE_VERSION ||
+      source.engineRevision !== APS_ENGINE_REVISION ||
+      artifactHash(source.inputRequest) !== source.snapshotHash
+    ) {
+      throw new ConflictException(
+        'This run cannot be replayed with the installed bridge; calculate a new scenario',
+      );
+    }
+    const baseline = await this.prisma.schedulingRun.findFirst({
+      where: { tenantId, isBaseline: true },
+      select: { id: true },
     });
+    return this.execute(
+      tenantId,
+      userId,
+      source.inputRequest as unknown as ApsBridgeRequest,
+      source.warnings,
+      baseline?.id ?? null,
+      id,
+    );
+  }
+
+  private async execute(
+    tenantId: string,
+    userId: string,
+    request: ApsBridgeRequest,
+    warnings: string[],
+    basedOnRunId: string | null,
+    replayedFromId?: string,
+  ) {
+    const result = validateEngineResult(
+      await this.aps.runForTenant(tenantId, request),
+      request,
+      tenantId,
+    );
+    const orderCount = request.snapshot.work_orders?.length ?? 0;
+    const operationCount =
+      request.snapshot.work_orders?.reduce((n, o) => n + o.operations.length, 0) ?? 0;
 
     // Persist the run + its assignments atomically.
     const run = await this.prisma.$transaction(async (tx) => {
@@ -197,12 +286,19 @@ export class SchedulingService {
           solverStatus: result.solver_status,
           objectiveValue: result.objective_value,
           wallTimeMs: result.wall_time_ms,
-          horizonStart: result.horizon_start ? new Date(result.horizon_start) : null,
-          horizonEnd: result.horizon_end ? new Date(result.horizon_end) : null,
+          horizonStart: parseApsUtc(result.horizon_start),
+          horizonEnd: parseApsUtc(result.horizon_end),
           orderCount,
           operationCount,
           assignmentCount: result.assignments.length,
-          snapshotHash: snapshot.metadata?.input_snapshot_hash as string | undefined,
+          snapshotHash: artifactHash(request),
+          inputRequest: request as unknown as Prisma.InputJsonValue,
+          engineResult: result as unknown as Prisma.InputJsonValue,
+          bridgeVersion: result.bridge_version,
+          engineRevision: result.engine_revision,
+          timeZone: result.time_zone,
+          basedOnRunId,
+          replayedFromId,
           warnings,
           diagnostics: (result.diagnostics ?? undefined) as object | undefined,
           createdById: userId,
@@ -216,9 +312,9 @@ export class SchedulingService {
             operationId: a.operation_id,
             orderId: a.work_order_id,
             workCenterId: a.machine_id,
-            setupStart: new Date(a.setup_start),
-            start: new Date(a.start),
-            end: new Date(a.end),
+            setupStart: parseApsUtc(a.setup_start),
+            start: parseApsUtc(a.start),
+            end: parseApsUtc(a.end),
           })),
         });
       }
@@ -236,6 +332,8 @@ export class SchedulingService {
         solverStatus: run.solverStatus,
         objectiveValue: run.objectiveValue,
         assignmentCount: run.assignmentCount,
+        snapshotHash: run.snapshotHash,
+        replayedFromId: run.replayedFromId,
       },
     });
 
@@ -246,7 +344,13 @@ export class SchedulingService {
     const { page, pageSize, skip, take } = paginationArgs(query);
     const where = { tenantId };
     const [items, total] = await this.prisma.$transaction([
-      this.prisma.schedulingRun.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+      this.prisma.schedulingRun.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        omit: { inputRequest: true, engineResult: true, publicationCheck: true },
+      }),
       this.prisma.schedulingRun.count({ where }),
     ]);
     return paginated(items, total, page, pageSize);
@@ -261,24 +365,115 @@ export class SchedulingService {
     return run;
   }
 
-  /** Promote a run to the tenant's single baseline (unset the others atomically). */
+  /** Engine gate first; tenant lock + expected baseline recheck before any write. */
   async publish(tenantId: string, userId: string, id: string) {
-    const run = await this.prisma.schedulingRun.findFirst({ where: { id, tenantId } });
-    if (!run) throw new NotFoundException('Scheduling run not found');
-    await this.prisma.$transaction([
-      this.prisma.schedulingRun.updateMany({
+    const run = await this.get(tenantId, id);
+    if (run.isBaseline) return run; // Safe retry after an uncertain successful response.
+    if (
+      !run.inputRequest ||
+      !run.engineResult ||
+      run.bridgeVersion !== APS_BRIDGE_VERSION ||
+      artifactHash(run.inputRequest) !== run.snapshotHash
+    ) {
+      throw new ConflictException(
+        'Legacy or incomplete scenario: calculate a new run before publishing',
+      );
+    }
+    if (run.publishedAt)
+      throw new ConflictException(
+        'This scenario has already been superseded; calculate a new candidate',
+      );
+    // Historical simulation never implicitly republishes obsolete orders/stock.
+    if (run.replayedFromId)
+      throw new ConflictException(
+        'Historical replay is read-only; calculate from current data to publish',
+      );
+    const baseline = await this.baseline(tenantId);
+    if ((baseline?.id ?? null) !== run.basedOnRunId) {
+      throw new ConflictException(
+        'The baseline changed since this calculation; calculate a new candidate',
+      );
+    }
+    const candidate = validateEngineResult(
+      run.engineResult,
+      run.inputRequest as unknown as ApsBridgeRequest,
+      tenantId,
+    );
+    // Old baselines have only assignments and diagnostics. Never invent an artifact
+    // for a legacy candidate or overwrite old timestamps with a guessed timezone.
+    const previous =
+      baseline?.engineResult ??
+      (baseline
+        ? {
+            schedule_id: baseline.apsScheduleId ?? baseline.id,
+            created_at: baseline.createdAt.toISOString(),
+            organization_id: tenantId,
+            strategy: baseline.strategy,
+            solver_status: baseline.solverStatus,
+            objective_value: baseline.objectiveValue,
+            wall_time_ms: baseline.wallTimeMs,
+            diagnostics: baseline.diagnostics ?? {},
+            metrics: {},
+            assignments: baseline.assignments.map((a) => ({
+              operation_id: a.operationId,
+              work_order_id: a.orderId,
+              machine_id: a.workCenterId,
+              setup_start: a.setupStart.toISOString().slice(0, 19),
+              start: a.start.toISOString().slice(0, 19),
+              end: a.end.toISOString().slice(0, 19),
+            })),
+          }
+        : null);
+    const assessment = await this.aps.checkPublication(tenantId, candidate, previous);
+    if (
+      assessment?.publish_status !== 'publishable' ||
+      typeof assessment.recommendation !== 'string'
+    ) {
+      throw new ServiceUnavailableException(
+        'Engine did not authorize publication; baseline unchanged',
+      );
+    }
+    const changed = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`manufacturing-baseline:${tenantId}`}, 0))`;
+      const current = await tx.schedulingRun.findFirst({ where: { tenantId, isBaseline: true } });
+      if (current?.id === id) return false;
+      if ((current?.id ?? null) !== run.basedOnRunId) {
+        throw new ConflictException(
+          'A different scenario was published during validation; baseline unchanged',
+        );
+      }
+      const liveSlice = await this.planningSlice(tx, tenantId);
+      const source = (run.inputRequest as unknown as ApsBridgeRequest).snapshot.metadata
+        ?.source_revision;
+      if (!source || artifactHash(liveSlice) !== source) {
+        throw new ConflictException(
+          'Manufacturing orders, work centers or calendars changed; calculate a new candidate',
+        );
+      }
+      await tx.schedulingRun.updateMany({
         where: { tenantId, isBaseline: true },
         data: { isBaseline: false },
-      }),
-      this.prisma.schedulingRun.update({ where: { id }, data: { isBaseline: true } }),
-    ]);
+      });
+      const claim = await tx.schedulingRun.updateMany({
+        where: { id, tenantId, publishedAt: null },
+        data: {
+          isBaseline: true,
+          publishedAt: new Date(),
+          publicationCheck: assessment as Prisma.InputJsonValue,
+        },
+      });
+      if (claim.count !== 1) throw new ConflictException('Scenario was already published');
+      return true;
+    });
+    if (!changed) return this.get(tenantId, id);
     await this.audit.log({
       tenantId,
       userId,
       action: AuditAction.UPDATE,
       entityType: 'scheduling-run',
       entityId: id,
-      after: { isBaseline: true },
+      before: { baselineId: run.basedOnRunId },
+      after: { isBaseline: true, publicationCheck: assessment },
     });
     return this.get(tenantId, id);
   }

@@ -18,7 +18,9 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [ ] Réception/préparation partielles, quantités attendues/réelles, scans, allocations/réservations et règles de conversion d'unités.
 - [x] Flotte visuelle : parc, échéancier UTC, historique paginé et panneaux d’intervention; concurrence multi-ordres et versions ([contrats et limites](docs/plans/fleet-visual-workspace.md)).
 - [ ] Flotte v2 : anciens registres/documents paginés, inspections/relevés, création idempotente; vraie réservation atelier et disponibilité prévisionnelle à concevoir.
-- [ ] Fabrication visuelle : postes, encours, blocages et flux; prochain lot de spécialisation métier.
+- [ ] Fabrication / PlaniAdvance : commencer par le contrat APS complet, les snapshots rejouables, les fuseaux, la publication gardée et la CI moteur; puis Gantt/scénarios et flux métier ([audit et lots](docs/plans/manufacturing-planiadvance-integration.md)).
+- [x] Fabrication A1 : passerelle privée isolée, workflow moteur complet, artefacts/rejeu historique, publication gardée et voie CI APS ([contrats et limites](docs/plans/manufacturing-aps-foundation.md)).
+- [ ] Fabrication A2 : fuseaux d'usine/DST, baseline/actions et revue explicite, parité WIP/gel avancée, matières par site et quotas avant Gantt interactif.
 - [ ] Agents : suggestions contextuelles gouvernées, motifs et résultats reliés aux dossiers.
 
 ## Relance UI — dossiers financiers connectés (2026-09-14)

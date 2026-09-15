@@ -12,6 +12,8 @@
 
 /** The only snapshot contract the engine accepts (canonical_mapper.CONTRACT_VERSION). */
 export const APS_CONTRACT_VERSION = 'aps.canonical.v1';
+export const APS_BRIDGE_VERSION = 'pulsar.aps.v1';
+export const APS_ENGINE_REVISION = 'planiadvance-d26a8cd.pulsar-a1';
 
 export interface ApsShift {
   /** 0 = Monday … 6 = Sunday. */
@@ -50,6 +52,7 @@ export interface ApsMaterialRequirement {
 }
 
 export interface ApsOperation {
+  status?: string;
   id: string;
   work_order_id: string;
   sequence: number;
@@ -143,6 +146,26 @@ export interface RunScheduleResponse {
   horizon_end?: string | null;
   metrics?: Record<string, unknown>;
   diagnostics?: Record<string, unknown>;
+  summary?: Record<string, unknown> | null;
+  analysis?: Record<string, unknown> | null;
+  feasibility?: Record<string, unknown> | null;
+}
+
+/** V1 is explicitly UTC. Site-specific wall-clock conversion is a later contract. */
+export interface ApsBridgeRequest extends RunFromSnapshotRequest {
+  bridge_version: typeof APS_BRIDGE_VERSION;
+  time_zone: 'UTC';
+  horizon_start: string;
+}
+
+export interface ApsBridgeResponse extends RunScheduleResponse {
+  bridge_version: typeof APS_BRIDGE_VERSION;
+  engine_revision: typeof APS_ENGINE_REVISION;
+  engine_version: string;
+  time_zone: 'UTC';
+  organization_id: string;
+  horizon_start: string;
+  horizon_end: string;
 }
 
 export interface ApsStrategyCapability {

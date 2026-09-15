@@ -6,6 +6,16 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Reprise Fabrication / PlaniAdvance (2026-09-15).** #79 est fusionnée; la CI de
+> `main` est verte, tests navigateur inclus. L'audit du projet original confirme
+> que le moteur Python est déjà copié, mais que Pulsar n'expose qu'une partie du
+> workflow industriel. Avant la refonte visuelle : contrat moteur, replay, fuseaux,
+> publication gardée et vraie voie CI APS. **Lot A1 implémenté localement** : entrée
+> moteur isolée par requête, artefacts/rejeu historique et publication gardée; UI
+> inchangée. Le lot A complet n'est pas terminé (fuseaux d'usine, revue et parité
+> avancée restent ouverts). [Contrats et limites A1](./plans/manufacturing-aps-foundation.md).
+> [Audit comparatif et lots d'intégration](./plans/manufacturing-planiadvance-integration.md).
+>
 > **Livraison regroupée (2026-09-14).** Les 14 lots récents sont désormais réunis
 > dans la [PR unique #79](https://github.com/SamChampagne/Pulsar/pull/79), vers `main`.
 > Les PR #66 à #78 sont remplacées, sans suppression de leurs branches. Les tests web
