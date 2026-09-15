@@ -329,6 +329,19 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     tenant-scopée, pas une provenance par lot ni une réservation de stock.
     Contrats et limites : `docs/plans/wms-putaway-traceability.md`.
 
+## Hard rules (continued, Flotte — poste visuel)
+
+43. Les mutations d’ordres de maintenance passent par le verrou tenant de
+    `MaintenanceService.locked` (création, édition, démarrage et clôtures, y compris
+    génération depuis un plan). Ordre + sync actif + réancrage du plan sont atomiques.
+    Une clôture ne remet AVAILABLE que si l’actif est encore MAINTENANCE et n’a plus
+    aucun ordre OPEN/IN_PROGRESS. Les state machines restent obligatoires, RETIRED
+    n’est jamais réactivé. Audit et événement sont émis après commit via les services
+    best-effort existants. Les nouveaux clients envoient `expectedUpdatedAt`;
+    l’échéancier `dueDate` est UTC/display de dates limites, jamais une réservation
+    d’atelier ou une disponibilité TMS. Le contexte transport du poste Flotte exige
+    Transportation activé ET `transportation.planning.read`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

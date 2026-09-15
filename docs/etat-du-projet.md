@@ -6,6 +6,13 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Flotte visuelle (2026-09-14) — `codex/fleet-visual-workspace`.**
+> Parc filtrable, échéancier UTC, historique et interventions en panneaux; documents
+> et chargements reliés selon les droits. Concurrence maintenance durcie : aucun
+> retour disponible tant qu’un autre ordre reste actif. Registre conservé, DÉMO locale,
+> aucune migration ni réservation d’atelier. Suite : Fabrication visuelle.
+> [Contrats, preuves et limites](./plans/fleet-visual-workspace.md).
+>
 > **WMS rangement et journal (2026-09-14) — `codex/wms-putaway-traceability`.**
 > File par entrepôt, mouvement confirmé, journal relié aux articles/emplacements/dossiers,
 > unités capturées et reprise durable du MOVE après coupure. Scénario local DÉMO prêt à essayer.

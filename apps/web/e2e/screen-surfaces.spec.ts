@@ -22,6 +22,7 @@ const routes = [
   '/crm/contacts',
   '/documents',
   '/fleet',
+  '/fleet/register',
   '/fleet/config',
   '/fleet/maintenance',
   '/integrations',

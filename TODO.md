@@ -16,7 +16,9 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [x] WMS rangement : file par site, journal contextualisé, unités capturées et MOVE idempotent avec reprise navigateur; scénario local DÉMO ([contrats et limites](docs/plans/wms-putaway-traceability.md)).
 - [ ] WMS suite : recherche paginée sur les anciens référentiels de l'inventaire; annulation serveur explicite des intentions de MOVE incertaines; provenance par lot à concevoir.
 - [ ] Réception/préparation partielles, quantités attendues/réelles, scans, allocations/réservations et règles de conversion d'unités.
-- [ ] Flotte : disponibilité et planification de maintenance; Fabrication : postes et flux.
+- [x] Flotte visuelle : parc, échéancier UTC, historique paginé et panneaux d’intervention; concurrence multi-ordres et versions ([contrats et limites](docs/plans/fleet-visual-workspace.md)).
+- [ ] Flotte v2 : anciens registres/documents paginés, inspections/relevés, création idempotente; vraie réservation atelier et disponibilité prévisionnelle à concevoir.
+- [ ] Fabrication visuelle : postes, encours, blocages et flux; prochain lot de spécialisation métier.
 - [ ] Agents : suggestions contextuelles gouvernées, motifs et résultats reliés aux dossiers.
 
 ## Relance UI — dossiers financiers connectés (2026-09-14)

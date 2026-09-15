@@ -35,6 +35,8 @@ export interface NavLink {
   label: string;
   /** Single permission key required to show this link. Omit = always shown when domain is visible. */
   perm?: string;
+  /** Optional cross-module dependency of this individual screen. */
+  module?: string;
   /** Runtime-injected badge count; not set by the catalogue itself. */
   badge?: number;
 }
@@ -283,8 +285,19 @@ export function navCatalogue(): NavDomain[] {
         {
           links: [
             { href: '/assets', label: 'Vue d’ensemble' },
-            { href: '/fleet', label: 'Véhicules et remorques' },
-            { href: '/fleet/maintenance', label: 'Maintenance', perm: PERMISSIONS.FLEET.READ },
+            { href: '/fleet', label: 'Poste flotte' },
+            {
+              href: '/fleet/register',
+              label: 'Registre et plans',
+              perm: PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ,
+              module: MODULE_KEYS.TRANSPORTATION,
+            },
+            {
+              href: '/fleet/maintenance',
+              label: 'Maintenance (registre)',
+              perm: PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ,
+              module: MODULE_KEYS.TRANSPORTATION,
+            },
           ],
         },
         {
@@ -693,7 +706,13 @@ export function visibleDomains(caps: NavCaps): NavDomain[] {
           ...s,
           // Spread each link so runtime badge injection by one consumer
           // never aliases the shared catalogue objects (e.g. /apps + palette).
-          links: s.links.filter((l) => !l.perm || caps.can(l.perm)).map((l) => ({ ...l })),
+          links: s.links
+            .filter(
+              (l) =>
+                (!l.perm || caps.can(l.perm)) &&
+                (!l.module || caps.enabledModules.includes(l.module)),
+            )
+            .map((l) => ({ ...l })),
         }))
         .filter((s) => s.links.length > 0),
     }))

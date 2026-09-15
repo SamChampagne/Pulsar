@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { AuditAction, MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
@@ -10,6 +10,8 @@ import {
   CompleteMaintenanceOrderDto,
   CreateMaintenanceOrderDto,
   MaintenanceListQueryDto,
+  MaintenanceVersionDto,
+  UpdateMaintenanceOrderDto,
 } from './dto/maintenance.dto';
 import { MaintenanceService } from './maintenance.service';
 
@@ -41,8 +43,12 @@ export class MaintenanceController {
 
   @Post(':id/start')
   @RequirePermissions(PERMISSIONS.FLEET.MANAGE)
-  start(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.maintenance.start(user.tenantId, user.id, id);
+  start(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: MaintenanceVersionDto,
+  ) {
+    return this.maintenance.start(user.tenantId, user.id, id, dto);
   }
 
   @Post(':id/complete')
@@ -57,7 +63,21 @@ export class MaintenanceController {
 
   @Post(':id/cancel')
   @RequirePermissions(PERMISSIONS.FLEET.MANAGE)
-  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.maintenance.cancel(user.tenantId, user.id, id);
+  cancel(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: MaintenanceVersionDto,
+  ) {
+    return this.maintenance.cancel(user.tenantId, user.id, id, dto);
+  }
+
+  @Patch(':id')
+  @RequirePermissions(PERMISSIONS.FLEET.MANAGE)
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateMaintenanceOrderDto,
+  ) {
+    return this.maintenance.update(user.tenantId, user.id, id, dto);
   }
 }

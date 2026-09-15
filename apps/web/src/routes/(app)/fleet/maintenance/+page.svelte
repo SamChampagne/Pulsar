@@ -154,7 +154,7 @@
         verb === 'start'
           ? 'Maintenance démarrée'
           : verb === 'complete'
-            ? 'Maintenance terminée — asset disponible'
+            ? 'Maintenance terminée — état flotte revérifié'
             : 'Ordre annulé';
       toast.success(msg);
       await load();

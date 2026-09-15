@@ -59,6 +59,7 @@ export * from './agents/operations';
 export * from './integrations/operations';
 export * from './integrations/connector-foundation';
 export * from './fleet/maintenance.workflow';
+export * from './fleet/workspace';
 export * from './fleet/compliance';
 export * from './fleet/usage';
 export * from './fleet/inspection';
