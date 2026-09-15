@@ -6,6 +6,13 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Livraison regroupée (2026-09-14).** Les 14 lots récents sont désormais réunis
+> dans la [PR unique #79](https://github.com/SamChampagne/Pulsar/pull/79), vers `main`.
+> Les PR #66 à #78 sont remplacées, sans suppression de leurs branches. Les tests web
+> génèrent maintenant leur configuration SvelteKit avant Vitest, y compris sur un
+> checkout propre. Les runs CI obsolètes d'une même PR sont annulés automatiquement;
+> les cinq jobs restent actifs. Vérifier les checks de #79 avant toute fusion.
+>
 > **Flotte visuelle (2026-09-14) — `codex/fleet-visual-workspace`.**
 > Parc filtrable, échéancier UTC, historique et interventions en panneaux; documents
 > et chargements reliés selon les droits. Concurrence maintenance durcie : aucun
