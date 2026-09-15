@@ -130,6 +130,7 @@ async function setup(page: Page, url = '/yard') {
     if (r.request().method() !== 'GET')
       return r.fulfill({ status: 500, json: { message: 'Aucune mutation WMS dans ce test.' } });
     const path = new URL(r.request().url()).pathname;
+    if (path.endsWith('/wms/sites')) return r.fulfill({ json: { items: [{ ...site, type: 'WAREHOUSE' }], total: 1, page: 1, pageSize: 100 } });
     if (path.endsWith('/receipts/linked-receipt'))
       return r.fulfill({
         json: {

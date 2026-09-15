@@ -119,15 +119,19 @@
     receipt ? bins.filter((b) => b.locationId === receipt!.locationId) : [],
   );
 
-  // "Lié à" — the warehouse location has no detail route yet, so it's shown
-  // informationally (no href). `Receipt` carries no carrier/supplier reference in
-  // the schema (packages/database/prisma/schema.prisma model Receipt) — nothing to link there.
+  // Return to the same warehouse workspace. Receipt has no carrier/supplier FK:
+  // do not invent a party link from its free-text reference.
   const relatedGroups = $derived<RelatedGroup[]>(
     receipt
       ? [
           {
             label: 'Entrepôt',
-            items: [{ label: locName(receipt.locationId) }],
+            items: [
+              {
+                label: locName(receipt.locationId),
+                href: `/wms?site=${encodeURIComponent(receipt.locationId)}`,
+              },
+            ],
           },
         ]
       : [],
@@ -157,7 +161,7 @@
         api<ReceiptDetail>(`/wms/receipts/${receiptId}`),
         api<Paginated<Item>>('/wms/items', { query: { pageSize: 100 } }),
         api<Bin[]>('/wms/bins'),
-        api<Paginated<LocationOption>>('/transportation/locations', { query: { pageSize: 100 } }),
+        api<Paginated<LocationOption>>('/wms/sites', { query: { pageSize: 100 } }),
       ]);
       receipt = rec;
       items = itemsRes.items;

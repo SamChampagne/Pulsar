@@ -11,6 +11,7 @@ import {
   canTransitionCycleCount,
 } from '@pulsar/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { Prisma } from '@pulsar/database';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
@@ -148,7 +149,9 @@ export class CycleCountsService {
 
       for (const line of count.lines) {
         if (line.countedQty == null) continue;
-        const delta = Number(line.countedQty) - Number(line.systemQty);
+        // Both persisted values have scale 3. Subtract as decimals so binary
+        // floating-point noise cannot fail the ledger's precision validation.
+        const delta = new Prisma.Decimal(line.countedQty).minus(line.systemQty).toNumber();
         if (delta === 0) continue;
         variances++;
         await this.inventory.postMovement(tx, {

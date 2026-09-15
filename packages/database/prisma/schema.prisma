@@ -2317,6 +2317,7 @@ model Bin {
   tenantId   String
   locationId String
   code       String
+  zone       String?  // Display grouping only; never a stock location or capacity rule.
   kind       BinKind  @default(STORAGE)
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())

@@ -6,6 +6,13 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **WMS visuel (2026-09-14) — `codex/wms-visual-workspace`.**
+> Poste de travail par entrepôt : réceptionner, ranger, préparer, finaliser;
+> zones et emplacements, stock en panneau, classement visuel et déplacement confirmé.
+> Référentiel WMS autonome en lecture, stock sérialisé entre opérateurs, contrôles
+> de site/droits et audit. Ce n'est ni un plan physique ni un stock réservé.
+> [Contrats, validation et suite](./plans/wms-visual-workspace.md).
+>
 > **Cour ↔ TMS ↔ WMS connectés (2026-09-14) — `codex/yard-connected-dossiers`.**
 > Associations explicites aux chargements, réceptions et préparations, partagées
 > entre rendez-vous et arrivée; navigation aller-retour depuis les fiches métier.

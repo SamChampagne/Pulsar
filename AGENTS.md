@@ -293,6 +293,17 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     est en lecture seule. Les contraintes SQL exactement une source/une cible doivent
     être préservées. Détail : `docs/plans/yard-connected-dossiers.md`.
 
+## Hard rules (continued, WMS — poste visuel)
+
+40. `Bin.zone` est un classement d'affichage, jamais une capacité ou un déplacement.
+    Les lectures du workspace sont tenant/site-scopées et calculées à la lecture;
+    ne jamais additionner les quantités d'articles/unités différents. Tous les writers
+    de stock passent par `InventoryService.postMovement` et son verrou transactionnel
+    de tenant, partagé avec `BinsService.update`. Site d'un bin immuable; pas de
+    désactivation/changement de type avec un solde non nul. L'UI transmet
+    `expectedUpdatedAt` pour les zones et confirme les MOVE existants; aucune transition
+    automatique des dossiers. Contrats et limites : `docs/plans/wms-visual-workspace.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

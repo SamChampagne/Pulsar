@@ -13,6 +13,8 @@ export type OwnedEntity =
   | 'dockAppointment'
   | 'receipt'
   | 'pickOrder'
+  | 'wmsItem'
+  | 'bin'
   | 'carrier'
   | 'driver'
   | 'vehicle'

@@ -1,147 +1,246 @@
 <script lang="ts">
-  import { api, ApiError } from '$lib/api/client';
+  import { onMount, untrack } from 'svelte';
+  import { beforeNavigate } from '$app/navigation';
+  import { api } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
   import {
-    Badge,
+    MODULE_KEYS,
+    PERMISSIONS,
+    type WmsWorkspace,
+    type WmsSite,
+    type Paginated,
+  } from '@pulsar/shared';
+  import {
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     ErrorNotice,
+    Input,
     PageHeader,
     Skeleton,
   } from '$lib/components/ui';
-  import { toast } from '$lib/stores/toast';
-
-  interface NegativeBin {
-    id: string;
-    itemId: string;
-    binId: string;
-    qtyOnHand: string;
-    item: { sku: string };
-    bin: { code: string };
-  }
-
-  interface Overview {
-    distinctItems: number;
-    totalOnHand: number;
-    openReceipts: number;
-    openPickOrders: number;
-    negativeBins: NegativeBin[];
-  }
-
-  let overview = $state<Overview | null>(null);
-  let loading = $state(true);
-  let error = $state('');
-
-  async function load() {
+  import WarehouseZones from '$lib/components/wms/WarehouseZones.svelte';
+  import WarehouseFlow from '$lib/components/wms/WarehouseFlow.svelte';
+  import WarehouseBinDrawer from '$lib/components/wms/WarehouseBinDrawer.svelte';
+  let siteId = $state(''),
+    initialized = $state(false),
+    query = $state(''),
+    page = $state(1);
+  let data = $state<WmsWorkspace | null>(null),
+    loading = $state(true),
+    error = $state(''),
+    initError = $state('');
+  let binId = $state(''),
+    generation = 0,
+    pendingBin = '';
+  const yard = $derived(
+    !!$auth?.tenant.enabledModules.includes(MODULE_KEYS.YARD) &&
+      !!$auth?.user.permissions.includes(PERMISSIONS.YARD.READ),
+  );
+  const canManage = $derived(!!$auth?.user.permissions.includes(PERMISSIONS.WMS.MANAGE));
+  async function init() {
+    initError = '';
     loading = true;
-    error = '';
     try {
-      overview = await api<Overview>('/wms/overview');
+      const params = new URL(window.location.href).searchParams;
+      const sites = await api<Paginated<WmsSite>>('/wms/sites');
+      pendingBin = params.get('bin') ?? '';
+      siteId = params.get('site') ?? sites.items[0]?.id ?? '';
+      initialized = true;
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Impossible de charger l’entrepôt';
-      toast.error(error);
+      initError = e instanceof Error ? e.message : 'Entrepôts indisponibles.';
     } finally {
       loading = false;
     }
   }
-
+  async function load() {
+    const id = siteId,
+      p = page,
+      q = query,
+      request = ++generation;
+    if (!id) {
+      data = null;
+      loading = false;
+      return;
+    }
+    loading = true;
+    error = '';
+    if (data?.site.id !== id) data = null;
+    try {
+      const result = await api<WmsWorkspace>('/wms/workspace', {
+        query: { locationId: id, q, page: p },
+      });
+      if (request === generation) {
+        data = result;
+        if (pendingBin) {
+          binId = pendingBin;
+          pendingBin = '';
+        }
+      }
+    } catch (e) {
+      if (request === generation) {
+        data = null;
+        error = e instanceof Error ? e.message : 'Entrepôt indisponible.';
+      }
+    } finally {
+      if (request === generation) loading = false;
+    }
+  }
   $effect(() => {
-    void load();
+    siteId;
+    untrack(() => {
+      page = 1;
+      binId = '';
+      data = null;
+    });
   });
-
-  const quickLinks = [
-    { href: '/wms/inventory', label: 'Inventaire' },
-    { href: '/wms/receiving', label: 'Réception' },
-    { href: '/wms/picking', label: 'Prélèvement' },
-    { href: '/wms/items', label: 'Articles' },
-    { href: '/wms/bins', label: 'Emplacements' },
-  ];
+  $effect(() => {
+    query;
+    untrack(() => (page = 1));
+  });
+  $effect(() => {
+    siteId;
+    query;
+    page;
+    if (!initialized) return;
+    const timer = setTimeout(() => void load(), 200);
+    return () => {
+      clearTimeout(timer);
+      generation++;
+    };
+  });
+  onMount(() => {
+    void init();
+    return () => generation++;
+  });
+  beforeNavigate(({ cancel }) => {
+    if (binId) cancel();
+  });
 </script>
 
-<PageHeader title="Entrepôt" subtitle="Réceptions, préparations et écarts de stock à suivre.">
-  {#snippet actions()}<Button variant="secondary" href="/wms/inventory">Inventaire</Button><Button
-      href="/wms/receiving">Réceptions</Button
-    >{/snippet}
+<PageHeader
+  title="Entrepôt"
+  subtitle="Votre poste de travail par site : réception, rangement et préparation."
+>
+  {#snippet actions()}<Button variant="secondary" href="/wms/inventory">Inventaire détaillé</Button
+    ><Button variant="secondary" href="/wms/receiving">Réceptions</Button>{/snippet}
 </PageHeader>
-
-<ErrorNotice message={error} onretry={load} />
-
-{#if loading}
-  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-    {#each Array(5) as _, i (i)}<Skeleton />{/each}
+<div class="mb-5 flex flex-wrap items-end gap-3">
+  <div class="w-full sm:w-80">
+    <p class="mb-1.5 text-xs font-medium text-ink-muted">Site de travail</p>
+    <EntityPicker endpoint="/wms/sites" label="Entrepôt" bind:value={siteId} disabled={!!binId} />
   </div>
-{:else if error}
-  <Card
+  <Button variant="secondary" disabled={loading || !siteId || !!binId} onclick={load}
+    >Actualiser</Button
+  >
+  {#if data && yard}<Button variant="ghost" href={`/yard?site=${encodeURIComponent(data.site.id)}`}
+      >Cour & quais ↗</Button
+    >{/if}
+  {#if canManage}<Button variant="ghost" href="/wms/bins">Gérer les emplacements</Button>{/if}
+</div>
+<ErrorNotice message={initError} onretry={init} /><ErrorNotice message={error} onretry={load} />
+<div class="mb-5 max-w-sm">
+  <Input
+    aria-label="Rechercher un emplacement ou une zone"
+    bind:value={query}
+    maxlength={80}
+    placeholder="Emplacement ou zone…"
+    disabled={!!binId || !siteId}
+  />
+</div>
+{#if loading && !data}<Skeleton rows={8} />
+{:else if !error && !initError && !siteId}<Card
     ><EmptyState
-      title="Données indisponibles"
-      message="Réessayez le chargement ou ouvrez directement les réceptions, l’inventaire ou les préparations."
+      title="Choisissez un entrepôt"
+      message="Sélectionnez un site existant. Si aucun site n’est disponible, demandez à un administrateur de créer une localisation de type entrepôt."
     /></Card
   >
-{:else if overview}
-  <!-- A. KPI cards -->
-  <div class="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-    <a href="/wms/items" class="block">
-      <Card>
-        <div class="text-xs font-medium text-ink-muted">Articles</div>
-        <div class="mt-1 text-2xl font-semibold text-ink">{overview.distinctItems}</div>
-      </Card>
-    </a>
-    <a href="/wms/inventory" class="block">
-      <Card>
-        <div class="text-xs font-medium text-ink-muted">Quantité totale en stock</div>
-        <div class="mt-1 text-2xl font-semibold text-ink">{overview.totalOnHand}</div>
-      </Card>
-    </a>
-    <a href="/wms/receiving" class="block">
-      <Card>
-        <div class="text-xs font-medium text-ink-muted">Réceptions ouvertes</div>
-        <div class="mt-1 text-2xl font-semibold text-ink">{overview.openReceipts}</div>
-      </Card>
-    </a>
-    <a href="/wms/picking" class="block">
-      <Card>
-        <div class="text-xs font-medium text-ink-muted">Préparations ouvertes</div>
-        <div class="mt-1 text-2xl font-semibold text-ink">{overview.openPickOrders}</div>
-      </Card>
-    </a>
-    <a href="#negative" class="block">
-      <Card>
-        <div class="text-xs font-medium text-danger">Emplacements en anomalie</div>
-        <div class="mt-1 text-2xl font-semibold text-danger">{overview.negativeBins.length}</div>
-      </Card>
-    </a>
-  </div>
-
-  <!-- B. Negative-bin attention list -->
-  <div id="negative" class="mb-5">
-    <h2 class="mb-2 text-sm font-semibold text-ink">Écarts de stock à corriger</h2>
-    <Card padded={false}>
-      {#if overview.negativeBins.length === 0}
-        <EmptyState message="Aucun stock négatif détecté." />
-      {:else}
-        <div class="divide-y divide-edge">
-          {#each overview.negativeBins as nb (nb.id)}
-            <div class="flex items-center gap-3 px-4 py-2.5 text-sm">
-              <Badge tone="danger">{nb.qtyOnHand}</Badge>
-              <span class="font-medium text-ink">{nb.item.sku}</span>
-              <span class="text-ink-muted">emplacement {nb.bin.code}</span>
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </Card>
-  </div>
-
-  <!-- C. Quick links to the workbenches -->
-  <h2 class="mb-2 text-sm font-semibold text-ink">Raccourcis</h2>
-  <div class="flex flex-wrap gap-2">
-    {#each quickLinks as link (link.href)}
-      <a
-        href={link.href}
-        class="rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink hover:bg-surface-muted"
+{:else if data}
+  <div
+    class="mb-6 flex flex-wrap items-center gap-x-7 gap-y-3 border-y border-edge py-4"
+    aria-label="État du site"
+  >
+    <div>
+      <span class="text-xl font-semibold tabular-nums">{data.summary.bins}</span><span
+        class="ml-2 text-xs text-ink-muted">emplacements</span
       >
-        {link.label}
-      </a>
-    {/each}
+    </div>
+    <div>
+      <span class="text-xl font-semibold tabular-nums">{data.summary.stockedBins}</span><span
+        class="ml-2 text-xs text-ink-muted">avec du stock</span
+      >
+    </div>
+    <div>
+      <span class="text-xl font-semibold tabular-nums">{data.summary.inactiveBins}</span><span
+        class="ml-2 text-xs text-ink-muted">inactifs</span
+      >
+    </div>
+    <a href="/wms/cycle-counts" class="text-xs text-accent hover:underline"
+      >{data.summary.cycleCounts} inventaire(s) tournant(s) ouvert(s) ↗</a
+    >
+    <span class="text-xs text-ink-faint"
+      >Actualisé à {new Date(data.generatedAt).toLocaleTimeString('fr-CA', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}</span
+    >
   </div>
+  {#if data.summary.negativeLevels}<p
+      role="alert"
+      class="mb-5 rounded-md border border-danger/30 p-3 text-sm text-danger"
+    >
+      {data.summary.negativeLevels} solde(s) négatif(s) à vérifier dans l’inventaire.
+    </p>{/if}
+  <WarehouseFlow {data} onbin={(id) => (binId = id)} />
+  <section class="mt-8" aria-label="Vue des emplacements">
+    <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 class="text-base font-semibold">Les zones et leurs emplacements</h2>
+        <p class="mt-1 text-xs text-ink-muted">
+          Vue schématique, sans échelle physique ni estimation de capacité. Les quantités restent
+          par article et unité.
+        </p>
+      </div>
+    </div>
+    {#if !data.bins.total}<Card
+        ><EmptyState
+          title={query ? 'Aucun emplacement correspondant' : 'Aucun emplacement configuré'}
+          message={query
+            ? 'Essayez un autre code ou nom de zone.'
+            : 'Ajoutez des emplacements de réception, stockage et expédition. Le plan utilisera vos données réelles.'}
+        />{#if canManage && !query}<Button variant="secondary" href="/wms/bins"
+            >Créer les emplacements</Button
+          >{/if}</Card
+      >{:else}<WarehouseZones bins={data.bins.items} onselect={(id) => (binId = id)} />{/if}
+    {#if data.bins.total > data.bins.pageSize}<nav
+        class="mt-4 flex items-center justify-end gap-3"
+        aria-label="Pages des emplacements"
+      >
+        <Button
+          variant="secondary"
+          disabled={page <= 1 || loading}
+          onclick={() => {
+            page--;
+          }}>Précédente</Button
+        ><span class="text-xs tabular-nums"
+          >Page {page} / {Math.ceil(data.bins.total / data.bins.pageSize)} · {data.bins.total} résultats</span
+        ><Button
+          variant="secondary"
+          disabled={page * data.bins.pageSize >= data.bins.total || loading}
+          onclick={() => {
+            page++;
+          }}>Suivante</Button
+        >
+      </nav>{/if}
+  </section>
 {/if}
+{#if binId && data}<WarehouseBinDrawer
+    {binId}
+    siteId={data.site.id}
+    onclose={() => (binId = '')}
+    onsaved={async () => {
+      binId = '';
+      await load();
+    }}
+  />{/if}

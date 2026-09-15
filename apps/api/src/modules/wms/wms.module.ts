@@ -6,6 +6,8 @@ import { CustomFieldsController } from './custom-fields/custom-fields.controller
 import { ItemsService } from './items/items.service';
 import { ItemsController } from './items/items.controller';
 import { BinsService } from './bins/bins.service';
+import { WmsWorkspaceController } from './workspace/workspace.controller';
+import { WmsWorkspaceService } from './workspace/workspace.service';
 import { BinsController } from './bins/bins.controller';
 import { InventoryService } from './inventory/inventory.service';
 import { InventoryController } from './inventory/inventory.controller';
@@ -35,6 +37,7 @@ import { CycleCountsController } from './cycle-counts/cycle-counts.controller';
 @Module({
   imports: [AuditLogsModule, CustomFieldsModule, forwardRef(() => OperatingModule)],
   controllers: [
+    WmsWorkspaceController,
     CustomFieldsController,
     ItemsController,
     BinsController,
@@ -46,6 +49,7 @@ import { CycleCountsController } from './cycle-counts/cycle-counts.controller';
     CycleCountsController,
   ],
   providers: [
+    WmsWorkspaceService,
     ItemsService,
     BinsService,
     InventoryService,

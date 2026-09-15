@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import {
@@ -119,8 +120,10 @@
     error = '';
     try {
       const [recs, locsRes] = await Promise.all([
-        api<ReceiptRow[]>('/wms/receipts'),
-        api<Paginated<LocationOption>>('/transportation/locations', { query: { pageSize: 100 } }),
+        api<ReceiptRow[]>('/wms/receipts', {
+          query: { locationId: page.url.searchParams.get('locationId') || undefined },
+        }),
+        api<Paginated<LocationOption>>('/wms/sites', { query: { pageSize: 100 } }),
       ]);
       receipts = recs;
       warehouses = locsRes.items.filter((l) => l.type === 'WAREHOUSE');
@@ -137,7 +140,7 @@
   });
 
   async function openCreate() {
-    createLocationId = warehouses[0]?.id ?? '';
+    createLocationId = page.url.searchParams.get('locationId') || warehouses[0]?.id || '';
     createReference = '';
     createNote = '';
     customData = {};
@@ -182,7 +185,16 @@
 </PageHeader>
 
 <div class="mb-4">
-  <a href="/wms" class="text-sm text-accent hover:underline">← Warehouse</a>
+  <a
+    href={page.url.searchParams.get('locationId')
+      ? `/wms?site=${encodeURIComponent(page.url.searchParams.get('locationId')!)}`
+      : '/wms'}
+    class="text-sm text-accent hover:underline">← Entrepôt</a
+  >
+  {#if page.url.searchParams.get('locationId')}<p class="mt-2 text-xs text-ink-muted">
+      Site : {locName(page.url.searchParams.get('locationId')!)} ·
+      <a href="/wms/receiving" class="text-accent hover:underline">Tous les sites</a>
+    </p>{/if}
 </div>
 
 {#if loading}
@@ -241,7 +253,9 @@
   <div class="flex gap-3 overflow-x-auto pb-2">
     {#each KANBAN_COLS as col (col.status)}
       {@const items = receipts.filter((r) => r.status === col.status)}
-      <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+      <div
+        class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted"
+      >
         <div class="flex items-center justify-between px-3 py-2">
           <Badge tone={statusTone(col.status)}>{col.label}</Badge>
           <span class="font-mono text-xs text-ink-muted">{items.length}</span>
@@ -292,7 +306,12 @@
     {/if}
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { createOpen = false; }}>Annuler</Button>
+    <Button
+      variant="secondary"
+      onclick={() => {
+        createOpen = false;
+      }}>Annuler</Button
+    >
     <Button loading={createSaving} onclick={submitCreate}>Créer</Button>
   {/snippet}
 </Modal>

@@ -148,7 +148,12 @@
       ? [
           {
             label: 'Entrepôt',
-            items: [{ label: locName(order.locationId) }],
+            items: [
+              {
+                label: locName(order.locationId),
+                href: `/wms?site=${encodeURIComponent(order.locationId)}`,
+              },
+            ],
           },
           {
             label: 'Expédition',
@@ -190,7 +195,7 @@
         api<PickDetail>(`/wms/pick-orders/${orderId}`),
         api<Paginated<Item>>('/wms/items', { query: { pageSize: 100 } }),
         api<Bin[]>('/wms/bins'),
-        api<Paginated<LocationOption>>('/transportation/locations', { query: { pageSize: 100 } }),
+        api<Paginated<LocationOption>>('/wms/sites', { query: { pageSize: 100 } }),
       ]);
       order = ord;
       items = itemsRes.items;

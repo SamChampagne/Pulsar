@@ -74,7 +74,7 @@
   }
 
   async function loadWarehouses() {
-    const res = await api<Paginated<LocationOption>>('/transportation/locations', {
+    const res = await api<Paginated<LocationOption>>('/wms/sites', {
       query: { pageSize: 100 },
     });
     warehouses = res.items.filter((l) => l.type === 'WAREHOUSE');
@@ -189,15 +189,24 @@
         <tr class="cursor-pointer" onclick={() => openEdit(b)}>
           <td class="font-mono font-semibold text-ink">{b.code}</td>
           <td><Badge tone={kindTone(b.kind)}>{kindLabel(b.kind)}</Badge></td>
-          <td class="text-ink-muted"><span class="font-mono">{b.location.code}</span> — {b.location.name}</td>
-          <td><Badge tone={b.isActive ? 'ok' : 'neutral'}>{b.isActive ? 'Actif' : 'Inactif'}</Badge></td>
+          <td class="text-ink-muted"
+            ><span class="font-mono">{b.location.code}</span> — {b.location.name}</td
+          >
+          <td
+            ><Badge tone={b.isActive ? 'ok' : 'neutral'}>{b.isActive ? 'Actif' : 'Inactif'}</Badge
+            ></td
+          >
         </tr>
       {/each}
     {/snippet}
   </Table>
 {/if}
 
-<Modal bind:open={formOpen} title={editId ? "Modifier l'emplacement" : 'Nouvel emplacement'} size="md">
+<Modal
+  bind:open={formOpen}
+  title={editId ? "Modifier l'emplacement" : 'Nouvel emplacement'}
+  size="md"
+>
   {#snippet children()}
     <div class="space-y-3">
       <Field label="Entrepôt">
@@ -223,7 +232,12 @@
         </label>
       </Field>
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
-        <Button variant="secondary" onclick={() => { formOpen = false; }}>Annuler</Button>
+        <Button
+          variant="secondary"
+          onclick={() => {
+            formOpen = false;
+          }}>Annuler</Button
+        >
         <Button variant="primary" loading={saving} onclick={submit}>Enregistrer</Button>
       </div>
     </div>
