@@ -37,10 +37,18 @@ import { AgentRuntimeService } from '../src/core/agents/agent-runtime.service';
 @Injectable()
 class FakeAgentRuntimeService {
   constructor(private readonly _agents: AgentsService) {}
-  async openSession(): Promise<string> { return 'fake-session'; }
-  async *sendTurn(): AsyncGenerator<never> { /* no turns */ }
-  async closeSession(): Promise<void> { /* no-op */ }
-  async killAgentSessions(): Promise<void> { /* no-op */ }
+  async openSession(): Promise<string> {
+    return 'fake-session';
+  }
+  async *sendTurn(): AsyncGenerator<never> {
+    /* no turns */
+  }
+  async closeSession(): Promise<void> {
+    /* no-op */
+  }
+  async killAgentSessions(): Promise<void> {
+    /* no-op */
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +213,280 @@ describe('Payments (e2e)', () => {
     await app?.close();
   });
 
+  describe('Payment party and draft integrity', () => {
+    let ownInvoice = '';
+    let foreignInvoice = '';
+    let secondCustomer = '';
+    let secondCarrier = '';
+    let foreignCarrierInvoice = '';
+    let foreignTenant = '';
+    let crossTenantInvoice = '';
+    const payload = (targetId = ownInvoice) => ({
+      type: 'RECEIVE',
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      modeOfPaymentId,
+      date: new Date().toISOString(),
+      currency: 'CAD',
+      totalAmount: 20,
+      allocations: [{ targetType: 'CUSTOMER_INVOICE', targetId, amount: 20 }],
+    });
+    const draft = async () => {
+      const res = await request(http)
+        .post('/api/v1/billing/payments')
+        .set(auth())
+        .send(payload())
+        .expect(201);
+      paymentIds.push(res.body.id);
+      return res.body.id as string;
+    };
+    const assertUnposted = async (id: string) => {
+      const p = await prisma.payment.findFirstOrThrow({ where: { id, tenantId } });
+      expect(p.status).toBe('DRAFT');
+      expect(
+        await prisma.journalEntry.count({
+          where: { tenantId, sourceType: 'payment', sourceId: id },
+        }),
+      ).toBe(0);
+    };
+
+    beforeAll(async () => {
+      secondCustomer = (
+        await prisma.customer.create({
+          data: { tenantId, code: `PAY-SECOND-${suffix}`, name: 'Second customer' },
+        })
+      ).id;
+      secondCarrier = (
+        await prisma.carrier.create({
+          data: { tenantId, code: `PAY-SECOND-${suffix}`, name: 'Second carrier' },
+        })
+      ).id;
+      for (const [party, label] of [
+        [customerId, 'OWN'],
+        [secondCustomer, 'FOREIGN'],
+      ]) {
+        const inv = await prisma.customerInvoice.create({
+          data: {
+            tenantId,
+            customerId: party,
+            invoiceNumber: `PAY-${label}-${suffix}`,
+            totalAmount: 100,
+            currency: 'CAD',
+            status: 'APPROVED',
+          },
+        });
+        customerInvoiceIds.push(inv.id);
+        if (label === 'OWN') ownInvoice = inv.id;
+        else foreignInvoice = inv.id;
+      }
+      foreignCarrierInvoice = (
+        await prisma.invoice.create({
+          data: {
+            tenantId,
+            carrierId: secondCarrier,
+            invoiceNumber: `PAY-FOREIGN-CARRIER-${suffix}`,
+            totalAmount: 100,
+            currency: 'CAD',
+            status: 'APPROVED',
+          },
+        })
+      ).id;
+      carrierInvoiceIds.push(foreignCarrierInvoice);
+      foreignTenant = (
+        await prisma.tenant.create({
+          data: { slug: `pay-write-${suffix}`, name: 'Other payment tenant' },
+        })
+      ).id;
+      const c = await prisma.customer.create({
+        data: { tenantId: foreignTenant, code: 'OTHER', name: 'Other tenant customer' },
+      });
+      crossTenantInvoice = (
+        await prisma.customerInvoice.create({
+          data: {
+            tenantId: foreignTenant,
+            customerId: c.id,
+            invoiceNumber: 'OTHER-1',
+            totalAmount: 100,
+            status: 'APPROVED',
+          },
+        })
+      ).id;
+    });
+    afterAll(async () => {
+      await prisma.customerInvoice.deleteMany({ where: { tenantId, customerId: secondCustomer } });
+      await prisma.invoice.deleteMany({ where: { tenantId, carrierId: secondCarrier } });
+      await prisma.customer.deleteMany({ where: { id: secondCustomer, tenantId } });
+      await prisma.carrier.deleteMany({ where: { id: secondCarrier, tenantId } });
+      await prisma.customerInvoice.deleteMany({ where: { tenantId: foreignTenant } });
+      await prisma.customer.deleteMany({ where: { tenantId: foreignTenant } });
+      await prisma.tenant.deleteMany({ where: { id: foreignTenant } });
+    });
+
+    it('rejects another customer invoice before creating a payment', async () => {
+      const before = await prisma.payment.count({ where: { tenantId } });
+      await request(http)
+        .post('/api/v1/billing/payments')
+        .set(auth())
+        .send(payload(foreignInvoice))
+        .expect(400);
+      expect(await prisma.payment.count({ where: { tenantId } })).toBe(before);
+    });
+    it('rejects another carrier invoice', async () => {
+      await request(http)
+        .post('/api/v1/billing/payments')
+        .set(auth())
+        .send({
+          ...payload(),
+          type: 'PAY',
+          partyType: 'CARRIER',
+          partyId: carrierId,
+          allocations: [
+            { targetType: 'CARRIER_INVOICE', targetId: foreignCarrierInvoice, amount: 20 },
+          ],
+        })
+        .expect(400);
+    });
+    it('rejects foreign-tenant and missing targets', async () => {
+      for (const targetId of [crossTenantInvoice, 'missing-invoice'])
+        await request(http)
+          .post('/api/v1/billing/payments')
+          .set(auth())
+          .send(payload(targetId))
+          .expect(400);
+    });
+    it('rejects the wrong direction and duplicate targets', async () => {
+      await request(http)
+        .post('/api/v1/billing/payments')
+        .set(auth())
+        .send({ ...payload(), type: 'PAY' })
+        .expect(400);
+      const p = payload();
+      await request(http)
+        .post('/api/v1/billing/payments')
+        .set(auth())
+        .send({ ...p, totalAmount: 40, allocations: [...p.allocations, ...p.allocations] })
+        .expect(400);
+    });
+    it('rejects allocation replacement atomically, preserving the original draft', async () => {
+      const id = await draft();
+      await request(http)
+        .patch(`/api/v1/billing/payments/${id}`)
+        .set(auth())
+        .send({ allocations: payload(foreignInvoice).allocations, reference: 'must not persist' })
+        .expect(400);
+      const p = await prisma.payment.findFirstOrThrow({
+        where: { id, tenantId },
+        include: { allocations: true },
+      });
+      expect(p.reference).toBeNull();
+      expect(p.allocations).toHaveLength(1);
+      expect(p.allocations[0].targetId).toBe(ownInvoice);
+      await assertUnposted(id);
+    });
+    it('explicitly rejects changes to immutable payment identity', async () => {
+      const id = await draft();
+      for (const change of [
+        { partyId: secondCustomer },
+        { type: 'PAY' },
+        { currency: 'USD' },
+        { modeOfPaymentId: 'missing' },
+      ])
+        await request(http)
+          .patch(`/api/v1/billing/payments/${id}`)
+          .set(auth())
+          .send(change)
+          .expect(400);
+      await request(http)
+        .patch(`/api/v1/billing/payments/${id}`)
+        .set(auth())
+        .send({ currency: 'CAD', note: 'Same identity allowed' })
+        .expect(200);
+    });
+    it('rechecks legacy allocations at submit and rolls back every invoice and GL change', async () => {
+      const id = await draft();
+      // Deliberately corrupt a persisted draft to model data created before this guard.
+      await prisma.paymentAllocation.create({
+        data: {
+          tenantId,
+          paymentId: id,
+          targetType: 'CUSTOMER_INVOICE',
+          targetId: foreignInvoice,
+          amount: 20,
+        },
+      });
+      await prisma.payment.update({ where: { id }, data: { totalAmount: 40 } });
+      await request(http).post(`/api/v1/billing/payments/${id}/submit`).set(auth()).expect(400);
+      await assertUnposted(id);
+      for (const invoiceId of [ownInvoice, foreignInvoice]) {
+        const inv = await prisma.customerInvoice.findFirstOrThrow({
+          where: { id: invoiceId, tenantId },
+        });
+        expect(Number(inv.amountPaid)).toBe(0);
+        expect(inv.status).toBe('APPROVED');
+      }
+    });
+    it('rejects partial payment on an unapproved invoice', async () => {
+      const inv = await prisma.customerInvoice.create({
+        data: {
+          tenantId,
+          customerId,
+          invoiceNumber: `PAY-DRAFT-${suffix}`,
+          totalAmount: 100,
+          status: 'DRAFT',
+        },
+      });
+      customerInvoiceIds.push(inv.id);
+      const res = await request(http)
+        .post('/api/v1/billing/payments')
+        .set(auth())
+        .send(payload(inv.id))
+        .expect(201);
+      paymentIds.push(res.body.id);
+      await request(http)
+        .post(`/api/v1/billing/payments/${res.body.id}/submit`)
+        .set(auth())
+        .expect(400);
+      await assertUnposted(res.body.id);
+    });
+    it('serializes concurrent edit and submit without stale journal amounts', async () => {
+      const id = await draft();
+      const [edit, submit] = await Promise.all([
+        request(http)
+          .patch(`/api/v1/billing/payments/${id}`)
+          .set(auth())
+          .send({
+            totalAmount: 30,
+            allocations: [{ targetType: 'CUSTOMER_INVOICE', targetId: ownInvoice, amount: 30 }],
+          }),
+        request(http).post(`/api/v1/billing/payments/${id}/submit`).set(auth()),
+      ]);
+      expect([200, 400]).toContain(edit.status);
+      expect([200, 201]).toContain(submit.status);
+      const payment = await prisma.payment.findFirstOrThrow({
+        where: { id, tenantId },
+        include: { allocations: true },
+      });
+      const entry = await prisma.journalEntry.findFirstOrThrow({
+        where: { tenantId, sourceType: 'payment', sourceId: id },
+        include: { lines: true },
+      });
+      const allocated = payment.allocations.reduce((sum, a) => sum + Number(a.amount), 0);
+      expect(allocated).toBe(edit.status === 200 ? 30 : 20);
+      expect(entry.lines.reduce((sum, line) => sum + Number(line.debit), 0)).toBe(allocated);
+      expect(
+        Number(
+          (await prisma.customerInvoice.findFirstOrThrow({ where: { id: ownInvoice, tenantId } }))
+            .amountPaid,
+        ),
+      ).toBe(allocated);
+      await request(http)
+        .patch(`/api/v1/billing/payments/${id}`)
+        .set(auth())
+        .send({ note: 'after submission' })
+        .expect(400);
+    });
+  });
+
   // ===========================================================================
   // Suite 1 — Partial payment (RECEIVE 40/100), then full payment (60), then cancel
   // ===========================================================================
@@ -250,9 +532,7 @@ describe('Payments (e2e)', () => {
           modeOfPaymentId,
           date: new Date().toISOString(),
           totalAmount: 40,
-          allocations: [
-            { targetType: 'CUSTOMER_INVOICE', targetId: invoiceId, amount: 40 },
-          ],
+          allocations: [{ targetType: 'CUSTOMER_INVOICE', targetId: invoiceId, amount: 40 }],
         })
         .expect(201);
 
@@ -299,9 +579,7 @@ describe('Payments (e2e)', () => {
           modeOfPaymentId,
           date: new Date().toISOString(),
           totalAmount: 60,
-          allocations: [
-            { targetType: 'CUSTOMER_INVOICE', targetId: invoiceId, amount: 60 },
-          ],
+          allocations: [{ targetType: 'CUSTOMER_INVOICE', targetId: invoiceId, amount: 60 }],
         })
         .expect(201);
 
@@ -350,6 +628,19 @@ describe('Payments (e2e)', () => {
         .reduce((s, l) => s + Number(l.debit), 0);
       expect(arCredited).toBe(100);
       expect(cashDebited).toBe(100);
+      const journal = await request(http)
+        .get('/api/v1/billing/ledger/journal')
+        .query({ sourceType: 'payment', sourceId: payment1Id })
+        .set(auth())
+        .expect(200);
+      expect(journal.body.total).toBe(1);
+      expect(journal.body.items[0].sourceId).toBe(payment1Id);
+      const missing = await request(http)
+        .get('/api/v1/billing/ledger/journal')
+        .query({ sourceType: 'invoice', sourceId: payment1Id })
+        .set(auth())
+        .expect(200);
+      expect(missing.body.total).toBe(0);
     });
 
     // -----------------------------------------------------------------------
@@ -428,9 +719,7 @@ describe('Payments (e2e)', () => {
           modeOfPaymentId,
           date: new Date().toISOString(),
           totalAmount: TOTAL,
-          allocations: [
-            { targetType: 'CARRIER_INVOICE', targetId: invoiceId, amount: TOTAL },
-          ],
+          allocations: [{ targetType: 'CARRIER_INVOICE', targetId: invoiceId, amount: TOTAL }],
         })
         .expect(201);
 
@@ -504,9 +793,7 @@ describe('Payments (e2e)', () => {
           modeOfPaymentId,
           date: new Date().toISOString(),
           totalAmount: 50,
-          allocations: [
-            { targetType: 'CUSTOMER_INVOICE', targetId: inv.id, amount: 50 },
-          ],
+          allocations: [{ targetType: 'CUSTOMER_INVOICE', targetId: inv.id, amount: 50 }],
         })
         .expect(201);
 
@@ -523,9 +810,16 @@ describe('Payments (e2e)', () => {
 
       // Enable billing for the other tenant so the module guard doesn't block it;
       // the service-layer tenantId scope is what we're testing.
-      const billingMod = await prisma.moduleDefinition.findUniqueOrThrow({ where: { key: 'billing' } });
+      const billingMod = await prisma.moduleDefinition.findUniqueOrThrow({
+        where: { key: 'billing' },
+      });
       await prisma.tenantModule.create({
-        data: { tenantId: otherTenantId, moduleId: billingMod.id, enabled: true, enabledAt: new Date() },
+        data: {
+          tenantId: otherTenantId,
+          moduleId: billingMod.id,
+          enabled: true,
+          enabledAt: new Date(),
+        },
       });
 
       // Create billing permissions in the other role.
@@ -611,9 +905,7 @@ describe('Payments (e2e)', () => {
           modeOfPaymentId,
           date: new Date().toISOString(),
           totalAmount: 150,
-          allocations: [
-            { targetType: 'CUSTOMER_INVOICE', targetId: invoiceId, amount: 150 },
-          ],
+          allocations: [{ targetType: 'CUSTOMER_INVOICE', targetId: invoiceId, amount: 150 }],
         })
         .expect(201);
 
@@ -665,9 +957,7 @@ describe('Payments (e2e)', () => {
           date: new Date().toISOString(),
           currency: 'USD',
           totalAmount: 80,
-          allocations: [
-            { targetType: 'CUSTOMER_INVOICE', targetId: cadInvoiceId, amount: 80 },
-          ],
+          allocations: [{ targetType: 'CUSTOMER_INVOICE', targetId: cadInvoiceId, amount: 80 }],
         })
         .expect(201);
 

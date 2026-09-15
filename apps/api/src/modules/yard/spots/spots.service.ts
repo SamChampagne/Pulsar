@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@pulsar/database';
 import { YardSpotType } from '@pulsar/shared';
 import { OwnershipService } from '../../../prisma/ownership.service';
@@ -50,7 +55,10 @@ export class SpotsService {
   async create(tenantId: string, dto: CreateSpotDto) {
     await this.assertTenantLocation(tenantId, dto.locationId);
     try {
-      return await this.prisma.yardSpot.create({ data: { ...dto, tenantId } });
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM locations WHERE id = ${dto.locationId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+        return tx.yardSpot.create({ data: { ...dto, tenantId } });
+      });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException('Spot code already exists at this location');
@@ -60,10 +68,25 @@ export class SpotsService {
   }
 
   async update(tenantId: string, id: string, dto: UpdateSpotDto) {
-    await this.get(tenantId, id);
+    const existing = await this.get(tenantId, id);
     if (dto.locationId) await this.assertTenantLocation(tenantId, dto.locationId);
     try {
-      await this.prisma.yardSpot.updateMany({ where: { id, tenantId }, data: dto });
+      await this.prisma.$transaction(async (tx) => {
+        for (const site of [
+          ...new Set([existing.locationId, dto.locationId ?? existing.locationId]),
+        ].sort())
+          await tx.$queryRaw`SELECT id FROM locations WHERE id = ${site} AND "tenantId" = ${tenantId} FOR UPDATE`;
+        if (dto.locationId && dto.locationId !== existing.locationId)
+          throw new BadRequestException('Créez un nouvel emplacement pour un autre site.');
+        if (
+          dto.isActive === false &&
+          (await tx.yardVisit.count({
+            where: { tenantId, spotId: id, status: { in: ['CHECKED_IN', 'ASSIGNED'] } },
+          }))
+        )
+          throw new ConflictException('Libérez cet emplacement avant de le désactiver.');
+        await tx.yardSpot.updateMany({ where: { id, tenantId }, data: dto });
+      });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException('Spot code already exists at this location');
@@ -83,14 +106,22 @@ export class SpotsService {
     _userId: string,
     positions: { id: string; posX: number; posY: number }[],
   ) {
-    await this.prisma.$transaction(
-      positions.map((p) =>
-        this.prisma.yardSpot.updateMany({
+    return this.prisma.$transaction(async (tx) => {
+      const spots = await tx.yardSpot.findMany({
+        where: { tenantId, id: { in: positions.map((p) => p.id) } },
+        select: { locationId: true },
+      });
+      for (const id of [...new Set(spots.map((s) => s.locationId))].sort())
+        await tx.$queryRaw`SELECT id FROM locations WHERE id = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      let updated = 0;
+      for (const p of positions) {
+        const result = await tx.yardSpot.updateMany({
           where: { id: p.id, tenantId },
           data: { posX: p.posX, posY: p.posY },
-        }),
-      ),
-    );
-    return { updated: positions.length };
+        });
+        updated += result.count;
+      }
+      return { updated };
+    });
   }
 }

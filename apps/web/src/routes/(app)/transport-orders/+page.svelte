@@ -233,7 +233,7 @@
 </script>
 
 <PageHeader
-  title="Transport Orders"
+  title="Ordres de transport"
   subtitle="Capture demand, confirm it, then plan orders into shipments and executable loads."
   count={total || kanbanTotal}
 >

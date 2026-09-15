@@ -12,6 +12,8 @@ import { FleetOverviewController } from './overview/fleet-overview.controller';
 import { FleetOverviewService } from './overview/fleet-overview.service';
 import { MaintenanceSchedulesController } from './schedules/maintenance-schedules.controller';
 import { MaintenanceSchedulesService } from './schedules/maintenance-schedules.service';
+import { FleetWorkspaceController } from './workspace/workspace.controller';
+import { FleetWorkspaceService } from './workspace/workspace.service';
 
 /**
  * Fleet module (maintenance + compliance + overview).
@@ -23,8 +25,14 @@ import { MaintenanceSchedulesService } from './schedules/maintenance-schedules.s
  * TransportationModule).
  */
 @Module({
-  imports: [AuditLogsModule, CustomFieldsModule, ModuleRegistryModule, forwardRef(() => OperatingModule)],
+  imports: [
+    AuditLogsModule,
+    CustomFieldsModule,
+    ModuleRegistryModule,
+    forwardRef(() => OperatingModule),
+  ],
   controllers: [
+    FleetWorkspaceController,
     CustomFieldsController,
     MaintenanceController,
     ComplianceController,
@@ -32,6 +40,7 @@ import { MaintenanceSchedulesService } from './schedules/maintenance-schedules.s
     MaintenanceSchedulesController,
   ],
   providers: [
+    FleetWorkspaceService,
     MaintenanceService,
     ComplianceService,
     FleetOverviewService,

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { TenantEmailConfig } from '@pulsar/database';
 import { AuditAction } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -51,6 +52,7 @@ export class EmailConfigService {
     private readonly audit: AuditLogsService,
     private readonly email: EmailService,
     @Inject(INBOUND_EMAIL_DRIVER) private readonly inboundDriver: InboundEmailDriver,
+    private readonly environment: ConfigService,
   ) {}
 
   /**
@@ -93,12 +95,35 @@ export class EmailConfigService {
     return config ? this.project(config) : null;
   }
 
+  async connectionStatus(tenantId: string) {
+    const config = await this.get(tenantId);
+    return {
+      outbound:
+        config?.active && config.host
+          ? 'smtp-tenant'
+          : this.environment.get('EMAIL_DRIVER', 'log') === 'smtp'
+            ? 'smtp-platform'
+            : 'log',
+      inbound:
+        this.environment.get('EMAIL_DRIVER', 'log') === 'smtp' &&
+        config?.inboundActive &&
+        config.imapHost
+          ? 'imap'
+          : 'log',
+      config,
+    };
+  }
+
   /**
    * Creates or updates the tenant SMTP config. Encrypts `password` when provided;
    * preserves the existing `passwordEnc` when omitted (mirrors runtime-config pattern).
    * Audited.
    */
-  async upsert(tenantId: string, dto: UpsertEmailConfigDto, userId?: string): Promise<EmailConfigProjection> {
+  async upsert(
+    tenantId: string,
+    dto: UpsertEmailConfigDto,
+    userId?: string,
+  ): Promise<EmailConfigProjection> {
     const hasPassword = typeof dto.password === 'string' && dto.password.length > 0;
     const passwordEnc = hasPassword ? this.crypto.encryptString(dto.password as string) : undefined;
 
@@ -128,6 +153,10 @@ export class EmailConfigService {
         ...(imapPasswordEnc !== undefined ? { imapPasswordEnc } : {}),
       },
       update: {
+        lastTestAt: null,
+        lastTestOk: null,
+        lastPollAt: null,
+        lastPollOk: null,
         ...(dto.host !== undefined ? { host: dto.host } : {}),
         ...(dto.port !== undefined ? { port: dto.port } : {}),
         ...(dto.secure !== undefined ? { secure: dto.secure } : {}),
@@ -218,7 +247,7 @@ export class EmailConfigService {
    * has no active config. Updates `lastTestAt` and `lastTestOk` regardless of
    * outcome.
    */
-  async sendTest(tenantId: string, to: string): Promise<{ ok: boolean }> {
+  async sendTest(tenantId: string, to: string): Promise<{ ok: boolean; simulated: boolean }> {
     const transport = await this.resolve(tenantId);
     const ok = await this.email.send(
       {
@@ -238,6 +267,6 @@ export class EmailConfigService {
       })
       .catch(() => undefined);
 
-    return { ok };
+    return { ok, simulated: !transport && this.environment.get('EMAIL_DRIVER', 'log') !== 'smtp' };
   }
 }

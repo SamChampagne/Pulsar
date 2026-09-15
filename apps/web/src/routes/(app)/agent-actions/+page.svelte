@@ -36,8 +36,12 @@
   let loading = $state(true);
   let busy = $state<Record<string, boolean>>({});
 
-  const sensitiveCount = $derived(pending.filter((p) => p.riskTier?.toUpperCase() === 'SENSITIVE').length);
-  const mutatingCount = $derived(pending.filter((p) => p.riskTier?.toUpperCase() === 'MUTATING').length);
+  const sensitiveCount = $derived(
+    pending.filter((p) => p.riskTier?.toUpperCase() === 'SENSITIVE').length,
+  );
+  const mutatingCount = $derived(
+    pending.filter((p) => p.riskTier?.toUpperCase() === 'MUTATING').length,
+  );
   const toolCount = $derived(new Set(pending.map((p) => p.tool)).size);
 
   async function load() {
@@ -114,7 +118,8 @@
         : tier === 'MUTATING'
           ? "Tier MUTATION → auto-exécutable selon l'autonomie de l'agent, sinon approbation requise."
           : '';
-    const amount = p.args && typeof p.args === 'object' ? (p.args as Record<string, unknown>).amount : undefined;
+    const amount =
+      p.args && typeof p.args === 'object' ? (p.args as Record<string, unknown>).amount : undefined;
     if (typeof amount === 'number') {
       return `${base} Montant en jeu : ${amount}.`;
     }
@@ -127,14 +132,32 @@
 </script>
 
 <PageHeader
-  title="Agent actions"
+  title="Approbations des agents"
   subtitle="Review mutating and sensitive AI tool calls before they execute against tenant data."
 />
 
 <div class="mb-4 grid gap-3 sm:grid-cols-3">
-  <Card><div class="text-xl font-bold text-ink">{pending.length}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Awaiting decision</div><p class="mt-1 text-xs text-ink-faint">Approve executes the queued tool; reject discards it.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{sensitiveCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Sensitive</div><p class="mt-1 text-xs text-ink-faint">Inspect first; {mutatingCount} more mutate data.</p></Card>
-  <Card><div class="text-xl font-bold text-ink">{toolCount}</div><div class="text-xs uppercase tracking-wide text-ink-muted">Tools involved</div><p class="mt-1 text-xs text-ink-faint">Distinct automation surfaces requesting approval.</p></Card>
+  <Card
+    ><div class="text-xl font-bold text-ink">{pending.length}</div>
+    <div class="text-xs uppercase tracking-wide text-ink-muted">Awaiting decision</div>
+    <p class="mt-1 text-xs text-ink-faint">
+      Approve executes the queued tool; reject discards it.
+    </p></Card
+  >
+  <Card
+    ><div class="text-xl font-bold text-ink">{sensitiveCount}</div>
+    <div class="text-xs uppercase tracking-wide text-ink-muted">Sensitive</div>
+    <p class="mt-1 text-xs text-ink-faint">
+      Inspect first; {mutatingCount} more mutate data.
+    </p></Card
+  >
+  <Card
+    ><div class="text-xl font-bold text-ink">{toolCount}</div>
+    <div class="text-xs uppercase tracking-wide text-ink-muted">Tools involved</div>
+    <p class="mt-1 text-xs text-ink-faint">
+      Distinct automation surfaces requesting approval.
+    </p></Card
+  >
 </div>
 
 <ErrorNotice message={error} onretry={load} />
@@ -142,8 +165,13 @@
 {#if loading}
   <Card padded={false}><Skeleton rows={4} /></Card>
 {:else if pending.length === 0}
-  <EmptyState title="No agent actions waiting" message="Read-only and low-risk tool calls run directly. Mutating or sensitive proposals will appear here when a human decision is required.">
-    {#snippet children()}<Button variant="secondary" href="/agents">Open agents</Button><Button href="/workbench">Open workbench</Button>{/snippet}
+  <EmptyState
+    title="No agent actions waiting"
+    message="Read-only and low-risk tool calls run directly. Mutating or sensitive proposals will appear here when a human decision is required."
+  >
+    {#snippet children()}<Button variant="secondary" href="/agents">Open agents</Button><Button
+        href="/workbench">Open workbench</Button
+      >{/snippet}
   </EmptyState>
 {:else}
   <Table>

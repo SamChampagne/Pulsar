@@ -47,7 +47,14 @@ export class DealsController {
   @HttpCode(200)
   @RequirePermissions(PERMISSIONS.CRM.MANAGE)
   advance(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AdvanceDealDto) {
-    return this.deals.advance(user.tenantId, id, user.id, dto.stage);
+    return this.deals.advance(
+      user.tenantId,
+      id,
+      user.id,
+      dto.stage,
+      dto.pipelineStageId,
+      dto.expectedRevision,
+    );
   }
 
   @Post(':id/convert')

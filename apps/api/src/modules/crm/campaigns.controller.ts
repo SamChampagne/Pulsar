@@ -48,7 +48,7 @@ export class CampaignsController {
 
   @Post(':id/send')
   @HttpCode(200)
-  @RequirePermissions(PERMISSIONS.CRM.MANAGE)
+  @RequirePermissions(PERMISSIONS.CRM.MANAGE, PERMISSIONS.EMAIL.SEND)
   send(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.campaigns.send(user.tenantId, id, user.id);
   }

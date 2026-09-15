@@ -1,4 +1,16 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { beforeNavigate } from '$app/navigation';
+  import { auth } from '$lib/stores/auth';
+  import { PERMISSIONS, type WmsMoveResult } from '@pulsar/shared';
+  import { confirmAction } from '$lib/stores/confirmation';
+  import {
+    pendingMove,
+    rememberMove,
+    resolveMove,
+    moveScope,
+    type MoveIntent,
+  } from '$lib/wms/move-intent';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import {
@@ -6,6 +18,7 @@
     Button,
     Card,
     EmptyState,
+    ErrorNotice,
     Field,
     Input,
     Modal,
@@ -55,6 +68,8 @@
   let moveQty = $state<number>(0);
   let moveNote = $state('');
   let moveSaving = $state(false);
+  let moveError = $state('');
+  const canManage = $derived(!!$auth?.user.permissions.includes(PERMISSIONS.WMS.MANAGE));
 
   // Adjust modal
   let adjustOpen = $state(false);
@@ -104,12 +119,17 @@
   });
 
   function openMove() {
+    if ($pendingMove) {
+      toast.error('Reprenez d’abord le déplacement en attente.');
+      return;
+    }
     moveItemId = '';
     moveFromBinId = '';
     moveToBinId = '';
     moveQty = 0;
     moveNote = '';
     moveOpen = true;
+    moveError = '';
   }
 
   function openAdjust() {
@@ -121,31 +141,66 @@
   }
 
   async function submitMove() {
+    if (moveSaving || $pendingMove || !canManage) return;
     if (!moveItemId || !moveFromBinId || !moveToBinId || !moveQty) {
       toast.error('Article, bins source/destination et quantité sont requis');
       return;
     }
     moveSaving = true;
+    moveError = '';
+    let intent: MoveIntent | null = null;
+    const scope = moveScope();
     try {
-      await api('/wms/inventory/move', {
-        method: 'POST',
-        body: {
+      if (
+        !(await confirmAction(
+          'Confirmer le déplacement de stock entre les emplacements sélectionnés ? Le journal conservera ce mouvement.',
+          { title: 'Confirmer le déplacement', confirmLabel: 'Déplacer le stock' },
+        ))
+      )
+        return;
+      if (moveScope() !== scope) throw new Error('La session a changé.');
+      intent = rememberMove(
+        {
+          operationKey: crypto.randomUUID(),
           itemId: moveItemId,
           fromBinId: moveFromBinId,
           toBinId: moveToBinId,
           qty: Number(moveQty),
-          note: moveNote || undefined,
+          ...(moveNote ? { note: moveNote } : {}),
         },
+        `${moveQty} ${items.find((i) => i.id === moveItemId)?.unit ?? ''} de ${items.find((i) => i.id === moveItemId)?.sku ?? 'l’article'} : ${bins.find((b) => b.id === moveFromBinId)?.code ?? 'source'} → ${bins.find((b) => b.id === moveToBinId)?.code ?? 'destination'}`,
+      );
+      await api<WmsMoveResult>('/wms/inventory/move', {
+        method: 'POST',
+        body: intent.request,
       });
+      resolveMove(intent);
       toast.success('Stock déplacé');
       moveOpen = false;
       await load();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Échec du déplacement');
+      if (intent && e instanceof ApiError && [400, 403, 404, 409, 422].includes(e.statusCode))
+        resolveMove(intent);
+      moveError = $pendingMove
+        ? 'Résultat non confirmé. Fermez et reprenez la demande conservée en haut de la page, sans créer un nouveau déplacement.'
+        : e instanceof Error
+          ? e.message
+          : 'Échec du déplacement';
     } finally {
       moveSaving = false;
     }
   }
+  onMount(() => {
+    const refresh = () => {
+      moveOpen = false;
+      void load();
+    };
+    window.addEventListener('wms:stock-changed', refresh);
+    return () => window.removeEventListener('wms:stock-changed', refresh);
+  });
+  beforeNavigate(({ cancel }) => {
+    if (moveSaving) cancel();
+  });
 
   async function submitAdjust() {
     if (!adjustItemId || !adjustBinId || !adjustDelta) {
@@ -176,8 +231,9 @@
 
 <PageHeader title="Inventaire">
   {#snippet actions()}
-    <Button variant="secondary" onclick={openAdjust}>Ajuster</Button>
-    <Button onclick={openMove}>Déplacer</Button>
+    <Button variant="secondary" href="/wms/movements">Journal des mouvements</Button>
+    {#if canManage}<Button variant="secondary" onclick={openAdjust}>Ajuster</Button>
+      <Button onclick={openMove} disabled={!!$pendingMove}>Déplacer</Button>{/if}
   {/snippet}
 </PageHeader>
 
@@ -203,10 +259,16 @@
             <span class="text-ink-muted">{lvl.item.name}</span>
             <span class="text-ink-faint">{lvl.bin.code}</span>
             <Badge tone="neutral">{lvl.bin.kind}</Badge>
+            <a
+              class="text-xs text-accent hover:underline"
+              href={`/wms/movements?itemId=${encodeURIComponent(lvl.itemId)}&binId=${encodeURIComponent(lvl.binId)}`}
+              >Journal ↗</a
+            >
             <span
               class={`ml-auto font-semibold ${Number(lvl.qtyOnHand) < 0 ? 'text-danger' : 'text-ink'}`}
             >
-              {lvl.qtyOnHand} {lvl.item.unit}
+              {lvl.qtyOnHand}
+              {lvl.item.unit}
             </span>
           </div>
         {/each}
@@ -216,8 +278,8 @@
 {/if}
 
 <!-- Move modal -->
-<Modal bind:open={moveOpen} title="Déplacer du stock">
-  <div class="space-y-3">
+<Modal bind:open={moveOpen} title="Déplacer du stock" dismissible={!moveSaving}>
+  <fieldset class="min-w-0 space-y-3" disabled={moveSaving || !!$pendingMove}>
     <Field label="Article">
       <Select bind:value={moveItemId}>
         <option value="">— Sélectionner —</option>
@@ -248,10 +310,17 @@
     <Field label="Note">
       <Textarea bind:value={moveNote} />
     </Field>
-  </div>
+  </fieldset>
+  <ErrorNotice message={moveError} />
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { moveOpen = false; }}>Annuler</Button>
-    <Button loading={moveSaving} onclick={submitMove}>Déplacer</Button>
+    <Button
+      variant="secondary"
+      disabled={moveSaving}
+      onclick={() => {
+        moveOpen = false;
+      }}>Fermer</Button
+    >
+    <Button loading={moveSaving} disabled={!!$pendingMove} onclick={submitMove}>Déplacer</Button>
   {/snippet}
 </Modal>
 
@@ -282,7 +351,12 @@
     </Field>
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { adjustOpen = false; }}>Annuler</Button>
+    <Button
+      variant="secondary"
+      onclick={() => {
+        adjustOpen = false;
+      }}>Annuler</Button
+    >
     <Button loading={adjustSaving} onclick={submitAdjust}>Ajuster</Button>
   {/snippet}
 </Modal>

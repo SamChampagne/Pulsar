@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # Separate jobs on purpose: a red typecheck job vs a red browser-e2e job point
 # straight at the failing tier instead of one monolithic "build-and-test" run.
 env:

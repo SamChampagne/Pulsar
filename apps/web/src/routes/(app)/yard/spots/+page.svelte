@@ -150,7 +150,7 @@
   }
 </script>
 
-<PageHeader title="Spots" count={spots.length}>
+<PageHeader title="Emplacements de cour" count={spots.length}>
   {#snippet actions()}
     <Button onclick={openCreate}>Nouveau spot</Button>
   {/snippet}
@@ -190,8 +190,13 @@
         <tr class="cursor-pointer" onclick={() => openEdit(s)}>
           <td class="font-mono font-semibold text-ink">{s.code}</td>
           <td><Badge tone={typeTone(s.type)}>{typeLabel(s.type)}</Badge></td>
-          <td class="text-ink-muted"><span class="font-mono">{s.location.code}</span> — {s.location.name}</td>
-          <td><Badge tone={s.isActive ? 'ok' : 'neutral'}>{s.isActive ? 'Actif' : 'Inactif'}</Badge></td>
+          <td class="text-ink-muted"
+            ><span class="font-mono">{s.location.code}</span> — {s.location.name}</td
+          >
+          <td
+            ><Badge tone={s.isActive ? 'ok' : 'neutral'}>{s.isActive ? 'Actif' : 'Inactif'}</Badge
+            ></td
+          >
         </tr>
       {/each}
     {/snippet}
@@ -224,7 +229,12 @@
         </label>
       </Field>
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
-        <Button variant="secondary" onclick={() => { formOpen = false; }}>Annuler</Button>
+        <Button
+          variant="secondary"
+          onclick={() => {
+            formOpen = false;
+          }}>Annuler</Button
+        >
         <Button variant="primary" loading={saving} onclick={submit}>Enregistrer</Button>
       </div>
     </div>

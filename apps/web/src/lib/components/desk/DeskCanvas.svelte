@@ -442,12 +442,14 @@
         {#if domain}
           {@const universe = MODULE_UNIVERSES[domain.key] ?? MODULE_UNIVERSES['dashboard']}
           <DeskIcon label={domain.label} icon={domain.icon} accent={universe.accent}
+            onSurface
             editing={editing}
             onactivate={() => { if (!editing) { closeFolder(); goto(domain.home); } }}
             onremove={editing ? () => removeFromFolder(folderId, ci) : undefined} />
         {/if}
       {:else if child.type === 'link'}
         <DeskIcon label={child.label} icon={linkIcon(child.href)} accent={linkAccent(child.href)}
+          onSurface
           editing={editing}
           onactivate={() => { if (!editing) { closeFolder(); goto(child.href); } }}
           onremove={editing ? () => removeFromFolder(folderId, ci) : undefined} />

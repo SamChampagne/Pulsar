@@ -4,12 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AuditAction, BankTxnStatus, parseBankCsv } from '@pulsar/shared';
+import { AuditAction, BankTxnStatus, bankMatchError, canTransitionBankTxn } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
+import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { ModesOfPaymentService } from '../modes-of-payment.service';
-import { CreateBankTransactionDto, ImportBankCsvDto } from './dto/bank-transaction.dto';
+import { CreateBankTransactionDto } from './dto/bank-transaction.dto';
 
 @Injectable()
 export class BankTransactionsService {
@@ -17,60 +18,48 @@ export class BankTransactionsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogsService,
     private readonly modes: ModesOfPaymentService,
+    private readonly ownership: OwnershipService,
   ) {}
 
   private async assertAccountOwned(tenantId: string, bankAccountId: string) {
     const account = await this.prisma.bankAccount.findFirst({
       where: { id: bankAccountId, tenantId },
-      select: { id: true, glAccountCode: true },
+      select: { id: true, glAccountCode: true, currency: true },
     });
     if (!account) throw new NotFoundException(`BankAccount ${bankAccountId} not found`);
     return account;
   }
 
-  list(tenantId: string, bankAccountId?: string, status?: BankTxnStatus) {
+  list(tenantId: string, bankAccountId?: string, status?: BankTxnStatus, paymentId?: string) {
     return this.prisma.bankTransaction.findMany({
       where: {
         tenantId,
         ...(bankAccountId ? { bankAccountId } : {}),
         ...(status ? { status } : {}),
+        ...(paymentId ? { matchedPaymentId: paymentId } : {}),
       },
       orderBy: { date: 'desc' },
     });
   }
 
   async create(tenantId: string, dto: CreateBankTransactionDto) {
-    await this.assertAccountOwned(tenantId, dto.bankAccountId);
-    return this.prisma.bankTransaction.create({
-      data: {
-        tenantId,
-        bankAccountId: dto.bankAccountId,
-        date: new Date(dto.date),
-        description: dto.description,
-        amount: new Prisma.Decimal(dto.amount),
-        reference: dto.reference,
-        status: BankTxnStatus.UNRECONCILED,
-      },
-    });
-  }
-
-  async import(tenantId: string, dto: ImportBankCsvDto) {
-    await this.assertAccountOwned(tenantId, dto.bankAccountId);
-    const { rows, errors } = parseBankCsv(dto.csv);
-    if (rows.length > 0) {
-      await this.prisma.bankTransaction.createMany({
-        data: rows.map((r) => ({
+    await this.ownership.assertOwned('bankAccount', dto.bankAccountId, tenantId);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM bank_accounts WHERE id = ${dto.bankAccountId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      if (!(await tx.bankAccount.findFirst({ where: { id: dto.bankAccountId, tenantId } })))
+        throw new NotFoundException('Compte bancaire introuvable.');
+      return tx.bankTransaction.create({
+        data: {
           tenantId,
           bankAccountId: dto.bankAccountId,
-          date: new Date(r.date),
-          amount: new Prisma.Decimal(r.amount),
-          description: r.description,
-          reference: r.reference ?? null,
+          date: new Date(dto.date),
+          description: dto.description,
+          amount: new Prisma.Decimal(dto.amount),
+          reference: dto.reference,
           status: BankTxnStatus.UNRECONCILED,
-        })),
+        },
       });
-    }
-    return { imported: rows.length, errors };
+    });
   }
 
   async reconciliation(tenantId: string, bankAccountId: string) {
@@ -83,61 +72,106 @@ export class BankTransactionsService {
 
     const allSubmitted = await this.prisma.payment.findMany({
       where: { tenantId, status: 'SUBMITTED', reconciledAt: null },
-      include: { modeOfPayment: true },
+      include: {
+        modeOfPayment: true,
+        allocations: { where: { tenantId }, select: { amount: true } },
+      },
     });
 
     const candidatePayments = allSubmitted.filter(
-      (p) => p.modeOfPayment?.accountCode === account.glAccountCode,
+      (p) =>
+        p.modeOfPayment?.accountCode === account.glAccountCode && p.currency === account.currency,
     );
 
-    return { unreconciledTransactions, candidatePayments };
+    return {
+      unreconciledTransactions,
+      candidatePayments: candidatePayments.map((p) => ({
+        ...p,
+        allocatedAmount: p.allocations.reduce((sum, a) => sum + Number(a.amount), 0),
+      })),
+    };
   }
 
   async match(tenantId: string, userId: string, txnId: string, paymentId: string) {
-    const txn = await this.prisma.bankTransaction.findFirst({
-      where: { id: txnId, tenantId },
-    });
-    if (!txn) throw new NotFoundException(`BankTransaction ${txnId} not found`);
-    if (txn.status !== BankTxnStatus.UNRECONCILED) {
-      throw new BadRequestException(`Transaction ${txnId} is not UNRECONCILED`);
-    }
-
-    const payment = await this.prisma.payment.findFirst({
-      where: { id: paymentId, tenantId },
-    });
-    if (!payment) throw new NotFoundException(`Payment ${paymentId} not found`);
-    if (payment.status !== 'SUBMITTED') {
-      throw new BadRequestException(`Payment ${paymentId} is not SUBMITTED`);
-    }
-    if (payment.reconciledAt !== null) {
-      throw new BadRequestException(`Payment ${paymentId} is already reconciled`);
-    }
-
+    await this.ownership.assertOwned('payment', paymentId, tenantId);
+    let changed = false;
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Global order: payment before bank transaction (shared with cancel/unmatch).
+      await tx.$queryRaw`SELECT id FROM payments WHERE id = ${paymentId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM bank_transactions WHERE id = ${txnId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      const txn = await tx.bankTransaction.findFirst({ where: { id: txnId, tenantId } });
+      if (!txn) throw new NotFoundException('Transaction bancaire introuvable.');
+      const payment = await tx.payment.findFirst({
+        where: { id: paymentId, tenantId },
+        include: { modeOfPayment: true, allocations: { where: { tenantId } } },
+      });
+      if (!payment || payment.status !== 'SUBMITTED')
+        throw new BadRequestException('Le paiement doit être comptabilisé.');
+      if (
+        txn.status === BankTxnStatus.RECONCILED &&
+        txn.matchedPaymentId === paymentId &&
+        payment.reconciledAt
+      )
+        return txn;
+      if (
+        !canTransitionBankTxn(txn.status as BankTxnStatus, BankTxnStatus.RECONCILED) ||
+        payment.reconciledAt
+      )
+        throw new ConflictException('Transaction ou paiement déjà rapproché.');
+      await tx.$queryRaw`SELECT id FROM bank_accounts WHERE id = ${txn.bankAccountId} AND "tenantId" = ${tenantId} FOR SHARE`;
+      const account = await tx.bankAccount.findFirst({
+        where: { id: txn.bankAccountId, tenantId },
+      });
+      if (!account) throw new NotFoundException('Compte bancaire introuvable.');
+      const reason = bankMatchError({
+        transactionAmount: Number(txn.amount),
+        paymentAmount: Number(payment.totalAmount),
+        allocatedAmount: payment.allocations.reduce((sum, a) => sum + Number(a.amount), 0),
+        bankCurrency: account.currency,
+        paymentCurrency: payment.currency,
+        bankAccountCode: account.glAccountCode,
+        paymentAccountCode: payment.modeOfPayment.accountCode,
+        paymentType: payment.type,
+      });
+      if (reason) throw new BadRequestException(reason);
+      // Match the actual posted bank leg, not just the mutable mode configuration.
+      const journal = await tx.journalEntry.findMany({
+        where: { tenantId, sourceType: 'payment', sourceId: paymentId, sourceKind: null },
+        include: {
+          lines: { where: { tenantId, account: { tenantId, code: account.glAccountCode } } },
+        },
+      });
+      const posted = journal
+        .flatMap((j) => j.lines)
+        .reduce((sum, line) => sum.plus(line.debit).minus(line.credit), new Prisma.Decimal(0));
+      if (journal.length !== 1 || !posted.equals(txn.amount))
+        throw new BadRequestException(
+          'L’écriture bancaire du paiement est absente ou ne correspond pas au mouvement.',
+        );
       const txnClaim = await tx.bankTransaction.updateMany({
-        where: { id: txnId, tenantId, status: BankTxnStatus.UNRECONCILED },
+        where: { id: txnId, tenantId, status: BankTxnStatus.UNRECONCILED, matchedPaymentId: null },
         data: { status: BankTxnStatus.RECONCILED, matchedPaymentId: paymentId },
       });
-      if (txnClaim.count === 0) throw new ConflictException('Transaction changed concurrently');
-
+      if (!txnClaim.count) throw new ConflictException('Transaction modifiée simultanément.');
       const paymentClaim = await tx.payment.updateMany({
-        where: { id: paymentId, tenantId, reconciledAt: null },
+        where: { id: paymentId, tenantId, status: 'SUBMITTED', reconciledAt: null },
         data: { reconciledAt: new Date() },
       });
-      if (paymentClaim.count === 0) throw new ConflictException('Payment changed concurrently');
-
-      return tx.bankTransaction.findFirst({ where: { id: txnId } });
+      if (!paymentClaim.count) throw new ConflictException('Paiement modifié simultanément.');
+      changed = true;
+      return tx.bankTransaction.findFirstOrThrow({ where: { id: txnId, tenantId } });
     });
 
-    await this.audit.log({
-      tenantId,
-      userId,
-      action: AuditAction.UPDATE,
-      entityType: 'bank-transaction',
-      entityId: txnId,
-      before: { status: BankTxnStatus.UNRECONCILED },
-      after: { status: BankTxnStatus.RECONCILED, matchedPaymentId: paymentId },
-    });
+    if (changed)
+      await this.audit.log({
+        tenantId,
+        userId,
+        action: AuditAction.UPDATE,
+        entityType: 'bank-transaction',
+        entityId: txnId,
+        before: { status: BankTxnStatus.UNRECONCILED },
+        after: { status: BankTxnStatus.RECONCILED, matchedPaymentId: paymentId },
+      });
 
     return updated;
   }
@@ -157,17 +191,25 @@ export class BankTransactionsService {
     const matchedPaymentId = txn.matchedPaymentId;
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.bankTransaction.updateMany({
-        where: { id: txnId, tenantId },
+      await tx.$queryRaw`SELECT id FROM payments WHERE id = ${matchedPaymentId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM bank_transactions WHERE id = ${txnId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      const current = await tx.bankTransaction.findFirst({ where: { id: txnId, tenantId } });
+      if (
+        !current ||
+        current.matchedPaymentId !== matchedPaymentId ||
+        !canTransitionBankTxn(current.status as BankTxnStatus, BankTxnStatus.UNRECONCILED)
+      )
+        throw new ConflictException('Le rapprochement a changé. Rechargez le dossier.');
+      const claim = await tx.bankTransaction.updateMany({
+        where: { id: txnId, tenantId, status: BankTxnStatus.RECONCILED, matchedPaymentId },
         data: { status: BankTxnStatus.UNRECONCILED, matchedPaymentId: null },
       });
-
+      if (!claim.count) throw new ConflictException('Le rapprochement a changé.');
       await tx.payment.updateMany({
         where: { id: matchedPaymentId, tenantId },
         data: { reconciledAt: null },
       });
-
-      return tx.bankTransaction.findFirst({ where: { id: txnId } });
+      return tx.bankTransaction.findFirstOrThrow({ where: { id: txnId, tenantId } });
     });
 
     await this.audit.log({

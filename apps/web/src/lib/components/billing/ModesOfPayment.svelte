@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import { Badge, Button, Card, Field, Input, Modal, Table, EmptyState } from '$lib/components/ui';
@@ -99,7 +100,7 @@
   // ── Delete ────────────────────────────────────────────────────────────────────
 
   async function deleteMode(mode: ModeOfPayment) {
-    if (!confirm(`Supprimer « ${mode.name} » ?`)) return;
+    if (!(await confirmAction(`Supprimer « ${mode.name} » ?`))) return;
     deleting = mode.id;
     deleteError = '';
     try {
@@ -110,7 +111,9 @@
       if (e instanceof ApiError && (e.statusCode === 409 || e.statusCode === 400)) {
         deleteError = e.message;
       } else {
-        toast.error(e instanceof ApiError ? e.message : 'Impossible de supprimer le mode de paiement');
+        toast.error(
+          e instanceof ApiError ? e.message : 'Impossible de supprimer le mode de paiement',
+        );
       }
     } finally {
       deleting = null;
@@ -137,7 +140,9 @@
   </div>
 
   {#if deleteError}
-    <div class="mb-3 rounded-md border border-danger bg-danger-soft/20 px-3 py-2 text-xs text-danger">
+    <div
+      class="mb-3 rounded-md border border-danger bg-danger-soft/20 px-3 py-2 text-xs text-danger"
+    >
       {deleteError}
     </div>
   {/if}
@@ -169,8 +174,8 @@
                 <Button
                   variant="danger"
                   loading={deleting === mode.id}
-                  onclick={() => void deleteMode(mode)}
-                >Supprimer</Button>
+                  onclick={() => void deleteMode(mode)}>Supprimer</Button
+                >
               </div>
             </td>
           </tr>
@@ -204,7 +209,12 @@
     </Field>
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { formOpen = false; }}>Annuler</Button>
+    <Button
+      variant="secondary"
+      onclick={() => {
+        formOpen = false;
+      }}>Annuler</Button
+    >
     <Button loading={formSaving} onclick={submitForm}>
       {formMode === 'create' ? 'Créer' : 'Enregistrer'}
     </Button>

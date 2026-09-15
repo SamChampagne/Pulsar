@@ -3,11 +3,19 @@ import { YardVisitStatus } from '@pulsar/shared';
 import { VisitsService } from './visits.service';
 
 function harness(opts: { occupied?: boolean; spotConflictPolicy?: 'BLOCK' | 'WARN' } = {}) {
-  const visit: any = { id: 'v1', tenantId: 't1', status: YardVisitStatus.CHECKED_IN, spotId: null };
+  const visit: any = {
+    id: 'v1',
+    tenantId: 't1',
+    locationId: 'site1',
+    status: YardVisitStatus.CHECKED_IN,
+    spotId: null,
+  };
   const moves: any[] = [];
   const client = {
+    $queryRaw: async () => [],
+    yardSpot: { findFirst: async () => ({ id: 'door1', locationId: 'site1', isActive: true }) },
     yardVisit: {
-      findFirst: async () => visit,
+      findFirst: async () => ({ ...visit }),
       count: async ({ where }: any) => (opts.occupied && where.spotId === 'door1' ? 1 : 0),
       updateMany: async ({ where, data }: any) => {
         const ok =
@@ -38,7 +46,15 @@ function harness(opts: { occupied?: boolean; spotConflictPolicy?: 'BLOCK' | 'WAR
   } as any;
   const customFields = { validateValues: async () => undefined } as any;
   return {
-    svc: new VisitsService(client, sequences, ownership, audit, domainEvents, moduleSettings, customFields),
+    svc: new VisitsService(
+      client,
+      sequences,
+      ownership,
+      audit,
+      domainEvents,
+      moduleSettings,
+      customFields,
+    ),
     visit,
     moves,
   };
@@ -54,7 +70,9 @@ describe('VisitsService.assign', () => {
   });
   it('rejects assigning an occupied spot (BLOCK policy)', async () => {
     const h = harness({ occupied: true, spotConflictPolicy: 'BLOCK' });
-    await expect(h.svc.assign('t1', 'u1', 'v1', { spotId: 'door1' } as any)).rejects.toThrow(ConflictException);
+    await expect(h.svc.assign('t1', 'u1', 'v1', { spotId: 'door1' } as any)).rejects.toThrow(
+      ConflictException,
+    );
   });
 });
 
@@ -71,14 +89,18 @@ describe('VisitsService.checkOut', () => {
 });
 
 describe('VisitsService.spotConflictPolicy', () => {
-  it('WARN policy: occupied spot resolves (no throw) with spotWarnings', async () => {
+  it('legacy WARN never bypasses physical occupancy', async () => {
     const h = harness({ occupied: true, spotConflictPolicy: 'WARN' });
-    const result = await h.svc.assign('t1', 'u1', 'v1', { spotId: 'door1' } as any);
-    expect((result as any).spotWarnings).toEqual(['Spot already occupied']);
+    await expect(h.svc.assign('t1', 'u1', 'v1', { spotId: 'door1' } as any)).rejects.toThrow(
+      ConflictException,
+    );
+    expect(h.moves).toHaveLength(0);
   });
 
   it('BLOCK policy: occupied spot throws ConflictException', async () => {
     const h = harness({ occupied: true, spotConflictPolicy: 'BLOCK' });
-    await expect(h.svc.assign('t1', 'u1', 'v1', { spotId: 'door1' } as any)).rejects.toThrow(ConflictException);
+    await expect(h.svc.assign('t1', 'u1', 'v1', { spotId: 'door1' } as any)).rejects.toThrow(
+      ConflictException,
+    );
   });
 });

@@ -2,7 +2,19 @@
   import type { Paginated } from '@pulsar/shared';
   import { YardDirection } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import { Badge, Button, Card, EmptyState, Field, Input, PageHeader, Select, Skeleton, ViewToggle, type ViewId } from '$lib/components/ui';
+  import {
+    Badge,
+    Button,
+    Card,
+    EmptyState,
+    Field,
+    Input,
+    PageHeader,
+    Select,
+    Skeleton,
+    ViewToggle,
+    type ViewId,
+  } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
@@ -130,14 +142,15 @@
   }
 
   function trailerLabel(v: Visit): string {
-    if (v.trailer) return v.trailer.plate ? `${v.trailer.unitNumber} (${v.trailer.plate})` : v.trailer.unitNumber;
+    if (v.trailer)
+      return v.trailer.plate
+        ? `${v.trailer.unitNumber} (${v.trailer.plate})`
+        : v.trailer.unitNumber;
     return v.trailerRef ?? '—';
   }
 
   // Free spots of the selected site (no occupying visit known here — show active ones).
-  const siteSpots = $derived(
-    spots.filter((s) => s.locationId === formLocationId && s.isActive),
-  );
+  const siteSpots = $derived(spots.filter((s) => s.locationId === formLocationId && s.isActive));
 
   const siteAppointments = $derived(
     appointments.filter(
@@ -146,6 +159,12 @@
         (a.locationId === formLocationId || a.location?.id === formLocationId),
     ),
   );
+
+  const selectedAppointment = $derived(siteAppointments.find((a) => a.id === formAppointmentId));
+  $effect(() => {
+    if (selectedAppointment) formDirection = selectedAppointment.direction;
+    else if (formAppointmentId) formAppointmentId = '';
+  });
 
   // Active visits only.
   const activeVisits = $derived(
@@ -159,7 +178,9 @@
       api<Paginated<CarrierOption>>('/transportation/carriers', { query: { pageSize: 100 } }),
       api<SpotOption[]>('/yard/spots'),
       api<AppointmentOption[]>('/yard/appointments', { query: { status: 'SCHEDULED' } }),
-      api<CustomFieldDef[]>('/yard/custom-fields', { query: { entityType: 'YARD_VISIT' } }).catch(() => [] as CustomFieldDef[]),
+      api<CustomFieldDef[]>('/yard/custom-fields', { query: { entityType: 'YARD_VISIT' } }).catch(
+        () => [] as CustomFieldDef[],
+      ),
     ]);
     locations = locs.items;
     trailers = trls.items;
@@ -218,7 +239,10 @@
         appointmentId: formAppointmentId || undefined,
         customData: Object.keys(customData).length > 0 ? customData : undefined,
       };
-      const result = await api<{ spotWarnings?: string[] }>('/yard/visits', { method: 'POST', body });
+      const result = await api<{ spotWarnings?: string[] }>('/yard/visits', {
+        method: 'POST',
+        body,
+      });
       if (result?.spotWarnings && result.spotWarnings.length > 0) {
         spotWarnings = result.spotWarnings;
       }
@@ -255,7 +279,7 @@
   }
 </script>
 
-<PageHeader title="Gate" />
+<PageHeader title="Entrées et sorties" />
 
 <div class="mb-4">
   <a href="/yard" class="text-sm text-accent hover:underline">← Yard</a>
@@ -306,10 +330,13 @@
           <Input bind:value={formDriverName} placeholder="Nom du chauffeur" />
         </Field>
         <Field label="Direction">
-          <Select bind:value={formDirection}>
+          <Select bind:value={formDirection} disabled={!!selectedAppointment}>
             {#each DIRECTIONS as d (d)}<option value={d}>{d}</option>{/each}
           </Select>
         </Field>
+        {#if selectedAppointment}<p class="mt-1 text-xs text-ink-muted">
+            Sens repris du rendez-vous lié.
+          </p>{/if}
         <Field label="Spot (optionnel)">
           <Select bind:value={formSpotId}>
             <option value="">— Aucun (placer plus tard) —</option>
@@ -358,7 +385,9 @@
                 <Badge tone={statusTone(v.status)}>{visitStatusLabel(v.status)}</Badge>
                 <div class="min-w-0">
                   <div class="font-medium text-ink">{v.visitNumber}</div>
-                  <div class="text-ink-muted">{trailerLabel(v)}{v.spot ? ` · ${v.spot.code}` : ''}</div>
+                  <div class="text-ink-muted">
+                    {trailerLabel(v)}{v.spot ? ` · ${v.spot.code}` : ''}
+                  </div>
                 </div>
                 {#if v.status === 'CHECKED_IN' || v.status === 'ASSIGNED'}
                   <span class="ml-auto">
@@ -382,7 +411,9 @@
                   <span class="font-semibold text-ink">{v.visitNumber}</span>
                   <Badge tone={statusTone(v.status)}>{visitStatusLabel(v.status)}</Badge>
                 </div>
-                <p class="mt-1 text-sm text-ink-muted">{trailerLabel(v)}{v.spot ? ` · ${v.spot.code}` : ''}</p>
+                <p class="mt-1 text-sm text-ink-muted">
+                  {trailerLabel(v)}{v.spot ? ` · ${v.spot.code}` : ''}
+                </p>
                 <p class="mt-0.5 text-xs text-ink-faint">{v.direction} · {fmtDate(v.checkInAt)}</p>
                 {#if v.status === 'CHECKED_IN' || v.status === 'ASSIGNED'}
                   <div class="mt-2">
@@ -397,7 +428,9 @@
         <div class="flex gap-3 overflow-x-auto p-3 pb-4">
           {#each VISIT_KANBAN_COLS as col (col.status)}
             {@const items = visits.filter((v) => v.status === col.status)}
-            <div class="flex w-56 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+            <div
+              class="flex w-56 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted"
+            >
               <div class="flex items-center justify-between px-3 py-2">
                 <Badge tone={statusTone(col.status)}>{col.label}</Badge>
                 <span class="font-mono text-xs text-ink-muted">{items.length}</span>
@@ -409,7 +442,9 @@
                   {#each items as v (v.id)}
                     <div class="rounded-inner border border-edge-soft bg-surface p-2.5 shadow-sm">
                       <div class="font-semibold text-sm text-ink">{v.visitNumber}</div>
-                      <div class="mt-0.5 truncate text-xs text-ink-muted">{trailerLabel(v)}{v.spot ? ` · ${v.spot.code}` : ''}</div>
+                      <div class="mt-0.5 truncate text-xs text-ink-muted">
+                        {trailerLabel(v)}{v.spot ? ` · ${v.spot.code}` : ''}
+                      </div>
                       <div class="mt-0.5 text-[11px] text-ink-faint">{v.direction}</div>
                       {#if v.status === 'CHECKED_IN' || v.status === 'ASSIGNED'}
                         <button

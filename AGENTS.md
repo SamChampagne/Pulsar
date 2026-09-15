@@ -283,6 +283,65 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     JAMAIS `WmsModule` ni `BillingModule` statiquement (cycle JS) ; `ReactionExecutorService`
     résout `PickingService`/`CustomerInvoicesService` via `ModuleRef.get()` + lazy `require()`.
 
+## Hard rules (continued, Yard — dossiers connectés)
+
+39. `YardDossierLink` décrit un contexte, jamais une transition : aucun stock, coût ou
+    statut TMS/WMS ne change à l'ajout/retrait. Une visite liée à un rendez-vous utilise
+    les liens du rendez-vous (pas de copie). Écritures via `YardDossiersService`, verrou
+    de site partagé avec Yard, droits de lecture de la cible et `yard.manage`, tenant/FK
+    vérifiés, compatibilité site/sens contrôlée, audit et idempotence. Un passage terminé
+    est en lecture seule. Les contraintes SQL exactement une source/une cible doivent
+    être préservées. Détail : `docs/plans/yard-connected-dossiers.md`.
+
+## Hard rules (continued, WMS — poste visuel)
+
+40. `Bin.zone` est un classement d'affichage, jamais une capacité ou un déplacement.
+    Les lectures du workspace sont tenant/site-scopées et calculées à la lecture;
+    ne jamais additionner les quantités d'articles/unités différents. Tous les writers
+    de stock passent par `InventoryService.postMovement` et son verrou transactionnel
+    de tenant, partagé avec `BinsService.update`. Site d'un bin immuable; pas de
+    désactivation/changement de type avec un solde non nul. L'UI transmet
+    `expectedUpdatedAt` pour les zones et confirme les MOVE existants; aucune transition
+    automatique des dossiers. Contrats et limites : `docs/plans/wms-visual-workspace.md`.
+
+## Hard rules (continued, WMS — documents guidés)
+
+41. Les writers de réception/préparation (lignes, métadonnées, validation, annulation)
+    prennent le verrou tenant AVANT de relire le document et ses lignes, via
+    `lockWmsDocument`. Une édition de ligne avance aussi `updatedAt` du parent via
+    `nextWmsVersion`; le client guidé transmet cette version sur chaque mutation.
+    `readiness` est une lecture, jamais une réservation : besoin cumulé Decimal par
+    article/bin, stock revérifié par le writer existant à la validation atomique.
+    Article/bin actifs et même entrepôt revérifiés en transaction; les documents
+    historiques ne sont pas recontrôlés contre le stock courant. Pas de retry après
+    réponse incertaine sans inspection. Voir `docs/plans/wms-guided-operations.md`.
+
+## Hard rules (continued, WMS — rangement et journal)
+
+42. Un MOVE avec `operationKey` est idempotent sur `(tenantId, operationKey)` dans
+    `StockMovement` : verrou tenant AVANT lookup, fingerprint lié à l'acteur et au
+    corps, replay avant validation de disponibilité, conflit de contenu ⇒ 409.
+    Clé, registre et soldes sont écrits dans la MÊME transaction via `postMovement`.
+    Le client conserve la demande avant envoi et reprend EXACTEMENT la même clé
+    après une réponse incertaine (jamais une nouvelle clé pour « réessayer »).
+    `unitSnapshot` capture l'unité des nouveaux mouvements; les anciens NULL sont
+    signalés, jamais backfillés par une unité supposée. Le journal est une lecture
+    tenant-scopée, pas une provenance par lot ni une réservation de stock.
+    Contrats et limites : `docs/plans/wms-putaway-traceability.md`.
+
+## Hard rules (continued, Flotte — poste visuel)
+
+43. Les mutations d’ordres de maintenance passent par le verrou tenant de
+    `MaintenanceService.locked` (création, édition, démarrage et clôtures, y compris
+    génération depuis un plan). Ordre + sync actif + réancrage du plan sont atomiques.
+    Une clôture ne remet AVAILABLE que si l’actif est encore MAINTENANCE et n’a plus
+    aucun ordre OPEN/IN_PROGRESS. Les state machines restent obligatoires, RETIRED
+    n’est jamais réactivé. Audit et événement sont émis après commit via les services
+    best-effort existants. Les nouveaux clients envoient `expectedUpdatedAt`;
+    l’échéancier `dueDate` est UTC/display de dates limites, jamais une réservation
+    d’atelier ou une disponibilité TMS. Le contexte transport du poste Flotte exige
+    Transportation activé ET `transportation.planning.read`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

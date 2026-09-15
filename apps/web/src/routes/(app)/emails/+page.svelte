@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page as routePage } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
@@ -102,7 +103,14 @@
 
   async function openComposer() {
     composerOpen = true;
-    composerForm = { to: '', cc: '', subject: '', html: '', attachmentDocumentId: '', attachmentFilename: '' };
+    composerForm = {
+      to: '',
+      cc: '',
+      subject: '',
+      html: '',
+      attachmentDocumentId: '',
+      attachmentFilename: '',
+    };
     draftPrompt = '';
     selectedTemplateId = '';
     if (!templatesLoaded) {
@@ -146,7 +154,7 @@
       if (e instanceof ApiError && e.statusCode === 400) {
         toast.error('IA non configurée pour ce tenant');
       } else {
-        toast.error("Erreur lors de la génération du brouillon");
+        toast.error('Erreur lors de la génération du brouillon');
       }
     } finally {
       drafting = false;
@@ -209,6 +217,8 @@
           search: search || undefined,
           page,
           pageSize,
+          relatedType: routePage.url.searchParams.get('relatedType') ?? undefined,
+          relatedId: routePage.url.searchParams.get('relatedId') ?? undefined,
         },
       });
       rows = result.items;
@@ -241,6 +251,7 @@
     statusFilter;
     search;
     page;
+    routePage.url.search;
     error = '';
     void load();
   });
@@ -259,12 +270,21 @@
     <input
       bind:value={search}
       placeholder="Sujet, destinataire…"
-      onkeydown={(e) => { if (e.key === 'Enter') { page = 1; } }}
+      onkeydown={(e) => {
+        if (e.key === 'Enter') {
+          page = 1;
+        }
+      }}
       class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
     />
   </div>
   <div class="w-40">
-    <Select bind:value={statusFilter} onchange={() => { page = 1; }}>
+    <Select
+      bind:value={statusFilter}
+      onchange={() => {
+        page = 1;
+      }}
+    >
       <option value="">Tous les statuts</option>
       <option value="QUEUED">En file</option>
       <option value="SENT">Envoyé</option>
@@ -272,7 +292,14 @@
       <option value="DRAFT">Brouillon</option>
     </Select>
   </div>
-  <Button variant="secondary" onclick={() => { search = ''; statusFilter = ''; page = 1; }}>
+  <Button
+    variant="secondary"
+    onclick={() => {
+      search = '';
+      statusFilter = '';
+      page = 1;
+    }}
+  >
     Réinitialiser
   </Button>
 </FilterBar>
@@ -311,8 +338,11 @@
             <button
               type="button"
               class="inline-flex items-center justify-center rounded-md border border-edge bg-surface px-3 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-muted"
-              onclick={(e) => { e.stopPropagation(); openDetail(row); }}
-            >Détails</button>
+              onclick={(e) => {
+                e.stopPropagation();
+                openDetail(row);
+              }}>Détails</button
+            >
           </td>
         </tr>
       {:else}
@@ -337,27 +367,40 @@
         <Button
           variant="secondary"
           disabled={page <= 1}
-          onclick={() => { page = Math.max(1, page - 1); void load(); }}
-        >Précédent</Button>
+          onclick={() => {
+            page = Math.max(1, page - 1);
+            void load();
+          }}>Précédent</Button
+        >
         <span class="font-mono text-xs">Page {page} / {totalPages}</span>
         <Button
           variant="secondary"
           disabled={page >= totalPages}
-          onclick={() => { page = Math.min(totalPages, page + 1); void load(); }}
-        >Suivant</Button>
+          onclick={() => {
+            page = Math.min(totalPages, page + 1);
+            void load();
+          }}>Suivant</Button
+        >
       </div>
     </div>
   {/if}
 {/if}
 
 <!-- Detail Modal -->
-<Modal bind:open={detailOpen} title={detailEmail?.subject ?? 'Détail courriel'} size="lg" onclose={closeDetail}>
+<Modal
+  bind:open={detailOpen}
+  title={detailEmail?.subject ?? 'Détail courriel'}
+  size="lg"
+  onclose={closeDetail}
+>
   {#if detailEmail}
     <div class="flex flex-col gap-4">
       <div class="flex items-center gap-2">
         <Badge tone={statusTone(detailEmail.status)}>{statusLabel(detailEmail.status)}</Badge>
         {#if detailEmail.sentAt}
-          <span class="text-xs text-ink-muted">Envoyé le {new Date(detailEmail.sentAt).toLocaleString()}</span>
+          <span class="text-xs text-ink-muted"
+            >Envoyé le {new Date(detailEmail.sentAt).toLocaleString()}</span
+          >
         {/if}
       </div>
 
@@ -454,7 +497,11 @@
             disabled={drafting}
           />
         </div>
-        <Button variant="secondary" onclick={draftWithAI} disabled={drafting || !draftPrompt.trim()}>
+        <Button
+          variant="secondary"
+          onclick={draftWithAI}
+          disabled={drafting || !draftPrompt.trim()}
+        >
           {drafting ? 'Génération…' : 'Générer'}
         </Button>
       </div>

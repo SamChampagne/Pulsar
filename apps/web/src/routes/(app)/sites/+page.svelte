@@ -125,7 +125,11 @@
   });
 </script>
 
-<PageHeader title="Sites & Pages" subtitle="Gérez vos pages d'atterrissage et collectez des soumissions." count={total}>
+<PageHeader
+  title="Sites et pages"
+  subtitle="Gérez vos pages d'atterrissage et collectez des soumissions."
+  count={total}
+>
   {#snippet actions()}
     <Button onclick={openCreate}>Nouvelle page</Button>
   {/snippet}
@@ -138,7 +142,9 @@
     <input
       placeholder="Rechercher par titre ou slug…"
       bind:value={search}
-      onkeydown={(e) => { if (e.key === 'Enter') void load(); }}
+      onkeydown={(e) => {
+        if (e.key === 'Enter') void load();
+      }}
       class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
     />
   </div>
@@ -181,7 +187,10 @@
             <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
             <span
               class="text-accent hover:underline text-xs"
-              onclick={(e) => { e.stopPropagation(); window.open(`/p/${p.slug}`, '_blank'); }}
+              onclick={(e) => {
+                e.stopPropagation();
+                window.open(`/p/${p.slug}`, '_blank');
+              }}
             >
               /p/{p.slug} ↗
             </span>
@@ -201,14 +210,20 @@
       <Button
         variant="secondary"
         disabled={page <= 1}
-        onclick={() => { page = Math.max(1, page - 1); void load(); }}
-      >Précédent</Button>
+        onclick={() => {
+          page = Math.max(1, page - 1);
+          void load();
+        }}>Précédent</Button
+      >
       <span class="font-mono text-xs">Page {page} / {totalPages}</span>
       <Button
         variant="secondary"
         disabled={page >= totalPages}
-        onclick={() => { page = Math.min(totalPages, page + 1); void load(); }}
-      >Suivant</Button>
+        onclick={() => {
+          page = Math.min(totalPages, page + 1);
+          void load();
+        }}>Suivant</Button
+      >
     </div>
   </div>
 {/if}
@@ -221,7 +236,12 @@
     </Field>
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { createOpen = false; }}>Annuler</Button>
+    <Button
+      variant="secondary"
+      onclick={() => {
+        createOpen = false;
+      }}>Annuler</Button
+    >
     <Button loading={createSaving} onclick={submitCreate}>Créer</Button>
   {/snippet}
 </Modal>

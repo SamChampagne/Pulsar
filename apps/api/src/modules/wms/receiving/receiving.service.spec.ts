@@ -1,4 +1,5 @@
 import { ReceiptStatus } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import { ReceivingService } from './receiving.service';
 
 function harness() {
@@ -7,12 +8,28 @@ function harness() {
     tenantId: 't1',
     status: ReceiptStatus.DRAFT,
     locationId: 'loc1',
-    lines: [{ id: 'l1', itemId: 'i1', toBinId: 'b1', qty: 7 }],
+    updatedAt: new Date(),
+    location: { id: 'loc1', type: 'WAREHOUSE' },
+    lines: [
+      {
+        id: 'l1',
+        itemId: 'i1',
+        toBinId: 'b1',
+        qty: new Prisma.Decimal(7),
+        item: { isActive: true, unit: 'EA' },
+        toBin: { id: 'b1', isActive: true, locationId: 'loc1' },
+      },
+    ],
   };
   const posted: any[] = [];
   const client = {
+    $queryRaw: async () => [],
+    wmsItem: { findFirst: async () => ({ isActive: true }) },
+    bin: { findFirst: async () => ({ isActive: true, locationId: 'loc1' }) },
+    location: { findFirst: async () => ({ id: 'loc1' }) },
     receipt: {
       findFirst: async () => receipt,
+      findFirstOrThrow: async () => receipt,
       updateMany: async ({ where, data }: any) => {
         if (where.status === receipt.status) {
           Object.assign(receipt, data);
@@ -33,7 +50,19 @@ function harness() {
   const audit = { log: async () => undefined } as any;
   const domainEvents = { emit: async () => undefined } as any;
   const customFields = { validateValues: async () => undefined } as any;
-  return { svc: new ReceivingService(client, inventory, sequences, ownership, audit, domainEvents, customFields), receipt, posted };
+  return {
+    svc: new ReceivingService(
+      client,
+      inventory,
+      sequences,
+      ownership,
+      audit,
+      domainEvents,
+      customFields,
+    ),
+    receipt,
+    posted,
+  };
 }
 
 describe('ReceivingService.post', () => {

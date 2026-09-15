@@ -1,514 +1,438 @@
 <script lang="ts">
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
+  import { PERMISSIONS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
   import { toast } from '$lib/stores/toast';
+  import { confirmAction } from '$lib/stores/confirmation';
   import { formatMoney } from '$lib/format';
+  import { type OpenInvoice, invoiceHref } from '$lib/billing/payments';
   import {
-    PageHeader,
+    RecordHeader,
     Button,
     Card,
-    Badge,
-    type Tone,
+    Field,
+    Input,
+    Select,
+    Textarea,
+    EntityPicker,
+    ErrorNotice,
+    Skeleton,
+    EmptyState,
   } from '$lib/components/ui';
 
-  // ── Types ─────────────────────────────────────────────────────────────────────
-
-  type PaymentType = 'RECEIVE' | 'PAY';
-
-  interface OpenInvoice {
-    id: string;
-    invoiceNumber: string;
-    totalAmount: string | number;
-    amountPaid: string | number;
-    currency: string;
-    targetType: string;
-    outstanding: string | number;
-  }
-
-  interface ModeOfPayment {
+  interface Mode {
     id: string;
     name: string;
-    accountCode: string;
     isDefault: boolean;
   }
-
-  interface PartyOption {
-    id: string;
-    name: string;
-  }
-
-  interface AllocationInput {
-    invoice: OpenInvoice;
-    amount: number;
-  }
-
-  // ── State ─────────────────────────────────────────────────────────────────────
-
-  let type = $state<PaymentType>('RECEIVE');
+  let type = $state<'RECEIVE' | 'PAY'>('RECEIVE');
   let partyId = $state('');
   let modeOfPaymentId = $state('');
-  let date = $state(new Date().toISOString().slice(0, 10));
+  let date = $state(new Date().toLocaleDateString('en-CA'));
   let currency = $state('CAD');
-  let totalAmountOverride = $state<number | null>(null);
+  let totalOverride = $state<number | null>(null);
   let reference = $state('');
   let note = $state('');
-
-  let customers = $state<PartyOption[]>([]);
-  let carriers = $state<PartyOption[]>([]);
-  let modes = $state<ModeOfPayment[]>([]);
-  let openInvoices = $state<OpenInvoice[]>([]);
-  let allocations = $state<AllocationInput[]>([]);
-
-  let loadingParties = $state(false);
+  let modes = $state<Mode[]>([]);
+  let invoices = $state<OpenInvoice[]>([]);
+  let amounts = $state<Record<string, number>>({});
   let loadingInvoices = $state(false);
-  let loadingModes = $state(false);
-  let submitting = $state(false);
-  let validationError = $state('');
-
-  // ── Derived ───────────────────────────────────────────────────────────────────
-
-  const parties = $derived(type === 'RECEIVE' ? customers : carriers);
-
+  let loadingModes = $state(true);
+  let invoiceError = $state('');
+  let modeError = $state('');
+  let error = $state('');
+  let saving = $state(false);
+  let createdId = $state('');
+  let initialized = $state(false);
+  let generation = 0;
+  let alive = true;
+  const canManage = $derived(
+    !!$auth?.user.permissions.includes(PERMISSIONS.BILLING.PAYMENTS_MANAGE),
+  );
   const partyType = $derived(type === 'RECEIVE' ? 'CUSTOMER' : 'CARRIER');
-
+  const currencies = $derived([...new Set(invoices.map((i) => i.currency))].sort());
+  const visibleInvoices = $derived(invoices.filter((i) => i.currency === currency));
   const totalAllocated = $derived(
-    allocations.reduce((sum, a) => sum + (a.amount || 0), 0),
+    visibleInvoices.reduce((sum, i) => sum + (Number(amounts[i.id]) || 0), 0),
   );
-
-  const totalAmount = $derived(
-    totalAmountOverride !== null ? totalAmountOverride : totalAllocated,
-  );
-
-  const reste = $derived(totalAmount - totalAllocated);
-
-  // ── Data loading ─────────────────────────────────────────────────────────────
-
-  async function loadCustomers() {
-    if (customers.length > 0) return;
-    loadingParties = true;
-    try {
-      const res = await api<{ items: PartyOption[] }>('/transportation/customers', {
-        query: { pageSize: 100 },
-      });
-      customers = res.items;
-    } catch {
-      // non-blocking
-    } finally {
-      loadingParties = false;
-    }
-  }
-
-  async function loadCarriers() {
-    if (carriers.length > 0) return;
-    loadingParties = true;
-    try {
-      const res = await api<{ items: PartyOption[] }>('/transportation/carriers', {
-        query: { pageSize: 100 },
-      });
-      carriers = res.items;
-    } catch {
-      // non-blocking
-    } finally {
-      loadingParties = false;
-    }
-  }
+  const totalAmount = $derived(totalOverride ?? totalAllocated);
+  const selectedCount = $derived(visibleInvoices.filter((i) => amounts[i.id] > 0).length);
+  const remainder = $derived(totalAmount - totalAllocated);
 
   async function loadModes() {
-    if (modes.length > 0) return;
     loadingModes = true;
+    modeError = '';
     try {
-      const res = await api<ModeOfPayment[]>('/billing/modes-of-payment');
-      modes = res;
-      const def = modes.find((m) => m.isDefault);
-      if (def && !modeOfPaymentId) modeOfPaymentId = def.id;
-    } catch {
-      // non-blocking
-    } finally {
-      loadingModes = false;
-    }
-  }
-
-  async function loadOpenInvoices() {
-    if (!partyId) { openInvoices = []; allocations = []; return; }
-    loadingInvoices = true;
-    openInvoices = [];
-    allocations = [];
-    try {
-      const res = await api<OpenInvoice[]>('/billing/payments/open-invoices', {
-        query: { partyType, partyId },
-      });
-      openInvoices = res;
-      allocations = res.map((inv) => ({
-        invoice: inv,
-        amount: Number(inv.outstanding),
-      }));
-      if (allocations.length > 0) {
-        currency = allocations[0].invoice.currency;
-      }
+      const result = await api<Mode[]>('/billing/modes-of-payment');
+      if (!alive) return;
+      modes = result;
+      if (!modeOfPaymentId) modeOfPaymentId = result.find((m) => m.isDefault)?.id ?? '';
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Impossible de charger les factures ouvertes');
+      if (alive) modeError = e instanceof ApiError ? e.message : 'Modes de paiement indisponibles.';
     } finally {
-      loadingInvoices = false;
+      if (alive) loadingModes = false;
     }
   }
 
-  // ── Effects ───────────────────────────────────────────────────────────────────
-
-  $effect(() => {
-    if (type === 'RECEIVE') {
-      void loadCustomers();
-    } else {
-      void loadCarriers();
+  async function loadInvoices(id: string, kind: string) {
+    const request = ++generation;
+    invoices = [];
+    amounts = {};
+    totalOverride = null;
+    invoiceError = '';
+    error = '';
+    loadingInvoices = !!id;
+    if (!id) return;
+    try {
+      const result = await api<OpenInvoice[]>('/billing/payments/open-invoices', {
+        query: { partyId: id, partyType: kind },
+      });
+      if (request !== generation) return;
+      invoices = result;
+      const targetId = page.url.searchParams.get('target');
+      const target = result.find((i) => i.id === targetId);
+      currency = target?.currency ?? result[0]?.currency ?? 'CAD';
+      // Only the invoice deliberately opened from its own dossier is preselected.
+      if (target) amounts = { [target.id]: Number(target.outstanding) };
+    } catch (e) {
+      if (request === generation)
+        invoiceError =
+          e instanceof ApiError ? e.message : 'Impossible de charger les factures ouvertes.';
+    } finally {
+      if (request === generation) loadingInvoices = false;
     }
-    partyId = '';
-    openInvoices = [];
-    allocations = [];
+  }
+
+  onMount(() => {
+    type = page.url.searchParams.get('partyType') === 'CARRIER' ? 'PAY' : 'RECEIVE';
+    partyId = page.url.searchParams.get('party') ?? '';
+    initialized = true;
     void loadModes();
   });
-
   $effect(() => {
-    void partyId;
-    void loadOpenInvoices();
+    const ready = initialized;
+    const id = partyId;
+    const kind = partyType;
+    if (ready) untrack(() => void loadInvoices(id, kind));
+  });
+  onDestroy(() => {
+    alive = false;
+    generation++;
   });
 
-  // ── Clamp allocation ──────────────────────────────────────────────────────────
-
-  function clampAmount(idx: number) {
-    const outstanding = Number(allocations[idx].invoice.outstanding);
-    if (allocations[idx].amount < 0) allocations[idx].amount = 0;
-    if (allocations[idx].amount > outstanding) allocations[idx].amount = outstanding;
+  async function changeType(next: 'RECEIVE' | 'PAY') {
+    if (next === type) return;
+    if (
+      selectedCount &&
+      !(await confirmAction('Changer de type effacera les allocations sélectionnées.', {
+        title: 'Changer de type de paiement ?',
+        confirmLabel: 'Changer de type',
+        dangerous: false,
+      }))
+    )
+      return;
+    partyId = '';
+    type = next;
   }
 
-  // ── Submit ────────────────────────────────────────────────────────────────────
-
-  async function handleSubmit() {
-    validationError = '';
-
-    // Client-side validation
-    const nonZero = allocations.filter((a) => a.amount > 0);
-    if (nonZero.length === 0) {
-      validationError = 'Au moins une allocation doit être supérieure à 0.';
+  async function save() {
+    if (saving || !canManage) return;
+    if (createdId) {
+      await goto(`/billing/payments/${createdId}`);
       return;
     }
-    for (const a of allocations) {
-      if (a.amount > Number(a.invoice.outstanding)) {
-        validationError = `L'allocation pour ${a.invoice.invoiceNumber} dépasse le montant dû.`;
-        return;
-      }
-    }
-    if (totalAllocated > totalAmount) {
-      validationError = 'Le total alloué ne peut pas dépasser le montant du paiement.';
+    error = '';
+    if (loadingInvoices || loadingModes || invoiceError || modeError) {
+      error = 'Attendez le chargement des données ou réessayez.';
       return;
     }
-    if (!partyId) {
-      validationError = 'Veuillez sélectionner une partie.';
+    if (!partyId || !modeOfPaymentId || !date) {
+      error = 'Sélectionnez le client ou transporteur, le mode de paiement et la date.';
       return;
     }
-    if (!modeOfPaymentId) {
-      validationError = 'Veuillez sélectionner un mode de paiement.';
+    if (!selectedCount) {
+      error = 'Allouez un montant à au moins une facture.';
       return;
     }
-
-    submitting = true;
+    if (
+      visibleInvoices.some(
+        (i) =>
+          !Number.isFinite(Number(amounts[i.id] ?? 0)) ||
+          Number(amounts[i.id] ?? 0) < 0 ||
+          Number(amounts[i.id] ?? 0) > Number(i.outstanding),
+      )
+    ) {
+      error = 'Chaque allocation doit être comprise entre zéro et le solde de sa facture.';
+      return;
+    }
+    if (!Number.isFinite(totalAmount) || totalAmount <= 0 || totalAllocated > totalAmount + 1e-9) {
+      error = 'Le montant déclaré doit couvrir les allocations et être supérieur à zéro.';
+      return;
+    }
+    saving = true;
     try {
-      const body = {
-        type,
-        partyType,
-        partyId,
-        modeOfPaymentId,
-        date: new Date(date).toISOString(),
-        currency,
-        totalAmount,
-        reference: reference.trim() || undefined,
-        note: note.trim() || undefined,
-        allocations: nonZero.map((a) => ({
-          targetType: a.invoice.targetType,
-          targetId: a.invoice.id,
-          amount: a.amount,
-        })),
-      };
-
       const payment = await api<{ id: string }>('/billing/payments', {
         method: 'POST',
-        body,
+        body: {
+          type,
+          partyType,
+          partyId,
+          modeOfPaymentId,
+          date: new Date(`${date}T12:00:00`).toISOString(),
+          currency,
+          totalAmount,
+          reference: reference.trim() || undefined,
+          note: note.trim() || undefined,
+          allocations: visibleInvoices
+            .filter((i) => amounts[i.id] > 0)
+            .map((i) => ({
+              targetType: i.targetType,
+              targetId: i.id,
+              amount: Number(amounts[i.id]),
+            })),
+        },
       });
-
-      await api(`/billing/payments/${payment.id}/submit`, { method: 'POST' });
-      toast.success('Paiement créé et soumis avec succès.');
-      goto(`/billing/payments/${payment.id}`);
+      createdId = payment.id;
+      toast.success('Brouillon enregistré. Vérifiez-le avant de le comptabiliser.');
+      await goto(`/billing/payments/${payment.id}`);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Erreur lors de la création du paiement');
+      error = createdId
+        ? 'Le brouillon est enregistré. Ouvrez-le pour poursuivre.'
+        : e instanceof ApiError
+          ? e.message
+          : 'Enregistrement non confirmé. Vérifiez la liste des paiements avant de réessayer.';
     } finally {
-      submitting = false;
+      saving = false;
     }
-  }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────────
-
-  function typeTone(t: PaymentType): Tone {
-    return t === 'RECEIVE' ? 'ok' : 'info';
   }
 </script>
 
-<PageHeader
-  title="Nouvelle écriture de paiement"
-  subtitle="Créez un paiement et allouez-le aux factures ouvertes."
+<RecordHeader
+  title="Nouveau paiement"
+  kind="Facturation · Étape 1 sur 2"
+  backHref="/billing/payments"
+  backLabel="Paiements"
 >
-  {#snippet actions()}
-    <Button variant="secondary" onclick={() => goto('/billing/payments')}>← Retour</Button>
-  {/snippet}
-</PageHeader>
+  {#snippet meta()}Préparez les allocations. Le brouillon ne modifie pas le grand livre.{/snippet}
+</RecordHeader>
 
-<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-  <!-- ── Main form ── -->
-  <div class="space-y-6 lg:col-span-2">
-
-    <!-- Type + Party -->
-    <Card>
-      <h2 class="mb-4 text-sm font-semibold text-ink">Type et partie</h2>
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <!-- Type -->
-        <div>
-          <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-            Type de paiement
-          </label>
-          <div class="flex gap-2">
-            {#each (['RECEIVE', 'PAY'] as PaymentType[]) as t (t)}
-              <button
-                type="button"
-                class={`flex-1 rounded-md border px-3 py-2 text-xs font-medium transition-colors
-                  ${type === t
-                    ? 'border-accent bg-accent text-white'
-                    : 'border-edge bg-surface text-ink-muted hover:border-accent hover:text-ink'}`}
-                onclick={() => { type = t; }}
-              >
-                {t === 'RECEIVE' ? 'Encaissement' : 'Décaissement'}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <!-- Party -->
-        <div>
-          <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-            {type === 'RECEIVE' ? 'Client' : 'Transporteur'}
-          </label>
-          {#if loadingParties}
-            <div class="text-xs text-ink-faint">Chargement…</div>
-          {:else}
-            <select
-              bind:value={partyId}
-              class="w-full rounded-md border border-edge bg-surface px-3 py-2 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            >
-              <option value="">— Sélectionner —</option>
-              {#each parties as p (p.id)}
-                <option value={p.id}>{p.name}</option>
-              {/each}
-            </select>
-          {/if}
-        </div>
-      </div>
-    </Card>
-
-    <!-- Allocations table -->
-    {#if partyId}
-      <Card>
-        <h2 class="mb-3 text-sm font-semibold text-ink">Allocations aux factures ouvertes</h2>
-        {#if loadingInvoices}
-          <div class="py-4 text-center text-xs text-ink-faint">Chargement des factures…</div>
-        {:else if openInvoices.length === 0}
-          <div class="rounded-md border border-edge bg-surface-muted/40 px-4 py-3 text-xs text-ink-muted">
-            Aucune facture ouverte pour cette partie.
-          </div>
-        {:else}
-          <div class="overflow-x-auto">
-            <table class="w-full text-xs">
-              <thead>
-                <tr class="border-b border-edge text-[11px] uppercase tracking-wide text-ink-muted">
-                  <th class="py-2 pr-3 text-left font-semibold">N° facture</th>
-                  <th class="py-2 px-2 text-right font-semibold w-28">Total</th>
-                  <th class="py-2 px-2 text-right font-semibold w-28">Restant dû</th>
-                  <th class="py-2 pl-3 text-right font-semibold w-32">Montant alloué</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each allocations as alloc, idx (alloc.invoice.id)}
-                  <tr class="border-b border-edge/50 last:border-0">
-                    <td class="py-2 pr-3 font-mono text-sm font-semibold text-ink">
-                      {alloc.invoice.invoiceNumber}
-                      <span class="ml-1 text-[10px] text-ink-faint">{alloc.invoice.targetType}</span>
-                    </td>
-                    <td class="py-2 px-2 text-right text-ink-muted">
-                      {formatMoney(alloc.invoice.totalAmount, alloc.invoice.currency)}
-                    </td>
-                    <td class="py-2 px-2 text-right text-warn font-semibold">
-                      {formatMoney(alloc.invoice.outstanding, alloc.invoice.currency)}
-                    </td>
-                    <td class="py-2 pl-3 text-right">
-                      <input
-                        type="number"
-                        min="0"
-                        max={Number(alloc.invoice.outstanding)}
-                        step="0.01"
-                        bind:value={alloc.amount}
-                        onblur={() => clampAmount(idx)}
-                        class="w-28 rounded-md border border-edge bg-surface px-2 py-1 text-right text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                      />
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-              <tfoot>
-                <tr class="border-t-2 border-edge">
-                  <td colspan="2" class="py-2 pr-3 text-right text-[11px] uppercase tracking-wide font-semibold text-ink-muted">
-                    Total alloué
-                  </td>
-                  <td colspan="2" class="py-2 pl-3 text-right text-sm font-bold text-accent">
-                    {formatMoney(totalAllocated, currency)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        {/if}
-      </Card>
-    {/if}
-
-  </div>
-
-  <!-- ── Right sidebar ── -->
-  <div class="space-y-6">
-
-    <!-- Payment details -->
-    <Card>
-      <h2 class="mb-4 text-sm font-semibold text-ink">Détails du paiement</h2>
-      <div class="space-y-3">
-
-        <!-- Mode of payment -->
-        <div>
-          <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-            Mode de paiement
-          </label>
-          {#if loadingModes}
-            <div class="text-xs text-ink-faint">Chargement…</div>
-          {:else}
-            <select
-              bind:value={modeOfPaymentId}
-              class="w-full rounded-md border border-edge bg-surface px-3 py-2 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            >
-              <option value="">— Sélectionner —</option>
-              {#each modes as m (m.id)}
-                <option value={m.id}>{m.name}</option>
-              {/each}
-            </select>
-          {/if}
-        </div>
-
-        <!-- Date -->
-        <div>
-          <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-            Date
-          </label>
-          <input
-            type="date"
-            bind:value={date}
-            class="w-full rounded-md border border-edge bg-surface px-3 py-2 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-        </div>
-
-        <!-- Montant total (override) -->
-        <div>
-          <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-            Montant total
-            <span class="ml-1 font-normal normal-case text-ink-faint">(auto = somme allocations)</span>
-          </label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            placeholder={String(totalAllocated.toFixed(2))}
-            value={totalAmountOverride ?? ''}
-            oninput={(e) => {
-              const v = (e.currentTarget as HTMLInputElement).value;
-              totalAmountOverride = v === '' ? null : Number(v);
-            }}
-            class="w-full rounded-md border border-edge bg-surface px-3 py-2 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-        </div>
-
-        <!-- Reference -->
-        <div>
-          <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-            Référence <span class="font-normal normal-case text-ink-faint">(optionnel)</span>
-          </label>
-          <input
-            type="text"
-            bind:value={reference}
-            placeholder="Ex : CHQ-1234"
-            class="w-full rounded-md border border-edge bg-surface px-3 py-2 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-        </div>
-
-        <!-- Note -->
-        <div>
-          <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-            Note <span class="font-normal normal-case text-ink-faint">(optionnel)</span>
-          </label>
-          <textarea
-            bind:value={note}
-            rows={2}
-            placeholder="Note interne…"
-            class="w-full rounded-md border border-edge bg-surface px-3 py-2 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent resize-none"
-          ></textarea>
-        </div>
-      </div>
-    </Card>
-
-    <!-- Summary -->
-    {#if partyId && openInvoices.length > 0}
-      <Card>
-        <h2 class="mb-3 text-sm font-semibold text-ink">Résumé</h2>
-        <div class="space-y-2 text-xs">
-          <div class="flex justify-between">
-            <span class="text-ink-muted">Type</span>
-            <Badge tone={typeTone(type)}>
-              {type === 'RECEIVE' ? 'Encaissement' : 'Décaissement'}
-            </Badge>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-ink-muted">Total alloué</span>
-            <span class="font-semibold text-ink">{formatMoney(totalAllocated, currency)}</span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-ink-muted">Montant paiement</span>
-            <span class="font-semibold text-ink">{formatMoney(totalAmount, currency)}</span>
-          </div>
-          {#if reste !== 0}
-            <div class="flex justify-between border-t border-edge pt-2">
-              <span class="text-ink-muted">Reste non alloué</span>
-              <span class={`font-semibold ${reste < 0 ? 'text-danger' : 'text-warn'}`}>
-                {formatMoney(reste, currency)}
-              </span>
-            </div>
-          {/if}
-        </div>
-      </Card>
-    {/if}
-
-    <!-- Validation error -->
-    {#if validationError}
-      <div class="rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-xs text-danger">
-        {validationError}
-      </div>
-    {/if}
-
-    <!-- Submit -->
-    <Button
-      variant="primary"
-      loading={submitting}
-      onclick={() => void handleSubmit()}
+{#if !canManage}
+  <EmptyState
+    title="Accès en lecture seule"
+    message="La gestion des paiements nécessite une permission supplémentaire."
+  />
+{:else}
+  <form
+    onsubmit={(e) => {
+      e.preventDefault();
+      void save();
+    }}
+    class="max-w-6xl"
+  >
+    <fieldset
+      disabled={saving || !!createdId}
+      class="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]"
     >
-      Créer et soumettre le paiement
-    </Button>
-  </div>
-</div>
+      <div class="min-w-0 space-y-5">
+        <Card>
+          <h2 class="mb-4 text-sm font-semibold">1. Qui règle qui ?</h2>
+          <div class="mb-5 flex flex-wrap gap-2" role="group" aria-label="Type de paiement">
+            <button
+              type="button"
+              aria-pressed={type === 'RECEIVE'}
+              onclick={() => void changeType('RECEIVE')}
+              class="rounded-md border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent {type ===
+              'RECEIVE'
+                ? 'border-accent bg-accent-soft text-accent'
+                : 'border-edge hover:bg-surface-muted'}">Encaissement client</button
+            >
+            <button
+              type="button"
+              aria-pressed={type === 'PAY'}
+              onclick={() => void changeType('PAY')}
+              class="rounded-md border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent {type ===
+              'PAY'
+                ? 'border-accent bg-accent-soft text-accent'
+                : 'border-edge hover:bg-surface-muted'}">Décaissement transporteur</button
+            >
+          </div>
+          <p class="mb-1.5 text-xs font-medium text-ink-muted">
+            {type === 'RECEIVE' ? 'Client' : 'Transporteur'}
+          </p>
+          <EntityPicker
+            endpoint={type === 'RECEIVE' ? '/transportation/customers' : '/transportation/carriers'}
+            label={type === 'RECEIVE' ? 'Client' : 'Transporteur'}
+            bind:value={partyId}
+            disabled={saving}
+          />
+        </Card>
+
+        <Card>
+          <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 class="text-sm font-semibold">2. Choisir les factures</h2>
+              <p class="mt-1 text-xs text-ink-muted">
+                Un paiement, une devise. Saisissez un montant partiel ou prenez le solde.
+              </p>
+            </div>
+            {#if currencies.length}<div class="w-32">
+                <Field label="Devise"
+                  ><Select
+                    bind:value={currency}
+                    onchange={() => {
+                      amounts = {};
+                      totalOverride = null;
+                    }}
+                    >{#each currencies as code}<option value={code}>{code}</option>{/each}</Select
+                  ></Field
+                >
+              </div>{/if}
+          </div>
+          <ErrorNotice message={invoiceError} onretry={() => loadInvoices(partyId, partyType)} />
+          {#if !partyId}<EmptyState
+              title="Choisissez un client ou un transporteur"
+              message="Ses factures approuvées avec un solde restant apparaîtront ici."
+            />
+          {:else if loadingInvoices}<Skeleton rows={4} />
+          {:else if !invoiceError && !invoices.length}<EmptyState
+              title="Aucune facture à régler"
+              message="Seules les factures approuvées (ou envoyées côté client) avec un solde restant sont proposées."
+            />
+            <a class="mt-2 inline-block text-sm text-accent hover:underline" href="/invoices"
+              >Consulter les factures et relevés</a
+            >
+          {:else if !invoiceError}
+            {#if currencies.length > 1}<p
+                class="mb-3 rounded-md bg-surface-muted p-3 text-xs text-ink-muted"
+              >
+                Des factures existent en {currencies.join(', ')}. Changer de devise efface les
+                allocations de ce brouillon.
+              </p>{/if}
+            <ul class="divide-y divide-edge">
+              {#each visibleInvoices as invoice (invoice.id)}
+                <li class="flex flex-wrap items-center justify-between gap-3 py-4">
+                  <div class="min-w-0 flex-1 basis-40">
+                    <a
+                      class="font-mono text-sm font-medium text-accent hover:underline"
+                      href={invoiceHref(invoice.targetType, invoice.id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Ouvrir ${invoice.invoiceNumber} (nouvel onglet)`}
+                      >{invoice.invoiceNumber}</a
+                    >
+                    <p class="mt-1 text-xs text-ink-muted">
+                      Restant dû <span class="font-mono text-ink"
+                        >{formatMoney(invoice.outstanding, invoice.currency)}</span
+                      >
+                    </p>
+                  </div>
+                  <div class="flex max-w-full items-end gap-2">
+                    <div class="w-36">
+                      <Field label={`Allocation · ${invoice.invoiceNumber}`}>
+                        <input
+                          type="number"
+                          min="0"
+                          max={Number(invoice.outstanding)}
+                          step="0.01"
+                          value={amounts[invoice.id] ?? 0}
+                          oninput={(e) => {
+                            amounts[invoice.id] = e.currentTarget.valueAsNumber || 0;
+                          }}
+                          class="min-h-9 w-full rounded-md border border-edge bg-surface px-3 text-right font-mono text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                        />
+                      </Field>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      aria-label={`Allouer le solde de ${invoice.invoiceNumber}`}
+                      onclick={() => {
+                        amounts[invoice.id] = Number(invoice.outstanding);
+                      }}>Solde</Button
+                    >
+                    {#if amounts[invoice.id] > 0}<Button
+                        variant="ghost"
+                        aria-label={`Retirer l’allocation de ${invoice.invoiceNumber}`}
+                        onclick={() => {
+                          amounts[invoice.id] = 0;
+                        }}>Retirer</Button
+                      >{/if}
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </Card>
+      </div>
+
+      <aside class="min-w-0 space-y-5">
+        <Card>
+          <h2 class="mb-4 text-sm font-semibold">3. Détails du règlement</h2>
+          <div class="space-y-4">
+            <ErrorNotice message={modeError} onretry={loadModes} />
+            <Field label="Mode de paiement"
+              ><Select bind:value={modeOfPaymentId} required disabled={loadingModes}>
+                <option value="">{loadingModes ? 'Chargement…' : 'Sélectionner…'}</option
+                >{#each modes as mode}<option value={mode.id}>{mode.name}</option>{/each}
+              </Select></Field
+            >
+            {#if !loadingModes && !modeError && !modes.length}<p class="text-xs text-ink-muted">
+                Aucun mode configuré. <a class="text-accent hover:underline" href="/billing/config"
+                  >Configurer la facturation</a
+                >
+              </p>{/if}
+            <Field label="Date"><Input type="date" bind:value={date} required /></Field>
+            <Field label="Montant déclaré (facultatif)"
+              ><Input
+                type="number"
+                min={totalAllocated}
+                step="0.01"
+                bind:value={totalOverride}
+                placeholder={totalAllocated.toFixed(2)}
+              /></Field
+            >
+            <p class="-mt-2 text-xs text-ink-muted">Vide : utilise la somme des allocations.</p>
+            <Field label="Référence (facultatif)"
+              ><Input bind:value={reference} placeholder="Virement, chèque…" /></Field
+            >
+            <Field label="Note interne (facultatif)"><Textarea bind:value={note} rows={3} /></Field>
+          </div>
+        </Card>
+        <div class="rounded-lg border border-edge bg-surface-muted p-4">
+          <h2 class="text-sm font-semibold">À vérifier avant validation</h2>
+          <dl class="mt-3 space-y-2 text-sm">
+            <div class="flex justify-between gap-2">
+              <dt class="text-ink-muted">Factures sélectionnées</dt>
+              <dd>{selectedCount}</dd>
+            </div>
+            <div class="flex justify-between gap-2">
+              <dt class="text-ink-muted">À comptabiliser</dt>
+              <dd class="font-mono font-medium">{formatMoney(totalAllocated, currency)}</dd>
+            </div>
+            {#if Math.abs(remainder) > 0.000001}<div class="flex justify-between gap-2">
+                <dt class="text-ink-muted">Non alloué</dt>
+                <dd class="font-mono">{formatMoney(remainder, currency)}</dd>
+              </div>
+              <p class="text-xs text-warn">
+                Seules les allocations seront comptabilisées. Le solde non alloué ne constitue pas
+                un crédit client.
+              </p>{/if}
+          </dl>
+        </div>
+      </aside>
+    </fieldset>
+    <div class="mt-5 border-t border-edge pt-4">
+      <ErrorNotice message={error} />
+      <div class="flex flex-wrap items-center justify-end gap-3">
+        <span class="mr-auto text-xs text-ink-muted"
+          >Aucun transfert bancaire ni envoi de courriel.</span
+        >
+        <Button type="submit" loading={saving} disabled={loadingInvoices || loadingModes}
+          >{createdId ? 'Ouvrir le brouillon enregistré' : 'Enregistrer le brouillon'}</Button
+        >
+      </div>
+    </div>
+  </form>
+{/if}

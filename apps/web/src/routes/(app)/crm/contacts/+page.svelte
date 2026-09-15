@@ -5,6 +5,8 @@
   import { formatDate } from '$lib/format';
   import {
     PageHeader,
+    Drawer,
+    EntityPicker,
     Button,
     FilterBar,
     Table,
@@ -23,6 +25,7 @@
   import LogActivity from '$lib/components/crm/LogActivity.svelte';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
   import RecordEmails from '$lib/components/crm/RecordEmails.svelte';
+  import SequenceRuns from '$lib/components/crm/SequenceRuns.svelte';
 
   // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -65,6 +68,14 @@
   let selected = $state<ContactDetail | null>(null);
   let selectedActivities = $state<Activity[]>([]);
   let detailLoading = $state(false);
+  let detailRequest = 0;
+  let listRequest = 0;
+
+  function closeDetail() {
+    detailRequest++;
+    selected = null;
+    detailLoading = false;
+  }
 
   // ── State — create modal ─────────────────────────────────────────────────────
 
@@ -81,6 +92,7 @@
   // ── Data loading ─────────────────────────────────────────────────────────────
 
   async function load() {
+    const request = ++listRequest;
     loading = true;
     error = '';
     try {
@@ -92,42 +104,48 @@
           companyId: companyIdFilter || undefined,
         },
       });
+      if (request !== listRequest) return;
       contacts = result.items;
       total = result.total;
     } catch (e) {
+      if (request !== listRequest) return;
       error = e instanceof ApiError ? e.message : 'Impossible de charger les contacts';
     } finally {
-      loading = false;
+      if (request === listRequest) loading = false;
     }
   }
 
-  async function openDetail(contact: ContactRow) {
+  async function openDetail(contact: { id: string }) {
+    const request = ++detailRequest;
     selected = null;
     selectedActivities = [];
     detailLoading = true;
     try {
       // GET /crm/contacts/:id returns the contact itself (no nested activities)
       const detail = await api<ContactDetail>(`/crm/contacts/${contact.id}`);
+      if (request !== detailRequest) return;
       selected = detail;
       // Load activities separately
       const actResult = await api<Paginated<Activity>>('/crm/activities', {
         query: { contactId: contact.id, pageSize: 20 },
       });
-      selectedActivities = actResult.items;
+      if (request === detailRequest) selectedActivities = actResult.items;
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Impossible de charger le contact');
+      if (request === detailRequest)
+        toast.error(e instanceof ApiError ? e.message : 'Impossible de charger le contact');
     } finally {
-      detailLoading = false;
+      if (request === detailRequest) detailLoading = false;
     }
   }
 
   async function refreshActivities() {
     if (!selected) return;
+    const id = selected.id;
     try {
       const actResult = await api<Paginated<Activity>>('/crm/activities', {
-        query: { contactId: selected.id, pageSize: 20 },
+        query: { contactId: id, pageSize: 20 },
       });
-      selectedActivities = actResult.items;
+      if (selected?.id === id) selectedActivities = actResult.items;
     } catch {
       // non-blocking
     }
@@ -149,6 +167,7 @@
   }
 
   async function submitCreate() {
+    if (createSaving) return;
     if (!createName.trim()) {
       toast.error('Le nom est obligatoire');
       return;
@@ -200,26 +219,29 @@
 <FilterBar>
   <div class="w-64">
     <input
+      aria-label="Rechercher par nom"
       placeholder="Rechercher par nom…"
       bind:value={search}
-      onkeydown={(e) => { if (e.key === 'Enter') void load(); }}
+      onkeydown={(e) => {
+        if (e.key === 'Enter') void load();
+      }}
       class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
     />
   </div>
-  <div class="w-56">
-    <input
-      placeholder="Filtrer par ID société…"
+  <div class="w-64">
+    <EntityPicker
+      endpoint="/crm/companies"
+      label="Société"
+      placeholder="Toutes les sociétés"
       bind:value={companyIdFilter}
-      onkeydown={(e) => { if (e.key === 'Enter') void load(); }}
-      class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
     />
   </div>
 </FilterBar>
 
 <!-- List / panel layout -->
-<div class={`flex gap-4 ${selected || detailLoading ? 'items-start' : ''}`}>
+<div class="min-w-0">
   <!-- ── List ── -->
-  <div class={`min-w-0 flex-1 transition-all ${selected || detailLoading ? 'max-w-[55%]' : ''}`}>
+  <div class="min-w-0">
     {#if loading}
       <Card padded={false}><Skeleton rows={6} /></Card>
     {:else if contacts.length === 0}
@@ -238,7 +260,15 @@
               class={`cursor-pointer transition-colors hover:bg-surface-muted ${selected?.id === contact.id ? 'bg-accent-soft/20' : ''}`}
               onclick={() => void openDetail(contact)}
             >
-              <td class="font-semibold text-ink">{contact.name}</td>
+              <td class="font-semibold text-ink"
+                ><button
+                  class="text-left hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    void openDetail(contact);
+                  }}>{contact.name}</button
+                ></td
+              >
               <td class="text-ink-muted">{contact.title ?? '—'}</td>
               <td class="text-ink-muted">{contact.email ?? '—'}</td>
               <td class="font-mono text-ink-muted">{contact.phone ?? '—'}</td>
@@ -258,59 +288,68 @@
           <Button
             variant="secondary"
             disabled={page <= 1}
-            onclick={() => { page = Math.max(1, page - 1); void load(); }}
-          >Précédent</Button>
+            onclick={() => {
+              page = Math.max(1, page - 1);
+              void load();
+            }}>Précédent</Button
+          >
           <span class="font-mono text-xs">Page {page} / {totalPages}</span>
           <Button
             variant="secondary"
             disabled={page >= totalPages}
-            onclick={() => { page = Math.min(totalPages, page + 1); void load(); }}
-          >Suivant</Button>
+            onclick={() => {
+              page = Math.min(totalPages, page + 1);
+              void load();
+            }}>Suivant</Button
+          >
         </div>
       </div>
     {/if}
   </div>
+</div>
 
+<Drawer
+  open={detailLoading || !!selected}
+  title={selected?.name ?? 'Chargement de la fiche…'}
+  width="xl"
+  onclose={closeDetail}
+>
   <!-- ── Detail panel ── -->
   {#if detailLoading}
-    <div class="w-[42%] shrink-0">
+    <div class="min-w-0 space-y-4">
       <Card padded={false}><Skeleton rows={8} /></Card>
     </div>
   {:else if selected}
-    <div class="w-[42%] shrink-0">
+    <div class="min-w-0 space-y-4">
       <Card>
         <!-- Panel header -->
         <div class="mb-4 flex items-start justify-between gap-2">
           <div class="min-w-0">
-            <h2 class="truncate text-base font-bold text-ink">{selected.name}</h2>
             {#if selected.title}
               <p class="text-sm text-ink-muted">{selected.title}</p>
             {/if}
           </div>
-          <button
-            class="shrink-0 rounded p-1 text-ink-faint hover:bg-surface-muted hover:text-ink"
-            onclick={() => { selected = null; selectedActivities = []; }}
-            aria-label="Fermer"
-          >✕</button>
         </div>
 
         <!-- Contact fields -->
         <div class="mb-4 grid grid-cols-2 gap-3 text-xs">
           {#if selected.email}
             <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Courriel</div>
-              <a href="mailto:{selected.email}" class="text-accent hover:underline">{selected.email}</a>
+              <div class="mb-0.5 font-medium text-ink-muted">Courriel</div>
+              <a href="mailto:{selected.email}" class="text-accent hover:underline"
+                >{selected.email}</a
+              >
             </div>
           {/if}
           {#if selected.phone}
             <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Téléphone</div>
+              <div class="mb-0.5 font-medium text-ink-muted">Téléphone</div>
               <div class="font-mono text-ink">{selected.phone}</div>
             </div>
           {/if}
           {#if selected.companyId}
             <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Société</div>
+              <div class="mb-0.5 font-medium text-ink-muted">Société</div>
               <a
                 href="/crm/companies/{selected.companyId}"
                 class="text-accent text-xs hover:underline"
@@ -321,32 +360,28 @@
             </div>
           {/if}
           <div>
-            <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Créé le</div>
+            <div class="mb-0.5 font-medium text-ink-muted">Créé le</div>
             <div class="text-ink">{formatDate(selected.createdAt)}</div>
           </div>
         </div>
 
         <!-- Activity timeline -->
         <div class="mb-4">
-          <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
-            Activités
-          </div>
+          <div class="mb-1.5 text-sm font-medium text-ink-muted">Activités</div>
           <ActivityTimeline activities={selectedActivities} />
         </div>
 
         <!-- Log activity -->
         <div>
-          <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
-            Enregistrer une activité
-          </div>
-          <LogActivity
-            contactId={selected.id}
-            onLogged={() => void refreshActivities()}
-          />
+          <div class="mb-1.5 text-sm font-medium text-ink-muted">Enregistrer une activité</div>
+          <LogActivity contactId={selected.id} onLogged={() => void refreshActivities()} />
         </div>
       </Card>
 
       <!-- Emails panel -->
+      <div class="mt-4 rounded-lg border border-edge bg-surface p-4">
+        {#key selected.id}<SequenceRuns contactId={selected.id} />{/key}
+      </div>
       <RecordEmails
         relatedType="crm-contact"
         relatedId={selected.id}
@@ -354,10 +389,10 @@
       />
     </div>
   {/if}
-</div>
+</Drawer>
 
 <!-- Create contact modal -->
-<Modal bind:open={createOpen} title="Nouveau contact">
+<Modal dismissible={!createSaving} bind:open={createOpen} title="Nouveau contact">
   <div class="flex flex-col gap-4">
     <Field label="Nom *">
       <Input bind:value={createName} placeholder="Jean Dupont" />
@@ -371,15 +406,26 @@
     <Field label="Téléphone">
       <Input bind:value={createPhone} placeholder="+1 514 555 0000" />
     </Field>
-    <Field label="ID Société (optionnel)">
-      <Input bind:value={createCompanyId} placeholder="cuid de la société" />
-    </Field>
+    <Field label="Société (optionnel)"
+      ><EntityPicker
+        endpoint="/crm/companies"
+        label="Société"
+        placeholder="Associer une société"
+        bind:value={createCompanyId}
+      /></Field
+    >
     {#if contactFieldDefs.length > 0}
       <CustomFieldInputs definitions={contactFieldDefs} bind:data={createCustomData} />
     {/if}
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { createOpen = false; }}>Annuler</Button>
+    <Button
+      disabled={createSaving}
+      variant="secondary"
+      onclick={() => {
+        createOpen = false;
+      }}>Annuler</Button
+    >
     <Button loading={createSaving} onclick={submitCreate}>Créer</Button>
   {/snippet}
 </Modal>

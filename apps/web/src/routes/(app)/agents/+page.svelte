@@ -11,6 +11,7 @@
     Button,
     Card,
     EmptyState,
+    ErrorNotice,
     PageHeader,
     Skeleton,
   } from '$lib/components/ui';
@@ -70,7 +71,10 @@
           ...agent,
           attention,
           mode: summarizeAgentOperationMode(agent),
-          rank: rankAgentForOperations(attention) + agent.kpis.actions.pending * 10 + Math.round(agent.kpis.errorRate * 100),
+          rank:
+            rankAgentForOperations(attention) +
+            agent.kpis.actions.pending * 10 +
+            Math.round(agent.kpis.errorRate * 100),
         };
       })
       .sort((a, b) => b.rank - a.rank || a.name.localeCompare(b.name)),
@@ -103,13 +107,17 @@
     }
   }
 
-  function autonomyTone(level: AutonomyLevel | undefined): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
+  function autonomyTone(
+    level: AutonomyLevel | undefined,
+  ): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
     if (level === 'AUTONOMOUS') return 'warn';
     if (level === 'ACT_LOW') return 'info';
     return 'neutral';
   }
 
-  function attentionTone(severity: AgentOperationAttention['severity']): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
+  function attentionTone(
+    severity: AgentOperationAttention['severity'],
+  ): 'ok' | 'warn' | 'danger' | 'info' | 'neutral' {
     if (severity === 'critical') return 'danger';
     if (severity === 'warning') return 'warn';
     if (severity === 'info') return 'info';
@@ -129,60 +137,63 @@
   });
 </script>
 
-<PageHeader title="Agents">
+<PageHeader
+  title="Agents"
+  subtitle="Équipe IA, interventions et suivi des actions."
+  count={items.length}
+>
   {#snippet actions()}
-    <Button onclick={() => { showForm = true; }}>Nouvel agent</Button>
+    <Button variant="secondary" href="/agent-actions">Approbations</Button>
+    <Button
+      onclick={() => {
+        showForm = true;
+      }}>Nouvel agent</Button
+    >
   {/snippet}
 </PageHeader>
 
 {#if modelReady === false}
-  <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-card border border-warn/40 bg-warn-soft px-4 py-3">
+  <div
+    class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-card border border-warn/40 bg-warn-soft px-4 py-3"
+  >
     <div class="text-sm text-ink">
       <span class="font-semibold">Aucun modèle connecté.</span>
       Tes agents ne peuvent pas réfléchir tant qu'un modèle LLM n'est pas branché.
     </div>
-    <a href="/settings/agent-runtime" class="inline-flex shrink-0 items-center rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover">Connecter un modèle</a>
+    <a
+      href="/settings/agent-runtime"
+      class="inline-flex shrink-0 items-center rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
+      >Connecter un modèle</a
+    >
   </div>
 {/if}
 
-<section class="mb-6 overflow-hidden rounded-card border border-edge bg-ink text-white shadow-sm">
-  <div class="grid gap-6 p-5 lg:grid-cols-[1.2fr_0.8fr] lg:p-6">
-    <div>
-      <p class="text-xs font-semibold tracking-[0.22em] text-white/55 uppercase">Hermes workforce</p>
-      <h1 class="mt-2 max-w-3xl text-2xl font-bold tracking-tight sm:text-3xl">
-        Supervise les employés IA comme une équipe opérationnelle, pas comme des clés API.
-      </h1>
-      <p class="mt-3 max-w-2xl text-sm leading-6 text-white/68">
-        Cette console priorise les agents à regarder maintenant : breaker, pause, approbations,
-        erreurs et santé d'exécution. Les mutations restent gouvernées par la file Pulsar.
-      </p>
+<ErrorNotice message={error} onretry={load} />
+{#if rollup && !loading && !error}
+  <dl
+    class="mb-5 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-edge bg-edge sm:grid-cols-4"
+  >
+    <div class="bg-surface p-4">
+      <dt class="text-xs text-ink-muted">Agents actifs</dt>
+      <dd class="mt-1 text-2xl font-semibold tabular-nums">
+        {rollup.active}<span class="text-sm text-ink-faint"> / {rollup.agents}</span>
+      </dd>
     </div>
-
-    {#if rollup}
-      <div class="grid grid-cols-2 gap-2 text-sm">
-        <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-          <p class="text-xs text-white/55">Actifs</p>
-          <p class="mt-1 text-2xl font-semibold">{rollup.active}/{rollup.agents}</p>
-        </div>
-        <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-          <p class="text-xs text-white/55">À approuver</p>
-          <p class="mt-1 text-2xl font-semibold">{rollup.pendingApprovals}</p>
-        </div>
-        <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-          <p class="text-xs text-white/55">Actions 30 j</p>
-          <p class="mt-1 text-2xl font-semibold">{rollup.totalActions}</p>
-        </div>
-        <div class="rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-          <p class="text-xs text-white/55">Tâches résolues</p>
-          <p class="mt-1 text-2xl font-semibold">{rollup.totalTasksResolved}</p>
-        </div>
-      </div>
-    {/if}
-  </div>
-</section>
-
-{#if error}
-  <p class="mb-4 text-sm text-danger">{error}</p>
+    <div class="bg-surface p-4">
+      <dt class="text-xs text-ink-muted">À approuver</dt>
+      <dd class="mt-1 text-2xl font-semibold tabular-nums">
+        <a class="text-accent hover:underline" href="/agent-actions">{rollup.pendingApprovals}</a>
+      </dd>
+    </div>
+    <div class="bg-surface p-4">
+      <dt class="text-xs text-ink-muted">Actions · 30 jours</dt>
+      <dd class="mt-1 text-2xl font-semibold tabular-nums">{rollup.totalActions}</dd>
+    </div>
+    <div class="bg-surface p-4">
+      <dt class="text-xs text-ink-muted">Tâches résolues</dt>
+      <dd class="mt-1 text-2xl font-semibold tabular-nums">{rollup.totalTasksResolved}</dd>
+    </div>
+  </dl>
 {/if}
 
 {#if loading}
@@ -194,12 +205,14 @@
 {:else if items.length === 0}
   <EmptyState message="Aucun agent enregistré. Engagez votre premier agent IA." />
 {:else}
-  <div class="mb-6 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+  <div class="mb-5">
     <Card>
       <div class="mb-3 flex items-center justify-between gap-3">
         <div>
           <h2 class="text-sm font-semibold text-ink">Attention maintenant</h2>
-          <p class="mt-0.5 text-xs text-ink-muted">Priorisé par risque opérationnel, pas par date de création.</p>
+          <p class="mt-0.5 text-xs text-ink-muted">
+            Priorisé par risque opérationnel, pas par date de création.
+          </p>
         </div>
         <Badge tone={attentionQueue.length ? 'warn' : 'ok'}>
           {attentionQueue.length ? `${attentionQueue.length} à surveiller` : 'sain'}
@@ -215,16 +228,25 @@
         <ul class="divide-y divide-edge">
           {#each attentionQueue as agent (agent.id)}
             <li class="py-3 first:pt-0 last:pb-0">
-              <a href="/agents/{agent.id}" class="group flex items-start gap-3 rounded-lg p-1 hover:bg-surface-muted">
-                <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-lg">
+              <a
+                href="/agents/{agent.id}"
+                class="group flex items-start gap-3 rounded-lg p-1 hover:bg-surface-muted"
+              >
+                <span
+                  class="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-lg"
+                >
                   {agent.avatar ?? '🤖'}
                 </span>
                 <span class="min-w-0 flex-1">
                   <span class="flex flex-wrap items-center gap-2">
                     <span class="font-medium text-ink group-hover:text-accent">{agent.name}</span>
-                    <Badge tone={attentionTone(agent.attention.severity)}>{agent.attention.reason}</Badge>
+                    <Badge tone={attentionTone(agent.attention.severity)}
+                      >{agent.attention.reason}</Badge
+                    >
                   </span>
-                  <span class="mt-1 block text-xs leading-5 text-ink-muted">{agent.attention.nextStep}</span>
+                  <span class="mt-1 block text-xs leading-5 text-ink-muted"
+                    >{agent.attention.nextStep}</span
+                  >
                 </span>
               </a>
             </li>
@@ -233,36 +255,28 @@
       {/if}
     </Card>
 
-    <Card>
-      <h2 class="text-sm font-semibold text-ink">Mode de gouvernance</h2>
-      <p class="mt-0.5 text-xs text-ink-muted">
-        Rappel rapide : l'autonomie ne lève jamais les caps ni la file pour les actions sensibles.
+    <details class="mt-3 rounded-lg border border-edge bg-surface p-3">
+      <summary class="cursor-pointer text-sm font-medium text-ink"
+        >Comprendre les niveaux d’autonomie</summary
+      >
+      <p class="mt-2 text-xs leading-relaxed text-ink-muted">
+        PROPOSE : validation humaine. ACT_LOW : actions à faible risque selon les règles. AUTONOMOUS
+        : exécution selon les règles autorisées. Les plafonds et la gouvernance restent appliqués
+        dans tous les modes.
       </p>
-      <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <div class="rounded-xl border border-edge p-3">
-          <p class="text-xs text-ink-muted">PROPOSE</p>
-          <p class="mt-1 text-sm font-semibold text-ink">Humain obligatoire</p>
-        </div>
-        <div class="rounded-xl border border-edge p-3">
-          <p class="text-xs text-ink-muted">ACT_LOW</p>
-          <p class="mt-1 text-sm font-semibold text-ink">Faible risque direct</p>
-        </div>
-        <div class="rounded-xl border border-edge p-3">
-          <p class="text-xs text-ink-muted">AUTONOMOUS</p>
-          <p class="mt-1 text-sm font-semibold text-ink">Borné par policy/caps</p>
-        </div>
-      </div>
-    </Card>
+    </details>
   </div>
 
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
     {#each agentViews as agent (agent.id)}
       <a
         href="/agents/{agent.id}"
-        class="group block rounded-card border border-edge bg-surface p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-accent hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        class="group block rounded-card border border-edge bg-surface p-4 shadow-sm transition-colors hover:border-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <div class="mb-4 flex items-start gap-3">
-          <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xl">
+          <div
+            class="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xl"
+          >
             {agent.avatar ?? '🤖'}
           </div>
           <div class="min-w-0 flex-1">

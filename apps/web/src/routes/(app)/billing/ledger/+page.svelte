@@ -1,8 +1,18 @@
 <script lang="ts">
+  import { page } from '$app/state';
+  import { goto } from '$app/navigation';
+  import { PERMISSIONS } from '@pulsar/shared';
+  import { auth } from '$lib/stores/auth';
+  import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import {
     PageHeader,
+    Tabs,
+    Drawer,
+    Field,
+    Input,
+    Select,
     Card,
     Table,
     Badge,
@@ -35,7 +45,9 @@
     id: string;
     date: string;
     memo: string | null;
-    source: string | null;
+    sourceType: string | null;
+    sourceId: string | null;
+    sourceKind: string | null;
     lines: JournalLine[];
   }
 
@@ -64,7 +76,51 @@
   // ── Tabs ─────────────────────────────────────────────────────────────────────
 
   type Tab = 'chart' | 'journal' | 'balance';
-  let activeTab = $state<Tab>('chart');
+  let activeTab = $state<string>('chart');
+  const tabs = [
+    { id: 'chart', label: 'Plan comptable' },
+    { id: 'journal', label: 'Journal' },
+    { id: 'balance', label: 'Balance' },
+  ];
+  const sourceType = $derived(page.url.searchParams.get('sourceType') || '');
+  const sourceId = $derived(page.url.searchParams.get('sourceId') || '');
+  const canManage = $derived($auth?.user.permissions.includes(PERMISSIONS.BILLING.LEDGER_MANAGE));
+  let accountId = $state('');
+  let dateFrom = $state('');
+  let dateTo = $state('');
+  let journalGeneration = 0;
+  function sourceHref(entry: Pick<JournalEntry, 'sourceType' | 'sourceId'>) {
+    if (!entry.sourceId) return '';
+    const id = encodeURIComponent(entry.sourceId);
+    const permissions = $auth?.user.permissions ?? [];
+    if (entry.sourceType === 'payment' && permissions.includes(PERMISSIONS.BILLING.PAYMENTS_READ))
+      return `/billing/payments/${id}`;
+    if (entry.sourceType === 'invoice' && permissions.includes(PERMISSIONS.BILLING.INVOICES_READ))
+      return `/invoices?invoice=${id}`;
+    if (
+      entry.sourceType === 'customer-invoice' &&
+      permissions.includes(PERMISSIONS.BILLING.CUSTOMER_INVOICES_READ)
+    )
+      return `/invoices?statement=${id}`;
+    return '';
+  }
+  async function clearSource() {
+    const url = new URL(page.url);
+    url.searchParams.delete('sourceType');
+    url.searchParams.delete('sourceId');
+    await goto(url.pathname + url.search, { keepFocus: true, noScroll: true });
+  }
+  $effect(() => {
+    if (sourceType || sourceId) activeTab = 'journal';
+  });
+  $effect(() => {
+    void sourceType;
+    void sourceId;
+    void accountId;
+    void dateFrom;
+    void dateTo;
+    journalPage = 1;
+  });
 
   // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -113,8 +169,7 @@
   const totalPages = $derived(Math.ceil(journalTotal / journalPageSize));
 
   const balanceBalanced = $derived(
-    trialBalance !== null &&
-      Number(trialBalance.totalDebit) === Number(trialBalance.totalCredit),
+    trialBalance !== null && Number(trialBalance.totalDebit) === Number(trialBalance.totalCredit),
   );
 
   // ── Load functions ────────────────────────────────────────────────────────────
@@ -132,18 +187,30 @@
   }
 
   async function loadJournal() {
+    const request = ++journalGeneration;
+    const query = {
+      page: journalPage,
+      pageSize: journalPageSize,
+      sourceType: sourceType || undefined,
+      sourceId: sourceId || undefined,
+      accountId: accountId || undefined,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+    };
     loadingJournal = true;
     errorJournal = '';
     try {
       const result = await api<Paginated<JournalEntry>>('/billing/ledger/journal', {
-        query: { page: journalPage, pageSize: journalPageSize },
+        query,
       });
+      if (request !== journalGeneration) return;
       journalEntries = result.items;
       journalTotal = result.total;
     } catch (e) {
+      if (request !== journalGeneration) return;
       errorJournal = e instanceof ApiError ? e.message : 'Échec du chargement du journal';
     } finally {
-      loadingJournal = false;
+      if (request === journalGeneration) loadingJournal = false;
     }
   }
 
@@ -204,15 +271,10 @@
   let manualError = $state('');
 
   // Live totals so the operator sees imbalance before submitting.
-  const manualTotalDebit = $derived(
-    manualLines.reduce((s, l) => s + (Number(l.debit) || 0), 0),
-  );
-  const manualTotalCredit = $derived(
-    manualLines.reduce((s, l) => s + (Number(l.credit) || 0), 0),
-  );
+  const manualTotalDebit = $derived(manualLines.reduce((s, l) => s + (Number(l.debit) || 0), 0));
+  const manualTotalCredit = $derived(manualLines.reduce((s, l) => s + (Number(l.credit) || 0), 0));
   const manualBalanced = $derived(
-    Math.round((manualTotalDebit - manualTotalCredit) * 100) === 0 &&
-      manualTotalDebit > 0,
+    Math.round((manualTotalDebit - manualTotalCredit) * 100) === 0 && manualTotalDebit > 0,
   );
 
   async function loadSettings() {
@@ -247,7 +309,25 @@
   }
 
   async function submitManualEntry() {
+    if (manualSaving || !canManage || !manualEntriesEnabled) return;
     manualError = '';
+    if (
+      manualLines.some((line) => {
+        const debit = Number(line.debit || 0),
+          credit = Number(line.credit || 0);
+        return (
+          !Number.isFinite(debit) ||
+          !Number.isFinite(credit) ||
+          debit < 0 ||
+          credit < 0 ||
+          (debit > 0 && credit > 0)
+        );
+      })
+    ) {
+      manualError =
+        'Chaque ligne doit contenir un montant valide au débit ou au crédit, jamais les deux.';
+      return;
+    }
     // Build payload: drop empty lines, send only populated debit/credit.
     const lines = manualLines
       .filter((l) => l.accountCode.trim() !== '')
@@ -265,8 +345,26 @@
       manualError = 'Au moins deux lignes avec un compte sont requises.';
       return;
     }
+    if (
+      !manualBalanced ||
+      manualLines.some((l) => (Number(l.debit) || Number(l.credit)) && !l.accountCode.trim())
+    ) {
+      manualError = 'Associez chaque montant à un compte et équilibrez les débits et crédits.';
+      return;
+    }
     manualSaving = true;
     try {
+      if (
+        !(await confirmAction(
+          'Cette écriture sera immédiatement comptabilisée au grand livre. Vérifiez les comptes, la date et les montants.',
+          {
+            title: 'Comptabiliser l’écriture ?',
+            confirmLabel: 'Comptabiliser',
+            dangerous: false,
+          },
+        ))
+      )
+        return;
       await api('/billing/ledger/entries', {
         method: 'POST',
         body: {
@@ -278,6 +376,10 @@
       toast.success('Écriture enregistrée');
       resetManualForm();
       showManualForm = false;
+      accountId = '';
+      dateFrom = '';
+      dateTo = '';
+      await clearSource();
       await Promise.all([loadJournal(), loadBalance()]);
     } catch (e) {
       // Surface the API 400 (e.g. unbalanced, unknown account code).
@@ -290,6 +392,26 @@
   $effect(() => {
     void loadSettings();
   });
+  function closeManual() {
+    if (manualSaving) return false;
+    if (
+      !manualDate &&
+      !manualMemo &&
+      !manualLines.some((l) => l.accountCode || l.debit || l.credit || l.memo) &&
+      manualLines.length === 2
+    )
+      return true;
+    void confirmAction('Les lignes non enregistrées seront abandonnées.', {
+      title: 'Fermer la saisie ?',
+      confirmLabel: 'Abandonner',
+    }).then((accepted) => {
+      if (accepted) {
+        showManualForm = false;
+        resetManualForm();
+      }
+    });
+    return false;
+  }
 </script>
 
 <PageHeader
@@ -297,349 +419,409 @@
   subtitle="Plan comptable, journal des écritures et balance de vérification."
 />
 
-<!-- Tabs -->
-<div class="mb-6 flex gap-1 rounded-xl bg-surface-muted p-1 w-fit">
-  <button
-    class={`rounded-lg px-4 py-2 text-sm font-medium transition ${activeTab === 'chart' ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink'}`}
-    onclick={() => { activeTab = 'chart'; }}
-  >Plan comptable</button>
-  <button
-    class={`rounded-lg px-4 py-2 text-sm font-medium transition ${activeTab === 'journal' ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink'}`}
-    onclick={() => { activeTab = 'journal'; }}
-  >Journal</button>
-  <button
-    class={`rounded-lg px-4 py-2 text-sm font-medium transition ${activeTab === 'balance' ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink'}`}
-    onclick={() => { activeTab = 'balance'; }}
-  >Balance</button>
-</div>
-
-<!-- ── Plan comptable ──────────────────────────────────────────────────────── -->
-{#if activeTab === 'chart'}
-  <ErrorNotice message={errorChart} onretry={loadChart} />
-  {#if loadingChart}
-    <Card padded={false}><Skeleton rows={8} /></Card>
-  {:else}
-    <Table>
-      {#snippet head()}
-        <th>Code</th>
-        <th>Nom</th>
-        <th>Type</th>
-        <th>Statut</th>
-      {/snippet}
-      {#snippet body()}
-        {#each accounts as account (account.id)}
-          <tr>
-            <td class="font-mono text-sm">{account.code}</td>
-            <td class="font-medium">{account.name}</td>
-            <td><Badge tone={accountTypeTone(account.type)}>{account.type}</Badge></td>
-            <td>
-              <Badge tone={account.active ? 'ok' : 'neutral'}>
-                {account.active ? 'Actif' : 'Inactif'}
-              </Badge>
-            </td>
-          </tr>
-        {:else}
-          <tr>
-            <td colspan={4}>
-              <EmptyState title="Aucun compte" message="Le plan comptable est vide." />
-            </td>
-          </tr>
-        {/each}
-      {/snippet}
-    </Table>
+<svelte:head><title>Grand livre · Pulsar</title></svelte:head>
+<Tabs {tabs} bind:active={activeTab} label="Vues du grand livre">
+  <!-- ── Plan comptable ──────────────────────────────────────────────────────── -->
+  {#if activeTab === 'chart'}
+    <ErrorNotice message={errorChart} onretry={loadChart} />
+    {#if loadingChart}
+      <Card padded={false}><Skeleton rows={8} /></Card>
+    {:else}
+      <Table>
+        {#snippet head()}
+          <th>Code</th>
+          <th>Nom</th>
+          <th>Type</th>
+          <th>Statut</th>
+        {/snippet}
+        {#snippet body()}
+          {#each accounts as account (account.id)}
+            <tr>
+              <td class="font-mono text-sm">{account.code}</td>
+              <td class="font-medium">{account.name}</td>
+              <td><Badge tone={accountTypeTone(account.type)}>{account.type}</Badge></td>
+              <td>
+                <Badge tone={account.active ? 'ok' : 'neutral'}>
+                  {account.active ? 'Actif' : 'Inactif'}
+                </Badge>
+              </td>
+            </tr>
+          {:else}
+            <tr>
+              <td colspan={4}>
+                <EmptyState title="Aucun compte" message="Le plan comptable est vide." />
+              </td>
+            </tr>
+          {/each}
+        {/snippet}
+      </Table>
+    {/if}
   {/if}
-{/if}
 
-<!-- ── Journal ────────────────────────────────────────────────────────────── -->
-{#if activeTab === 'journal'}
-  {#if manualEntriesEnabled}
-    <div class="mb-4">
-      {#if !showManualForm}
-        <Button variant="primary" onclick={() => { showManualForm = true; }}>
-          + Nouvelle écriture manuelle
-        </Button>
-      {:else}
-        <Card>
-          <div class="mb-3 flex items-center justify-between">
-            <h2 class="text-sm font-bold text-ink">Nouvelle écriture manuelle</h2>
+  <!-- ── Journal ────────────────────────────────────────────────────────────── -->
+  {#if activeTab === 'journal'}
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <p class="text-sm text-ink-muted">Écritures comptabilisées · {journalTotal} résultat(s)</p>
+      {#if manualEntriesEnabled && canManage}
+        <Button
+          onclick={() => {
+            showManualForm = true;
+          }}>Nouvelle écriture manuelle</Button
+        >
+      {/if}
+    </div>
+    {#if sourceType || sourceId}
+      <div
+        class="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-edge bg-surface-muted p-3 text-sm"
+      >
+        <span>Journal filtré sur {sourceType === 'payment' ? 'ce paiement' : 'cette source'}</span>
+        {#if sourceHref({ sourceType, sourceId })}<a
+            class="text-accent hover:underline"
+            href={sourceHref({ sourceType, sourceId })}>Ouvrir la source</a
+          >{/if}
+        <Button variant="ghost" onclick={clearSource}>Voir toutes les écritures</Button>
+      </div>
+    {/if}
+    <div class="mb-4 grid gap-3 sm:grid-cols-3">
+      <Field label="Compte"
+        ><Select bind:value={accountId}
+          ><option value="">Tous les comptes</option>{#each accounts as account}<option
+              value={account.id}>{account.code} · {account.name}</option
+            >{/each}</Select
+        ></Field
+      >
+      <Field label="Depuis"><Input type="date" bind:value={dateFrom} /></Field>
+      <Field label="Jusqu’au"><Input type="date" bind:value={dateTo} /></Field>
+    </div>
+    <ErrorNotice message={errorJournal} onretry={loadJournal} />
+    {#if loadingJournal}
+      <Card padded={false}><Skeleton rows={8} /></Card>
+    {:else if !errorJournal}
+      <div class="space-y-3">
+        {#each journalEntries as entry (entry.id)}
+          <Card>
+            <div class="mb-3 flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <span class="font-mono text-xs text-ink-faint">{fmtDate(entry.date)}</span>
+                <span class="ml-2"
+                  ><Badge tone={entry.sourceKind === 'reversal' ? 'warn' : 'neutral'}
+                    >{entry.sourceKind === 'reversal'
+                      ? 'Contrepassation'
+                      : entry.sourceType === 'payment'
+                        ? 'Paiement'
+                        : entry.sourceType === 'invoice'
+                          ? 'Facture transporteur'
+                          : entry.sourceType === 'customer-invoice'
+                            ? 'Relevé client'
+                            : entry.sourceType || 'Écriture manuelle'}</Badge
+                  ></span
+                >
+                {#if sourceHref(entry)}<a
+                    class="ml-2 text-xs font-medium text-accent hover:underline"
+                    href={sourceHref(entry)}>Ouvrir la source</a
+                  >{/if}
+              </div>
+              {#if entry.memo}
+                <span class="text-sm text-ink-muted">{entry.memo}</span>
+              {/if}
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-edge-soft text-xs text-ink-faint">
+                    <th class="pb-1 text-left font-medium">Compte</th>
+                    <th class="pb-1 text-right font-medium">Débit</th>
+                    <th class="pb-1 text-right font-medium">Crédit</th>
+                    {#if entry.lines.some((l) => l.memo)}
+                      <th class="pb-1 text-left font-medium">Note</th>
+                    {/if}
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each entry.lines as line, i (i)}
+                    <tr class="border-b border-edge-soft/50 last:border-0">
+                      <td class="py-1">
+                        {#if line.account}
+                          <span class="font-mono text-ink-muted text-xs">{line.account.code}</span>
+                          <span class="ml-2">{line.account.name}</span>
+                        {:else}
+                          <span class="font-mono text-xs">{line.accountId}</span>
+                        {/if}
+                      </td>
+                      <td class="py-1 text-right tabular-nums">
+                        {Number(line.debit) !== 0 ? money(line.debit) : ''}
+                      </td>
+                      <td class="py-1 text-right tabular-nums">
+                        {Number(line.credit) !== 0 ? money(line.credit) : ''}
+                      </td>
+                      {#if entry.lines.some((l) => l.memo)}
+                        <td class="py-1 text-xs text-ink-muted">{line.memo ?? ''}</td>
+                      {/if}
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        {:else}
+          <Card>
+            <EmptyState
+              title="Aucune écriture"
+              message="Aucune écriture ne correspond à cette source et à ces filtres."
+            />
+          </Card>
+        {/each}
+      </div>
+
+      <!-- Pagination -->
+      {#if journalTotal > journalPageSize}
+        <div class="mt-4 flex items-center justify-between text-sm text-ink-muted">
+          <span>{journalTotal} écriture{journalTotal > 1 ? 's' : ''} au total</span>
+          <div class="flex gap-1">
             <button
-              class="text-sm text-ink-muted hover:text-ink"
-              onclick={() => { showManualForm = false; resetManualForm(); }}
-            >Annuler</button>
+              class="rounded px-2 py-1 hover:bg-surface-muted disabled:opacity-40"
+              disabled={journalPage <= 1}
+              onclick={() => goJournalPage(journalPage - 1)}>‹ Préc.</button
+            >
+            <span class="px-2 py-1">{journalPage} / {totalPages}</span>
+            <button
+              class="rounded px-2 py-1 hover:bg-surface-muted disabled:opacity-40"
+              disabled={journalPage >= totalPages}
+              onclick={() => goJournalPage(journalPage + 1)}>Suiv. ›</button
+            >
           </div>
+        </div>
+      {/if}
+    {/if}
+  {/if}
 
-          <div class="mb-3 grid gap-3 sm:grid-cols-2">
-            <div>
-              <label class="mb-1 block text-xs font-medium text-ink-muted" for="manual-date">Date</label>
-              <input
-                id="manual-date"
-                type="date"
-                bind:value={manualDate}
-                class="w-full rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-              />
-              <p class="mt-1 text-xs text-ink-faint">Laisser vide pour la date courante.</p>
-            </div>
-            <div>
-              <label class="mb-1 block text-xs font-medium text-ink-muted" for="manual-memo">Description</label>
-              <input
-                id="manual-memo"
-                placeholder="Mémo de l'écriture"
-                bind:value={manualMemo}
-                class="w-full rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-              />
-            </div>
-          </div>
+  <!-- ── Balance de vérification ────────────────────────────────────────────── -->
+  {#if activeTab === 'balance'}
+    <div class="mb-4 flex items-center gap-3">
+      <label class="text-sm font-medium text-ink" for="asof-input">Au</label>
+      <input
+        id="asof-input"
+        type="date"
+        bind:value={asOf}
+        class="rounded-lg border border-edge px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+      />
+      <span class="text-xs text-ink-faint">(laisser vide pour la date courante)</span>
+    </div>
 
-          <table class="w-full text-sm">
+    <ErrorNotice message={errorBalance} onretry={loadBalance} />
+
+    {#if loadingBalance}
+      <Card padded={false}><Skeleton rows={8} /></Card>
+    {:else if trialBalance}
+      <Card padded={false}>
+        <div class="overflow-x-auto">
+          <table class="w-full">
             <thead>
-              <tr class="border-b border-edge-soft text-xs text-ink-faint">
-                <th class="pb-1 text-left font-medium">Compte (code)</th>
-                <th class="pb-1 text-right font-medium">Débit</th>
-                <th class="pb-1 text-right font-medium">Crédit</th>
-                <th class="pb-1 text-left font-medium">Note</th>
-                <th class="pb-1"></th>
+              <tr
+                class="border-b border-edge text-xs font-semibold tracking-wide text-ink-faint uppercase"
+              >
+                <th class="px-4 py-3 text-left">Code</th>
+                <th class="px-4 py-3 text-left">Compte</th>
+                <th class="px-4 py-3 text-left">Type</th>
+                <th class="px-4 py-3 text-right">Débit</th>
+                <th class="px-4 py-3 text-right">Crédit</th>
+                <th class="px-4 py-3 text-right">Solde</th>
               </tr>
             </thead>
-            <tbody>
-              {#each manualLines as line, i (i)}
-                <tr class="border-b border-edge-soft/50 last:border-0">
-                  <td class="py-1 pr-2">
-                    <input
-                      list="manual-account-codes"
-                      bind:value={line.accountCode}
-                      placeholder="ex. 1000"
-                      class="w-32 rounded border border-edge bg-surface px-2 py-1 text-sm focus:border-accent focus:outline-none"
-                    />
+            <tbody class="divide-y divide-edge-soft">
+              {#each trialBalance.rows as row (row.code)}
+                <tr class="text-sm hover:bg-surface-muted/50">
+                  <td class="px-4 py-2.5 font-mono text-ink-muted">{row.code}</td>
+                  <td class="px-4 py-2.5 font-medium">{row.name}</td>
+                  <td class="px-4 py-2.5">
+                    <Badge tone={accountTypeTone(row.type)}>{row.type}</Badge>
                   </td>
-                  <td class="py-1 px-1 text-right">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      bind:value={line.debit}
-                      class="w-28 rounded border border-edge bg-surface px-2 py-1 text-right text-sm focus:border-accent focus:outline-none"
+                  <td class="px-4 py-2.5 text-right tabular-nums">{money(row.debit)}</td>
+                  <td class="px-4 py-2.5 text-right tabular-nums">{money(row.credit)}</td>
+                  <td class="px-4 py-2.5 text-right tabular-nums font-semibold"
+                    >{money(row.balance)}</td
+                  >
+                </tr>
+              {:else}
+                <tr>
+                  <td colspan={6} class="px-4 py-6">
+                    <EmptyState
+                      title="Aucun solde"
+                      message="Aucune donnée disponible pour cette période."
                     />
-                  </td>
-                  <td class="py-1 px-1 text-right">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      bind:value={line.credit}
-                      class="w-28 rounded border border-edge bg-surface px-2 py-1 text-right text-sm focus:border-accent focus:outline-none"
-                    />
-                  </td>
-                  <td class="py-1 px-1">
-                    <input
-                      bind:value={line.memo}
-                      placeholder="(optionnel)"
-                      class="w-full rounded border border-edge bg-surface px-2 py-1 text-sm focus:border-accent focus:outline-none"
-                    />
-                  </td>
-                  <td class="py-1 pl-1 text-right">
-                    <button
-                      class="text-ink-faint hover:text-danger disabled:opacity-30"
-                      disabled={manualLines.length <= 2}
-                      title="Supprimer la ligne"
-                      onclick={() => removeManualLine(i)}
-                    >✕</button>
                   </td>
                 </tr>
               {/each}
             </tbody>
-            <tfoot class="border-t border-edge">
-              <tr class="text-xs font-semibold">
-                <td class="py-2">
-                  <button class="text-accent hover:underline" onclick={addManualLine}>+ Ajouter une ligne</button>
-                </td>
-                <td class="py-2 text-right tabular-nums">{money(String(manualTotalDebit))}</td>
-                <td class="py-2 text-right tabular-nums">{money(String(manualTotalCredit))}</td>
-                <td class="py-2" colspan={2}>
-                  {#if manualBalanced}
+            <tfoot class="border-t-2 border-edge">
+              <tr class="text-sm font-bold">
+                <td class="px-4 py-3" colspan={3}>Total</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(trialBalance.totalDebit)}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{money(trialBalance.totalCredit)}</td>
+                <td class="px-4 py-3 text-right">
+                  {#if balanceBalanced}
                     <Badge tone="ok">Équilibré ✓</Badge>
                   {:else}
-                    <Badge tone="warn">Déséquilibré</Badge>
+                    <Badge tone="danger">Déséquilibré !</Badge>
                   {/if}
                 </td>
               </tr>
             </tfoot>
           </table>
-
-          <datalist id="manual-account-codes">
-            {#each accounts as a (a.id)}
-              <option value={a.code}>{a.code} — {a.name}</option>
-            {/each}
-          </datalist>
-
-          {#if manualError}
-            <p class="mt-3 text-sm text-danger">{manualError}</p>
-          {/if}
-
-          <div class="mt-4 flex justify-end">
-            <Button variant="primary" disabled={manualSaving || !manualBalanced} onclick={submitManualEntry}>
-              {manualSaving ? 'Enregistrement…' : 'Enregistrer l’écriture'}
-            </Button>
-          </div>
-        </Card>
-      {/if}
-    </div>
-  {/if}
-
-  <ErrorNotice message={errorJournal} onretry={loadJournal} />
-  {#if loadingJournal}
-    <Card padded={false}><Skeleton rows={8} /></Card>
-  {:else}
-    <div class="space-y-3">
-      {#each journalEntries as entry (entry.id)}
-        <Card>
-          <div class="mb-3 flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <span class="font-mono text-xs text-ink-faint">{fmtDate(entry.date)}</span>
-              {#if entry.source}
-                <span class="ml-2"><Badge tone="neutral">{entry.source}</Badge></span>
-              {/if}
-            </div>
-            {#if entry.memo}
-              <span class="text-sm text-ink-muted">{entry.memo}</span>
-            {/if}
-          </div>
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-edge-soft text-xs text-ink-faint">
-                <th class="pb-1 text-left font-medium">Compte</th>
-                <th class="pb-1 text-right font-medium">Débit</th>
-                <th class="pb-1 text-right font-medium">Crédit</th>
-                {#if entry.lines.some((l) => l.memo)}
-                  <th class="pb-1 text-left font-medium">Note</th>
-                {/if}
-              </tr>
-            </thead>
-            <tbody>
-              {#each entry.lines as line, i (i)}
-                <tr class="border-b border-edge-soft/50 last:border-0">
-                  <td class="py-1">
-                    {#if line.account}
-                      <span class="font-mono text-ink-muted text-xs">{line.account.code}</span>
-                      <span class="ml-2">{line.account.name}</span>
-                    {:else}
-                      <span class="font-mono text-xs">{line.accountId}</span>
-                    {/if}
-                  </td>
-                  <td class="py-1 text-right tabular-nums">
-                    {Number(line.debit) !== 0 ? money(line.debit) : ''}
-                  </td>
-                  <td class="py-1 text-right tabular-nums">
-                    {Number(line.credit) !== 0 ? money(line.credit) : ''}
-                  </td>
-                  {#if entry.lines.some((l) => l.memo)}
-                    <td class="py-1 text-xs text-ink-muted">{line.memo ?? ''}</td>
-                  {/if}
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </Card>
-      {:else}
-        <Card>
-          <EmptyState title="Aucune écriture" message="Le journal est vide pour cette période." />
-        </Card>
-      {/each}
-    </div>
-
-    <!-- Pagination -->
-    {#if journalTotal > journalPageSize}
-      <div class="mt-4 flex items-center justify-between text-sm text-ink-muted">
-        <span>{journalTotal} écriture{journalTotal > 1 ? 's' : ''} au total</span>
-        <div class="flex gap-1">
-          <button
-            class="rounded px-2 py-1 hover:bg-surface-muted disabled:opacity-40"
-            disabled={journalPage <= 1}
-            onclick={() => goJournalPage(journalPage - 1)}
-          >‹ Préc.</button>
-          <span class="px-2 py-1">{journalPage} / {totalPages}</span>
-          <button
-            class="rounded px-2 py-1 hover:bg-surface-muted disabled:opacity-40"
-            disabled={journalPage >= totalPages}
-            onclick={() => goJournalPage(journalPage + 1)}
-          >Suiv. ›</button>
         </div>
-      </div>
+      </Card>
+    {:else}
+      <Card>
+        <EmptyState
+          title="Aucune balance"
+          message="Impossible de charger la balance de vérification."
+        />
+      </Card>
     {/if}
   {/if}
-{/if}
+</Tabs>
+<Drawer
+  bind:open={showManualForm}
+  title="Nouvelle écriture manuelle"
+  width="xl"
+  dismissible={!manualSaving}
+  onbeforeclose={closeManual}
+>
+  <p class="mb-4 text-sm text-ink-muted">
+    Les débits et crédits doivent être équilibrés. L’enregistrement crée une écriture définitive,
+    pas un brouillon. Cette écriture manuelle est indépendante de la source filtrée.
+  </p>
+  <fieldset class="min-w-0" disabled={manualSaving}>
+    <div class="mb-3 grid gap-3 sm:grid-cols-2">
+      <div>
+        <label class="mb-1 block text-xs font-medium text-ink-muted" for="manual-date">Date</label>
+        <input
+          id="manual-date"
+          type="date"
+          bind:value={manualDate}
+          class="w-full rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+        />
+        <p class="mt-1 text-xs text-ink-faint">Laisser vide pour la date courante.</p>
+      </div>
+      <div>
+        <label class="mb-1 block text-xs font-medium text-ink-muted" for="manual-memo"
+          >Description</label
+        >
+        <input
+          id="manual-memo"
+          placeholder="Mémo de l'écriture"
+          bind:value={manualMemo}
+          class="w-full rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+        />
+      </div>
+    </div>
 
-<!-- ── Balance de vérification ────────────────────────────────────────────── -->
-{#if activeTab === 'balance'}
-  <div class="mb-4 flex items-center gap-3">
-    <label class="text-sm font-medium text-ink" for="asof-input">Au</label>
-    <input
-      id="asof-input"
-      type="date"
-      bind:value={asOf}
-      onchange={loadBalance}
-      class="rounded-lg border border-edge px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-    />
-    <span class="text-xs text-ink-faint">(laisser vide pour la date courante)</span>
-  </div>
-
-  <ErrorNotice message={errorBalance} onretry={loadBalance} />
-
-  {#if loadingBalance}
-    <Card padded={false}><Skeleton rows={8} /></Card>
-  {:else if trialBalance}
-    <Card padded={false}>
-      <div class="overflow-x-auto">
-        <table class="w-full">
-          <thead>
-            <tr class="border-b border-edge text-xs font-semibold tracking-wide text-ink-faint uppercase">
-              <th class="px-4 py-3 text-left">Code</th>
-              <th class="px-4 py-3 text-left">Compte</th>
-              <th class="px-4 py-3 text-left">Type</th>
-              <th class="px-4 py-3 text-right">Débit</th>
-              <th class="px-4 py-3 text-right">Crédit</th>
-              <th class="px-4 py-3 text-right">Solde</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-edge-soft">
-            {#each trialBalance.rows as row (row.code)}
-              <tr class="text-sm hover:bg-surface-muted/50">
-                <td class="px-4 py-2.5 font-mono text-ink-muted">{row.code}</td>
-                <td class="px-4 py-2.5 font-medium">{row.name}</td>
-                <td class="px-4 py-2.5">
-                  <Badge tone={accountTypeTone(row.type)}>{row.type}</Badge>
-                </td>
-                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.debit)}</td>
-                <td class="px-4 py-2.5 text-right tabular-nums">{money(row.credit)}</td>
-                <td class="px-4 py-2.5 text-right tabular-nums font-semibold">{money(row.balance)}</td>
-              </tr>
-            {:else}
-              <tr>
-                <td colspan={6} class="px-4 py-6">
-                  <EmptyState title="Aucun solde" message="Aucune donnée disponible pour cette période." />
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-          <tfoot class="border-t-2 border-edge">
-            <tr class="text-sm font-bold">
-              <td class="px-4 py-3" colspan={3}>Total</td>
-              <td class="px-4 py-3 text-right tabular-nums">{money(trialBalance.totalDebit)}</td>
-              <td class="px-4 py-3 text-right tabular-nums">{money(trialBalance.totalCredit)}</td>
-              <td class="px-4 py-3 text-right">
-                {#if balanceBalanced}
-                  <Badge tone="ok">Équilibré ✓</Badge>
-                {:else}
-                  <Badge tone="danger">Déséquilibré !</Badge>
-                {/if}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-edge-soft text-xs text-ink-faint">
+            <th class="pb-1 text-left font-medium">Compte (code)</th>
+            <th class="pb-1 text-right font-medium">Débit</th>
+            <th class="pb-1 text-right font-medium">Crédit</th>
+            <th class="pb-1 text-left font-medium">Note</th>
+            <th class="pb-1"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each manualLines as line, i (i)}
+            <tr class="border-b border-edge-soft/50 last:border-0">
+              <td class="py-1 pr-2">
+                <input
+                  aria-label={`Compte · ligne ${i + 1}`}
+                  list="manual-account-codes"
+                  bind:value={line.accountCode}
+                  placeholder="ex. 1000"
+                  class="w-32 rounded border border-edge bg-surface px-2 py-1 text-sm focus:border-accent focus:outline-none"
+                />
+              </td>
+              <td class="py-1 px-1 text-right">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  aria-label={`Débit · ligne ${i + 1}`}
+                  bind:value={line.debit}
+                  class="w-28 rounded border border-edge bg-surface px-2 py-1 text-right text-sm focus:border-accent focus:outline-none"
+                />
+              </td>
+              <td class="py-1 px-1 text-right">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  aria-label={`Crédit · ligne ${i + 1}`}
+                  bind:value={line.credit}
+                  class="w-28 rounded border border-edge bg-surface px-2 py-1 text-right text-sm focus:border-accent focus:outline-none"
+                />
+              </td>
+              <td class="py-1 px-1">
+                <input
+                  aria-label={`Note · ligne ${i + 1}`}
+                  bind:value={line.memo}
+                  placeholder="(optionnel)"
+                  class="w-full rounded border border-edge bg-surface px-2 py-1 text-sm focus:border-accent focus:outline-none"
+                />
+              </td>
+              <td class="py-1 pl-1 text-right">
+                <button
+                  class="text-ink-faint hover:text-danger disabled:opacity-30"
+                  disabled={manualLines.length <= 2}
+                  aria-label={`Supprimer la ligne ${i + 1}`}
+                  title="Supprimer la ligne"
+                  onclick={() => removeManualLine(i)}>✕</button
+                >
               </td>
             </tr>
-          </tfoot>
-        </table>
-      </div>
-    </Card>
-  {:else}
-    <Card>
-      <EmptyState title="Aucune balance" message="Impossible de charger la balance de vérification." />
-    </Card>
-  {/if}
-{/if}
+          {/each}
+        </tbody>
+        <tfoot class="border-t border-edge">
+          <tr class="text-xs font-semibold">
+            <td class="py-2">
+              <button class="text-accent hover:underline" onclick={addManualLine}
+                >+ Ajouter une ligne</button
+              >
+            </td>
+            <td class="py-2 text-right tabular-nums">{money(String(manualTotalDebit))}</td>
+            <td class="py-2 text-right tabular-nums">{money(String(manualTotalCredit))}</td>
+            <td class="py-2" colspan={2}>
+              {#if manualBalanced}
+                <Badge tone="ok">Équilibré ✓</Badge>
+              {:else}
+                <Badge tone="warn">Déséquilibré</Badge>
+              {/if}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <datalist id="manual-account-codes">
+      {#each accounts as a (a.id)}
+        <option value={a.code}>{a.code} — {a.name}</option>
+      {/each}
+    </datalist>
+
+    {#if manualError}
+      <p role="alert" class="mt-3 text-sm text-danger">{manualError}</p>
+    {/if}
+  </fieldset>
+  {#snippet footer()}
+    <Button
+      variant="secondary"
+      disabled={manualSaving}
+      onclick={() => {
+        if (closeManual()) showManualForm = false;
+      }}>Fermer</Button
+    >
+    <Button
+      disabled={manualSaving || !manualBalanced}
+      loading={manualSaving}
+      onclick={submitManualEntry}>Comptabiliser l’écriture</Button
+    >
+  {/snippet}
+</Drawer>

@@ -2,6 +2,39 @@
 
 Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link PRs when relevant.
 
+## Modules visuels — priorité de relance (2026-09-14)
+
+- [x] Cour & quais : poste de travail par site, plan configurable, occupation, planning et panneaux d’action ([contrats et limites](docs/plans/yard-visual-workspace.md)).
+- [x] Gardes Yard : disponibilité et même site, concurrence, départ/annulation traçables, arrivée liée sans doublon.
+- [x] Connexions explicites visite/rendez-vous ↔ chargement TMS ↔ réception/préparation WMS ([contrats et limites](docs/plans/yard-connected-dossiers.md)).
+- [x] Référentiel entrepôts en lecture avec `wms.read`, sans dépendance à la lecture des localisations TMS.
+- [ ] Cohérence guidée entre lignes/expéditions des dossiers reliés; validations des lignes et réservations de stock.
+- [ ] Replanification contextuelle, horaires/capacités des quais et seuils de présence configurables.
+- [x] WMS visuel v1 : zones/emplacements, files par site et déplacement confirmé depuis le stock ([contrats et limites](docs/plans/wms-visual-workspace.md)).
+- [x] WMS guidé : réception/préparation par lignes, unités/stock/manque, correction en panneau, choix recherchables et validation versionnée ([contrats et limites](docs/plans/wms-guided-operations.md)).
+- [x] Sérialiser édition/validation des documents WMS; revalider site/article/bin et besoin cumulé; préserver saisie et bloquer le retry incertain.
+- [x] WMS rangement : file par site, journal contextualisé, unités capturées et MOVE idempotent avec reprise navigateur; scénario local DÉMO ([contrats et limites](docs/plans/wms-putaway-traceability.md)).
+- [ ] WMS suite : recherche paginée sur les anciens référentiels de l'inventaire; annulation serveur explicite des intentions de MOVE incertaines; provenance par lot à concevoir.
+- [ ] Réception/préparation partielles, quantités attendues/réelles, scans, allocations/réservations et règles de conversion d'unités.
+- [x] Flotte visuelle : parc, échéancier UTC, historique paginé et panneaux d’intervention; concurrence multi-ordres et versions ([contrats et limites](docs/plans/fleet-visual-workspace.md)).
+- [ ] Flotte v2 : anciens registres/documents paginés, inspections/relevés, création idempotente; vraie réservation atelier et disponibilité prévisionnelle à concevoir.
+- [ ] Fabrication visuelle : postes, encours, blocages et flux; prochain lot de spécialisation métier.
+- [ ] Agents : suggestions contextuelles gouvernées, motifs et résultats reliés aux dossiers.
+
+## Relance UI — dossiers financiers connectés (2026-09-14)
+
+- [x] Association audit → facture approuvée existante, tenant-scopée et idempotente.
+- [x] Navigation facture/paiement/banque, sélection expliquée et confirmations UI.
+- [x] Rapprochement bancaire un à un : montant, sens, devise, écriture réelle, concurrence.
+- [x] Interdire annulation d’un paiement rapproché et suppression d’un compte avec mouvements.
+- [x] Import CSV : prévisualisation, validation stricte du format pris en charge et dédoublonnage serveur ([lot 6](docs/plans/bank-csv-import.md)).
+- [ ] Mapping guidé des formats bancaires et historique/correction des imports.
+- [ ] Parcours documenté de correction d’une association audit/facture.
+- [ ] Rapprochements partiels/groupés, frais, avances et FX : conception dédiée.
+- [ ] Atomicité historique du rapprochement Freight Audit/factures; grand livre multi-devises.
+
+Contrats, migration et preuves : [finance-connected-flow.md](docs/plans/finance-connected-flow.md).
+
 ## Phase 0 — Foundation
 
 - [x] Monorepo pnpm workspaces + root scripts

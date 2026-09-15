@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
   import {
     Badge,
@@ -69,11 +70,16 @@
 
   function statusLabel(s: string): string {
     switch (s) {
-      case 'OPEN': return 'Ouvert';
-      case 'COUNTED': return 'Compté';
-      case 'RECONCILED': return 'Réconcilié';
-      case 'CANCELLED': return 'Annulé';
-      default: return s;
+      case 'OPEN':
+        return 'Ouvert';
+      case 'COUNTED':
+        return 'Compté';
+      case 'RECONCILED':
+        return 'Réconcilié';
+      case 'CANCELLED':
+        return 'Annulé';
+      default:
+        return s;
     }
   }
 
@@ -167,7 +173,7 @@
   }
 
   async function cancel(id: string) {
-    if (!confirm('Annuler ce comptage ?')) return;
+    if (!(await confirmAction('Annuler ce comptage ?'))) return;
     try {
       await api(`/wms/cycle-counts/${id}/cancel`, { method: 'POST' });
       await load();
@@ -252,11 +258,7 @@
       {:else}
         <div class="grid gap-3">
           {#each counts as c (c.id)}
-            <button
-              type="button"
-              class="block w-full text-left"
-              onclick={() => openCount(c.id)}
-            >
+            <button type="button" class="block w-full text-left" onclick={() => openCount(c.id)}>
               <Card>
                 <div class="flex items-start justify-between gap-2">
                   <span class="font-mono font-semibold text-ink">{c.number}</span>
@@ -278,7 +280,9 @@
         <div class="flex gap-2 overflow-x-auto pb-2">
           {#each KANBAN_COLS as col (col.status)}
             {@const items = counts.filter((c) => c.status === col.status)}
-            <div class="flex w-52 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+            <div
+              class="flex w-52 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted"
+            >
               <div class="flex items-center justify-between px-3 py-2">
                 <Badge tone={statusTone(col.status)}>{col.label}</Badge>
                 <span class="font-mono text-xs text-ink-muted">{items.length}</span>
@@ -295,7 +299,9 @@
                     >
                       <div class="font-mono font-semibold text-sm text-ink">{c.number}</div>
                       <div class="mt-0.5 text-xs text-ink-muted">{c.bin.code}</div>
-                      <div class="mt-1 text-[11px] text-ink-faint">{c._count?.lines ?? 0} lignes</div>
+                      <div class="mt-1 text-[11px] text-ink-faint">
+                        {c._count?.lines ?? 0} lignes
+                      </div>
                     </button>
                   {/each}
                 {/if}

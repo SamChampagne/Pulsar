@@ -87,9 +87,9 @@
   const selectedShipmentCount = $derived(selectedShipments.length);
 
   const viewOptions: Array<{ id: DispatchView; label: string; hint: string }> = [
-    { id: 'map', label: 'Map', hint: 'route + rates' },
-    { id: 'board', label: 'Board', hint: 'ops pipeline' },
-    { id: 'table', label: 'Table', hint: 'dense planning' },
+    { id: 'map', label: 'Carte', hint: 'itinéraires et tarifs' },
+    { id: 'board', label: 'Kanban', hint: 'étapes opérationnelles' },
+    { id: 'table', label: 'Tableau', hint: 'planification détaillée' },
   ];
 
   const boardColumns: Array<{ title: string; statuses: string[]; tone: Tone }> = [
@@ -287,51 +287,28 @@
 
 <PageHeader
   title="Dispatch"
-  subtitle="Plan unassigned shipments, build loads, and move execution forward from one cockpit."
+  subtitle="Planifiez les expéditions, constituez les chargements et suivez leur exécution."
 />
 
 <section class="mb-4 overflow-hidden rounded-card border border-edge bg-surface shadow-sm">
-  <div
-    class="border-b border-edge bg-[linear-gradient(135deg,#0f172a_0%,#172554_52%,#1e3a8a_100%)] p-4 text-white"
-  >
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <p class="text-xs font-semibold tracking-[0.18em] text-blue-100 uppercase">
-          Operations cockpit
-        </p>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">
-          Planifier, suivre et tender depuis la même surface.
-        </h1>
-        <p class="mt-1 max-w-3xl text-sm text-blue-100">
-          Pulsar passe d'une page de gestion à un poste de dispatch: backlog, route, rates, board
-          d'états et actions agent-ready au même endroit.
-        </p>
-      </div>
-      <div class="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-right backdrop-blur">
-        <div class="text-xs text-blue-100">Sélection active</div>
-        <div class="text-2xl font-bold">{selectedCount}</div>
-      </div>
-    </div>
-  </div>
-
   <div class="grid gap-0 divide-y divide-edge md:grid-cols-4 md:divide-x md:divide-y-0">
     <div class="p-3">
-      <div class="text-xs font-medium text-ink-muted">Unplanned shipments</div>
+      <div class="text-xs font-medium text-ink-muted">Expéditions à planifier</div>
       <div class="mt-1 flex items-end gap-2">
         <span class="text-2xl font-bold text-ink">{backlog.length}</span>
-        {#if lateBacklog > 0}<Badge tone="danger">{lateBacklog} late</Badge>{/if}
+        {#if lateBacklog > 0}<Badge tone="danger">{lateBacklog} en retard</Badge>{/if}
       </div>
     </div>
     <div class="p-3">
-      <div class="text-xs font-medium text-ink-muted">Loads planned/open</div>
+      <div class="text-xs font-medium text-ink-muted">Chargements ouverts</div>
       <div class="mt-1 text-2xl font-bold text-ink">{plannedLoadCount + openLoadCount}</div>
     </div>
     <div class="p-3">
-      <div class="text-xs font-medium text-ink-muted">Moving / dispatched</div>
+      <div class="text-xs font-medium text-ink-muted">En exécution</div>
       <div class="mt-1 text-2xl font-bold text-ink">{movingLoadCount}</div>
     </div>
     <div class="p-3">
-      <div class="text-xs font-medium text-ink-muted">Selected load</div>
+      <div class="text-xs font-medium text-ink-muted">Chargement sélectionné</div>
       <div class="mt-1 flex flex-wrap items-center gap-2">
         <span class="text-lg font-bold text-ink">{selectedLoad?.loadNumber ?? '—'}</span>
         {#if selectedLoad}<Badge tone={statusTone(selectedLoad.status)}>{selectedLoad.status}</Badge
@@ -591,7 +568,7 @@
       </Card>
 
       <Card>
-        <h2 class="mb-3 text-sm font-bold text-ink">Selected load details</h2>
+        <h2 class="mb-3 text-sm font-bold text-ink">Chargement sélectionné details</h2>
         {#if !selectedLoad}
           <p class="text-sm text-ink-muted">Aucun load sélectionné.</p>
         {:else}

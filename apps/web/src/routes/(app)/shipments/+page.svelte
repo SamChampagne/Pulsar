@@ -392,7 +392,7 @@
 </script>
 
 <PageHeader
-  title="Shipments"
+  title="Expéditions"
   subtitle="Plan confirmed freight into loads, then monitor pickup, transit, and delivery readiness."
   count={total || kanbanTotal}
 />

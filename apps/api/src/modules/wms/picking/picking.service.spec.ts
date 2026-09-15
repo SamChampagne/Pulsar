@@ -1,4 +1,5 @@
 import { PickOrderStatus, StockMovementType } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import { PickingService } from './picking.service';
 
 function harness(throwOnPost = false) {
@@ -7,12 +8,28 @@ function harness(throwOnPost = false) {
     tenantId: 't1',
     status: PickOrderStatus.OPEN,
     locationId: 'loc1',
-    lines: [{ id: 'l1', itemId: 'i1', fromBinId: 'b1', qty: 3 }],
+    updatedAt: new Date(),
+    location: { id: 'loc1', type: 'WAREHOUSE' },
+    lines: [
+      {
+        id: 'l1',
+        itemId: 'i1',
+        fromBinId: 'b1',
+        qty: new Prisma.Decimal(3),
+        item: { isActive: true, unit: 'EA' },
+        fromBin: { id: 'b1', isActive: true, locationId: 'loc1' },
+      },
+    ],
   };
   const posted: any[] = [];
   const client = {
+    $queryRaw: async () => [],
+    wmsItem: { findFirst: async () => ({ isActive: true }) },
+    bin: { findFirst: async () => ({ isActive: true, locationId: 'loc1' }) },
+    location: { findFirst: async () => ({ id: 'loc1' }) },
     pickOrder: {
       findFirst: async () => order,
+      findFirstOrThrow: async () => order,
       updateMany: async ({ where, data }: any) => {
         const allowed = where.status?.in ?? [where.status];
         if (allowed.includes(order.status)) {
@@ -35,7 +52,19 @@ function harness(throwOnPost = false) {
   const audit = { log: async () => undefined } as any;
   const domainEvents = { emit: async () => undefined } as any;
   const customFields = { validateValues: async () => undefined } as any;
-  return { svc: new PickingService(client, inventory, sequences, ownership, audit, domainEvents, customFields), order, posted };
+  return {
+    svc: new PickingService(
+      client,
+      inventory,
+      sequences,
+      ownership,
+      audit,
+      domainEvents,
+      customFields,
+    ),
+    order,
+    posted,
+  };
 }
 
 describe('PickingService.complete', () => {
@@ -55,7 +84,9 @@ describe('PickingService.complete', () => {
 function createHarness(opts: { shipment?: any; location?: any } = {}) {
   const created: any[] = [];
   const prisma = {
-    location: { findFirst: async () => opts.location ?? { id: 'loc1', tenantId: 't1', type: 'WAREHOUSE' } },
+    location: {
+      findFirst: async () => opts.location ?? { id: 'loc1', tenantId: 't1', type: 'WAREHOUSE' },
+    },
     shipment: { findFirst: async () => opts.shipment ?? null },
     pickOrder: {
       create: async ({ data }: any) => {
@@ -71,7 +102,18 @@ function createHarness(opts: { shipment?: any; location?: any } = {}) {
   const audit = { log: async () => undefined } as any;
   const domainEvents = { emit: async () => undefined } as any;
   const customFields = { validateValues: async () => undefined } as any;
-  return { svc: new PickingService(prisma, inventory, sequences, ownership, audit, domainEvents, customFields), created };
+  return {
+    svc: new PickingService(
+      prisma,
+      inventory,
+      sequences,
+      ownership,
+      audit,
+      domainEvents,
+      customFields,
+    ),
+    created,
+  };
 }
 
 describe('PickingService.create with shipmentId', () => {
@@ -88,10 +130,14 @@ describe('PickingService.create with shipmentId', () => {
       location: { id: 'loc1', tenantId: 't1', type: 'WAREHOUSE' },
       shipment: { id: 'sh1', tenantId: 't1', originLocationId: 'OTHER' },
     });
-    await expect(h.svc.create('t1', 'u1', { locationId: 'loc1', shipmentId: 'sh1' } as any)).rejects.toThrow();
+    await expect(
+      h.svc.create('t1', 'u1', { locationId: 'loc1', shipmentId: 'sh1' } as any),
+    ).rejects.toThrow();
   });
   it('rejects when the shipment does not exist for the tenant', async () => {
     const h = createHarness({ shipment: null });
-    await expect(h.svc.create('t1', 'u1', { locationId: 'loc1', shipmentId: 'missing' } as any)).rejects.toThrow();
+    await expect(
+      h.svc.create('t1', 'u1', { locationId: 'loc1', shipmentId: 'missing' } as any),
+    ).rejects.toThrow();
   });
 });

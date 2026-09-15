@@ -1,5 +1,7 @@
 <script lang="ts">
   import DossierButton from '$lib/components/workflows/DossierButton.svelte';
+  import { untrack } from 'svelte';
+  import { confirmAction } from '$lib/stores/confirmation';
   import { page } from '$app/state';
   import { api, ApiError } from '$lib/api/client';
   import {
@@ -8,6 +10,10 @@
     Card,
     Field,
     PageHeader,
+    RecordHeader,
+    RecordNav,
+    RecordSection,
+    Drawer,
     toneFor,
     labelFor,
     Skeleton,
@@ -71,6 +77,22 @@
   let events = $state<TimelineEvent[]>([]);
   let error = $state('');
   let eventsError = $state(false);
+  let busy = $state(false);
+  let planError = $state('');
+  let fieldsLoading = $state(false);
+  let fieldsError = $state('');
+
+  function closePlan() {
+    if (busy) return false;
+    if (!planDirty) return true;
+    void confirmAction('Abandonner la préparation des expéditions ?', {
+      title: 'Saisie non enregistrée',
+      confirmLabel: 'Abandonner',
+    }).then((ok) => {
+      if (ok) showPlanForm = false;
+    });
+    return false;
+  }
 
   // Plan-with-split form
   let showPlanForm = $state(false);
@@ -82,9 +104,18 @@
   let shipmentFieldDefs = $state<CustomFieldDef[]>([]);
   let shipmentCustomData = $state<Record<string, unknown>>({});
   let orderFieldDefs = $state<CustomFieldDef[]>([]);
+  const planDirty = $derived(
+    splitRows.length > 1 ||
+      splitRows.some((r) => r.weightKg != null || r.palletCount != null) ||
+      Object.values(shipmentCustomData).some((v) => v !== '' && v !== false && v != null),
+  );
 
   async function submitPlan(event: SubmitEvent) {
     event.preventDefault();
+    if (busy || fieldsLoading || fieldsError || !order) return;
+    busy = true;
+    planError = '';
+    let created = 0;
     const customDataPayload =
       Object.keys(shipmentCustomData).length > 0 ? shipmentCustomData : undefined;
     const rows = splitRows.map((r) => ({
@@ -100,26 +131,39 @@
             method: 'POST',
             body: row,
           });
+          created++;
+          splitRows = splitRows.slice(1);
         }
-        toast.success(`${rows.length} shipment${rows.length > 1 ? 's' : ''} added`);
+        toast.success(`${rows.length} expédition(s) ajoutée(s)`);
       } else {
         const meaningful = rows.filter(
-          (r) => r.weightKg !== undefined || r.palletCount !== undefined,
+          (r) =>
+            r.weightKg !== undefined || r.palletCount !== undefined || r.customData !== undefined,
         );
         const body = splitRows.length > 1 || meaningful.length > 0 ? { shipments: rows } : {};
         await api(`/transportation/transport-orders/${orderId}/plan`, { method: 'POST', body });
-        toast.success(`Order planned (${rows.length} shipment${rows.length > 1 ? 's' : ''})`);
+        toast.success(`Ordre planifié · ${rows.length} expédition(s)`);
       }
       showPlanForm = false;
       splitRows = [{ weightKg: null, palletCount: null }];
       shipmentCustomData = {};
       await load();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Failed to plan');
+      planError =
+        (created
+          ? `${created} expédition(s) créée(s). Seules les lignes restantes sont conservées. `
+          : '') +
+        (e instanceof ApiError
+          ? e.message
+          : 'Impossible de planifier les expéditions. Vérifiez le dossier avant de réessayer si la connexion a été interrompue.');
+      if (created) await load();
+    } finally {
+      busy = false;
     }
   }
 
   async function load() {
+    const id = orderId;
     error = '';
     let detail: OrderDetail;
     try {
@@ -133,6 +177,7 @@
       error = e instanceof ApiError ? e.message : `Failed to load order — ${String(e)}`;
       return;
     }
+    if (orderId !== id) return;
     order = detail;
     eventsError = false;
     try {
@@ -141,20 +186,34 @@
           api<TimelineEvent[]>('/transportation/tracking/events', { query: { shipmentId: s.id } }),
         ),
       );
+      if (orderId !== id) return;
       events = lists.flat().sort((a, b) => (b.occurredAt ?? '').localeCompare(a.occurredAt ?? ''));
     } catch {
+      if (orderId !== id) return;
       events = [];
       eventsError = true;
     }
   }
 
   async function action(name: 'confirm' | 'plan' | 'cancel' | 'close') {
+    if (busy) return;
+    if (
+      name === 'cancel' &&
+      !(await confirmAction('Annuler cet ordre de transport ?', {
+        title: 'Annuler l’ordre',
+        confirmLabel: 'Annuler l’ordre',
+      }))
+    )
+      return;
+    busy = true;
     try {
       await api(`/transportation/transport-orders/${orderId}/${name}`, { method: 'POST' });
-      toast.success(`Order ${name === 'plan' ? 'planned' : name + 'ed'}`);
+      toast.success('Ordre de transport mis à jour');
       await load();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : `Failed to ${name}`);
+      toast.error(e instanceof ApiError ? e.message : 'Impossible de mettre à jour l’ordre');
+    } finally {
+      busy = false;
     }
   }
 
@@ -175,16 +234,36 @@
     return `${w.shipmentNumber} — ${fieldLabel} planifié ${kindLabel} ${bound} (demandé ${fmtDate(w.requested)}, planifié ${fmtDate(w.planned)})`;
   }
 
-  async function openPlanForm() {
+  async function loadShipmentFields() {
+    fieldsLoading = true;
+    fieldsError = '';
+    try {
+      shipmentFieldDefs = await api<CustomFieldDef[]>('/transportation/custom-fields', {
+        query: { entityType: 'SHIPMENT' },
+      });
+    } catch (e) {
+      fieldsError = e instanceof ApiError ? e.message : 'Champs personnalisés indisponibles';
+    } finally {
+      fieldsLoading = false;
+    }
+  }
+  function openPlanForm() {
+    if (busy) return;
+    splitRows = [{ weightKg: null, palletCount: null }];
     shipmentCustomData = {};
-    shipmentFieldDefs = await api<CustomFieldDef[]>('/transportation/custom-fields', {
-      query: { entityType: 'SHIPMENT' },
-    }).catch(() => [] as CustomFieldDef[]);
-    showPlanForm = !showPlanForm;
+    planError = '';
+    showPlanForm = true;
+    void loadShipmentFields();
   }
 
   $effect(() => {
-    if (orderId) void load();
+    orderId;
+    untrack(() => {
+      order = null;
+      events = [];
+      showPlanForm = false;
+      void load();
+    });
   });
 
   // "Lié à" — only ids the page already has are linked (customer, shipments, loads).
@@ -280,59 +359,83 @@
 </script>
 
 {#if error}
+  <RecordHeader
+    title="Ordre de transport"
+    kind="Transport"
+    backHref="/transport-orders"
+    backLabel="Ordres de transport"
+  />
   <ErrorNotice message={error} onretry={load} />
 {:else if order}
-  <PageHeader title={order.orderNumber}>
+  <RecordHeader
+    title={order.orderNumber}
+    kind="Ordre de transport"
+    backHref="/transport-orders"
+    backLabel="Ordres de transport"
+  >
+    {#snippet meta()}<Badge tone={toneFor(order!.status)}>{labelFor(order!.status)}</Badge
+      >{#if order!.mode}<Badge tone="info">{order!.mode}</Badge>{/if}<span
+        >{order!.originLocation.city} → {order!.destinationLocation.city}</span
+      >{/snippet}
     {#snippet actions()}
       <DossierButton entityType="TRANSPORT_ORDER" entityId={order!.id} />
-      <Badge tone={toneFor(order!.status)}>{labelFor(order!.status)}</Badge>
-      {#if order!.mode}
-        <Badge tone="info">{order!.mode}</Badge>
-      {/if}
-
       {#if order!.status === 'DRAFT'}
         <Button
+          disabled={busy}
           variant="primary"
           onclick={() => {
             void action('confirm');
-          }}>Confirm</Button
+          }}>Confirmer</Button
         >
         <Button
+          disabled={busy}
           variant="danger"
           onclick={() => {
             void action('cancel');
-          }}>Cancel</Button
+          }}>Annuler</Button
         >
       {:else if order!.status === 'CONFIRMED'}
         <Button
+          disabled={busy}
           variant="primary"
           onclick={() => {
             void openPlanForm();
-          }}>Plan…</Button
+          }}>Planifier…</Button
         >
         <Button
+          disabled={busy}
           variant="danger"
           onclick={() => {
             void action('cancel');
-          }}>Cancel</Button
+          }}>Annuler</Button
         >
       {:else if order!.status === 'PLANNED'}
         <Button
+          disabled={busy}
           variant="secondary"
           onclick={() => {
             void openPlanForm();
-          }}>Add shipment…</Button
+          }}>Ajouter une expédition…</Button
         >
       {:else if order!.status === 'COMPLETED'}
         <Button
+          disabled={busy}
           variant="primary"
           onclick={() => {
             void action('close');
-          }}>Close</Button
+          }}>Clôturer</Button
         >
       {/if}
     {/snippet}
-  </PageHeader>
+  </RecordHeader>
+  <RecordNav
+    sections={[
+      { id: 'record-shipments', label: 'Expéditions' },
+      { id: 'record-tracking', label: 'Suivi' },
+      { id: 'record-info', label: 'Informations' },
+      { id: 'record-related', label: 'Dossiers liés' },
+    ]}
+  />
 
   {#if order.windowWarnings && order.windowWarnings.length > 0}
     <div class="mb-4 flex flex-col gap-2">
@@ -347,245 +450,243 @@
   <div class="grid gap-4 lg:grid-cols-3">
     <!-- Left 2/3: Shipments + Plan form -->
     <div class="flex flex-col gap-4 lg:col-span-2">
-      <!-- Plan / Add shipment card -->
-      {#if showPlanForm}
-        <Card>
-          <h2 class="mb-1 font-semibold text-ink">
-            {order.status === 'PLANNED' ? 'Add shipment' : 'Plan — split into shipments'}
-          </h2>
-          <p class="mb-3 text-xs text-ink-muted">
-            One shipment per row. Leave a single empty row to create one shipment with the full
-            order quantities.
-          </p>
-          <form onsubmit={submitPlan}>
-            <div class="flex flex-col gap-2">
-              {#each splitRows as row, index (index)}
-                <div class="grid grid-cols-[32px_1fr_1fr_40px] items-center gap-2">
-                  <span class="text-xs text-ink-muted">#{index + 1}</span>
-                  <Field label="Weight (kg)">
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      placeholder="Weight (kg)"
-                      bind:value={row.weightKg}
-                      class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-                    />
-                  </Field>
-                  <Field label="Pallets">
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="Pallets"
-                      bind:value={row.palletCount}
-                      class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-                    />
-                  </Field>
-                  {#if splitRows.length > 1}
-                    <div class="mt-5">
-                      <Button
-                        variant="danger"
-                        onclick={() => {
-                          splitRows = splitRows.filter((_, i) => i !== index);
-                        }}>✕</Button
-                      >
-                    </div>
-                  {:else}
-                    <span></span>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-            {#if shipmentFieldDefs.length > 0}
-              <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1">
-                <CustomFieldInputs definitions={shipmentFieldDefs} bind:data={shipmentCustomData} />
-              </div>
-            {/if}
-            <div class="mt-3 flex gap-2">
-              <Button
-                variant="secondary"
-                type="button"
-                onclick={() => {
-                  splitRows = [...splitRows, { weightKg: null, palletCount: null }];
-                }}
-              >
-                Add shipment
-              </Button>
-              <Button variant="primary" type="submit">
-                {order.status === 'PLANNED' ? 'Add' : 'Plan order'}
-              </Button>
-              <Button
-                variant="secondary"
-                type="button"
-                onclick={() => {
-                  showPlanForm = false;
-                }}>Cancel</Button
-              >
-            </div>
-          </form>
-        </Card>
-      {/if}
-
-      <!-- Shipments card -->
-      <Card>
-        <h2 class="mb-3 font-semibold text-ink">Shipments</h2>
-        {#if order.shipments.length === 0}
-          <p class="text-sm text-ink-muted">No shipments yet — confirm then plan the order.</p>
-        {:else}
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="border-b border-edge text-xs text-ink-muted uppercase tracking-wide">
-                  <th class="pb-2 text-left font-semibold">Shipment #</th>
-                  <th class="pb-2 text-left font-semibold">Status</th>
-                  <th class="pb-2 text-left font-semibold">Load</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each order.shipments as shipment (shipment.id)}
-                  <tr class="border-b border-edge last:border-0">
-                    <td class="py-2 pr-2 font-semibold">{shipment.shipmentNumber}</td>
-                    <td class="py-2 pr-2">
-                      <Badge tone={toneFor(shipment.status)}>{labelFor(shipment.status)}</Badge>
-                    </td>
-                    <td class="py-2">
-                      {#if shipment.loadId}
-                        <a href={`/loads/${shipment.loadId}`} class="text-accent hover:underline"
-                          >View load</a
-                        >
-                      {:else}
-                        <a href="/shipments" class="text-accent hover:underline"
-                          >Assign via Shipments</a
-                        >
-                      {/if}
-                    </td>
+      <RecordSection id="record-shipments" label="Expéditions"
+        ><Card>
+          <h2 class="mb-3 font-semibold text-ink">Expéditions</h2>
+          {#if order.shipments.length === 0}
+            <p class="text-sm text-ink-muted">
+              Aucune expédition. Confirmez puis planifiez l’ordre.
+            </p>
+          {:else}
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-edge text-xs text-ink-muted uppercase tracking-wide">
+                    <th class="pb-2 text-left font-semibold">Expédition</th>
+                    <th class="pb-2 text-left font-semibold">Statut</th>
+                    <th class="pb-2 text-left font-semibold">Chargement</th>
                   </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {/if}
-      </Card>
-
-      <!-- Tracking card -->
-      <Card>
-        <h2 class="mb-3 font-semibold text-ink">Tracking</h2>
-        {#if eventsError}
-          <p class="text-sm text-warn">Tracking events unavailable — reload to retry.</p>
-        {/if}
-        <TrackingTimeline {events} />
-      </Card>
+                </thead>
+                <tbody>
+                  {#each order.shipments as shipment (shipment.id)}
+                    <tr class="border-b border-edge last:border-0">
+                      <td class="py-2 pr-2 font-semibold">{shipment.shipmentNumber}</td>
+                      <td class="py-2 pr-2">
+                        <Badge tone={toneFor(shipment.status)}>{labelFor(shipment.status)}</Badge>
+                      </td>
+                      <td class="py-2">
+                        {#if shipment.loadId}
+                          <a href={`/loads/${shipment.loadId}`} class="text-accent hover:underline"
+                            >Voir le chargement</a
+                          >
+                        {:else}
+                          <a href="/shipments" class="text-accent hover:underline"
+                            >Affecter une expédition</a
+                          >
+                        {/if}
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+        </Card>
+      </RecordSection>
+      <RecordSection id="record-tracking" label="Suivi">
+        <Card>
+          <h2 class="mb-3 font-semibold text-ink">Suivi</h2>
+          {#if eventsError}<ErrorNotice
+              message="Suivi indisponible. Aucun historique ne peut être confirmé."
+              onretry={load}
+            />{:else}<TrackingTimeline {events} />{/if}
+        </Card></RecordSection
+      >
     </div>
 
     <!-- Right 1/3: Summary + warnings -->
     <div class="flex flex-col gap-4">
-      <!-- Summary card -->
-      <Card>
-        <h2 class="mb-3 font-semibold text-ink">Summary</h2>
-        <dl class="flex flex-col gap-2 text-sm">
-          <div class="flex items-start justify-between gap-2">
-            <dt class="text-ink-muted shrink-0">Customer</dt>
-            <dd class="font-medium text-right">
-              {order.customer.name}
-              <span class="text-xs text-ink-muted">({order.customer.code})</span>
-            </dd>
-          </div>
-          {#if order.customerReference}
-            <div class="flex items-center justify-between gap-2">
-              <dt class="text-ink-muted">Reference</dt>
-              <dd class="font-medium">{order.customerReference}</dd>
-            </div>
-          {/if}
-          <div class="flex items-start justify-between gap-2">
-            <dt class="text-ink-muted shrink-0">Origin</dt>
-            <dd class="font-medium text-right">
-              {order.originLocation.name}, {order.originLocation.city}
-            </dd>
-          </div>
-          <div class="flex items-start justify-between gap-2">
-            <dt class="text-ink-muted shrink-0">Destination</dt>
-            <dd class="font-medium text-right">
-              {order.destinationLocation.name}, {order.destinationLocation.city}
-            </dd>
-          </div>
-          <div class="flex items-center justify-between gap-2">
-            <dt class="text-ink-muted">Pickup window</dt>
-            <dd class="font-medium">
-              {fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}
-            </dd>
-          </div>
-          <div class="flex items-center justify-between gap-2">
-            <dt class="text-ink-muted">Delivery window</dt>
-            <dd class="font-medium">
-              {fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}
-            </dd>
-          </div>
-          <div class="flex items-center justify-between gap-2">
-            <dt class="text-ink-muted">Mode</dt>
-            <dd class="font-medium">{order.mode ?? '—'}</dd>
-          </div>
-          <div class="flex items-center justify-between gap-2">
-            <dt class="text-ink-muted">Weight</dt>
-            <dd class="font-medium">
-              {order.totalWeightKg != null ? `${order.totalWeightKg} kg` : '—'}
-            </dd>
-          </div>
-          <div class="flex items-center justify-between gap-2">
-            <dt class="text-ink-muted">Volume</dt>
-            <dd class="font-medium">
-              {order.totalVolumeM3 != null ? `${order.totalVolumeM3} m³` : '—'}
-            </dd>
-          </div>
-          <div class="flex items-center justify-between gap-2">
-            <dt class="text-ink-muted">Pallets</dt>
-            <dd class="font-medium">{order.palletCount ?? '—'}</dd>
-          </div>
-          {#if order.notes}
+      <RecordSection id="record-info" label="Informations">
+        <Card>
+          <h2 class="mb-3 font-semibold text-ink">Informations</h2>
+          <dl class="flex flex-col gap-2 text-sm">
             <div class="flex items-start justify-between gap-2">
-              <dt class="text-ink-muted shrink-0">Notes</dt>
-              <dd class="font-medium text-right">{order.notes}</dd>
+              <dt class="text-ink-muted shrink-0">Client</dt>
+              <dd class="font-medium text-right">
+                {order.customer.name}
+                <span class="text-xs text-ink-muted">({order.customer.code})</span>
+              </dd>
             </div>
-          {/if}
-          <div class="flex items-center justify-between gap-2">
-            <dt class="text-ink-muted">Created</dt>
-            <dd class="font-medium">{fmtDate(order.createdAt)}</dd>
-          </div>
-          {#if order.customData && orderFieldDefs.length > 0}
-            {#each orderFieldDefs as d (d.key)}
-              {#if order.customData[d.key] !== undefined && order.customData[d.key] !== null}
-                <div class="flex items-center justify-between gap-2">
-                  <dt class="text-ink-muted">{d.label}</dt>
-                  <dd class="font-medium">{fmtCustomValue(order.customData[d.key], d.type)}</dd>
-                </div>
-              {/if}
-            {/each}
-          {/if}
-        </dl>
-      </Card>
+            {#if order.customerReference}
+              <div class="flex items-center justify-between gap-2">
+                <dt class="text-ink-muted">Référence</dt>
+                <dd class="font-medium">{order.customerReference}</dd>
+              </div>
+            {/if}
+            <div class="flex items-start justify-between gap-2">
+              <dt class="text-ink-muted shrink-0">Origine</dt>
+              <dd class="font-medium text-right">
+                {order.originLocation.name}, {order.originLocation.city}
+              </dd>
+            </div>
+            <div class="flex items-start justify-between gap-2">
+              <dt class="text-ink-muted shrink-0">Destination</dt>
+              <dd class="font-medium text-right">
+                {order.destinationLocation.name}, {order.destinationLocation.city}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <dt class="text-ink-muted">Fenêtre de collecte</dt>
+              <dd class="font-medium">
+                {fmtWindow(order.requestedPickupEarly, order.requestedPickupLate)}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <dt class="text-ink-muted">Fenêtre de livraison</dt>
+              <dd class="font-medium">
+                {fmtWindow(order.requestedDeliveryEarly, order.requestedDeliveryLate)}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <dt class="text-ink-muted">Mode</dt>
+              <dd class="font-medium">{order.mode ?? '—'}</dd>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <dt class="text-ink-muted">Poids</dt>
+              <dd class="font-medium">
+                {order.totalWeightKg != null ? `${order.totalWeightKg} kg` : '—'}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <dt class="text-ink-muted">Volume</dt>
+              <dd class="font-medium">
+                {order.totalVolumeM3 != null ? `${order.totalVolumeM3} m³` : '—'}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <dt class="text-ink-muted">Palettes</dt>
+              <dd class="font-medium">{order.palletCount ?? '—'}</dd>
+            </div>
+            {#if order.notes}
+              <div class="flex items-start justify-between gap-2">
+                <dt class="text-ink-muted shrink-0">Notes</dt>
+                <dd class="font-medium text-right">{order.notes}</dd>
+              </div>
+            {/if}
+            <div class="flex items-center justify-between gap-2">
+              <dt class="text-ink-muted">Création</dt>
+              <dd class="font-medium">{fmtDate(order.createdAt)}</dd>
+            </div>
+            {#if order.customData && orderFieldDefs.length > 0}
+              {#each orderFieldDefs as d (d.key)}
+                {#if order.customData[d.key] !== undefined && order.customData[d.key] !== null}
+                  <div class="flex items-center justify-between gap-2">
+                    <dt class="text-ink-muted">{d.label}</dt>
+                    <dd class="font-medium">{fmtCustomValue(order.customData[d.key], d.type)}</dd>
+                  </div>
+                {/if}
+              {/each}
+            {/if}
+          </dl>
+        </Card>
 
-      <!-- Historique (créée / fenêtres demandées / statut actuel) -->
-      <Card>
-        <h2 class="mb-3 font-semibold text-ink">Historique</h2>
-        <StatusTimeline entries={timelineEntries} />
-      </Card>
-
+        <!-- Historique (créée / fenêtres demandées / statut actuel) -->
+        <Card>
+          <h2 class="mb-3 font-semibold text-ink">Historique</h2>
+          <StatusTimeline entries={timelineEntries} />
+        </Card>
+      </RecordSection>
       <!-- Lié à -->
-      <Card>
-        <RelatedEntities groups={relatedGroups} />
-      </Card>
-
-      {#if order.windowWarnings && order.windowWarnings.length > 0}
-        <div class="rounded-card bg-warn-soft text-warn p-3 text-sm">
-          <p class="mb-2 font-semibold">Window warnings ({order.windowWarnings.length})</p>
-          <ul class="flex flex-col gap-1">
-            {#each order.windowWarnings as w (w.shipmentNumber + w.field + w.kind)}
-              <li>{warningText(w)}</li>
-            {/each}
-          </ul>
-        </div>
-      {/if}
+      <RecordSection id="record-related" label="Dossiers liés"
+        ><Card><RelatedEntities title="Dossiers liés" groups={relatedGroups} /></Card
+        ></RecordSection
+      >
     </div>
   </div>
+  <Drawer
+    bind:open={showPlanForm}
+    title={order!.status === 'PLANNED' ? 'Ajouter des expéditions' : 'Planifier les expéditions'}
+    width="lg"
+    dismissible={!busy}
+    onbeforeclose={closePlan}
+  >
+    <p class="mb-4 text-sm text-ink-muted">
+      Une expédition par ligne. Une seule ligne vide reprend les quantités de l’ordre. Les champs
+      personnalisés s’appliquent à chaque ligne.
+    </p>
+    <ErrorNotice message={planError} />
+    <ErrorNotice message={fieldsError} onretry={loadShipmentFields} />
+    {#if fieldsLoading}<Skeleton rows={2} />{/if}
+    <form onsubmit={submitPlan}>
+      <fieldset disabled={busy || fieldsLoading || !!fieldsError}>
+        <div class="flex flex-col gap-2">
+          {#each splitRows as row, index (index)}
+            <div class="grid grid-cols-[32px_1fr_1fr_40px] items-center gap-2">
+              <span class="text-xs text-ink-muted">#{index + 1}</span>
+              <Field label="Poids (kg)">
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder="Poids (kg)"
+                  bind:value={row.weightKg}
+                  class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+                />
+              </Field>
+              <Field label="Palettes">
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Palettes"
+                  bind:value={row.palletCount}
+                  class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+                />
+              </Field>
+              {#if splitRows.length > 1}
+                <div class="mt-5">
+                  <Button
+                    variant="ghost"
+                    aria-label={`Supprimer la ligne ${index + 1}`}
+                    onclick={() => {
+                      splitRows = splitRows.filter((_, i) => i !== index);
+                    }}>✕</Button
+                  >
+                </div>
+              {:else}
+                <span></span>
+              {/if}
+            </div>
+          {/each}
+        </div>
+        {#if shipmentFieldDefs.length > 0}
+          <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1">
+            <CustomFieldInputs definitions={shipmentFieldDefs} bind:data={shipmentCustomData} />
+          </div>
+        {/if}
+        <div class="mt-3 flex gap-2">
+          <Button
+            variant="secondary"
+            type="button"
+            onclick={() => {
+              splitRows = [...splitRows, { weightKg: null, palletCount: null }];
+            }}
+          >
+            Ajouter une ligne
+          </Button>
+          <Button variant="primary" type="submit">
+            {order.status === 'PLANNED' ? 'Ajouter' : 'Planifier'}
+          </Button>
+          <Button
+            variant="secondary"
+            type="button"
+            onclick={() => {
+              if (closePlan()) showPlanForm = false;
+            }}>Annuler</Button
+          >
+        </div>
+      </fieldset>
+    </form>
+  </Drawer>
 {:else}
   <Card padded={false}><div class="p-4"><Skeleton rows={6} /></div></Card>
 {/if}

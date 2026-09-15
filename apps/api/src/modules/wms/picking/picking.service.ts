@@ -19,6 +19,12 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { InventoryService } from '../inventory/inventory.service';
+import {
+  assertWmsLine,
+  lockWmsDocument,
+  nextWmsVersion,
+  readWmsDocument,
+} from '../document-operations';
 import { AddPickLineDto, CreatePickOrderDto, PickListQueryDto } from './dto/pick.dto';
 
 /**
@@ -61,20 +67,9 @@ export class PickingService {
   }
 
   async get(tenantId: string, id: string) {
-    const order = await this.prisma.pickOrder.findFirst({
-      where: { id, tenantId },
-      include: {
-        lines: {
-          include: {
-            item: { select: { sku: true, name: true } },
-            fromBin: { select: { code: true } },
-          },
-        },
-        shipment: { select: { id: true, shipmentNumber: true, status: true } },
-      },
+    return this.prisma.$transaction((tx) => readWmsDocument(tx, tenantId, 'pickOrder', id), {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
     });
-    if (!order) throw new NotFoundException('Pick order not found');
-    return order;
   }
 
   async create(tenantId: string, userId: string, dto: CreatePickOrderDto) {
@@ -100,7 +95,11 @@ export class PickingService {
     }
 
     const customData = await this.customFields.validateValues(
-      'wms', tenantId, CustomFieldEntity.PICK_ORDER, dto.customData, { partial: false },
+      'wms',
+      tenantId,
+      CustomFieldEntity.PICK_ORDER,
+      dto.customData,
+      { partial: false },
     );
     const number = await this.sequences.nextNumber(tenantId, 'pick-order');
     const order = await this.prisma.pickOrder.create({
@@ -128,58 +127,75 @@ export class PickingService {
   }
 
   async addLine(tenantId: string, id: string, dto: AddPickLineDto) {
-    const order = await this.prisma.pickOrder.findFirst({
-      where: { id, tenantId },
-      select: { id: true, status: true },
-    });
-    if (!order) throw new NotFoundException('Pick order not found');
-    if (order.status !== PickOrderStatus.OPEN)
-      throw new BadRequestException('Pick order is not editable');
-
-    const item = await this.prisma.wmsItem.findFirst({
-      where: { id: dto.itemId, tenantId },
-      select: { id: true },
-    });
-    if (!item) throw new NotFoundException('Item not found');
-    const bin = await this.prisma.bin.findFirst({
-      where: { id: dto.fromBinId, tenantId },
-      select: { id: true },
-    });
-    if (!bin) throw new NotFoundException('Bin not found');
-
-    await this.prisma.pickLine.create({
-      data: {
-        tenantId,
-        pickOrderId: id,
-        itemId: dto.itemId,
-        fromBinId: dto.fromBinId,
-        qty: dto.qty,
-      },
-    });
-    return this.get(tenantId, id);
+    return this.writeLine(tenantId, id, dto);
   }
 
-  async removeLine(tenantId: string, id: string, lineId: string) {
-    const order = await this.prisma.pickOrder.findFirst({
-      where: { id, tenantId },
-      select: { id: true, status: true },
-    });
-    if (!order) throw new NotFoundException('Pick order not found');
-    if (order.status !== PickOrderStatus.OPEN)
-      throw new BadRequestException('Pick order is not editable');
-
-    await this.prisma.pickLine.deleteMany({ where: { id: lineId, tenantId, pickOrderId: id } });
-    return this.get(tenantId, id);
+  async updateLine(tenantId: string, id: string, lineId: string, dto: AddPickLineDto) {
+    return this.writeLine(tenantId, id, dto, lineId);
   }
 
-  async complete(tenantId: string, userId: string, id: string) {
-    const order = await this.get(tenantId, id);
-    if (!canTransitionPickOrder(order.status as PickOrderStatus, PickOrderStatus.COMPLETED)) {
-      throw new BadRequestException(`Cannot complete a pick order in status ${order.status}`);
-    }
-    if (order.lines.length === 0) throw new BadRequestException('Pick order has no lines');
-
+  private async writeLine(tenantId: string, id: string, dto: AddPickLineDto, lineId?: string) {
+    await this.ownership.assertOwned('wmsItem', dto.itemId, tenantId);
+    await this.ownership.assertOwned('bin', dto.fromBinId, tenantId);
     await this.prisma.$transaction(async (tx) => {
+      const doc = await lockWmsDocument(tx, tenantId, 'pickOrder', id, dto.expectedUpdatedAt);
+      if (doc.status !== 'OPEN') throw new ConflictException('Ce document n’est plus modifiable.');
+      await assertWmsLine(tx, tenantId, doc.locationId, dto.itemId, dto.fromBinId, dto.qty);
+      const data = { itemId: dto.itemId, fromBinId: dto.fromBinId, qty: dto.qty };
+      if (lineId) {
+        const result = await tx.pickLine.updateMany({
+          where: { id: lineId, tenantId, pickOrderId: id },
+          data,
+        });
+        if (!result.count) throw new NotFoundException('Ligne introuvable dans ce document.');
+      } else {
+        await tx.pickLine.create({ data: { ...data, tenantId, pickOrderId: id } });
+      }
+      await tx.pickOrder.updateMany({
+        where: { id, tenantId, status: 'OPEN' },
+        data: { updatedAt: nextWmsVersion(doc.updatedAt) },
+      });
+    });
+    return this.get(tenantId, id);
+  }
+
+  async removeLine(tenantId: string, id: string, lineId: string, expectedUpdatedAt?: string) {
+    await this.prisma.$transaction(async (tx) => {
+      const doc = await lockWmsDocument(tx, tenantId, 'pickOrder', id, expectedUpdatedAt);
+      if (doc.status !== 'OPEN') throw new ConflictException('Ce document n’est plus modifiable.');
+      const result = await tx.pickLine.deleteMany({
+        where: { id: lineId, tenantId, pickOrderId: id },
+      });
+      if (!result.count) throw new NotFoundException('Ligne introuvable dans ce document.');
+      await tx.pickOrder.updateMany({
+        where: { id, tenantId, status: 'OPEN' },
+        data: { updatedAt: nextWmsVersion(doc.updatedAt) },
+      });
+    });
+    return this.get(tenantId, id);
+  }
+
+  async complete(tenantId: string, userId: string, id: string, expectedUpdatedAt?: string) {
+    const order = await this.prisma.$transaction(async (tx) => {
+      await lockWmsDocument(tx, tenantId, 'pickOrder', id, expectedUpdatedAt);
+      const order = await tx.pickOrder.findFirstOrThrow({
+        where: { id, tenantId },
+        include: { lines: true, shipment: { select: { id: true, shipmentNumber: true } } },
+      });
+      if (!canTransitionPickOrder(order.status as PickOrderStatus, PickOrderStatus.COMPLETED)) {
+        throw new BadRequestException(`Cannot complete a pick order in status ${order.status}`);
+      }
+      if (order.lines.length === 0) throw new BadRequestException('Pick order has no lines');
+      for (const line of order.lines) {
+        await assertWmsLine(
+          tx,
+          tenantId,
+          order.locationId,
+          line.itemId,
+          line.fromBinId,
+          Number(line.qty),
+        );
+      }
       const claim = await tx.pickOrder.updateMany({
         where: { id, tenantId, status: { in: [PickOrderStatus.OPEN, PickOrderStatus.PICKED] } },
         data: { status: PickOrderStatus.COMPLETED, completedAt: new Date() },
@@ -193,10 +209,12 @@ export class PickingService {
           itemId: line.itemId,
           fromBinId: line.fromBinId,
           qty: Number(line.qty),
+          locationId: order.locationId,
           refType: 'pick-order',
           refId: id,
         });
       }
+      return order;
     });
 
     await this.audit.log({
@@ -227,20 +245,19 @@ export class PickingService {
     return this.get(tenantId, id);
   }
 
-  async cancel(tenantId: string, userId: string, id: string) {
-    const order = await this.prisma.pickOrder.findFirst({
-      where: { id, tenantId },
-      select: { id: true, status: true },
+  async cancel(tenantId: string, userId: string, id: string, expectedUpdatedAt?: string) {
+    const order = await this.prisma.$transaction(async (tx) => {
+      const order = await lockWmsDocument(tx, tenantId, 'pickOrder', id, expectedUpdatedAt);
+      if (!canTransitionPickOrder(order.status as PickOrderStatus, PickOrderStatus.CANCELLED)) {
+        throw new BadRequestException(`Cannot cancel a pick order in status ${order.status}`);
+      }
+      const claim = await tx.pickOrder.updateMany({
+        where: { id, tenantId, status: { in: [PickOrderStatus.OPEN, PickOrderStatus.PICKED] } },
+        data: { status: PickOrderStatus.CANCELLED },
+      });
+      if (claim.count === 0) throw new ConflictException('Pick order already processed');
+      return order;
     });
-    if (!order) throw new NotFoundException('Pick order not found');
-    if (!canTransitionPickOrder(order.status as PickOrderStatus, PickOrderStatus.CANCELLED)) {
-      throw new BadRequestException(`Cannot cancel a pick order in status ${order.status}`);
-    }
-    const claim = await this.prisma.pickOrder.updateMany({
-      where: { id, tenantId, status: { in: [PickOrderStatus.OPEN, PickOrderStatus.PICKED] } },
-      data: { status: PickOrderStatus.CANCELLED },
-    });
-    if (claim.count === 0) throw new ConflictException('Pick order already processed');
     await this.audit.log({
       tenantId,
       userId,

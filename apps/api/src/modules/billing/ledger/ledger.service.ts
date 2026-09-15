@@ -92,7 +92,9 @@ export class LedgerService {
       where: { tenantId, code: { in: codes }, active: true },
       select: { id: true, code: true },
     });
-    const codeToId = new Map((accounts as { id: string; code: string }[]).map((a) => [a.code, a.id]));
+    const codeToId = new Map(
+      (accounts as { id: string; code: string }[]).map((a) => [a.code, a.id]),
+    );
 
     for (const code of codes) {
       if (!codeToId.has(code)) {
@@ -195,8 +197,8 @@ export class LedgerService {
   ): Promise<{ posted: boolean; journalEntryId?: string }> {
     // Ensure chart exists before entering the transaction (avoids nested tx issues).
     await this.ensureChart(tenantId);
-    return (this.prisma.$transaction as (fn: (tx: any) => Promise<any>) => Promise<any>)(
-      (tx) => this.postTx(tx, tenantId, input, userId),
+    return (this.prisma.$transaction as (fn: (tx: any) => Promise<any>) => Promise<any>)((tx) =>
+      this.postTx(tx, tenantId, input, userId),
     );
   }
 
@@ -292,11 +294,19 @@ export class LedgerService {
   /** Returns a paginated list of journal entries with their lines (+ account), ordered date desc. */
   async listJournal(
     tenantId: string,
-    query: ListQueryDto & { accountId?: string; dateFrom?: string; dateTo?: string },
+    query: ListQueryDto & {
+      accountId?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      sourceType?: string;
+      sourceId?: string;
+    },
   ) {
     const { page, pageSize, skip, take } = paginationArgs(query);
 
-    const where: any = { tenantId };
+    const where: Prisma.JournalEntryWhereInput = { tenantId };
+    if (query.sourceType) where.sourceType = query.sourceType;
+    if (query.sourceId) where.sourceId = query.sourceId;
     if (query.accountId) {
       where.lines = { some: { accountId: query.accountId } };
     }

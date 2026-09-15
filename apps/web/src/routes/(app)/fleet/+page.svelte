@@ -1,870 +1,390 @@
 <script lang="ts">
-  import type { Paginated } from '@pulsar/shared';
-  import { api, ApiError } from '$lib/api/client';
+  import { onMount, untrack } from 'svelte';
+  import { beforeNavigate } from '$app/navigation';
+  import { api } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
+  import {
+    FLEET_ASSET_LABELS,
+    FLEET_ORDER_LABELS,
+    FLEET_TYPE_LABELS,
+    fleetAttention,
+    fleetDateKey,
+    PERMISSIONS,
+    type FleetAssetRow,
+    type FleetWorkspace,
+    type FleetAgenda,
+  } from '@pulsar/shared';
   import {
     Badge,
     Button,
-    Card,
     EmptyState,
     ErrorNotice,
+    Field,
     Input,
-    Modal,
     PageHeader,
     Select,
     Skeleton,
     Tabs,
-    ViewToggle,
-    type ViewId,
   } from '$lib/components/ui';
-  import type { Tone } from '$lib/components/ui';
-  import { toast } from '$lib/stores/toast';
-  import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
-
-  interface ComplianceDoc {
-    id: string;
-    subjectType: 'VEHICLE' | 'TRAILER' | 'DRIVER';
-    subjectId: string;
-    docType: string;
-    expiresAt: string;
-    reference?: string | null;
-    status: 'VALID' | 'EXPIRING' | 'EXPIRED';
-  }
-
-  interface MaintenanceOrder {
-    id: string;
-    status: string;
-    description: string;
-    dueDate: string | null;
-  }
-
-  interface Overview {
-    openWorkOrders: number;
-    maintenanceDue: MaintenanceOrder[];
-    complianceExpiring: ComplianceDoc[];
-    complianceExpired: ComplianceDoc[];
-  }
-
-  interface Asset {
-    id: string;
-    unitNumber: string;
-    status: string;
-    carrierId: string | null;
-  }
-
-  interface Driver {
-    id: string;
-    firstName: string;
-    lastName: string;
-    status: string;
-    licenseNumber?: string | null;
-    carrierId: string | null;
-  }
-
-  type AssetKind = 'vehicle' | 'trailer' | 'driver';
-  interface AssetForm {
-    kind: AssetKind;
-    unitNumber: string;
-    type: string;
-    plate: string;
-    make: string;
-    model: string;
-    year: string;
-    capacityPallets: string;
-    // Driver fields
-    firstName: string;
-    lastName: string;
-    licenseNumber: string;
-    phone: string;
-    email: string;
-  }
-
-  interface CustomFieldDef {
-    key: string;
-    label: string;
-    type: 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN' | 'SELECT';
-    options?: { value: string; label: string }[];
-    required: boolean;
-    showInList?: boolean;
-  }
-
-  const vehicleTypes = ['TRACTOR', 'STRAIGHT_TRUCK', 'VAN', 'OTHER'];
-  const trailerTypes = ['DRY_VAN', 'REEFER', 'FLATBED', 'TANKER', 'OTHER'];
-
-  let overview = $state<Overview | null>(null);
-  let vehicles = $state<Asset[]>([]);
-  let trailers = $state<Asset[]>([]);
-  let drivers = $state<Driver[]>([]);
-  let loading = $state(true);
-  let savingAsset = $state(false);
-  let error = $state('');
-  let activeTab = $state('vehicles');
-  let assetForm = $state<AssetForm>(emptyAssetForm('vehicle'));
-  let showCreate = $state(false);
-  let showSchedule = $state(false);
-  let assetFieldDefs = $state<CustomFieldDef[]>([]);
-  let assetCustomData = $state<Record<string, unknown>>({});
-
-  function emptyAssetForm(kind: AssetKind): AssetForm {
-    return {
-      kind,
-      unitNumber: '',
-      type: kind === 'vehicle' ? 'TRACTOR' : 'DRY_VAN',
-      plate: '',
-      make: '',
-      model: '',
-      year: '',
-      capacityPallets: '',
-      firstName: '',
-      lastName: '',
-      licenseNumber: '',
-      phone: '',
-      email: '',
-    };
-  }
-
-  // AssetStatus → visual tone. Drivers use ACTIVE/INACTIVE (handled separately).
-  function assetTone(status: string): Tone {
-    switch (status) {
-      case 'AVAILABLE':
-        return 'ok';
-      case 'IN_SERVICE':
-        return 'info';
-      case 'MAINTENANCE':
-        return 'warn';
-      case 'RETIRED':
-        return 'neutral';
-      default:
-        return 'neutral';
-    }
-  }
-
-  function driverTone(status: string): Tone {
-    return status === 'ACTIVE' ? 'ok' : 'neutral';
-  }
-
-  function complianceTone(status: string): Tone {
-    return status === 'EXPIRED' ? 'danger' : status === 'EXPIRING' ? 'warn' : 'ok';
-  }
-
-  function fmtDate(d: string | null): string {
-    return d ? new Date(d).toLocaleDateString() : '—';
-  }
-
-  // Internal fleet = no carrier assigned.
-  const internalVehicles = $derived(vehicles.filter((v) => v.carrierId === null));
-  const internalTrailers = $derived(trailers.filter((t) => t.carrierId === null));
-  const internalDrivers = $derived(drivers.filter((d) => d.carrierId === null));
-
-  // Expired first (red), then expiring (amber).
-  const complianceAttention = $derived(
-    overview ? [...overview.complianceExpired, ...overview.complianceExpiring] : [],
+  import FleetAssetDrawer from '$lib/components/fleet/FleetAssetDrawer.svelte';
+  import FleetOrderDrawer from '$lib/components/fleet/FleetOrderDrawer.svelte';
+  let kind = $state('vehicle'),
+    ownership = $state('internal'),
+    status = $state(''),
+    search = $state(''),
+    view = $state('park');
+  let page = $state(1),
+    workPage = $state(1),
+    bucket = $state('dated'),
+    from = $state(fleetDateKey(new Date()));
+  let data = $state<FleetWorkspace | null>(null),
+    agenda = $state<FleetAgenda | null>(null),
+    loading = $state(true),
+    error = $state(''),
+    generation = 0;
+  let selected = $state<FleetAssetRow | null>(null),
+    order = $state<{ id: string; asset: FleetAssetRow | null } | null>(null);
+  const masterRead = $derived(
+    !!$auth?.user.permissions.includes(PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ) &&
+      !!$auth?.tenant.enabledModules.includes('transportation'),
   );
-
-  // --- Preventive maintenance schedules --------------------------------------
-  interface ScheduleDue {
-    status: 'OK' | 'DUE_SOON' | 'DUE' | 'OVERDUE';
-    nextDueDate: string | null;
-    nextDueKm: number | null;
-    daysUntilDue: number | null;
-    kmUntilDue: number | null;
-    isDue: boolean;
-  }
-  interface Schedule {
-    id: string;
-    name: string;
-    type: string;
-    intervalDays: number | null;
-    intervalKm: number | null;
-    leadDays: number;
-    isActive: boolean;
-    vehicleId: string | null;
-    trailerId: string | null;
-    currentOdometerKm: number | null;
-    due: ScheduleDue;
-  }
-
-  let schedules = $state<Schedule[]>([]);
-  let savingSchedule = $state(false);
-  let mxView = $state<ViewId>('table');
-
-  const MX_KANBAN_COLS: { status: string; label: string }[] = [
-    { status: 'OVERDUE', label: 'En retard' },
-    { status: 'DUE', label: 'Dû' },
-    { status: 'DUE_SOON', label: 'Bientôt' },
-    { status: 'OK', label: 'OK' },
-  ];
-  // asset value encodes kind+id: "vehicle:<id>" | "trailer:<id>"
-  let scheduleForm = $state({
-    asset: '',
-    name: '',
-    intervalDays: '',
-    intervalKm: '',
-    leadDays: '7',
+  const busyPanel = $derived(!!selected || !!order);
+  $effect(() => {
+    kind;
+    ownership;
+    status;
+    search;
+    untrack(() => {
+      page = 1;
+      workPage = 1;
+    });
   });
-
-  function scheduleTone(s: string): Tone {
-    return s === 'OVERDUE' ? 'danger' : s === 'DUE' ? 'warn' : s === 'DUE_SOON' ? 'info' : 'ok';
-  }
-  function assetLabel(s: Schedule): string {
-    if (s.vehicleId) return vehicles.find((v) => v.id === s.vehicleId)?.unitNumber ?? 'véhicule';
-    if (s.trailerId) return trailers.find((t) => t.id === s.trailerId)?.unitNumber ?? 'remorque';
-    return '—';
-  }
-  function intervalLabel(s: Schedule): string {
-    const parts: string[] = [];
-    if (s.intervalDays) parts.push(`${s.intervalDays} j`);
-    if (s.intervalKm) parts.push(`${s.intervalKm.toLocaleString()} km`);
-    return parts.join(' · ') || '—';
-  }
-  function nextDueLabel(s: Schedule): string {
-    const parts: string[] = [];
-    if (s.due.nextDueDate) parts.push(fmtDate(s.due.nextDueDate));
-    if (s.due.nextDueKm != null) parts.push(`${s.due.nextDueKm.toLocaleString()} km`);
-    return parts.join(' · ') || '—';
-  }
-
-  const pmOverdue = $derived(
-    schedules.filter((s) => s.isActive && s.due.status === 'OVERDUE').length,
-  );
-  const pmDue = $derived(schedules.filter((s) => s.isActive && s.due.status === 'DUE').length);
-  const pmDueSoon = $derived(
-    schedules.filter((s) => s.isActive && s.due.status === 'DUE_SOON').length,
-  );
-  const pmActionable = $derived(
-    [...schedules]
-      .filter((s) => s.isActive)
-      .sort(
-        (a, b) =>
-          (b.due.isDue ? 1 : 0) - (a.due.isDue ? 1 : 0) ||
-          (a.due.daysUntilDue ?? 9999) - (b.due.daysUntilDue ?? 9999),
-      ),
-  );
-
-  async function loadSchedules() {
-    try {
-      schedules = await api<Schedule[]>('/fleet/maintenance-schedules');
-    } catch {
-      /* non-critical */
-    }
-  }
-
-  async function createSchedule(e: SubmitEvent) {
-    e.preventDefault();
-    if (!scheduleForm.asset || !scheduleForm.name.trim()) return;
-    if (!scheduleForm.intervalDays && !scheduleForm.intervalKm) {
-      toast.error('Renseigne au moins un intervalle (jours ou km)');
-      return;
-    }
-    savingSchedule = true;
-    try {
-      const [kind, id] = scheduleForm.asset.split(':');
-      await api('/fleet/maintenance-schedules', {
-        method: 'POST',
-        body: {
-          [kind === 'vehicle' ? 'vehicleId' : 'trailerId']: id,
-          name: scheduleForm.name.trim(),
-          intervalDays: scheduleForm.intervalDays ? Number(scheduleForm.intervalDays) : undefined,
-          intervalKm: scheduleForm.intervalKm ? Number(scheduleForm.intervalKm) : undefined,
-          leadDays: scheduleForm.leadDays ? Number(scheduleForm.leadDays) : undefined,
-        },
-      });
-      toast.success("Plan d'entretien créé");
-      scheduleForm = { asset: '', name: '', intervalDays: '', intervalKm: '', leadDays: '7' };
-      showSchedule = false;
-      await loadSchedules();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Échec de la création du plan');
-    } finally {
-      savingSchedule = false;
-    }
-  }
-
-  async function generateFromSchedule(id: string) {
-    try {
-      await api(`/fleet/maintenance-schedules/${id}/generate-order`, { method: 'POST' });
-      toast.success('Work order généré — asset en maintenance');
-      await Promise.all([loadSchedules(), load()]);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Échec de la génération');
-    }
-  }
-  async function toggleSchedule(s: Schedule) {
-    try {
-      await api(`/fleet/maintenance-schedules/${s.id}`, {
-        method: 'PATCH',
-        body: { isActive: !s.isActive },
-      });
-      await loadSchedules();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Échec');
-    }
-  }
-  async function deleteSchedule(id: string) {
-    if (!confirm("Supprimer ce plan d'entretien ?")) return;
-    try {
-      await api(`/fleet/maintenance-schedules/${id}`, { method: 'DELETE' });
-      await loadSchedules();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Échec');
-    }
-  }
-
+  $effect(() => {
+    bucket;
+    from;
+    untrack(() => {
+      workPage = 1;
+    });
+  });
   async function load() {
+    const request = ++generation;
     loading = true;
     error = '';
     try {
-      const [ov, veh, trl, drv] = await Promise.all([
-        api<Overview>('/fleet/overview'),
-        api<Paginated<Asset>>('/transportation/vehicles', { query: { pageSize: 100 } }),
-        api<Paginated<Asset>>('/transportation/trailers', { query: { pageSize: 100 } }),
-        api<Paginated<Driver>>('/transportation/drivers', { query: { pageSize: 100 } }),
+      const [park, work] = await Promise.all([
+        api<FleetWorkspace>('/fleet/workspace', {
+          query: { kind, ownership, status, search, page, pageSize: 30 },
+        }),
+        api<FleetAgenda>('/fleet/workspace/orders', {
+          query: { kind, ownership, status, search, bucket, from, page: workPage, pageSize: 30 },
+        }),
       ]);
-      overview = ov;
-      vehicles = veh.items;
-      trailers = trl.items;
-      drivers = drv.items;
-      void loadSchedules();
-    } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load fleet';
-      toast.error(error);
-    } finally {
-      loading = false;
-    }
-  }
-
-  async function fetchAssetFieldDefs(kind: AssetKind) {
-    if (kind === 'driver') {
-      assetFieldDefs = [];
-      assetCustomData = {};
-      return;
-    }
-    const entityType = kind === 'vehicle' ? 'VEHICLE' : 'TRAILER';
-    assetFieldDefs = await api<CustomFieldDef[]>('/fleet/custom-fields', {
-      query: { entityType },
-    }).catch(() => [] as CustomFieldDef[]);
-    assetCustomData = {};
-  }
-
-  function setAssetKind(kind: AssetKind) {
-    assetForm.kind = kind;
-    assetForm.type = kind === 'vehicle' ? 'TRACTOR' : 'DRY_VAN';
-    activeTab = kind === 'vehicle' ? 'vehicles' : kind === 'trailer' ? 'trailers' : 'drivers';
-    void fetchAssetFieldDefs(kind);
-  }
-
-  function resetAssetForm(kind: AssetKind = assetForm.kind) {
-    assetForm = emptyAssetForm(kind);
-    assetCustomData = {};
-  }
-
-  function clean<T extends Record<string, unknown>>(payload: T): T {
-    return Object.fromEntries(
-      Object.entries(payload).filter(
-        ([, value]) => value !== '' && value !== undefined && value !== null,
-      ),
-    ) as T;
-  }
-
-  const assetFormValid = $derived(
-    assetForm.kind === 'driver'
-      ? assetForm.firstName.trim() !== '' && assetForm.lastName.trim() !== ''
-      : assetForm.unitNumber.trim() !== '',
-  );
-
-  async function createAsset(event: SubmitEvent) {
-    event.preventDefault();
-    if (!assetFormValid) return;
-    savingAsset = true;
-    error = '';
-    try {
-      let label: string;
-      if (assetForm.kind === 'vehicle') {
-        await api('/transportation/vehicles', {
-          method: 'POST',
-          body: clean({
-            unitNumber: assetForm.unitNumber.trim(),
-            type: assetForm.type,
-            plate: assetForm.plate.trim(),
-            make: assetForm.make.trim(),
-            model: assetForm.model.trim(),
-            year: assetForm.year ? Number(assetForm.year) : undefined,
-            customData: Object.keys(assetCustomData).length > 0 ? assetCustomData : undefined,
-          }),
-        });
-        activeTab = 'vehicles';
-        label = assetForm.unitNumber.trim();
-      } else if (assetForm.kind === 'trailer') {
-        await api('/transportation/trailers', {
-          method: 'POST',
-          body: clean({
-            unitNumber: assetForm.unitNumber.trim(),
-            type: assetForm.type,
-            plate: assetForm.plate.trim(),
-            capacityPallets: assetForm.capacityPallets
-              ? Number(assetForm.capacityPallets)
-              : undefined,
-            customData: Object.keys(assetCustomData).length > 0 ? assetCustomData : undefined,
-          }),
-        });
-        activeTab = 'trailers';
-        label = assetForm.unitNumber.trim();
-      } else {
-        await api('/transportation/drivers', {
-          method: 'POST',
-          body: clean({
-            firstName: assetForm.firstName.trim(),
-            lastName: assetForm.lastName.trim(),
-            licenseNumber: assetForm.licenseNumber.trim(),
-            phone: assetForm.phone.trim(),
-            email: assetForm.email.trim(),
-          }),
-        });
-        activeTab = 'drivers';
-        label = `${assetForm.firstName.trim()} ${assetForm.lastName.trim()}`;
+      if (request === generation) {
+        data = park;
+        agenda = work;
       }
-      toast.success(`${label} ajouté à la flotte`);
-      resetAssetForm(assetForm.kind);
-      showCreate = false;
-      await load();
     } catch (e) {
-      error = e instanceof ApiError ? e.message : "Impossible d'ajouter l'asset";
-      toast.error(error);
+      if (request === generation) {
+        data = null;
+        agenda = null;
+        error = e instanceof Error ? e.message : 'Poste flotte indisponible.';
+      }
     } finally {
-      savingAsset = false;
+      if (request === generation) loading = false;
     }
   }
-
   $effect(() => {
-    void load();
+    kind;
+    ownership;
+    status;
+    search;
+    page;
+    workPage;
+    bucket;
+    from;
+    data = null;
+    agenda = null;
+    const timer = setTimeout(() => void load(), 180);
+    return () => {
+      clearTimeout(timer);
+      generation++;
+    };
   });
-
-  const tabs = [
-    { id: 'vehicles', label: 'Vehicles' },
-    { id: 'trailers', label: 'Trailers' },
-    { id: 'drivers', label: 'Drivers' },
-  ];
+  onMount(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('order')) order = { id: url.searchParams.get('order')!, asset: null };
+    return () => {
+      generation++;
+    };
+  });
+  beforeNavigate(({ cancel }) => {
+    if (busyPanel) cancel();
+  });
+  function openOrder(id: string, asset: FleetAssetRow) {
+    selected = null;
+    order = { id, asset };
+  }
+  function shiftWeek(direction: number) {
+    from = fleetDateKey(
+      new Date(new Date(`${from}T00:00:00Z`).getTime() + direction * 7 * 86400000),
+    );
+  }
 </script>
 
-<PageHeader title="Fleet" subtitle="Actifs, conformité et maintenance.">
-  {#snippet actions()}
-    <Button onclick={() => { showSchedule = true; }} variant="secondary">Planifier un entretien</Button>
-    <Button onclick={() => { showCreate = true; void fetchAssetFieldDefs(assetForm.kind); }}>Ajouter</Button>
-  {/snippet}
+<svelte:head><title>Poste flotte — Pulsar</title></svelte:head>
+<PageHeader
+  title="Flotte"
+  subtitle="Disponibilité enregistrée, interventions et échéances au même endroit."
+>
+  {#snippet actions()}{#if masterRead}<Button variant="secondary" href="/fleet/register"
+        >Registre et plans préventifs</Button
+      >{/if}<Button
+      variant="secondary"
+      disabled={busyPanel}
+      onclick={() => {
+        view = 'agenda';
+        bucket = 'history';
+      }}>Historique maintenance</Button
+    >{/snippet}
 </PageHeader>
-
-{#if loading}
-  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-    {#each Array(4) as _, i (i)}<Skeleton />{/each}
+<div class="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-[10rem_12rem_12rem_minmax(12rem,1fr)_auto]">
+  <Field label="Type d’actif"
+    ><Select bind:value={kind} disabled={busyPanel}
+      ><option value="vehicle">Véhicules</option><option value="trailer">Remorques</option></Select
+    ></Field
+  >
+  <Field label="Périmètre"
+    ><Select bind:value={ownership} disabled={busyPanel}
+      ><option value="internal">Parc interne</option><option value="all">Tous les actifs</option
+      ></Select
+    ></Field
+  >
+  <Field label="État enregistré"
+    ><Select bind:value={status} disabled={busyPanel}
+      ><option value="">Tous les états</option
+      >{#each Object.entries(FLEET_ASSET_LABELS) as [key, label]}<option value={key}>{label}</option
+        >{/each}</Select
+    ></Field
+  >
+  <Field label="Rechercher dans le parc"
+    ><Input
+      bind:value={search}
+      placeholder="Unité ou plaque…"
+      maxlength={80}
+      disabled={busyPanel}
+    /></Field
+  >
+  <div class="self-end">
+    <Button variant="secondary" onclick={load} disabled={loading || busyPanel}>Actualiser</Button>
   </div>
-{:else if error}
-  <ErrorNotice message={error} onretry={load} />
-{:else if overview}
-  <!-- A. Attention cards -->
-  <div class="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-    <a href="#compliance" class="block">
-      <Card>
-        <div class="text-xs font-medium text-ink-muted">Work orders ouverts</div>
-        <div class="mt-1 text-3xl font-bold text-ink">{overview.openWorkOrders}</div>
-      </Card>
-    </a>
-    <a href="#compliance" class="block">
-      <Card>
-        <div class="text-xs font-medium text-ink-muted">Maintenance due (7j)</div>
-        <div class="mt-1 text-3xl font-bold text-ink">{overview.maintenanceDue.length}</div>
-      </Card>
-    </a>
-    <a href="#compliance" class="block">
-      <Card>
-        <div class="text-xs font-medium text-warn">Conformité expirante (30j)</div>
-        <div class="mt-1 text-3xl font-bold text-warn">{overview.complianceExpiring.length}</div>
-      </Card>
-    </a>
-    <a href="#compliance" class="block">
-      <Card>
-        <div class="text-xs font-medium text-danger">Conformité expirée</div>
-        <div class="mt-1 text-3xl font-bold text-danger">{overview.complianceExpired.length}</div>
-      </Card>
-    </a>
-  </div>
-
-  <Modal bind:open={showCreate} title="Ajouter un asset" size="lg">
-    <form id="asset-create-form" onsubmit={createAsset}>
-      <div class="mb-3 flex flex-wrap items-center gap-3">
-        <p class="text-xs font-semibold tracking-[0.18em] text-ink-faint uppercase">Type</p>
-        <div class="flex rounded-lg bg-surface-muted p-1 text-xs font-semibold">
-          <button
-            type="button"
-            class={`rounded-md px-3 py-1 ${assetForm.kind === 'vehicle' ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted'}`}
-            onclick={() => setAssetKind('vehicle')}>Véhicule</button
-          >
-          <button
-            type="button"
-            class={`rounded-md px-3 py-1 ${assetForm.kind === 'trailer' ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted'}`}
-            onclick={() => setAssetKind('trailer')}>Remorque</button
-          >
-          <button
-            type="button"
-            class={`rounded-md px-3 py-1 ${assetForm.kind === 'driver' ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted'}`}
-            onclick={() => setAssetKind('driver')}>Chauffeur</button
-          >
-        </div>
+</div>
+<ErrorNotice message={error} onretry={load} />
+{#if loading && !data}<Skeleton rows={6} />{:else if data && agenda}
+  <section class="mb-5 border-y border-edge py-4" aria-label="État global du parc sélectionné">
+    <div class="flex flex-wrap items-center gap-x-8 gap-y-4">
+      <div>
+        <p class="font-mono text-2xl font-semibold">{data.summary.total}</p>
+        <p class="text-xs text-ink-muted">
+          {kind === 'vehicle' ? 'Véhicules' : 'Remorques'} · {ownership === 'internal'
+            ? 'internes'
+            : 'tous'}
+        </p>
       </div>
-
-      {#if assetForm.kind === 'driver'}
-        <div class="grid gap-3 sm:grid-cols-2">
-          <label class="space-y-1 text-xs font-semibold text-ink-muted">
-            Prénom
-            <Input bind:value={assetForm.firstName} placeholder="Jean" required />
-          </label>
-          <label class="space-y-1 text-xs font-semibold text-ink-muted">
-            Nom
-            <Input bind:value={assetForm.lastName} placeholder="Tremblay" required />
-          </label>
-          <label class="space-y-1 text-xs font-semibold text-ink-muted">
-            Permis #
-            <Input bind:value={assetForm.licenseNumber} placeholder="T1234-5678" />
-          </label>
-          <label class="space-y-1 text-xs font-semibold text-ink-muted">
-            Téléphone
-            <Input bind:value={assetForm.phone} placeholder="514-555-0199" />
-          </label>
-          <label class="space-y-1 text-xs font-semibold text-ink-muted sm:col-span-2">
-            Courriel
-            <Input
-              bind:value={assetForm.email}
-              type="email"
-              placeholder="jean.tremblay@flotte.dev"
-            />
-          </label>
-        </div>
-      {:else}
-        <div class="grid gap-3 sm:grid-cols-2">
-          <label class="space-y-1 text-xs font-semibold text-ink-muted">
-            Unit #
-            <Input
-              bind:value={assetForm.unitNumber}
-              placeholder={assetForm.kind === 'vehicle' ? 'TRK-104' : 'TRL-204'}
-              required
-            />
-          </label>
-          <label class="space-y-1 text-xs font-semibold text-ink-muted">
-            Type
-            <Select bind:value={assetForm.type}>
-              {#each assetForm.kind === 'vehicle' ? vehicleTypes : trailerTypes as type (type)}
-                <option value={type}>{type}</option>
-              {/each}
-            </Select>
-          </label>
-          <label class="space-y-1 text-xs font-semibold text-ink-muted">
-            Plaque
-            <Input bind:value={assetForm.plate} placeholder="QC-4821" />
-          </label>
-          {#if assetForm.kind === 'vehicle'}
-            <label class="space-y-1 text-xs font-semibold text-ink-muted">
-              Marque
-              <Input bind:value={assetForm.make} placeholder="Freightliner" />
-            </label>
-            <label class="space-y-1 text-xs font-semibold text-ink-muted">
-              Modèle
-              <Input bind:value={assetForm.model} placeholder="Cascadia" />
-            </label>
-            <label class="space-y-1 text-xs font-semibold text-ink-muted">
-              Année
-              <Input bind:value={assetForm.year} type="number" placeholder="2024" />
-            </label>
-          {:else}
-            <label class="space-y-1 text-xs font-semibold text-ink-muted">
-              Palettes
-              <Input bind:value={assetForm.capacityPallets} type="number" placeholder="26" />
-            </label>
-          {/if}
-        </div>
-        {#if assetFieldDefs.length > 0}
-          <div class="mt-3">
-            <CustomFieldInputs definitions={assetFieldDefs} bind:data={assetCustomData} />
-          </div>
-        {/if}
-      {/if}
-    </form>
-    {#snippet footer()}
-      <Button variant="secondary" onclick={() => { showCreate = false; }}>Annuler</Button>
-      <Button
-        variant="primary"
-        loading={savingAsset}
-        disabled={!assetFormValid}
-        onclick={(e) => {
-          const form = document.getElementById('asset-create-form') as HTMLFormElement | null;
-          form?.requestSubmit();
-        }}
-      >Ajouter</Button>
-    {/snippet}
-  </Modal>
-
-  <!-- B. Compliance attention list -->
-  <div id="compliance" class="mb-5">
-    <h2 class="mb-2 text-sm font-semibold text-ink">Conformité à surveiller</h2>
-    <Card padded={false}>
-      {#if complianceAttention.length === 0}
-        <EmptyState message="Aucun document à surveiller." />
-      {:else}
-        <div class="divide-y divide-edge">
-          {#each complianceAttention as doc (doc.id)}
-            <div class="flex items-center gap-3 px-4 py-2.5 text-sm">
-              <Badge tone={complianceTone(doc.status)}>{doc.status}</Badge>
-              <span class="font-medium text-ink">{doc.docType}</span>
-              <span class="text-ink-muted">
-                {doc.subjectType.toLowerCase()} · {doc.subjectId}
-              </span>
-              {#if doc.reference}<span class="text-ink-faint">{doc.reference}</span>{/if}
-              <span class="ml-auto text-ink-muted">expire le {fmtDate(doc.expiresAt)}</span>
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </Card>
-  </div>
-
-  <!-- B2. Preventive maintenance schedules -->
-  <Modal bind:open={showSchedule} title="Planifier un entretien préventif" size="md">
-    <form id="schedule-create-form" class="grid gap-3" onsubmit={createSchedule}>
-      <label class="space-y-1 text-xs font-semibold text-ink-muted">
-        Asset
-        <Select bind:value={scheduleForm.asset}>
-          <option value="">Choisir…</option>
-          {#each internalVehicles as v (v.id)}<option value={`vehicle:${v.id}`}
-              >{v.unitNumber} (véh.)</option
-            >{/each}
-          {#each internalTrailers as t (t.id)}<option value={`trailer:${t.id}`}
-              >{t.unitNumber} (rem.)</option
-            >{/each}
-        </Select>
-      </label>
-      <label class="space-y-1 text-xs font-semibold text-ink-muted">
-        Nom du plan
-        <Input bind:value={scheduleForm.name} placeholder="Vidange, inspection DOT…" />
-      </label>
-      <div class="grid gap-3 sm:grid-cols-3">
-        <label class="space-y-1 text-xs font-semibold text-ink-muted">
-          Tous les (jours)
-          <Input bind:value={scheduleForm.intervalDays} type="number" min="1" placeholder="90" />
-        </label>
-        <label class="space-y-1 text-xs font-semibold text-ink-muted">
-          ou (km)
-          <Input bind:value={scheduleForm.intervalKm} type="number" min="1" placeholder="20000" />
-        </label>
-        <label class="space-y-1 text-xs font-semibold text-ink-muted">
-          Préavis (j)
-          <Input bind:value={scheduleForm.leadDays} type="number" min="0" />
-        </label>
-      </div>
-    </form>
-    {#snippet footer()}
-      <Button variant="secondary" onclick={() => { showSchedule = false; }}>Annuler</Button>
-      <Button
-        variant="primary"
-        loading={savingSchedule}
-        disabled={!scheduleForm.asset || !scheduleForm.name.trim()}
-        onclick={() => {
-          const form = document.getElementById('schedule-create-form') as HTMLFormElement | null;
-          form?.requestSubmit();
-        }}
-      >Planifier</Button>
-    {/snippet}
-  </Modal>
-
-  <div class="mb-5">
-    <div class="mb-2 flex flex-wrap items-center gap-2">
-      <h2 class="text-sm font-semibold text-ink">Maintenance préventive</h2>
-      {#if pmOverdue > 0}<Badge tone="danger">{pmOverdue} en retard</Badge>{/if}
-      {#if pmDue > 0}<Badge tone="warn">{pmDue} dû</Badge>{/if}
-      {#if pmDueSoon > 0}<Badge tone="info">{pmDueSoon} bientôt</Badge>{/if}
-      <span class="ml-auto"><ViewToggle bind:view={mxView} views={['table', 'cards', 'kanban']} /></span>
+      {#each [['AVAILABLE', 'available'], ['IN_SERVICE', 'inService'], ['MAINTENANCE', 'maintenance'], ['RETIRED', 'retired']] as [state, key]}<div
+        >
+          <p class="font-mono text-xl font-semibold">
+            {data.summary[key as 'available' | 'inService' | 'maintenance' | 'retired']}
+          </p>
+          <p class="text-xs text-ink-muted">{FLEET_ASSET_LABELS[state]}</p>
+        </div>{/each}
     </div>
-
-    {#if schedules.length === 0}
-      <Card>
-        <EmptyState
-          message="Aucun plan d'entretien. Crée un intervalle (km/jours) — l'échéance se calcule toute seule et alimente le Workbench."
-        />
-      </Card>
-    {:else if mxView === 'table'}
-      <Card padded={false}>
-        <div class="divide-y divide-edge">
-          {#each pmActionable as s (s.id)}
-            <div
-              class={`flex flex-wrap items-center gap-3 px-4 py-2.5 text-sm ${s.isActive ? '' : 'opacity-50'}`}
-            >
-              <Badge tone={scheduleTone(s.due.status)}>{s.due.status}</Badge>
-              <span class="font-medium text-ink">{assetLabel(s)}</span>
-              <span class="text-ink-muted">{s.name}</span>
-              <span class="text-xs text-ink-faint">chaque {intervalLabel(s)}</span>
-              <span class="ml-auto text-xs text-ink-muted">
-                prochaine: {nextDueLabel(s)}
-                {#if s.due.daysUntilDue != null}
-                  <span class="text-ink-faint">({s.due.daysUntilDue} j)</span>
-                {/if}
-              </span>
-              <div class="flex gap-1">
-                {#if s.due.isDue && s.isActive}
-                  <button
-                    class="rounded-md bg-accent px-2.5 py-1 text-xs font-semibold text-white hover:bg-accent-strong"
-                    onclick={() => generateFromSchedule(s.id)}>Générer WO</button
-                  >
-                {/if}
-                <button
-                  class="rounded-md border border-edge px-2.5 py-1 text-xs font-semibold text-ink-muted hover:bg-surface-muted"
-                  onclick={() => toggleSchedule(s)}>{s.isActive ? 'Pause' : 'Activer'}</button
-                >
-                <button
-                  class="rounded-md px-2.5 py-1 text-xs font-semibold text-danger hover:bg-danger/10"
-                  onclick={() => deleteSchedule(s.id)}
-                  aria-label="Supprimer le plan">✕</button
-                >
+    <p class="mt-3 max-w-3xl text-xs leading-relaxed text-ink-muted">
+      Statuts de tout ce périmètre, avant recherche. Une unité « disponible » peut être affectée au
+      transport; les interventions et documents restent à vérifier dans sa fiche.
+    </p>
+  </section>
+  <Tabs
+    bind:active={view}
+    label="Poste flotte"
+    tabs={[
+      { id: 'park', label: `Parc · ${data.total}` },
+      { id: 'agenda', label: 'Échéancier maintenance' },
+    ]}
+  >
+    {#if view === 'park'}
+      <div class="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+        {#each data.items as asset (asset.id)}
+          <button
+            aria-label={`Consulter ${asset.unitNumber}`}
+            disabled={loading || busyPanel}
+            class="group min-w-0 rounded-lg border border-edge bg-surface p-4 text-left transition-colors duration-150 hover:border-accent/40 hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
+            onclick={() => {
+              selected = asset;
+            }}
+          >
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p class="font-mono text-lg font-semibold">{asset.unitNumber}</p>
+                <p class="mt-1 text-xs text-ink-muted">{asset.plate || 'Plaque non renseignée'}</p>
               </div>
-            </div>
-          {/each}
-        </div>
-      </Card>
-    {:else if mxView === 'cards'}
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {#each pmActionable as s (s.id)}
-          <Card>
-            <div class="flex items-start justify-between gap-2">
-              <span class="font-semibold text-ink">{assetLabel(s)}</span>
-              <Badge tone={scheduleTone(s.due.status)}>{s.due.status}</Badge>
-            </div>
-            <p class="mt-0.5 text-sm text-ink-muted">{s.name}</p>
-            <p class="mt-0.5 text-xs text-ink-faint">chaque {intervalLabel(s)}</p>
-            <div class="mt-1 text-xs text-ink-muted">
-              prochaine : {nextDueLabel(s)}
-              {#if s.due.daysUntilDue != null}
-                <span class="text-ink-faint">({s.due.daysUntilDue} j)</span>
-              {/if}
-            </div>
-            <div class="mt-2 flex flex-wrap gap-1">
-              {#if s.due.isDue && s.isActive}
-                <button
-                  class="rounded-md bg-accent px-2.5 py-1 text-xs font-semibold text-white hover:bg-accent-strong"
-                  onclick={() => generateFromSchedule(s.id)}>Générer WO</button
-                >
-              {/if}
-              <button
-                class="rounded-md border border-edge px-2.5 py-1 text-xs font-semibold text-ink-muted hover:bg-surface-muted"
-                onclick={() => toggleSchedule(s)}>{s.isActive ? 'Pause' : 'Activer'}</button
-              >
-              <button
-                class="rounded-md px-2.5 py-1 text-xs font-semibold text-danger hover:bg-danger/10"
-                onclick={() => deleteSchedule(s.id)}
-                aria-label="Supprimer le plan">✕</button
+              <Badge
+                tone={asset.status === 'RETIRED'
+                  ? 'neutral'
+                  : asset.openOrders || asset.status === 'MAINTENANCE'
+                    ? 'warn'
+                    : asset.status === 'IN_SERVICE'
+                      ? 'info'
+                      : 'neutral'}>{FLEET_ASSET_LABELS[asset.status]}</Badge
               >
             </div>
-          </Card>
-        {/each}
+            <div class="mt-5 border-t border-edge pt-3">
+              <p class="text-sm font-medium">{fleetAttention(asset)}</p>
+              <p class="mt-2 text-xs text-ink-muted">
+                {asset.expiredDocuments
+                  ? `${asset.expiredDocuments} document(s) expiré(s)`
+                  : 'Aucun document expiré enregistré'} · {asset.expiringDocuments} à renouveler
+              </p>
+            </div>
+            <div class="mt-4 flex justify-between gap-3 text-xs">
+              <span class="text-ink-muted">{asset.internal ? 'Interne' : 'Transporteur'}</span><span
+                class="text-accent">Ouvrir le dossier →</span
+              >
+            </div>
+          </button>
+        {:else}<div class="md:col-span-2">
+            <EmptyState
+              title="Aucun actif correspondant"
+              message="Modifiez les filtres ou ajoutez un véhicule ou une remorque dans le registre existant."
+            />{#if masterRead}<Button variant="secondary" href="/fleet/register"
+                >Ouvrir le registre</Button
+              >{/if}
+          </div>{/each}
       </div>
-    {:else if mxView === 'kanban'}
-      <div class="flex gap-3 overflow-x-auto pb-2">
-        {#each MX_KANBAN_COLS as col (col.status)}
-          {@const items = pmActionable.filter((s) => s.due.status === col.status)}
-          <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
-            <div class="flex items-center justify-between px-3 py-2">
-              <Badge tone={scheduleTone(col.status)}>{col.label}</Badge>
-              <span class="font-mono text-xs text-ink-muted">{items.length}</span>
-            </div>
-            <div class="flex max-h-[65vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
-              {#if items.length === 0}
-                <p class="px-1 py-3 text-center text-xs text-ink-faint">—</p>
-              {:else}
-                {#each items as s (s.id)}
-                  <div class={`rounded-inner border border-edge-soft bg-surface p-2.5 shadow-sm ${s.isActive ? '' : 'opacity-50'}`}>
-                    <div class="font-semibold text-sm text-ink">{assetLabel(s)}</div>
-                    <div class="mt-0.5 truncate text-xs text-ink-muted">{s.name}</div>
-                    <div class="mt-0.5 text-[11px] text-ink-faint">chaque {intervalLabel(s)}</div>
-                    <div class="mt-0.5 text-[11px] text-ink-muted">prochaine : {nextDueLabel(s)}</div>
-                    <div class="mt-1.5 flex flex-wrap gap-1">
-                      {#if s.due.isDue && s.isActive}
-                        <button
-                          class="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-accent-strong"
-                          onclick={() => generateFromSchedule(s.id)}>Générer WO</button
-                        >
-                      {/if}
-                      <button
-                        class="rounded-md border border-edge px-2 py-0.5 text-[11px] font-semibold text-ink-muted hover:bg-surface-muted"
-                        onclick={() => toggleSchedule(s)}>{s.isActive ? 'Pause' : 'Activer'}</button
-                      >
-                      <button
-                        class="rounded-md px-2 py-0.5 text-[11px] font-semibold text-danger hover:bg-danger/10"
-                        onclick={() => deleteSchedule(s.id)}
-                        aria-label="Supprimer le plan">✕</button
-                      >
-                    </div>
-                  </div>
-                {/each}
-              {/if}
-            </div>
-          </div>
-        {/each}
-      </div>
-    {/if}
-  </div>
-
-  <!-- C. Asset roster -->
-  <h2 class="mb-2 text-sm font-semibold text-ink">Flotte interne</h2>
-  <Tabs {tabs} bind:active={activeTab}>
-    {#if activeTab === 'vehicles'}
-      <Card padded={false}>
-        {#if internalVehicles.length === 0}
-          <EmptyState message="Aucun véhicule interne." />
-        {:else}
-          <div class="divide-y divide-edge">
-            {#each internalVehicles as v (v.id)}
-              <a
-                href={`/fleet/vehicles/${v.id}`}
-                class="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-surface-muted"
-              >
-                <span class="font-medium text-ink">{v.unitNumber}</span>
-                <Badge tone={assetTone(v.status)}>{v.status}</Badge>
-              </a>
-            {/each}
-          </div>
-        {/if}
-      </Card>
-    {:else if activeTab === 'trailers'}
-      <Card padded={false}>
-        {#if internalTrailers.length === 0}
-          <EmptyState message="Aucune remorque interne." />
-        {:else}
-          <div class="divide-y divide-edge">
-            {#each internalTrailers as t (t.id)}
-              <a
-                href={`/fleet/trailers/${t.id}`}
-                class="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-surface-muted"
-              >
-                <span class="font-medium text-ink">{t.unitNumber}</span>
-                <Badge tone={assetTone(t.status)}>{t.status}</Badge>
-              </a>
-            {/each}
-          </div>
-        {/if}
-      </Card>
+      {#if data.total > data.pageSize}<nav
+          class="mt-5 flex items-center justify-end gap-3"
+          aria-label="Pages du parc"
+        >
+          <Button
+            variant="secondary"
+            disabled={page <= 1 || busyPanel}
+            onclick={() => {
+              page--;
+            }}>Précédente</Button
+          ><span class="text-xs">Page {page} / {Math.ceil(data.total / data.pageSize)}</span><Button
+            variant="secondary"
+            disabled={page * data.pageSize >= data.total || busyPanel}
+            onclick={() => {
+              page++;
+            }}>Suivante</Button
+          >
+        </nav>{/if}
     {:else}
-      <Card padded={false}>
-        {#if internalDrivers.length === 0}
-          <EmptyState message="Aucun chauffeur interne." />
-        {:else}
-          <div class="divide-y divide-edge">
-            {#each internalDrivers as d (d.id)}
-              <a
-                href={`/fleet/drivers/${d.id}`}
-                class="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-surface-muted"
-              >
-                <span class="font-medium text-ink">{d.firstName} {d.lastName}</span>
-                {#if d.licenseNumber}<span class="text-ink-faint">{d.licenseNumber}</span>{/if}
-                <Badge tone={driverTone(d.status)}>{d.status}</Badge>
-              </a>
-            {/each}
-          </div>
-        {/if}
-      </Card>
+      <div class="mb-5 flex flex-wrap items-end gap-3">
+        <Field label="Semaine à partir du (UTC)"
+          ><Input type="date" bind:value={from} disabled={busyPanel} /></Field
+        ><Button variant="secondary" disabled={busyPanel || !from} onclick={() => shiftWeek(-1)}
+          >− 7 jours</Button
+        ><Button variant="secondary" disabled={busyPanel || !from} onclick={() => shiftWeek(1)}
+          >+ 7 jours</Button
+        ><Field label="File des interventions"
+          ><Select bind:value={bucket} disabled={busyPanel}
+            ><option value="dated">Cette semaine · {agenda.counts.dated}</option><option
+              value="overdue">Avant cette semaine · {agenda.counts.overdue}</option
+            ><option value="undated">Sans échéance · {agenda.counts.undated}</option><option
+              value="history">Terminées et annulées · {agenda.counts.history}</option
+            ></Select
+          ></Field
+        >
+      </div>
+      {#if bucket !== 'history'}<section
+          aria-label="Charge de maintenance sur sept jours"
+          class="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7"
+        >
+          {#each agenda.days as day}<div
+              class="min-w-0 rounded-md border border-edge p-3"
+              class:bg-surface-muted={day.count > 0}
+            >
+              <p class="text-xs text-ink-muted">
+                {new Date(`${day.date}T00:00:00Z`).toLocaleDateString('fr-CA', {
+                  weekday: 'short',
+                  timeZone: 'UTC',
+                })}
+              </p>
+              <p class="mt-1 font-mono text-xs">{day.date.slice(5)}</p>
+              <p class="mt-4 font-mono text-2xl font-semibold">{day.count}</p>
+              <p class="mt-1 text-xs text-ink-muted">à échéance</p>
+            </div>{/each}
+        </section>{/if}
+      <p class="mb-4 text-xs text-ink-muted">
+        {bucket === 'history'
+          ? 'Ordres terminés et annulés, toutes dates, les plus récents en premier.'
+          : 'Échéances UTC des ordres ouverts ou en cours. Pas de durée estimée, réservation d’atelier ou disponibilité future déduite.'}
+        {agenda.total} intervention(s) dans cette file.
+      </p>
+      <div class="space-y-3">
+        {#each agenda.items as wo (wo.id)}<button
+            aria-label={`Intervention ${wo.description}`}
+            class="grid w-full min-w-0 gap-4 rounded-lg border border-edge p-4 text-left transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-accent md:grid-cols-[8rem_minmax(0,1fr)_auto]"
+            disabled={busyPanel || loading}
+            onclick={() => {
+              order = { id: wo.id, asset: null };
+            }}
+          >
+            <div class="border-l-2 border-accent/30 pl-3">
+              <p class="font-mono text-sm font-semibold">
+                {wo.dueDate ? fleetDateKey(wo.dueDate) : 'À dater'}
+              </p>
+              <p class="mt-1 text-xs text-ink-muted">{FLEET_TYPE_LABELS[wo.type]}</p>
+            </div>
+            <div class="min-w-0">
+              <p class="break-words text-sm font-semibold">{wo.description}</p>
+              <p class="mt-1 text-sm text-ink-muted">
+                <span class="font-mono">{wo.asset?.unitNumber ?? 'Actif non renseigné'}</span> · {wo.vendor ||
+                  'Prestataire à préciser'}
+              </p>
+            </div>
+            <div class="flex items-center gap-3">
+              <Badge>{FLEET_ORDER_LABELS[wo.status]}</Badge><span class="text-accent">→</span>
+            </div>
+          </button>{:else}<EmptyState
+            title="Aucune intervention dans cette file"
+            message="Consultez les autres semaines ou les ordres sans échéance. Les plans préventifs n’immobilisent pas le parc avant ouverture d’un ordre."
+          />{/each}
+      </div>
+      {#if agenda.total > agenda.pageSize}<nav
+          class="mt-5 flex items-center justify-end gap-3"
+          aria-label="Pages de l’échéancier"
+        >
+          <Button
+            variant="secondary"
+            disabled={workPage <= 1 || busyPanel}
+            onclick={() => {
+              workPage--;
+            }}>Précédente</Button
+          ><span class="text-xs">Page {workPage} / {Math.ceil(agenda.total / agenda.pageSize)}</span
+          ><Button
+            variant="secondary"
+            disabled={workPage * agenda.pageSize >= agenda.total || busyPanel}
+            onclick={() => {
+              workPage++;
+            }}>Suivante</Button
+          >
+        </nav>{/if}
     {/if}
   </Tabs>
 {/if}
+{#if selected}<FleetAssetDrawer
+    asset={selected}
+    onclose={() => {
+      selected = null;
+    }}
+    onorder={openOrder}
+  />{/if}
+{#if order}{#key order.id}<FleetOrderDrawer
+      id={order.id}
+      asset={order.asset}
+      onclose={() => {
+        order = null;
+      }}
+      onsaved={load}
+    />{/key}{/if}

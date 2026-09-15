@@ -2,6 +2,9 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { AuditAction, StockMovementType, applyToBalance } from '@pulsar/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
+import { OwnershipService } from '../../../prisma/ownership.service';
+import { Prisma } from '@pulsar/database';
+import { createHash } from 'node:crypto';
 import { AdjustStockDto, InventoryListQueryDto, MoveStockDto } from './dto/inventory.dto';
 
 /**
@@ -17,6 +20,7 @@ export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogsService,
+    private readonly ownership: OwnershipService,
   ) {}
 
   /** Read a level qty (0 if absent) within a tx client. qtyOnHand is a Prisma Decimal. */
@@ -52,8 +56,38 @@ export class InventoryService {
       refType?: string;
       refId?: string;
       note?: string;
+      locationId?: string;
+      operationKey?: string;
+      requestFingerprint?: string;
     },
   ) {
+    if (
+      !Number.isFinite(args.qty) ||
+      args.qty <= 0 ||
+      new Prisma.Decimal(args.qty).decimalPlaces() > 3
+    )
+      throw new BadRequestException('Quantité positive requise, avec au plus trois décimales.');
+    // One tenant mutex also covers absent inventory rows and multi-line posting.
+    // All stock writers (receipt, pick, count, move, adjustment) use this primitive.
+    await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${args.tenantId} FOR UPDATE`;
+    const item = await tx.wmsItem.findFirst({
+      where: { id: args.itemId, tenantId: args.tenantId },
+      select: { id: true, unit: true },
+    });
+    if (!item) throw new BadRequestException('Article introuvable dans cette entreprise.');
+    const ids = [...new Set([args.fromBinId, args.toBinId].filter(Boolean))];
+    if (!ids.length || (args.fromBinId && args.fromBinId === args.toBinId))
+      throw new BadRequestException('Emplacements de mouvement invalides.');
+    const bins = await tx.bin.findMany({
+      where: { tenantId: args.tenantId, id: { in: ids } },
+      select: { id: true, isActive: true, locationId: true },
+    });
+    if (bins.length !== ids.length)
+      throw new BadRequestException('Emplacement introuvable dans cette entreprise.');
+    if (args.type !== StockMovementType.ADJUSTMENT && bins.some((b: any) => !b.isActive))
+      throw new ConflictException('Un emplacement du mouvement est inactif.');
+    if (args.locationId && bins.some((b: any) => b.locationId !== args.locationId))
+      throw new BadRequestException('Les emplacements doivent correspondre au site sélectionné.');
     if (args.fromBinId) {
       const cur = await this.readQty(tx, args.tenantId, args.itemId, args.fromBinId);
       const res = applyToBalance(cur, -args.qty);
@@ -62,9 +96,11 @@ export class InventoryService {
     }
     if (args.toBinId) {
       const cur = await this.readQty(tx, args.tenantId, args.itemId, args.toBinId);
-      await this.setQty(tx, args.tenantId, args.itemId, args.toBinId, cur + args.qty);
+      const res = applyToBalance(cur, args.qty);
+      if (!res.ok) throw new ConflictException('Le mouvement laisserait un stock négatif.');
+      await this.setQty(tx, args.tenantId, args.itemId, args.toBinId, res.next);
     }
-    await tx.stockMovement.create({
+    return tx.stockMovement.create({
       data: {
         tenantId: args.tenantId,
         type: args.type,
@@ -76,6 +112,9 @@ export class InventoryService {
         refId: args.refId ?? null,
         note: args.note ?? null,
         createdById: args.userId ?? null,
+        operationKey: args.operationKey ?? null,
+        requestFingerprint: args.requestFingerprint ?? null,
+        unitSnapshot: item.unit,
       },
     });
   }
@@ -97,9 +136,48 @@ export class InventoryService {
   }
 
   async move(tenantId: string, userId: string, dto: MoveStockDto) {
-    if (dto.fromBinId === dto.toBinId) throw new BadRequestException('Source and destination bins must differ');
-    await this.prisma.$transaction(async (tx) => {
-      await this.postMovement(tx, {
+    if (dto.fromBinId === dto.toBinId)
+      throw new BadRequestException('Source and destination bins must differ');
+    await this.ownership.assertOwned('wmsItem', dto.itemId, tenantId);
+    await this.ownership.assertOwned('bin', dto.fromBinId, tenantId);
+    await this.ownership.assertOwned('bin', dto.toBinId, tenantId);
+    await this.ownership.assertOwnedIfSet('location', dto.locationId, tenantId);
+    const fingerprint = createHash('sha256')
+      .update(
+        JSON.stringify([
+          'wms-move-v1',
+          userId,
+          dto.itemId,
+          dto.fromBinId,
+          dto.toBinId,
+          new Prisma.Decimal(dto.qty).toString(),
+          dto.note ?? null,
+          dto.locationId ?? null,
+        ]),
+      )
+      .digest('hex');
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Same lock order as receipt/pick/count/bin writers. Replay BEFORE stock validation:
+      // the original movement may have emptied or since deactivated its source.
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+      if (dto.operationKey) {
+        const previous = await tx.stockMovement.findFirst({
+          where: { tenantId, operationKey: dto.operationKey },
+        });
+        if (previous) {
+          if (
+            previous.type !== StockMovementType.MOVE ||
+            previous.requestFingerprint !== fingerprint
+          )
+            throw new ConflictException('Cette clé de déplacement correspond à une autre demande.');
+          return {
+            movementId: previous.id,
+            createdAt: previous.createdAt.toISOString(),
+            replayed: true,
+          };
+        }
+      }
+      const movement = await this.postMovement(tx, {
         tenantId,
         userId,
         type: StockMovementType.MOVE,
@@ -108,31 +186,51 @@ export class InventoryService {
         toBinId: dto.toBinId,
         qty: dto.qty,
         note: dto.note,
+        locationId: dto.locationId,
+        operationKey: dto.operationKey,
+        requestFingerprint: dto.operationKey ? fingerprint : undefined,
       });
+      return {
+        movementId: movement.id,
+        createdAt: movement.createdAt.toISOString(),
+        replayed: false,
+      };
     });
-    await this.audit.log({ tenantId, userId, action: AuditAction.UPDATE, entityType: 'wms-inventory', entityId: dto.itemId, after: { move: dto } });
+    if (!result.replayed)
+      await this.audit.log({
+        tenantId,
+        userId,
+        action: AuditAction.UPDATE,
+        entityType: 'wms-inventory',
+        entityId: dto.itemId,
+        after: { move: dto, movementId: result.movementId },
+      });
+    return result;
   }
 
   async adjust(tenantId: string, userId: string, dto: AdjustStockDto) {
     if (dto.qtyDelta === 0) throw new BadRequestException('qtyDelta must be non-zero');
+    await this.ownership.assertOwned('wmsItem', dto.itemId, tenantId);
+    await this.ownership.assertOwned('bin', dto.binId, tenantId);
     await this.prisma.$transaction(async (tx) => {
-      const cur = await this.readQty(tx, tenantId, dto.itemId, dto.binId);
-      const res = applyToBalance(cur, dto.qtyDelta); // refuses below zero (no override — even adjustments don't go negative)
-      if (!res.ok) throw new ConflictException('Adjustment would drive the bin negative');
-      await this.setQty(tx, tenantId, dto.itemId, dto.binId, res.next);
-      await tx.stockMovement.create({
-        data: {
-          tenantId,
-          type: StockMovementType.ADJUSTMENT,
-          itemId: dto.itemId,
-          fromBinId: dto.qtyDelta < 0 ? dto.binId : null,
-          toBinId: dto.qtyDelta > 0 ? dto.binId : null,
-          qty: Math.abs(dto.qtyDelta),
-          note: dto.note ?? null,
-          createdById: userId,
-        },
+      await this.postMovement(tx, {
+        tenantId,
+        userId,
+        type: StockMovementType.ADJUSTMENT,
+        itemId: dto.itemId,
+        fromBinId: dto.qtyDelta < 0 ? dto.binId : undefined,
+        toBinId: dto.qtyDelta > 0 ? dto.binId : undefined,
+        qty: Math.abs(dto.qtyDelta),
+        note: dto.note,
       });
     });
-    await this.audit.log({ tenantId, userId, action: AuditAction.UPDATE, entityType: 'wms-inventory', entityId: dto.itemId, after: { adjust: dto } });
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'wms-inventory',
+      entityId: dto.itemId,
+      after: { adjust: dto },
+    });
   }
 }

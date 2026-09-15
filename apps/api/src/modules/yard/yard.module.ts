@@ -12,6 +12,10 @@ import { AppointmentsService } from './appointments/appointments.service';
 import { AppointmentsController } from './appointments/appointments.controller';
 import { YardOverviewService } from './overview/yard-overview.service';
 import { YardOverviewController } from './overview/yard-overview.controller';
+import { YardWorkspaceService } from './workspace/workspace.service';
+import { YardWorkspaceController } from './workspace/workspace.controller';
+import { YardDossiersController } from './dossiers/dossiers.controller';
+import { YardDossiersService } from './dossiers/dossiers.service';
 
 /**
  * Yard Management module (spots master-data + gate visits + dock appointments +
@@ -24,9 +28,29 @@ import { YardOverviewController } from './overview/yard-overview.controller';
  * AuditLogsModule (same pattern as WmsModule / FleetModule).
  */
 @Module({
-  imports: [AuditLogsModule, CustomFieldsModule, ModuleRegistryModule, forwardRef(() => OperatingModule)],
-  controllers: [YardCustomFieldsController, SpotsController, VisitsController, AppointmentsController, YardOverviewController],
-  providers: [SpotsService, VisitsService, AppointmentsService, YardOverviewService],
+  imports: [
+    AuditLogsModule,
+    CustomFieldsModule,
+    ModuleRegistryModule,
+    forwardRef(() => OperatingModule),
+  ],
+  controllers: [
+    YardDossiersController,
+    YardWorkspaceController,
+    YardCustomFieldsController,
+    SpotsController,
+    VisitsController,
+    AppointmentsController,
+    YardOverviewController,
+  ],
+  providers: [
+    YardDossiersService,
+    YardWorkspaceService,
+    SpotsService,
+    VisitsService,
+    AppointmentsService,
+    YardOverviewService,
+  ],
   exports: [VisitsService, AppointmentsService, YardOverviewService],
 })
 export class YardModule {}

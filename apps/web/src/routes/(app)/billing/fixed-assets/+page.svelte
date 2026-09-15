@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Modal } from '$lib/components/ui';
+  import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import {
@@ -151,15 +153,36 @@
 
   async function saveAsset() {
     formError = '';
-    if (!form.assetCode.trim()) { formError = 'Le code est requis.'; return; }
-    if (!form.name.trim()) { formError = 'Le nom est requis.'; return; }
-    if (!form.acquisitionDate) { formError = "La date d'acquisition est requise."; return; }
+    if (!form.assetCode.trim()) {
+      formError = 'Le code est requis.';
+      return;
+    }
+    if (!form.name.trim()) {
+      formError = 'Le nom est requis.';
+      return;
+    }
+    if (!form.acquisitionDate) {
+      formError = "La date d'acquisition est requise.";
+      return;
+    }
     const cost = Number(form.cost ?? '');
-    if (form.cost === null || form.cost === undefined || isNaN(cost) || cost < 0) { formError = 'Le coût doit être un nombre positif.'; return; }
+    if (form.cost === null || form.cost === undefined || isNaN(cost) || cost < 0) {
+      formError = 'Le coût doit être un nombre positif.';
+      return;
+    }
     const salvage = Number(form.salvageValue ?? 0);
-    if (isNaN(salvage) || salvage < 0) { formError = 'La valeur résiduelle doit être un nombre positif.'; return; }
+    if (isNaN(salvage) || salvage < 0) {
+      formError = 'La valeur résiduelle doit être un nombre positif.';
+      return;
+    }
     const life = Number(form.usefulLifeMonths ?? '');
-    if (form.usefulLifeMonths === null || form.usefulLifeMonths === undefined || isNaN(life) || life < 1 || !Number.isInteger(life)) {
+    if (
+      form.usefulLifeMonths === null ||
+      form.usefulLifeMonths === undefined ||
+      isNaN(life) ||
+      life < 1 ||
+      !Number.isInteger(life)
+    ) {
       formError = 'La durée de vie doit être un entier supérieur à 0.';
       return;
     }
@@ -175,7 +198,8 @@
         salvageValue: salvage,
         usefulLifeMonths: life,
         depreciationExpenseAccountCode: form.depreciationExpenseAccountCode.trim() || undefined,
-        accumulatedDepreciationAccountCode: form.accumulatedDepreciationAccountCode.trim() || undefined,
+        accumulatedDepreciationAccountCode:
+          form.accumulatedDepreciationAccountCode.trim() || undefined,
       };
       if (editingAsset) {
         await api(`/billing/fixed-assets/${editingAsset.id}`, { method: 'PATCH', body });
@@ -199,7 +223,7 @@
 
   async function deleteAsset(a: FixedAsset) {
     if (a.status !== 'DRAFT') return;
-    if (!confirm(`Supprimer l'immobilisation « ${a.name} » ?`)) return;
+    if (!(await confirmAction(`Supprimer l'immobilisation « ${a.name} » ?`))) return;
     deletingId = a.id;
     try {
       await api(`/billing/fixed-assets/${a.id}`, { method: 'DELETE' });
@@ -257,7 +281,7 @@
   }
 
   async function disposeAsset(a: FixedAsset) {
-    if (!confirm(`Céder l'immobilisation « ${a.name} » ?`)) return;
+    if (!(await confirmAction(`Céder l'immobilisation « ${a.name} » ?`))) return;
     actioningId = a.id;
     try {
       await api(`/billing/fixed-assets/${a.id}/dispose`, { method: 'POST' });
@@ -318,7 +342,9 @@
 
 <!-- Toolbar -->
 <div class="mb-4 flex items-center justify-between">
-  <span class="text-sm text-ink-muted">{assets.length} immobilisation{assets.length !== 1 ? 's' : ''}</span>
+  <span class="text-sm text-ink-muted"
+    >{assets.length} immobilisation{assets.length !== 1 ? 's' : ''}</span
+  >
   <Button variant="primary" onclick={openCreate}>+ Nouvelle immobilisation</Button>
 </div>
 
@@ -352,33 +378,42 @@
             <Badge tone={statusTone(a.status)}>{statusLabel(a.status)}</Badge>
           </td>
           <td class="text-right whitespace-nowrap text-xs">
-            <button class="mr-2 text-accent hover:underline" onclick={() => openSchedule(a)}>Calendrier</button>
+            <button class="mr-2 text-accent hover:underline" onclick={() => openSchedule(a)}
+              >Calendrier</button
+            >
             {#if a.status === 'DRAFT'}
               <button
                 class="mr-2 text-ok hover:underline disabled:opacity-40"
                 disabled={actioningId === a.id}
-                onclick={() => activateAsset(a)}
-              >{actioningId === a.id ? '…' : 'Activer'}</button>
-              <button class="mr-2 text-accent hover:underline" onclick={() => openEdit(a)}>Modifier</button>
+                onclick={() => activateAsset(a)}>{actioningId === a.id ? '…' : 'Activer'}</button
+              >
+              <button class="mr-2 text-accent hover:underline" onclick={() => openEdit(a)}
+                >Modifier</button
+              >
               <button
                 class="text-danger hover:underline disabled:opacity-40"
                 disabled={deletingId === a.id}
-                onclick={() => deleteAsset(a)}
-              >{deletingId === a.id ? '…' : 'Supprimer'}</button>
+                onclick={() => deleteAsset(a)}>{deletingId === a.id ? '…' : 'Supprimer'}</button
+              >
             {:else if a.status === 'ACTIVE'}
-              <button class="mr-2 text-accent hover:underline" onclick={() => openDepreciate(a)}>Amortir</button>
+              <button class="mr-2 text-accent hover:underline" onclick={() => openDepreciate(a)}
+                >Amortir</button
+              >
               <button
                 class="text-warn hover:underline disabled:opacity-40"
                 disabled={actioningId === a.id}
-                onclick={() => disposeAsset(a)}
-              >{actioningId === a.id ? '…' : 'Céder'}</button>
+                onclick={() => disposeAsset(a)}>{actioningId === a.id ? '…' : 'Céder'}</button
+              >
             {/if}
           </td>
         </tr>
       {:else}
         <tr>
           <td colspan={7}>
-            <EmptyState title="Aucune immobilisation" message="Créez votre premier actif amortissable." />
+            <EmptyState
+              title="Aucune immobilisation"
+              message="Créez votre premier actif amortissable."
+            />
           </td>
         </tr>
       {/each}
@@ -388,232 +423,255 @@
 
 <!-- ── Create / Edit modal ─────────────────────────────────────────────────── -->
 {#if showModal}
-  <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-    <div class="w-full max-w-lg rounded-xl bg-surface p-6 shadow-xl overflow-y-auto max-h-[90vh]">
-      <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-base font-bold text-ink">
-          {editingAsset ? "Modifier l'immobilisation" : 'Nouvelle immobilisation'}
-        </h2>
-        <button class="text-ink-muted hover:text-ink" onclick={() => { showModal = false; }}>✕</button>
-      </div>
-
-      <div class="space-y-3">
-        <!-- Code + Name -->
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-code">Code</label>
-            <input
-              id="fa-code"
-              bind:value={form.assetCode}
-              placeholder="ex. IMM-001"
-              class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm font-mono focus:border-accent focus:outline-none"
-            />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-name">Nom</label>
-            <input
-              id="fa-name"
-              bind:value={form.name}
-              placeholder="ex. Véhicule de livraison"
-              class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-            />
-          </div>
-        </div>
-
-        <!-- Category + Acquisition date -->
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-category">Catégorie</label>
-            <input
-              id="fa-category"
-              bind:value={form.category}
-              placeholder="ex. Matériel roulant"
-              class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-            />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-date">Date d'acquisition</label>
-            <input
-              id="fa-date"
-              type="date"
-              bind:value={form.acquisitionDate}
-              class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-            />
-          </div>
-        </div>
-
-        <!-- Cost + Salvage value -->
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-cost">Coût ($)</label>
-            <input
-              id="fa-cost"
-              type="number"
-              step="0.01"
-              min="0"
-              bind:value={form.cost}
-              placeholder="12000.00"
-              class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-            />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-salvage">Valeur résiduelle ($)</label>
-            <input
-              id="fa-salvage"
-              type="number"
-              step="0.01"
-              min="0"
-              bind:value={form.salvageValue}
-              placeholder="0.00"
-              class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-            />
-          </div>
-        </div>
-
-        <!-- Useful life -->
+  <Modal
+    open
+    title={editingAsset ? 'Modifier l’immobilisation' : 'Nouvelle immobilisation'}
+    size="lg"
+    onclose={() => {
+      showModal = false;
+    }}
+    dismissible={!saving}
+  >
+    <div class="space-y-3">
+      <!-- Code + Name -->
+      <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-life">Durée de vie (mois)</label>
+          <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-code">Code</label>
           <input
-            id="fa-life"
-            type="number"
-            step="1"
-            min="1"
-            bind:value={form.usefulLifeMonths}
-            placeholder="ex. 60"
+            id="fa-code"
+            bind:value={form.assetCode}
+            placeholder="ex. IMM-001"
+            class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm font-mono focus:border-accent focus:outline-none"
+          />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-name">Nom</label>
+          <input
+            id="fa-name"
+            bind:value={form.name}
+            placeholder="ex. Véhicule de livraison"
             class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
           />
         </div>
+      </div>
 
-        <!-- Account codes -->
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-exp-acc">
-              Compte dotation (défaut 5100)
-            </label>
-            <input
-              id="fa-exp-acc"
-              bind:value={form.depreciationExpenseAccountCode}
-              placeholder="5100"
-              class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm font-mono focus:border-accent focus:outline-none"
-            />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-contra-acc">
-              Compte amort. cumulé (défaut 1590)
-            </label>
-            <input
-              id="fa-contra-acc"
-              bind:value={form.accumulatedDepreciationAccountCode}
-              placeholder="1590"
-              class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm font-mono focus:border-accent focus:outline-none"
-            />
-          </div>
+      <!-- Category + Acquisition date -->
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-category"
+            >Catégorie</label
+          >
+          <input
+            id="fa-category"
+            bind:value={form.category}
+            placeholder="ex. Matériel roulant"
+            class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+          />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-date"
+            >Date d'acquisition</label
+          >
+          <input
+            id="fa-date"
+            type="date"
+            bind:value={form.acquisitionDate}
+            class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+          />
         </div>
       </div>
 
-      {#if formError}
-        <p class="mt-3 text-sm text-danger">{formError}</p>
-      {/if}
+      <!-- Cost + Salvage value -->
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-cost">Coût ($)</label
+          >
+          <input
+            id="fa-cost"
+            type="number"
+            step="0.01"
+            min="0"
+            bind:value={form.cost}
+            placeholder="12000.00"
+            class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+          />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-salvage"
+            >Valeur résiduelle ($)</label
+          >
+          <input
+            id="fa-salvage"
+            type="number"
+            step="0.01"
+            min="0"
+            bind:value={form.salvageValue}
+            placeholder="0.00"
+            class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+          />
+        </div>
+      </div>
 
-      <div class="mt-5 flex justify-end gap-2">
-        <Button variant="ghost" onclick={() => { showModal = false; }}>Annuler</Button>
+      <!-- Useful life -->
+      <div>
+        <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-life"
+          >Durée de vie (mois)</label
+        >
+        <input
+          id="fa-life"
+          type="number"
+          step="1"
+          min="1"
+          bind:value={form.usefulLifeMonths}
+          placeholder="ex. 60"
+          class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+        />
+      </div>
+
+      <!-- Account codes -->
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-exp-acc">
+            Compte dotation (défaut 5100)
+          </label>
+          <input
+            id="fa-exp-acc"
+            bind:value={form.depreciationExpenseAccountCode}
+            placeholder="5100"
+            class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm font-mono focus:border-accent focus:outline-none"
+          />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-muted" for="fa-contra-acc">
+            Compte amort. cumulé (défaut 1590)
+          </label>
+          <input
+            id="fa-contra-acc"
+            bind:value={form.accumulatedDepreciationAccountCode}
+            placeholder="1590"
+            class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm font-mono focus:border-accent focus:outline-none"
+          />
+        </div>
+      </div>
+    </div>
+
+    {#if formError}
+      <p class="mt-3 text-sm text-danger">{formError}</p>
+    {/if}
+    {#snippet footer()}<div class="flex justify-end gap-2">
+        <Button
+          disabled={saving}
+          variant="secondary"
+          onclick={() => {
+            showModal = false;
+          }}>Annuler</Button
+        >
         <Button variant="primary" disabled={saving} onclick={saveAsset}>
           {saving ? 'Enregistrement…' : 'Enregistrer'}
         </Button>
-      </div>
-    </div>
-  </div>
+      </div>{/snippet}
+  </Modal>
 {/if}
 
 <!-- ── Depreciate modal ────────────────────────────────────────────────────── -->
 {#if depreciatingAsset}
-  <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-    <div class="w-full max-w-sm rounded-xl bg-surface p-6 shadow-xl">
-      <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-base font-bold text-ink">Amortir — {depreciatingAsset.name}</h2>
-        <button class="text-ink-muted hover:text-ink" onclick={closeDepreciate}>✕</button>
+  <Modal
+    open
+    title={`Amortir — ${depreciatingAsset.name}`}
+    size="sm"
+    onclose={closeDepreciate}
+    dismissible={!depreciating}
+  >
+    <div class="space-y-3">
+      <div>
+        <label class="mb-1 block text-xs font-medium text-ink-muted" for="dep-period">
+          Période (1er du mois)
+        </label>
+        <input
+          id="dep-period"
+          type="date"
+          bind:value={depreciationPeriod}
+          class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+        />
       </div>
-
-      <div class="space-y-3">
-        <div>
-          <label class="mb-1 block text-xs font-medium text-ink-muted" for="dep-period">
-            Période (1er du mois)
-          </label>
-          <input
-            id="dep-period"
-            type="date"
-            bind:value={depreciationPeriod}
-            class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-          />
-        </div>
-        <div class="text-xs text-ink-muted">
-          Amort. cumulé actuel : {money(depreciatingAsset.accumulatedDepreciation)}
-          / Coût : {money(depreciatingAsset.cost)}
-        </div>
-      </div>
-
-      {#if depreciateError}
-        <p class="mt-3 text-sm text-danger">{depreciateError}</p>
-      {/if}
-
-      <div class="mt-5 flex justify-end gap-2">
-        <Button variant="ghost" onclick={closeDepreciate}>Annuler</Button>
-        <Button variant="primary" disabled={depreciating || !depreciationPeriod} onclick={runDepreciation}>
-          {depreciating ? 'Comptabilisation…' : 'Amortir'}
-        </Button>
+      <div class="text-xs text-ink-muted">
+        Amort. cumulé actuel : {money(depreciatingAsset.accumulatedDepreciation)}
+        / Coût : {money(depreciatingAsset.cost)}
       </div>
     </div>
-  </div>
+
+    {#if depreciateError}
+      <p class="mt-3 text-sm text-danger">{depreciateError}</p>
+    {/if}
+    {#snippet footer()}<div class="flex justify-end gap-2">
+        <Button disabled={depreciating} variant="secondary" onclick={closeDepreciate}
+          >Annuler</Button
+        >
+        <Button
+          variant="primary"
+          disabled={depreciating || !depreciationPeriod}
+          onclick={runDepreciation}
+        >
+          {depreciating ? 'Comptabilisation…' : 'Amortir'}
+        </Button>
+      </div>{/snippet}
+  </Modal>
 {/if}
 
 <!-- ── Schedule panel ──────────────────────────────────────────────────────── -->
 {#if scheduleAsset}
-  <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-    <div class="w-full max-w-2xl rounded-xl bg-surface p-6 shadow-xl">
-      <div class="mb-4 flex items-center justify-between">
-        <div>
-          <h2 class="text-base font-bold text-ink">Calendrier d'amortissement — {scheduleAsset.name}</h2>
-          <p class="text-xs text-ink-muted">
-            Coût {money(scheduleAsset.cost)} · Résiduel {money(scheduleAsset.salvageValue)} · {scheduleAsset.usefulLifeMonths} mois
-          </p>
-        </div>
-        <button class="text-ink-muted hover:text-ink" onclick={closeSchedule}>✕</button>
-      </div>
+  <Modal
+    open
+    title={`Calendrier d’amortissement — ${scheduleAsset.name}`}
+    size="xl"
+    onclose={closeSchedule}
+  >
+    <p class="text-xs text-ink-muted">
+      Coût {money(scheduleAsset.cost)} · Résiduel {money(scheduleAsset.salvageValue)} · {scheduleAsset.usefulLifeMonths}
+      mois
+    </p>
 
-      <ErrorNotice message={errorSchedule} onretry={() => { if (scheduleAsset) void openSchedule(scheduleAsset); }} />
+    <ErrorNotice
+      message={errorSchedule}
+      onretry={() => {
+        if (scheduleAsset) void openSchedule(scheduleAsset);
+      }}
+    />
 
-      {#if loadingSchedule}
-        <Skeleton rows={5} />
-      {:else if scheduleRows.length > 0}
-        <div class="overflow-x-auto max-h-96 overflow-y-auto">
-          <table class="w-full">
-            <thead class="sticky top-0 bg-surface">
-              <tr class="border-b border-edge text-xs font-semibold tracking-wide text-ink-faint uppercase">
-                <th class="px-3 py-3 text-right">Période</th>
-                <th class="px-3 py-3 text-right">Dotation</th>
-                <th class="px-3 py-3 text-right">Amort. cumulé</th>
-                <th class="px-3 py-3 text-right">Valeur nette</th>
+    {#if loadingSchedule}
+      <Skeleton rows={5} />
+    {:else if scheduleRows.length > 0}
+      <div class="overflow-x-auto max-h-96 overflow-y-auto">
+        <table class="w-full">
+          <thead class="sticky top-0 bg-surface">
+            <tr
+              class="border-b border-edge text-xs font-semibold tracking-wide text-ink-faint uppercase"
+            >
+              <th class="px-3 py-3 text-right">Période</th>
+              <th class="px-3 py-3 text-right">Dotation</th>
+              <th class="px-3 py-3 text-right">Amort. cumulé</th>
+              <th class="px-3 py-3 text-right">Valeur nette</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-edge-soft">
+            {#each scheduleRows as row (row.period)}
+              <tr class="text-sm hover:bg-surface-muted/50">
+                <td class="px-3 py-2.5 text-right tabular-nums text-ink-muted">{row.period}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums">{money(row.accumulated)}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums font-semibold"
+                  >{money(row.bookValue)}</td
+                >
               </tr>
-            </thead>
-            <tbody class="divide-y divide-edge-soft">
-              {#each scheduleRows as row (row.period)}
-                <tr class="text-sm hover:bg-surface-muted/50">
-                  <td class="px-3 py-2.5 text-right tabular-nums text-ink-muted">{row.period}</td>
-                  <td class="px-3 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
-                  <td class="px-3 py-2.5 text-right tabular-nums">{money(row.accumulated)}</td>
-                  <td class="px-3 py-2.5 text-right tabular-nums font-semibold">{money(row.bookValue)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {:else if !loadingSchedule && !errorSchedule}
-        <EmptyState title="Calendrier vide" message="Aucun calendrier disponible pour cet actif." />
-      {/if}
-
-      <div class="mt-5 flex justify-end">
-        <Button variant="ghost" onclick={closeSchedule}>Fermer</Button>
+            {/each}
+          </tbody>
+        </table>
       </div>
-    </div>
-  </div>
+    {:else if !loadingSchedule && !errorSchedule}
+      <EmptyState title="Calendrier vide" message="Aucun calendrier disponible pour cet actif." />
+    {/if}
+    {#snippet footer()}<div class="flex justify-end">
+        <Button variant="ghost" onclick={closeSchedule}>Fermer</Button>
+      </div>{/snippet}
+  </Modal>
 {/if}

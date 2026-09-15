@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import { fade } from 'svelte/transition';
   import { PERMISSIONS } from '@pulsar/shared';
@@ -9,9 +9,22 @@
   import { deskSearch } from '$lib/stores/desk';
   import { getPreferences } from '$lib/api/preferences';
   import { loadAppearanceFrom } from '$lib/stores/appearance';
-  import { Bell, LogOut, Menu, Search, UserRound, X } from 'lucide-svelte';
+  import {
+    Bell,
+    LogOut,
+    Menu,
+    Search,
+    X,
+    Grid2X2,
+    ChevronDown,
+    Inbox,
+    Workflow,
+    Bot,
+    SlidersHorizontal,
+  } from 'lucide-svelte';
+  import { Drawer, Modal } from '$lib/components/ui';
+  import { density, toggleDensity } from '$lib/stores/density';
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
-  import WorkspaceTools from '$lib/components/workflows/WorkspaceTools.svelte';
   import AssistantPanel from '$lib/components/agents/AssistantPanel.svelte';
   import { MODULE_UNIVERSES } from '$lib/modules/universe';
   import { visibleDomains as buildVisibleDomains, type NavDomain } from '$lib/modules/navigation';
@@ -30,7 +43,10 @@
   let notifOpen = $state(false);
   let profileOpen = $state(false);
   let drawerOpen = $state(false);
-  let drawerCloseBtn = $state<HTMLButtonElement | undefined>(undefined);
+  let switcherOpen = $state(false);
+  let switcherSearch = $state('');
+  let lastRoutes = $state<Record<string, string>>({});
+  let workspaceEl = $state<HTMLElement>();
   const unreadCount = $derived(notifications.filter((n) => !n.readAt).length);
 
   const canReadAgentActions = $derived(
@@ -85,30 +101,9 @@
     // Route change (including SPA navigations from drawer links) always closes
     // the mobile drawer — there's nothing to keep open once we've navigated.
     drawerOpen = false;
-  });
-
-  // Escape closes the mobile drawer.
-  $effect(() => {
-    if (!drawerOpen) return;
-    function onKeydown(e: KeyboardEvent) {
-      if (e.key === 'Escape') drawerOpen = false;
-    }
-    window.addEventListener('keydown', onKeydown);
-    return () => window.removeEventListener('keydown', onKeydown);
-  });
-
-  // Lock body scroll while the mobile drawer is open.
-  $effect(() => {
-    if (typeof document === 'undefined') return;
-    document.body.style.overflow = drawerOpen ? 'hidden' : '';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  });
-
-  // Sensible focus on open — land on the drawer's own close control.
-  $effect(() => {
-    if (drawerOpen) drawerCloseBtn?.focus();
+    closeFloaters();
+    switcherOpen = false;
+    workspaceEl?.scrollTo({ top: 0, left: 0 });
   });
 
   onMount(() => {
@@ -225,389 +220,347 @@
     { label: 'Pulsar Apps', hint: 'plateforme', run: () => goto('/apps') },
     { label: 'Framework', hint: 'plateforme', run: () => goto('/framework') },
   ]);
+
+  const canWork = $derived(
+    $auth?.user.permissions.includes(PERMISSIONS.CORE.OPERATING_TASKS_READ) ?? false,
+  );
+  const canTrace = $derived(
+    !!$auth?.tenant.enabledModules.includes('analytics') &&
+      $auth.user.permissions.includes(PERMISSIONS.ANALYTICS.READ),
+  );
+  const isWorkbench = $derived(page.url.pathname.startsWith('/workbench'));
+  const contextTitle = $derived(isWorkbench ? 'Mon travail' : (activeDomain?.label ?? 'Pulsar'));
+  const currentPage = $derived(activeLinks.find((l) => l.href === activeLinkHref)?.label);
+  const switcherDomains = $derived(
+    visibleDomains.filter(
+      (d) =>
+        d.key !== 'dashboard' &&
+        d.label.toLocaleLowerCase('fr').includes(switcherSearch.toLocaleLowerCase('fr').trim()),
+    ),
+  );
+
+  // Keep each app's most recent URL (including filters) for this signed-in workspace only.
+  $effect(() => {
+    const scope = $auth ? $auth.tenant.id + ':' + $auth.user.id : '';
+    if (scope) lastRoutes = {};
+  });
+  beforeNavigate(() => {
+    if (activeDomain && !deskMode) {
+      lastRoutes = { ...lastRoutes, [activeDomain.key]: page.url.pathname + page.url.search };
+    }
+  });
+  function openSwitcher() {
+    closeFloaters();
+    switcherSearch = '';
+    switcherOpen = true;
+  }
 </script>
+
+{#snippet moduleLinks()}
+  {#if activeDomain}
+    <div class="space-y-5">
+      {#each activeDomain.sections as section (section.label ?? section.links[0]?.href)}
+        <section>
+          {#if section.label}<h2 class="px-3 pb-2 text-xs font-medium text-ink-faint">
+              {section.label}
+            </h2>{/if}
+          <div class="grid gap-0.5">
+            {#each section.links as l (l.href)}
+              <a
+                href={l.href}
+                aria-current={linkActive(l.href) ? 'page' : undefined}
+                class={`flex min-h-9 items-center justify-between gap-2 rounded-md px-3 py-2 text-sm transition-colors ${linkActive(l.href) ? 'bg-surface-muted font-medium text-ink' : 'text-ink-muted hover:bg-surface-muted/70 hover:text-ink'}`}
+              >
+                <span class="truncate">{l.label}</span>
+                {#if l.badge}<span
+                    class="rounded bg-danger px-1.5 text-[10px] font-semibold text-white"
+                    >{l.badge}</span
+                  >{/if}
+              </a>
+            {/each}
+          </div>
+        </section>
+      {/each}
+    </div>
+  {/if}
+{/snippet}
 
 {#if $auth}
   <div
-    class="flex min-h-screen"
+    class="flex h-dvh min-h-0 flex-col overflow-hidden bg-canvas"
     style={`--module-accent: ${activeUniverse.accent}; --module-soft: ${activeUniverse.soft}; --module-rgb: ${activeUniverse.rgb};`}
+    data-testid="workspace-shell"
   >
-    {#if deskMode}
-      <div class="flex min-h-screen flex-1 flex-col bg-[#f8f8f7]">
-        <header
-          class="sticky top-0 z-20 flex h-14 items-center border-b border-edge-soft bg-surface/96 px-4 shadow-[0_1px_0_rgba(15,23,42,0.04)] backdrop-blur"
-        >
-          <a
-            href="/apps"
-            class="flex size-8 items-center justify-center rounded-xl bg-[#6f7480] text-sm font-bold text-white shadow-sm"
-            aria-label="Pulsar desk">⬢</a
-          >
-          {#if page.url.pathname === '/apps'}
-            <div
-              class="mx-auto hidden h-9 w-full max-w-sm items-center gap-2 rounded-lg bg-surface-muted px-3 ring-1 ring-edge-soft focus-within:ring-accent sm:flex"
-            >
-              <Search class="size-4 shrink-0 text-ink-faint" />
-              <input
-                class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-faint"
-                placeholder="Rechercher une app…"
-                bind:value={$deskSearch}
-                aria-label="Rechercher une app"
-              />
-              {#if $deskSearch}
-                <button
-                  type="button"
-                  class="rounded-md px-1 text-xs text-ink-faint hover:text-ink"
-                  onclick={() => ($deskSearch = '')}
-                  aria-label="Effacer">✕</button
-                >
-              {/if}
-            </div>
-          {:else}
-            <button
-              class="mx-auto hidden h-9 w-full max-w-sm items-center justify-between rounded-lg bg-surface-muted px-3 text-sm text-ink-faint ring-1 ring-edge-soft transition hover:bg-surface sm:flex"
-              onclick={() => {
-                closeFloaters();
-                paletteOpen = true;
-              }}
-              aria-label="Rechercher (Ctrl+K)"
-            >
-              <span class="inline-flex items-center gap-2"><Search class="size-4" /> Search</span>
-              <span class="text-xs">Ctrl+K</span>
-            </button>
-          {/if}
-          <div class="flex items-center gap-2">
-            <button
-              class="relative flex size-8 items-center justify-center rounded-full text-ink-muted hover:bg-surface-muted hover:text-ink"
-              onclick={() => {
-                profileOpen = false;
-                notifOpen = !notifOpen;
-              }}
-              aria-label="Notifications"
-              aria-expanded={notifOpen}
-            >
-              <Bell class="size-4" />
-              {#if unreadCount > 0}<span
-                  class="absolute top-1 right-1 size-2 rounded-full bg-danger"
-                ></span>{/if}
-            </button>
-            <button
-              class={`grid size-8 place-items-center rounded-full text-xs font-semibold transition ${profileOpen ? 'bg-ink text-white' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}
-              onclick={() => {
-                notifOpen = false;
-                profileOpen = !profileOpen;
-              }}
-              aria-label="Profil utilisateur"
-              aria-expanded={profileOpen}
-              title={$auth.user.email}
-            >
-              {initials()}
-            </button>
-          </div>
-        </header>
-        <main class="min-w-0 flex-1 overflow-x-hidden">
-          {#key page.url.pathname}
-            <div in:fade={{ duration: reduceMotion ? 0 : 120 }}>
-              {@render children()}
-            </div>
-          {/key}
-        </main>
-      </div>
-    {:else}
-      <!-- Module shell — once an app is opened, show ONLY that selected universe. Global app switching lives on /apps. -->
-      <!-- Below `lg`, the sidebar is an off-canvas drawer (translate + overlay); at `lg`+ it's the
-           original static sidebar — `lg:static lg:translate-x-0` restores the exact desktop layout. -->
-      <aside
-        class={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] shrink-0 flex-col border-r border-edge bg-surface ${reduceMotion ? '' : 'transition-transform duration-200 ease-out'} ${drawerOpen ? 'translate-x-0' : '-translate-x-full'} lg:static lg:z-auto lg:w-64 lg:max-w-none lg:translate-x-0`}
-        aria-label="Menu principal"
-      >
-        <div class="border-b border-edge-soft p-4">
-          <div class="flex items-center justify-between gap-2">
-            <a
-              href="/apps"
-              class="inline-flex items-center gap-2 rounded-xl bg-surface-muted px-3 py-2 text-xs font-semibold text-ink-muted transition hover:bg-accent-soft hover:text-accent"
-              aria-label="Retour au bureau Pulsar"
-            >
-              <span class="text-base leading-none">⬢</span>
-              Bureau des apps
-            </a>
-            <button
-              type="button"
-              bind:this={drawerCloseBtn}
-              class="flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-muted hover:text-ink lg:hidden"
-              onclick={() => (drawerOpen = false)}
-              aria-label="Fermer le menu"
-            >
-              <X class="size-4" />
-            </button>
-          </div>
-          <div class="mt-5 flex items-start gap-3">
-            {#if activeDomain}
-              {@const Icon = activeDomain.icon}
-              <div
-                class="grid size-11 place-items-center rounded-2xl text-white shadow-sm"
-                style={`background: ${activeUniverse.accent}`}
-              >
-                <Icon class="size-5" />
-              </div>
-            {/if}
-            <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2">
-                <h1 class="truncate text-base font-bold text-ink">{activeUniverse.title}</h1>
-                <span
-                  class="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
-                  style={`background: ${activeUniverse.accent}`}>{activeUniverse.signal}</span
-                >
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <nav class="min-h-0 flex-1 overflow-y-auto p-3" aria-label="Menu du module sélectionné">
-          {#if activeDomain && activeDomain.sections.length > 0}
-            <div class="space-y-4">
-              {#each activeDomain.sections as section (section.label ?? section.links[0]?.href)}
-                <section>
-                  {#if section.label}
-                    <div
-                      class="px-2 pb-1 text-[10px] font-semibold tracking-[0.18em] text-ink-faint uppercase"
-                    >
-                      {section.label}
-                    </div>
-                  {/if}
-                  <div class="grid gap-1">
-                    {#each section.links as l (l.href)}
-                      <a
-                        href={l.href}
-                        class={`flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm transition ${linkActive(l.href) ? 'font-semibold text-white shadow-sm' : 'text-ink-muted hover:bg-surface-muted hover:text-ink'}`}
-                        style={linkActive(l.href) ? `background: ${activeUniverse.accent}` : ''}
-                      >
-                        <span class="truncate">{l.label}</span>
-                        {#if l.badge}<span
-                            class="rounded-full bg-danger px-1.5 text-[10px] font-semibold text-white"
-                            >{l.badge}</span
-                          >{/if}
-                      </a>
-                    {/each}
-                  </div>
-                </section>
-              {/each}
-            </div>
-          {:else}
-            <p class="rounded-2xl bg-surface-muted p-3 text-sm text-ink-muted">
-              Ce module n'a pas encore de menu dédié.
-            </p>
-          {/if}
-        </nav>
-
-        <div class="border-t border-edge-soft p-3">
-          <div class="mb-3 rounded-2xl bg-surface-muted p-3 text-xs text-ink-muted">
-            <div class="font-semibold text-ink">{$auth.tenant.name}</div>
-            <div class="mt-1 font-mono text-[10px] text-ink-faint">tenant {$auth.tenant.slug}</div>
-          </div>
-          <div class="flex gap-2">
-            <button
-              class="relative flex size-10 items-center justify-center rounded-xl text-ink-muted hover:bg-surface-muted hover:text-ink"
-              onclick={() => {
-                profileOpen = false;
-                notifOpen = !notifOpen;
-              }}
-              aria-label="Notifications"
-              aria-expanded={notifOpen}
-            >
-              <Bell class="size-5" />
-              {#if unreadCount > 0}<span
-                  class="absolute top-1 right-1 size-2 rounded-full bg-danger"
-                ></span>{/if}
-            </button>
-            <button
-              class={`grid size-10 flex-1 place-items-center rounded-xl text-xs font-bold transition-colors ${profileOpen ? 'bg-ink text-white' : 'bg-surface-muted text-ink hover:bg-accent-soft hover:text-accent'}`}
-              onclick={() => {
-                notifOpen = false;
-                profileOpen = !profileOpen;
-              }}
-              aria-label="Profil utilisateur"
-              aria-expanded={profileOpen}
-              title="Profil utilisateur"
-            >
-              {initials()}
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {#if drawerOpen}
+    <a
+      href="#workspace-content"
+      class="sr-only z-[60] rounded-md bg-surface p-3 text-sm focus:not-sr-only focus:absolute focus:top-2 focus:left-2"
+      >Aller au contenu</a
+    >
+    <header
+      class="z-20 flex h-14 shrink-0 items-center gap-2 border-b border-edge bg-surface px-3 sm:gap-3 sm:px-4"
+    >
+      {#if !deskMode}
         <button
-          type="button"
-          class="fixed inset-0 z-40 bg-ink/40 lg:hidden"
-          onclick={() => (drawerOpen = false)}
-          aria-label="Fermer le menu"
-        ></button>
+          class="shell-icon lg:hidden"
+          onclick={() => (drawerOpen = true)}
+          aria-label="Ouvrir le menu"
+          aria-expanded={drawerOpen}><Menu class="size-5" /></button
+        >
       {/if}
-
-      <div class="flex min-w-0 flex-1 flex-col">
-        <!-- Mobile-only top bar: hamburger + active module title + notifications/profile
-             reachable without opening the drawer. Hidden entirely at `lg`+ (static sidebar). -->
-        <header
-          class="flex h-14 shrink-0 items-center gap-2 border-b border-edge bg-surface px-3 lg:hidden"
-        >
-          <button
-            type="button"
-            class="flex size-9 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-muted hover:text-ink"
-            onclick={() => (drawerOpen = true)}
-            aria-label="Ouvrir le menu"
-            aria-expanded={drawerOpen}
-          >
-            <Menu class="size-5" />
-          </button>
-          {#if activeDomain}
-            {@const Icon = activeDomain.icon}
-            <div
-              class="grid size-7 shrink-0 place-items-center rounded-lg text-white"
-              style={`background: ${activeUniverse.accent}`}
-            >
-              <Icon class="size-4" />
-            </div>
-          {/if}
-          <span class="truncate text-sm font-semibold text-ink">{activeUniverse.title}</span>
-          <div class="ml-auto flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              class="relative flex size-9 items-center justify-center rounded-full text-ink-muted hover:bg-surface-muted hover:text-ink"
-              onclick={() => {
-                profileOpen = false;
-                notifOpen = !notifOpen;
-              }}
-              aria-label="Notifications"
-              aria-expanded={notifOpen}
-            >
-              <Bell class="size-4" />
-              {#if unreadCount > 0}<span
-                  class="absolute top-1 right-1 size-2 rounded-full bg-danger"
-                ></span>{/if}
-            </button>
-            <button
-              type="button"
-              class={`grid size-9 place-items-center rounded-full text-xs font-semibold transition ${profileOpen ? 'bg-ink text-white' : 'bg-surface-muted text-ink hover:bg-accent-soft hover:text-accent'}`}
-              onclick={() => {
-                notifOpen = false;
-                profileOpen = !profileOpen;
-              }}
-              aria-label="Profil utilisateur"
-              aria-expanded={profileOpen}
-              title={$auth.user.email}
-            >
-              {initials()}
-            </button>
-          </div>
-        </header>
-
-        <main
-          class="min-w-0 flex-1 overflow-x-hidden p-4 lg:p-6"
-          style={`background: radial-gradient(circle at top left, rgb(${activeUniverse.rgb} / 0.10), transparent 360px), var(--color-canvas);`}
-        >
-          <WorkspaceTools
-            onsearch={() => {
-              paletteOpen = true;
-            }}
-          />
-          {#key page.url.pathname}
-            <div in:fade={{ duration: reduceMotion ? 0 : 120 }}>
-              {@render children()}
-            </div>
-          {/key}
-        </main>
-      </div>
-    {/if}
-
-    {#if profileOpen}
-      <div
-        class={`fixed z-50 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-edge bg-surface p-3 shadow-pop ${deskMode ? 'top-14 right-4' : 'top-16 right-4 lg:top-auto lg:right-auto lg:bottom-4 lg:left-[17rem]'}`}
+      <a
+        href="/apps"
+        aria-label="Retour au bureau Pulsar"
+        class="flex shrink-0 items-center gap-2 rounded-md"
       >
-        <div class="flex items-start gap-3 border-b border-edge-soft pb-3">
-          <div
-            class="grid size-11 place-items-center rounded-2xl text-sm font-bold text-white"
-            style={`background: ${activeUniverse.accent}`}
-          >
-            {initials()}
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-bold text-ink">{displayName()}</div>
-            <div class="truncate text-xs text-ink-muted">{$auth.user.email}</div>
-            <div
-              class="mt-2 inline-flex rounded-full bg-ok-soft px-2 py-0.5 text-[10px] font-bold text-ok"
-            >
-              Compte actif
-            </div>
-          </div>
-        </div>
-        <div class="grid gap-2 py-3 text-xs">
-          <div class="rounded-xl bg-surface-muted p-3">
-            <div class="font-semibold text-ink">Tenant</div>
-            <div class="mt-1 flex items-center justify-between gap-2">
-              <span class="truncate text-ink-muted">{$auth.tenant.name}</span>
-              <span
-                class="rounded-full px-2 py-0.5 font-mono text-[10px] font-bold"
-                style={`background: ${activeUniverse.soft}; color: ${activeUniverse.accent}`}
-                >{$auth.tenant.slug}</span
-              >
-            </div>
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <div class="rounded-xl bg-surface-muted p-3">
-              <div class="text-ink-faint">Modules</div>
-              <div class="mt-1 text-base font-bold text-ink">
-                {$auth.tenant.enabledModules.length}
-              </div>
-            </div>
-            <div class="rounded-xl bg-surface-muted p-3">
-              <div class="text-ink-faint">Permissions</div>
-              <div class="mt-1 text-base font-bold text-ink">{$auth.user.permissions.length}</div>
-            </div>
-          </div>
-        </div>
-        <div class="flex gap-2 border-t border-edge-soft pt-3">
-          <a
-            href="/settings/users"
-            class="flex flex-1 items-center justify-center gap-2 rounded-lg bg-surface-muted px-3 py-2 text-xs font-semibold text-ink hover:bg-accent-soft hover:text-accent"
-          >
-            <UserRound class="size-4" /> Profil
-          </a>
-          <button
-            class="flex flex-1 items-center justify-center gap-2 rounded-lg bg-danger/10 px-3 py-2 text-xs font-semibold text-danger hover:bg-danger hover:text-white"
-            onclick={logout}
-          >
-            <LogOut class="size-4" /> Déconnexion
-          </button>
-        </div>
-      </div>
-    {/if}
-
-    {#if notifOpen}
-      <div
-        class={`fixed z-30 max-h-96 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-card border border-edge bg-surface p-2 shadow-pop ${deskMode ? 'top-14 right-4' : 'top-16 right-4 lg:top-auto lg:right-auto lg:bottom-4 lg:left-[17rem]'}`}
+        <span
+          class="grid size-8 place-items-center rounded-lg bg-zinc-800 text-base font-semibold text-white"
+          >⬢</span
+        >
+        <span class="hidden text-sm font-semibold sm:inline">Pulsar</span>
+      </a>
+      <span class="hidden h-5 w-px bg-edge sm:block"></span>
+      <button
+        class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium hover:bg-surface-muted"
+        onclick={openSwitcher}
+        aria-label="Changer d’application"
+        aria-haspopup="dialog"
       >
-        {#if notifications.length === 0}
-          <p class="px-2 py-3 text-center text-xs text-ink-faint">Aucune notification</p>
-        {:else}
-          {#each notifications as n (n.id)}
-            <div class={`mb-1 rounded p-2 text-xs ${n.readAt ? 'opacity-60' : ''}`}>
-              <div class="font-semibold text-ink">{n.title}</div>
-              <div class="text-ink-muted">{n.body}</div>
-              <div class="mt-1 flex items-center justify-between">
-                <span class="text-ink-faint">{new Date(n.createdAt).toLocaleString()}</span>
-                {#if !n.readAt}
-                  <button
-                    class="rounded px-1.5 py-0.5 text-[10px] text-accent hover:bg-accent-soft"
-                    onclick={() => markRead(n.id)}>Marquer lu</button
-                  >
-                {/if}
-              </div>
-            </div>
-          {/each}
+        {#if deskMode}<Grid2X2 class="size-4 shrink-0 text-ink-muted" />{:else if activeDomain}
+          {@const Icon = activeDomain.icon}
+          <span
+            class="grid size-6 shrink-0 place-items-center rounded-md text-white"
+            style={`background: ${activeUniverse.accent}`}><Icon class="size-3.5" /></span
+          >
         {/if}
+        <span class="max-w-32 truncate">{deskMode ? 'Bureau' : contextTitle}</span><ChevronDown
+          class="size-3.5 shrink-0 text-ink-faint"
+        />
+      </button>
+      {#if !deskMode && currentPage && currentPage !== contextTitle}
+        <span class="hidden min-w-0 truncate text-xs text-ink-muted xl:block"
+          >/ &nbsp; {currentPage}</span
+        >
+      {/if}
+      <div class="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
+        {#if page.url.pathname === '/apps'}
+          <label
+            class="hidden h-9 w-52 items-center gap-2 rounded-md border border-edge bg-surface px-2.5 md:flex lg:w-64"
+          >
+            <Search class="size-4 shrink-0 text-ink-faint" /><input
+              class="min-w-0 flex-1 bg-transparent text-sm outline-none"
+              placeholder="Rechercher une app…"
+              bind:value={$deskSearch}
+              aria-label="Rechercher une app"
+            />
+            {#if $deskSearch}<button
+                class="text-ink-muted"
+                onclick={() => ($deskSearch = '')}
+                aria-label="Effacer"><X class="size-3.5" /></button
+              >{/if}
+          </label>
+        {:else}
+          <nav class="hidden items-center gap-1 xl:flex" aria-label="Outils de travail">
+            {#if canWork}<a
+                class="flex items-center gap-1.5 rounded-md px-2 py-2 text-xs text-ink-muted hover:bg-surface-muted"
+                href="/workbench"><Inbox class="size-3.5" /> Mon travail</a
+              >{/if}
+            {#if canTrace}<a
+                class="flex items-center gap-1.5 rounded-md px-2 py-2 text-xs text-ink-muted hover:bg-surface-muted"
+                href="/workflows"><Workflow class="size-3.5" /> Dossiers connectés</a
+              >{/if}
+          </nav>
+        {/if}
+        <button
+          class="shell-icon"
+          onclick={() => {
+            closeFloaters();
+            paletteOpen = true;
+          }}
+          aria-label="Rechercher (Ctrl+K)"
+          title="Aller à… (Ctrl+K)"><Search class="size-4" /></button
+        >
+        {#if canChatAgents}<button
+            class="shell-icon hidden sm:inline-flex"
+            onclick={() => {
+              closeFloaters();
+              assistantOpen = true;
+            }}
+            aria-label="Assistant IA"
+            title="Assistant IA"><Bot class="size-4" /></button
+          >{/if}
+        <button
+          class="shell-icon relative"
+          onclick={() => {
+            profileOpen = false;
+            notifOpen = !notifOpen;
+          }}
+          aria-label="Notifications"
+          aria-expanded={notifOpen}
+        >
+          <Bell class="size-4" />{#if unreadCount > 0}<span
+              class="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-danger"
+            ></span>{/if}
+        </button>
+        <button
+          class="grid size-8 shrink-0 place-items-center rounded-full border border-edge bg-surface-muted text-xs font-medium text-ink"
+          onclick={() => {
+            notifOpen = false;
+            profileOpen = !profileOpen;
+          }}
+          aria-label="Profil utilisateur"
+          aria-expanded={profileOpen}
+          title={$auth.user.email}>{initials()}</button
+        >
       </div>
-    {/if}
+    </header>
+
+    <div class="flex min-h-0 min-w-0 flex-1">
+      {#if !deskMode}
+        <aside
+          class="hidden w-56 shrink-0 flex-col border-r border-edge bg-surface lg:flex"
+          aria-label="Menu principal"
+        >
+          <nav
+            class="workspace-scroll min-h-0 flex-1 overflow-y-auto px-3 py-4"
+            aria-label="Menu du module sélectionné"
+          >
+            {@render moduleLinks()}
+          </nav>
+          <div class="shrink-0 border-t border-edge px-4 py-3">
+            <div class="truncate text-xs font-medium text-ink">{$auth.tenant.name}</div>
+            <a
+              class="mt-1 inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink"
+              href="/apps"><Grid2X2 class="size-3.5" /> Bureau des apps</a
+            >
+          </div>
+        </aside>
+      {/if}
+      <main
+        id="workspace-content"
+        data-workspace-scroll
+        bind:this={workspaceEl}
+        tabindex="-1"
+        class={`workspace-scroll min-h-0 min-w-0 flex-1 overflow-auto focus:outline-none ${deskMode ? '' : 'p-4 lg:p-6'}`}
+      >
+        {#key page.url.pathname}
+          <div class="min-w-0" in:fade={{ duration: reduceMotion ? 0 : 120 }}>
+            {@render children()}
+          </div>
+        {/key}
+      </main>
+    </div>
   </div>
+
+  <Drawer bind:open={drawerOpen} title={contextTitle} width="sm" side="left">
+    <nav aria-label="Menu du module sélectionné">{@render moduleLinks()}</nav>
+    {#snippet footer()}<a href="/apps" class="mr-auto text-sm font-medium">Bureau des apps</a
+      >{/snippet}
+  </Drawer>
+
+  <Modal bind:open={switcherOpen} title="Changer d’application" size="lg">
+    <label class="mb-4 flex items-center gap-2 rounded-md border border-edge px-3 py-2">
+      <Search class="size-4 text-ink-muted" /><input
+        class="min-w-0 flex-1 bg-transparent text-sm outline-none"
+        bind:value={switcherSearch}
+        aria-label="Filtrer les applications"
+        placeholder="Trouver une application…"
+      />
+    </label>
+    <div class="grid grid-cols-3 gap-2 sm:grid-cols-5" aria-label="Applications accessibles">
+      {#each switcherDomains as domain (domain.key)}
+        {@const Icon = domain.icon}
+        {@const universe = MODULE_UNIVERSES[domain.key] ?? MODULE_UNIVERSES.dashboard}
+        <a
+          href={lastRoutes[domain.key] ?? domain.home}
+          onclick={() => (switcherOpen = false)}
+          class="flex min-h-24 flex-col items-center gap-2 rounded-lg p-2 text-center text-xs text-ink hover:bg-surface-muted"
+        >
+          <span
+            class="grid size-11 place-items-center rounded-xl text-white shadow-sm"
+            style={`background: ${universe.accent}`}><Icon class="size-5" /></span
+          >
+          <span class="line-clamp-2">{domain.label}</span>
+        </a>
+      {:else}<p class="col-span-full py-8 text-center text-sm text-ink-muted">
+          Aucune application correspondante.
+        </p>{/each}
+    </div>
+    {#snippet footer()}
+      <div class="flex w-full flex-wrap items-center justify-between gap-3 text-sm">
+        <a
+          href="/apps"
+          onclick={() => (switcherOpen = false)}
+          class="inline-flex items-center gap-2 font-medium"
+          ><Grid2X2 class="size-4" /> Ouvrir le bureau</a
+        >
+        <div class="flex gap-4">
+          {#if canWork}<a
+              href="/workbench"
+              onclick={() => (switcherOpen = false)}
+              class="text-ink-muted">Mon travail</a
+            >{/if}
+          {#if canTrace}<a
+              href="/workflows"
+              onclick={() => (switcherOpen = false)}
+              class="text-ink-muted">Dossiers connectés</a
+            >{/if}
+        </div>
+      </div>
+    {/snippet}
+  </Modal>
+
+  <Modal bind:open={profileOpen} title="Votre espace" size="sm">
+    <div class="mb-4 border-b border-edge pb-4">
+      <p class="text-sm font-semibold">{displayName()}</p>
+      <p class="mt-1 break-all text-xs text-ink-muted">{$auth.user.email}</p>
+      <p class="mt-2 text-xs text-ink-muted">
+        {$auth.tenant.name} · {$auth.tenant.enabledModules.length} modules
+      </p>
+    </div>
+    <div class="grid gap-2 text-sm">
+      <a
+        href="/personalize"
+        onclick={closeFloaters}
+        class="flex items-center gap-2 rounded-md p-2 hover:bg-surface-muted"
+        ><SlidersHorizontal class="size-4" /> Personnaliser mon espace</a
+      >
+      <button
+        class="flex items-center justify-between gap-2 rounded-md p-2 text-left hover:bg-surface-muted"
+        onclick={toggleDensity}
+        aria-pressed={$density === 'compact'}
+        ><span>Tables compactes</span><span class="text-xs text-ink-muted"
+          >{$density === 'compact' ? 'Activées' : 'Désactivées'}</span
+        ></button
+      >
+      {#if canChatAgents}<button
+          class="flex items-center gap-2 rounded-md p-2 hover:bg-surface-muted"
+          onclick={() => {
+            closeFloaters();
+            assistantOpen = true;
+          }}><Bot class="size-4" /> Assistant IA</button
+        >{/if}
+    </div>
+    {#snippet footer()}<button
+        class="mr-auto flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-danger hover:bg-danger-soft"
+        onclick={logout}><LogOut class="size-4" /> Déconnexion</button
+      >{/snippet}
+  </Modal>
+
+  <Drawer bind:open={notifOpen} title="Notifications" width="md">
+    {#each notifications as n (n.id)}
+      <article class="border-b border-edge-soft py-3">
+        <h3 class="text-sm font-medium">{n.title}</h3>
+        <p class="mt-1 text-sm text-ink-muted">{n.body}</p>
+        <div class="mt-2 flex items-center justify-between gap-2 text-xs text-ink-muted">
+          <time datetime={n.createdAt}>{new Date(n.createdAt).toLocaleString('fr-CA')}</time>
+          {#if !n.readAt}<button
+              class="rounded-md px-2 py-1 text-ink hover:bg-surface-muted"
+              onclick={() => markRead(n.id)}>Marquer lu</button
+            >{/if}
+        </div>
+      </article>
+    {:else}<p class="py-8 text-center text-sm text-ink-muted">Aucune notification à lire.</p>{/each}
+  </Drawer>
   <CommandPalette bind:open={paletteOpen} commands={paletteCommands} />
   {#if canChatAgents}<AssistantPanel bind:open={assistantOpen} />{/if}
 {/if}

@@ -6,7 +6,105 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
-> **Relance en cours (2026-09-13) — `codex/control-center-workflows`.**
+> **Livraison regroupée (2026-09-14).** Les 14 lots récents sont désormais réunis
+> dans la [PR unique #79](https://github.com/SamChampagne/Pulsar/pull/79), vers `main`.
+> Les PR #66 à #78 sont remplacées, sans suppression de leurs branches. Les tests web
+> génèrent maintenant leur configuration SvelteKit avant Vitest, y compris sur un
+> checkout propre. Les runs CI obsolètes d'une même PR sont annulés automatiquement;
+> les cinq jobs restent actifs. Vérifier les checks de #79 avant toute fusion.
+>
+> **Flotte visuelle (2026-09-14) — `codex/fleet-visual-workspace`.**
+> Parc filtrable, échéancier UTC, historique et interventions en panneaux; documents
+> et chargements reliés selon les droits. Concurrence maintenance durcie : aucun
+> retour disponible tant qu’un autre ordre reste actif. Registre conservé, DÉMO locale,
+> aucune migration ni réservation d’atelier. Suite : Fabrication visuelle.
+> [Contrats, preuves et limites](./plans/fleet-visual-workspace.md).
+>
+> **WMS rangement et journal (2026-09-14) — `codex/wms-putaway-traceability`.**
+> File par entrepôt, mouvement confirmé, journal relié aux articles/emplacements/dossiers,
+> unités capturées et reprise durable du MOVE après coupure. Scénario local DÉMO prêt à essayer.
+> Aucun partiel ni réservation. Suite : Flotte visuelle; anciens référentiels WMS à paginer.
+> [Contrats, scénario et limites](./plans/wms-putaway-traceability.md).
+>
+> **WMS guidé (2026-09-14) — `codex/wms-guided-operations`.**
+> Réception/préparation par lignes : unités, emplacements, stock physique et manque,
+> correction en panneau, validation globale confirmée et liens Cour/entrepôt.
+> Édition et validation sérialisées, versions optimistes et références revérifiées.
+> Aucun prélèvement partiel ni réservation. Suite : rangement traçable et MOVE robuste.
+> [Contrats, validation et limites](./plans/wms-guided-operations.md).
+>
+> **WMS visuel (2026-09-14) — `codex/wms-visual-workspace`.**
+> Poste de travail par entrepôt : réceptionner, ranger, préparer, finaliser;
+> zones et emplacements, stock en panneau, classement visuel et déplacement confirmé.
+> Référentiel WMS autonome en lecture, stock sérialisé entre opérateurs, contrôles
+> de site/droits et audit. Ce n'est ni un plan physique ni un stock réservé.
+> [Contrats, validation et suite](./plans/wms-visual-workspace.md).
+>
+> **Cour ↔ TMS ↔ WMS connectés (2026-09-14) — `codex/yard-connected-dossiers`.**
+> Associations explicites aux chargements, réceptions et préparations, partagées
+> entre rendez-vous et arrivée; navigation aller-retour depuis les fiches métier.
+> Droits croisés, compatibilité site/sens, idempotence, audit et historique protégé.
+> Aucun changement automatique de stock/statut. Suite : WMS visuel.
+> [Contrats, tests et limites](./plans/yard-connected-dossiers.md).
+>
+> **Cour & quais visuel (2026-09-14) — `codex/yard-visual-workspace`.**
+> Nouvelle priorité : approfondir chaque module avec une UI métier, bureau conservé.
+> Plan configurable, occupation et planning par site, arrivées et mouvements en
+> panneaux confirmés. Affectations concurrentes durcies; géométrie séparée des opérations.
+> Migration locale additive, aucun push/déploiement. Contrats, tests et suite :
+> [yard-visual-workspace.md](./plans/yard-visual-workspace.md).
+>
+> **Import CSV bancaire, lot 6 (2026-09-14) — `codex/bank-csv-import`.**
+> Fichier ou collage → prévisualisation → confirmation. Validation stricte, lot atomique,
+> doublons contrôlés en base et contre les mouvements historiques. Aucun virement ni rapprochement
+> automatique. Contrats, formats et limites : [bank-csv-import.md](./plans/bank-csv-import.md).
+>
+> **Dossiers financiers connectés, lot 5 (2026-09-14) — `codex/finance-connected-flow`.**
+> Association explicite audit → facture existante, paiements et contexte bancaire reliés.
+> Rapprochement gardé par montant/sens/devise/écriture réelle, protections concurrence et annulation.
+> Migration additive appliquée localement; aucun transfert bancaire, push ou déploiement.
+> Contrats, tests et limites : [finance-connected-flow.md](./plans/finance-connected-flow.md).
+>
+> **Audit et traçabilité comptable, lot 4 (2026-09-14) — `codex/ui-finance-audit`.**
+> Contrôle serveur partie/facture et édition/soumission concurrentes durcis.
+> Audit transporteur en français, panneaux de saisie/litige, liens vers chargements,
+> journal filtré depuis le paiement et économies par devise. Le suivi d’audit reste
+> distinct du règlement comptable : [ui-finance-audit.md](./plans/ui-finance-audit.md).
+>
+> **Factures et paiements, lot 3 (2026-09-14) — `codex/ui-billing`.** Liste lisible,
+> allocations par devise, parcours brouillon → validation, dossiers en panneaux
+> et liens facture/ordre/chargement/paiement. Projections API tenant-scopées, sans
+> modification comptable. Périmètre, tests et limites : [ui-billing.md](./plans/ui-billing.md).
+>
+> **Fiches de travail, lot 2 (2026-09-14) — `codex/ui-records`.** Opportunité,
+> commande de vente, ordre de transport et chargement : navigation de sections,
+> éditeur CRM commun, panneaux de préparation et erreurs locales. Contrat de lecture
+> des lignes de commande corrigé. Périmètre, tests et suite : [ui-records.md](./plans/ui-records.md).
+>
+> **Refonte des écrans, lot 1 (2026-09-14) — `codex/ui-screens`.** Fiches CRM,
+> réglages des modules, fenêtres Finance, accueils Agents/Flotte/Entrepôt/Intégrations,
+> confirmations et onglets harmonisés. Bureau conservé, aucune API métier modifiée.
+> Inventaire des 138 pages et reste à faire : [ui-screens.md](./plans/ui-screens.md).
+>
+> **Socle UI global (2026-09-14) — `codex/ui-workspace`.** Bureau iPhone conservé,
+> cadre et navigation stables, changement d’app rapide, composants communs harmonisés,
+> panneaux CRM, Dispatch et Finance allégés. Aucun backend ni droit modifié.
+> Périmètre et suite : [ui-workspace.md](./plans/ui-workspace.md).
+>
+> **Lot CRM pipelines et connexions (2026-09-14) — `codex/crm-communications`.**
+> Pipelines et colonnes configurables, actions courriel à l'entrée d'une colonne,
+> contact principal explicite, arrêt sur sortie/changement de destinataire, outils agents
+> adaptés aux colonnes et page Connexions centralisée. SMTP/IA existants réutilisés ;
+> SMS/Graph/Meta et multi-comptes non livrés. Migration additive appliquée en local.
+> Contrat et qualification : [crm-pipelines-connections.md](./plans/crm-pipelines-connections.md).
+>
+> **Lot précédent CRM communications (2026-09-14) — même branche.**
+> Scénarios courriel configurables, simulation, gouvernance d'agent sans LLM obligatoire,
+> consentement/désabonnement, pause/reprise/arrêt, historique depuis les contacts. Migration
+> additive appliquée localement ; SMS et fournisseurs réels non qualifiés. Périmètre,
+> tests et limites : [crm-communications.md](./plans/crm-communications.md).
+>
+> **Relance précédente (2026-09-13) — `codex/control-center-workflows`.**
 > Console SaaS `/platform/operations`, diagnostics par entreprise, catalogue complet,
 > dossiers intermodules `/workflows`, vues personnelles et accès contextuels livrés sur
 > la branche. Profil OVH Linux/Docker/Nginx préparé pour `pulsar.intebec.ca` ; **pas déployé**.

@@ -135,9 +135,12 @@
     try {
       const [ords, locsRes] = await Promise.all([
         api<PickRow[]>('/wms/pick-orders', {
-          query: shipmentFilter ? { shipmentId: shipmentFilter } : undefined,
+          query: {
+            shipmentId: shipmentFilter || undefined,
+            locationId: page.url.searchParams.get('locationId') || undefined,
+          },
         }),
-        api<Paginated<LocationOption>>('/transportation/locations', { query: { pageSize: 100 } }),
+        api<Paginated<LocationOption>>('/wms/sites', { query: { pageSize: 100 } }),
       ]);
       orders = ords;
       warehouses = locsRes.items.filter((l) => l.type === 'WAREHOUSE');
@@ -156,7 +159,7 @@
   });
 
   async function openCreate() {
-    createLocationId = warehouses[0]?.id ?? '';
+    createLocationId = page.url.searchParams.get('locationId') || warehouses[0]?.id || '';
     createReference = '';
     createNote = '';
     customData = {};
@@ -201,7 +204,16 @@
 </PageHeader>
 
 <div class="mb-4 flex items-center gap-3">
-  <a href="/wms" class="text-sm text-accent hover:underline">← Warehouse</a>
+  <a
+    href={page.url.searchParams.get('locationId')
+      ? `/wms?site=${encodeURIComponent(page.url.searchParams.get('locationId')!)}`
+      : '/wms'}
+    class="text-sm text-accent hover:underline">← Entrepôt</a
+  >
+  {#if page.url.searchParams.get('locationId')}<span class="text-xs text-ink-muted"
+      >Site : {locName(page.url.searchParams.get('locationId')!)} ·
+      <a href="/wms/picking" class="text-accent hover:underline">Tous les sites</a></span
+    >{/if}
   {#if shipmentFilter}
     <span class="text-sm text-ink-muted">
       Filtré par shipment —
@@ -272,7 +284,9 @@
   <div class="flex gap-3 overflow-x-auto pb-2">
     {#each KANBAN_COLS as col (col.status)}
       {@const items = orders.filter((o) => o.status === col.status)}
-      <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+      <div
+        class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted"
+      >
         <div class="flex items-center justify-between px-3 py-2">
           <Badge tone={statusTone(col.status)}>{col.label}</Badge>
           <span class="font-mono text-xs text-ink-muted">{items.length}</span>
@@ -288,7 +302,9 @@
               >
                 <div class="font-semibold text-sm text-ink">{o.number}</div>
                 {#if o.shipment}
-                  <div class="mt-0.5 text-[11px] font-medium text-accent">↔ {o.shipment.shipmentNumber}</div>
+                  <div class="mt-0.5 text-[11px] font-medium text-accent">
+                    ↔ {o.shipment.shipmentNumber}
+                  </div>
                 {/if}
                 <div class="mt-0.5 truncate text-xs text-ink-muted">{locName(o.locationId)}</div>
                 <div class="mt-1 flex items-center justify-between text-[11px] text-ink-faint">
@@ -326,7 +342,12 @@
     {/if}
   </div>
   {#snippet footer()}
-    <Button variant="secondary" onclick={() => { createOpen = false; }}>Annuler</Button>
+    <Button
+      variant="secondary"
+      onclick={() => {
+        createOpen = false;
+      }}>Annuler</Button
+    >
     <Button loading={createSaving} onclick={submitCreate}>Créer</Button>
   {/snippet}
 </Modal>

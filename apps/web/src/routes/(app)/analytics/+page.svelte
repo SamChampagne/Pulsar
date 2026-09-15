@@ -21,7 +21,11 @@
 
   function fmtCurrency(v: number | null): string {
     if (v === null) return '—';
-    return v.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 });
+    return v.toLocaleString('fr-CA', {
+      style: 'currency',
+      currency: 'CAD',
+      maximumFractionDigits: 0,
+    });
   }
 
   async function load() {
@@ -41,42 +45,44 @@
     void load();
   });
 
-  const cards = $derived([
-    {
-      href: '/analytics/control-tower',
-      label: 'Control Tower',
-      desc: "Points d'attention en direct et KPI opérationnels cross-module.",
-      icon: Gauge,
-      show: true,
-    },
-    {
-      href: '/analytics/scorecards',
-      label: 'Scorecards',
-      desc: 'Disponibilité flotte, congestion cour, préparation entrepôt, exceptions et ROI agents.',
-      icon: BarChart3,
-      show: true,
-    },
-    {
-      href: '/analytics/flow',
-      label: 'Flux',
-      desc: 'Chaînes événement → tâches → actions cross-module — timeline, tracé entité et carte de flux.',
-      icon: Workflow,
-      show: true,
-    },
-    {
-      href: '/analytics/carriers',
-      label: 'Scorecard transporteurs',
-      desc: 'Acceptation, ponctualité, exposition et dépense estimée par transporteur.',
-      icon: Truck,
-      show: canSeeCarriers,
-    },
-  ].filter((c) => c.show));
+  const cards = $derived(
+    [
+      {
+        href: '/analytics/control-tower',
+        label: 'Control Tower',
+        desc: "Points d'attention en direct et KPI opérationnels cross-module.",
+        icon: Gauge,
+        show: true,
+      },
+      {
+        href: '/analytics/scorecards',
+        label: 'Scorecards',
+        desc: 'Disponibilité flotte, congestion cour, préparation entrepôt, exceptions et ROI agents.',
+        icon: BarChart3,
+        show: true,
+      },
+      {
+        href: '/analytics/flow',
+        label: 'Flux',
+        desc: 'Chaînes événement → tâches → actions cross-module — timeline, tracé entité et carte de flux.',
+        icon: Workflow,
+        show: true,
+      },
+      {
+        href: '/analytics/carriers',
+        label: 'Scorecard transporteurs',
+        desc: 'Acceptation, ponctualité, exposition et dépense estimée par transporteur.',
+        icon: Truck,
+        show: canSeeCarriers,
+      },
+    ].filter((c) => c.show),
+  );
 </script>
 
 <svelte:head><title>Analytics — Pulsar</title></svelte:head>
 
 <PageHeader
-  title="Analytics"
+  title="Analyses"
   subtitle="Le pouls opérationnel de votre tenant — KPI cross-module calculés à la lecture, et accès direct aux tableaux détaillés."
 >
   {#snippet actions()}
@@ -105,7 +111,9 @@
     </Card>
     <Card>
       <div class="text-xs text-ink-faint">Loads en retard</div>
-      <div class={`mt-1 text-2xl font-bold ${data.kpis.loadsLate > 0 ? 'text-danger' : 'text-ink'}`}>
+      <div
+        class={`mt-1 text-2xl font-bold ${data.kpis.loadsLate > 0 ? 'text-danger' : 'text-ink'}`}
+      >
         {data.kpis.loadsLate}
       </div>
     </Card>
@@ -145,13 +153,17 @@
     <a href={c.href} class="group block">
       <Card>
         <div class="flex items-start gap-3">
-          <div class="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">
+          <div
+            class="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent"
+          >
             <Icon class="size-5" />
           </div>
           <div class="min-w-0 flex-1">
             <div class="flex items-center justify-between gap-2">
               <span class="font-semibold text-ink">{c.label}</span>
-              <ArrowRight class="size-4 shrink-0 text-ink-faint transition group-hover:translate-x-0.5 group-hover:text-accent" />
+              <ArrowRight
+                class="size-4 shrink-0 text-ink-faint transition group-hover:translate-x-0.5 group-hover:text-accent"
+              />
             </div>
             <p class="mt-1 text-xs text-ink-muted">{c.desc}</p>
           </div>

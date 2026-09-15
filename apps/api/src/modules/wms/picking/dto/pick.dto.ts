@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsNumber, IsObject, IsOptional, IsPositive, IsString, MinLength } from 'class-validator';
+import { WmsVersionDto } from '../../document-operations';
 
 export class CreatePickOrderDto {
   @IsString() @MinLength(1) locationId!: string;
@@ -9,10 +10,10 @@ export class CreatePickOrderDto {
   @IsOptional() @IsObject() customData?: Record<string, unknown>;
 }
 
-export class AddPickLineDto {
+export class AddPickLineDto extends WmsVersionDto {
   @IsString() @MinLength(1) itemId!: string;
   @IsString() @MinLength(1) fromBinId!: string;
-  @Type(() => Number) @IsNumber() @IsPositive() qty!: number;
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 3 }) @IsPositive() qty!: number;
 }
 
 export class PickListQueryDto {

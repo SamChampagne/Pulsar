@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import {
@@ -74,20 +75,29 @@
 
   function statusLabel(s: string): string {
     switch (s) {
-      case 'OPEN': return 'Ouvert';
-      case 'IN_PROGRESS': return 'En cours';
-      case 'COMPLETED': return 'Terminé';
-      case 'CANCELLED': return 'Annulé';
-      default: return s;
+      case 'OPEN':
+        return 'Ouvert';
+      case 'IN_PROGRESS':
+        return 'En cours';
+      case 'COMPLETED':
+        return 'Terminé';
+      case 'CANCELLED':
+        return 'Annulé';
+      default:
+        return s;
     }
   }
 
   function typeLabel(t: string): string {
     switch (t) {
-      case 'PREVENTIVE': return 'Préventif';
-      case 'REPAIR': return 'Réparation';
-      case 'INSPECTION': return 'Inspection';
-      default: return t;
+      case 'PREVENTIVE':
+        return 'Préventif';
+      case 'REPAIR':
+        return 'Réparation';
+      case 'INSPECTION':
+        return 'Inspection';
+      default:
+        return t;
     }
   }
 
@@ -136,7 +146,7 @@
   }
 
   async function act(id: string, verb: 'start' | 'complete' | 'cancel') {
-    if (verb === 'cancel' && !confirm('Annuler cet ordre de maintenance ?')) return;
+    if (verb === 'cancel' && !(await confirmAction('Annuler cet ordre de maintenance ?'))) return;
     busy = id;
     try {
       await api(`/fleet/maintenance-orders/${id}/${verb}`, { method: 'POST', body: {} });
@@ -144,7 +154,7 @@
         verb === 'start'
           ? 'Maintenance démarrée'
           : verb === 'complete'
-            ? 'Maintenance terminée — asset disponible'
+            ? 'Maintenance terminée — état flotte revérifié'
             : 'Ordre annulé';
       toast.success(msg);
       await load();
@@ -182,13 +192,18 @@
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
 {:else if orders.length === 0}
-  <Card><EmptyState message="Aucun ordre de maintenance. Génère-en un depuis un plan d'entretien ou la fiche d'un asset." /></Card>
+  <Card
+    ><EmptyState
+      message="Aucun ordre de maintenance. Génère-en un depuis un plan d'entretien ou la fiche d'un asset."
+    /></Card
+  >
 {:else if view === 'table'}
   <Card padded={false}>
     <Table>
       {#snippet head()}
-        <th>N°</th><th>Asset</th><th>Type</th><th>Statut</th><th>Ouvert</th><th>Échéance</th
-        ><th>Terminé</th><th class="text-right">Actions</th>
+        <th>N°</th><th>Asset</th><th>Type</th><th>Statut</th><th>Ouvert</th><th>Échéance</th><th
+          >Terminé</th
+        ><th class="text-right">Actions</th>
       {/snippet}
       {#snippet body()}
         {#each orders as wo (wo.id)}
@@ -212,11 +227,23 @@
             <td class="text-right">
               <div class="flex justify-end gap-1">
                 {#if wo.status === 'OPEN'}
-                  <Button variant="secondary" loading={busy === wo.id} onclick={() => act(wo.id, 'start')}>Démarrer</Button>
+                  <Button
+                    variant="secondary"
+                    loading={busy === wo.id}
+                    onclick={() => act(wo.id, 'start')}>Démarrer</Button
+                  >
                 {/if}
                 {#if wo.status === 'OPEN' || wo.status === 'IN_PROGRESS'}
-                  <Button variant="primary" loading={busy === wo.id} onclick={() => act(wo.id, 'complete')}>Terminer</Button>
-                  <Button variant="secondary" loading={busy === wo.id} onclick={() => act(wo.id, 'cancel')}>Annuler</Button>
+                  <Button
+                    variant="primary"
+                    loading={busy === wo.id}
+                    onclick={() => act(wo.id, 'complete')}>Terminer</Button
+                  >
+                  <Button
+                    variant="secondary"
+                    loading={busy === wo.id}
+                    onclick={() => act(wo.id, 'cancel')}>Annuler</Button
+                  >
                 {/if}
               </div>
             </td>
@@ -232,7 +259,8 @@
         <div class="flex items-start justify-between gap-2">
           {#if assetHref(wo)}
             <a class="font-semibold text-accent hover:underline" href={assetHref(wo)}>
-              {assetLabel(wo)} <span class="text-xs font-normal text-ink-faint">{assetKind(wo)}</span>
+              {assetLabel(wo)}
+              <span class="text-xs font-normal text-ink-faint">{assetKind(wo)}</span>
             </a>
           {:else}
             <span class="font-semibold text-ink">—</span>
@@ -249,10 +277,22 @@
         {#if wo.status === 'OPEN' || wo.status === 'IN_PROGRESS'}
           <div class="mt-2 flex flex-wrap gap-1">
             {#if wo.status === 'OPEN'}
-              <Button variant="secondary" loading={busy === wo.id} onclick={() => act(wo.id, 'start')}>Démarrer</Button>
+              <Button
+                variant="secondary"
+                loading={busy === wo.id}
+                onclick={() => act(wo.id, 'start')}>Démarrer</Button
+              >
             {/if}
-            <Button variant="primary" loading={busy === wo.id} onclick={() => act(wo.id, 'complete')}>Terminer</Button>
-            <Button variant="secondary" loading={busy === wo.id} onclick={() => act(wo.id, 'cancel')}>Annuler</Button>
+            <Button
+              variant="primary"
+              loading={busy === wo.id}
+              onclick={() => act(wo.id, 'complete')}>Terminer</Button
+            >
+            <Button
+              variant="secondary"
+              loading={busy === wo.id}
+              onclick={() => act(wo.id, 'cancel')}>Annuler</Button
+            >
           </div>
         {/if}
       </Card>
@@ -262,7 +302,9 @@
   <div class="flex gap-2 overflow-x-auto pb-2">
     {#each KANBAN_COLS as col (col.status)}
       {@const items = orders.filter((w) => w.status === col.status)}
-      <div class="flex w-60 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+      <div
+        class="flex w-60 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted"
+      >
         <div class="flex items-center justify-between px-3 py-2">
           <Badge tone={statusTone(col.status)}>{col.label}</Badge>
           <span class="font-mono text-xs text-ink-muted">{items.length}</span>
@@ -275,7 +317,8 @@
               <div class="rounded-inner border border-edge-soft bg-surface p-2.5 shadow-sm">
                 {#if assetHref(wo)}
                   <a class="font-semibold text-sm text-accent hover:underline" href={assetHref(wo)}>
-                    {assetLabel(wo)} <span class="text-xs font-normal text-ink-faint">{assetKind(wo)}</span>
+                    {assetLabel(wo)}
+                    <span class="text-xs font-normal text-ink-faint">{assetKind(wo)}</span>
                   </a>
                 {:else}
                   <div class="font-semibold text-sm text-ink">—</div>

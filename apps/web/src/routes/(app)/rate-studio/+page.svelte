@@ -161,8 +161,7 @@
   }
 
   function fuelLabel(fuel: FuelResolution): string {
-    const src =
-      fuel.source === 'TABLE' ? 'table' : fuel.source === 'STATIC' ? 'fixe' : 'aucune';
+    const src = fuel.source === 'TABLE' ? 'table' : fuel.source === 'STATIC' ? 'fixe' : 'aucune';
     return `${fuel.pct}% (${src})`;
   }
 
@@ -172,7 +171,9 @@
         api<Paginated<LaneOption>>('/transportation/lanes', { query: { pageSize: 100 } }),
         api<Paginated<LocationOption>>('/transportation/locations', { query: { pageSize: 100 } }),
         api<Paginated<CarrierOption>>('/transportation/carriers', { query: { pageSize: 100 } }),
-        api<Paginated<AccessorialOpt>>('/transportation/accessorials', { query: { pageSize: 100 } }),
+        api<Paginated<AccessorialOpt>>('/transportation/accessorials', {
+          query: { pageSize: 100 },
+        }),
       ]);
       lanes = lanesRes.items;
       locations = locsRes.items;
@@ -245,7 +246,7 @@
   });
 </script>
 
-<PageHeader title="Rate Studio" />
+<PageHeader title="Tarification" />
 
 <p class="mb-4 max-w-3xl text-sm text-ink-muted">
   Simulez un prix sur une voie, un poids et une date hypothétiques (sans chargement), comparez les
@@ -262,18 +263,21 @@
     {:else}
       <form onsubmit={simulate} class="space-y-4">
         <div>
-          <span class="mb-1.5 block text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Origine / destination</span>
+          <span
+            class="mb-1.5 block text-[11px] font-semibold tracking-wide text-ink-muted uppercase"
+            >Origine / destination</span
+          >
           <div class="inline-flex rounded-inner border border-edge p-0.5">
             <button
               type="button"
               class={`rounded px-3 py-1 text-sm font-medium ${inputMode === 'lane' ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink'}`}
-              onclick={() => (inputMode = 'lane')}
-            >Voie existante</button>
+              onclick={() => (inputMode = 'lane')}>Voie existante</button
+            >
             <button
               type="button"
               class={`rounded px-3 py-1 text-sm font-medium ${inputMode === 'manual' ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink'}`}
-              onclick={() => (inputMode = 'manual')}
-            >Saisie manuelle</button>
+              onclick={() => (inputMode = 'manual')}>Saisie manuelle</button
+            >
           </div>
         </div>
 
@@ -287,7 +291,9 @@
         {:else}
           <div class="grid gap-4 md:grid-cols-2">
             <fieldset class="space-y-2 rounded-inner border border-edge p-3">
-              <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Origine</legend>
+              <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase"
+                >Origine</legend
+              >
               <Field label="Niveau">
                 <Select bind:value={originType}>
                   {#each Object.keys(ENDPOINT_LABELS) as t (t)}
@@ -299,23 +305,38 @@
                 <Field label="Site">
                   <Select bind:value={originLocationId} required>
                     <option value="" disabled>Sélectionner…</option>
-                    {#each locations as l (l.id)}<option value={l.id}>{l.name} ({l.city})</option>{/each}
+                    {#each locations as l (l.id)}<option value={l.id}>{l.name} ({l.city})</option
+                      >{/each}
                   </Select>
                 </Field>
               {:else if originType === 'CITY'}
-                <Field label="Ville"><Input bind:value={originCity} required placeholder="Montréal" /></Field>
-                <Field label="Province / État"><Input bind:value={originState} required placeholder="QC" /></Field>
-                <Field label="Pays"><Input bind:value={originCountry} required placeholder="CA" /></Field>
+                <Field label="Ville"
+                  ><Input bind:value={originCity} required placeholder="Montréal" /></Field
+                >
+                <Field label="Province / État"
+                  ><Input bind:value={originState} required placeholder="QC" /></Field
+                >
+                <Field label="Pays"
+                  ><Input bind:value={originCountry} required placeholder="CA" /></Field
+                >
               {:else if originType === 'STATE'}
-                <Field label="Province / État"><Input bind:value={originState} required placeholder="QC" /></Field>
-                <Field label="Pays"><Input bind:value={originCountry} required placeholder="CA" /></Field>
+                <Field label="Province / État"
+                  ><Input bind:value={originState} required placeholder="QC" /></Field
+                >
+                <Field label="Pays"
+                  ><Input bind:value={originCountry} required placeholder="CA" /></Field
+                >
               {:else if originType === 'COUNTRY'}
-                <Field label="Pays"><Input bind:value={originCountry} required placeholder="CA" /></Field>
+                <Field label="Pays"
+                  ><Input bind:value={originCountry} required placeholder="CA" /></Field
+                >
               {/if}
             </fieldset>
 
             <fieldset class="space-y-2 rounded-inner border border-edge p-3">
-              <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Destination</legend>
+              <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase"
+                >Destination</legend
+              >
               <Field label="Niveau">
                 <Select bind:value={destinationType}>
                   {#each Object.keys(ENDPOINT_LABELS) as t (t)}
@@ -327,18 +348,31 @@
                 <Field label="Site">
                   <Select bind:value={destinationLocationId} required>
                     <option value="" disabled>Sélectionner…</option>
-                    {#each locations as l (l.id)}<option value={l.id}>{l.name} ({l.city})</option>{/each}
+                    {#each locations as l (l.id)}<option value={l.id}>{l.name} ({l.city})</option
+                      >{/each}
                   </Select>
                 </Field>
               {:else if destinationType === 'CITY'}
-                <Field label="Ville"><Input bind:value={destinationCity} required placeholder="Toronto" /></Field>
-                <Field label="Province / État"><Input bind:value={destinationState} required placeholder="ON" /></Field>
-                <Field label="Pays"><Input bind:value={destinationCountry} required placeholder="CA" /></Field>
+                <Field label="Ville"
+                  ><Input bind:value={destinationCity} required placeholder="Toronto" /></Field
+                >
+                <Field label="Province / État"
+                  ><Input bind:value={destinationState} required placeholder="ON" /></Field
+                >
+                <Field label="Pays"
+                  ><Input bind:value={destinationCountry} required placeholder="CA" /></Field
+                >
               {:else if destinationType === 'STATE'}
-                <Field label="Province / État"><Input bind:value={destinationState} required placeholder="ON" /></Field>
-                <Field label="Pays"><Input bind:value={destinationCountry} required placeholder="CA" /></Field>
+                <Field label="Province / État"
+                  ><Input bind:value={destinationState} required placeholder="ON" /></Field
+                >
+                <Field label="Pays"
+                  ><Input bind:value={destinationCountry} required placeholder="CA" /></Field
+                >
               {:else if destinationType === 'COUNTRY'}
-                <Field label="Pays"><Input bind:value={destinationCountry} required placeholder="CA" /></Field>
+                <Field label="Pays"
+                  ><Input bind:value={destinationCountry} required placeholder="CA" /></Field
+                >
               {/if}
             </fieldset>
           </div>
@@ -398,7 +432,10 @@
 
         <div class="grid gap-4 md:grid-cols-2">
           <div>
-            <span class="mb-1.5 block text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Accessoriaux demandés</span>
+            <span
+              class="mb-1.5 block text-[11px] font-semibold tracking-wide text-ink-muted uppercase"
+              >Accessoriaux demandés</span
+            >
             {#if accessorials.length === 0}
               <p class="text-xs text-ink-faint">Aucun accessorial configuré.</p>
             {:else}
@@ -408,13 +445,17 @@
                     type="button"
                     class={`rounded-inner border px-2 py-1 text-xs ${selectedAccessorials.includes(a.code) ? 'border-accent bg-accent/10 text-accent' : 'border-edge text-ink-muted hover:text-ink'}`}
                     onclick={() => (selectedAccessorials = toggle(selectedAccessorials, a.code))}
-                  >{a.code} – {a.name}</button>
+                    >{a.code} – {a.name}</button
+                  >
                 {/each}
               </div>
             {/if}
           </div>
           <div>
-            <span class="mb-1.5 block text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Transporteurs (vide = tous)</span>
+            <span
+              class="mb-1.5 block text-[11px] font-semibold tracking-wide text-ink-muted uppercase"
+              >Transporteurs (vide = tous)</span
+            >
             {#if carriers.length === 0}
               <p class="text-xs text-ink-faint">Aucun transporteur.</p>
             {:else}
@@ -424,7 +465,8 @@
                     type="button"
                     class={`rounded-inner border px-2 py-1 text-xs ${selectedCarriers.includes(c.id) ? 'border-accent bg-accent/10 text-accent' : 'border-edge text-ink-muted hover:text-ink'}`}
                     onclick={() => (selectedCarriers = toggle(selectedCarriers, c.id))}
-                  >{c.name}</button>
+                    >{c.name}</button
+                  >
                 {/each}
               </div>
             {/if}
@@ -449,7 +491,9 @@
     <div class="mb-2 flex flex-wrap items-baseline justify-between gap-2">
       <h2 class="text-base font-semibold text-ink">Comparaison transporteurs</h2>
       <span class="font-mono text-xs text-ink-muted">
-        {result.resolved.originKey} → {result.resolved.destinationKey} · {formatDate(result.referenceDate)}
+        {result.resolved.originKey} → {result.resolved.destinationKey} · {formatDate(
+          result.referenceDate,
+        )}
       </span>
     </div>
 
@@ -460,19 +504,28 @@
     {:else}
       <Table>
         {#snippet head()}
-          <th>#</th><th>Tarif</th><th>Transporteur</th><th>Total</th><th>Spécificité</th><th>Alertes</th><th></th>
+          <th>#</th><th>Tarif</th><th>Transporteur</th><th>Total</th><th>Spécificité</th><th
+            >Alertes</th
+          ><th></th>
         {/snippet}
         {#snippet body()}
           {#each result?.options ?? [] as opt, i (opt.rateId)}
-            <tr class="cursor-pointer" onclick={() => (expanded = { ...expanded, [opt.rateId]: !expanded[opt.rateId] })}>
+            <tr
+              class="cursor-pointer"
+              onclick={() => (expanded = { ...expanded, [opt.rateId]: !expanded[opt.rateId] })}
+            >
               <td class="font-mono text-ink-muted">{i + 1}</td>
               <td><span class="font-semibold text-ink">{opt.rateName}</span></td>
               <td>{opt.carrier?.name ?? '—'}</td>
-              <td class="font-mono tabular-nums text-ink">{formatMoney(opt.breakdown.total, opt.currency)}</td>
+              <td class="font-mono tabular-nums text-ink"
+                >{formatMoney(opt.breakdown.total, opt.currency)}</td
+              >
               <td class="font-mono text-xs text-ink-muted">{opt.laneSpecificity?.total ?? '—'}</td>
               <td>
                 {#if opt.breakdown.missingAccessorials.length > 0}
-                  <Badge tone="warn">Accessoriaux manquants ({opt.breakdown.missingAccessorials.length})</Badge>
+                  <Badge tone="warn"
+                    >Accessoriaux manquants ({opt.breakdown.missingAccessorials.length})</Badge
+                  >
                 {:else}
                   <span class="text-ink-faint">—</span>
                 {/if}
@@ -483,7 +536,9 @@
               <tr>
                 <td colspan="7" class="bg-surface-muted">
                   <div class="space-y-3 px-2 py-3">
-                    <div class="text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Pourquoi ce tarif ?</div>
+                    <div class="text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+                      Pourquoi ce tarif ?
+                    </div>
 
                     <table class="w-full text-sm">
                       <tbody>
@@ -491,24 +546,49 @@
                           <tr class="border-b border-edge/50">
                             <td class="py-1 text-ink">
                               {line.label}
-                              {#if line.code}<span class="ml-1 font-mono text-xs text-ink-muted">{line.code}</span>{/if}
+                              {#if line.code}<span class="ml-1 font-mono text-xs text-ink-muted"
+                                  >{line.code}</span
+                                >{/if}
                             </td>
-                            <td class="py-1 text-right font-mono tabular-nums text-ink">{formatMoney(line.amount, opt.currency)}</td>
+                            <td class="py-1 text-right font-mono tabular-nums text-ink"
+                              >{formatMoney(line.amount, opt.currency)}</td
+                            >
                           </tr>
                         {/each}
                         <tr>
                           <td class="py-1 font-semibold text-ink">Total</td>
-                          <td class="py-1 text-right font-mono font-semibold tabular-nums text-ink">{formatMoney(opt.breakdown.total, opt.currency)}</td>
+                          <td class="py-1 text-right font-mono font-semibold tabular-nums text-ink"
+                            >{formatMoney(opt.breakdown.total, opt.currency)}</td
+                          >
                         </tr>
                       </tbody>
                     </table>
 
                     <div class="flex flex-wrap gap-x-6 gap-y-1 text-xs text-ink-muted">
-                      <span>Base&nbsp;<span class="font-mono text-ink">{formatMoney(opt.breakdown.base, opt.currency)}</span></span>
-                      <span>Carburant&nbsp;<span class="font-mono text-ink">{formatMoney(opt.breakdown.fuelSurcharge, opt.currency)}</span> · {fuelLabel(opt.fuel)}</span>
-                      <span>Accessoriaux&nbsp;<span class="font-mono text-ink">{formatMoney(opt.breakdown.accessorialsTotal, opt.currency)}</span></span>
+                      <span
+                        >Base&nbsp;<span class="font-mono text-ink"
+                          >{formatMoney(opt.breakdown.base, opt.currency)}</span
+                        ></span
+                      >
+                      <span
+                        >Carburant&nbsp;<span class="font-mono text-ink"
+                          >{formatMoney(opt.breakdown.fuelSurcharge, opt.currency)}</span
+                        >
+                        · {fuelLabel(opt.fuel)}</span
+                      >
+                      <span
+                        >Accessoriaux&nbsp;<span class="font-mono text-ink"
+                          >{formatMoney(opt.breakdown.accessorialsTotal, opt.currency)}</span
+                        ></span
+                      >
                       {#if opt.laneSpecificity}
-                        <span>Voie&nbsp;<span class="font-mono text-ink">{opt.laneSpecificity.originType} → {opt.laneSpecificity.destinationType}</span> (spéc. {opt.laneSpecificity.total})</span>
+                        <span
+                          >Voie&nbsp;<span class="font-mono text-ink"
+                            >{opt.laneSpecificity.originType} → {opt.laneSpecificity
+                              .destinationType}</span
+                          >
+                          (spéc. {opt.laneSpecificity.total})</span
+                        >
                       {:else}
                         <span>Voie&nbsp;<span class="text-ink">générique</span></span>
                       {/if}
@@ -516,17 +596,25 @@
 
                     {#if opt.breakdown.appliedBreak}
                       <div class="text-xs text-ink-muted">
-                        Palier appliqué : jusqu'à <span class="font-mono text-ink">{opt.breakdown.appliedBreak.upToKg} kg</span>
-                        @ <span class="font-mono text-ink">{opt.breakdown.appliedBreak.amount}</span>
+                        Palier appliqué : jusqu'à <span class="font-mono text-ink"
+                          >{opt.breakdown.appliedBreak.upToKg} kg</span
+                        >
+                        @
+                        <span class="font-mono text-ink">{opt.breakdown.appliedBreak.amount}</span>
                         {#if opt.breakdown.appliedBreak.asIfApplied}
-                          <Badge tone="neutral">règle « as-if » · poids fictif {opt.breakdown.appliedBreak.asIfWeightKg} kg</Badge>
+                          <Badge tone="neutral"
+                            >règle « as-if » · poids fictif {opt.breakdown.appliedBreak
+                              .asIfWeightKg} kg</Badge
+                          >
                         {/if}
                       </div>
                     {/if}
 
                     {#if opt.breakdown.missingAccessorials.length > 0}
                       <div class="text-xs text-warn">
-                        Accessoriaux demandés non tarifés : <span class="font-mono">{opt.breakdown.missingAccessorials.join(', ')}</span>
+                        Accessoriaux demandés non tarifés : <span class="font-mono"
+                          >{opt.breakdown.missingAccessorials.join(', ')}</span
+                        >
                       </div>
                     {/if}
                   </div>
@@ -544,13 +632,11 @@
 <div class="mt-8">
   <h2 class="mb-2 text-base font-semibold text-ink">Hub tarification</h2>
   <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-    {#each [
-      { href: '/rates', label: 'Tarifs', desc: 'Grilles tarifaires et paliers' },
-      { href: '/lanes', label: 'Voies (lanes)', desc: 'Corridors et préférences transporteurs' },
-      { href: '/accessorials', label: 'Accessoriaux', desc: 'Frais additionnels' },
-      { href: '/fuel-tables', label: 'Carburant', desc: 'Tables de surtaxe carburant' },
-    ] as link (link.href)}
-      <a href={link.href} class="block rounded-card border border-edge p-4 transition-colors hover:border-accent hover:bg-surface-muted">
+    {#each [{ href: '/rates', label: 'Tarifs', desc: 'Grilles tarifaires et paliers' }, { href: '/lanes', label: 'Voies (lanes)', desc: 'Corridors et préférences transporteurs' }, { href: '/accessorials', label: 'Accessoriaux', desc: 'Frais additionnels' }, { href: '/fuel-tables', label: 'Carburant', desc: 'Tables de surtaxe carburant' }] as link (link.href)}
+      <a
+        href={link.href}
+        class="block rounded-card border border-edge p-4 transition-colors hover:border-accent hover:bg-surface-muted"
+      >
         <div class="font-semibold text-ink">{link.label}</div>
         <div class="mt-0.5 text-xs text-ink-muted">{link.desc}</div>
       </a>

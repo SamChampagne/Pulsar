@@ -3,17 +3,28 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { BankTxnStatus, MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import { Audit } from '../../../common/decorators/audit.decorator';
+import { AuditAction } from '@pulsar/shared';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { BankTransactionsService } from './bank-transactions.service';
-import { CreateBankTransactionDto, ImportBankCsvDto, MatchDto } from './dto/bank-transaction.dto';
+import {
+  CreateBankTransactionDto,
+  ImportBankCsvDto,
+  PreviewBankCsvDto,
+  MatchDto,
+} from './dto/bank-transaction.dto';
+import { BankCsvService } from './bank-csv.service';
 
 @ApiTags('billing')
 @ApiBearerAuth()
 @RequireModule(MODULE_KEYS.BILLING)
 @Controller('billing/bank-transactions')
 export class BankTransactionsController {
-  constructor(private readonly service: BankTransactionsService) {}
+  constructor(
+    private readonly service: BankTransactionsService,
+    private readonly csv: BankCsvService,
+  ) {}
 
   @Get()
   @RequirePermissions(PERMISSIONS.BILLING.LEDGER_READ)
@@ -21,31 +32,36 @@ export class BankTransactionsController {
     @CurrentUser() user: AuthUser,
     @Query('bankAccountId') bankAccountId?: string,
     @Query('status') status?: BankTxnStatus,
+    @Query('paymentId') paymentId?: string,
   ) {
-    return this.service.list(user.tenantId, bankAccountId, status);
+    return this.service.list(user.tenantId, bankAccountId, status, paymentId);
   }
 
   // Declared BEFORE :id routes to avoid shadowing
   @Get('reconciliation')
   @RequirePermissions(PERMISSIONS.BILLING.LEDGER_READ)
-  reconciliation(
-    @CurrentUser() user: AuthUser,
-    @Query('bankAccountId') bankAccountId: string,
-  ) {
+  reconciliation(@CurrentUser() user: AuthUser, @Query('bankAccountId') bankAccountId: string) {
     return this.service.reconciliation(user.tenantId, bankAccountId);
   }
 
   @Post()
+  @Audit('bank-transaction', AuditAction.CREATE)
   @RequirePermissions(PERMISSIONS.BILLING.LEDGER_MANAGE)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateBankTransactionDto) {
     return this.service.create(user.tenantId, dto);
   }
 
   // Declared BEFORE :id/... routes to avoid shadowing
+  @Post('import/preview')
+  @RequirePermissions(PERMISSIONS.BILLING.LEDGER_MANAGE)
+  previewCsv(@CurrentUser() user: AuthUser, @Body() dto: PreviewBankCsvDto) {
+    return this.csv.preview(user.tenantId, dto);
+  }
+
   @Post('import')
   @RequirePermissions(PERMISSIONS.BILLING.LEDGER_MANAGE)
   importCsv(@CurrentUser() user: AuthUser, @Body() dto: ImportBankCsvDto) {
-    return this.service.import(user.tenantId, dto);
+    return this.csv.import(user.tenantId, user.id, dto);
   }
 
   @Post(':id/match')

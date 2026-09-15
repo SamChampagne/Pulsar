@@ -162,13 +162,15 @@
   // Load field defs once on mount
   $effect(() => {
     api<CustomFieldDef[]>('/transportation/custom-fields', { query: { entityType: 'LOAD' } })
-      .then((defs) => { loadFieldDefs = defs; })
+      .then((defs) => {
+        loadFieldDefs = defs;
+      })
       .catch(() => {});
   });
 </script>
 
 <PageHeader
-  title="Loads"
+  title="Chargements"
   subtitle="Consolidate shipments, tender carriers, and track execution through delivery."
   count={total || kanbanTotal}
 >

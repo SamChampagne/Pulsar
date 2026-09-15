@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import type { CapacityExcess } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { Badge, Button, Card, EmptyState, PageHeader, Skeleton } from '$lib/components/ui';
@@ -131,9 +132,9 @@
         if (
           e instanceof ApiError &&
           e.statusCode === 400 &&
-          window.confirm(
+          (await confirmAction(
             `${e.message}\n\nDépasser la capacité de la remorque et assigner quand même ?`,
-          )
+          ))
         ) {
           await assignShipment(item.id, loadId, true);
         } else {
@@ -211,9 +212,9 @@
         if (
           e instanceof ApiError &&
           e.statusCode === 400 &&
-          window.confirm(
+          (await confirmAction(
             `${e.message}\n\nDépasser la capacité et affecter la ressource quand même ?`,
-          )
+          ))
         ) {
           await assignResource(loadId, body, true);
         } else {
@@ -272,7 +273,7 @@
 </script>
 
 <PageHeader
-  title="Planning Board"
+  title="Planification des transports"
   subtitle="Glissez les shipments sur un load, retirez-les vers le pool, et affectez les ressources — tout réutilise les services TMS."
 >
   {#snippet actions()}
@@ -367,9 +368,7 @@
               <div class="flex items-center gap-2">
                 <span class="font-mono text-sm font-semibold text-accent">{load.loadNumber}</span>
                 <Badge tone={load.status === 'PLANNED' ? 'warn' : 'neutral'}>{load.status}</Badge>
-                {#if load.excesses.length > 0}<Badge tone="danger"
-                    >Capacité dépassée</Badge
-                  >{/if}
+                {#if load.excesses.length > 0}<Badge tone="danger">Capacité dépassée</Badge>{/if}
               </div>
               <span class="text-xs text-ink-muted">{load.shipments.length} shipment(s)</span>
             </div>
@@ -378,9 +377,7 @@
               <span class="rounded border border-edge px-1.5"
                 >🚚 {load.trailerLabel ?? '— remorque'}</span
               >
-              <span class="rounded border border-edge px-1.5"
-                >🛻 {load.mode ?? '—'}</span
-              >
+              <span class="rounded border border-edge px-1.5">🛻 {load.mode ?? '—'}</span>
               {#if load.driverName}<span class="rounded border border-edge px-1.5"
                   >👤 {load.driverName}</span
                 >{/if}
@@ -438,7 +435,9 @@
                   >
                 </div>
               {:else}
-                <p class="rounded-inner border border-dashed border-edge py-3 text-center text-xs text-ink-faint">
+                <p
+                  class="rounded-inner border border-dashed border-edge py-3 text-center text-xs text-ink-faint"
+                >
                   Déposez un shipment ici.
                 </p>
               {/each}

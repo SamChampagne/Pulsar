@@ -5,7 +5,13 @@ import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
-import { AdjustStockDto, InventoryListQueryDto, MoveStockDto } from './dto/inventory.dto';
+import {
+  AdjustStockDto,
+  InventoryListQueryDto,
+  MoveStockDto,
+  MovementListQueryDto,
+} from './dto/inventory.dto';
+import { MovementHistoryService } from './movement-history.service';
 import { InventoryService } from './inventory.service';
 
 @ApiTags('wms/inventory')
@@ -13,7 +19,16 @@ import { InventoryService } from './inventory.service';
 @RequireModule(MODULE_KEYS.WMS)
 @Controller('wms/inventory')
 export class InventoryController {
-  constructor(private readonly inventory: InventoryService) {}
+  constructor(
+    private readonly inventory: InventoryService,
+    private readonly history: MovementHistoryService,
+  ) {}
+
+  @Get('movements')
+  @RequirePermissions(PERMISSIONS.WMS.READ)
+  movements(@CurrentUser() user: AuthUser, @Query() query: MovementListQueryDto) {
+    return this.history.list(user.tenantId, query);
+  }
 
   @Get()
   @RequirePermissions(PERMISSIONS.WMS.READ)

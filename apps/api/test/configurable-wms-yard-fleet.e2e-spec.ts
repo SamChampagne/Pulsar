@@ -12,8 +12,7 @@
  *      B.2 documentPrefixDockAppointment — same for dock appointments.
  *   C. Yard spotConflictPolicy
  *      C.1 BLOCK (default) — assigning two active visits to the same spot → 409.
- *      C.2 WARN — same assignment succeeds with non-empty spotWarnings and a
- *          YardMove row is written.
+ *      C.2 Legacy WARN — physical occupancy still blocks; no YardMove written.
  *   D. Custom fields round-trip (one per module)
  *      D.1 WMS/RECEIPT — required SELECT field: missing → 400; bad value → 400;
  *          valid → 201 + customData in GET.
@@ -197,9 +196,7 @@ describe('Configurable WMS / Yard / Fleet (e2e)', () => {
       await prisma.yardSpot
         .deleteMany({ where: { id: { in: [yardDoorId, yardParkingId] } } })
         .catch(() => undefined);
-      await prisma.location
-        .deleteMany({ where: { id: yardLocationId } })
-        .catch(() => undefined);
+      await prisma.location.deleteMany({ where: { id: yardLocationId } }).catch(() => undefined);
 
       // Cleanup WMS
       await prisma.stockMovement
@@ -218,9 +215,7 @@ describe('Configurable WMS / Yard / Fleet (e2e)', () => {
         .deleteMany({ where: { id: { in: [wmsReceivingBinId, wmsStorageBinId] } } })
         .catch(() => undefined);
       await prisma.wmsItem.deleteMany({ where: { id: wmsItemId } }).catch(() => undefined);
-      await prisma.location
-        .deleteMany({ where: { id: wmsLocationId } })
-        .catch(() => undefined);
+      await prisma.location.deleteMany({ where: { id: wmsLocationId } }).catch(() => undefined);
 
       // Cleanup custom-field definitions created by suites
       await prisma.customFieldDefinition
@@ -583,7 +578,7 @@ describe('Configurable WMS / Yard / Fleet (e2e)', () => {
       });
     });
 
-    describe('C.2 WARN — second assignment succeeds with non-empty spotWarnings and YardMove written', () => {
+    describe('C.2 Legacy WARN — physical occupancy remains blocked', () => {
       let visitC = '';
       let visitD = '';
 
@@ -593,14 +588,22 @@ describe('Configurable WMS / Yard / Fleet (e2e)', () => {
         const resC = await request(http)
           .post('/api/v1/yard/visits')
           .set(auth())
-          .send({ locationId: yardLocationId, trailerRef: `WARN-C-${suffix}`, direction: 'INBOUND' })
+          .send({
+            locationId: yardLocationId,
+            trailerRef: `WARN-C-${suffix}`,
+            direction: 'INBOUND',
+          })
           .expect(201);
         visitC = (resC.body as { id: string }).id;
 
         const resD = await request(http)
           .post('/api/v1/yard/visits')
           .set(auth())
-          .send({ locationId: yardLocationId, trailerRef: `WARN-D-${suffix}`, direction: 'INBOUND' })
+          .send({
+            locationId: yardLocationId,
+            trailerRef: `WARN-D-${suffix}`,
+            direction: 'INBOUND',
+          })
           .expect(201);
         visitD = (resD.body as { id: string }).id;
 
@@ -623,24 +626,19 @@ describe('Configurable WMS / Yard / Fleet (e2e)', () => {
           .catch(() => undefined);
       });
 
-      it('assigning second visit with WARN succeeds (2xx) with non-empty spotWarnings', async () => {
-        const res = await request(http)
+      it('assigning second visit with legacy WARN returns 409', async () => {
+        await request(http)
           .post(`/api/v1/yard/visits/${visitD}/assign`)
           .set(auth())
           .send({ spotId: yardDoorId })
-          .expect((r) => expect([200, 201]).toContain(r.status));
-
-        const body = res.body as { spotWarnings?: string[] };
-        expect(body.spotWarnings).toBeDefined();
-        expect(Array.isArray(body.spotWarnings)).toBe(true);
-        expect((body.spotWarnings as string[]).length).toBeGreaterThan(0);
+          .expect(409);
       });
 
-      it('a YardMove row exists for the WARN assignment', async () => {
+      it('no YardMove row is written for the refused assignment', async () => {
         const moves = await prisma.yardMove.count({
           where: { tenantId, visitId: visitD, toSpotId: yardDoorId },
         });
-        expect(moves).toBeGreaterThan(0);
+        expect(moves).toBe(0);
       });
     });
   });

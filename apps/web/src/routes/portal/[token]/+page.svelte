@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmAction } from '$lib/stores/confirmation';
   import { page } from '$app/state';
   import { suggestMode, TransportMode } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
@@ -330,7 +331,7 @@
   }
 
   async function deleteTemplate(tpl: Template) {
-    if (!confirm('Supprimer ce modèle ?')) return;
+    if (!(await confirmAction('Supprimer ce modèle ?'))) return;
     try {
       await api(`/public/portal/${token}/templates/${tpl.id}`, { method: 'DELETE' });
       await loadTemplates();

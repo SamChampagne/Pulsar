@@ -16,7 +16,7 @@ import {
   canTransitionDockAppointment,
   canTransitionYardVisit,
 } from '@pulsar/shared';
-import { Prisma } from '@pulsar/database';
+import { Prisma, type DockAppointment } from '@pulsar/database';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
@@ -40,7 +40,7 @@ const ACTIVE_STATUSES = [YardVisitStatus.CHECKED_IN, YardVisitStatus.ASSIGNED];
  * canTransitionYardVisit (rule 2) with conditional updateMany claims (TOCTOU-safe).
  * Spot occupancy is DERIVED — a spot is occupied iff an active visit (CHECKED_IN/
  * ASSIGNED) points to it (count, never denormalised); an occupied spot rejects a
- * new visit with 409 (BLOCK policy) or warns (WARN policy, rule 35/spotConflictPolicy).
+ * new visit with 409 (including the legacy WARN setting).
  * Every spotId change writes a YardMove in the SAME transaction
  * (mirrors InventoryService.postMovement). Numbers via SequencesService (YV-, rule 8);
  * tenant-scoped (rule 1); FKs checked (rule 9); audited (rule 6).
@@ -104,7 +104,7 @@ export class VisitsService {
   private async assertActiveVisit(tenantId: string, id: string) {
     const visit = await this.prisma.yardVisit.findFirst({
       where: { id, tenantId },
-      select: { id: true, status: true, spotId: true },
+      select: { id: true, status: true, spotId: true, locationId: true },
     });
     if (!visit) throw new NotFoundException('Visit not found');
     return visit;
@@ -112,19 +112,27 @@ export class VisitsService {
 
   /**
    * Assign a visit to a spot inside an existing transaction: guard the transition,
-   * derive occupancy (409 if BLOCK policy; warning if WARN policy and another active
-   * visit holds the spot), write the YardMove, then flip the visit.
+   * derive occupancy (409 if another active visit holds the spot), write the YardMove
+   * and update the visit in the same transaction.
    * Caller owns the tx (rule: same-tx move log).
-   * Returns spotWarnings (non-empty only when policy=WARN and spot is occupied).
+   * Keeps the legacy return shape; physical occupancy can never be bypassed.
    */
   private async assignToSpot(
-    tx: any,
+    tx: Prisma.TransactionClient,
     tenantId: string,
     userId: string,
-    visit: { id: string; status: string; spotId: string | null },
+    visit: { id: string; status: string; spotId: string | null; locationId: string },
     toSpotId: string,
     note?: string,
   ): Promise<string[]> {
+    await tx.$queryRaw`SELECT id FROM locations WHERE id = ${visit.locationId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+    const current = await tx.yardVisit.findFirst({ where: { id: visit.id, tenantId } });
+    if (!current) throw new NotFoundException('Visite introuvable.');
+    visit = current;
+    const spot = await tx.yardSpot.findFirst({
+      where: { id: toSpotId, tenantId, locationId: visit.locationId, isActive: true },
+    });
+    if (!spot) throw new BadRequestException('Choisissez un emplacement actif du même site.');
     if (!canTransitionYardVisit(visit.status as YardVisitStatus, YardVisitStatus.ASSIGNED)) {
       throw new BadRequestException(`Cannot assign a visit in status ${visit.status}`);
     }
@@ -137,13 +145,21 @@ export class VisitsService {
       },
     });
 
-    const settings = await this.moduleSettings.resolve(tenantId, 'yard');
-    const policy = (settings.spotConflictPolicy as 'BLOCK' | 'WARN') ?? 'BLOCK';
     const spotWarnings: string[] = [];
-    if (occ > 0) {
-      if (policy === 'BLOCK') throw new ConflictException('Spot already occupied');
-      spotWarnings.push('Spot already occupied');
-    }
+    // Physical occupancy is a hard invariant, including legacy WARN settings.
+    if (occ > 0) throw new ConflictException('Emplacement déjà occupé. Actualisez le plan.');
+    if (visit.spotId === toSpotId) return spotWarnings;
+
+    const claim = await tx.yardVisit.updateMany({
+      where: {
+        id: visit.id,
+        tenantId,
+        status: visit.status as YardVisitStatus,
+        spotId: visit.spotId,
+      },
+      data: { spotId: toSpotId, status: YardVisitStatus.ASSIGNED },
+    });
+    if (!claim.count) throw new ConflictException('La visite a changé. Actualisez le plan.');
 
     await tx.yardMove.create({
       data: {
@@ -154,10 +170,6 @@ export class VisitsService {
         createdById: userId,
         note: note ?? null,
       },
-    });
-    await tx.yardVisit.updateMany({
-      where: { id: visit.id, tenantId },
-      data: { spotId: toSpotId, status: YardVisitStatus.ASSIGNED },
     });
 
     return spotWarnings;
@@ -172,6 +184,8 @@ export class VisitsService {
 
     await this.ownership.assertOwnedIfSet('trailer', dto.trailerId, tenantId);
     await this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId);
+    await this.ownership.assertOwnedIfSet('yardSpot', dto.spotId, tenantId);
+    await this.ownership.assertOwnedIfSet('dockAppointment', dto.appointmentId, tenantId);
     if (dto.spotId) {
       const spot = await this.prisma.yardSpot.findFirst({
         where: { id: dto.spotId, tenantId },
@@ -198,6 +212,26 @@ export class VisitsService {
     const visitNumber = await this.sequences.nextNumber(tenantId, 'yard-visit');
 
     const created = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM locations WHERE id = ${dto.locationId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      let booked: Pick<DockAppointment, 'direction' | 'carrierId'> | null = null;
+      if (dto.appointmentId) {
+        const appt = await tx.dockAppointment.findFirst({
+          where: { id: dto.appointmentId, tenantId, locationId: dto.locationId },
+        });
+        if (!appt || !['SCHEDULED', 'ARRIVED'].includes(appt.status))
+          throw new BadRequestException('Rendez-vous indisponible ou sur un autre site.');
+        if (dto.carrierId && appt.carrierId && dto.carrierId !== appt.carrierId)
+          throw new BadRequestException('Le transporteur ne correspond pas au rendez-vous.');
+        if (dto.direction && dto.direction !== appt.direction)
+          throw new BadRequestException('Le sens de l’opération ne correspond pas au rendez-vous.');
+        booked = appt;
+        if (
+          await tx.yardVisit.count({
+            where: { tenantId, appointmentId: appt.id, status: { not: YardVisitStatus.CANCELLED } },
+          })
+        )
+          throw new ConflictException('Ce rendez-vous possède déjà une visite.');
+      }
       const visit = await tx.yardVisit.create({
         data: {
           tenantId,
@@ -205,9 +239,9 @@ export class VisitsService {
           locationId: dto.locationId,
           trailerId: dto.trailerId ?? null,
           trailerRef: dto.trailerRef ?? null,
-          carrierId: dto.carrierId ?? null,
+          carrierId: dto.carrierId ?? booked?.carrierId ?? null,
           driverName: dto.driverName ?? null,
-          direction: dto.direction ?? undefined,
+          direction: dto.direction ?? booked?.direction ?? undefined,
           status: YardVisitStatus.CHECKED_IN,
           appointmentId: dto.appointmentId ?? null,
           checkInAt: new Date(),
@@ -242,7 +276,12 @@ export class VisitsService {
           tx,
           tenantId,
           userId,
-          { id: visit.id, status: YardVisitStatus.CHECKED_IN, spotId: null },
+          {
+            id: visit.id,
+            status: YardVisitStatus.CHECKED_IN,
+            spotId: null,
+            locationId: visit.locationId,
+          },
           dto.spotId,
         );
       }
@@ -278,10 +317,15 @@ export class VisitsService {
   }
 
   async assign(tenantId: string, userId: string, visitId: string, dto: AssignSpotDto) {
-    const visit = await this.assertActiveVisit(tenantId, visitId);
-    const spotWarnings = await this.prisma.$transaction((tx) =>
-      this.assignToSpot(tx, tenantId, userId, visit, dto.spotId, dto.note),
-    );
+    await this.ownership.assertOwnedIfSet('yardSpot', dto.spotId, tenantId);
+    let visit = await this.assertActiveVisit(tenantId, visitId);
+    const spotWarnings = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM locations WHERE id = ${visit.locationId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      const fresh = await tx.yardVisit.findFirst({ where: { id: visitId, tenantId } });
+      if (!fresh) throw new NotFoundException('Visite introuvable.');
+      visit = fresh;
+      return this.assignToSpot(tx, tenantId, userId, visit, dto.spotId, dto.note);
+    });
     await this.audit.log({
       tenantId,
       userId,
@@ -301,11 +345,20 @@ export class VisitsService {
   }
 
   async checkOut(tenantId: string, userId: string, visitId: string) {
-    const visit = await this.assertActiveVisit(tenantId, visitId);
+    let visit = await this.assertActiveVisit(tenantId, visitId);
     if (!canTransitionYardVisit(visit.status as YardVisitStatus, YardVisitStatus.DEPARTED)) {
       throw new BadRequestException(`Cannot check out a visit in status ${visit.status}`);
     }
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM locations WHERE id = ${visit.locationId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      const fresh = await tx.yardVisit.findFirst({ where: { id: visitId, tenantId } });
+      if (
+        !fresh ||
+        !canTransitionYardVisit(fresh.status as YardVisitStatus, YardVisitStatus.DEPARTED) ||
+        !ACTIVE_STATUSES.includes(fresh.status as YardVisitStatus)
+      )
+        throw new ConflictException('Visite déjà traitée.');
+      visit = fresh;
       const claim = await tx.yardVisit.updateMany({
         where: { id: visitId, tenantId, status: { in: ACTIVE_STATUSES } },
         data: { status: YardVisitStatus.DEPARTED, checkOutAt: new Date(), spotId: null },
@@ -342,15 +395,36 @@ export class VisitsService {
   }
 
   async cancel(tenantId: string, userId: string, visitId: string) {
-    const visit = await this.assertActiveVisit(tenantId, visitId);
+    let visit = await this.assertActiveVisit(tenantId, visitId);
     if (!canTransitionYardVisit(visit.status as YardVisitStatus, YardVisitStatus.CANCELLED)) {
       throw new BadRequestException(`Cannot cancel a visit in status ${visit.status}`);
     }
-    const claim = await this.prisma.yardVisit.updateMany({
-      where: { id: visitId, tenantId, status: { in: ACTIVE_STATUSES } },
-      data: { status: YardVisitStatus.CANCELLED, spotId: null },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM locations WHERE id = ${visit.locationId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      const fresh = await tx.yardVisit.findFirst({ where: { id: visitId, tenantId } });
+      if (
+        !fresh ||
+        !canTransitionYardVisit(fresh.status as YardVisitStatus, YardVisitStatus.CANCELLED) ||
+        !ACTIVE_STATUSES.includes(fresh.status as YardVisitStatus)
+      )
+        throw new ConflictException('Visite déjà traitée.');
+      visit = fresh;
+      const claim = await tx.yardVisit.updateMany({
+        where: { id: visitId, tenantId, status: { in: ACTIVE_STATUSES } },
+        data: { status: YardVisitStatus.CANCELLED, spotId: null },
+      });
+      if (claim.count === 0) throw new ConflictException('Visit already processed');
+      await tx.yardMove.create({
+        data: {
+          tenantId,
+          visitId,
+          fromSpotId: visit.spotId,
+          toSpotId: null,
+          createdById: userId,
+          note: 'Visite annulée',
+        },
+      });
     });
-    if (claim.count === 0) throw new ConflictException('Visit already processed');
     await this.audit.log({
       tenantId,
       userId,

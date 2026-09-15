@@ -128,7 +128,7 @@
 <svelte:head><title>Control Tower — Pulsar</title></svelte:head>
 
 <PageHeader
-  title="Control Tower"
+  title="Supervision des agents"
   subtitle="Santé, productivité et gouvernance de la main-d’œuvre IA du tenant — calculé en direct depuis les runs, actions proposées et tâches."
   count={data?.rollup.agents}
 >

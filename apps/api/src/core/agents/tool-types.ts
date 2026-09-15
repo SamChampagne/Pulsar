@@ -148,6 +148,12 @@ export interface ToolServices {
   };
   // ── CRM ────────────────────────────────────────────────────────────────────
   crm: {
+    sendSequenceStep(
+      tenantId: string,
+      stepId: string,
+      agentId: string,
+      preview: { to: string; subject: string; body: string },
+    ): Promise<unknown>;
     listDeals(tenantId: string, query: object): Promise<unknown>;
     getCompany(tenantId: string, id: string): Promise<unknown>;
     listActivities(tenantId: string, query: object): Promise<unknown>;
@@ -156,7 +162,14 @@ export interface ToolServices {
       input: object,
       author: { agentId?: string; userId?: string },
     ): Promise<unknown>;
-    advanceDeal(tenantId: string, id: string, userId: string, stage: string): Promise<unknown>;
+    advanceDeal(
+      tenantId: string,
+      id: string,
+      userId: string,
+      stage?: string,
+      pipelineStageId?: string,
+      expectedRevision?: number,
+    ): Promise<unknown>;
     createFollowup(tenantId: string, input: object, author: { agentId?: string }): Promise<unknown>;
     getDeal(tenantId: string, id: string): Promise<unknown>;
     listThreads(tenantId: string, query: object): Promise<unknown>;
