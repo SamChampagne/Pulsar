@@ -180,12 +180,14 @@ export function navCatalogue(): NavDomain[] {
           links: [
             { href: '/wms', label: "Vue d'ensemble" },
             { href: '/wms/inventory', label: 'Inventaire' },
+            { href: '/wms/movements', label: 'Journal des mouvements' },
           ],
         },
         {
           label: 'Flux',
           links: [
             { href: '/wms/receiving', label: 'Réception' },
+            { href: '/wms/putaway', label: 'Rangement' },
             { href: '/wms/fulfillment', label: 'Préparation' },
             { href: '/wms/picking', label: 'Prélèvement' },
             { href: '/wms/cycle-counts', label: 'Comptages' },

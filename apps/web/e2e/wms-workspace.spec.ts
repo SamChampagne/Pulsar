@@ -97,6 +97,21 @@ async function setup(page: Page) {
       return r.fulfill({ status: 500, json: { message: 'Mutation non prévue dans ce test.' } });
     if (path === 'sites')
       return r.fulfill({ json: { items: [site, otherSite], total: 2, page: 1, pageSize: 100 } });
+    if (path === `sites/${site.id}/bins`)
+      return r.fulfill({
+        json: {
+          items: bins
+            .filter((b) => b.isActive)
+            .map((b) => ({ ...b, locationId: site.id, name: `${b.code} · ${b.zone}` })),
+          total: 2,
+          page: 1,
+          pageSize: 20,
+        },
+      });
+    if (path.startsWith(`sites/${site.id}/bins/`)) {
+      const b = bins.find((b) => path.endsWith(b.id))!;
+      return r.fulfill({ json: { ...b, locationId: site.id, name: `${b.code} · ${b.zone}` } });
+    }
     if (path.startsWith('sites/'))
       return r.fulfill({ json: path.endsWith(otherSite.id) ? otherSite : site });
     if (path === 'workspace')
@@ -151,9 +166,11 @@ async function panel(page: Page) {
 async function moveForm(page: Page) {
   const p = await panel(page);
   await p.getByRole('button', { name: 'Déplacer VIS', exact: true }).click();
-  await p
-    .getByRole('combobox', { name: 'Emplacement de destination', exact: true })
-    .selectOption('storage');
+  await p.getByRole('button', { name: /^Destination :/ }).click();
+  await page
+    .getByRole('dialog', { name: 'Destination', exact: true })
+    .getByRole('button', { name: 'A-01 · Allée A', exact: true })
+    .click();
   await p.getByRole('spinbutton', { name: 'Quantité (EA)', exact: true }).fill('4');
   return p;
 }
@@ -188,6 +205,7 @@ test('confirmed stock movement retains the current site, cancel does nothing and
       toBinId: 'storage',
       locationId: 'warehouse-a',
       qty: 4,
+      operationKey: expect.stringMatching(/^[0-9a-f-]{36}$/i),
     });
     detail.levels.items[0].qtyOnHand = '13';
     return r.fulfill({ json: {} });
@@ -218,11 +236,9 @@ test('rejected movement preserves the selection and quantity', async ({ page }) 
     .click();
   await expect(p.getByRole('alert')).toContainText('autre opérateur');
   await expect(p.getByRole('spinbutton', { name: 'Quantité (EA)' })).toHaveValue('4');
-  await expect(p.getByRole('combobox', { name: 'Emplacement de destination' })).toHaveValue(
-    'storage',
-  );
+  await expect(p.getByRole('button', { name: 'Destination : A-01 · Allée A' })).toBeVisible();
 });
-test('uncertain stock response cannot be retried and requires a fresh inspection', async ({
+test('uncertain stock response cannot be recreated and retains the original request', async ({
   page,
 }) => {
   await setup(page);
@@ -235,7 +251,7 @@ test('uncertain stock response cannot be retried and requires a fresh inspection
     .click();
   await expect(p.getByRole('alert')).toContainText('peut-être été déplacé');
   await expect(p.getByRole('button', { name: 'Vérifier le déplacement' })).toBeDisabled();
-  await p.getByRole('button', { name: 'Fermer et actualiser' }).click();
+  await p.getByRole('button', { name: 'Fermer et vérifier' }).click();
   await expect(p).toBeHidden();
 });
 test('zone save sends only display metadata and a version; stale save keeps the draft', async ({
@@ -332,7 +348,7 @@ test('schematic and bin drawer stay contained on phone and desktop', async ({ pa
     .toBe(true);
   await page.screenshot({ path: 'playwright-artifacts/wms-bin-mobile.png', fullPage: true });
   await p.getByRole('button', { name: 'Déplacer VIS', exact: true }).click();
-  await expect(p.getByRole('combobox', { name: 'Emplacement de destination' })).toBeVisible();
+  await expect(p.getByRole('button', { name: /^Destination :/ })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true);

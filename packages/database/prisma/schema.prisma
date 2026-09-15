@@ -2368,6 +2368,10 @@ model StockMovement {
   note        String?
   createdById String?
   createdAt   DateTime          @default(now())
+  // Durable identity for explicit MOVE requests; legacy/internal movements keep NULL.
+  operationKey String?
+  requestFingerprint String?
+  unitSnapshot String?
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
   item    WmsItem @relation(fields: [itemId], references: [id])
@@ -2377,6 +2381,9 @@ model StockMovement {
   @@index([tenantId, itemId])
   @@index([tenantId, createdAt])
   @@index([tenantId, refType, refId])
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, fromBinId, createdAt])
+  @@index([tenantId, toBinId, createdAt])
   @@map("wms_stock_movements")
 }
 

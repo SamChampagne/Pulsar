@@ -112,7 +112,15 @@
   });
   onMount(() => {
     void init();
-    return () => generation++;
+    const refresh = () => {
+      binId = '';
+      void load();
+    };
+    window.addEventListener('wms:stock-changed', refresh);
+    return () => {
+      generation++;
+      window.removeEventListener('wms:stock-changed', refresh);
+    };
   });
   beforeNavigate(({ cancel }) => {
     if (binId) cancel();
@@ -124,7 +132,12 @@
   subtitle="Votre poste de travail par site : réception, rangement et préparation."
 >
   {#snippet actions()}<Button variant="secondary" href="/wms/inventory">Inventaire détaillé</Button
-    ><Button variant="secondary" href="/wms/receiving">Réceptions</Button>{/snippet}
+    ><Button variant="secondary" href="/wms/receiving">Réceptions</Button>
+    <Button
+      variant="secondary"
+      href={`/wms/movements${siteId ? `?locationId=${encodeURIComponent(siteId)}` : ''}`}
+      >Journal des mouvements</Button
+    >{/snippet}
 </PageHeader>
 <div class="mb-5 flex flex-wrap items-end gap-3">
   <div class="w-full sm:w-80">

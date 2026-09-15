@@ -236,6 +236,10 @@
     <a href={`/wms?site=${encodeURIComponent(data.locationId)}`} class="hover:underline"
       >Vue de l’entrepôt ↗</a
     >
+    <a
+      href={`/wms/movements?refType=${receiving ? 'receipt' : 'pick-order'}&refId=${encodeURIComponent(data.id)}&locationId=${encodeURIComponent(data.locationId)}`}
+      class="hover:underline">Mouvements du document ↗</a
+    >
   </nav>
   <ErrorNotice message={actionError} />
   {#if loading}<p role="status" class="mb-3 text-xs text-ink-muted">

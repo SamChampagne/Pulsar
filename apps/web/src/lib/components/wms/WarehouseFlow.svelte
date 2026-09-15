@@ -13,7 +13,7 @@
       key: 'putaway',
       label: 'Ranger',
       description: 'Emplacements de réception avec du stock',
-      href: '',
+      href: '/wms/putaway',
       items: [],
       total: data.putaway.total,
     },
@@ -76,7 +76,7 @@
           </p>{/if}
         {#if lane.href}<a
             class="mt-3 inline-block text-xs font-medium text-accent hover:underline"
-            href={`${lane.href}?locationId=${encodeURIComponent(data.site.id)}`}
+            href={`${lane.href}?${lane.key === 'putaway' ? 'site' : 'locationId'}=${encodeURIComponent(data.site.id)}`}
             >Ouvrir la liste →</a
           >{/if}
       </section>

@@ -6,7 +6,7 @@ function harness(levels: Record<string, number> = {}) {
   const movements: any[] = [];
   const client = {
     $queryRaw: async () => [],
-    wmsItem: { findFirst: async () => ({ id: 'i1' }) },
+    wmsItem: { findFirst: async () => ({ id: 'i1', unit: 'EA' }) },
     bin: {
       findMany: async ({ where }: any) =>
         where.id.in.map((id: string) => ({ id, isActive: true, locationId: 'site' })),
@@ -34,7 +34,7 @@ function harness(levels: Record<string, number> = {}) {
     stockMovement: {
       create: async ({ data }: any) => {
         movements.push(data);
-        return { id: 'm' + movements.length, ...data };
+        return { id: 'm' + movements.length, createdAt: new Date(), ...data };
       },
     },
     $transaction: async (fn: any) => fn(client),

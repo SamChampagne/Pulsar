@@ -132,6 +132,69 @@ export class WmsWorkspaceService {
     if (!bin) throw new NotFoundException('Emplacement introuvable dans cet entrepôt.');
     return { ...bin, name: [bin.code, bin.zone].filter(Boolean).join(' · ') };
   }
+  async putaway(tenantId: string, q: WmsWorkspaceQuery) {
+    const pageSize = 30;
+    return this.prisma.$transaction(
+      async (tx) => {
+        const site = await tx.location.findFirst({
+          where: { tenantId, id: q.locationId, type: 'WAREHOUSE' },
+          select: siteSelect,
+        });
+        if (!site) throw new NotFoundException('Entrepôt introuvable.');
+        const search = q.q?.trim();
+        const where: Prisma.InventoryLevelWhereInput = {
+          tenantId,
+          qtyOnHand: { gt: 0 },
+          bin: { tenantId, locationId: site.id, kind: 'RECEIVING' },
+          ...(search
+            ? {
+                OR: [
+                  { item: { tenantId, sku: { contains: search, mode: 'insensitive' } } },
+                  { item: { tenantId, name: { contains: search, mode: 'insensitive' } } },
+                  { bin: { tenantId, code: { contains: search, mode: 'insensitive' } } },
+                  { bin: { tenantId, zone: { contains: search, mode: 'insensitive' } } },
+                ],
+              }
+            : {}),
+        };
+        const [levels, total] = await Promise.all([
+          tx.inventoryLevel.findMany({
+            where,
+            skip: (q.page - 1) * pageSize,
+            take: pageSize,
+            orderBy: [{ bin: { code: 'asc' } }, { item: { sku: 'asc' } }, { id: 'asc' }],
+            select: {
+              itemId: true,
+              binId: true,
+              qtyOnHand: true,
+              item: { select: { sku: true, name: true, unit: true, isActive: true } },
+              bin: { select: { code: true, zone: true, isActive: true } },
+            },
+          }),
+          tx.inventoryLevel.count({ where }),
+        ]);
+        return {
+          site,
+          generatedAt: new Date().toISOString(),
+          total,
+          page: q.page,
+          pageSize,
+          items: levels.map((l) => ({
+            ...l.item,
+            itemId: l.itemId,
+            binId: l.binId,
+            binCode: l.bin.code,
+            zone: l.bin.zone,
+            binActive: l.bin.isActive,
+            locationId: site.id,
+            qtyOnHand: l.qtyOnHand.toString(),
+          })),
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
+
   private async visualBins(
     db: Prisma.TransactionClient,
     tenantId: string,

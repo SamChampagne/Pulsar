@@ -11,6 +11,7 @@ import { WmsWorkspaceService } from './workspace/workspace.service';
 import { BinsController } from './bins/bins.controller';
 import { InventoryService } from './inventory/inventory.service';
 import { InventoryController } from './inventory/inventory.controller';
+import { MovementHistoryService } from './inventory/movement-history.service';
 import { ReceivingService } from './receiving/receiving.service';
 import { ReceivingController } from './receiving/receiving.controller';
 import { PickingService } from './picking/picking.service';
@@ -49,6 +50,7 @@ import { CycleCountsController } from './cycle-counts/cycle-counts.controller';
     CycleCountsController,
   ],
   providers: [
+    MovementHistoryService,
     WmsWorkspaceService,
     ItemsService,
     BinsService,

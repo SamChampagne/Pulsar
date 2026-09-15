@@ -316,6 +316,19 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     historiques ne sont pas recontrôlés contre le stock courant. Pas de retry après
     réponse incertaine sans inspection. Voir `docs/plans/wms-guided-operations.md`.
 
+## Hard rules (continued, WMS — rangement et journal)
+
+42. Un MOVE avec `operationKey` est idempotent sur `(tenantId, operationKey)` dans
+    `StockMovement` : verrou tenant AVANT lookup, fingerprint lié à l'acteur et au
+    corps, replay avant validation de disponibilité, conflit de contenu ⇒ 409.
+    Clé, registre et soldes sont écrits dans la MÊME transaction via `postMovement`.
+    Le client conserve la demande avant envoi et reprend EXACTEMENT la même clé
+    après une réponse incertaine (jamais une nouvelle clé pour « réessayer »).
+    `unitSnapshot` capture l'unité des nouveaux mouvements; les anciens NULL sont
+    signalés, jamais backfillés par une unité supposée. Le journal est une lecture
+    tenant-scopée, pas une provenance par lot ni une réservation de stock.
+    Contrats et limites : `docs/plans/wms-putaway-traceability.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

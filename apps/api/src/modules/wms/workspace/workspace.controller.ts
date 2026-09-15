@@ -37,6 +37,11 @@ export class WmsWorkspaceController {
   workspace(@CurrentUser() u: AuthUser, @Query() q: WmsWorkspaceQuery) {
     return this.service.workspace(u.tenantId, q);
   }
+  @Get('putaway')
+  @RequirePermissions(PERMISSIONS.WMS.READ)
+  putaway(@CurrentUser() u: AuthUser, @Query() q: WmsWorkspaceQuery) {
+    return this.service.putaway(u.tenantId, q);
+  }
   @Get('sites/:siteId/bins')
   @RequirePermissions(PERMISSIONS.WMS.READ)
   siteBins(@CurrentUser() u: AuthUser, @Param('siteId') id: string, @Query() q: WmsSitesQuery) {

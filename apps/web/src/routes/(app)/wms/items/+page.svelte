@@ -166,7 +166,7 @@
     {#snippet head()}
       <th>SKU</th><th>Nom</th><th>Unité</th><th class="text-right">Stock</th><th class="text-right"
         >Min / cible</th
-      ><th>Réappro</th><th>Statut</th>
+      ><th>Réappro</th><th>Statut</th><th>Traçabilité</th>
     {/snippet}
     {#snippet body()}
       {#each items as it (it.id)}
@@ -195,6 +195,13 @@
           </td>
           <td
             ><Badge tone={it.isActive ? 'ok' : 'neutral'}>{it.isActive ? 'Actif' : 'Inactif'}</Badge
+            ></td
+          >
+          <td
+            ><a
+              class="text-xs text-accent hover:underline"
+              href={`/wms/movements?itemId=${encodeURIComponent(it.id)}`}
+              onclick={(e) => e.stopPropagation()}>Journal ↗</a
             ></td
           >
         </tr>

@@ -6,6 +6,12 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **WMS rangement et journal (2026-09-14) — `codex/wms-putaway-traceability`.**
+> File par entrepôt, mouvement confirmé, journal relié aux articles/emplacements/dossiers,
+> unités capturées et reprise durable du MOVE après coupure. Scénario local DÉMO prêt à essayer.
+> Aucun partiel ni réservation. Suite : Flotte visuelle; anciens référentiels WMS à paginer.
+> [Contrats, scénario et limites](./plans/wms-putaway-traceability.md).
+>
 > **WMS guidé (2026-09-14) — `codex/wms-guided-operations`.**
 > Réception/préparation par lignes : unités, emplacements, stock physique et manque,
 > correction en panneau, validation globale confirmée et liens Cour/entrepôt.

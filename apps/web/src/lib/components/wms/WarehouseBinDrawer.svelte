@@ -1,20 +1,12 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
-  import { api, ApiError } from '$lib/api/client';
+  import { api } from '$lib/api/client';
   import { auth } from '$lib/stores/auth';
   import { confirmAction } from '$lib/stores/confirmation';
   import { PERMISSIONS, WMS_BIN_LABELS, type WmsBinDetail } from '@pulsar/shared';
-  import {
-    Badge,
-    Button,
-    Drawer,
-    ErrorNotice,
-    Field,
-    Input,
-    Select,
-    Skeleton,
-    Textarea,
-  } from '$lib/components/ui';
+  import { Badge, Button, Drawer, ErrorNotice, Field, Input, Skeleton } from '$lib/components/ui';
+  import StockMoveForm from './StockMoveForm.svelte';
+  import { pendingMove } from '$lib/wms/move-intent';
   let {
     binId,
     siteId,
@@ -33,17 +25,7 @@
     editingZone = $state(false),
     zone = $state('');
   type Level = WmsBinDetail['levels']['items'][number];
-  let moving = $state<Level | null>(null),
-    qty = $state<number | null>(null),
-    note = $state(''),
-    destination = $state(''),
-    destinationQuery = $state('');
-  let destinations = $state<
-      { id: string; code: string; kind: string; locationId: string; isActive: boolean }[]
-    >([]),
-    searching = $state(false),
-    searchError = $state(''),
-    uncertain = $state(false);
+  let moving = $state<Level | null>(null);
   let generation = 0;
   const canManage = $derived(!!$auth?.user.permissions.includes(PERMISSIONS.WMS.MANAGE));
   async function load() {
@@ -82,42 +64,11 @@
       generation++;
     };
   });
-  $effect(() => {
-    const active = !!moving,
-      q = destinationQuery,
-      site = siteId,
-      source = binId;
-    let disposed = false;
-    destination = '';
-    destinations = [];
-    searchError = '';
-    searching = active;
-    if (!active) return;
-    const timer = setTimeout(() => {
-      api<typeof destinations>('/wms/bins', { query: { locationId: site, search: q } })
-        .then((rows) => {
-          if (!disposed)
-            destinations = rows.filter(
-              (b) => b.id !== source && b.locationId === site && b.isActive,
-            );
-        })
-        .catch((e) => {
-          if (!disposed) searchError = e.message;
-        })
-        .finally(() => {
-          if (!disposed) searching = false;
-        });
-    }, 200);
-    return () => {
-      disposed = true;
-      clearTimeout(timer);
-    };
-  });
   onDestroy(() => generation++);
   async function close() {
     if (busy) return;
     if (
-      !uncertain &&
+      !$pendingMove &&
       (moving || editingZone) &&
       !(await confirmAction('Fermer ce panneau et abandonner la saisie non enregistrée ?', {
         title: 'Fermer l’emplacement',
@@ -126,15 +77,10 @@
     )
       return;
     open = false;
-    if (uncertain) await onsaved();
-    else onclose();
+    onclose();
   }
   function startMove(level: Level) {
     moving = level;
-    qty = null;
-    note = '';
-    destinationQuery = '';
-    destination = '';
     actionError = '';
   }
   async function saveZone() {
@@ -150,49 +96,6 @@
       await onsaved();
     } catch (e) {
       actionError = e instanceof Error ? e.message : 'Zone non enregistrée.';
-    } finally {
-      busy = false;
-    }
-  }
-  async function move() {
-    if (!moving || !data || !canManage || busy || uncertain) return;
-    const target = destinations.find((b) => b.id === destination);
-    if (!target || !qty || qty <= 0 || qty > Number(moving.qtyOnHand) || !Number.isFinite(qty)) {
-      actionError =
-        'Sélectionnez une destination et une quantité positive, au plus égale au stock affiché.';
-      return;
-    }
-    busy = true;
-    actionError = '';
-    try {
-      if (
-        !(await confirmAction(
-          `Déplacer ${qty} ${moving.unit} de ${moving.sku}, de ${data.bin.code} vers ${target.code} ? Un mouvement de stock sera enregistré. Aucun dossier de réception ou transport ne sera terminé.`,
-          { title: 'Confirmer le déplacement', confirmLabel: 'Déplacer le stock' },
-        ))
-      )
-        return;
-      await api('/wms/inventory/move', {
-        method: 'POST',
-        body: {
-          itemId: moving.itemId,
-          fromBinId: binId,
-          toBinId: target.id,
-          locationId: siteId,
-          qty,
-          note: note.trim() || undefined,
-        },
-      });
-      moving = null;
-      await onsaved();
-    } catch (e) {
-      if (e instanceof ApiError && [400, 403, 404, 409, 422].includes(e.statusCode))
-        actionError = e.message;
-      else {
-        uncertain = true;
-        actionError =
-          'Résultat non confirmé. Le stock a peut-être été déplacé. Fermez et actualisez pour vérifier avant toute nouvelle opération.';
-      }
     } finally {
       busy = false;
     }
@@ -250,7 +153,7 @@
         </fieldset>
       {:else}<Button
           variant="secondary"
-          disabled={busy || loading || uncertain}
+          disabled={busy || loading || !!$pendingMove}
           onclick={() => {
             zone = data!.bin.zone ?? '';
             editingZone = true;
@@ -262,7 +165,17 @@
         class="mt-5 border-t border-edge pt-4"
         aria-label="Stock de l’emplacement"
       >
-        <h3 class="mb-2 text-sm font-semibold">Stock sur place</h3>
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h3 class="text-sm font-semibold">Stock sur place</h3>
+          {#if !editingZone && !busy}<a
+              href={`/wms/movements?locationId=${encodeURIComponent(siteId)}&binId=${encodeURIComponent(binId)}`}
+              class="text-xs text-accent hover:underline"
+              onclick={() => {
+                open = false;
+                onclose();
+              }}>Journal de l’emplacement ↗</a
+            >{/if}
+        </div>
         <p class="mb-3 text-xs text-ink-muted">
           Quantités physiques enregistrées, sans déduction des préparations ouvertes.
         </p>
@@ -288,7 +201,7 @@
                 >{level.qtyOnHand} {level.unit}</span
               >{#if canManage && data.bin.isActive && Number(level.qtyOnHand) > 0}<Button
                   variant="ghost"
-                  disabled={busy || loading || !!moving || editingZone || uncertain}
+                  disabled={busy || loading || !!moving || editingZone || !!$pendingMove}
                   aria-label={`Déplacer ${level.sku}`}
                   onclick={() => startMove(level)}>Déplacer</Button
                 >{/if}
@@ -322,53 +235,20 @@
             >
           </nav>{/if}
       </section>{/if}
-    {#if moving}<fieldset
-        disabled={busy || uncertain}
-        class="mt-5 space-y-3 rounded-lg border border-edge bg-surface-muted p-4"
-      >
-        <h3 class="text-sm font-semibold">Déplacer {moving.sku}</h3>
-        <p class="text-xs text-ink-muted">
-          Source {data.bin.code} · {moving.qtyOnHand}
-          {moving.unit} sur place
-        </p>
-        <Field label="Rechercher la destination"
-          ><Input bind:value={destinationQuery} maxlength={80} placeholder="Code ou zone…" /></Field
-        ><ErrorNotice message={searchError} />{#if searching}<p role="status" class="text-xs">
-            Recherche…
-          </p>{:else}<Field label="Emplacement de destination"
-            ><Select bind:value={destination}
-              ><option value="">Choisir un emplacement actif du site</option
-              >{#each destinations as bin (bin.id)}<option value={bin.id}
-                  >{bin.code} · {WMS_BIN_LABELS[bin.kind]}</option
-                >{/each}</Select
-            ></Field
-          >{#if destinations.length >= 199}<p class="text-xs text-warn">
-              Liste limitée à 200 résultats. Précisez le code.
-            </p>{/if}{/if}<Field label={`Quantité (${moving.unit})`}
-          ><Input
-            type="number"
-            bind:value={qty}
-            min={0.001}
-            step={0.001}
-            max={Number(moving.qtyOnHand)}
-          /></Field
-        ><Field label="Note du mouvement"><Textarea bind:value={note} rows={2} /></Field>
-        <div class="flex flex-wrap gap-2">
-          <Button disabled={busy || uncertain || searching || !destination} onclick={move}
-            >Vérifier le déplacement</Button
-          ><Button
-            variant="ghost"
-            disabled={busy || uncertain}
-            onclick={() => {
-              moving = null;
-              actionError = '';
-            }}>Annuler la saisie</Button
-          >
-        </div>
-      </fieldset>{/if}
+    {#if moving}<StockMoveForm
+        source={{ ...moving, binId, binCode: data.bin.code, locationId: siteId }}
+        onbusy={(b) => (busy = b)}
+        oncancel={() => {
+          moving = null;
+        }}
+        onsaved={async () => {
+          moving = null;
+          await onsaved();
+        }}
+      />{/if}
   {/if}
   <div class="mt-4"><ErrorNotice message={actionError} /></div>
   {#snippet footer()}<Button variant="secondary" disabled={busy} onclick={close}
-      >{uncertain ? 'Fermer et actualiser' : 'Fermer'}</Button
+      >{$pendingMove ? 'Fermer et vérifier' : 'Fermer'}</Button
     >{/snippet}
 </Drawer>

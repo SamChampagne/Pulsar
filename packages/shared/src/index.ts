@@ -31,6 +31,7 @@ export * from './yard/workspace';
 export * from './yard/dossiers';
 export * from './wms/workspace';
 export * from './wms/documents';
+export * from './wms/movements';
 export * from './billing/budget';
 export * from './billing/subscription';
 export * from './billing/fiscal';

@@ -13,7 +13,8 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [x] WMS visuel v1 : zones/emplacements, files par site et déplacement confirmé depuis le stock ([contrats et limites](docs/plans/wms-visual-workspace.md)).
 - [x] WMS guidé : réception/préparation par lignes, unités/stock/manque, correction en panneau, choix recherchables et validation versionnée ([contrats et limites](docs/plans/wms-guided-operations.md)).
 - [x] Sérialiser édition/validation des documents WMS; revalider site/article/bin et besoin cumulé; préserver saisie et bloquer le retry incertain.
-- [ ] WMS suite : putaway traçable, recherche paginée sur les autres référentiels historiques; idempotence durable des mouvements avant retry réseau.
+- [x] WMS rangement : file par site, journal contextualisé, unités capturées et MOVE idempotent avec reprise navigateur; scénario local DÉMO ([contrats et limites](docs/plans/wms-putaway-traceability.md)).
+- [ ] WMS suite : recherche paginée sur les anciens référentiels de l'inventaire; annulation serveur explicite des intentions de MOVE incertaines; provenance par lot à concevoir.
 - [ ] Réception/préparation partielles, quantités attendues/réelles, scans, allocations/réservations et règles de conversion d'unités.
 - [ ] Flotte : disponibilité et planification de maintenance; Fabrication : postes et flux.
 - [ ] Agents : suggestions contextuelles gouvernées, motifs et résultats reliés aux dossiers.
