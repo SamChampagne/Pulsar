@@ -4,7 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { AuditAction, resolveRoleTemplates, type ModuleKey } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CreateRoleDto, UpdateRoleDto } from './dto/role.dto';
 
 const roleInclude = {
@@ -14,7 +17,35 @@ const roleInclude = {
 
 @Injectable()
 export class RolesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantModules: TenantModulesCacheService,
+    private readonly auditLogs: AuditLogsService,
+  ) {}
+
+  async templates(tenantId: string) {
+    const enabled = [...(await this.tenantModules.getEnabledKeys(tenantId))] as ModuleKey[];
+    const existing = new Set(
+      (await this.prisma.role.findMany({ where: { tenantId }, select: { key: true } })).map(
+        (r) => r.key,
+      ),
+    );
+    return resolveRoleTemplates(enabled).map((t) => ({ ...t, exists: existing.has(t.key) }));
+  }
+
+  async createFromTemplate(tenantId: string, templateKey: string) {
+    const enabled = [...(await this.tenantModules.getEnabledKeys(tenantId))] as ModuleKey[];
+    const template = resolveRoleTemplates(enabled).find((t) => t.key === templateKey);
+    if (!template) {
+      throw new BadRequestException(`Unknown or unavailable role template "${templateKey}"`);
+    }
+    return this.create(tenantId, {
+      key: template.key,
+      name: template.name,
+      description: template.description,
+      permissionKeys: template.permissionKeys,
+    });
+  }
 
   list(tenantId: string) {
     return this.prisma.role.findMany({
@@ -78,10 +109,21 @@ export class RolesService {
     });
   }
 
-  async remove(tenantId: string, id: string) {
+  async remove(tenantId: string, id: string, userId?: string) {
     const role = await this.get(tenantId, id);
     if (role.isSystem) throw new BadRequestException('System roles cannot be deleted');
+    if (role._count.users > 0) {
+      throw new BadRequestException(`Role is assigned to ${role._count.users} user(s)`);
+    }
     await this.prisma.role.delete({ where: { id } });
+    await this.auditLogs.log({
+      tenantId,
+      userId,
+      action: AuditAction.DELETE,
+      entityType: 'role',
+      entityId: id,
+      before: { key: role.key, name: role.name },
+    });
     return { deleted: true };
   }
 
