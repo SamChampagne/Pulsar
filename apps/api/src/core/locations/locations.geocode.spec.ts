@@ -1,7 +1,7 @@
 import { LocationsService } from './locations.service';
-import type { OwnershipService } from '../../../prisma/ownership.service';
-import type { PrismaService } from '../../../prisma/prisma.service';
-import type { RoutingService } from '../../../core/routing/routing.service';
+import type { OwnershipService } from '../../prisma/ownership.service';
+import type { PrismaService } from '../../prisma/prisma.service';
+import type { RoutingService } from '../routing/routing.service';
 import type { CreateLocationDto } from './dto/location.dto';
 import { LocationType } from '@pulsar/shared';
 

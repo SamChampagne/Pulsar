@@ -19,6 +19,7 @@ import { AuthModule } from './core/auth/auth.module';
 import { TenantsModule } from './core/tenants/tenants.module';
 import { UsersModule } from './core/users/users.module';
 import { RolesModule } from './core/roles/roles.module';
+import { CoreLocationsModule } from './core/locations/locations.module';
 import { PermissionsModule } from './core/permissions/permissions.module';
 import { AuditLogsModule } from './core/audit-logs/audit-logs.module';
 import { DocumentsModule } from './core/documents/documents.module';
@@ -68,6 +69,7 @@ import { ConnectModule } from './core/connect/connect.module';
     TenantsModule,
     UsersModule,
     RolesModule,
+    CoreLocationsModule,
     PermissionsModule,
     AuditLogsModule,
     DocumentsModule,

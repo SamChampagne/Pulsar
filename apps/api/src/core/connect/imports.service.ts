@@ -20,7 +20,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { paginated, paginationArgs } from '../../common/pagination';
 import { ListQueryDto } from '../../common/dto/list-query.dto';
 import { CustomersService } from '../../modules/transportation/customers/customers.service';
-import { LocationsService } from '../../modules/transportation/locations/locations.service';
+import { LocationsService } from '../locations/locations.service';
 import { CarriersService } from '../../modules/transportation/carriers/carriers.service';
 import { ItemsService } from '../../modules/wms/items/items.service';
 import { VehiclesService } from '../../modules/transportation/vehicles/vehicles.service';

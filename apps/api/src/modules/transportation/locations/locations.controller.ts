@@ -6,10 +6,14 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Audit } from '../../../common/decorators/audit.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
-import { ListQueryDto } from '../../../common/dto/list-query.dto';
-import { CreateLocationDto, UpdateLocationDto } from './dto/location.dto';
-import { LocationsService } from './locations.service';
+import {
+  CreateLocationDto,
+  LocationsListQueryDto,
+  UpdateLocationDto,
+} from '../../../core/locations/dto/location.dto';
+import { LocationsService } from '../../../core/locations/locations.service';
 
+/** Backward-compatible alias of core `/locations`, gated by the TMS module. New code uses `/locations`. */
 @ApiTags('transportation/locations')
 @ApiBearerAuth()
 @RequireModule(MODULE_KEYS.TRANSPORTATION)
@@ -19,7 +23,7 @@ export class LocationsController {
 
   @Get()
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ)
-  list(@CurrentUser() user: AuthUser, @Query() query: ListQueryDto) {
+  list(@CurrentUser() user: AuthUser, @Query() query: LocationsListQueryDto) {
     return this.locations.list(user.tenantId, query);
   }
 
