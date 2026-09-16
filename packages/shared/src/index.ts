@@ -1,5 +1,6 @@
 export * from './modules';
 export * from './permissions';
+export * from './role-templates';
 export * from './config/module-settings';
 export * from './config/custom-fields';
 export * from './enums/core';
