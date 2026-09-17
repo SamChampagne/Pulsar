@@ -1,8 +1,12 @@
-import { TransportMode } from '@pulsar/shared';
+import {
+  PortalChangeRequestKind,
+  PortalChangeRequestStatus,
+  TransportMode,
+  TransportOrderStatus,
+} from '@pulsar/shared';
 import {
   IsDateString,
   IsEnum,
-  IsIn,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -11,7 +15,9 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import type { CreateOrderTemplateInput, PortalChangeRequestInput } from '../portal.service';
+import { ListQueryDto } from '../../../common/dto/list-query.dto';
+import type { PortalChangeRequestInput } from '../portal-change-requests.service';
+import type { CreateOrderTemplateInput } from '../portal.service';
 
 /**
  * Request payloads of the portal surface. Shared verbatim by the two doors —
@@ -118,11 +124,35 @@ export class PortalChangeRequestDtoClass implements PortalChangeRequestInput {
   @IsString()
   shipmentId?: string;
 
-  @IsIn(['DATE', 'ADDRESS', 'CANCEL', 'OTHER'])
-  kind!: string;
+  @IsEnum(PortalChangeRequestKind)
+  kind!: PortalChangeRequestKind;
 
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000)
   note!: string;
+}
+
+/** Filters of the paginated portal order list (`GET /portal/orders`). */
+export class PortalOrdersQueryDto extends ListQueryDto {
+  @IsOptional()
+  @IsEnum(TransportOrderStatus)
+  status?: TransportOrderStatus;
+}
+
+/** Staff filter of the change-request queue. */
+export class ChangeRequestsQueryDto {
+  @IsOptional()
+  @IsEnum(PortalChangeRequestStatus)
+  status?: PortalChangeRequestStatus;
+}
+
+/** Staff answer carried by acknowledge/resolve/reject. */
+export class ChangeRequestResponseDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  response?: string;
 }
 
 export class ShipmentCommentDto {

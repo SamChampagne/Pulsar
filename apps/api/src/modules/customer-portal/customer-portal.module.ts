@@ -11,6 +11,8 @@ import {
   PortalLinksController,
   PortalPublicController,
 } from './portal.controller';
+import { PortalChangeRequestsAdminController } from './portal-change-requests.admin.controller';
+import { PortalChangeRequestsService } from './portal-change-requests.service';
 import { PortalSessionController } from './portal-session.controller';
 import { PortalService } from './portal.service';
 import { PortalAuthController, PortalAuthMeController } from './auth/portal-auth.controller';
@@ -42,10 +44,18 @@ import { PortalUsersService } from './portal-users.service';
     PortalAuthMeController,
     PortalUsersAdminController,
     PortalUsersSelfController,
+    PortalChangeRequestsAdminController,
     // Declared after portal/auth and portal/users: its routes are literal
     // segments under /portal, so there is no shadowing either way.
     PortalSessionController,
   ],
-  providers: [PortalService, PortalAuthService, PortalUsersService, PortalJwtStrategy, PortalGuard],
+  providers: [
+    PortalService,
+    PortalChangeRequestsService,
+    PortalAuthService,
+    PortalUsersService,
+    PortalJwtStrategy,
+    PortalGuard,
+  ],
 })
 export class CustomerPortalModule {}

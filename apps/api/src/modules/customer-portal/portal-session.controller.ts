@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { PortalAuthUser } from '@pulsar/shared';
 import type { Response } from 'express';
@@ -8,8 +8,10 @@ import {
   CreateOrderTemplateDtoClass,
   PortalChangeRequestDtoClass,
   PortalOrderDto,
+  PortalOrdersQueryDto,
   ShipmentCommentDto,
 } from './dto/portal.dto';
+import { PortalChangeRequestsService } from './portal-change-requests.service';
 import { PortalService } from './portal.service';
 
 /**
@@ -36,7 +38,10 @@ import { PortalService } from './portal.service';
 @PortalController()
 @Controller('portal')
 export class PortalSessionController {
-  constructor(private readonly portal: PortalService) {}
+  constructor(
+    private readonly portal: PortalService,
+    private readonly changeRequests: PortalChangeRequestsService,
+  ) {}
 
   @Get('view')
   async view(@CurrentPortalUser() user: PortalAuthUser) {
@@ -48,9 +53,45 @@ export class PortalSessionController {
     return this.portal.createOrderFor(await this.portal.contextFromPortalUser(user), dto);
   }
 
+  /** Paginated order list (status/search filters) — the `view` keeps the last 50. */
+  @Get('orders')
+  async listOrders(
+    @CurrentPortalUser() user: PortalAuthUser,
+    @Query() query: PortalOrdersQueryDto,
+  ) {
+    return this.portal.listOrdersFor(await this.portal.contextFromPortalUser(user), query);
+  }
+
   @Get('invoices')
   async listInvoices(@CurrentPortalUser() user: PortalAuthUser) {
     return this.portal.listInvoicesFor(await this.portal.contextFromPortalUser(user));
+  }
+
+  @Get('invoices/:invoiceId/pdf')
+  async downloadInvoicePdf(
+    @CurrentPortalUser() user: PortalAuthUser,
+    @Param('invoiceId') invoiceId: string,
+    @Res() res: Response,
+  ) {
+    const ctx = await this.portal.contextFromPortalUser(user);
+    const { stream, fileName, mimeType } = await this.portal.downloadInvoicePdfFor(ctx, invoiceId);
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+    });
+    stream.pipe(res);
+  }
+
+  /** Tracking detail — same payload as the public tracking page. */
+  @Get('shipments/:shipmentId')
+  async getShipment(
+    @CurrentPortalUser() user: PortalAuthUser,
+    @Param('shipmentId') shipmentId: string,
+  ) {
+    return this.portal.getShipmentTrackingFor(
+      await this.portal.contextFromPortalUser(user),
+      shipmentId,
+    );
   }
 
   @Get('shipments/:shipmentId/documents')
@@ -100,12 +141,17 @@ export class PortalSessionController {
     return this.portal.deleteTemplateFor(await this.portal.contextFromPortalUser(user), id);
   }
 
+  @Get('change-requests')
+  async listChangeRequests(@CurrentPortalUser() user: PortalAuthUser) {
+    return this.changeRequests.listFor(await this.portal.contextFromPortalUser(user));
+  }
+
   @Post('change-requests')
   async createChangeRequest(
     @CurrentPortalUser() user: PortalAuthUser,
     @Body() dto: PortalChangeRequestDtoClass,
   ) {
-    return this.portal.createChangeRequestFor(await this.portal.contextFromPortalUser(user), dto);
+    return this.changeRequests.createFor(await this.portal.contextFromPortalUser(user), dto);
   }
 
   @Get('shipments/:shipmentId/comments')

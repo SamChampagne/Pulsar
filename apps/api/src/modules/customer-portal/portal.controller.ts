@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
@@ -12,8 +12,10 @@ import {
   CreateOrderTemplateDtoClass,
   PortalChangeRequestDtoClass,
   PortalOrderDto,
+  PortalOrdersQueryDto,
   ShipmentCommentDto,
 } from './dto/portal.dto';
+import { PortalChangeRequestsService } from './portal-change-requests.service';
 import { PortalService } from './portal.service';
 
 class SetBrandingDto {
@@ -23,7 +25,9 @@ class SetBrandingDto {
 
   @IsOptional()
   @IsString()
-  @Matches(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/, { message: 'accentColor must be a hex color (e.g. #RRGGBB)' })
+  @Matches(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/, {
+    message: 'accentColor must be a hex color (e.g. #RRGGBB)',
+  })
   accentColor?: string;
 }
 
@@ -68,7 +72,10 @@ export class PortalAdminController {
 @Public()
 @Controller('public/portal')
 export class PortalPublicController {
-  constructor(private readonly portal: PortalService) {}
+  constructor(
+    private readonly portal: PortalService,
+    private readonly changeRequests: PortalChangeRequestsService,
+  ) {}
 
   @Get(':token')
   view(@Param('token') token: string) {
@@ -81,16 +88,38 @@ export class PortalPublicController {
     return this.portal.createOrder(token, dto);
   }
 
+  /** Token twin of `GET /portal/orders` — same payload, same scoping. */
+  @Get(':token/orders')
+  listOrders(@Param('token') token: string, @Query() query: PortalOrdersQueryDto) {
+    return this.portal.listOrders(token, query);
+  }
+
+  @Get(':token/shipments/:shipmentId')
+  getShipment(@Param('token') token: string, @Param('shipmentId') shipmentId: string) {
+    return this.portal.getShipmentTracking(token, shipmentId);
+  }
+
   @Get(':token/invoices')
   listInvoices(@Param('token') token: string) {
     return this.portal.listInvoices(token);
   }
 
-  @Get(':token/shipments/:shipmentId/documents')
-  listShipmentDocuments(
+  @Get(':token/invoices/:invoiceId/pdf')
+  async downloadInvoicePdf(
     @Param('token') token: string,
-    @Param('shipmentId') shipmentId: string,
+    @Param('invoiceId') invoiceId: string,
+    @Res() res: Response,
   ) {
+    const { stream, fileName, mimeType } = await this.portal.downloadInvoicePdf(token, invoiceId);
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+    });
+    stream.pipe(res);
+  }
+
+  @Get(':token/shipments/:shipmentId/documents')
+  listShipmentDocuments(@Param('token') token: string, @Param('shipmentId') shipmentId: string) {
     return this.portal.listShipmentDocuments(token, shipmentId);
   }
 
@@ -100,7 +129,10 @@ export class PortalPublicController {
     @Param('documentId') documentId: string,
     @Res() res: Response,
   ) {
-    const { stream, fileName, mimeType } = await this.portal.downloadShipmentDocument(token, documentId);
+    const { stream, fileName, mimeType } = await this.portal.downloadShipmentDocument(
+      token,
+      documentId,
+    );
     res.set({
       'Content-Type': mimeType,
       'Content-Disposition': `attachment; filename="${fileName}"`,
@@ -114,34 +146,30 @@ export class PortalPublicController {
   }
 
   @Post(':token/templates')
-  createTemplate(
-    @Param('token') token: string,
-    @Body() dto: CreateOrderTemplateDtoClass,
-  ) {
+  createTemplate(@Param('token') token: string, @Body() dto: CreateOrderTemplateDtoClass) {
     return this.portal.createTemplate(token, dto);
   }
 
   @Delete(':token/templates/:id')
-  deleteTemplate(
-    @Param('token') token: string,
-    @Param('id') id: string,
-  ) {
+  deleteTemplate(@Param('token') token: string, @Param('id') id: string) {
     return this.portal.deleteTemplate(token, id);
   }
 
+  @Get(':token/change-requests')
+  async listChangeRequests(@Param('token') token: string) {
+    return this.changeRequests.listFor(await this.portal.contextFromToken(token));
+  }
+
   @Post(':token/change-requests')
-  createChangeRequest(
+  async createChangeRequest(
     @Param('token') token: string,
     @Body() dto: PortalChangeRequestDtoClass,
   ) {
-    return this.portal.createChangeRequest(token, dto);
+    return this.changeRequests.createFor(await this.portal.contextFromToken(token), dto);
   }
 
   @Get(':token/shipments/:shipmentId/comments')
-  listShipmentComments(
-    @Param('token') token: string,
-    @Param('shipmentId') shipmentId: string,
-  ) {
+  listShipmentComments(@Param('token') token: string, @Param('shipmentId') shipmentId: string) {
     return this.portal.listShipmentComments(token, shipmentId);
   }
 
