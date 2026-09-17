@@ -3,6 +3,9 @@
   the existing form, opened from a header button (spec B5). Shared by the
   session workspace (`/portal/requests`) and the capability-link plane
   (`/portal/:token`) — the single implementation both doors render.
+
+  `active` gates the fetch the way `InvoicesPanel` does: on the capability-link
+  plane this panel stays mounted-but-hidden as one tab among others.
 -->
 <script lang="ts">
   import {
@@ -27,26 +30,31 @@
   let {
     client,
     view,
+    active = true,
     initialOrderId = '',
     initialShipmentId = '',
   }: {
     client: PortalClient;
     view: PortalView;
+    active?: boolean;
     /** From the session route's `?orderId=`/`?shipmentId=` query, if present. */
     initialOrderId?: string;
     initialShipmentId?: string;
   } = $props();
 
   let requests = $state<PortalChangeRequest[]>([]);
-  let loading = $state(true);
+  let loading = $state(false);
+  let loaded = $state(false);
   let error = $state('');
   let formOpen = $state(false);
 
   async function load() {
+    if (loading) return;
     loading = true;
     error = '';
     try {
       requests = await client.get<PortalChangeRequest[]>('/change-requests');
+      loaded = true;
     } catch (e) {
       requests = [];
       error = e instanceof PortalApiError ? e.message : 'Impossible de charger les demandes.';
@@ -55,8 +63,9 @@
     }
   }
 
+  // Lazy load: fetch only once the tab (or page) is first activated.
   $effect(() => {
-    void load();
+    if (active && !loaded && !loading) void load();
   });
 
   function openForm() {
@@ -67,7 +76,7 @@
 <PageHeader
   title="Demandes"
   subtitle="Historique de vos demandes de changement et leur avancement."
-  count={loading ? undefined : requests.length}
+  count={loaded ? requests.length : undefined}
 >
   {#snippet actions()}
     <Button onclick={openForm}>Nouvelle demande</Button>
@@ -76,9 +85,9 @@
 
 <ErrorNotice message={error} onretry={load} />
 
-{#if loading}
+{#if loading && !loaded}
   <Card padded={false}><Skeleton rows={5} /></Card>
-{:else if requests.length === 0}
+{:else if loaded && requests.length === 0}
   <Card>
     <EmptyState
       title="Aucune demande"

@@ -4,6 +4,12 @@
   shipment (`GET /shipments/:id/documents`), bounded to a handful in flight at
   once so a customer with many shipments doesn't fire dozens of requests at
   the same instant.
+
+  `active` gates the fetch the way `InvoicesPanel` does: on the capability-link
+  plane this panel stays mounted-but-hidden as one tab among others, and a
+  hidden tab must not spend round-trips before it is ever shown. If `view`
+  changes while the tab is inactive, the panel is marked stale instead of
+  refetching immediately, and catches up the next time it becomes active.
 -->
 <script lang="ts">
   import { Card, EmptyState, ErrorNotice, PageHeader, Skeleton, Table } from '$lib/components/ui';
@@ -12,7 +18,11 @@
   import type { PortalClient } from '../client';
   import type { PortalDocument, PortalView } from '../types';
 
-  let { client, view }: { client: PortalClient; view: PortalView } = $props();
+  let {
+    client,
+    view,
+    active = true,
+  }: { client: PortalClient; view: PortalView; active?: boolean } = $props();
 
   interface DocumentRow extends PortalDocument {
     shipmentNumber: string;
@@ -20,7 +30,9 @@
   }
 
   let rows = $state<DocumentRow[]>([]);
-  let loading = $state(true);
+  let loading = $state(false);
+  let loaded = $state(false);
+  let stale = $state(false);
   let error = $state('');
 
   /** Runs `fn` over `items` with at most `limit` in flight at once. */
@@ -42,7 +54,9 @@
   }
 
   async function load() {
+    if (loading) return;
     loading = true;
+    stale = false;
     error = '';
     try {
       const targets = view.orders.flatMap((order) =>
@@ -62,6 +76,7 @@
         }
       });
       rows = perShipment.flat().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      loaded = true;
     } catch {
       rows = [];
       error = 'Impossible de charger les documents.';
@@ -70,9 +85,27 @@
     }
   }
 
+  // `view` changes (a new order/shipment) reload immediately when the tab is
+  // active, or are deferred (marked stale) until it becomes active again.
+  // `undefined` is a one-time sentinel so the very first render doesn't count
+  // as a "change" — the lazy-load effect below owns the initial fetch.
+  let lastView: PortalView | null | undefined = undefined;
   $effect(() => {
-    void view;
-    void load();
+    const current = view;
+    if (lastView === undefined) {
+      lastView = current;
+      return;
+    }
+    if (current === lastView) return;
+    lastView = current;
+    if (active) void load();
+    else stale = true;
+  });
+
+  // Lazy load: fetch only once the tab (or page) is first activated, and
+  // again if it went stale while hidden.
+  $effect(() => {
+    if (active && (!loaded || stale) && !loading) void load();
   });
 
   async function downloadDoc(doc: PortalDocument) {
@@ -89,14 +122,14 @@
 <PageHeader
   title="Documents"
   subtitle="Tous les documents de vos expéditions, du plus récent au plus ancien."
-  count={loading ? undefined : rows.length}
+  count={loaded ? rows.length : undefined}
 />
 
 <ErrorNotice message={error} onretry={load} />
 
-{#if loading}
+{#if loading && !loaded}
   <Card padded={false}><Skeleton rows={5} /></Card>
-{:else if rows.length === 0}
+{:else if loaded && rows.length === 0}
   <Card>
     <EmptyState
       title="Aucun document"

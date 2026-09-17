@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { PortalChangeRequestStatus } from '@pulsar/shared';
+  import { PERMISSIONS, PortalChangeRequestStatus } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import {
     Badge,
@@ -17,6 +17,7 @@
     toneFor,
   } from '$lib/components/ui';
   import { formatDate } from '$lib/format';
+  import { auth } from '$lib/stores/auth';
   import { confirmAction } from '$lib/stores/confirmation';
   import { toast } from '$lib/stores/toast';
 
@@ -35,6 +36,12 @@
     requestedBy: string | null;
     updatedAt: string;
   }
+
+  // Acknowledge/resolve/reject are staff write actions — same permission the
+  // admin controller's mutating endpoints require.
+  const canManage = $derived(
+    ($auth?.user.permissions ?? []).includes(PERMISSIONS.CUSTOMER_PORTAL.USERS_MANAGE),
+  );
 
   let requests = $state<StaffChangeRequestRow[]>([]);
   let loading = $state(true);
@@ -173,25 +180,27 @@
           <td><Badge tone={toneFor(row.status)}>{labelFor(row.status)}</Badge></td>
           <td class="text-ink-muted">{formatDate(row.createdAt)}</td>
           <td class="text-right">
-            <div class="flex justify-end gap-1">
-              {#if row.status === PortalChangeRequestStatus.OPEN}
-                <Button
-                  variant="secondary"
-                  loading={busyId === row.id}
-                  onclick={() => acknowledge(row)}
-                >
-                  Accuser réception
-                </Button>
-              {/if}
-              {#if row.status === PortalChangeRequestStatus.OPEN || row.status === PortalChangeRequestStatus.ACKNOWLEDGED}
-                <Button variant="primary" onclick={() => openResponse(row, 'resolve')}>
-                  Résoudre
-                </Button>
-                <Button variant="secondary" onclick={() => openResponse(row, 'reject')}>
-                  Rejeter
-                </Button>
-              {/if}
-            </div>
+            {#if canManage}
+              <div class="flex justify-end gap-1">
+                {#if row.status === PortalChangeRequestStatus.OPEN}
+                  <Button
+                    variant="secondary"
+                    loading={busyId === row.id}
+                    onclick={() => acknowledge(row)}
+                  >
+                    Accuser réception
+                  </Button>
+                {/if}
+                {#if row.status === PortalChangeRequestStatus.OPEN || row.status === PortalChangeRequestStatus.ACKNOWLEDGED}
+                  <Button variant="primary" onclick={() => openResponse(row, 'resolve')}>
+                    Résoudre
+                  </Button>
+                  <Button variant="secondary" onclick={() => openResponse(row, 'reject')}>
+                    Rejeter
+                  </Button>
+                {/if}
+              </div>
+            {/if}
           </td>
         </tr>
       {/each}

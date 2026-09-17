@@ -7,9 +7,19 @@
   import { toast } from '$lib/stores/toast';
   import { confirmAction } from '$lib/stores/confirmation';
   import {
-    Badge, Card, PageHeader, ErrorNotice, Skeleton,
-    toneFor, labelFor,
-    Table, Button, Modal, Field, Input, Select,
+    Badge,
+    Card,
+    PageHeader,
+    ErrorNotice,
+    Skeleton,
+    toneFor,
+    labelFor,
+    Table,
+    Button,
+    Modal,
+    Field,
+    Input,
+    Select,
   } from '$lib/components/ui';
 
   interface CustomerDetail {
@@ -116,9 +126,7 @@
     portalUsersError = '';
     portalUsersLoading = true;
     try {
-      portalUsers = await api<PortalUserRow[]>(
-        `/customer-portal/customers/${customerId}/users`,
-      );
+      portalUsers = await api<PortalUserRow[]>(`/customer-portal/customers/${customerId}/users`);
     } catch (e) {
       portalUsersError =
         e instanceof ApiError
@@ -244,7 +252,6 @@
   <div class="grid gap-4 lg:grid-cols-3">
     <!-- Colonne gauche 2/3 -->
     <div class="flex flex-col gap-4 lg:col-span-2">
-
       <!-- Ordres de transport récents -->
       <Card>
         <h2 class="mb-3 font-semibold text-ink">Ordres de transport</h2>
@@ -300,9 +307,17 @@
         <Card>
           <div class="mb-3 flex items-center justify-between gap-2">
             <h2 class="font-semibold text-ink">Utilisateurs du portail</h2>
-            {#if canManagePortalUsers}
-              <Button onclick={openInvite}>Inviter un utilisateur</Button>
-            {/if}
+            <div class="flex items-center gap-2">
+              <a
+                href="/customer-portal/requests"
+                class="text-sm font-medium text-accent hover:underline"
+              >
+                Demandes du portail
+              </a>
+              {#if canManagePortalUsers}
+                <Button onclick={openInvite}>Inviter un utilisateur</Button>
+              {/if}
+            </div>
           </div>
 
           {#if portalInviteUrl}
@@ -366,15 +381,13 @@
                         {#if user.status === 'INVITED'}
                           <Button
                             variant="secondary"
-                            onclick={() => void resendPortalInvitation(user)}
-                            >Renvoyer</Button
+                            onclick={() => void resendPortalInvitation(user)}>Renvoyer</Button
                           >
                         {/if}
                         {#if user.status === 'DISABLED'}
                           <Button
                             variant="secondary"
-                            onclick={() => void reactivatePortalUser(user)}
-                            >Réactiver</Button
+                            onclick={() => void reactivatePortalUser(user)}>Réactiver</Button
                           >
                         {:else}
                           <Button variant="danger" onclick={() => void deactivatePortalUser(user)}
@@ -458,8 +471,8 @@
     <form onsubmit={invite} class="space-y-3">
       {#if inviteError}<p class="text-sm text-danger">{inviteError}</p>{/if}
       <p class="text-sm text-ink-muted">
-        L'utilisateur reçoit un courriel contenant un lien pour définir son mot de passe (valide
-        72 h). Le lien s'affiche aussi ici pour que vous puissiez le transmettre vous-même.
+        L'utilisateur reçoit un courriel contenant un lien pour définir son mot de passe (valide 72
+        h). Le lien s'affiche aussi ici pour que vous puissiez le transmettre vous-même.
       </p>
       <Field label="Courriel">
         <Input type="email" bind:value={inviteForm.email} required />
@@ -477,10 +490,13 @@
         </Select>
       </Field>
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
-        <Button variant="secondary" onclick={() => { showInvite = false; }}>Annuler</Button>
-        <Button variant="primary" type="submit" loading={inviteSaving}
-          >Envoyer l'invitation</Button
+        <Button
+          variant="secondary"
+          onclick={() => {
+            showInvite = false;
+          }}>Annuler</Button
         >
+        <Button variant="primary" type="submit" loading={inviteSaving}>Envoyer l'invitation</Button>
       </div>
     </form>
   {/snippet}

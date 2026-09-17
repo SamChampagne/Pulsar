@@ -100,3 +100,26 @@ test('the « Portail client » domain nav lists the requests queue', async ({ pa
   await expect(nav.getByRole('link', { name: 'Demandes' })).toBeVisible();
   await expect(nav.getByRole('link', { name: 'Clients & portail' })).toBeVisible();
 });
+
+test('the domain switcher reaches the requests queue via the domain home', async ({ page }) => {
+  await login(page);
+  await mockChangeRequests(page);
+  await page.goto('/dashboard');
+
+  // The domain's `home` must fall under its own prefix (`/customer-portal`)
+  // or the switcher lands on a route owned by a different domain and its
+  // sidebar never appears (regression covered here: fix round 1).
+  await page.getByRole('button', { name: 'Changer d’application' }).click();
+  const switcher = page.getByRole('dialog', { name: 'Changer d’application' });
+  const portalTile = switcher.getByRole('link', { name: 'Portail client' });
+  await portalTile.waitFor({ state: 'visible' });
+  // The tile's own transition-in (Modal `scale`) briefly reports as "not
+  // stable" to Playwright's actionability check; force past that instead of
+  // retrying the click into a timeout.
+  await portalTile.click({ force: true });
+
+  await expect(page).toHaveURL(/\/customer-portal\/requests$/);
+  const nav = page.getByRole('navigation', { name: 'Menu du module sélectionné' });
+  await expect(nav.getByRole('link', { name: 'Demandes' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Clients & portail' })).toBeVisible();
+});

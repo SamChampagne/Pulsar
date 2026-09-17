@@ -112,8 +112,9 @@ export const STATUS_LABELS_FR: Record<string, string> = {
   ACKNOWLEDGED: 'Prise en compte',
   RESOLVED: 'Résolue',
   REJECTED: 'Rejetée',
-  // Portal change request kinds (PortalChangeRequestKind) — OTHER already
-  // covers several unrelated enums, so its "Autre" reading applies here too.
+  // Portal change request kinds (PortalChangeRequestKind). `OTHER` is also
+  // the raw value of several unrelated enums (e.g. billing/transportation
+  // "other" categories), so this one entry covers all of them too.
   DATE: 'Date',
   ADDRESS: 'Adresse',
   CANCEL: 'Annulation',

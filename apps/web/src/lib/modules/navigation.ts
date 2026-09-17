@@ -531,7 +531,10 @@ export function navCatalogue(): NavDomain[] {
       key: 'customer-portal',
       label: 'Portail client',
       icon: Globe,
-      home: '/customers',
+      // `/customers` belongs to the Transport domain's own prefixes, so a
+      // `home` there would show Transport's sidebar the instant the switcher
+      // navigates to it. The domain's own prefix is `/customer-portal`.
+      home: '/customer-portal/requests',
       module: MODULE_KEYS.CUSTOMER_PORTAL,
       prefixes: ['/customer-portal'],
       sections: [

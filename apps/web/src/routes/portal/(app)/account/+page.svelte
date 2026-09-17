@@ -7,7 +7,7 @@
   let sending = $state(false);
   let sent = $state(false);
 
-  // Reuses the exact public forgot-password call (`$lib/portal/forgot`'s
+  // Reuses the exact public forgot-password call (`routes/portal/forgot`'s
   // `/portal/auth/forgot-password`), just with the signed-in email already
   // known — no tenant slug travels in the session, but `tenant` is optional
   // server-side. Like the public page, the API never reveals whether the

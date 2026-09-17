@@ -65,10 +65,10 @@
       <InvoicesPanel {client} active={activeTab === 'invoices'} />
     </div>
     <div hidden={activeTab !== 'documents'}>
-      <DocumentsPanel {client} {view} />
+      <DocumentsPanel {client} {view} active={activeTab === 'documents'} />
     </div>
     <div hidden={activeTab !== 'change'}>
-      <ChangeRequestsPanel {client} {view} />
+      <ChangeRequestsPanel {client} {view} active={activeTab === 'change'} />
     </div>
   {:else}
     <p class="text-sm text-ink-muted">Chargement…</p>
