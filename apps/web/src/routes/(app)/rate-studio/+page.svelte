@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
-  import { TransportMode } from '@pulsar/shared';
+  import { TransportMode, COUNTRIES, regionsFor } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import { formatMoney, formatDate } from '$lib/format';
@@ -15,7 +15,10 @@
     Field,
     Input,
     Select,
+    ReferenceSelect,
   } from '$lib/components/ui';
+
+  const COUNTRY_OPTIONS = COUNTRIES.map((c) => ({ value: c.code, label: c.name }));
 
   type EndpointType = 'LOCATION' | 'CITY' | 'STATE' | 'COUNTRY';
 
@@ -135,6 +138,25 @@
 
   function laneLabel(lane: LaneOption): string {
     return lane.name ?? `${lane.originType} → ${lane.destinationType}`;
+  }
+
+  /** Distinct cities across the tenant's locations, for the free-text city field. */
+  const cityOptions = $derived(
+    [...new Set(locations.map((l) => l.city).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+  );
+
+  const originRegions = $derived(
+    regionsFor(originCountry).map((r) => ({ value: r.code, label: r.name })),
+  );
+  const destinationRegions = $derived(
+    regionsFor(destinationCountry).map((r) => ({ value: r.code, label: r.name })),
+  );
+
+  function resetOriginState() {
+    originState = '';
+  }
+  function resetDestinationState() {
+    destinationState = '';
   }
 
   function buildEndpointBody(
@@ -310,26 +332,48 @@
                   </Select>
                 </Field>
               {:else if originType === 'CITY'}
-                <Field label="Ville"
-                  ><Input bind:value={originCity} required placeholder="Montréal" /></Field
-                >
-                <Field label="Province / État"
-                  ><Input bind:value={originState} required placeholder="QC" /></Field
-                >
-                <Field label="Pays"
-                  ><Input bind:value={originCountry} required placeholder="CA" /></Field
-                >
+                <Field label="Ville">
+                  <input
+                    bind:value={originCity}
+                    required
+                    list="rs-city-list"
+                    placeholder="Montréal"
+                    class="min-h-9 w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink transition-colors placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+                  />
+                </Field>
+                <Field label="Province / État">
+                  {#if originRegions.length}
+                    <ReferenceSelect options={originRegions} bind:value={originState} />
+                  {:else}
+                    <Input bind:value={originState} required placeholder="QC" />
+                  {/if}
+                </Field>
+                <Field label="Pays">
+                  <ReferenceSelect
+                    options={COUNTRY_OPTIONS}
+                    bind:value={originCountry}
+                    onchange={resetOriginState}
+                  />
+                </Field>
               {:else if originType === 'STATE'}
-                <Field label="Province / État"
-                  ><Input bind:value={originState} required placeholder="QC" /></Field
-                >
-                <Field label="Pays"
-                  ><Input bind:value={originCountry} required placeholder="CA" /></Field
-                >
+                <Field label="Province / État">
+                  {#if originRegions.length}
+                    <ReferenceSelect options={originRegions} bind:value={originState} />
+                  {:else}
+                    <Input bind:value={originState} required placeholder="QC" />
+                  {/if}
+                </Field>
+                <Field label="Pays">
+                  <ReferenceSelect
+                    options={COUNTRY_OPTIONS}
+                    bind:value={originCountry}
+                    onchange={resetOriginState}
+                  />
+                </Field>
               {:else if originType === 'COUNTRY'}
-                <Field label="Pays"
-                  ><Input bind:value={originCountry} required placeholder="CA" /></Field
-                >
+                <Field label="Pays">
+                  <ReferenceSelect options={COUNTRY_OPTIONS} bind:value={originCountry} />
+                </Field>
               {/if}
             </fieldset>
 
@@ -353,29 +397,54 @@
                   </Select>
                 </Field>
               {:else if destinationType === 'CITY'}
-                <Field label="Ville"
-                  ><Input bind:value={destinationCity} required placeholder="Toronto" /></Field
-                >
-                <Field label="Province / État"
-                  ><Input bind:value={destinationState} required placeholder="ON" /></Field
-                >
-                <Field label="Pays"
-                  ><Input bind:value={destinationCountry} required placeholder="CA" /></Field
-                >
+                <Field label="Ville">
+                  <input
+                    bind:value={destinationCity}
+                    required
+                    list="rs-city-list"
+                    placeholder="Toronto"
+                    class="min-h-9 w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink transition-colors placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+                  />
+                </Field>
+                <Field label="Province / État">
+                  {#if destinationRegions.length}
+                    <ReferenceSelect options={destinationRegions} bind:value={destinationState} />
+                  {:else}
+                    <Input bind:value={destinationState} required placeholder="ON" />
+                  {/if}
+                </Field>
+                <Field label="Pays">
+                  <ReferenceSelect
+                    options={COUNTRY_OPTIONS}
+                    bind:value={destinationCountry}
+                    onchange={resetDestinationState}
+                  />
+                </Field>
               {:else if destinationType === 'STATE'}
-                <Field label="Province / État"
-                  ><Input bind:value={destinationState} required placeholder="ON" /></Field
-                >
-                <Field label="Pays"
-                  ><Input bind:value={destinationCountry} required placeholder="CA" /></Field
-                >
+                <Field label="Province / État">
+                  {#if destinationRegions.length}
+                    <ReferenceSelect options={destinationRegions} bind:value={destinationState} />
+                  {:else}
+                    <Input bind:value={destinationState} required placeholder="ON" />
+                  {/if}
+                </Field>
+                <Field label="Pays">
+                  <ReferenceSelect
+                    options={COUNTRY_OPTIONS}
+                    bind:value={destinationCountry}
+                    onchange={resetDestinationState}
+                  />
+                </Field>
               {:else if destinationType === 'COUNTRY'}
-                <Field label="Pays"
-                  ><Input bind:value={destinationCountry} required placeholder="CA" /></Field
-                >
+                <Field label="Pays">
+                  <ReferenceSelect options={COUNTRY_OPTIONS} bind:value={destinationCountry} />
+                </Field>
               {/if}
             </fieldset>
           </div>
+          <datalist id="rs-city-list">
+            {#each cityOptions as city (city)}<option value={city}></option>{/each}
+          </datalist>
         {/if}
 
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

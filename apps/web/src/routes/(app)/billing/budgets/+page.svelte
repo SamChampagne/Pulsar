@@ -12,6 +12,7 @@
     EmptyState,
     Skeleton,
     ErrorNotice,
+    EntityPicker,
     type Tone,
   } from '$lib/components/ui';
 
@@ -359,11 +360,18 @@
         <div class="space-y-2 max-h-48 overflow-y-auto pr-1">
           {#each lines as line, idx (idx)}
             <div class="flex items-center gap-2">
-              <input
-                bind:value={line.accountCode}
-                placeholder="Code compte (ex. 5000)"
-                class="min-w-0 flex-1 rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm font-mono focus:border-accent focus:outline-none"
-              />
+              <div class="min-w-0 flex-1">
+                <EntityPicker
+                  endpoint="/billing/ledger/accounts"
+                  label="Code compte"
+                  placeholder="Code compte (ex. 5000)"
+                  listShape="array"
+                  valueKey="code"
+                  labelKey="code"
+                  detailKey="name"
+                  bind:value={line.accountCode}
+                />
+              </div>
               <input
                 type="number"
                 step="0.01"

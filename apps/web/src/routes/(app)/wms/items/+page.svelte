@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { WMS_UNITS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import {
     Badge,
@@ -11,6 +12,7 @@
     Input,
     Modal,
     PageHeader,
+    ReferenceSelect,
     Skeleton,
     Table,
   } from '$lib/components/ui';
@@ -33,6 +35,8 @@
     return status === 'BELOW_MIN' ? 'danger' : status === 'LOW' ? 'warn' : 'ok';
   }
 
+  const BASE_UNIT_OPTIONS = WMS_UNITS.map((u) => ({ value: u.code, label: u.name }));
+
   let items = $state<Item[]>([]);
   let total = $state(0);
   let loading = $state(true);
@@ -50,6 +54,14 @@
   let formReorderQty = $state('');
   let formActive = $state(true);
   let saving = $state(false);
+
+  /** The closed vocabulary, plus the current value when it's an unknown unit
+   *  already stored on an existing item — never silently dropped. */
+  const unitOptions = $derived(
+    formUnit && !BASE_UNIT_OPTIONS.some((o) => o.value === formUnit)
+      ? [...BASE_UNIT_OPTIONS, { value: formUnit, label: formUnit }]
+      : BASE_UNIT_OPTIONS,
+  );
 
   async function load() {
     loading = true;
@@ -220,7 +232,7 @@
         <Input bind:value={formName} placeholder="Désignation" />
       </Field>
       <Field label="Unité">
-        <Input bind:value={formUnit} placeholder="EA" />
+        <ReferenceSelect options={unitOptions} bind:value={formUnit} />
       </Field>
       <Field label="Code-barres">
         <Input bind:value={formBarcode} placeholder="Optionnel" />

@@ -2,7 +2,17 @@
   import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
-  import { Badge, Button, Card, Field, Input, Modal, Table, EmptyState } from '$lib/components/ui';
+  import {
+    Badge,
+    Button,
+    Card,
+    EntityPicker,
+    Field,
+    Input,
+    Modal,
+    Table,
+    EmptyState,
+  } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
 
   interface ModeOfPayment {
@@ -195,7 +205,16 @@
       <Input bind:value={formName} placeholder="Ex. : Virement bancaire" />
     </Field>
     <Field label="Code de compte">
-      <Input bind:value={formAccountCode} placeholder="Ex. : 1010" />
+      <EntityPicker
+        endpoint="/billing/ledger/accounts"
+        label="Code de compte"
+        placeholder="Ex. : 1010"
+        listShape="array"
+        valueKey="code"
+        labelKey="code"
+        detailKey="name"
+        bind:value={formAccountCode}
+      />
     </Field>
     <Field label="Par défaut">
       <div class="flex h-9 items-center">

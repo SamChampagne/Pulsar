@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
-  import { TransportMode } from '@pulsar/shared';
+  import { TransportMode, CURRENCIES } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import { formatMoney, formatDate } from '$lib/format';
@@ -16,13 +16,32 @@
     Field,
     Input,
     Select,
+    ReferenceSelect,
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
 
-  interface Option { id: string; name: string }
-  interface LaneOption { id: string; name: string | null; originType: string; destinationType: string }
-  interface AccessorialOpt { id: string; name: string; code: string; unit: string }
-  interface RateBreak { upToKg: number; amount: number }
+  const CURRENCY_OPTIONS = CURRENCIES.map((c) => ({ value: c.code, label: c.name }));
+
+  interface Option {
+    id: string;
+    name: string;
+  }
+  interface LaneOption {
+    id: string;
+    name: string | null;
+    originType: string;
+    destinationType: string;
+  }
+  interface AccessorialOpt {
+    id: string;
+    name: string;
+    code: string;
+    unit: string;
+  }
+  interface RateBreak {
+    upToKg: number;
+    amount: number;
+  }
   interface RateAccessorialPrice {
     accessorialId?: string;
     amount: number;
@@ -103,7 +122,9 @@
         api<Paginated<LaneOption>>('/transportation/lanes', { query: { pageSize: 100 } }),
         api<Paginated<Option>>('/transportation/carriers', { query: { pageSize: 100 } }),
         api<Paginated<Option>>('/transportation/fuel-tables', { query: { pageSize: 100 } }),
-        api<Paginated<AccessorialOpt>>('/transportation/accessorials', { query: { pageSize: 100 } }),
+        api<Paginated<AccessorialOpt>>('/transportation/accessorials', {
+          query: { pageSize: 100 },
+        }),
       ]);
       rates = ratesRes.items;
       total = ratesRes.total;
@@ -192,12 +213,16 @@
         laneId: laneId || undefined,
         fuelTableId: fuelTableId || undefined,
         minCharge: minCharge !== null && minCharge !== undefined ? Number(minCharge) : undefined,
-        fuelSurchargePct: fuelSurchargePct !== null && fuelSurchargePct !== undefined ? Number(fuelSurchargePct) : undefined,
+        fuelSurchargePct:
+          fuelSurchargePct !== null && fuelSurchargePct !== undefined
+            ? Number(fuelSurchargePct)
+            : undefined,
         validFrom: validFrom ? new Date(validFrom).toISOString() : undefined,
         validTo: validTo ? new Date(validTo).toISOString() : undefined,
-        breaks: rateType === 'PER_HUNDREDWEIGHT'
-          ? breaks.map((b) => ({ upToKg: Number(b.upToKg), amount: Number(b.amount) }))
-          : undefined,
+        breaks:
+          rateType === 'PER_HUNDREDWEIGHT'
+            ? breaks.map((b) => ({ upToKg: Number(b.upToKg), amount: Number(b.amount) }))
+            : undefined,
         accessorialPrices: prices
           .filter((p) => p.accessorialId)
           .map((p) => ({ accessorialId: p.accessorialId, amount: Number(p.amount) })),
@@ -227,7 +252,12 @@
 
 <PageHeader title="Tarifs" count={total}>
   {#snippet actions()}
-    <Button onclick={() => { reset(); showForm = true; }}>Nouveau tarif</Button>
+    <Button
+      onclick={() => {
+        reset();
+        showForm = true;
+      }}>Nouveau tarif</Button
+    >
   {/snippet}
 </PageHeader>
 
@@ -239,14 +269,21 @@
   <Card>
     <EmptyState message="Aucun tarif pour le moment.">
       {#snippet children()}
-        <Button onclick={() => { reset(); showForm = true; }}>Nouveau tarif</Button>
+        <Button
+          onclick={() => {
+            reset();
+            showForm = true;
+          }}>Nouveau tarif</Button
+        >
       {/snippet}
     </EmptyState>
   </Card>
 {:else}
   <Table>
     {#snippet head()}
-      <th>Nom</th><th>Type</th><th>Mode</th><th>Corridor</th><th>Transporteur</th><th>Base</th><th>Validité</th><th>Statut</th>
+      <th>Nom</th><th>Type</th><th>Mode</th><th>Corridor</th><th>Transporteur</th><th>Base</th><th
+        >Validité</th
+      ><th>Statut</th>
     {/snippet}
     {#snippet body()}
       {#each rates as rate (rate.id)}
@@ -260,7 +297,9 @@
           </td>
           <td>
             {#if rate.mode}
-              <span class="rounded border border-edge px-1.5 font-mono text-xs text-neutral">{rate.mode}</span>
+              <span class="rounded border border-edge px-1.5 font-mono text-xs text-neutral"
+                >{rate.mode}</span
+              >
             {:else}
               <span class="text-ink-faint">tous</span>
             {/if}
@@ -315,7 +354,7 @@
           <Input type="number" step="0.01" min="0" bind:value={baseAmount} required />
         </Field>
         <Field label="Devise">
-          <Input bind:value={currency} placeholder="CAD" maxlength={3} />
+          <ReferenceSelect options={CURRENCY_OPTIONS} bind:value={currency} />
         </Field>
         <Field label="Charge minimale">
           <Input
@@ -407,7 +446,13 @@
               {#each breaks as brk, i (i)}
                 <div class="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
                   <Field label="Jusqu'à (kg)">
-                    <Input type="number" step="0.001" min="0.001" bind:value={brk.upToKg} required />
+                    <Input
+                      type="number"
+                      step="0.001"
+                      min="0.001"
+                      bind:value={brk.upToKg}
+                      required
+                    />
                   </Field>
                   <Field label="Montant">
                     <Input type="number" step="0.01" min="0" bind:value={brk.amount} required />

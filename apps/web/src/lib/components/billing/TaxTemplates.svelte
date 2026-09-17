@@ -2,7 +2,17 @@
   import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
-  import { Badge, Button, Card, Field, Input, Modal, Table, EmptyState } from '$lib/components/ui';
+  import {
+    Badge,
+    Button,
+    Card,
+    EntityPicker,
+    Field,
+    Input,
+    Modal,
+    Table,
+    EmptyState,
+  } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
 
   type TaxType = 'SALES' | 'PURCHASE';
@@ -293,7 +303,16 @@
                 />
               </div>
               <div class="w-28">
-                <Input bind:value={line.accountCode} placeholder="Compte" />
+                <EntityPicker
+                  endpoint="/billing/ledger/accounts"
+                  label="Compte"
+                  placeholder="Compte"
+                  listShape="array"
+                  valueKey="code"
+                  labelKey="code"
+                  detailKey="name"
+                  bind:value={line.accountCode}
+                />
               </div>
               <Button variant="danger" onclick={() => removeLine(i)}>✕</Button>
             </div>

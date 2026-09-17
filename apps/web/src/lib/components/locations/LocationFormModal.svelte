@@ -1,8 +1,21 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
-  import { Field, Input, Select, Button, Modal } from '$lib/components/ui';
+  import { Field, Input, Select, ReferenceSelect, Button, Modal } from '$lib/components/ui';
+  import { COUNTRIES, regionsFor } from '@pulsar/shared';
   import type { LocationRecord } from './types';
+
+  const COUNTRY_OPTIONS = COUNTRIES.map((c) => ({ value: c.code, label: c.name }));
+
+  /** `Intl.supportedValuesOf` is missing on some older engines; the field
+   *  falls back to a plain text input (no datalist) rather than throwing. */
+  const TIMEZONES: string[] = (() => {
+    try {
+      return typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
+    } catch {
+      return [];
+    }
+  })();
 
   const LOCATION_TYPES = [
     'PLANT',
@@ -77,6 +90,14 @@
     }
   });
 
+  /** Province/state options for the currently selected country; empty when
+   *  the country has no closed vocabulary (falls back to free text below). */
+  const regions = $derived(regionsFor(form.country).map((r) => ({ value: r.code, label: r.name })));
+
+  function onCountryChange() {
+    form.state = '';
+  }
+
   async function save(event: SubmitEvent) {
     event.preventDefault();
     error = '';
@@ -142,24 +163,57 @@
       >
       <div class="grid grid-cols-2 gap-3">
         <Field label="Ville"><Input bind:value={form.city} required /></Field>
-        <Field label="Province / État"><Input bind:value={form.state} placeholder="QC" /></Field>
+        <Field label="Province / État">
+          {#if regions.length}
+            <ReferenceSelect options={regions} bind:value={form.state} clearable />
+          {:else}
+            <Input bind:value={form.state} placeholder="QC" />
+          {/if}
+        </Field>
       </div>
       <div class="grid grid-cols-2 gap-3">
         <Field label="Code postal"
           ><Input bind:value={form.postalCode} placeholder="H1A 1A1" /></Field
         >
-        <Field label="Pays"><Input bind:value={form.country} placeholder="CA" /></Field>
+        <Field label="Pays">
+          <ReferenceSelect
+            options={COUNTRY_OPTIONS}
+            bind:value={form.country}
+            clearable
+            onchange={onCountryChange}
+          />
+        </Field>
       </div>
       <div class="grid grid-cols-3 gap-3">
         <Field label="Latitude"
-          ><Input bind:value={form.latitude} type="number" step="any" placeholder="45.5017" /></Field
+          ><Input
+            bind:value={form.latitude}
+            type="number"
+            step="any"
+            placeholder="45.5017"
+          /></Field
         >
         <Field label="Longitude"
-          ><Input bind:value={form.longitude} type="number" step="any" placeholder="-73.5673" /></Field
+          ><Input
+            bind:value={form.longitude}
+            type="number"
+            step="any"
+            placeholder="-73.5673"
+          /></Field
         >
-        <Field label="Fuseau"
-          ><Input bind:value={form.timezone} placeholder="America/Toronto" /></Field
-        >
+        <Field label="Fuseau">
+          <input
+            bind:value={form.timezone}
+            list={TIMEZONES.length ? 'loc-tz-list' : undefined}
+            placeholder="America/Toronto"
+            class="min-h-9 w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink transition-colors placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+          />
+          {#if TIMEZONES.length}
+            <datalist id="loc-tz-list">
+              {#each TIMEZONES as tz (tz)}<option value={tz}></option>{/each}
+            </datalist>
+          {/if}
+        </Field>
       </div>
       <p class="text-xs text-ink-faint">
         Latitude/longitude sont optionnelles : laissées vides, le serveur tente un géocodage

@@ -7,6 +7,7 @@
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     Field,
     FilterBar,
     Input,
@@ -207,8 +208,9 @@
 {:else}
   <Table>
     {#snippet head()}
-      <th>N°</th><th>Nom</th><th>Produit</th><th class="text-right">Qté</th><th>Échéance</th
-      ><th>Priorité</th><th>Statut</th>
+      <th>N°</th><th>Nom</th><th>Produit</th><th class="text-right">Qté</th><th>Échéance</th><th
+        >Priorité</th
+      ><th>Statut</th>
     {/snippet}
     {#snippet body()}
       {#each orders as o (o.id)}
@@ -237,7 +239,14 @@
         <Input bind:value={formName} placeholder="Désignation" />
       </Field>
       <Field label="Produit">
-        <Input bind:value={formProductRef} placeholder="Réf. produit" />
+        <EntityPicker
+          endpoint="/wms/choices/items"
+          label="Produit"
+          placeholder="Réf. produit"
+          labelKey="name"
+          valueKey="sku"
+          bind:value={formProductRef}
+        />
       </Field>
       <Field label="Quantité">
         <Input bind:value={formQuantity} type="number" min="0" step="any" placeholder="ex. 100" />

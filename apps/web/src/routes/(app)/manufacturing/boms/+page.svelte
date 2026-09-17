@@ -6,6 +6,7 @@
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     Field,
     FilterBar,
     Input,
@@ -253,7 +254,15 @@
           <Input bind:value={formCode} placeholder="NOM-001" />
         </Field>
         <Field label="Produit">
-          <Input bind:value={formProductRef} placeholder="Optionnel" />
+          <EntityPicker
+            endpoint="/wms/choices/items"
+            label="Produit"
+            placeholder="Optionnel"
+            labelKey="name"
+            valueKey="sku"
+            selectedLabel={formProductRef}
+            bind:value={formProductRef}
+          />
         </Field>
       </div>
       <Field label="Nom">
@@ -274,7 +283,9 @@
           {:else}
             <ul class="space-y-1">
               {#each lines as line (line.id)}
-                <li class="flex items-center justify-between gap-2 rounded-md border border-edge bg-surface px-3 py-2">
+                <li
+                  class="flex items-center justify-between gap-2 rounded-md border border-edge bg-surface px-3 py-2"
+                >
                   <div class="text-sm">
                     <span class="font-mono font-semibold text-ink">{line.materialRef}</span>
                     {#if line.materialName}
@@ -294,7 +305,14 @@
           <div class="space-y-2 rounded-md border border-edge bg-surface-muted p-3">
             <div class="grid grid-cols-3 gap-2">
               <Field label="Référence matière">
-                <Input bind:value={lineRef} placeholder="MAT-001" />
+                <EntityPicker
+                  endpoint="/wms/choices/items"
+                  label="Référence matière"
+                  placeholder="MAT-001"
+                  labelKey="name"
+                  valueKey="sku"
+                  bind:value={lineRef}
+                />
               </Field>
               <Field label="Désignation">
                 <Input bind:value={lineName} placeholder="Optionnel" />

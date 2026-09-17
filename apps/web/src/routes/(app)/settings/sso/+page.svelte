@@ -84,8 +84,8 @@
 </PageHeader>
 
 <p class="mb-4 text-sm text-ink-muted">
-  Connectez un fournisseur OpenID Connect pour permettre à vos utilisateurs de se connecter avec
-  le système d'identité de votre organisation.
+  Connectez un fournisseur OpenID Connect pour permettre à vos utilisateurs de se connecter avec le
+  système d'identité de votre organisation.
 </p>
 
 {#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
@@ -105,19 +105,18 @@
       <div class="space-y-4">
         <div>
           <h2 class="text-xs font-semibold tracking-wide text-ink-muted uppercase">Fournisseur</h2>
-          <p class="mt-0.5 text-xs text-ink-faint">Coordonnées de connexion à votre fournisseur OIDC.</p>
+          <p class="mt-0.5 text-xs text-ink-faint">
+            Coordonnées de connexion à votre fournisseur OIDC.
+          </p>
         </div>
         <Field label="URL de l'émetteur (issuer)">
-          <Input bind:value={config.issuer} placeholder="https://login.example.com" />
+          <Input type="url" bind:value={config.issuer} placeholder="https://login.example.com" />
         </Field>
         <Field label="Identifiant client (client ID)">
           <Input bind:value={config.clientId} />
         </Field>
         <Field label="Secret client (client secret)">
-          <Input
-            bind:value={config.clientSecret}
-            placeholder="*** (inchangé si laissé masqué)"
-          />
+          <Input bind:value={config.clientSecret} placeholder="*** (inchangé si laissé masqué)" />
         </Field>
       </div>
     </Card>
