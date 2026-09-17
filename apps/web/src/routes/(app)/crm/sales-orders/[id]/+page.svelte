@@ -301,7 +301,7 @@
     showWizard = true;
     if (wizardLocations.length === 0) {
       try {
-        const res = await api<{ items: LocationOption[] }>('/transportation/locations', {
+        const res = await api<{ items: LocationOption[] }>('/locations', {
           query: { pageSize: 100 },
         });
         wizardLocations = res.items;

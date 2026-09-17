@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
-  import { YardSpotType } from '@pulsar/shared';
+  import { PERMISSIONS, YardSpotType } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
   import {
     Badge,
     Button,
@@ -18,6 +19,8 @@
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import LocationFormModal from '$lib/components/locations/LocationFormModal.svelte';
+  import type { LocationRecord } from '$lib/components/locations/types';
 
   interface Spot {
     id: string;
@@ -47,6 +50,16 @@
   let loading = $state(true);
   let error = $state('');
   let filterLocationId = $state('');
+  let showCreateSite = $state(false);
+  const canManageLocations = $derived(
+    !!$auth?.user.permissions.includes(PERMISSIONS.CORE.LOCATIONS_MANAGE),
+  );
+
+  async function onSiteCreated(loc: LocationRecord) {
+    showCreateSite = false;
+    await loadLocations();
+    filterLocationId = loc.id;
+  }
 
   // Create / edit panel
   let formOpen = $state(false);
@@ -75,7 +88,7 @@
   }
 
   async function loadLocations() {
-    const res = await api<Paginated<LocationOption>>('/transportation/locations', {
+    const res = await api<Paginated<LocationOption>>('/locations', {
       query: { pageSize: 100 },
     });
     locations = res.items;
@@ -166,6 +179,14 @@
       {/each}
     </Select>
   </div>
+  {#if canManageLocations}
+    <Button
+      variant="secondary"
+      onclick={() => {
+        showCreateSite = true;
+      }}>+ Site</Button
+    >
+  {/if}
 </FilterBar>
 
 {#if loading}
@@ -240,3 +261,11 @@
     </div>
   {/snippet}
 </Modal>
+
+<LocationFormModal
+  bind:open={showCreateSite}
+  location={null}
+  lockedType={null}
+  defaultType="OTHER"
+  oncreated={onSiteCreated}
+/>

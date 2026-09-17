@@ -173,7 +173,7 @@
 
   async function loadStatic() {
     const [locs, trls, crs, spts, appts, defs] = await Promise.all([
-      api<Paginated<LocationOption>>('/transportation/locations', { query: { pageSize: 100 } }),
+      api<Paginated<LocationOption>>('/locations', { query: { pageSize: 100 } }),
       api<Paginated<TrailerOption>>('/transportation/trailers', { query: { pageSize: 100 } }),
       api<Paginated<CarrierOption>>('/transportation/carriers', { query: { pageSize: 100 } }),
       api<SpotOption[]>('/yard/spots'),

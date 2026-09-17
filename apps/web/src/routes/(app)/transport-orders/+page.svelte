@@ -163,7 +163,7 @@
     customData = {};
     const [customersResult, locationsResult, fieldDefs] = await Promise.all([
       api<Paginated<Option>>('/transportation/customers', { query: { pageSize: 100 } }),
-      api<Paginated<Option>>('/transportation/locations', { query: { pageSize: 100 } }),
+      api<Paginated<Option>>('/locations', { query: { pageSize: 100 } }),
       api<CustomFieldDef[]>('/transportation/custom-fields', {
         query: { entityType: 'TRANSPORT_ORDER' },
       }).catch(() => [] as CustomFieldDef[]),

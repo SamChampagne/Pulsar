@@ -169,7 +169,7 @@
     try {
       const [lanesRes, locsRes, carriersRes, accsRes] = await Promise.all([
         api<Paginated<LaneOption>>('/transportation/lanes', { query: { pageSize: 100 } }),
-        api<Paginated<LocationOption>>('/transportation/locations', { query: { pageSize: 100 } }),
+        api<Paginated<LocationOption>>('/locations', { query: { pageSize: 100 } }),
         api<Paginated<CarrierOption>>('/transportation/carriers', { query: { pageSize: 100 } }),
         api<Paginated<AccessorialOpt>>('/transportation/accessorials', {
           query: { pageSize: 100 },

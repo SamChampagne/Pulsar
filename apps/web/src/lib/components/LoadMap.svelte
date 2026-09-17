@@ -22,7 +22,7 @@
 
       const locs = await Promise.all(
         [...new Set(stops.map((s) => s.locationId))].map((id) =>
-          api<Loc>(`/transportation/locations/${id}`).catch(() => null),
+          api<Loc>(`/locations/${id}`).catch(() => null),
         ),
       );
       if (destroyed) return;

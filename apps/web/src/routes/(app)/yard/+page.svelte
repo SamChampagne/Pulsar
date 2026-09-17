@@ -33,7 +33,10 @@
   import YardContextDrawer from '$lib/components/yard/YardContextDrawer.svelte';
   import YardArrival from '$lib/components/yard/YardArrival.svelte';
   import YardDossiers from '$lib/components/yard/YardDossiers.svelte';
+  import LocationFormModal from '$lib/components/locations/LocationFormModal.svelte';
+  import type { LocationRecord } from '$lib/components/locations/types';
 
+  let showCreateSite = $state(false);
   let sites = $state<YardWorkspace['site'][]>([]),
     siteId = $state(''),
     date = $state(''),
@@ -66,6 +69,14 @@
     null;
   let focusedAppointment = $state<YardWorkspaceAppointment | null>(null);
   const canManage = $derived(!!$auth?.user.permissions.includes(PERMISSIONS.YARD.MANAGE));
+  const canManageLocations = $derived(
+    !!$auth?.user.permissions.includes(PERMISSIONS.CORE.LOCATIONS_MANAGE),
+  );
+  async function onSiteCreated(loc: LocationRecord) {
+    showCreateSite = false;
+    await init();
+    siteId = loc.id;
+  }
   const occupied = $derived(new Set(workspace?.visits.map((v) => v.spotId).filter(Boolean) ?? []));
   const freeSpots = $derived(
     workspace?.spots.filter((s) => s.isActive && !occupied.has(s.id)) ?? [],
@@ -443,7 +454,13 @@
     variant="secondary"
     disabled={loading || editing || busy}
     onclick={() => (workspace ? load(true) : siteId ? load() : init())}>Actualiser</Button
-  >{#if workspace}<p class="pb-2 text-xs text-ink-muted">
+  >{#if canManageLocations}<Button
+      variant="secondary"
+      disabled={editing || busy}
+      onclick={() => {
+        showCreateSite = true;
+      }}>+ Site</Button
+    >{/if}{#if workspace}<p class="pb-2 text-xs text-ink-muted">
       Mise à jour {clock(workspace.generatedAt)} · {workspace.timeZone}
     </p>{/if}
 </div>
@@ -716,9 +733,16 @@
         }}
       />{/if}</Tabs
   >
-{:else if !error}<p class="rounded-lg border border-edge p-6 text-sm text-ink-muted">
-    Aucun site actif. Créez un site dans les données de l’entreprise pour préparer la cour.
-  </p>{/if}
+{:else if !error}<div class="rounded-lg border border-edge p-6 text-sm text-ink-muted">
+    <p>Aucun site actif. Créez un site dans les données de l’entreprise pour préparer la cour.</p>
+    {#if canManageLocations}<div class="mt-3">
+        <Button
+          onclick={() => {
+            showCreateSite = true;
+          }}>Créer un site</Button
+        >
+      </div>{/if}
+  </div>{/if}
 
 {#if workspace && visitId}<YardContextDrawer
     {visitId}
@@ -844,3 +868,10 @@
           onclick={() => appointmentAction('complete')}>Terminer le rendez-vous</Button
         >{/if}{/if}{/snippet}
 </Drawer>
+<LocationFormModal
+  bind:open={showCreateSite}
+  location={null}
+  lockedType={null}
+  defaultType="OTHER"
+  oncreated={onSiteCreated}
+/>
