@@ -40,9 +40,10 @@ export class PortalJwtStrategy extends PassportStrategy(Strategy, 'portal-jwt') 
     if (payload.portal !== true || payload.platformAdmin) {
       throw new UnauthorizedException('Not a portal access token');
     }
-    // Both scopes are required: PortalGuard scopes its lookup by them, and an
-    // undefined value would be silently dropped from the Prisma filter.
-    if (!payload.tenantId || !payload.customerId) {
+    // Subject and both scopes are required: PortalGuard scopes its lookup by the
+    // three of them, and an undefined value would be silently dropped from the
+    // Prisma filter — widening `findFirst` to "any portal user".
+    if (!payload.sub || !payload.tenantId || !payload.customerId) {
       throw new UnauthorizedException('Not a portal access token');
     }
     return {

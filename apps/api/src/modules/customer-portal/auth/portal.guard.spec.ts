@@ -108,6 +108,21 @@ describe('PortalGuard', () => {
     expect(request.portalUser).toBeUndefined();
   });
 
+  it('401s on a DISABLED account even when the module is also disabled (401 decided first)', async () => {
+    // Order matters: an account that no longer exists must never learn, through a
+    // 403, whether the shipper still runs the portal module.
+    const { guard } = makeGuard({ ...DB_ROW, status: 'DISABLED' }, ['transportation']);
+    await expect(guard.canActivate(contextFor({}))).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('clears request.user so a portal identity is never taken for a tenant AuthUser', async () => {
+    const { guard } = makeGuard(DB_ROW);
+    const request: Record<string, unknown> = {};
+    await expect(guard.canActivate(contextFor(request))).resolves.toBe(true);
+    expect(request.user).toBeUndefined();
+    expect(request.portalUser).toBeDefined();
+  });
+
   it('denies when the passport layer denies', async () => {
     parentCanActivate.mockResolvedValue(false);
     const { guard, findFirst } = makeGuard(DB_ROW);

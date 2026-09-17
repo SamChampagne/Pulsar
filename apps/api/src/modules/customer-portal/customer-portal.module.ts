@@ -12,8 +12,13 @@ import {
   PortalPublicController,
 } from './portal.controller';
 import { PortalService } from './portal.service';
+import { PortalAuthController, PortalAuthMeController } from './auth/portal-auth.controller';
+import { PortalAuthService } from './auth/portal-auth.service';
 import { PortalJwtStrategy } from './auth/portal-jwt.strategy';
 import { PortalGuard } from './auth/portal.guard';
+import { PortalUsersAdminController } from './portal-users.admin.controller';
+import { PortalUsersSelfController } from './portal-users.self.controller';
+import { PortalUsersService } from './portal-users.service';
 
 @Module({
   imports: [
@@ -26,7 +31,17 @@ import { PortalGuard } from './auth/portal.guard';
     BillingModule,
     OperatingModule,
   ],
-  controllers: [PortalLinksController, PortalPublicController, PortalAdminController],
-  providers: [PortalService, PortalJwtStrategy, PortalGuard],
+  controllers: [
+    PortalLinksController,
+    PortalPublicController,
+    PortalAdminController,
+    // ThrottlerModule and EmailModule (MailService) are global; AuditLogsModule
+    // is imported above.
+    PortalAuthController,
+    PortalAuthMeController,
+    PortalUsersAdminController,
+    PortalUsersSelfController,
+  ],
+  providers: [PortalService, PortalAuthService, PortalUsersService, PortalJwtStrategy, PortalGuard],
 })
 export class CustomerPortalModule {}

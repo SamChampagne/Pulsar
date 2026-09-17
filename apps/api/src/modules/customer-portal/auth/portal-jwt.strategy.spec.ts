@@ -58,6 +58,12 @@ describe('PortalJwtStrategy', () => {
     );
   });
 
+  it('rejects a portal payload without a subject (would widen the guard lookup)', () => {
+    expect(() => strategy.validate({ ...validPayload, sub: undefined } as never)).toThrow(
+      UnauthorizedException,
+    );
+  });
+
   it('rejects a portal payload without customerId (would widen the guard lookup)', () => {
     expect(() => strategy.validate({ ...validPayload, customerId: undefined } as never)).toThrow(
       UnauthorizedException,
