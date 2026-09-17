@@ -82,7 +82,11 @@ export async function portalApi<T>(
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 
-  if (response.status === 401 && !path.startsWith('/auth/')) {
+  // The auth door (`/portal/auth/*`) answers 401 for bad credentials and dead
+  // links: those are the caller's message to show, never a lost session — no
+  // refresh-and-retry, no wipe, no redirect. Paths are absolute from the API
+  // root here (`sessionClient` prefixes `/portal`), so match the full prefix.
+  if (response.status === 401 && !path.startsWith('/portal/auth/')) {
     if (!isRetry) {
       refreshing ??= tryRefresh().finally(() => (refreshing = null));
       if (await refreshing) {
