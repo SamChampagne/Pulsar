@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MODULE_KEYS } from './modules';
-import { PERMISSION_CATALOG } from './permissions';
+import { PERMISSION_CATALOG, PERMISSIONS } from './permissions';
 import { ROLE_TEMPLATES, VIEWER_EXCLUDED_KEYS, resolveRoleTemplates } from './role-templates';
 
 const catalogKeys = new Set(PERMISSION_CATALOG.map((p) => p.key));
@@ -14,6 +14,10 @@ describe('ROLE_TEMPLATES', () => {
   it('only references catalog permissions', () => {
     for (const t of ROLE_TEMPLATES)
       for (const k of t.permissionKeys) expect(catalogKeys.has(k), `${t.key}:${k}`).toBe(true);
+  });
+  it('dispatcher gains customer-portal.users.read (portal accounts oversight)', () => {
+    const dispatcher = ROLE_TEMPLATES.find((t) => t.key === 'dispatcher')!;
+    expect(dispatcher.permissionKeys).toContain(PERMISSIONS.CUSTOMER_PORTAL.USERS_READ);
   });
 });
 

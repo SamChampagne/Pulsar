@@ -61,6 +61,8 @@ export const PERMISSIONS = {
   },
   CUSTOMER_PORTAL: {
     LINKS_MANAGE: 'customer-portal.links.manage',
+    USERS_READ: 'customer-portal.users.read',
+    USERS_MANAGE: 'customer-portal.users.manage',
   },
   CARRIER_PORTAL: {
     LINKS_MANAGE: 'carrier-portal.links.manage',
@@ -264,6 +266,8 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   tms(PERMISSIONS.TRANSPORTATION.TRACKING_WRITE, 'Record tracking events and PODs'),
   tms(PERMISSIONS.TRANSPORTATION.ANALYTICS_READ, 'View carrier scorecards and KPIs'),
   portal(PERMISSIONS.CUSTOMER_PORTAL.LINKS_MANAGE, 'Generate and revoke customer portal links'),
+  portal(PERMISSIONS.CUSTOMER_PORTAL.USERS_READ, 'View customer portal accounts'),
+  portal(PERMISSIONS.CUSTOMER_PORTAL.USERS_MANAGE, 'Invite, disable and manage portal accounts'),
   billing(PERMISSIONS.BILLING.INVOICES_READ, 'View carrier invoices'),
   billing(PERMISSIONS.BILLING.INVOICES_MANAGE, 'Draft and approve carrier invoices'),
   billing(PERMISSIONS.BILLING.INVOICES_PAY, 'Mark carrier invoices as paid'),

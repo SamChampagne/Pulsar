@@ -1,5 +1,6 @@
 import type { PermissionKey } from '../permissions';
 import type { ModuleKey } from '../modules';
+import type { PortalUserRole } from '../portal/portal';
 
 /** Payload embedded in the JWT access token. */
 export interface JwtPayload {
@@ -83,3 +84,42 @@ export type PlatformLoginResponse =
   | PlatformLoginResponseSuccess
   | PlatformLoginResponseMfaRequired
   | PlatformLoginResponseEnrollmentRequired;
+
+/** Payload of a customer-portal-plane access token. Tenant and platform guards MUST reject it. */
+export interface PortalJwtPayload {
+  /** PortalUser id */
+  sub: string;
+  tenantId: string;
+  customerId: string;
+  email: string;
+  role: PortalUserRole;
+  portal: true;
+}
+
+export interface PortalAuthUser {
+  id: string;
+  tenantId: string;
+  customerId: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: PortalUserRole;
+}
+
+export interface PortalLoginResponse {
+  accessToken: string;
+  /** Opaque rotating token — exchange at POST /portal/auth/refresh for a new pair. */
+  refreshToken: string;
+  user: PortalAuthUser;
+  customer: {
+    id: string;
+    name: string;
+  };
+  shipper: {
+    name: string;
+  };
+  branding: {
+    logoUrl?: string;
+    accentColor?: string;
+  };
+}

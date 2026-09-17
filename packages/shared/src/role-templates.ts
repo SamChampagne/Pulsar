@@ -80,6 +80,7 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
       P.CORE.OPERATING_TASKS_READ,
       P.CORE.OPERATING_TASKS_MANAGE,
       P.CORE.AGENTS_CHAT,
+      P.CUSTOMER_PORTAL.USERS_READ,
     ],
   },
   {
