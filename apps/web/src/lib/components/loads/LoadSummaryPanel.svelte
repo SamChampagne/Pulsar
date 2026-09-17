@@ -2,6 +2,7 @@
   import { Badge, Button, Card } from '$lib/components/ui';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import { formatDate } from '$lib/format';
   import type { LoadDetail, RateOption } from './types';
 
   interface Props {
@@ -59,7 +60,9 @@
     </div>
     <div class="flex items-center justify-between gap-2">
       <dt class="text-ink-muted">Driver</dt>
-      <dd class="font-medium">{detail.driver ? `${detail.driver.firstName} ${detail.driver.lastName}` : '—'}</dd>
+      <dd class="font-medium">
+        {detail.driver ? `${detail.driver.firstName} ${detail.driver.lastName}` : '—'}
+      </dd>
     </div>
     <div class="flex items-center justify-between gap-2">
       <dt class="text-ink-muted">Vehicle</dt>
@@ -80,7 +83,10 @@
     {#if detail.estimatedCost !== null}
       <div class="flex items-center justify-between gap-2">
         <dt class="text-ink-muted">Estimated cost</dt>
-        <dd class="font-semibold">{Number(detail.estimatedCost).toLocaleString()} {detail.costCurrency}</dd>
+        <dd class="font-semibold">
+          {Number(detail.estimatedCost).toLocaleString('fr-CA')}
+          {detail.costCurrency}
+        </dd>
       </div>
     {/if}
   </dl>
@@ -95,7 +101,9 @@
     {@const cd = detail.costDetail}
     <div class="mt-4 rounded-card border border-edge bg-surface-muted p-3">
       <div class="mb-2 flex flex-wrap items-center gap-2">
-        <span class="text-xs text-ink-muted">Cost snapshot — ref. {new Date(cd.referenceDate).toLocaleDateString()}</span>
+        <span class="text-xs text-ink-muted"
+          >Cost snapshot — ref. {formatDate(cd.referenceDate)}</span
+        >
         {#if !cd.rate.validAtReference}
           <Badge tone="warn">rate outside validity window</Badge>
         {/if}
@@ -105,12 +113,16 @@
           {#each cd.result.lines as line}
             <tr class="border-b border-edge last:border-0">
               <td class="py-1">{line.label}</td>
-              <td class="py-1 text-right">{line.amount.toLocaleString()} {cd.rate.currency}</td>
+              <td class="py-1 text-right"
+                >{line.amount.toLocaleString('fr-CA')} {cd.rate.currency}</td
+              >
             </tr>
           {/each}
           <tr>
             <td class="pt-2 font-semibold">Total</td>
-            <td class="pt-2 text-right font-semibold">{cd.result.total.toLocaleString()} {cd.rate.currency}</td>
+            <td class="pt-2 text-right font-semibold"
+              >{cd.result.total.toLocaleString('fr-CA')} {cd.rate.currency}</td
+            >
           </tr>
         </tbody>
       </table>
@@ -124,7 +136,7 @@
       <p class="mt-1 text-xs text-ink-muted">
         Fuel: {cd.rate.fuel.pct}% — {cd.rate.fuel.source}
         {#if cd.rate.fuel.source === 'TABLE' && cd.rate.fuel.effectiveFrom}
-          (eff. {new Date(cd.rate.fuel.effectiveFrom).toLocaleDateString()})
+          (eff. {formatDate(cd.rate.fuel.effectiveFrom)})
         {/if}
       </p>
       {#if cd.result.missingAccessorials.length > 0}
@@ -139,7 +151,12 @@
     <div class="mt-4 rounded-card border border-edge bg-surface-muted p-3">
       <div class="mb-2 flex items-center justify-between">
         <strong class="text-sm">Rate options</strong>
-        <Button variant="ghost" onclick={() => { rateOptionsOpen = false; }}>Close</Button>
+        <Button
+          variant="ghost"
+          onclick={() => {
+            rateOptionsOpen = false;
+          }}>Close</Button
+        >
       </div>
       {#if rateOptionsLoading}
         <p class="text-sm text-ink-muted">Loading…</p>
@@ -165,8 +182,13 @@
               class="cursor-pointer rounded-md border border-edge bg-surface p-2 hover:bg-surface-muted"
               role="button"
               tabindex="0"
-              onclick={() => { expandedRateId = expandedRateId === opt.rateId ? null : opt.rateId; }}
-              onkeydown={(e) => { if (e.key === 'Enter') expandedRateId = expandedRateId === opt.rateId ? null : opt.rateId; }}
+              onclick={() => {
+                expandedRateId = expandedRateId === opt.rateId ? null : opt.rateId;
+              }}
+              onkeydown={(e) => {
+                if (e.key === 'Enter')
+                  expandedRateId = expandedRateId === opt.rateId ? null : opt.rateId;
+              }}
             >
               <div class="flex items-center justify-between gap-2 text-sm">
                 <div class="flex items-center gap-1 flex-wrap">
@@ -178,7 +200,9 @@
                     <Badge tone="warn">missing: {opt.missingAccessorials.length}</Badge>
                   {/if}
                 </div>
-                <span class="font-semibold whitespace-nowrap">{opt.breakdown.total.toLocaleString()} {opt.currency}</span>
+                <span class="font-semibold whitespace-nowrap"
+                  >{opt.breakdown.total.toLocaleString('fr-CA')} {opt.currency}</span
+                >
               </div>
               <div class="mt-0.5 text-xs text-ink-muted">
                 {opt.carrier?.name ?? '—'} ·
@@ -192,7 +216,9 @@
                     {#each opt.breakdown.lines as line}
                       <tr>
                         <td class="py-0.5 text-ink-muted">{line.label}</td>
-                        <td class="py-0.5 text-right">{line.amount.toLocaleString()} {opt.currency}</td>
+                        <td class="py-0.5 text-right"
+                          >{line.amount.toLocaleString('fr-CA')} {opt.currency}</td
+                        >
                       </tr>
                     {/each}
                   </tbody>

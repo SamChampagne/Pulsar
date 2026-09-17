@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { LoadStatus, MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
+import { Transform } from 'class-transformer';
 import { ArrayMinSize, IsArray, IsEnum, IsOptional } from 'class-validator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
@@ -38,9 +39,21 @@ class ConsolidateDto {
 }
 
 class LoadListQueryDto extends ListQueryDto {
+  /** Accepts a single value (`?status=OPEN`, backward-compatible) or a
+   *  comma-separated list (`?status=OPEN,PLANNED`) — e.g. the shipments
+   *  "assign to load" picker, which needs both. */
   @IsOptional()
-  @IsEnum(LoadStatus)
-  status?: LoadStatus;
+  @Transform(({ value }) =>
+    value === undefined || value === null || value === ''
+      ? undefined
+      : String(value)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+  )
+  @IsArray()
+  @IsEnum(LoadStatus, { each: true })
+  status?: LoadStatus[];
 }
 
 @ApiTags('transportation/loads')
@@ -89,7 +102,11 @@ export class LoadsController {
 
   @Post(':id/assign')
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
-  assign(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AssignLoadResourcesDto) {
+  assign(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: AssignLoadResourcesDto,
+  ) {
     return this.loads.assignResources(user.tenantId, user.id, id, dto);
   }
 

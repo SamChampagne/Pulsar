@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { LoadStatus, TenderStatus } from '@pulsar/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { WebhooksService } from '../../../core/integrations/webhooks.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { TendersService } from './tenders.service';
 
@@ -18,7 +17,6 @@ export class TenderExpiryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenders: TendersService,
-    private readonly webhooks: WebhooksService,
     private readonly domainEvents: DomainEventsService,
   ) {}
 
@@ -42,12 +40,7 @@ export class TenderExpiryService {
           data: { status: LoadStatus.PLANNED },
         }),
       ]);
-      await this.webhooks.emit(tender.tenantId, 'tender.expired', {
-        loadId: tender.loadId,
-        loadNumber: tender.load.loadNumber,
-        tenderId: tender.id,
-        carrierId: tender.carrierId,
-      });
+      // Rule 55: bridged to the webhook outbox by DomainEventsService.
       await this.domainEvents.emit(
         tender.tenantId,
         'tender.expired',

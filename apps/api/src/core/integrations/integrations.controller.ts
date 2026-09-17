@@ -76,28 +76,60 @@ export class IntegrationsController {
     return this.integrations.list(user.tenantId);
   }
 
+  /**
+   * Catalog of the business events an integration can subscribe to
+   * (`config.events[]`) — type, module, FR description, example payload.
+   * Static data: no tenant scope needed beyond the permission check.
+   */
+  @Get('events')
+  @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_READ)
+  events() {
+    return this.integrations.eventCatalog();
+  }
+
   @Post()
   @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateIntegrationDto) {
-    return this.integrations.create(user.tenantId, dto);
+    // The acting user is forwarded so an inbound receiver can only be pointed at
+    // a business target the user is itself allowed to write (403 otherwise).
+    return this.integrations.create(user.tenantId, dto, user);
   }
 
   @Patch(':id')
   @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
-  update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateIntegrationDto) {
-    return this.integrations.update(user.tenantId, id, dto);
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateIntegrationDto,
+  ) {
+    return this.integrations.update(user.tenantId, id, dto, user);
   }
 
   @Post(':id/test')
   @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
   testConnection(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.integrations.testConnection(user.tenantId, id);
+    return this.integrations.testConnection(user.tenantId, id, user.id);
   }
 
   @Post(':id/dry-run')
   @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
-  dryRun(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: DryRunIntegrationDto) {
+  dryRun(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: DryRunIntegrationDto,
+  ) {
     return this.integrations.dryRun(user.tenantId, id, dto);
+  }
+
+  /** Re-queue and retry one delivery (tenant-scoped; 404 when unknown). */
+  @Post(':id/deliveries/:deliveryId/replay')
+  @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
+  replayDelivery(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('deliveryId') deliveryId: string,
+  ) {
+    return this.integrations.replayDelivery(user.tenantId, id, deliveryId, user.id);
   }
 
   /** Recent webhook deliveries of an integration (outbox audit/debugging). */

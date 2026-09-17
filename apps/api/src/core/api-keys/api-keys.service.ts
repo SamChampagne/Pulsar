@@ -17,6 +17,7 @@ const keySelect = {
   prefix: true,
   scopes: true,
   lastUsedAt: true,
+  expiresAt: true,
   revokedAt: true,
   createdAt: true,
 } as const;
@@ -33,8 +34,12 @@ const SERVICE_ACCOUNT_EMAIL = 'service-account@pulsar.local';
 export class ApiKeysService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** One hidden service-account user per tenant, created lazily. */
-  private async ensureServiceUser(tenantId: string): Promise<string> {
+  /**
+   * One hidden service-account user per tenant, created lazily.
+   * Public: every machine write path (API keys, inbound webhooks) attributes
+   * its actions to this user (rule 13) instead of inventing a fake id.
+   */
+  async ensureServiceUser(tenantId: string): Promise<string> {
     const existing = await this.prisma.user.findUnique({
       where: { tenantId_email: { tenantId, email: SERVICE_ACCOUNT_EMAIL } },
       select: { id: true },
@@ -64,10 +69,19 @@ export class ApiKeysService {
   }
 
   /** Returns the full key once — only the hash is stored. */
-  async create(tenantId: string, createdById: string, name: string, scopes: string[]) {
+  async create(
+    tenantId: string,
+    createdById: string,
+    name: string,
+    scopes: string[],
+    expiresAt?: Date,
+  ) {
     const valid = new Set<string>(ALL_PERMISSION_KEYS);
     for (const scope of scopes) {
       if (!valid.has(scope)) throw new BadRequestException(`Unknown scope "${scope}"`);
+    }
+    if (expiresAt && expiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException('expiresAt must be in the future');
     }
     await this.ensureServiceUser(tenantId);
     const rawKey = `pk_${randomBytes(24).toString('base64url')}`;
@@ -78,6 +92,7 @@ export class ApiKeysService {
         prefix: rawKey.slice(0, 11),
         keyHash: sha256(rawKey),
         scopes,
+        expiresAt: expiresAt ?? null,
         createdById,
       },
       select: keySelect,
@@ -95,7 +110,11 @@ export class ApiKeysService {
   /** Resolves a raw key into the tenant's service-account principal with the key's scopes. */
   async validate(rawKey: string): Promise<AuthUser> {
     const key = await this.prisma.apiKey.findUnique({ where: { keyHash: sha256(rawKey) } });
-    if (!key || key.revokedAt) throw new UnauthorizedException('Invalid API key');
+    // Same generic message whether the key is unknown, revoked or expired — never
+    // tell a caller which reason applies.
+    if (!key || key.revokedAt || (key.expiresAt && key.expiresAt.getTime() <= Date.now())) {
+      throw new UnauthorizedException('Invalid API key');
+    }
     // Fire-and-forget usage stamp — not worth blocking the request for.
     void this.prisma.apiKey
       .update({ where: { id: key.id }, data: { lastUsedAt: new Date() } })

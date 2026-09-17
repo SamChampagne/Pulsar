@@ -6,6 +6,7 @@
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     Field,
     FilterBar,
     Input,
@@ -148,9 +149,7 @@
   }
 
   function toggleWc(id: string) {
-    stepWcIds = stepWcIds.includes(id)
-      ? stepWcIds.filter((x) => x !== id)
-      : [...stepWcIds, id];
+    stepWcIds = stepWcIds.includes(id) ? stepWcIds.filter((x) => x !== id) : [...stepWcIds, id];
   }
 
   async function addStep() {
@@ -291,7 +290,15 @@
           <Input bind:value={formCode} placeholder="GAM-001" />
         </Field>
         <Field label="Produit">
-          <Input bind:value={formProductRef} placeholder="Optionnel" />
+          <EntityPicker
+            endpoint="/wms/choices/items"
+            label="Produit"
+            placeholder="Optionnel"
+            labelKey="name"
+            valueKey="sku"
+            selectedLabel={formProductRef}
+            bind:value={formProductRef}
+          />
         </Field>
       </div>
       <Field label="Nom">
@@ -312,7 +319,9 @@
           {:else}
             <ul class="space-y-1">
               {#each steps as step (step.id)}
-                <li class="flex items-start justify-between gap-2 rounded-md border border-edge bg-surface px-3 py-2">
+                <li
+                  class="flex items-start justify-between gap-2 rounded-md border border-edge bg-surface px-3 py-2"
+                >
                   <div class="text-sm">
                     <span class="font-mono text-ink-muted">#{step.sequence}</span>
                     <span class="ml-2 font-semibold text-ink">{step.name}</span>

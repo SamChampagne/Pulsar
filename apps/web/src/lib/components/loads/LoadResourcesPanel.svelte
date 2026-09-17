@@ -1,9 +1,9 @@
 <script lang="ts">
   import { TransportMode } from '@pulsar/shared';
-  import { Badge, Button, Card, Field, Select } from '$lib/components/ui';
+  import { Button, Card, EntityPicker, Field, Select } from '$lib/components/ui';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
-  import type { Option, CapacityExcess } from './types';
+  import type { CapacityExcess } from './types';
 
   interface ResourceForm {
     carrierId: string;
@@ -17,17 +17,16 @@
   interface Props {
     loadId: string;
     editable: boolean;
-    carriers: Option[];
-    drivers: Option[];
-    vehicles: Option[];
-    trailers: Option[];
-    rates: Option[];
     form: ResourceForm;
     onFormChange: (form: ResourceForm) => void;
     onReload: () => Promise<void>;
   }
 
-  const { loadId, editable, carriers, drivers, vehicles, trailers, rates, form, onFormChange, onReload }: Props = $props();
+  // Each field below searches its own endpoint through EntityPicker (hard rule
+  // 53) instead of a caller-preloaded `pageSize: 100` list — the parent
+  // (loads/[id]/+page.svelte) no longer fetches or passes carrier/driver/
+  // vehicle/trailer/rate options.
+  const { loadId, editable, form, onFormChange, onReload }: Props = $props();
 
   let resourcesCapacityExcesses = $state<CapacityExcess[]>([]);
   let resourcesForce = $state(false);
@@ -51,9 +50,11 @@
       );
       if (resp?.modeWarning) {
         const { loadMode, orderMode } = resp.modeWarning;
-        toast.error(`Mode mismatch: load ${loadMode} / order ${orderMode} — assigned anyway`);
+        toast.error(
+          `Mode incompatible : load ${loadMode} / commande ${orderMode} — assigné quand même`,
+        );
       }
-      toast.success('Resources assigned');
+      toast.success('Ressources assignées');
       resourcesCapacityExcesses = [];
       resourcesForce = false;
       await onReload();
@@ -65,47 +66,69 @@
           return;
         }
       }
-      toast.error(e instanceof ApiError ? e.message : 'Failed to assign resources');
+      toast.error(e instanceof ApiError ? e.message : "Échec de l'assignation des ressources");
     }
   }
 </script>
 
 <Card>
-  <h2 class="mb-3 font-semibold text-ink">Resources</h2>
+  <h2 class="mb-3 font-semibold text-ink">Ressources</h2>
   <div class="flex flex-col gap-3">
-    <Field label="Carrier">
-      <Select value={form.carrierId} onchange={(e) => onFormChange({ ...form, carrierId: (e.currentTarget as HTMLSelectElement).value })} disabled={!editable}>
-        <option value="">—</option>
-        {#each carriers as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
-      </Select>
+    <Field label="Transporteur">
+      <EntityPicker
+        endpoint="/transportation/carriers"
+        label="Transporteur"
+        labelKey="name"
+        detailKey="code"
+        disabled={!editable}
+        bind:value={() => form.carrierId, (v) => onFormChange({ ...form, carrierId: v })}
+      />
     </Field>
-    <Field label="Driver">
-      <Select value={form.driverId} onchange={(e) => onFormChange({ ...form, driverId: (e.currentTarget as HTMLSelectElement).value })} disabled={!editable}>
-        <option value="">—</option>
-        {#each drivers as o (o.id)}<option value={o.id}>{o.firstName} {o.lastName}</option>{/each}
-      </Select>
+    <Field label="Chauffeur">
+      <EntityPicker
+        endpoint="/transportation/drivers"
+        label="Chauffeur"
+        labelKey="lastName"
+        detailKey="firstName"
+        disabled={!editable}
+        bind:value={() => form.driverId, (v) => onFormChange({ ...form, driverId: v })}
+      />
     </Field>
-    <Field label="Vehicle">
-      <Select value={form.vehicleId} onchange={(e) => onFormChange({ ...form, vehicleId: (e.currentTarget as HTMLSelectElement).value })} disabled={!editable}>
-        <option value="">—</option>
-        {#each vehicles as o (o.id)}<option value={o.id}>{o.unitNumber}</option>{/each}
-      </Select>
+    <Field label="Véhicule">
+      <EntityPicker
+        endpoint="/transportation/vehicles"
+        label="Véhicule"
+        labelKey="unitNumber"
+        disabled={!editable}
+        bind:value={() => form.vehicleId, (v) => onFormChange({ ...form, vehicleId: v })}
+      />
     </Field>
-    <Field label="Trailer">
-      <Select value={form.trailerId} onchange={(e) => onFormChange({ ...form, trailerId: (e.currentTarget as HTMLSelectElement).value })} disabled={!editable}>
-        <option value="">—</option>
-        {#each trailers as o (o.id)}<option value={o.id}>{o.unitNumber}</option>{/each}
-      </Select>
+    <Field label="Remorque">
+      <EntityPicker
+        endpoint="/transportation/trailers"
+        label="Remorque"
+        labelKey="unitNumber"
+        disabled={!editable}
+        bind:value={() => form.trailerId, (v) => onFormChange({ ...form, trailerId: v })}
+      />
     </Field>
-    <Field label="Rate">
-      <Select value={form.rateId} onchange={(e) => onFormChange({ ...form, rateId: (e.currentTarget as HTMLSelectElement).value })} disabled={!editable}>
-        <option value="">—</option>
-        {#each rates as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
-      </Select>
+    <Field label="Tarif">
+      <EntityPicker
+        endpoint="/transportation/rates"
+        label="Tarif"
+        labelKey="name"
+        disabled={!editable}
+        bind:value={() => form.rateId, (v) => onFormChange({ ...form, rateId: v })}
+      />
     </Field>
     <Field label="Mode">
-      <Select value={form.mode} onchange={(e) => onFormChange({ ...form, mode: (e.currentTarget as HTMLSelectElement).value })} disabled={!editable}>
-        <option value="">— inherit —</option>
+      <Select
+        value={form.mode}
+        onchange={(e) =>
+          onFormChange({ ...form, mode: (e.currentTarget as HTMLSelectElement).value })}
+        disabled={!editable}
+      >
+        <option value="">— hérité —</option>
         {#each Object.values(TransportMode) as m (m)}
           <option value={m}>{m}</option>
         {/each}
@@ -114,20 +137,20 @@
   </div>
   {#if editable}
     <div class="mt-3">
-      <Button variant="primary" onclick={saveResources}>Save resources</Button>
+      <Button variant="primary" onclick={saveResources}>Enregistrer les ressources</Button>
     </div>
   {/if}
 
   {#if resourcesCapacityExcesses.length > 0}
     <div class="mt-3 rounded-card border border-warn bg-warn-soft p-3">
-      <p class="mb-2 text-sm font-semibold text-warn">Trailer capacity exceeded</p>
+      <p class="mb-2 text-sm font-semibold text-warn">Capacité de la remorque dépassée</p>
       <table class="w-full text-xs">
         <thead>
           <tr class="text-ink-muted">
-            <th class="pb-1 text-left">Axis</th>
-            <th class="pb-1 text-right">Capacity</th>
-            <th class="pb-1 text-right">Requested</th>
-            <th class="pb-1 text-right">Excess</th>
+            <th class="pb-1 text-left">Axe</th>
+            <th class="pb-1 text-right">Capacité</th>
+            <th class="pb-1 text-right">Demandé</th>
+            <th class="pb-1 text-right">Excédent</th>
           </tr>
         </thead>
         <tbody>
@@ -144,11 +167,11 @@
       {#if editable}
         <label class="mt-2 flex cursor-pointer items-center gap-2 text-sm text-ink">
           <input type="checkbox" bind:checked={resourcesForce} />
-          Force assignment (audited)
+          Forcer l'assignation (audité)
         </label>
         {#if resourcesForce}
           <div class="mt-2">
-            <Button variant="danger" onclick={saveResources}>Confirm force assign</Button>
+            <Button variant="danger" onclick={saveResources}>Confirmer l'assignation forcée</Button>
           </div>
         {/if}
       {/if}

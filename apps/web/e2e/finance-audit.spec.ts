@@ -172,10 +172,10 @@ test('intake uses a carrier picker and keeps failed submissions in the drawer', 
   await panel.getByRole('button', { name: /^Transporteur :/ }).click();
   await page
     .getByRole('dialog', { name: 'Transporteur', exact: true })
-    .getByRole('button', { name: carrier.name, exact: true })
+    .getByRole('option', { name: carrier.name, exact: true })
     .click();
   await panel.getByLabel('Numéro de facture transporteur', { exact: true }).fill('FA-NEW-21');
-  await panel.getByLabel('Devise', { exact: true }).fill('usd');
+  await panel.getByRole('combobox', { name: 'Devise', exact: true }).selectOption('USD');
   await panel.getByLabel('Chargement · ligne 1', { exact: true }).fill('LD-REAL-21');
   await panel.getByLabel('Montant facturé · ligne 1', { exact: true }).fill('128.65');
   await panel.getByRole('button', { name: 'Enregistrer la facture' }).click();
@@ -284,9 +284,17 @@ test('manual journal entry uses a drawer and explicit posting confirmation', asy
   await page.goto('/billing/ledger?sourceType=payment&sourceId=fa-payment');
   await page.getByRole('button', { name: 'Nouvelle écriture manuelle', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'Nouvelle écriture manuelle', exact: true });
-  await panel.getByLabel('Compte · ligne 1').fill('1000');
+  await panel.getByRole('button', { name: /^Compte · ligne 1 :/ }).click();
+  await page
+    .getByRole('dialog', { name: 'Compte · ligne 1', exact: true })
+    .getByRole('option', { name: /^1000/ })
+    .click();
   await panel.getByLabel('Débit · ligne 1').fill('28.65');
-  await panel.getByLabel('Compte · ligne 2').fill('1100');
+  await panel.getByRole('button', { name: /^Compte · ligne 2 :/ }).click();
+  await page
+    .getByRole('dialog', { name: 'Compte · ligne 2', exact: true })
+    .getByRole('option', { name: /^1100/ })
+    .click();
   await panel.getByLabel('Crédit · ligne 2').fill('28.65');
   await panel.getByRole('button', { name: 'Comptabiliser l’écriture', exact: true }).click();
   const confirm = page.getByRole('dialog', { name: 'Comptabiliser l’écriture ?', exact: true });

@@ -1,11 +1,14 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { PERMISSIONS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
   import {
     Badge,
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     Field,
     FilterBar,
     Input,
@@ -17,6 +20,8 @@
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import LocationFormModal from '$lib/components/locations/LocationFormModal.svelte';
+  import type { LocationRecord } from '$lib/components/locations/types';
 
   interface Bin {
     id: string;
@@ -46,6 +51,18 @@
   let loading = $state(true);
   let error = $state('');
   let filterLocationId = $state('');
+  let showCreateWarehouse = $state(false);
+
+  const canManageLocations = $derived(
+    !!$auth?.user.permissions.includes(PERMISSIONS.CORE.LOCATIONS_MANAGE),
+  );
+
+  async function onWarehouseCreated(loc: LocationRecord) {
+    showCreateWarehouse = false;
+    await loadWarehouses();
+    filterLocationId = loc.id;
+    await load();
+  }
 
   // Create / edit panel
   let formOpen = $state(false);
@@ -158,13 +175,21 @@
 <FilterBar>
   <a href="/wms" class="text-sm text-accent hover:underline">← Entrepôt</a>
   <div class="w-64">
-    <Select bind:value={filterLocationId}>
-      <option value="">Tous les entrepôts</option>
-      {#each warehouses as w (w.id)}
-        <option value={w.id}>{w.code} — {w.name}</option>
-      {/each}
-    </Select>
+    <EntityPicker
+      endpoint="/wms/sites"
+      label="Entrepôt"
+      placeholder="Tous les entrepôts"
+      bind:value={filterLocationId}
+    />
   </div>
+  {#if canManageLocations}
+    <Button
+      variant="secondary"
+      onclick={() => {
+        showCreateWarehouse = true;
+      }}>+ Entrepôt</Button
+    >
+  {/if}
 </FilterBar>
 
 {#if loading}
@@ -210,12 +235,7 @@
   {#snippet children()}
     <div class="space-y-3">
       <Field label="Entrepôt">
-        <Select bind:value={formLocationId}>
-          <option value="">— Sélectionner —</option>
-          {#each warehouses as w (w.id)}
-            <option value={w.id}>{w.code} — {w.name}</option>
-          {/each}
-        </Select>
+        <EntityPicker endpoint="/wms/sites" label="Entrepôt" bind:value={formLocationId} />
       </Field>
       <Field label="Code">
         <Input bind:value={formCode} placeholder="A-01-01" />
@@ -243,3 +263,10 @@
     </div>
   {/snippet}
 </Modal>
+
+<LocationFormModal
+  bind:open={showCreateWarehouse}
+  location={null}
+  lockedType="WAREHOUSE"
+  oncreated={onWarehouseCreated}
+/>

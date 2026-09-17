@@ -249,19 +249,27 @@
 
   function statusTone(status: string): 'neutral' | 'warn' | 'ok' | 'info' {
     switch (status) {
-      case 'UNLINKED': return 'warn';
-      case 'LINKED':   return 'ok';
-      case 'ARCHIVED': return 'neutral';
-      default:         return 'neutral';
+      case 'UNLINKED':
+        return 'warn';
+      case 'LINKED':
+        return 'ok';
+      case 'ARCHIVED':
+        return 'neutral';
+      default:
+        return 'neutral';
     }
   }
 
   function statusLabel(status: string): string {
     switch (status) {
-      case 'UNLINKED': return 'À trier';
-      case 'LINKED':   return 'Rattaché';
-      case 'ARCHIVED': return 'Archivé';
-      default:         return status;
+      case 'UNLINKED':
+        return 'À trier';
+      case 'LINKED':
+        return 'Rattaché';
+      case 'ARCHIVED':
+        return 'Archivé';
+      default:
+        return status;
     }
   }
 
@@ -293,11 +301,14 @@
 
 <!-- Tabs -->
 <div class="mb-4 flex gap-1 rounded-xl bg-surface-muted p-1 w-fit">
-  {#each ([['UNLINKED', 'À trier'], ['LINKED', 'Rattachés'], ['ALL', 'Tous']] as const) as [tab, label] (tab)}
+  {#each [['UNLINKED', 'À trier'], ['LINKED', 'Rattachés'], ['ALL', 'Tous']] as const as [tab, label] (tab)}
     <button
       class={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${activeTab === tab ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink'}`}
-      onclick={() => { activeTab = tab; selected = null; }}
-    >{label}</button>
+      onclick={() => {
+        activeTab = tab;
+        selected = null;
+      }}>{label}</button
+    >
   {/each}
 </div>
 
@@ -320,7 +331,9 @@
           >
             <div class="flex items-start justify-between gap-2">
               <div class="min-w-0 flex-1">
-                <div class="truncate text-sm font-semibold text-ink">{thread.subject || '(sans objet)'}</div>
+                <div class="truncate text-sm font-semibold text-ink">
+                  {thread.subject || '(sans objet)'}
+                </div>
                 <div class="mt-0.5 flex items-center gap-2 text-xs text-ink-muted">
                   <span class="truncate">{threadDisplay(thread)}</span>
                 </div>
@@ -329,7 +342,10 @@
                 <span class="text-[10px] text-ink-faint">{relativeTime(thread.lastMessageAt)}</span>
                 <div class="flex items-center gap-1">
                   {#if thread.messageCount > 1}
-                    <span class="rounded-full bg-surface-muted px-1.5 py-0.5 font-mono text-[10px] font-semibold text-ink-muted">{thread.messageCount}</span>
+                    <span
+                      class="rounded-full bg-surface-muted px-1.5 py-0.5 font-mono text-[10px] font-semibold text-ink-muted"
+                      >{thread.messageCount}</span
+                    >
                   {/if}
                   <Badge tone={statusTone(thread.status)}>{statusLabel(thread.status)}</Badge>
                 </div>
@@ -361,24 +377,34 @@
             </div>
             <button
               class="shrink-0 rounded p-1 text-ink-faint hover:bg-surface-muted hover:text-ink"
-              onclick={() => { selected = null; }}
-              aria-label="Fermer"
-            >✕</button>
+              onclick={() => {
+                selected = null;
+              }}
+              aria-label="Fermer">✕</button
+            >
           </div>
 
           <!-- Message timeline -->
           <div class="mb-4 flex flex-col gap-3 max-h-96 overflow-y-auto pr-1">
             {#each selected.messages as msg (msg.id)}
               <div class={`flex ${msg.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start'}`}>
-                <div class={`max-w-[80%] rounded-2xl px-4 py-3 text-xs ${msg.direction === 'OUTBOUND' ? 'rounded-br-sm bg-accent text-white' : 'rounded-bl-sm bg-surface-muted text-ink'}`}>
+                <div
+                  class={`max-w-[80%] rounded-2xl px-4 py-3 text-xs ${msg.direction === 'OUTBOUND' ? 'rounded-br-sm bg-accent text-white' : 'rounded-bl-sm bg-surface-muted text-ink'}`}
+                >
                   {#if msg.fromAddress}
-                    <div class={`mb-1 text-[10px] font-semibold ${msg.direction === 'OUTBOUND' ? 'text-white/70' : 'text-ink-faint'}`}>
+                    <div
+                      class={`mb-1 text-[10px] font-semibold ${msg.direction === 'OUTBOUND' ? 'text-white/70' : 'text-ink-faint'}`}
+                    >
                       {msg.fromAddress}
                     </div>
                   {/if}
                   <!-- Inbound HTML is attacker-controlled; sanitized via DOMPurify before render. -->
-                  <div class="prose-xs leading-snug [&_p]:mb-1 [&_a]:underline">{@html msg.html ? safeHtml(msg.html) : '(contenu vide)'}</div>
-                  <div class={`mt-2 text-[10px] ${msg.direction === 'OUTBOUND' ? 'text-white/60' : 'text-ink-faint'}`}>
+                  <div class="prose-xs leading-snug [&_p]:mb-1 [&_a]:underline">
+                    {@html msg.html ? safeHtml(msg.html) : '(contenu vide)'}
+                  </div>
+                  <div
+                    class={`mt-2 text-[10px] ${msg.direction === 'OUTBOUND' ? 'text-white/60' : 'text-ink-faint'}`}
+                  >
                     {relativeTime(msg.createdAt)}
                   </div>
                 </div>
@@ -392,7 +418,9 @@
 
           <!-- Reply composer -->
           <div class="mb-4 border-t border-edge-soft pt-4">
-            <div class="mb-2 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Répondre</div>
+            <div class="mb-2 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+              Répondre
+            </div>
             <Textarea
               bind:value={replyHtml}
               rows={4}
@@ -406,22 +434,23 @@
           <!-- Link panel — only for UNLINKED threads -->
           {#if selected.status === 'UNLINKED'}
             <div class="border-t border-edge-soft pt-4">
-              <div class="mb-3 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Rattacher à un contact</div>
+              <div class="mb-3 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+                Rattacher à un contact
+              </div>
 
               <!-- Search contacts -->
               {#if !createMode}
                 <div class="mb-2">
-                  <Input
-                    bind:value={linkSearch}
-                    placeholder="Rechercher par nom ou courriel…"
-                  />
+                  <Input bind:value={linkSearch} placeholder="Rechercher par nom ou courriel…" />
                 </div>
                 {#if linkSearching}
                   <Skeleton rows={2} />
                 {:else if linkResults.length > 0}
                   <div class="mb-2 flex flex-col gap-1">
                     {#each linkResults as contact (contact.id)}
-                      <div class="flex items-center justify-between rounded-lg border border-edge-soft bg-surface-muted px-3 py-2 text-xs">
+                      <div
+                        class="flex items-center justify-between rounded-lg border border-edge-soft bg-surface-muted px-3 py-2 text-xs"
+                      >
                         <div>
                           <div class="font-semibold text-ink">{contact.name}</div>
                           <div class="text-ink-faint">{contact.email}</div>
@@ -429,8 +458,8 @@
                         <Button
                           variant="secondary"
                           loading={linkSaving}
-                          onclick={() => void linkToContact(contact.id)}
-                        >Rattacher</Button>
+                          onclick={() => void linkToContact(contact.id)}>Rattacher</Button
+                        >
                       </div>
                     {/each}
                   </div>
@@ -438,7 +467,12 @@
                   <p class="mb-2 text-xs text-ink-faint">Aucun contact trouvé.</p>
                 {/if}
 
-                <Button variant="secondary" onclick={() => { createMode = true; }}>+ Créer un contact</Button>
+                <Button
+                  variant="secondary"
+                  onclick={() => {
+                    createMode = true;
+                  }}>+ Créer un contact</Button
+                >
               {:else}
                 <!-- Create contact form -->
                 <div class="flex flex-col gap-3">
@@ -446,11 +480,16 @@
                     <Input bind:value={createName} placeholder="Prénom Nom" />
                   </Field>
                   <Field label="Adresse courriel *">
-                    <Input bind:value={createEmail} placeholder="prenom@exemple.com" />
+                    <Input type="email" bind:value={createEmail} placeholder="prenom@exemple.com" />
                   </Field>
                   <div class="flex gap-2">
                     <Button loading={linkSaving} onclick={createAndLink}>Créer et rattacher</Button>
-                    <Button variant="secondary" onclick={() => { createMode = false; }}>Annuler</Button>
+                    <Button
+                      variant="secondary"
+                      onclick={() => {
+                        createMode = false;
+                      }}>Annuler</Button
+                    >
                   </div>
                 </div>
               {/if}
@@ -460,7 +499,9 @@
           <!-- Archive button -->
           {#if selected.status !== 'ARCHIVED'}
             <div class="mt-4 border-t border-edge-soft pt-4 flex justify-end">
-              <Button variant="secondary" loading={archiving} onclick={archiveThread}>Archiver</Button>
+              <Button variant="secondary" loading={archiving} onclick={archiveThread}
+                >Archiver</Button
+              >
             </div>
           {/if}
         </Card>

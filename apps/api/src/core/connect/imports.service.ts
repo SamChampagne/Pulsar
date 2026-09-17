@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   applyMapping,
   AuditAction,
@@ -19,12 +24,7 @@ import { SequencesService } from '../../prisma/sequences.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { paginated, paginationArgs } from '../../common/pagination';
 import { ListQueryDto } from '../../common/dto/list-query.dto';
-import { CustomersService } from '../../modules/transportation/customers/customers.service';
-import { LocationsService } from '../../modules/transportation/locations/locations.service';
-import { CarriersService } from '../../modules/transportation/carriers/carriers.service';
-import { ItemsService } from '../../modules/wms/items/items.service';
-import { VehiclesService } from '../../modules/transportation/vehicles/vehicles.service';
-import { TrailersService } from '../../modules/transportation/trailers/trailers.service';
+import { ConnectRecordWriter } from './record-writer.service';
 
 export interface StartImportInput {
   file: Express.Multer.File;
@@ -43,41 +43,10 @@ export class ImportsService {
     private readonly audit: AuditLogsService,
     private readonly events: DomainEventsService,
     private readonly moduleSettings: ModuleSettingsService,
-    private readonly customers: CustomersService,
-    private readonly locations: LocationsService,
-    private readonly carriers: CarriersService,
-    private readonly items: ItemsService,
-    private readonly vehicles: VehiclesService,
-    private readonly trailers: TrailersService,
+    // Shared write surface: the inbound webhook receiver goes through the very
+    // same permission re-check and business services (never duplicated).
+    private readonly writer: ConnectRecordWriter,
   ) {}
-
-  // -------------------------------------------------------------------------
-  // Aiguillage: target key → service.create
-  // -------------------------------------------------------------------------
-
-  private async createRecord(
-    tenantId: string,
-    userId: string,
-    targetKey: string,
-    data: Record<string, unknown>,
-  ): Promise<unknown> {
-    switch (targetKey) {
-      case 'customers':
-        return this.customers.create(tenantId, data as any);
-      case 'locations':
-        return this.locations.create(tenantId, data as any);
-      case 'carriers':
-        return this.carriers.create(tenantId, data as any);
-      case 'items':
-        return this.items.create(tenantId, userId, data as any);
-      case 'vehicles':
-        return this.vehicles.create(tenantId, data as any);
-      case 'trailers':
-        return this.trailers.create(tenantId, data as any);
-      default:
-        throw new BadRequestException(`Unknown import target: "${targetKey}"`);
-    }
-  }
 
   // -------------------------------------------------------------------------
   // List batches
@@ -215,7 +184,7 @@ export class ImportsService {
           throw new Error(`Missing required fields: ${missing.join(', ')}`);
         }
 
-        await this.createRecord(tenantId, user.id, targetKey, coerced);
+        await this.writer.createImportRecord(user, targetKey, coerced);
         rowData = coerced;
         rowStatus = 'IMPORTED';
         importedRows++;

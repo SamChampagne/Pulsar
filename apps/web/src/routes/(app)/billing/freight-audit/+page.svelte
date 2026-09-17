@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { PERMISSIONS } from '@pulsar/shared';
+  import { PERMISSIONS, CURRENCIES } from '@pulsar/shared';
   import { auth } from '$lib/stores/auth';
   import { confirmAction } from '$lib/stores/confirmation';
   import {
@@ -20,6 +20,7 @@
     Skeleton,
     Drawer,
     EntityPicker,
+    ReferenceSelect,
     Select,
     Field,
     Input,
@@ -347,11 +348,10 @@
             <Input bind:value={carrierInvoiceNumber} required placeholder="ex. INV-12345" />
           </Field>
           <Field label="Devise">
-            <Input
+            <ReferenceSelect
+              options={CURRENCIES.map((c) => ({ value: c.code, label: c.name }))}
               bind:value={currency}
-              maxlength={3}
-              minlength={3}
-              pattern={'[A-Za-z]{3}'}
+              clearable
               placeholder="Défaut de facturation"
             />
           </Field>

@@ -20,6 +20,7 @@
     EmptyState,
     Skeleton,
     ErrorNotice,
+    EntityPicker,
     type Tone,
   } from '$lib/components/ui';
 
@@ -731,13 +732,18 @@
           {#each manualLines as line, i (i)}
             <tr class="border-b border-edge-soft/50 last:border-0">
               <td class="py-1 pr-2">
-                <input
-                  aria-label={`Compte · ligne ${i + 1}`}
-                  list="manual-account-codes"
-                  bind:value={line.accountCode}
-                  placeholder="ex. 1000"
-                  class="w-32 rounded border border-edge bg-surface px-2 py-1 text-sm focus:border-accent focus:outline-none"
-                />
+                <div class="w-36">
+                  <EntityPicker
+                    endpoint="/billing/ledger/accounts"
+                    label={`Compte · ligne ${i + 1}`}
+                    placeholder="ex. 1000"
+                    listShape="array"
+                    valueKey="code"
+                    labelKey="code"
+                    detailKey="name"
+                    bind:value={line.accountCode}
+                  />
+                </div>
               </td>
               <td class="py-1 px-1 text-right">
                 <input
@@ -799,12 +805,6 @@
         </tfoot>
       </table>
     </div>
-
-    <datalist id="manual-account-codes">
-      {#each accounts as a (a.id)}
-        <option value={a.code}>{a.code} — {a.name}</option>
-      {/each}
-    </datalist>
 
     {#if manualError}
       <p role="alert" class="mt-3 text-sm text-danger">{manualError}</p>

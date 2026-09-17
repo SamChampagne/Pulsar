@@ -19,6 +19,12 @@ export class CreateRoleDto {
   permissionKeys?: string[];
 }
 
+export class CreateRoleFromTemplateDto {
+  @IsString()
+  @Matches(/^[a-z0-9-]+$/, { message: 'templateKey must be kebab-case (a-z, 0-9, -)' })
+  templateKey!: string;
+}
+
 export class UpdateRoleDto {
   @IsOptional()
   @IsString()

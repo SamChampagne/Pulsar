@@ -4,6 +4,7 @@
   import { confirmAction } from '$lib/stores/confirmation';
   import { page } from '$app/state';
   import { api, ApiError } from '$lib/api/client';
+  import { formatDate } from '$lib/format';
   import {
     Badge,
     Button,
@@ -218,14 +219,11 @@
   }
 
   function fmtDate(value: string | null): string {
-    return value ? new Date(value).toLocaleDateString() : '—';
+    return formatDate(value);
   }
 
   const fmtWindow = (early: string | null, late?: string | null) =>
-    early
-      ? new Date(early).toLocaleDateString() +
-        (late ? ' → ' + new Date(late).toLocaleDateString() : '')
-      : '—';
+    early ? formatDate(early) + (late ? ' → ' + formatDate(late) : '') : '—';
 
   function warningText(w: WindowWarning): string {
     const kindLabel = w.kind === 'BEFORE_EARLY' ? 'avant' : 'après';

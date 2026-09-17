@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsDateString,
   IsHexColor,
   IsIn,
   IsInt,
@@ -58,4 +59,8 @@ export class UpdatePreferencesDto {
   @ValidateNested()
   @Type(() => AppearanceDto)
   appearance?: AppearanceDto;
+
+  @IsOptional()
+  @IsDateString()
+  releaseNotesSeenAt?: string;
 }

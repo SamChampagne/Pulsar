@@ -1,50 +1,23 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { PERMISSIONS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import { toast } from '$lib/stores/toast';
+  import { auth } from '$lib/stores/auth';
   import {
     PageHeader,
     Button,
     FilterBar,
-    Field,
-    Input,
-    Select,
     Table,
     Badge,
     EmptyState,
     Card,
     Skeleton,
-    Modal,
     ErrorNotice,
     type Tone,
   } from '$lib/components/ui';
+  import LocationFormModal from '$lib/components/locations/LocationFormModal.svelte';
+  import type { LocationRecord } from '$lib/components/locations/types';
 
-  interface Location {
-    id: string;
-    code: string;
-    name: string;
-    type: string;
-    customerId: string | null;
-    addressLine1: string;
-    addressLine2: string | null;
-    city: string;
-    state: string | null;
-    postalCode: string | null;
-    country: string | null;
-    latitude: number | null;
-    longitude: number | null;
-    timezone: string | null;
-    isActive: boolean;
-  }
-
-  const LOCATION_TYPES = [
-    'PLANT',
-    'WAREHOUSE',
-    'DISTRIBUTION_CENTER',
-    'CUSTOMER_SITE',
-    'CARRIER_TERMINAL',
-    'OTHER',
-  ];
   const TYPE_TONE: Record<string, Tone> = {
     PLANT: 'info',
     WAREHOUSE: 'ok',
@@ -63,37 +36,21 @@
       .replace(/^./, (c) => c.toUpperCase());
   }
 
-  let locations = $state<Location[]>([]);
+  const canManage = $derived(
+    ($auth?.user.permissions ?? []).includes(PERMISSIONS.CORE.LOCATIONS_MANAGE),
+  );
+
+  let locations = $state<LocationRecord[]>([]);
   let total = $state(0);
   let page = $state(1);
   const pageSize = 25;
   const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
   let search = $state('');
   let loading = $state(true);
-  let saving = $state(false);
   let error = $state('');
 
   let showForm = $state(false);
-  let editing = $state<Location | null>(null);
-  let form = $state(blankForm());
-
-  function blankForm() {
-    return {
-      code: '',
-      name: '',
-      type: 'WAREHOUSE',
-      addressLine1: '',
-      addressLine2: '',
-      city: '',
-      state: '',
-      postalCode: '',
-      country: '',
-      latitude: '',
-      longitude: '',
-      timezone: '',
-      isActive: true,
-    };
-  }
+  let editing = $state<LocationRecord | null>(null);
 
   // Signals over the loaded page.
   const geocoded = $derived(
@@ -106,7 +63,7 @@
     loading = true;
     error = '';
     try {
-      const result = await api<Paginated<Location>>('/transportation/locations', {
+      const result = await api<Paginated<LocationRecord>>('/locations', {
         query: { search, page, pageSize },
       });
       locations = result.items;
@@ -120,70 +77,15 @@
 
   function openNew() {
     editing = null;
-    form = blankForm();
-    error = '';
     showForm = true;
   }
-  function openEdit(loc: Location) {
+  function openEdit(loc: LocationRecord) {
+    if (!canManage) return;
     editing = loc;
-    form = {
-      code: loc.code,
-      name: loc.name,
-      type: loc.type,
-      addressLine1: loc.addressLine1,
-      addressLine2: loc.addressLine2 ?? '',
-      city: loc.city,
-      state: loc.state ?? '',
-      postalCode: loc.postalCode ?? '',
-      country: loc.country ?? '',
-      latitude: loc.latitude != null ? String(loc.latitude) : '',
-      longitude: loc.longitude != null ? String(loc.longitude) : '',
-      timezone: loc.timezone ?? '',
-      isActive: loc.isActive,
-    };
-    error = '';
     showForm = true;
   }
 
-  async function save(event: SubmitEvent) {
-    event.preventDefault();
-    error = '';
-    saving = true;
-    const body = {
-      code: form.code,
-      name: form.name,
-      type: form.type,
-      addressLine1: form.addressLine1,
-      addressLine2: form.addressLine2 || undefined,
-      city: form.city,
-      state: form.state || undefined,
-      postalCode: form.postalCode || undefined,
-      country: form.country || undefined,
-      latitude: String(form.latitude ?? '').trim() !== '' ? Number(form.latitude) : undefined,
-      longitude: String(form.longitude ?? '').trim() !== '' ? Number(form.longitude) : undefined,
-      timezone: form.timezone || undefined,
-      ...(editing ? { isActive: form.isActive } : {}),
-    };
-    try {
-      if (editing) {
-        await api(`/transportation/locations/${editing.id}`, { method: 'PATCH', body });
-        toast.success('Lieu mis à jour');
-      } else {
-        await api('/transportation/locations', { method: 'POST', body });
-        toast.success('Lieu créé');
-      }
-      showForm = false;
-      await load();
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Échec de l’enregistrement';
-      error = msg;
-      toast.error(msg);
-    } finally {
-      saving = false;
-    }
-  }
-
-  function addressLine(l: Location): string {
+  function addressLine(l: LocationRecord): string {
     return [l.city, l.state, l.postalCode].filter(Boolean).join(', ');
   }
 
@@ -206,7 +108,9 @@
   count={total}
 >
   {#snippet actions()}
-    <Button onclick={openNew}>Nouveau lieu</Button>
+    {#if canManage}
+      <Button onclick={openNew}>Nouveau lieu</Button>
+    {/if}
   {/snippet}
 </PageHeader>
 
@@ -258,7 +162,9 @@
       message="Créez vos sites avant de planifier des ordres : origines, destinations et entrepôts s’y rattachent."
     >
       {#snippet children()}
-        <Button onclick={openNew}>Nouveau lieu</Button>
+        {#if canManage}
+          <Button onclick={openNew}>Nouveau lieu</Button>
+        {/if}
       {/snippet}
     </EmptyState>
   </Card>
@@ -269,7 +175,10 @@
     {/snippet}
     {#snippet body()}
       {#each locations as loc (loc.id)}
-        <tr class="cursor-pointer hover:bg-surface-muted" onclick={() => openEdit(loc)}>
+        <tr
+          class={canManage ? 'cursor-pointer hover:bg-surface-muted' : ''}
+          onclick={() => openEdit(loc)}
+        >
           <td class="font-mono font-semibold text-ink">{loc.code}</td>
           <td>{loc.name}</td>
           <td><Badge tone={typeTone(loc.type)}>{typeLabel(loc.type)}</Badge></td>
@@ -288,7 +197,7 @@
               <Badge tone="neutral">Inactif</Badge>
             {/if}
           </td>
-          <td class="text-right text-xs text-ink-faint">Éditer →</td>
+          <td class="text-right text-xs text-ink-faint">{canManage ? 'Éditer →' : ''}</td>
         </tr>
       {/each}
     {/snippet}
@@ -322,66 +231,13 @@
   </div>
 {/if}
 
-<Modal bind:open={showForm} title={editing ? `Éditer ${editing.code}` : 'Nouveau lieu'} size="md">
-  {#snippet children()}
-    <form onsubmit={save} class="space-y-3">
-      {#if error}<p class="text-sm text-danger">{error}</p>{/if}
-      <div class="grid grid-cols-2 gap-3">
-        <Field label="Code"><Input bind:value={form.code} required placeholder="WH-MTL" /></Field>
-        <Field label="Type">
-          <Select bind:value={form.type}>
-            {#each LOCATION_TYPES as t (t)}<option value={t}>{typeLabel(t)}</option>{/each}
-          </Select>
-        </Field>
-      </div>
-      <Field label="Nom"><Input bind:value={form.name} required /></Field>
-      <Field label="Adresse"
-        ><Input bind:value={form.addressLine1} required placeholder="1234 rue Principale" /></Field
-      >
-      <Field label="Complément d’adresse"
-        ><Input bind:value={form.addressLine2} placeholder="Suite, dock…" /></Field
-      >
-      <div class="grid grid-cols-2 gap-3">
-        <Field label="Ville"><Input bind:value={form.city} required /></Field>
-        <Field label="Province / État"><Input bind:value={form.state} placeholder="QC" /></Field>
-      </div>
-      <div class="grid grid-cols-2 gap-3">
-        <Field label="Code postal"
-          ><Input bind:value={form.postalCode} placeholder="H1A 1A1" /></Field
-        >
-        <Field label="Pays"><Input bind:value={form.country} placeholder="CA" /></Field>
-      </div>
-      <div class="grid grid-cols-3 gap-3">
-        <Field label="Latitude"
-          ><Input bind:value={form.latitude} type="number" step="any" placeholder="45.5017" /></Field
-        >
-        <Field label="Longitude"
-          ><Input bind:value={form.longitude} type="number" step="any" placeholder="-73.5673" /></Field
-        >
-        <Field label="Fuseau"
-          ><Input bind:value={form.timezone} placeholder="America/Toronto" /></Field
-        >
-      </div>
-      <p class="text-xs text-ink-faint">
-        Latitude/longitude sont optionnelles : laissées vides, le serveur tente un géocodage
-        automatique de l’adresse.
-      </p>
-      {#if editing}
-        <label class="flex items-center gap-2 text-sm text-ink">
-          <input type="checkbox" bind:checked={form.isActive} class="rounded border-edge" /> Lieu actif
-        </label>
-      {/if}
-      <div class="flex justify-end gap-2 border-t border-edge pt-3">
-        <Button
-          variant="secondary"
-          onclick={() => {
-            showForm = false;
-          }}>Annuler</Button
-        >
-        <Button variant="primary" type="submit" loading={saving}
-          >{editing ? 'Enregistrer' : 'Créer'}</Button
-        >
-      </div>
-    </form>
-  {/snippet}
-</Modal>
+<LocationFormModal
+  bind:open={showForm}
+  location={editing}
+  oncreated={() => {
+    void load();
+  }}
+  onupdated={() => {
+    void load();
+  }}
+/>

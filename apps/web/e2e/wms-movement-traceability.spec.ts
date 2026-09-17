@@ -152,7 +152,7 @@ async function form(page: Page) {
   await panel.getByRole('button', { name: /^Destination :/ }).click();
   await page
     .getByRole('dialog', { name: 'Destination', exact: true })
-    .getByRole('button', { name: 'A-01 · Allée A', exact: true })
+    .getByRole('option', { name: 'A-01 · Allée A', exact: true })
     .click();
   await expect(page.getByRole('dialog', { name: 'Destination', exact: true })).toHaveCount(0);
   await panel.getByRole('spinbutton', { name: 'Quantité (EA)', exact: true }).fill('4');

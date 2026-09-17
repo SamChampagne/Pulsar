@@ -2,17 +2,20 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
+  import { PERMISSIONS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
+  import { formatDate as formatDateShared } from '$lib/format';
   import {
     Badge,
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     Field,
     Input,
     Modal,
     PageHeader,
-    Select,
     Skeleton,
     Textarea,
     ViewToggle,
@@ -21,6 +24,8 @@
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
+  import LocationFormModal from '$lib/components/locations/LocationFormModal.svelte';
+  import type { LocationRecord } from '$lib/components/locations/types';
 
   interface ReceiptRow {
     id: string;
@@ -73,6 +78,16 @@
   let createSaving = $state(false);
   let receiptFieldDefs = $state<CustomFieldDef[]>([]);
   let customData = $state<Record<string, unknown>>({});
+  let showCreateWarehouse = $state(false);
+  const canManageLocations = $derived(
+    !!$auth?.user.permissions.includes(PERMISSIONS.CORE.LOCATIONS_MANAGE),
+  );
+
+  async function onWarehouseCreated(loc: LocationRecord) {
+    showCreateWarehouse = false;
+    warehouses = [...warehouses, { id: loc.id, code: loc.code, name: loc.name, type: loc.type }];
+    createLocationId = loc.id;
+  }
 
   const KANBAN_COLS: { status: string; label: string }[] = [
     { status: 'DRAFT', label: 'Brouillon' },
@@ -112,7 +127,7 @@
   }
 
   function fmtDate(iso: string): string {
-    return new Date(iso).toLocaleDateString();
+    return formatDateShared(iso);
   }
 
   async function load() {
@@ -288,12 +303,14 @@
 <Modal bind:open={createOpen} title="Nouvelle réception">
   <div class="space-y-3">
     <Field label="Entrepôt">
-      <Select bind:value={createLocationId}>
-        <option value="">— Sélectionner —</option>
-        {#each warehouses as w (w.id)}
-          <option value={w.id}>{w.code} — {w.name}</option>
-        {/each}
-      </Select>
+      <EntityPicker
+        endpoint="/wms/sites"
+        label="Entrepôt"
+        bind:value={createLocationId}
+        allowCreate={canManageLocations
+          ? { label: 'Créer un entrepôt', onCreate: () => (showCreateWarehouse = true) }
+          : undefined}
+      />
     </Field>
     <Field label="Référence">
       <Input bind:value={createReference} placeholder="Bon de commande / fournisseur" />
@@ -315,3 +332,10 @@
     <Button loading={createSaving} onclick={submitCreate}>Créer</Button>
   {/snippet}
 </Modal>
+
+<LocationFormModal
+  bind:open={showCreateWarehouse}
+  location={null}
+  lockedType="WAREHOUSE"
+  oncreated={onWarehouseCreated}
+/>

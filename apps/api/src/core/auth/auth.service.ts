@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { JwtPayload, LoginResponse, ModuleKey, PermissionKey } from '@pulsar/shared';
@@ -65,6 +65,18 @@ export class AuthService {
     });
     if (!record || record.usedAt || record.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid or expired link');
+    }
+    // A disabled account must never be reactivated through a still-live
+    // token (e.g. a password-reset link issued before it was deactivated) —
+    // checked before any write. UsersService.deactivate now also invalidates
+    // open tokens on deactivation; this is defense in depth for tokens that
+    // predate that guard or were issued through another path.
+    const tokenUser = await this.prisma.user.findUnique({
+      where: { id: record.userId },
+      select: { status: true },
+    });
+    if (!tokenUser || tokenUser.status === 'DISABLED') {
+      throw new BadRequestException('Account is disabled');
     }
     await this.prisma.$transaction([
       this.prisma.userActionToken.update({

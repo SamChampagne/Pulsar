@@ -4,6 +4,7 @@
   import { Badge, Button, Card, EmptyState, PageHeader, Skeleton } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import { formatDateTime as formatDateTimeShared } from '$lib/format';
 
   type PickStatus = 'NOT_PICKED' | 'PICKING' | 'PICKED';
 
@@ -58,7 +59,7 @@
   function formatDate(value: string | null): string {
     if (!value) return '—';
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+    return Number.isNaN(d.getTime()) ? '—' : formatDateTimeShared(value);
   }
 
   function formatWeight(value: string | number | null): string {

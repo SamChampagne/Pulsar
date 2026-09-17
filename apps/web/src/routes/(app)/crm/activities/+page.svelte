@@ -43,20 +43,20 @@
   const SEGMENTS: Segment[] = [
     { key: 'overdue', label: 'Relances en retard' },
     { key: 'pending', label: 'À faire' },
-    { key: 'all',     label: 'Toutes' },
+    { key: 'all', label: 'Toutes' },
   ];
 
   // ── State ────────────────────────────────────────────────────────────────────
 
   let activeFilter = $state<FilterKey>('overdue');
-  let activities   = $state<CrmActivity[]>([]);
-  let total        = $state(0);
-  let page         = $state(1);
-  const pageSize   = 25;
+  let activities = $state<CrmActivity[]>([]);
+  let total = $state(0);
+  let page = $state(1);
+  const pageSize = 25;
   const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
-  let loading      = $state(true);
-  let error        = $state('');
-  let completing   = $state<string | null>(null); // activityId being marked done
+  let loading = $state(true);
+  let error = $state('');
+  let completing = $state<string | null>(null); // activityId being marked done
 
   // ── Query builder ─────────────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@
     if (activeFilter === 'overdue') {
       base['overdue'] = 'true';
     } else if (activeFilter === 'pending') {
-      base['type']    = 'TASK';
+      base['type'] = 'TASK';
       base['pending'] = 'true';
     }
     return base;
@@ -118,34 +118,52 @@
 
   function typeIcon(type: string): string {
     switch (type) {
-      case 'NOTE':    return '📝';
-      case 'CALL':    return '📞';
-      case 'EMAIL':   return '✉️';
-      case 'MEETING': return '🤝';
-      case 'TASK':    return '✅';
-      default:        return '•';
+      case 'NOTE':
+        return '📝';
+      case 'CALL':
+        return '📞';
+      case 'EMAIL':
+        return '✉️';
+      case 'MEETING':
+        return '🤝';
+      case 'TASK':
+        return '✅';
+      default:
+        return '•';
     }
   }
 
   function typeLabel(type: string): string {
     switch (type) {
-      case 'NOTE':    return 'Note';
-      case 'CALL':    return 'Appel';
-      case 'EMAIL':   return 'Courriel';
-      case 'MEETING': return 'Réunion';
-      case 'TASK':    return 'Tâche';
-      default:        return type;
+      case 'NOTE':
+        return 'Note';
+      case 'CALL':
+        return 'Appel';
+      case 'EMAIL':
+        return 'Courriel';
+      case 'MEETING':
+        return 'Réunion';
+      case 'TASK':
+        return 'Tâche';
+      default:
+        return type;
     }
   }
 
   function typeTone(type: string): Tone {
     switch (type) {
-      case 'TASK':    return 'warn';
-      case 'NOTE':    return 'neutral';
-      case 'CALL':    return 'info';
-      case 'EMAIL':   return 'info';
-      case 'MEETING': return 'ok';
-      default:        return 'neutral';
+      case 'TASK':
+        return 'warn';
+      case 'NOTE':
+        return 'neutral';
+      case 'CALL':
+        return 'info';
+      case 'EMAIL':
+        return 'info';
+      case 'MEETING':
+        return 'ok';
+      default:
+        return 'neutral';
     }
   }
 
@@ -178,29 +196,25 @@
     if (diffH < 24) return `Il y a ${diffH}h`;
     const diffD = Math.floor(diffH / 24);
     if (diffD < 7) return `Il y a ${diffD}j`;
-    return d.toLocaleDateString();
+    return formatDate(iso);
   }
 
   function subjectRef(activity: CrmActivity): string | null {
-    if (activity.dealId)    return `Affaire ${activity.dealId.slice(0, 8)}…`;
+    if (activity.dealId) return `Affaire ${activity.dealId.slice(0, 8)}…`;
     if (activity.companyId) return `Société ${activity.companyId.slice(0, 8)}…`;
     if (activity.contactId) return `Contact ${activity.contactId.slice(0, 8)}…`;
     return null;
   }
 
   function subjectHref(activity: CrmActivity): string | null {
-    if (activity.dealId)    return `/crm/deals`;
+    if (activity.dealId) return `/crm/deals`;
     if (activity.companyId) return `/crm/companies`;
     if (activity.contactId) return `/crm/contacts`;
     return null;
   }
 </script>
 
-<PageHeader
-  title="Activités"
-  subtitle="Inbox des relances, tâches et suivis CRM."
-  count={total}
-/>
+<PageHeader title="Activités" subtitle="Inbox des relances, tâches et suivis CRM." count={total} />
 
 <ErrorNotice message={error} onretry={load} />
 
@@ -214,7 +228,9 @@
           ? 'bg-accent text-white shadow-sm'
           : 'text-ink-muted hover:bg-surface hover:text-ink'
       }`}
-      onclick={() => { activeFilter = seg.key; }}
+      onclick={() => {
+        activeFilter = seg.key;
+      }}
     >
       {seg.label}
     </button>
@@ -226,13 +242,13 @@
   <Card padded={false}><Skeleton rows={6} /></Card>
 {:else if activities.length === 0}
   <Card>
-    <EmptyState message={
-      activeFilter === 'overdue'
+    <EmptyState
+      message={activeFilter === 'overdue'
         ? 'Aucune relance en retard. Tout est à jour !'
         : activeFilter === 'pending'
           ? 'Aucune tâche en attente.'
-          : 'Aucune activité enregistrée.'
-    } />
+          : 'Aucune activité enregistrée.'}
+    />
   </Card>
 {:else}
   <ol class="space-y-2">
@@ -283,7 +299,9 @@
           {#if activity.type === 'TASK'}
             <div class="mt-2 flex flex-wrap items-center gap-3">
               {#if activity.doneAt}
-                <span class="inline-flex items-center gap-1 rounded-full bg-ok-soft px-2 py-0.5 text-[10px] font-semibold text-ok">
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-ok-soft px-2 py-0.5 text-[10px] font-semibold text-ok"
+                >
                   ✓ Terminée le {formatDate(activity.doneAt)}
                 </span>
               {:else if activity.dueAt}
@@ -292,7 +310,7 @@
                     overdue ? 'bg-danger-soft text-danger' : 'bg-warn-soft text-warn'
                   }`}
                 >
-                  ⏱ Échéance : {new Date(activity.dueAt).toLocaleDateString()}
+                  ⏱ Échéance : {formatDate(activity.dueAt)}
                   {#if overdue}&nbsp;— En retard{/if}
                 </span>
               {:else}
@@ -325,14 +343,20 @@
         <Button
           variant="secondary"
           disabled={page <= 1}
-          onclick={() => { page = Math.max(1, page - 1); void load(); }}
-        >Précédent</Button>
+          onclick={() => {
+            page = Math.max(1, page - 1);
+            void load();
+          }}>Précédent</Button
+        >
         <span class="font-mono text-xs">Page {page} / {totalPages}</span>
         <Button
           variant="secondary"
           disabled={page >= totalPages}
-          onclick={() => { page = Math.min(totalPages, page + 1); void load(); }}
-        >Suivant</Button>
+          onclick={() => {
+            page = Math.min(totalPages, page + 1);
+            void load();
+          }}>Suivant</Button
+        >
       </div>
     </div>
   {/if}

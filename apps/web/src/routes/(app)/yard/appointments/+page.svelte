@@ -2,11 +2,13 @@
   import type { Paginated } from '@pulsar/shared';
   import { YardDirection, YardSpotType, computeAppointmentTiming } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { formatDateTime } from '$lib/format';
   import {
     Badge,
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     Field,
     Input,
     Modal,
@@ -25,11 +27,6 @@
     code: string;
     name: string;
     type: string;
-  }
-
-  interface CarrierOption {
-    id: string;
-    name: string;
   }
 
   interface SpotOption {
@@ -65,7 +62,6 @@
 
   let appointments = $state<Appointment[]>([]);
   let locations = $state<LocationOption[]>([]);
-  let carriers = $state<CarrierOption[]>([]);
   let spots = $state<SpotOption[]>([]);
   let loading = $state(true);
   let error = $state('');
@@ -136,17 +132,17 @@
   function fmtDate(value: string): string {
     if (!value) return '—';
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+    return Number.isNaN(d.getTime()) ? '—' : formatDateTime(value);
   }
 
   async function loadStatic() {
-    const [locs, crs, spts] = await Promise.all([
-      api<Paginated<LocationOption>>('/transportation/locations', { query: { pageSize: 100 } }),
-      api<Paginated<CarrierOption>>('/transportation/carriers', { query: { pageSize: 100 } }),
+    const [locs, spts] = await Promise.all([
+      api<Paginated<LocationOption>>('/locations', {
+        query: { type: 'WAREHOUSE', pageSize: 100 },
+      }),
       api<SpotOption[]>('/yard/spots'),
     ]);
     locations = locs.items;
-    carriers = crs.items;
     spots = spts;
   }
 
@@ -173,7 +169,7 @@
   });
 
   async function openCreate() {
-    formLocationId = locations.find((l) => l.type === 'WAREHOUSE')?.id ?? locations[0]?.id ?? '';
+    formLocationId = locations[0]?.id ?? '';
     formSpotId = '';
     formCarrierId = '';
     formDirection = YardDirection.INBOUND;
@@ -370,16 +366,30 @@
             {a.direction}{a.spot ? ` · ${a.spot.code}` : ''}
             {#if a.carrier}<span class="block text-xs text-ink-faint">{a.carrier.name}</span>{/if}
           </div>
-          <p class="mt-1 text-xs text-ink-faint">{fmtDate(a.windowStart)} → {fmtDate(a.windowEnd)}</p>
+          <p class="mt-1 text-xs text-ink-faint">
+            {fmtDate(a.windowStart)} → {fmtDate(a.windowEnd)}
+          </p>
           {#if a.status === 'SCHEDULED' || a.status === 'ARRIVED'}
             <div class="mt-2 flex flex-wrap gap-1">
               {#if a.status === 'SCHEDULED'}
-                <Button variant="secondary" onclick={() => action(a, 'arrive', 'Arrivée enregistrée')}>Arrivée</Button>
-                <Button variant="ghost" onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}>Annuler</Button>
-                <Button variant="ghost" onclick={() => action(a, 'no-show', 'No-show enregistré')}>No-show</Button>
+                <Button
+                  variant="secondary"
+                  onclick={() => action(a, 'arrive', 'Arrivée enregistrée')}>Arrivée</Button
+                >
+                <Button variant="ghost" onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}
+                  >Annuler</Button
+                >
+                <Button variant="ghost" onclick={() => action(a, 'no-show', 'No-show enregistré')}
+                  >No-show</Button
+                >
               {:else if a.status === 'ARRIVED'}
-                <Button variant="secondary" onclick={() => action(a, 'complete', 'Rendez-vous complété')}>Compléter</Button>
-                <Button variant="ghost" onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}>Annuler</Button>
+                <Button
+                  variant="secondary"
+                  onclick={() => action(a, 'complete', 'Rendez-vous complété')}>Compléter</Button
+                >
+                <Button variant="ghost" onclick={() => action(a, 'cancel', 'Rendez-vous annulé')}
+                  >Annuler</Button
+                >
               {/if}
             </div>
           {/if}
@@ -391,7 +401,9 @@
   <div class="flex gap-3 overflow-x-auto pb-2">
     {#each KANBAN_COLS as col (col.status)}
       {@const items = appointments.filter((a) => a.status === col.status)}
-      <div class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted">
+      <div
+        class="flex w-64 shrink-0 flex-col rounded-card border border-edge-soft bg-surface-muted"
+      >
         <div class="flex items-center justify-between px-3 py-2">
           <Badge tone={statusTone(col.status)}>{col.label}</Badge>
           <span class="font-mono text-xs text-ink-muted">{items.length}</span>
@@ -440,7 +452,8 @@
                     {:else if a.status === 'ARRIVED'}
                       <button
                         class="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-accent-strong"
-                        onclick={() => action(a, 'complete', 'Rendez-vous complété')}>Compléter</button
+                        onclick={() => action(a, 'complete', 'Rendez-vous complété')}
+                        >Compléter</button
                       >
                       <button
                         class="rounded-md border border-edge px-2 py-0.5 text-[11px] font-semibold text-ink-muted hover:bg-surface-muted"
@@ -461,12 +474,14 @@
 <Modal bind:open={createOpen} title="Nouveau rendez-vous">
   <div class="space-y-3">
     <Field label="Site">
-      <Select bind:value={formLocationId}>
-        <option value="">— Sélectionner —</option>
-        {#each locations as l (l.id)}
-          <option value={l.id}>{l.code} — {l.name}</option>
-        {/each}
-      </Select>
+      <EntityPicker
+        endpoint="/locations"
+        label="Site"
+        filters={{ type: 'WAREHOUSE' }}
+        labelKey="name"
+        detailKey="code"
+        bind:value={formLocationId}
+      />
     </Field>
     <Field label="Porte (optionnel)">
       <Select bind:value={formSpotId}>
@@ -477,12 +492,13 @@
       </Select>
     </Field>
     <Field label="Transporteur (optionnel)">
-      <Select bind:value={formCarrierId}>
-        <option value="">— Aucun —</option>
-        {#each carriers as c (c.id)}
-          <option value={c.id}>{c.name}</option>
-        {/each}
-      </Select>
+      <EntityPicker
+        endpoint="/transportation/carriers"
+        label="Transporteur"
+        labelKey="name"
+        detailKey="code"
+        bind:value={formCarrierId}
+      />
     </Field>
     <Field label="Direction">
       <Select bind:value={formDirection}>

@@ -1,14 +1,33 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AuditAction, CustomerInvoiceStatus, DOMAIN_EVENT_TYPES, MODULE_KEYS, TransportMode } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
+import type { PortalAuthUser } from '@pulsar/shared';
+import {
+  AuditAction,
+  CustomerInvoiceStatus,
+  MODULE_KEYS,
+  ShipmentStatus,
+  TransportMode,
+  TransportOrderStatus,
+} from '@pulsar/shared';
 import { randomBytes } from 'node:crypto';
+import { ListQueryDto } from '../../common/dto/list-query.dto';
+import { paginated, paginationArgs } from '../../common/pagination';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { DocumentsService } from '../../core/documents/documents.service';
-import { DomainEventsService } from '../../core/operating/domain-events.service';
+import {
+  buildShipmentTrackingView,
+  lastPositionsByLoad,
+} from '../transportation/public/shipment-tracking.view';
 import { toDate, assertWindowCoherence } from '../transportation/planning/window-validation';
 
 export interface PortalOrderInput {
@@ -37,11 +56,25 @@ export interface CreateOrderTemplateInput {
   notes?: string;
 }
 
-export interface PortalChangeRequestInput {
-  orderId?: string;
-  shipmentId?: string;
-  kind: string;
-  note: string;
+/**
+ * Who the portal is acting for, whatever the door they came through.
+ *
+ * Two doors resolve to the same context: the revocable capability link
+ * (`/public/portal/:token`, no `actor`) and an authenticated portal account
+ * (`/portal/*`, `actor` set). Every business method is written against this
+ * context, so the two surfaces can never drift apart — and both stay scoped by
+ * `tenantId` AND `customerId` (rule 1: a customer company is the isolation unit
+ * inside a tenant).
+ */
+export interface PortalContext {
+  tenantId: string;
+  customerId: string;
+  customerName: string;
+  tenantName: string;
+  /** Free-form tenant settings JSON; only `branding` is ever projected out of it. */
+  settings: unknown;
+  /** Set only for a session (account) caller — a shared link has no named author. */
+  actor?: { portalUserId: string; displayName: string };
 }
 
 /** Public/internal-safe projection of a shipment comment (rule 10: never tenantId/authorId). */
@@ -74,10 +107,116 @@ export function projectShipmentComment(comment: {
 }
 
 /**
- * Customer Portal v1: capability-link visibility for the shipper's customers.
- * One revocable token per customer opens a read-only page listing their orders,
- * shipment statuses and public tracking links. Same security model as
- * tender/tracking/driver links (see docs/collaboration.md).
+ * Order-template row as exposed to the portal: location **codes**, never PKs
+ * (rule 10). `OrderTemplate` holds soft FKs (no Prisma relation to `Location`),
+ * so the codes are resolved by the caller and handed over as a map.
+ */
+function projectTemplate(
+  template: {
+    id: string;
+    name: string;
+    originLocationId: string | null;
+    destinationLocationId: string | null;
+    mode: string | null;
+    totalWeightKg: number | null;
+    totalVolumeM3: number | null;
+    palletCount: number | null;
+    notes: string | null;
+    createdAt: Date;
+  },
+  codes: Map<string, string>,
+) {
+  return {
+    id: template.id,
+    name: template.name,
+    originCode: (template.originLocationId && codes.get(template.originLocationId)) || null,
+    destinationCode:
+      (template.destinationLocationId && codes.get(template.destinationLocationId)) || null,
+    mode: template.mode,
+    totalWeightKg: template.totalWeightKg,
+    totalVolumeM3: template.totalVolumeM3,
+    palletCount: template.palletCount,
+    notes: template.notes,
+    createdAt: template.createdAt,
+  };
+}
+
+/** Amounts leave the API as numbers, never as serialized `Decimal` strings. */
+function amount(value: Prisma.Decimal | number | null | undefined): number {
+  return value === null || value === undefined ? 0 : Number(value);
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * A live position is only published while the shipment is actually moving
+ * (rule 20 + spec §B2.2) — one point, no history, never after delivery.
+ */
+/** A customer never sees a DRAFT statement - only what has been approved. */
+const PORTAL_VISIBLE_INVOICE_STATUSES = [
+  CustomerInvoiceStatus.APPROVED,
+  CustomerInvoiceStatus.SENT,
+  CustomerInvoiceStatus.PAID,
+];
+
+const POSITION_STATUSES = new Set<string>([ShipmentStatus.DISPATCHED, ShipmentStatus.IN_TRANSIT]);
+
+/**
+ * The order rows the portal is allowed to see. Explicit select (rule 10): no
+ * `tenantId`, no carrier, no cost, no internal location PK — `loadId` and
+ * `trackingToken` are read for derived fields and dropped by the projection.
+ */
+const portalOrderSelect = {
+  id: true,
+  orderNumber: true,
+  customerReference: true,
+  status: true,
+  mode: true,
+  totalWeightKg: true,
+  totalVolumeM3: true,
+  palletCount: true,
+  notes: true,
+  requestedPickupEarly: true,
+  requestedPickupLate: true,
+  requestedDeliveryEarly: true,
+  requestedDeliveryLate: true,
+  createdAt: true,
+  updatedAt: true,
+  originLocation: { select: { city: true, state: true } },
+  destinationLocation: { select: { city: true, state: true } },
+  shipments: {
+    orderBy: { shipmentNumber: 'asc' },
+    select: {
+      id: true,
+      shipmentNumber: true,
+      status: true,
+      loadId: true,
+      trackingToken: true,
+      plannedPickupEarly: true,
+      plannedPickupLate: true,
+      plannedDeliveryEarly: true,
+      plannedDeliveryLate: true,
+      actualPickupAt: true,
+      actualDeliveryAt: true,
+      weightKg: true,
+      palletCount: true,
+      proofOfDelivery: { select: { id: true } },
+    },
+  },
+} satisfies Prisma.TransportOrderSelect;
+
+type PortalOrderRow = Prisma.TransportOrderGetPayload<{ select: typeof portalOrderSelect }>;
+
+/**
+ * Customer Portal: visibility and self-service for the shipper's customers.
+ *
+ * Two authentication doors, one behaviour (see `PortalContext`):
+ *  - the revocable capability link (`/public/portal/:token`), same security
+ *    model as tender/tracking/driver links (docs/collaboration.md);
+ *  - a named portal account (`/portal/*`, PortalGuard).
+ * The `x(token, …)` methods only resolve a context and delegate to `xFor(ctx, …)`.
  */
 @Injectable()
 export class PortalService {
@@ -89,11 +228,14 @@ export class PortalService {
     private readonly audit: AuditLogsService,
     private readonly config: ConfigService,
     private readonly documents: DocumentsService,
-    private readonly domainEvents: DomainEventsService,
   ) {}
 
-  /** Resolves + gates a portal token (module must be enabled for the tenant). */
-  private async customerByToken(token: string) {
+  /**
+   * Resolves + gates a portal token (module must be enabled for the tenant).
+   * Public because the sibling change-requests surface resolves the same context
+   * for its own token routes — there is exactly one door resolver.
+   */
+  async contextFromToken(token: string): Promise<PortalContext> {
     const customer = await this.prisma.customer.findUnique({
       where: { portalToken: token },
       include: { tenant: { select: { name: true, settings: true } } },
@@ -103,7 +245,44 @@ export class PortalService {
     if (!enabled.has(MODULE_KEYS.CUSTOMER_PORTAL)) {
       throw new ForbiddenException('The customer portal is not enabled for this shipper');
     }
-    return customer;
+    // No actor: a capability link is bearer-authenticated, nobody is named.
+    return {
+      tenantId: customer.tenantId,
+      customerId: customer.id,
+      customerName: customer.name,
+      tenantName: customer.tenant.name,
+      settings: customer.tenant.settings,
+    };
+  }
+
+  /**
+   * Resolves the context of an authenticated portal account. PortalGuard has
+   * already re-read the account, the customer company and the module activation
+   * on this very request; the lookup here is defensive (and loads the shipper
+   * name / branding the payloads need).
+   */
+  async contextFromPortalUser(user: PortalAuthUser): Promise<PortalContext> {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: user.customerId, tenantId: user.tenantId, isActive: true },
+      select: { id: true, name: true, tenant: { select: { name: true, settings: true } } },
+    });
+    if (!customer) throw new NotFoundException('Customer not found');
+    return {
+      tenantId: user.tenantId,
+      customerId: customer.id,
+      customerName: customer.name,
+      tenantName: customer.tenant.name,
+      settings: customer.tenant.settings,
+      actor: {
+        portalUserId: user.id,
+        displayName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+      },
+    };
+  }
+
+  /** Audit payload fragment naming the portal account behind the action, when there is one. */
+  private actorTrace(ctx: PortalContext): Record<string, string> {
+    return ctx.actor ? { portalUserId: ctx.actor.portalUserId } : {};
   }
 
   /** Resolves an opaque location code (exposed in the public payload) to its internal PK. */
@@ -120,21 +299,27 @@ export class PortalService {
    * Portal v2: the customer submits a transport request, landing as a DRAFT
    * order for the shipper's customer service to confirm (or cancel).
    */
-  async createOrder(token: string, input: PortalOrderInput) {
-    const customer = await this.customerByToken(token);
+  createOrder(token: string, input: PortalOrderInput) {
+    return this.contextFromToken(token).then((ctx) => this.createOrderFor(ctx, input));
+  }
 
+  async createOrderFor(ctx: PortalContext, input: PortalOrderInput) {
     // Resolve opaque location codes (from the public payload) to internal PKs before merging.
     const resolvedOriginId = input.originLocationId
-      ? await this.resolveLocationCode(customer.tenantId, input.originLocationId)
+      ? await this.resolveLocationCode(ctx.tenantId, input.originLocationId)
       : undefined;
     const resolvedDestinationId = input.destinationLocationId
-      ? await this.resolveLocationCode(customer.tenantId, input.destinationLocationId)
+      ? await this.resolveLocationCode(ctx.tenantId, input.destinationLocationId)
       : undefined;
 
-    let mergedInput = { ...input, originLocationId: resolvedOriginId, destinationLocationId: resolvedDestinationId };
+    let mergedInput = {
+      ...input,
+      originLocationId: resolvedOriginId,
+      destinationLocationId: resolvedDestinationId,
+    };
     if (input.templateId) {
       const tpl = await this.prisma.orderTemplate.findFirst({
-        where: { id: input.templateId, tenantId: customer.tenantId, customerId: customer.id },
+        where: { id: input.templateId, tenantId: ctx.tenantId, customerId: ctx.customerId },
       });
       if (!tpl) throw new NotFoundException('Template not found');
       mergedInput = {
@@ -149,12 +334,14 @@ export class PortalService {
     }
 
     if (!mergedInput.originLocationId || !mergedInput.destinationLocationId) {
-      throw new BadRequestException('origin/destination requis (fournir directement ou via un template)');
+      throw new BadRequestException(
+        'origin/destination requis (fournir directement ou via un template)',
+      );
     }
 
     await Promise.all([
-      this.ownership.assertOwned('location', mergedInput.originLocationId, customer.tenantId),
-      this.ownership.assertOwned('location', mergedInput.destinationLocationId, customer.tenantId),
+      this.ownership.assertOwned('location', mergedInput.originLocationId, ctx.tenantId),
+      this.ownership.assertOwned('location', mergedInput.destinationLocationId, ctx.tenantId),
     ]);
 
     const pickupEarly = toDate(mergedInput.requestedPickupEarly);
@@ -165,9 +352,9 @@ export class PortalService {
 
     const order = await this.prisma.transportOrder.create({
       data: {
-        tenantId: customer.tenantId,
-        orderNumber: await this.sequences.nextNumber(customer.tenantId, 'transport-order'),
-        customerId: customer.id,
+        tenantId: ctx.tenantId,
+        orderNumber: await this.sequences.nextNumber(ctx.tenantId, 'transport-order'),
+        customerId: ctx.customerId,
         customerReference: mergedInput.customerReference,
         originLocationId: mergedInput.originLocationId!,
         destinationLocationId: mergedInput.destinationLocationId!,
@@ -180,14 +367,20 @@ export class PortalService {
         notes: mergedInput.notes,
         ...(mergedInput.mode ? { mode: mergedInput.mode } : {}),
         // No createdById: the author is the customer via the portal, not a tenant user.
+        // A PortalUser id is not a User row either — it goes in the audit payload.
       },
     });
     await this.audit.log({
-      tenantId: customer.tenantId,
+      tenantId: ctx.tenantId,
       action: AuditAction.CREATE,
       entityType: 'transport-order',
       entityId: order.id,
-      after: { orderNumber: order.orderNumber, source: 'customer-portal', customerId: customer.id },
+      after: {
+        orderNumber: order.orderNumber,
+        source: 'customer-portal',
+        customerId: ctx.customerId,
+        ...this.actorTrace(ctx),
+      },
     });
     return {
       orderNumber: order.orderNumber,
@@ -225,155 +418,349 @@ export class PortalService {
   }
 
   /** Public read. The module gate must be enforced here — public routes bypass ModulesGuard. */
-  async getPortalView(token: string) {
-    const customer = await this.customerByToken(token);
+  getPortalView(token: string) {
+    return this.contextFromToken(token).then((ctx) => this.getPortalViewFor(ctx));
+  }
 
+  async getPortalViewFor(ctx: PortalContext) {
     const orders = await this.prisma.transportOrder.findMany({
-      where: { tenantId: customer.tenantId, customerId: customer.id },
+      where: { tenantId: ctx.tenantId, customerId: ctx.customerId },
       orderBy: { createdAt: 'desc' },
       take: 50,
-      select: {
-        id: true,
-        orderNumber: true,
-        customerReference: true,
-        status: true,
-        requestedPickupEarly: true,
-        requestedPickupLate: true,
-        requestedDeliveryEarly: true,
-        requestedDeliveryLate: true,
-        createdAt: true,
-        originLocation: { select: { city: true, state: true } },
-        destinationLocation: { select: { city: true, state: true } },
-        shipments: {
-          select: {
-            id: true,
-            shipmentNumber: true,
-            status: true,
-            actualDeliveryAt: true,
-            trackingToken: true,
-          },
-        },
-      },
+      select: portalOrderSelect,
     });
 
-    // Locations are exposed minimally (code/name/city) — opaque code instead of PK (rule 10).
+    // Locations are exposed minimally (code/name/city) - opaque code instead of PK (rule 10).
     const locations = await this.prisma.location.findMany({
-      where: { tenantId: customer.tenantId, isActive: true },
+      where: { tenantId: ctx.tenantId, isActive: true },
       orderBy: { name: 'asc' },
       take: 100,
       select: { code: true, name: true, city: true },
     });
 
-    const branding = ((customer.tenant.settings as Record<string, unknown>)?.branding as Record<string, unknown>) ?? {};
-    const webUrl = this.config.get('WEB_URL', 'http://localhost:5173');
+    const branding =
+      ((ctx.settings as Record<string, unknown>)?.branding as Record<string, unknown>) ?? {};
     return {
-      shipper: customer.tenant.name,
-      customer: customer.name,
+      shipper: ctx.tenantName,
+      customer: ctx.customerName,
       branding,
       locations,
-      orders: orders.map((order) => ({
-        ...order,
-        shipments: order.shipments.map(({ trackingToken, ...shipment }) => ({
-          ...shipment,
-          trackingUrl: trackingToken ? `${webUrl}/track/${trackingToken}` : null,
-        })),
-      })),
+      orders: await this.projectOrders(ctx, orders),
     };
   }
 
-  async listInvoices(token: string) {
-    const customer = await this.customerByToken(token);
-    const enabled = await this.modulesCache.getEnabledKeys(customer.tenantId);
+  listOrders(token: string, query: ListQueryDto & { status?: TransportOrderStatus }) {
+    return this.contextFromToken(token).then((ctx) => this.listOrdersFor(ctx, query));
+  }
+
+  /**
+   * Paginated order list for the portal workspace - same projection as the
+   * dashboard `view`, scoped `(tenantId, customerId)` (rule 1 + rule 54).
+   */
+  async listOrdersFor(ctx: PortalContext, query: ListQueryDto & { status?: TransportOrderStatus }) {
+    const { page, pageSize, skip, take } = paginationArgs(query);
+    const where: Prisma.TransportOrderWhereInput = {
+      tenantId: ctx.tenantId,
+      customerId: ctx.customerId,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { orderNumber: { contains: query.search, mode: 'insensitive' } },
+              { customerReference: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.transportOrder.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        select: portalOrderSelect,
+      }),
+      this.prisma.transportOrder.count({ where }),
+    ]);
+    return paginated(await this.projectOrders(ctx, rows), total, page, pageSize);
+  }
+
+  /**
+   * Builds the customer-facing order rows: drops every internal reference
+   * (`loadId`, `trackingToken`, POD id) and derives the three fields the portal
+   * needs - document count, POD presence and the single live position.
+   *
+   * Batched on purpose: two extra queries whatever the number of orders.
+   */
+  private async projectOrders(ctx: PortalContext, orders: PortalOrderRow[]) {
+    const shipments = orders.flatMap((order) => order.shipments);
+    const shipmentIds = shipments.map((shipment) => shipment.id);
+    const movingLoadIds = shipments
+      .filter((shipment) => POSITION_STATUSES.has(shipment.status))
+      .map((shipment) => shipment.loadId);
+
+    const [documentCounts, positions] = await Promise.all([
+      shipmentIds.length
+        ? this.prisma.document.groupBy({
+            by: ['entityId'],
+            where: {
+              tenantId: ctx.tenantId,
+              entityType: 'proof-of-delivery',
+              entityId: { in: shipmentIds },
+            },
+            _count: { _all: true },
+          })
+        : Promise.resolve([] as Array<{ entityId: string; _count: { _all: number } }>),
+      lastPositionsByLoad(this.prisma, ctx.tenantId, movingLoadIds),
+    ]);
+    const counts = new Map(documentCounts.map((row) => [row.entityId, row._count._all]));
+    const webUrl = this.config.get('WEB_URL', 'http://localhost:5173');
+
+    return orders.map((order) => ({
+      id: order.id,
+      orderNumber: order.orderNumber,
+      customerReference: order.customerReference,
+      status: order.status,
+      mode: order.mode,
+      totalWeightKg: order.totalWeightKg,
+      totalVolumeM3: order.totalVolumeM3,
+      palletCount: order.palletCount,
+      notes: order.notes,
+      requestedPickupEarly: order.requestedPickupEarly,
+      requestedPickupLate: order.requestedPickupLate,
+      requestedDeliveryEarly: order.requestedDeliveryEarly,
+      requestedDeliveryLate: order.requestedDeliveryLate,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      originLocation: order.originLocation,
+      destinationLocation: order.destinationLocation,
+      shipments: order.shipments.map((shipment) => {
+        const position =
+          shipment.loadId && POSITION_STATUSES.has(shipment.status)
+            ? (positions.get(shipment.loadId) ?? null)
+            : null;
+        return {
+          id: shipment.id,
+          shipmentNumber: shipment.shipmentNumber,
+          status: shipment.status,
+          plannedPickupEarly: shipment.plannedPickupEarly,
+          plannedPickupLate: shipment.plannedPickupLate,
+          plannedDeliveryEarly: shipment.plannedDeliveryEarly,
+          plannedDeliveryLate: shipment.plannedDeliveryLate,
+          actualPickupAt: shipment.actualPickupAt,
+          actualDeliveryAt: shipment.actualDeliveryAt,
+          weightKg: shipment.weightKg,
+          palletCount: shipment.palletCount,
+          documentCount: counts.get(shipment.id) ?? 0,
+          hasPod: shipment.proofOfDelivery !== null,
+          lastPosition: position
+            ? {
+                latitude: position.latitude,
+                longitude: position.longitude,
+                recordedAt: position.occurredAt,
+              }
+            : null,
+          trackingUrl: shipment.trackingToken ? `${webUrl}/track/${shipment.trackingToken}` : null,
+        };
+      }),
+    }));
+  }
+
+  getShipmentTracking(token: string, shipmentId: string) {
+    return this.contextFromToken(token).then((ctx) => this.getShipmentTrackingFor(ctx, shipmentId));
+  }
+
+  /**
+   * Same payload as the public tracking page, reached through the portal:
+   * ownership first (the shipment must hang off one of this customer's orders),
+   * then the one shared projection.
+   */
+  async getShipmentTrackingFor(ctx: PortalContext, shipmentId: string) {
+    await this.customerShipment(ctx.tenantId, ctx.customerId, shipmentId);
+    return buildShipmentTrackingView(
+      this.prisma,
+      { id: shipmentId, tenantId: ctx.tenantId },
+      'Shipment not found',
+    );
+  }
+
+  listInvoices(token: string) {
+    return this.contextFromToken(token).then((ctx) => this.listInvoicesFor(ctx));
+  }
+
+  async listInvoicesFor(ctx: PortalContext) {
+    const enabled = await this.modulesCache.getEnabledKeys(ctx.tenantId);
     if (!enabled.has(MODULE_KEYS.BILLING)) return [];
     const invoices = await this.prisma.customerInvoice.findMany({
       where: {
-        tenantId: customer.tenantId,
-        customerId: customer.id,
-        status: { in: [CustomerInvoiceStatus.APPROVED, CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.PAID] },
+        tenantId: ctx.tenantId,
+        customerId: ctx.customerId,
+        status: { in: PORTAL_VISIBLE_INVOICE_STATUSES },
       },
       orderBy: { createdAt: 'desc' },
       take: 100,
+      select: {
+        id: true,
+        invoiceNumber: true,
+        status: true,
+        currency: true,
+        totalAmount: true,
+        amountPaid: true,
+        taxAmount: true,
+        approvedAt: true,
+        sentAt: true,
+        paidAt: true,
+      },
     });
-    return invoices.map(({ invoiceNumber, status, currency, totalAmount, sentAt, paidAt }) => ({
-      invoiceNumber,
-      status,
-      currency,
-      totalAmount,
-      sentAt,
-      paidAt,
+    return invoices.map((invoice) => {
+      const total = amount(invoice.totalAmount);
+      const tax = amount(invoice.taxAmount);
+      return {
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        status: invoice.status,
+        currency: invoice.currency,
+        // Numbers, never serialized Decimal strings (spec B2.2).
+        totalAmount: total,
+        amountPaid: amount(invoice.amountPaid),
+        taxAmount: tax,
+        netAmount: round2(total - tax),
+        approvedAt: invoice.approvedAt,
+        sentAt: invoice.sentAt,
+        paidAt: invoice.paidAt,
+      };
+    });
+  }
+
+  downloadInvoicePdf(token: string, invoiceId: string) {
+    return this.contextFromToken(token).then((ctx) => this.downloadInvoicePdfFor(ctx, invoiceId));
+  }
+
+  /**
+   * Streams the PDF attached to one of the customer's own statements. Every
+   * miss - unknown id, another customer's invoice, billing disabled, no file -
+   * answers the same 404 so the portal cannot probe the tenant's invoices.
+   */
+  async downloadInvoicePdfFor(ctx: PortalContext, invoiceId: string) {
+    const enabled = await this.modulesCache.getEnabledKeys(ctx.tenantId);
+    if (!enabled.has(MODULE_KEYS.BILLING)) throw new NotFoundException('Invoice not found');
+    const invoice = await this.prisma.customerInvoice.findFirst({
+      where: {
+        id: invoiceId,
+        tenantId: ctx.tenantId,
+        customerId: ctx.customerId,
+        status: { in: PORTAL_VISIBLE_INVOICE_STATUSES },
+      },
+      select: { id: true },
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    const document = await this.prisma.document.findFirst({
+      where: {
+        tenantId: ctx.tenantId,
+        entityType: 'customer-invoice',
+        entityId: invoice.id,
+        mimeType: 'application/pdf',
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    if (!document) throw new NotFoundException('Invoice not found');
+    return this.documents.download(ctx.tenantId, document.id);
+  }
+
+  listShipmentDocuments(token: string, shipmentId: string) {
+    return this.contextFromToken(token).then((ctx) =>
+      this.listShipmentDocumentsFor(ctx, shipmentId),
+    );
+  }
+
+  async listShipmentDocumentsFor(ctx: PortalContext, shipmentId: string) {
+    await this.customerShipment(ctx.tenantId, ctx.customerId, shipmentId);
+    const docs = await this.documents.listForEntity(ctx.tenantId, 'proof-of-delivery', shipmentId);
+    return docs.map(({ id, fileName, mimeType, createdAt }) => ({
+      id,
+      fileName,
+      mimeType,
+      createdAt,
     }));
   }
 
-  async listShipmentDocuments(token: string, shipmentId: string) {
-    const customer = await this.customerByToken(token);
-    const shipment = await this.prisma.shipment.findFirst({
-      where: { id: shipmentId, tenantId: customer.tenantId },
-      select: { id: true, transportOrder: { select: { customerId: true } } },
-    });
-    if (!shipment || shipment.transportOrder.customerId !== customer.id) {
-      throw new NotFoundException('Shipment not found');
-    }
-    const docs = await this.documents.listForEntity(customer.tenantId, 'proof-of-delivery', shipmentId);
-    return docs.map(({ id, fileName, mimeType, createdAt }) => ({ id, fileName, mimeType, createdAt }));
+  downloadShipmentDocument(token: string, documentId: string) {
+    return this.contextFromToken(token).then((ctx) =>
+      this.downloadShipmentDocumentFor(ctx, documentId),
+    );
   }
 
-  async downloadShipmentDocument(token: string, documentId: string) {
-    const customer = await this.customerByToken(token);
+  async downloadShipmentDocumentFor(ctx: PortalContext, documentId: string) {
     const doc = await this.prisma.document.findFirst({
-      where: { id: documentId, tenantId: customer.tenantId, entityType: 'proof-of-delivery' },
+      where: { id: documentId, tenantId: ctx.tenantId, entityType: 'proof-of-delivery' },
     });
     if (!doc) throw new NotFoundException('Document not found');
     const shipment = await this.prisma.shipment.findFirst({
-      where: { id: doc.entityId, tenantId: customer.tenantId },
+      where: { id: doc.entityId, tenantId: ctx.tenantId },
       select: { transportOrder: { select: { customerId: true } } },
     });
-    if (!shipment || shipment.transportOrder.customerId !== customer.id) {
+    if (!shipment || shipment.transportOrder.customerId !== ctx.customerId) {
+      // Same wording as an unknown document: a customer must not learn that a
+      // document of another customer exists.
       throw new NotFoundException('Document not found');
     }
-    return this.documents.download(customer.tenantId, documentId);
+    return this.documents.download(ctx.tenantId, documentId);
   }
 
-  async listTemplates(token: string) {
-    const customer = await this.customerByToken(token);
+  listTemplates(token: string) {
+    return this.contextFromToken(token).then((ctx) => this.listTemplatesFor(ctx));
+  }
+
+  async listTemplatesFor(ctx: PortalContext) {
     const templates = await this.prisma.orderTemplate.findMany({
-      where: { tenantId: customer.tenantId, customerId: customer.id },
+      where: { tenantId: ctx.tenantId, customerId: ctx.customerId },
       orderBy: { createdAt: 'desc' },
     });
-    return templates.map((t) => ({
-      id: t.id,
-      name: t.name,
-      originLocationId: t.originLocationId,
-      destinationLocationId: t.destinationLocationId,
-      mode: t.mode,
-      totalWeightKg: t.totalWeightKg,
-      totalVolumeM3: t.totalVolumeM3,
-      palletCount: t.palletCount,
-      notes: t.notes,
-      createdAt: t.createdAt,
-    }));
+    const codes = await this.locationCodes(
+      ctx.tenantId,
+      templates.flatMap((t) => [t.originLocationId, t.destinationLocationId]),
+    );
+    return templates.map((t) => projectTemplate(t, codes));
   }
 
-  async createTemplate(token: string, dto: CreateOrderTemplateInput) {
-    const customer = await this.customerByToken(token);
+  /** Maps location PKs to their opaque codes, scoped to the tenant (rule 1). */
+  private async locationCodes(
+    tenantId: string,
+    ids: Array<string | null>,
+  ): Promise<Map<string, string>> {
+    const wanted = [...new Set(ids.filter((id): id is string => !!id))];
+    if (wanted.length === 0) return new Map();
+    const locations = await this.prisma.location.findMany({
+      where: { tenantId, id: { in: wanted } },
+      select: { id: true, code: true },
+    });
+    return new Map(locations.map((l) => [l.id, l.code]));
+  }
+
+  createTemplate(token: string, dto: CreateOrderTemplateInput) {
+    return this.contextFromToken(token).then((ctx) => this.createTemplateFor(ctx, dto));
+  }
+
+  /** `originLocationId`/`destinationLocationId` in the payload are location **codes**. */
+  async createTemplateFor(ctx: PortalContext, dto: CreateOrderTemplateInput) {
     // Resolve opaque codes → PKs before ownership check and persistence.
     const originId = dto.originLocationId
-      ? await this.resolveLocationCode(customer.tenantId, dto.originLocationId)
+      ? await this.resolveLocationCode(ctx.tenantId, dto.originLocationId)
       : undefined;
     const destinationId = dto.destinationLocationId
-      ? await this.resolveLocationCode(customer.tenantId, dto.destinationLocationId)
+      ? await this.resolveLocationCode(ctx.tenantId, dto.destinationLocationId)
       : undefined;
     await Promise.all([
-      originId
-        ? this.ownership.assertOwned('location', originId, customer.tenantId)
-        : Promise.resolve(),
+      originId ? this.ownership.assertOwned('location', originId, ctx.tenantId) : Promise.resolve(),
       destinationId
-        ? this.ownership.assertOwned('location', destinationId, customer.tenantId)
+        ? this.ownership.assertOwned('location', destinationId, ctx.tenantId)
         : Promise.resolve(),
     ]);
     const template = await this.prisma.orderTemplate.create({
       data: {
-        tenantId: customer.tenantId,
-        customerId: customer.id,
+        tenantId: ctx.tenantId,
+        customerId: ctx.customerId,
         name: dto.name,
         originLocationId: originId,
         destinationLocationId: destinationId,
@@ -385,90 +772,50 @@ export class PortalService {
       },
     });
     await this.audit.log({
-      tenantId: customer.tenantId,
+      tenantId: ctx.tenantId,
       action: AuditAction.CREATE,
       entityType: 'order-template',
       entityId: template.id,
-      after: { name: template.name, customerId: customer.id },
+      after: { name: template.name, customerId: ctx.customerId, ...this.actorTrace(ctx) },
     });
-    const { id, name, originLocationId, destinationLocationId, mode, totalWeightKg, totalVolumeM3, palletCount, notes, createdAt } = template;
-    return { id, name, originLocationId, destinationLocationId, mode, totalWeightKg, totalVolumeM3, palletCount, notes, createdAt };
+    // The codes are the ones just validated — no need to read them back.
+    const codes = new Map<string, string>();
+    if (originId && dto.originLocationId) codes.set(originId, dto.originLocationId);
+    if (destinationId && dto.destinationLocationId) {
+      codes.set(destinationId, dto.destinationLocationId);
+    }
+    return projectTemplate(template, codes);
   }
 
-  async deleteTemplate(token: string, id: string) {
-    const customer = await this.customerByToken(token);
+  deleteTemplate(token: string, id: string) {
+    return this.contextFromToken(token).then((ctx) => this.deleteTemplateFor(ctx, id));
+  }
+
+  async deleteTemplateFor(ctx: PortalContext, id: string) {
     const template = await this.prisma.orderTemplate.findFirst({
-      where: { id, tenantId: customer.tenantId, customerId: customer.id },
+      where: { id, tenantId: ctx.tenantId, customerId: ctx.customerId },
     });
     if (!template) throw new NotFoundException('Template not found');
     const { count } = await this.prisma.orderTemplate.deleteMany({
-      where: { id, tenantId: customer.tenantId, customerId: customer.id },
+      where: { id, tenantId: ctx.tenantId, customerId: ctx.customerId },
     });
     if (count === 0) throw new NotFoundException('Template not found');
     await this.audit.log({
-      tenantId: customer.tenantId,
+      tenantId: ctx.tenantId,
       action: AuditAction.DELETE,
       entityType: 'order-template',
       entityId: id,
       before: { name: template.name },
+      ...(ctx.actor ? { after: this.actorTrace(ctx) } : {}),
     });
     return { deleted: true };
-  }
-
-  async createChangeRequest(token: string, dto: PortalChangeRequestInput) {
-    const customer = await this.customerByToken(token);
-    let subject: { type: string; id: string };
-    let orderNumber: string | undefined;
-
-    if (dto.orderId) {
-      const order = await this.prisma.transportOrder.findFirst({
-        where: { id: dto.orderId, tenantId: customer.tenantId, customerId: customer.id },
-        select: { id: true, orderNumber: true },
-      });
-      if (!order) throw new NotFoundException('Order not found');
-      subject = { type: 'transport-order', id: order.id };
-      orderNumber = order.orderNumber;
-    } else if (dto.shipmentId) {
-      const shipment = await this.prisma.shipment.findFirst({
-        where: { id: dto.shipmentId, tenantId: customer.tenantId },
-        select: { id: true, transportOrder: { select: { customerId: true } } },
-      });
-      if (!shipment || shipment.transportOrder.customerId !== customer.id) {
-        throw new NotFoundException('Shipment not found');
-      }
-      subject = { type: 'shipment', id: shipment.id };
-    } else {
-      throw new BadRequestException('orderId or shipmentId is required');
-    }
-
-    const bucket = new Date().toISOString().slice(0, 16);
-    void this.domainEvents
-      .emit(customer.tenantId, DOMAIN_EVENT_TYPES.PORTAL_CHANGE_REQUEST, subject, {
-        subject,
-        kind: dto.kind,
-        note: dto.note,
-        bucket,
-        customerName: customer.name,
-        ...(orderNumber ? { orderNumber } : {}),
-      })
-      .catch(() => { /* best-effort */ });
-
-    void this.audit.log({
-      tenantId: customer.tenantId,
-      action: AuditAction.CREATE,
-      entityType: 'change-request',
-      entityId: dto.shipmentId ?? dto.orderId ?? '',
-      after: { kind: dto.kind, note: dto.note, customer: customer.name },
-    }).catch(() => { /* best-effort */ });
-
-    return { ok: true };
   }
 
   /**
    * Resolves a shipment the customer is allowed to see (it must belong to one of
    * their transport orders). Same ownership logic as change-request/documents.
    */
-  private async customerShipment(tenantId: string, customerId: string, shipmentId: string) {
+  async customerShipment(tenantId: string, customerId: string, shipmentId: string) {
     const shipment = await this.prisma.shipment.findFirst({
       where: { id: shipmentId, tenantId },
       select: { id: true, transportOrder: { select: { customerId: true } } },
@@ -480,36 +827,64 @@ export class PortalService {
   }
 
   /** Public: the comment thread for a shipment, projected per rule 10. */
-  async listShipmentComments(token: string, shipmentId: string): Promise<ShipmentCommentView[]> {
-    const customer = await this.customerByToken(token);
-    await this.customerShipment(customer.tenantId, customer.id, shipmentId);
+  listShipmentComments(token: string, shipmentId: string): Promise<ShipmentCommentView[]> {
+    return this.contextFromToken(token).then((ctx) =>
+      this.listShipmentCommentsFor(ctx, shipmentId),
+    );
+  }
+
+  async listShipmentCommentsFor(
+    ctx: PortalContext,
+    shipmentId: string,
+  ): Promise<ShipmentCommentView[]> {
+    await this.customerShipment(ctx.tenantId, ctx.customerId, shipmentId);
     const comments = await this.prisma.shipmentComment.findMany({
-      where: { tenantId: customer.tenantId, shipmentId },
+      where: { tenantId: ctx.tenantId, shipmentId },
       orderBy: { createdAt: 'asc' },
     });
     return comments.map(projectShipmentComment);
   }
 
   /** Public: the customer posts a comment on one of their shipments. */
-  async createShipmentComment(token: string, shipmentId: string, body: string): Promise<ShipmentCommentView> {
-    const customer = await this.customerByToken(token);
-    await this.customerShipment(customer.tenantId, customer.id, shipmentId);
+  createShipmentComment(
+    token: string,
+    shipmentId: string,
+    body: string,
+  ): Promise<ShipmentCommentView> {
+    return this.contextFromToken(token).then((ctx) =>
+      this.createShipmentCommentFor(ctx, shipmentId, body),
+    );
+  }
+
+  async createShipmentCommentFor(
+    ctx: PortalContext,
+    shipmentId: string,
+    body: string,
+  ): Promise<ShipmentCommentView> {
+    await this.customerShipment(ctx.tenantId, ctx.customerId, shipmentId);
     const comment = await this.prisma.shipmentComment.create({
       data: {
-        tenantId: customer.tenantId,
+        tenantId: ctx.tenantId,
         shipmentId,
         authorType: 'CUSTOMER',
-        authorId: customer.id,
-        authorName: customer.name,
+        // A named account signs with its own id and "Person · Company"; a shared
+        // capability link can only sign for the company itself.
+        authorId: ctx.actor?.portalUserId ?? ctx.customerId,
+        authorName: ctx.actor ? `${ctx.actor.displayName} · ${ctx.customerName}` : ctx.customerName,
         body,
       },
     });
     await this.audit.log({
-      tenantId: customer.tenantId,
+      tenantId: ctx.tenantId,
       action: AuditAction.CREATE,
       entityType: 'shipment-comment',
       entityId: comment.id,
-      after: { shipmentId, authorType: 'CUSTOMER', customer: customer.name },
+      after: {
+        shipmentId,
+        authorType: 'CUSTOMER',
+        customer: ctx.customerName,
+        ...this.actorTrace(ctx),
+      },
     });
     return projectShipmentComment(comment);
   }

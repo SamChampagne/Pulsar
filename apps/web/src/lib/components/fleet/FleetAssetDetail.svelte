@@ -1,6 +1,7 @@
 <script lang="ts">
   import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
+  import { formatDate } from '$lib/format';
   import {
     Badge,
     Button,
@@ -156,7 +157,7 @@
   }
 
   function fmtDate(d: string | null | undefined): string {
-    return d ? new Date(d).toLocaleDateString() : '—';
+    return formatDate(d);
   }
 
   const WO_TYPES = ['PREVENTIVE', 'REPAIR', 'INSPECTION'];
@@ -523,7 +524,7 @@
               <div class="mt-1 flex flex-wrap gap-3 text-xs text-ink-muted">
                 {#if wo.odometerKm != null}<span>{wo.odometerKm} km</span>{/if}
                 {#if wo.costAmount != null}<span
-                    >{Number(wo.costAmount).toLocaleString()} {wo.costCurrency ?? ''}</span
+                    >{Number(wo.costAmount).toLocaleString('fr-CA')} {wo.costCurrency ?? ''}</span
                   >{/if}
                 {#if wo.vendor}<span>{wo.vendor}</span>{/if}
                 {#if wo.dueDate}<span>échéance {fmtDate(wo.dueDate)}</span>{/if}

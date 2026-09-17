@@ -1,12 +1,14 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
-  import { YardSpotType } from '@pulsar/shared';
+  import { PERMISSIONS, YardSpotType } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
   import {
     Badge,
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     Field,
     FilterBar,
     Input,
@@ -18,6 +20,8 @@
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import LocationFormModal from '$lib/components/locations/LocationFormModal.svelte';
+  import type { LocationRecord } from '$lib/components/locations/types';
 
   interface Spot {
     id: string;
@@ -47,6 +51,16 @@
   let loading = $state(true);
   let error = $state('');
   let filterLocationId = $state('');
+  let showCreateSite = $state(false);
+  const canManageLocations = $derived(
+    !!$auth?.user.permissions.includes(PERMISSIONS.CORE.LOCATIONS_MANAGE),
+  );
+
+  async function onSiteCreated(loc: LocationRecord) {
+    showCreateSite = false;
+    await loadLocations();
+    filterLocationId = loc.id;
+  }
 
   // Create / edit panel
   let formOpen = $state(false);
@@ -75,8 +89,8 @@
   }
 
   async function loadLocations() {
-    const res = await api<Paginated<LocationOption>>('/transportation/locations', {
-      query: { pageSize: 100 },
+    const res = await api<Paginated<LocationOption>>('/locations', {
+      query: { type: 'WAREHOUSE', pageSize: 100 },
     });
     locations = res.items;
   }
@@ -159,13 +173,24 @@
 <FilterBar>
   <a href="/yard" class="text-sm text-accent hover:underline">← Cour</a>
   <div class="w-64">
-    <Select bind:value={filterLocationId}>
-      <option value="">Tous les sites</option>
-      {#each locations as l (l.id)}
-        <option value={l.id}>{l.code} — {l.name}</option>
-      {/each}
-    </Select>
+    <EntityPicker
+      endpoint="/locations"
+      label="Site"
+      placeholder="Tous les sites"
+      filters={{ type: 'WAREHOUSE' }}
+      labelKey="name"
+      detailKey="code"
+      bind:value={filterLocationId}
+    />
   </div>
+  {#if canManageLocations}
+    <Button
+      variant="secondary"
+      onclick={() => {
+        showCreateSite = true;
+      }}>+ Site</Button
+    >
+  {/if}
 </FilterBar>
 
 {#if loading}
@@ -207,12 +232,14 @@
   {#snippet children()}
     <div class="space-y-3">
       <Field label="Site">
-        <Select bind:value={formLocationId}>
-          <option value="">— Sélectionner —</option>
-          {#each locations as l (l.id)}
-            <option value={l.id}>{l.code} — {l.name}</option>
-          {/each}
-        </Select>
+        <EntityPicker
+          endpoint="/locations"
+          label="Site"
+          filters={{ type: 'WAREHOUSE' }}
+          labelKey="name"
+          detailKey="code"
+          bind:value={formLocationId}
+        />
       </Field>
       <Field label="Code">
         <Input bind:value={formCode} placeholder="DOOR-1" />
@@ -240,3 +267,11 @@
     </div>
   {/snippet}
 </Modal>
+
+<LocationFormModal
+  bind:open={showCreateSite}
+  location={null}
+  lockedType={null}
+  defaultType="OTHER"
+  oncreated={onSiteCreated}
+/>

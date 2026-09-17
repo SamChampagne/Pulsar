@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import { fmtCustomValue } from '$lib/format';
+  import { fmtCustomValue, formatDateTime } from '$lib/format';
   import { toast } from '$lib/stores/toast';
 
   interface CustomFieldDef {
@@ -240,7 +240,7 @@
             <td>{row.carrier?.name ?? '—'}</td>
             <td>{row.driver ? `${row.driver.firstName} ${row.driver.lastName}` : '—'}</td>
             <td class="font-mono">{row.shipments.length}</td>
-            <td>{row.dispatchedAt ? new Date(row.dispatchedAt).toLocaleString() : '—'}</td>
+            <td>{formatDateTime(row.dispatchedAt)}</td>
             <td
               >{#if row.mode}<span class="rounded border border-edge px-1.5 text-xs text-neutral"
                   >{row.mode}</span
@@ -395,7 +395,7 @@
           Dispatché
         </div>
         <div class="text-sm text-ink">
-          {sel.dispatchedAt ? new Date(sel.dispatchedAt).toLocaleString() : '—'}
+          {formatDateTime(sel.dispatchedAt)}
         </div>
       </div>
       <div>

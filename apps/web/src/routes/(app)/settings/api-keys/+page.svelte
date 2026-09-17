@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { PERMISSION_CATALOG } from '@pulsar/shared';
+  import { API_KEY_SCOPE_PRESETS, PERMISSION_CATALOG } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import { formatDateTime } from '$lib/format';
@@ -8,6 +8,7 @@
     Button,
     Field,
     Input,
+    ReferenceSelect,
     Table,
     Badge,
     EmptyState,
@@ -22,11 +23,13 @@
     prefix: string;
     scopes: string[];
     lastUsedAt: string | null;
+    expiresAt: string | null;
     revokedAt: string | null;
     createdAt: string;
   }
 
-  const readScopes = PERMISSION_CATALOG.filter((p) => p.key.endsWith('.read'));
+  const allScopes = PERMISSION_CATALOG;
+  const presetOptions = API_KEY_SCOPE_PRESETS.map((p) => ({ value: p.key, label: p.label }));
 
   let keys = $state<KeyRow[]>([]);
   let error = $state('');
@@ -35,7 +38,13 @@
   let showForm = $state(false);
   let name = $state('');
   let scopes = $state<string[]>([]);
+  let preset = $state('');
+  let expiresAt = $state('');
   let createdKey = $state('');
+
+  function isExpired(key: KeyRow): boolean {
+    return !!key.expiresAt && new Date(key.expiresAt).getTime() <= Date.now();
+  }
 
   async function load() {
     try {
@@ -50,12 +59,31 @@
   function openNew() {
     name = '';
     scopes = [];
+    preset = '';
+    expiresAt = '';
     error = '';
     showForm = true;
   }
 
   function toggleScope(key: string) {
     scopes = scopes.includes(key) ? scopes.filter((s) => s !== key) : [...scopes, key];
+  }
+
+  function applyPreset(value: string) {
+    const found = API_KEY_SCOPE_PRESETS.find((p) => p.key === value);
+    if (found) scopes = [...found.scopes];
+  }
+
+  /**
+   * The date input only carries a calendar day (browser-local, no time). We
+   * expire the key at the end of that day in the browser's local time zone,
+   * not at UTC midnight — otherwise a key picked to "expire on the 20th"
+   * would silently die hours earlier for anyone west of UTC.
+   */
+  function toEndOfDayIso(dateStr: string): string | undefined {
+    if (!dateStr) return undefined;
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d, 23, 59, 59).toISOString();
   }
 
   async function create(event: SubmitEvent) {
@@ -65,11 +93,13 @@
     try {
       const created = await api<KeyRow & { key: string }>('/api-keys', {
         method: 'POST',
-        body: { name, scopes },
+        body: { name, scopes, expiresAt: toEndOfDayIso(expiresAt) },
       });
       createdKey = created.key;
       name = '';
       scopes = [];
+      preset = '';
+      expiresAt = '';
       showForm = false;
       await load();
     } catch (e) {
@@ -109,8 +139,8 @@
 
 <p class="mb-4 text-sm text-ink-muted">
   Accès machine-à-machine via l'en-tête
-  <code class="rounded bg-surface-muted px-1 font-mono text-xs">X-Api-Key</code>. Portées en
-  lecture seule pour l'instant — l'accès en écriture viendra avec les comptes de service.
+  <code class="rounded bg-surface-muted px-1 font-mono text-xs">X-Api-Key</code>. Choisissez un
+  modèle de portée puis ajustez-le au besoin, avec une expiration optionnelle.
 </p>
 
 {#if error && !showForm}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
@@ -149,6 +179,7 @@
       <th>Préfixe</th>
       <th>Portées</th>
       <th>Dernière utilisation</th>
+      <th>Expiration</th>
       <th>Statut</th>
       <th></th>
     {/snippet}
@@ -157,11 +188,17 @@
         <tr>
           <td class="font-semibold text-ink">{key.name}</td>
           <td><code class="font-mono text-xs text-ink-muted">{key.prefix}…</code></td>
-          <td class="max-w-xs truncate font-mono text-xs text-ink-muted">{key.scopes.join(', ')}</td>
+          <td class="max-w-xs truncate font-mono text-xs text-ink-muted">{key.scopes.join(', ')}</td
+          >
           <td class="font-mono text-ink-muted">{formatDateTime(key.lastUsedAt)}</td>
+          <td class="font-mono text-ink-muted">
+            {key.expiresAt ? formatDateTime(key.expiresAt) : 'Jamais'}
+          </td>
           <td>
             {#if key.revokedAt}
               <Badge tone="danger">Révoquée</Badge>
+            {:else if isExpired(key)}
+              <Badge tone="danger">Expirée</Badge>
             {:else}
               <Badge tone="ok">Active</Badge>
             {/if}
@@ -170,8 +207,11 @@
             {#if !key.revokedAt}
               <Button
                 variant="danger"
-                onclick={(e) => { e.stopPropagation(); void revoke(key); }}
-              >Révoquer</Button>
+                onclick={(e) => {
+                  e.stopPropagation();
+                  void revoke(key);
+                }}>Révoquer</Button
+              >
             {/if}
           </td>
         </tr>
@@ -187,10 +227,24 @@
       <Field label="Nom">
         <Input bind:value={name} required placeholder="Accès lecture ERP" />
       </Field>
+      <Field label="Modèle de portée">
+        <ReferenceSelect
+          options={presetOptions}
+          bind:value={preset}
+          clearable
+          placeholder="Aucun (choisir manuellement)"
+          onchange={(e) => applyPreset(e.currentTarget.value)}
+        />
+        <p class="mt-1 text-xs text-ink-muted">
+          Pré-remplit les portées ci-dessous — vous pouvez ensuite les ajuster.
+        </p>
+      </Field>
       <div>
-        <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Portées</span>
-        <div class="grid grid-cols-1 gap-1.5">
-          {#each readScopes as scope (scope.key)}
+        <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase"
+          >Portées</span
+        >
+        <div class="grid max-h-64 grid-cols-1 gap-1.5 overflow-y-auto">
+          {#each allScopes as scope (scope.key)}
             <label class="flex cursor-pointer items-center gap-1.5 text-xs text-ink">
               <input
                 type="checkbox"
@@ -202,8 +256,19 @@
           {/each}
         </div>
       </div>
+      <Field label="Expiration (optionnelle)">
+        <Input type="date" bind:value={expiresAt} />
+        <p class="mt-1 text-xs text-ink-muted">
+          Expire à la fin de la journée choisie (heure locale).
+        </p>
+      </Field>
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
-        <Button variant="secondary" onclick={() => { showForm = false; }}>Annuler</Button>
+        <Button
+          variant="secondary"
+          onclick={() => {
+            showForm = false;
+          }}>Annuler</Button
+        >
         <Button variant="primary" type="submit" loading={saving} disabled={scopes.length === 0}>
           Créer la clé
         </Button>

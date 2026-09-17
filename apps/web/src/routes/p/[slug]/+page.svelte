@@ -5,10 +5,12 @@
   import LandingPageRender from '$lib/components/sites/LandingPageRender.svelte';
 
   interface Block {
-    type: 'heading' | 'text' | 'image' | 'form';
+    type: 'heading' | 'text' | 'image' | 'form' | 'cta';
     text?: string;
     url?: string;
     fields?: string[];
+    label?: string;
+    href?: string;
   }
 
   interface SitePage {

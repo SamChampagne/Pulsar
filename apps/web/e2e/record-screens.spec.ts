@@ -143,7 +143,7 @@ test('CRM add drawer preserves the page, searches active products, and protects 
   await drawer.getByRole('button', { name: 'Produit : Sélectionner…' }).click();
   const picker = page.getByRole('dialog', { name: 'Produit', exact: true });
   await picker.getByLabel('Rechercher : produit').fill('Palette');
-  await picker.getByRole('button', { name: 'Palette spéciale', exact: true }).click();
+  await picker.getByRole('option', { name: 'Palette spéciale', exact: true }).click();
   await expect(picker).toHaveCount(0);
   expect(
     searches.some(

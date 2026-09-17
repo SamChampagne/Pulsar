@@ -1,6 +1,7 @@
 <script lang="ts">
   import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
+  import { formatDate } from '$lib/format';
   import {
     Badge,
     Button,
@@ -75,7 +76,7 @@
     return status === 'EXPIRED' ? 'danger' : status === 'EXPIRING' ? 'warn' : 'ok';
   }
   function fmtDate(d: string | null | undefined): string {
-    return d ? new Date(d).toLocaleDateString() : '—';
+    return formatDate(d);
   }
 
   async function load() {

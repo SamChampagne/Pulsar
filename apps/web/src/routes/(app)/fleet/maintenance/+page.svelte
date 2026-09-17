@@ -2,6 +2,7 @@
   import { confirmAction } from '$lib/stores/confirmation';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { formatDate } from '$lib/format';
   import {
     Badge,
     Button,
@@ -102,7 +103,7 @@
   }
 
   function fmtDate(d: string | null): string {
-    return d ? new Date(d).toLocaleDateString() : '—';
+    return formatDate(d);
   }
 
   // Asset link + label derived from the vehicle/trailer lookups (the list payload

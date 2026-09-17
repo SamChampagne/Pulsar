@@ -2,6 +2,7 @@
   import { Button, Card } from '$lib/components/ui';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import { formatDateTime } from '$lib/format';
   import type { LoadDocument } from './types';
 
   interface Props {
@@ -48,9 +49,14 @@
           {#each documents as doc (doc.id)}
             <tr class="border-b border-edge last:border-0">
               <td class="py-2 pr-2">{doc.fileName}</td>
-              <td class="py-2 pr-2 text-xs text-ink-muted">{new Date(doc.createdAt).toLocaleString()}</td>
+              <td class="py-2 pr-2 text-xs text-ink-muted">{formatDateTime(doc.createdAt)}</td>
               <td class="py-2 text-right">
-                <a href={`/api/v1/documents/${doc.id}/download`} target="_blank" class="inline-flex items-center justify-center gap-1.5 rounded-md border border-edge bg-surface px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-surface-muted">Download</a>
+                <a
+                  href={`/api/v1/documents/${doc.id}/download`}
+                  target="_blank"
+                  class="inline-flex items-center justify-center gap-1.5 rounded-md border border-edge bg-surface px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-surface-muted"
+                  >Download</a
+                >
               </td>
             </tr>
           {/each}

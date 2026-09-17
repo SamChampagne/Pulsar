@@ -2,6 +2,7 @@
   import { Badge, Button, Card } from '$lib/components/ui';
   import { toneFor, labelFor } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import { formatDateTime } from '$lib/format';
   import type { TenderRow } from './types';
 
   interface Props {
@@ -17,7 +18,7 @@
   <div class="flex flex-wrap items-center gap-2 text-sm">
     <Badge tone={toneFor(tender.status)}>{labelFor(tender.status)}</Badge>
     <span>{tender.carrier.name}</span>
-    <span class="text-ink-muted">expires {new Date(tender.expiresAt).toLocaleString()}</span>
+    <span class="text-ink-muted">expires {formatDateTime(tender.expiresAt)}</span>
   </div>
   {#if tender.declineReason}
     <p class="mt-2 text-sm text-danger">Declined: {tender.declineReason}</p>

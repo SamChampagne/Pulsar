@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
+import { CoreLocationsModule } from '../../core/locations/locations.module';
 import { DocumentsModule } from '../../core/documents/documents.module';
 import { IntegrationsModule } from '../../core/integrations/integrations.module';
 import { ModuleRegistryModule } from '../../core/module-registry/module-registry.module';
@@ -9,7 +10,6 @@ import { DelayDetectionService } from './exceptions/delay-detection.service';
 import { CustomersController } from './customers/customers.controller';
 import { CustomersService } from './customers/customers.service';
 import { LocationsController } from './locations/locations.controller';
-import { LocationsService } from './locations/locations.service';
 import { CarriersController } from './carriers/carriers.controller';
 import { CarriersService } from './carriers/carriers.service';
 import { DriversController } from './drivers/drivers.controller';
@@ -58,7 +58,7 @@ import { CustomFieldsController } from './custom-fields/custom-fields.controller
  * tenants without the module enabled get a 403 from ModulesGuard.
  */
 @Module({
-  imports: [AuditLogsModule, CustomFieldsModule, DocumentsModule, IntegrationsModule, ModuleRegistryModule, NotificationsModule, OperatingModule],
+  imports: [AuditLogsModule, CoreLocationsModule, CustomFieldsModule, DocumentsModule, IntegrationsModule, ModuleRegistryModule, NotificationsModule, OperatingModule],
   controllers: [
     CustomersController,
     LocationsController,
@@ -84,7 +84,6 @@ import { CustomFieldsController } from './custom-fields/custom-fields.controller
   ],
   providers: [
     CustomersService,
-    LocationsService,
     CarriersService,
     DriversService,
     VehiclesService,
@@ -122,7 +121,6 @@ import { CustomFieldsController } from './custom-fields/custom-fields.controller
     TrailersService,
     // Consumed by ConnectModule (CSV importer).
     CustomersService,
-    LocationsService,
     CarriersService,
   ],
 })

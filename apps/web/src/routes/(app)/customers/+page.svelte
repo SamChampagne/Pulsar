@@ -162,7 +162,9 @@
     <input
       placeholder="Rechercher nom ou code…"
       bind:value={search}
-      onkeydown={(e) => { if (e.key === 'Enter') void load(); }}
+      onkeydown={(e) => {
+        if (e.key === 'Enter') void load();
+      }}
       class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
     />
   </div>
@@ -188,7 +190,11 @@
       {#each customers as customer (customer.id)}
         <tr>
           <td class="font-mono font-semibold text-ink">{customer.code}</td>
-          <td><a href={`/customers/${customer.id}`} class="hover:underline text-accent font-medium">{customer.name}</a></td>
+          <td
+            ><a href={`/customers/${customer.id}`} class="hover:underline text-accent font-medium"
+              >{customer.name}</a
+            ></td
+          >
           <td>{customer.contactName ?? '—'}</td>
           <td class="text-ink-muted">{customer.email ?? '—'}</td>
           <td>
@@ -198,9 +204,7 @@
           </td>
           {#if hasPortal}
             <td class="text-right">
-              <Button variant="secondary" onclick={() => portalLink(customer)}>
-                Lien portail
-              </Button>
+              <Button variant="secondary" onclick={() => portalLink(customer)}>Lien portail</Button>
             </td>
           {/if}
         </tr>
@@ -242,10 +246,14 @@
       <h2 class="mb-4 text-base font-semibold text-ink">Branding du portail</h2>
       <div class="flex flex-col gap-4">
         <Field label="URL du logo">
-          <Input bind:value={brandLogoUrl} placeholder="https://...logo.png" />
+          <Input type="url" bind:value={brandLogoUrl} placeholder="https://...logo.png" />
         </Field>
         <Field label="Couleur d'accent">
-          <input type="color" bind:value={brandAccentColor} class="h-9 w-16 cursor-pointer rounded border border-edge" />
+          <input
+            type="color"
+            bind:value={brandAccentColor}
+            class="h-9 w-16 cursor-pointer rounded border border-edge"
+          />
         </Field>
         <div class="flex justify-end">
           <Button onclick={saveBranding} loading={brandSaving}>Enregistrer</Button>
@@ -272,7 +280,12 @@
         <Input type="email" bind:value={form.email} />
       </Field>
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
-        <Button variant="secondary" onclick={() => { showForm = false; }}>Annuler</Button>
+        <Button
+          variant="secondary"
+          onclick={() => {
+            showForm = false;
+          }}>Annuler</Button
+        >
         <Button variant="primary" type="submit" loading={saving}>Créer</Button>
       </div>
     </form>

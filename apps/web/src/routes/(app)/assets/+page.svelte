@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { formatDate } from '$lib/format';
   import {
     Badge,
     Button,
@@ -72,7 +73,7 @@
   );
 
   function fmtDate(d: string | null): string {
-    return d ? new Date(d).toLocaleDateString() : '—';
+    return formatDate(d);
   }
 
   async function load() {

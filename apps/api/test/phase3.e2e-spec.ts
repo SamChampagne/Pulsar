@@ -28,6 +28,12 @@ describe('Phase 3 (e2e)', () => {
   const auth = () => ({ Authorization: `Bearer ${token}` });
 
   beforeAll(async () => {
+    // This suite deliberately points a webhook at an unreachable loopback port
+    // (127.0.0.1:9) to exercise the outbox retry path: the SSRF egress guard
+    // must be relaxed first, exactly like integrations.e2e-spec.ts. Set BEFORE
+    // the module compiles — ConfigService snapshots process.env at init.
+    process.env.WEBHOOK_ALLOW_PRIVATE_URLS = 'true';
+
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
@@ -63,7 +69,13 @@ describe('Phase 3 (e2e)', () => {
       const location = await request(http)
         .post('/api/v1/transportation/locations')
         .set(auth())
-        .send({ code, name: code, type: 'WAREHOUSE', addressLine1: '1 Test', city: 'Trois-Rivières' })
+        .send({
+          code,
+          name: code,
+          type: 'WAREHOUSE',
+          addressLine1: '1 Test',
+          city: 'Trois-Rivières',
+        })
         .expect(201);
       ids[field] = location.body.id;
     }
@@ -248,10 +260,20 @@ describe('Phase 3 (e2e)', () => {
       .set(auth())
       .expect(201);
 
-    const deliveries = await request(http)
+    // The domain-event → outbox bridge is fire-and-forget (DomainEventsService
+    // never extends the caller's path), so the row — and its first, failing
+    // attempt — land just after the dispatch response. Poll instead of racing.
+    let deliveries = await request(http)
       .get(`/api/v1/integrations/${ids.integration}/deliveries`)
       .set(auth())
       .expect(200);
+    for (let i = 0; i < 60 && (deliveries.body[0]?.attempts ?? 0) < 1; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      deliveries = await request(http)
+        .get(`/api/v1/integrations/${ids.integration}/deliveries`)
+        .set(auth())
+        .expect(200);
+    }
     expect(deliveries.body.length).toBeGreaterThanOrEqual(1);
     const delivery = deliveries.body[0];
     expect(delivery.event).toBe('load.dispatched');

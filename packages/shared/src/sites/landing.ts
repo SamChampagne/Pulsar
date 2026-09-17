@@ -3,7 +3,7 @@ export enum LandingPageStatus {
   PUBLISHED = 'PUBLISHED',
 }
 
-export const LANDING_BLOCK_TYPES = ['heading', 'text', 'image', 'form'] as const;
+export const LANDING_BLOCK_TYPES = ['heading', 'text', 'image', 'form', 'cta'] as const;
 export type LandingBlockType = (typeof LANDING_BLOCK_TYPES)[number];
 export const LANDING_FORM_FIELDS = ['name', 'email', 'phone', 'company', 'message'] as const;
 
@@ -42,13 +42,37 @@ export function mapSubmissionToContact(data: Record<string, unknown>): {
   return out;
 }
 
+/**
+ * cta href: a single-leading-slash relative path, or an absolute http(s) URL —
+ * never javascript:/data:/etc, and never protocol-relative (`//evil.com` or
+ * `/\evil.com` — browsers normalize a backslash to a forward slash in http(s)
+ * URLs, so `/\evil.com` resolves to `//evil.com`, the same open redirect).
+ * Backslashes are rejected outright (no legitimate use in a cta href).
+ */
+const CTA_HREF_PATTERN = /^(\/(?![\\/])|https:\/\/|http:\/\/)/;
+
 /** Permissive shape check: content must be an array of blocks with a known type. */
 export function validateLandingContent(content: unknown): boolean {
   if (!Array.isArray(content)) return false;
-  return content.every(
-    (b) =>
-      b &&
-      typeof b === 'object' &&
-      LANDING_BLOCK_TYPES.includes((b as { type?: string }).type as LandingBlockType),
-  );
+  return content.every((b) => {
+    if (!b || typeof b !== 'object') return false;
+    const type = (b as { type?: string }).type as LandingBlockType;
+    if (!LANDING_BLOCK_TYPES.includes(type)) return false;
+    if (type === 'cta') {
+      const label = (b as { label?: unknown }).label;
+      const href = (b as { href?: unknown }).href;
+      if (typeof label !== 'string' || label.trim().length === 0 || label.length > 80) {
+        return false;
+      }
+      if (
+        typeof href !== 'string' ||
+        href.length === 0 ||
+        href.includes('\\') ||
+        !CTA_HREF_PATTERN.test(href)
+      ) {
+        return false;
+      }
+    }
+    return true;
+  });
 }

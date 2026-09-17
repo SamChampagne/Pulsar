@@ -9,6 +9,7 @@
     FLEET_ORDER_LABELS,
     FLEET_TYPE_LABELS,
     fleetDateKey,
+    CURRENCIES,
     type CustomFieldDefinition,
     type FleetAssetRow,
   } from '@pulsar/shared';
@@ -19,11 +20,14 @@
     ErrorNotice,
     Field,
     Input,
+    ReferenceSelect,
     Select,
     Skeleton,
     Textarea,
   } from '$lib/components/ui';
   import CustomFieldInputs from '$lib/components/CustomFieldInputs.svelte';
+
+  const CURRENCY_OPTIONS = CURRENCIES.map((c) => ({ value: c.code, label: c.name }));
   let {
     id = '',
     asset = null,
@@ -305,7 +309,9 @@
         <div class="grid grid-cols-2 gap-4">
           <Field label="Coût total"
             ><Input type="number" min={0} step={0.01} bind:value={amount} /></Field
-          ><Field label="Devise"><Input bind:value={currency} maxlength={3} /></Field>
+          ><Field label="Devise"
+            ><ReferenceSelect options={CURRENCY_OPTIONS} bind:value={currency} /></Field
+          >
         </div>
         <Field label="Kilométrage relevé"
           ><Input type="number" min={0} step={1} bind:value={odometer} /></Field

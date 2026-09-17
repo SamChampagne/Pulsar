@@ -19,6 +19,7 @@ import { AuthModule } from './core/auth/auth.module';
 import { TenantsModule } from './core/tenants/tenants.module';
 import { UsersModule } from './core/users/users.module';
 import { RolesModule } from './core/roles/roles.module';
+import { CoreLocationsModule } from './core/locations/locations.module';
 import { PermissionsModule } from './core/permissions/permissions.module';
 import { AuditLogsModule } from './core/audit-logs/audit-logs.module';
 import { DocumentsModule } from './core/documents/documents.module';
@@ -42,6 +43,7 @@ import { ManufacturingModule } from './modules/manufacturing/manufacturing.modul
 import { OperatingModule } from './core/operating/operating.module';
 import { AutomationModule } from './core/automation/automation.module';
 import { PreferencesModule } from './core/preferences/preferences.module';
+import { ReleaseNotesModule } from './core/release-notes/release-notes.module';
 import { ConnectModule } from './core/connect/connect.module';
 
 @Module({
@@ -68,6 +70,7 @@ import { ConnectModule } from './core/connect/connect.module';
     TenantsModule,
     UsersModule,
     RolesModule,
+    CoreLocationsModule,
     PermissionsModule,
     AuditLogsModule,
     DocumentsModule,
@@ -79,6 +82,7 @@ import { ConnectModule } from './core/connect/connect.module';
     OperatingModule,
     AutomationModule,
     PreferencesModule,
+    ReleaseNotesModule,
     ConnectModule,
     // Business modules (activable per tenant — see ModulesGuard)
     TransportationModule,

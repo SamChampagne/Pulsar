@@ -145,6 +145,8 @@ model Tenant {
   boms                    Bom[]
   manufacturingOrders     ManufacturingOrder[]
   schedulingRuns          SchedulingRun[]
+  portalUsers             PortalUser[]
+  portalChangeRequests    PortalChangeRequest[]
 
   @@map("tenants")
 }
@@ -200,13 +202,14 @@ model User {
 }
 
 model UserPreferences {
-  id         String   @id @default(cuid())
-  userId     String   @unique
-  deskLayout Json     @default("{}")
-  appearance Json?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  deskLayout         Json      @default("{}")
+  appearance         Json?
+  releaseNotesSeenAt DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_preferences")
 }
@@ -221,6 +224,8 @@ model ApiKey {
   keyHash     String    @unique
   scopes      String[]
   lastUsedAt  DateTime?
+  // Optional expiry for partner keys; a key past this instant is rejected.
+  expiresAt   DateTime?
   revokedAt   DateTime?
   createdById String?
   createdAt   DateTime  @default(now())
@@ -423,14 +428,18 @@ enum IntegrationStatus {
 }
 
 model Integration {
-  id        String            @id @default(cuid())
-  tenantId  String
-  key       String // e.g. "telematics-samsara", "edi-204"
-  name      String
-  status    IntegrationStatus @default(DISABLED)
-  config    Json              @default("{}")
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  id       String            @id @default(cuid())
+  tenantId String
+  key      String // e.g. "telematics-samsara", "edi-204"
+  name     String
+  status   IntegrationStatus @default(DISABLED)
+  config   Json              @default("{}")
+  // sha256 of the inbound webhook token (POST /public/hooks/:inboundToken).
+  // Column, not config: the receiver looks the integration up BY this hash, and
+  // an encrypted Json blob cannot be indexed. The raw token is shown once.
+  inboundTokenHash String?  @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   tenant     Tenant            @relation(fields: [tenantId], references: [id])
   deliveries WebhookDelivery[]
@@ -524,10 +533,133 @@ model Customer {
   customerInvoices CustomerInvoice[]
   orderTemplates   OrderTemplate[]
   subscriptions    Subscription[]
+  portalUsers      PortalUser[]
+  changeRequests   PortalChangeRequest[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
   @@map("customers")
+}
+
+// Mirrors PortalUserRole from @pulsar/shared/portal (rule 3).
+enum PortalUserRole {
+  ADMIN
+  MEMBER
+}
+
+// Mirrors PortalUserStatus from @pulsar/shared/portal (rule 3).
+enum PortalUserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+// Standalone customer-portal account (not a User, not a CrmContact) scoped to a
+// tenant + customer. `Customer.portalToken` (shared capability link) is kept as a
+// degraded/legacy mode a tenant can revoke.
+model PortalUser {
+  id           String           @id @default(cuid())
+  tenantId     String
+  customerId   String
+  email        String
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         PortalUserRole   @default(MEMBER)
+  status       PortalUserStatus @default(INVITED)
+  lastLoginAt  DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  tenant         Tenant                @relation(fields: [tenantId], references: [id])
+  customer       Customer              @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  actionTokens   PortalActionToken[]
+  refreshTokens  PortalRefreshToken[]
+  changeRequests PortalChangeRequest[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId, customerId])
+  @@map("portal_users")
+}
+
+// Mirrors PortalActionTokenKind from @pulsar/shared/portal (rule 3).
+enum PortalActionTokenKind {
+  INVITATION
+  PASSWORD_RESET
+}
+
+// One-shot tokens for portal invitation acceptance and password resets (hash at rest).
+model PortalActionToken {
+  id           String                @id @default(cuid())
+  portalUserId String
+  kind         PortalActionTokenKind
+  tokenHash    String                @unique
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime              @default(now())
+
+  portalUser PortalUser @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+
+  @@index([portalUserId])
+  @@map("portal_action_tokens")
+}
+
+// Rotating refresh tokens for portal accounts (only the SHA-256 hash is stored).
+model PortalRefreshToken {
+  id           String    @id @default(cuid())
+  portalUserId String
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  portalUser PortalUser @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+
+  @@index([portalUserId])
+  @@map("portal_refresh_tokens")
+}
+
+// Mirrors PortalChangeRequestKind from @pulsar/shared/portal (rule 3).
+enum PortalChangeRequestKind {
+  DATE
+  ADDRESS
+  CANCEL
+  OTHER
+}
+
+// Mirrors PortalChangeRequestStatus from @pulsar/shared/portal (rule 3).
+enum PortalChangeRequestStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  REJECTED
+}
+
+// A customer-portal user's request to change something on an order/shipment (date, address,
+// cancel) or a free-form ask (OTHER). `orderId`/`shipmentId` are soft references (plain String?,
+// no FK): the underlying TransportOrder/Shipment may be deleted/archived independently and this
+// history should survive that. Status only changes via canTransitionPortalChangeRequest (rule 2).
+model PortalChangeRequest {
+  id            String                    @id @default(cuid())
+  tenantId      String
+  customerId    String
+  portalUserId  String?
+  orderId       String?
+  shipmentId    String?
+  kind          PortalChangeRequestKind
+  note          String
+  status        PortalChangeRequestStatus @default(OPEN)
+  staffResponse String?
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  resolvedAt    DateTime?
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  customer   Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  portalUser PortalUser? @relation(fields: [portalUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, customerId, status])
+  @@map("portal_change_requests")
 }
 
 enum LocationType {
@@ -937,7 +1069,7 @@ model ShipmentComment {
   tenantId   String
   shipmentId String
   authorType String // 'CUSTOMER' | 'STAFF'
-  authorId   String? // userId (STAFF) | customerId (CUSTOMER) — internal, never exposed publicly
+  authorId   String? // userId (STAFF) | customerId (CUSTOMER via shared portal link) | portalUserId (CUSTOMER via named portal account) — soft ref, never exposed
   authorName String
   body       String
   createdAt  DateTime @default(now())
@@ -2674,6 +2806,7 @@ enum InboundSource {
   PDF
   DOCUMENT
   WEBHOOK
+  EDI
 }
 
 enum InboundStatus {
@@ -2708,12 +2841,17 @@ model InboundMessage {
   error       String?
   refType     String?
   refId       String?
+  // Idempotency key of an inbound webhook delivery (X-Idempotency-Key header,
+  // else sha256 of the raw body). Nullable-unique per tenant: Postgres allows
+  // many NULLs, so CSV/PDF/document messages are unaffected.
+  dedupKey    String?
   createdById String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
+  @@unique([tenantId, dedupKey])
   @@index([tenantId, status, createdAt])
   @@map("inbound_messages")
 }
@@ -4521,4 +4659,37 @@ model ManufacturingDeclaration {
   @@unique([tenantId, operationKey])
   @@index([tenantId, orderId, createdAt])
   @@map("manufacturing_declarations")
+}
+
+// ============================================================================
+// PLATFORM — Release notes ("what's new" feed)
+// ============================================================================
+
+// Mirrors ReleaseNoteKind from @pulsar/shared/release-notes (rule 3).
+enum ReleaseNoteKind {
+  FEATURE
+  IMPROVEMENT
+  FIX
+}
+
+// Mirrors ReleaseNoteStatus from @pulsar/shared/release-notes (rule 3).
+enum ReleaseNoteStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model ReleaseNote {
+  id             String            @id @default(cuid())
+  title          String
+  body           String
+  kind           ReleaseNoteKind
+  version        String?
+  status         ReleaseNoteStatus @default(DRAFT)
+  publishedAt    DateTime?
+  createdByEmail String
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([status, publishedAt])
+  @@map("release_notes")
 }

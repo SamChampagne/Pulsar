@@ -12,6 +12,11 @@
  *     re-submit same email → contact deduped (still one).
  *  7. Honeypot: submit with _hp: 'x' → { ok: true } but NO new submission row.
  *  8. Tenant isolation: admin GET /sites/pages returns only acme's pages.
+ *  10. POST /sites/pages with a valid `cta` block → 201; with an invalid
+ *      `href: 'javascript:alert(1)'` → 400.
+ *  11-14. cta href validation: javascript:, protocol-relative (//evil.com), and
+ *        backslash-relative (/\evil.com) → 400.
+ *  13. GET /public/sites/:slug projects a `cta` block to exactly { type, label, href }.
  *
  * Prerequisites: reachable PostgreSQL with seed applied (admin@pulsar.dev / admin123, tenant acme).
  */
@@ -345,5 +350,83 @@ describe('Sites module (e2e)', () => {
     expect(row).toBeTruthy();
     expect(row._count).toBeDefined();
     expect(row._count.submissions).toBe(2);
+  });
+
+  it('10. POST /sites/pages with a valid cta block → 201', async () => {
+    const suffix = uniq();
+    const res = await request(srv())
+      .post('/api/v1/sites/pages')
+      .set(auth())
+      .send({
+        title: `CTA Page ${suffix}`,
+        content: [{ type: 'cta', label: 'En savoir plus', href: '/contact' }],
+      })
+      .expect(201);
+
+    expect(res.body.content).toEqual([{ type: 'cta', label: 'En savoir plus', href: '/contact' }]);
+  });
+
+  it('11. POST /sites/pages with a cta block using href: javascript:… → 400', async () => {
+    const suffix = uniq();
+    await request(srv())
+      .post('/api/v1/sites/pages')
+      .set(auth())
+      .send({
+        title: `CTA Bad Page ${suffix}`,
+        content: [{ type: 'cta', label: 'Cliquez', href: 'javascript:alert(1)' }],
+      })
+      .expect(400);
+  });
+
+  it('12. POST /sites/pages with a cta block using a protocol-relative href (//evil.com) → 400', async () => {
+    const suffix = uniq();
+    await request(srv())
+      .post('/api/v1/sites/pages')
+      .set(auth())
+      .send({
+        title: `CTA Open Redirect Page ${suffix}`,
+        content: [{ type: 'cta', label: 'Cliquez', href: '//evil.com' }],
+      })
+      .expect(400);
+  });
+
+  it('14. POST /sites/pages with a cta block using a backslash-relative href (/\\evil.com) → 400', async () => {
+    const suffix = uniq();
+    await request(srv())
+      .post('/api/v1/sites/pages')
+      .set(auth())
+      .send({
+        title: `CTA Backslash Redirect Page ${suffix}`,
+        content: [{ type: 'cta', label: 'Cliquez', href: '/\\evil.com' }],
+      })
+      .expect(400);
+  });
+
+  it('13. GET /public/sites/:slug projects a cta block to exactly { type, label, href }', async () => {
+    const suffix = uniq();
+    const page = (
+      await request(srv())
+        .post('/api/v1/sites/pages')
+        .set(auth())
+        .send({ title: `CTA Public Page ${suffix}`, slug: `cta-public-page-${suffix}` })
+        .expect(201)
+    ).body;
+
+    await request(srv())
+      .patch(`/api/v1/sites/pages/${page.id}`)
+      .set(auth())
+      .send({ content: [{ type: 'cta', label: 'Nous contacter', href: '/contact' }] })
+      .expect(200);
+
+    await request(srv())
+      .post(`/api/v1/sites/pages/${page.id}/publish`)
+      .set(auth())
+      .expect(201);
+
+    const res = await request(srv())
+      .get(`/api/v1/public/sites/cta-public-page-${suffix}`)
+      .expect(200);
+
+    expect(res.body.blocks).toEqual([{ type: 'cta', label: 'Nous contacter', href: '/contact' }]);
   });
 });

@@ -4,18 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  LoadStatus,
-  MODULE_KEYS,
-  ShipmentStatus,
-  StopStatus,
-  TrackingEventType,
-} from '@pulsar/shared';
+import { LoadStatus, MODULE_KEYS, StopStatus, TrackingEventType } from '@pulsar/shared';
 import { DocumentsService } from '../../../core/documents/documents.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
 import { RoutesService } from '../routes/routes.service';
+import { buildShipmentTrackingView } from './shipment-tracking.view';
 import { TrackingService } from '../tracking/tracking.service';
 
 /**
@@ -38,62 +33,17 @@ export class PublicLinksService {
 
   // --- Customer tracking -----------------------------------------------------
 
-  async getTracking(token: string) {
-    const shipment = await this.prisma.shipment.findUnique({
-      where: { trackingToken: token },
-      include: {
-        tenant: { select: { name: true } },
-        originLocation: { select: { city: true, state: true, latitude: true, longitude: true } },
-        destinationLocation: { select: { city: true, state: true, latitude: true, longitude: true } },
-        proofOfDelivery: { select: { signedByName: true, signedAt: true } },
-        trackingEvents: {
-          orderBy: { occurredAt: 'desc' },
-          take: 50,
-          select: { id: true, type: true, message: true, occurredAt: true },
-        },
-      },
-    });
-    if (!shipment) throw new NotFoundException('Unknown tracking link');
-
-    // Last position of the carrying load, only while the shipment is not delivered.
-    // Single point, no history, no other stops — a multi-customer load never leaks
-    // its itinerary (rule 10 + spec §B).
-    const delivered =
-      shipment.status === ShipmentStatus.DELIVERED || shipment.status === ShipmentStatus.CLOSED;
-    let lastPosition: { latitude: number; longitude: number; occurredAt: Date } | null = null;
-    if (!delivered && shipment.loadId) {
-      const pos = await this.prisma.trackingEvent.findFirst({
-        where: {
-          tenantId: shipment.tenantId,
-          loadId: shipment.loadId,
-          type: TrackingEventType.POSITION_UPDATE,
-          latitude: { not: null },
-          longitude: { not: null },
-        },
-        orderBy: { occurredAt: 'desc' },
-        select: { latitude: true, longitude: true, occurredAt: true },
-      });
-      if (pos) {
-        lastPosition = { latitude: pos.latitude!, longitude: pos.longitude!, occurredAt: pos.occurredAt };
-      }
-    }
-
-    return {
-      shipper: shipment.tenant.name,
-      shipmentNumber: shipment.shipmentNumber,
-      status: shipment.status,
-      origin: shipment.originLocation,
-      destination: shipment.destinationLocation,
-      plannedPickupEarly: shipment.plannedPickupEarly,
-      plannedPickupLate: shipment.plannedPickupLate,
-      plannedDeliveryEarly: shipment.plannedDeliveryEarly,
-      plannedDeliveryLate: shipment.plannedDeliveryLate,
-      actualPickupAt: shipment.actualPickupAt,
-      actualDeliveryAt: shipment.actualDeliveryAt,
-      proofOfDelivery: shipment.proofOfDelivery,
-      events: shipment.trackingEvents,
-      lastPosition,
-    };
+  /**
+   * Read-only tracking page. The projection itself lives in
+   * `shipment-tracking.view.ts` — the customer portal serves the very same
+   * payload from `GET /portal/shipments/:id`, so the two can never drift.
+   */
+  getTracking(token: string) {
+    return buildShipmentTrackingView(
+      this.prisma,
+      { trackingToken: token },
+      'Unknown tracking link',
+    );
   }
 
   // --- Driver page -------------------------------------------------------------
@@ -328,20 +278,22 @@ export class PublicLinksService {
         payload: { kind: dto.kind, note: dto.note, shipmentId: dto.shipmentId, stopId: dto.stopId },
       },
     });
-    void this.domainEvents.emit(
-      load.tenantId,
-      'driver.exception',
-      { type: 'load', id: load.id },
-      {
-        loadId: load.id,
-        loadNumber: load.loadNumber,
-        shipmentId: dto.shipmentId,
-        stopId: dto.stopId,
-        kind: dto.kind,
-        note: dto.note,
-        bucket,
-      },
-    ).catch(() => {});
+    void this.domainEvents
+      .emit(
+        load.tenantId,
+        'driver.exception',
+        { type: 'load', id: load.id },
+        {
+          loadId: load.id,
+          loadNumber: load.loadNumber,
+          shipmentId: dto.shipmentId,
+          stopId: dto.stopId,
+          kind: dto.kind,
+          note: dto.note,
+          bucket,
+        },
+      )
+      .catch(() => {});
     return { ok: true };
   }
 }

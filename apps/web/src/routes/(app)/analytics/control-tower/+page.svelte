@@ -1,14 +1,7 @@
 <script lang="ts">
   import type { ControlTower, AttentionItem, AttentionSeverity } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
-  import {
-    PageHeader,
-    Card,
-    EmptyState,
-    Skeleton,
-    ErrorNotice,
-    Select,
-  } from '$lib/components/ui';
+  import { PageHeader, Card, EmptyState, Skeleton, ErrorNotice, Select } from '$lib/components/ui';
 
   let data = $state<ControlTower | null>(null);
   let loading = $state(true);
@@ -17,27 +10,37 @@
 
   function fmt(v: number | null, suffix = ''): string {
     if (v === null) return '—';
-    return `${v.toLocaleString()}${suffix}`;
+    return `${v.toLocaleString('fr-CA')}${suffix}`;
   }
 
   function fmtCurrency(v: number | null): string {
     if (v === null) return '—';
-    return v.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 });
+    return v.toLocaleString('fr-CA', {
+      style: 'currency',
+      currency: 'CAD',
+      maximumFractionDigits: 0,
+    });
   }
 
   function severityBorderClass(s: AttentionSeverity): string {
     switch (s) {
-      case 'critical': return 'border-l-danger';
-      case 'warning':  return 'border-l-warn';
-      default:         return 'border-l-border';
+      case 'critical':
+        return 'border-l-danger';
+      case 'warning':
+        return 'border-l-warn';
+      default:
+        return 'border-l-border';
     }
   }
 
   function severityBadgeClass(s: AttentionSeverity): string {
     switch (s) {
-      case 'critical': return 'bg-danger/10 text-danger';
-      case 'warning':  return 'bg-warn/10 text-warn';
-      default:         return 'bg-surface-muted text-ink-muted';
+      case 'critical':
+        return 'bg-danger/10 text-danger';
+      case 'warning':
+        return 'bg-warn/10 text-warn';
+      default:
+        return 'bg-surface-muted text-ink-muted';
     }
   }
 
@@ -92,7 +95,9 @@
     </Card>
     <Card>
       <div class="text-xs text-ink-faint">Loads en retard</div>
-      <div class={`mt-1 text-2xl font-bold ${data.kpis.loadsLate > 0 ? 'text-danger' : 'text-ink'}`}>
+      <div
+        class={`mt-1 text-2xl font-bold ${data.kpis.loadsLate > 0 ? 'text-danger' : 'text-ink'}`}
+      >
         {data.kpis.loadsLate}
       </div>
     </Card>
@@ -110,7 +115,9 @@
     </Card>
     <Card>
       <div class="text-xs text-ink-faint">Litiges ouverts</div>
-      <div class={`mt-1 text-2xl font-bold ${data.kpis.disputesOpen > 0 ? 'text-warn' : 'text-ink'}`}>
+      <div
+        class={`mt-1 text-2xl font-bold ${data.kpis.disputesOpen > 0 ? 'text-warn' : 'text-ink'}`}
+      >
         {data.kpis.disputesOpen}
       </div>
     </Card>
@@ -120,7 +127,9 @@
     </Card>
     <Card>
       <div class="text-xs text-ink-faint">Actions agents en attente</div>
-      <div class={`mt-1 text-2xl font-bold ${data.kpis.agentActionsPending > 0 ? 'text-warn' : 'text-ink'}`}>
+      <div
+        class={`mt-1 text-2xl font-bold ${data.kpis.agentActionsPending > 0 ? 'text-warn' : 'text-ink'}`}
+      >
         {data.kpis.agentActionsPending}
       </div>
       {#if data.kpis.agentActionsPending > 0}
@@ -146,7 +155,9 @@
   <div class="mb-2 flex items-center justify-between">
     <h2 class="text-sm font-semibold uppercase tracking-wide text-ink-muted">Points d'attention</h2>
     {#if data.attention.length > 0}
-      <span class="text-xs text-ink-faint">{data.attention.length} élément{data.attention.length > 1 ? 's' : ''}</span>
+      <span class="text-xs text-ink-faint"
+        >{data.attention.length} élément{data.attention.length > 1 ? 's' : ''}</span
+      >
     {/if}
   </div>
 
@@ -160,11 +171,15 @@
   {:else}
     <div class="flex flex-col gap-2">
       {#each data.attention as item (item.kind + (item.ref ?? ''))}
-        <div class={`rounded-lg border border-l-4 bg-surface px-4 py-3 ${severityBorderClass(item.severity)}`}>
+        <div
+          class={`rounded-lg border border-l-4 bg-surface px-4 py-3 ${severityBorderClass(item.severity)}`}
+        >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
-                <span class={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase ${severityBadgeClass(item.severity)}`}>
+                <span
+                  class={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase ${severityBadgeClass(item.severity)}`}
+                >
                   {item.severity}
                 </span>
                 {#if item.href}
@@ -177,7 +192,10 @@
               </div>
               {#if item.at}
                 <div class="mt-0.5 text-[11px] text-ink-faint">
-                  {new Date(item.at).toLocaleString('fr-CA', { dateStyle: 'medium', timeStyle: 'short' })}
+                  {new Date(item.at).toLocaleString('fr-CA', {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  })}
                 </div>
               {/if}
             </div>

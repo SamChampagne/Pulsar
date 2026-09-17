@@ -23,6 +23,15 @@ export function assertProductionSecrets(env: Record<string, string | undefined>)
         '(the seeded platform admin would otherwise be sign-in-able with admin123).',
     );
   }
+  // Dev/CI escape hatch for loopback webhook endpoints (IntegrationsService
+  // `allowPrivateUrls`). Left on in production it disables the SSRF egress
+  // guard on every integration write and delivery — refuse the boot.
+  if (env.WEBHOOK_ALLOW_PRIVATE_URLS === 'true') {
+    throw new Error(
+      'WEBHOOK_ALLOW_PRIVATE_URLS=true is a dev/CI escape hatch and must not be set in production ' +
+        '(it disables the SSRF egress guard on webhook and EDI endpoints).',
+    );
+  }
   for (const [name, examples] of Object.entries(PUBLISHED_EXAMPLES)) {
     const value = env[name];
     // Unset is deliberately NOT handled here: JWT_SECRET (getOrThrow) and

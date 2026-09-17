@@ -1,10 +1,12 @@
-import { IsEnum, IsObject, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEnum, IsObject, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { YardDirection } from '@pulsar/shared';
 
 export class CheckInDto {
   @IsString() @MinLength(1) locationId!: string;
   @IsOptional() @IsString() trailerId?: string;
-  @IsOptional() @IsString() trailerRef?: string;
+  // Free text carried over from a YardArrival (unmatched trailer): same cap as
+  // the arrival input it replaces.
+  @IsOptional() @IsString() @MaxLength(100) trailerRef?: string;
   @IsOptional() @IsString() carrierId?: string;
   @IsOptional() @IsString() driverName?: string;
   @IsOptional() @IsEnum(YardDirection) direction?: YardDirection;

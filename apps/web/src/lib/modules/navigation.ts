@@ -83,12 +83,13 @@ export function navCatalogue(): NavDomain[] {
       label: 'Plateforme',
       icon: LayoutDashboard,
       home: '/apps',
-      prefixes: ['/apps', '/framework', '/dashboard', '/onboarding'],
+      prefixes: ['/apps', '/framework', '/dashboard', '/onboarding', '/whats-new'],
       // Always visible; no module or perm gate.
       sections: [
         {
           links: [
             { href: '/dashboard', label: 'Tableau de bord' },
+            { href: '/whats-new', label: 'Quoi de neuf' },
             { href: '/apps', label: 'Pulsar Desk' },
             { href: '/onboarding', label: 'Onboarding' },
           ],
@@ -153,7 +154,11 @@ export function navCatalogue(): NavDomain[] {
           links: [
             { href: '/customers', label: 'Clients' },
             { href: '/carriers', label: 'Transporteurs' },
-            { href: '/locations', label: 'Lieux' },
+            {
+              href: '/locations',
+              label: 'Lieux',
+              perm: PERMISSIONS.CORE.LOCATIONS_READ,
+            },
           ],
         },
         {
@@ -198,6 +203,11 @@ export function navCatalogue(): NavDomain[] {
         {
           label: 'Données',
           links: [
+            {
+              href: '/wms/warehouses',
+              label: 'Entrepôts',
+              perm: PERMISSIONS.CORE.LOCATIONS_READ,
+            },
             { href: '/wms/items', label: 'Articles' },
             { href: '/wms/bins', label: 'Emplacements' },
           ],
@@ -519,6 +529,36 @@ export function navCatalogue(): NavDomain[] {
       ],
     },
 
+    // ── Portail client ───────────────────────────────────────────────────
+    {
+      key: 'customer-portal',
+      label: 'Portail client',
+      icon: Globe,
+      // `/customers` belongs to the Transport domain's own prefixes, so a
+      // `home` there would show Transport's sidebar the instant the switcher
+      // navigates to it. The domain's own prefix is `/customer-portal`.
+      home: '/customer-portal/requests',
+      module: MODULE_KEYS.CUSTOMER_PORTAL,
+      prefixes: ['/customer-portal'],
+      sections: [
+        {
+          label: 'Clients',
+          links: [
+            {
+              href: '/customers',
+              label: 'Clients & portail',
+              perm: PERMISSIONS.CUSTOMER_PORTAL.LINKS_MANAGE,
+            },
+            {
+              href: '/customer-portal/requests',
+              label: 'Demandes',
+              perm: PERMISSIONS.CUSTOMER_PORTAL.USERS_READ,
+            },
+          ],
+        },
+      ],
+    },
+
     // ── Procurement / Bid Board ────────────────────────────────────────────
     {
       key: 'procurement',
@@ -583,6 +623,16 @@ export function navCatalogue(): NavDomain[] {
             { href: '/connect/inbox', label: 'Inbox', perm: PERMISSIONS.CORE.CONNECT_READ },
             { href: '/connect/imports', label: 'Imports', perm: PERMISSIONS.CORE.CONNECT_READ },
             { href: '/integrations', label: 'Studio avancé' },
+            {
+              href: '/connect/inbound-hooks',
+              label: 'Récepteurs entrants',
+              perm: PERMISSIONS.CORE.INTEGRATIONS_READ,
+            },
+            {
+              href: '/connect/edi',
+              label: 'EDI',
+              perm: PERMISSIONS.CORE.CONNECT_READ,
+            },
             {
               href: '/connect/email',
               label: 'Courriel SMTP / IMAP',
@@ -653,6 +703,8 @@ export function navCatalogue(): NavDomain[] {
           label: 'Plateforme',
           links: [
             { href: '/settings/users', label: 'Utilisateurs' },
+            { href: '/settings/roles', label: 'Rôles', perm: PERMISSIONS.CORE.ROLES_READ },
+            { href: '/locations', label: 'Lieux', perm: PERMISSIONS.CORE.LOCATIONS_READ },
             { href: '/settings/api-keys', label: 'Clés API' },
             { href: '/settings/modules', label: 'Modules' },
             { href: '/settings/sso', label: 'SSO' },
@@ -691,6 +743,24 @@ export function navCatalogue(): NavDomain[] {
  * - Sections with no remaining links are dropped; domains with no remaining sections are
  *   dropped UNLESS they are the `dashboard` domain.
  */
+/**
+ * Where clicking a domain's icon/card should navigate: `domain.home` when the
+ * user can actually reach it (it appears among the domain's own — already
+ * perm-filtered — links), otherwise the first link the user DOES have access
+ * to. Some domains gate their `home` route behind a permission narrower than
+ * the domain's own visibility gate (e.g. Portail client is visible on the
+ * module alone, but `/customer-portal/requests` needs
+ * `customer-portal.users.read` — a user with only
+ * `customer-portal.links.manage` would otherwise land on a 403). `domain`
+ * must be one already produced by `visibleDomains()` so its `sections` are
+ * pre-filtered for the current user.
+ */
+export function domainHome(domain: NavDomain): string {
+  const links = domain.sections.flatMap((s) => s.links);
+  if (links.some((l) => l.href === domain.home)) return domain.home;
+  return links[0]?.href ?? domain.home;
+}
+
 export function visibleDomains(caps: NavCaps): NavDomain[] {
   return navCatalogue()
     .filter((d) => {

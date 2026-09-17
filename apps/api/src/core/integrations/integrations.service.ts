@@ -1,7 +1,42 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@pulsar/database';
+import { createHash, randomBytes } from 'node:crypto';
+import {
+  applyIntegrationMapping,
+  AuditAction,
+  getInboundHookTarget,
+  validateMappingPaths,
+  checkWebhookUrl,
+  PERMISSIONS,
+  DOMAIN_EVENT_CATALOG,
+  normalizeMappingRules,
+  resolveWebhookTarget,
+} from '@pulsar/shared';
+import { OwnershipService } from '../../prisma/ownership.service';
+import { mentionsEdi, normalizeEdiConfig } from './edi-identity';
 import { PrismaService } from '../../prisma/prisma.service';
+import { auditActor } from '../audit-logs/audit-actor';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CryptoService } from '../crypto/crypto.service';
+import { WebhooksService } from './webhooks.service';
+
+/**
+ * The staff user performing a configuration write. Inbound receivers need more
+ * than `core.integrations.manage`: pointing a receiver at a business target is
+ * granting a partner that target's write permission, so the configuring user
+ * must hold it too (the delivery itself runs as the service-account, rule 13).
+ */
+export interface ConfiguringUser {
+  id: string;
+  permissions: readonly string[];
+}
 
 export interface UpsertIntegrationInput {
   key: string;
@@ -29,6 +64,10 @@ export interface ConnectionTestReport {
   summary: string;
   checkedAt: string;
   checks: StudioCheck[];
+  /** True for a real network probe (webhook*), false for the config-shape simulation. */
+  live?: boolean;
+  statusCode?: number;
+  latencyMs?: number;
 }
 
 export interface DryRunInput {
@@ -49,53 +88,18 @@ const SENSITIVE_KEY = /secret|password|token|key/i;
 const MASK = '***';
 
 function asObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-function asMappingRows(value: unknown): StudioMappingRow[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item))
-    .map((item) => ({
-      source: asString(item.source),
-      target: asString(item.target),
-      transform: asString(item.transform) || 'none',
-      required: Boolean(item.required),
-    }))
-    .filter((item) => item.source || item.target);
-}
-
-function getPath(source: Record<string, unknown>, path: string): unknown {
-  return path.split('.').reduce<unknown>((current, segment) => {
-    if (!current || typeof current !== 'object' || Array.isArray(current)) return undefined;
-    return (current as Record<string, unknown>)[segment];
-  }, source);
-}
-
-function setPath(target: Record<string, unknown>, path: string, value: unknown) {
-  const segments = path.split('.').filter(Boolean);
-  if (!segments.length) return;
-  let cursor = target;
-  for (const segment of segments.slice(0, -1)) {
-    const next = cursor[segment];
-    if (!next || typeof next !== 'object' || Array.isArray(next)) cursor[segment] = {};
-    cursor = cursor[segment] as Record<string, unknown>;
-  }
-  cursor[segments.at(-1)!] = value;
-}
-
-function applyTransform(value: unknown, transform?: string): unknown {
-  if (value == null) return value;
-  const op = transform || 'none';
-  if (op === 'trim' && typeof value === 'string') return value.trim();
-  if (op === 'uppercase' && typeof value === 'string') return value.toUpperCase();
-  if (op === 'number') return Number(value);
-  if (op === 'date.iso') return new Date(String(value)).toISOString();
-  return value;
+/** `config.mappings` (unknown JSON) → studio rows. Shape lives in @pulsar/shared. */
+function normalizeMappingRows(value: unknown): StudioMappingRow[] {
+  return normalizeMappingRules(value);
 }
 
 function redactUrl(url: string): string {
@@ -117,33 +121,45 @@ export function buildConnectionTestReport(integration: {
   const config = asObject(integration.config);
   const endpointUrl = asString(config.endpointUrl);
   const hasEndpoint = /^https?:\/\//i.test(endpointUrl);
-  const hasCredential = ['apiKey', 'secret', 'webhookSecret', 'tenantReference'].some((key) => Boolean(asString(config[key])));
-  const mappings = asMappingRows(config.mappings);
-  const objects = Array.isArray(config.objects) ? config.objects.filter((item) => typeof item === 'string') : [];
+  const hasCredential = ['apiKey', 'secret', 'webhookSecret', 'tenantReference'].some((key) =>
+    Boolean(asString(config[key])),
+  );
+  const mappings = normalizeMappingRows(config.mappings);
+  const objects = Array.isArray(config.objects)
+    ? config.objects.filter((item) => typeof item === 'string')
+    : [];
   const checks: StudioCheck[] = [
     {
       key: 'endpoint',
       label: 'Endpoint',
       status: hasEndpoint ? 'ok' : 'blocked',
-      detail: hasEndpoint ? `${redactUrl(endpointUrl)} répondra au test réel bientôt` : 'Ajoute une URL https/http avant activation.',
+      detail: hasEndpoint
+        ? `${redactUrl(endpointUrl)} — simulation (contrôle de configuration, aucun appel réseau).`
+        : 'Ajoute une URL https/http avant activation.',
     },
     {
       key: 'credential',
       label: 'Credentials',
       status: hasCredential ? 'ok' : 'blocked',
-      detail: hasCredential ? 'Credential présent et masqué dans le rapport.' : 'API key, secret, webhook secret ou référence projet requis.',
+      detail: hasCredential
+        ? 'Credential présent et masqué dans le rapport.'
+        : 'API key, secret, webhook secret ou référence projet requis.',
     },
     {
       key: 'objects',
       label: 'Objets métier',
       status: objects.length ? 'ok' : 'warning',
-      detail: objects.length ? `${objects.length} objet(s) sélectionné(s).` : 'Sélectionne au moins un objet pour documenter la portée.',
+      detail: objects.length
+        ? `${objects.length} objet(s) sélectionné(s).`
+        : 'Sélectionne au moins un objet pour documenter la portée.',
     },
     {
       key: 'mapping',
       label: 'Mapping',
       status: mappings.length ? 'ok' : 'warning',
-      detail: mappings.length ? `${mappings.length} champ(s) dans le mapping.` : 'Ajoute au moins un mapping source → Pulsar.',
+      detail: mappings.length
+        ? `${mappings.length} champ(s) dans le mapping.`
+        : 'Ajoute au moins un mapping source → Pulsar.',
     },
   ];
   const status = checks.some((check) => check.status === 'blocked')
@@ -153,15 +169,20 @@ export function buildConnectionTestReport(integration: {
       : 'ok';
   return {
     status,
-    summary: status === 'ok' ? 'Connexion prête pour un dry run.' : status === 'warning' ? 'Connexion testable, mais portée/mapping incomplet.' : 'Connexion bloquée avant dry run.',
+    summary:
+      status === 'ok'
+        ? 'Simulation : connexion prête pour un dry run.'
+        : status === 'warning'
+          ? 'Simulation : connexion testable, mais portée/mapping incomplet.'
+          : 'Simulation : connexion bloquée avant dry run.',
     checkedAt: new Date().toISOString(),
     checks,
+    live: false,
   };
 }
 
 export function buildDryRunMapping(input: DryRunInput): DryRunReport {
-  const mappings = asMappingRows(input.mappings);
-  const errors: string[] = [];
+  const mappings = normalizeMappingRows(input.mappings);
   let payload: Record<string, unknown> = {};
   try {
     payload = asObject(input.samplePayload ? JSON.parse(input.samplePayload) : {});
@@ -176,24 +197,22 @@ export function buildDryRunMapping(input: DryRunInput): DryRunReport {
     };
   }
 
-  const output: Record<string, unknown> = {};
-  const rows = mappings.map((mapping) => {
-    if (!mapping.source || !mapping.target) {
-      return { ...mapping, status: 'skipped' as const };
-    }
-    const raw = getPath(payload, mapping.source);
-    if (raw == null || raw === '') {
-      if (mapping.required) errors.push(`Champ requis manquant: ${mapping.source}`);
-      return { ...mapping, status: 'missing' as const };
-    }
-    const value = applyTransform(raw, mapping.transform);
-    setPath(output, mapping.target, value);
-    return { ...mapping, status: 'mapped' as const, value };
-  });
-  const status = errors.length ? 'warning' : rows.some((row) => row.status === 'mapped') ? 'ok' : 'blocked';
+  // Lenient mode: an unknown transform stays a no-op in the studio preview
+  // (the inbound receiver runs the same engine with strictTransforms).
+  const { output, rows, errors } = applyIntegrationMapping(payload, mappings);
+  const status = errors.length
+    ? 'warning'
+    : rows.some((row) => row.status === 'mapped')
+      ? 'ok'
+      : 'blocked';
   return {
     status,
-    summary: status === 'ok' ? 'Dry run réussi.' : status === 'warning' ? `${errors.length} champ(s) requis à corriger.` : 'Aucun mapping exploitable.',
+    summary:
+      status === 'ok'
+        ? 'Dry run réussi.'
+        : status === 'warning'
+          ? `${errors.length} champ(s) requis à corriger.`
+          : 'Aucun mapping exploitable.',
     checkedAt: new Date().toISOString(),
     rows,
     output,
@@ -214,17 +233,58 @@ export function maskConfig(config: Record<string, unknown>): Record<string, unkn
 }
 
 /**
- * A client echoing back "***" means "keep the stored secret unchanged" (flat
- * keys only). Consequence: a literal secret value of "***" cannot be set —
- * the accepted trade-off of echo-back masking.
+ * PATCH semantics for `config` — a true MERGE over what is stored (flat keys).
+ *
+ * The result is the stored config with the incoming keys applied, because a
+ * client only ever sends the keys its form knows about: the generic Studio form
+ * has no idea a receiver carries `target`, `inboundSecret`, `customerId` or the
+ * `isa*` EDI identity, and a replace would silently disarm a live receiver's
+ * HMAC and drop its target on the next "Save".
+ *
+ * Three rules:
+ *  - a key echoed back as "***" keeps the STORED secret (echo-back masking —
+ *    consequence: a literal secret value of "***" cannot be set);
+ *  - a key sent as `null` DELETES it (the only way to clear a setting);
+ *  - any other value overwrites.
+ *
+ * Callers still run the normalize/gate/safe-url checks on the MERGED result,
+ * so a merge can never produce a config a direct write would have refused.
  */
 export function mergePreservingMasked(
   incoming: Record<string, unknown>,
   stored: Record<string, unknown>,
 ): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(incoming).map(([k, v]) => [k, v === MASK ? stored[k] : v]),
-  );
+  const merged: Record<string, unknown> = { ...stored };
+  for (const [k, v] of Object.entries(incoming)) {
+    if (v === MASK) continue; // keep the stored secret
+    if (v === null) {
+      delete merged[k]; // explicit removal
+    } else {
+      merged[k] = v;
+    }
+  }
+  return merged;
+}
+
+/**
+ * A `webhook*` integration's config always carries `eventsBackfilledAt` once
+ * written through this service — on create AND on update — so
+ * `WebhookEventsBackfillService` never re-widens an explicit empty allowlist
+ * set later via PATCH. Preserves an already-stamped value (from the new
+ * config, or — for a pre-merge caller that passes it explicitly — from the
+ * previously stored config); stamps now (ISO) only when neither has one.
+ * No-op for non-webhook kinds.
+ */
+function withEventsBackfillStamp(
+  key: string,
+  config: Record<string, unknown>,
+  previousStamp?: unknown,
+): Record<string, unknown> {
+  if (!key.startsWith('webhook')) return config;
+  if (config.eventsBackfilledAt) return config;
+  const stamp =
+    typeof previousStamp === 'string' && previousStamp ? previousStamp : new Date().toISOString();
+  return { ...config, eventsBackfilledAt: stamp };
 }
 
 /**
@@ -238,15 +298,136 @@ export class IntegrationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
+    private readonly webhooks: WebhooksService,
+    private readonly audit: AuditLogsService,
+    private readonly config: ConfigService,
+    private readonly ownership: OwnershipService,
   ) {}
+
+  /** Dev/CI escape hatch for loopback endpoints (WEBHOOK_ALLOW_PRIVATE_URLS=true). */
+  private get allowPrivateUrls(): boolean {
+    return this.config.get<string>('WEBHOOK_ALLOW_PRIVATE_URLS') === 'true';
+  }
+
+  /**
+   * Egress guard (SSRF): an integration that Pulsar will POST to — `webhook*`
+   * and EDI (outbound 214) — may only point at a public http/https endpoint.
+   * Applied on every write and before a live ping. EDI is recognised by EITHER
+   * half of its identity (`mentionsEdi`), so a half-declared receiver is checked
+   * too instead of slipping past on its key alone.
+   */
+  private assertSafeWebhookConfig(key: string, config: Record<string, unknown>) {
+    if (!key.startsWith('webhook') && !mentionsEdi(key, config)) return;
+    const target = resolveWebhookTarget(config);
+    if (!target) return;
+    const check = checkWebhookUrl(target.url, { allowPrivate: this.allowPrivateUrls });
+    if (!check.ok) throw new BadRequestException(check.reason);
+  }
+
+  /**
+   * Config guard for an EDI integration.
+   *
+   * Keyed on `mentionsEdi` — EITHER an `edi-*` key OR `config.format: 'x12'` —
+   * not on the key alone: the public receiver used to dispatch on the format,
+   * so a receiver declaring only the format reached the EDI plane while this
+   * gate never ran. `normalizeEdiConfig` then makes the two halves agree before
+   * anything is persisted.
+   *
+   * The two foreign keys an interchange is written against — `customerId` (the
+   * shipper a 204 becomes an order for) and `carrierId` (the carrier a 210 is
+   * billed by) — are checked at SAVE time (rule 9), so the intake path can never
+   * be pointed at another tenant's master data. Partner ids are bounded to the
+   * 15 characters ISA05..ISA08 accept.
+   */
+  private async assertEdiConfigAllowed(
+    tenantId: string,
+    key: string,
+    config: Record<string, unknown>,
+    actor?: ConfiguringUser,
+  ) {
+    if (!mentionsEdi(key, config)) return;
+    const customerId = asString(config.customerId) || undefined;
+    const carrierId = asString(config.carrierId) || undefined;
+    await this.ownership.assertOwnedIfSet('customer', customerId, tenantId);
+    await this.ownership.assertOwnedIfSet('carrier', carrierId, tenantId);
+
+    // Privilege gate — same shape as `assertInboundConfigAllowed`, but keyed on
+    // the EDI config instead of `config.target` (an EDI receiver has none).
+    // Setting `customerId` means "a 204 arriving here creates a transport
+    // order"; setting `carrierId` means "a 210 creates an incoming carrier
+    // invoice". Granting that to an anonymous door is granting the permission,
+    // so the configuring user must hold it themselves (rule 13 spirit).
+    if (actor) {
+      for (const [id, permission, label] of [
+        [customerId, PERMISSIONS.TRANSPORTATION.ORDERS_MANAGE, 'transport orders'],
+        [carrierId, PERMISSIONS.BILLING.FREIGHT_AUDIT_MANAGE, 'incoming carrier invoices'],
+      ] as const) {
+        if (id && !actor.permissions.includes(permission)) {
+          throw new ForbiddenException(
+            `Permission "${permission}" is required to configure an inbound receiver writing ${label}`,
+          );
+        }
+      }
+    }
+
+    for (const field of ['isaSenderId', 'isaReceiverId', 'gsSenderId', 'gsReceiverId']) {
+      const value = asString(config[field]);
+      if (value.length > 15) {
+        throw new BadRequestException(`"${field}" must be at most 15 characters (X12 ISA width)`);
+      }
+    }
+  }
+
+  /** Documented business events a webhook integration can subscribe to. */
+  eventCatalog() {
+    return DOMAIN_EVENT_CATALOG;
+  }
 
   /** Internal consumers (webhooks) get the decrypted config. */
   decryptedConfig<T = Record<string, unknown>>(stored: unknown): T {
     return this.crypto.decryptJson<T>(stored);
   }
 
+  /**
+   * API projection. The token hash never leaves the server (it is the
+   * verifier of a live credential): callers get a boolean instead.
+   */
   private present(integration: { config: unknown } & Record<string, unknown>) {
-    return { ...integration, config: maskConfig(this.crypto.decryptJson(integration.config)) };
+    const { inboundTokenHash, ...rest } = integration;
+    return {
+      ...rest,
+      config: maskConfig(this.crypto.decryptJson(integration.config)),
+      hasInboundToken: typeof inboundTokenHash === 'string' && inboundTokenHash.length > 0,
+    };
+  }
+
+  /**
+   * Guards a configuration write that (re)points an inbound receiver.
+   *
+   * Two checks, both refusing with 403:
+   *  - `config.target` must be a known inbound target;
+   *  - the configuring user must hold that target's own permission, on top of
+   *    the `core.integrations.manage` already enforced by the controller.
+   *
+   * Also rejects prototype-walking mapping paths (`__proto__`, `constructor`,
+   * `prototype`) with a 400 — a bad target never reaches storage.
+   */
+  private assertInboundConfigAllowed(config: Record<string, unknown>, actor?: ConfiguringUser) {
+    const mappingErrors = validateMappingPaths(normalizeMappingRows(config.mappings));
+    if (mappingErrors.length > 0) throw new BadRequestException(mappingErrors.join('; '));
+
+    const targetKey = typeof config.target === 'string' ? config.target.trim() : '';
+    if (!targetKey) return;
+    const target = getInboundHookTarget(targetKey);
+    if (!target) {
+      throw new BadRequestException(`Unknown inbound target: "${targetKey}"`);
+    }
+    if (!actor) return; // internal caller (seed/tests) — no user context to check
+    if (!actor.permissions.includes(target.permission)) {
+      throw new ForbiddenException(
+        `Permission "${target.permission}" is required to configure an inbound receiver writing ${target.label}`,
+      );
+    }
   }
 
   async list(tenantId: string) {
@@ -257,63 +438,309 @@ export class IntegrationsService {
     return rows.map((row) => this.present(row));
   }
 
-  async create(tenantId: string, input: UpsertIntegrationInput) {
+  async create(tenantId: string, input: UpsertIntegrationInput, actor?: ConfiguringUser) {
     const existing = await this.prisma.integration.findUnique({
       where: { tenantId_key: { tenantId, key: input.key } },
     });
     if (existing) throw new ConflictException(`Integration "${input.key}" already exists`);
+    this.assertSafeWebhookConfig(input.key, input.config ?? {});
+    this.assertInboundConfigAllowed(input.config ?? {}, actor);
+    // Reconcile the two halves of the EDI identity BEFORE the gate, so the gate
+    // sees exactly what will be stored (and a mismatched pair is a 400).
+    const ediConfig = normalizeEdiConfig(input.key, input.config ?? {});
+    await this.assertEdiConfigAllowed(tenantId, input.key, ediConfig, actor);
+    // A webhook integration created here already follows the current semantics
+    // (empty `events` = every catalog event), so it must never be picked up by
+    // WebhookEventsBackfillService — stamp the marker straight away.
+    const config = withEventsBackfillStamp(input.key, ediConfig);
     const created = await this.prisma.integration.create({
       data: {
         tenantId,
         key: input.key,
         name: input.name,
         status: input.status ?? 'DISABLED',
-        config: this.crypto.encryptJson(input.config ?? {}) as Prisma.InputJsonValue,
+        config: this.crypto.encryptJson(config) as Prisma.InputJsonValue,
+      },
+    });
+    // Configuring a connector points Pulsar at (or opens it to) a third party:
+    // the write is auditable. Secrets are `maskConfig`-ed — the trail records
+    // that a secret is set, never its value.
+    await this.audit.log({
+      tenantId,
+      userId: auditActor(actor?.id),
+      action: AuditAction.CREATE,
+      entityType: 'integration',
+      entityId: created.id,
+      after: {
+        key: created.key,
+        name: created.name,
+        status: created.status,
+        config: maskConfig(config),
       },
     });
     return this.present(created);
   }
 
-  async update(tenantId: string, id: string, input: Partial<UpsertIntegrationInput>) {
+  async update(
+    tenantId: string,
+    id: string,
+    input: Partial<UpsertIntegrationInput>,
+    actor?: ConfiguringUser,
+  ) {
     const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
     if (!integration) throw new NotFoundException('Integration not found');
-    const stored = this.crypto.decryptJson(integration.config);
+    const stored = this.crypto.decryptJson<Record<string, unknown>>(integration.config);
+    let merged = input.config
+      ? withEventsBackfillStamp(
+          integration.key,
+          mergePreservingMasked(input.config, stored),
+          stored.eventsBackfilledAt,
+        )
+      : undefined;
+    if (merged) {
+      this.assertSafeWebhookConfig(integration.key, merged);
+      this.assertInboundConfigAllowed(merged, actor);
+      merged = normalizeEdiConfig(integration.key, merged);
+      await this.assertEdiConfigAllowed(tenantId, integration.key, merged, actor);
+    }
     const updated = await this.prisma.integration.update({
       where: { id },
       data: {
         name: input.name,
         status: input.status,
-        ...(input.config
-          ? {
-              config: this.crypto.encryptJson(
-                mergePreservingMasked(input.config, stored),
-              ) as Prisma.InputJsonValue,
-            }
-          : {}),
+        ...(merged ? { config: this.crypto.encryptJson(merged) as Prisma.InputJsonValue } : {}),
+      },
+    });
+    // Same trail as `create`: before/after of the configuration, secrets masked.
+    await this.audit.log({
+      tenantId,
+      userId: auditActor(actor?.id),
+      action: AuditAction.UPDATE,
+      entityType: 'integration',
+      entityId: updated.id,
+      before: {
+        key: integration.key,
+        name: integration.name,
+        status: integration.status,
+        config: maskConfig(stored),
+      },
+      after: {
+        key: updated.key,
+        name: updated.name,
+        status: updated.status,
+        config: maskConfig(merged ?? stored),
       },
     });
     return this.present(updated);
   }
 
-  async testConnection(tenantId: string, id: string) {
+  /**
+   * Connection test. `webhook*` integrations get a REAL signed `ping` POST
+   * (5 s timeout); every other kind still gets the configuration-shape
+   * simulation, explicitly labelled as such.
+   */
+  async testConnection(
+    tenantId: string,
+    id: string,
+    userId?: string,
+  ): Promise<ConnectionTestReport> {
     const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
     if (!integration) throw new NotFoundException('Integration not found');
-    return buildConnectionTestReport({
-      id: integration.id,
-      name: integration.name,
-      status: integration.status,
-      config: this.crypto.decryptJson(integration.config),
+    const config = this.crypto.decryptJson(integration.config);
+
+    const report = integration.key.startsWith('webhook')
+      ? await this.pingWebhook(config)
+      : buildConnectionTestReport({
+          id: integration.id,
+          name: integration.name,
+          status: integration.status,
+          config,
+        });
+
+    await this.audit.log({
+      tenantId,
+      userId: auditActor(userId),
+      action: AuditAction.UPDATE,
+      entityType: 'integration',
+      entityId: integration.id,
+      after: { action: 'test', live: report.live === true, status: report.status },
     });
+    return report;
+  }
+
+  private async pingWebhook(config: Record<string, unknown>): Promise<ConnectionTestReport> {
+    const target = resolveWebhookTarget(config);
+    const url = target?.url ?? '';
+    const checkedAt = new Date().toISOString();
+    if (!url) {
+      return {
+        status: 'blocked',
+        summary: 'Aucune URL de destination configurée.',
+        checkedAt,
+        live: true,
+        checks: [
+          {
+            key: 'endpoint',
+            label: 'Endpoint',
+            status: 'blocked',
+            detail: 'Ajoute une URL https/http avant de tester.',
+          },
+        ],
+      };
+    }
+
+    const guard = checkWebhookUrl(url, { allowPrivate: this.allowPrivateUrls });
+    if (!guard.ok) {
+      return {
+        status: 'blocked',
+        summary: guard.reason,
+        checkedAt,
+        live: true,
+        checks: [{ key: 'endpoint', label: 'Endpoint', status: 'blocked', detail: guard.reason }],
+      };
+    }
+
+    const result = await this.webhooks.ping({
+      url,
+      secret: target?.secret,
+      format: config.format as never,
+    });
+    const signed = Boolean(target?.secret);
+    const checks: StudioCheck[] = [
+      {
+        key: 'endpoint',
+        label: 'Endpoint',
+        status: result.ok ? 'ok' : 'blocked',
+        detail: result.ok
+          ? `${redactUrl(url)} a répondu ${result.statusCode} en ${result.latencyMs} ms.`
+          : `${redactUrl(url)} n'a pas répondu : ${result.error ?? 'erreur inconnue'}.`,
+      },
+      {
+        key: 'signature',
+        label: 'Signature',
+        status: signed ? 'ok' : 'warning',
+        detail: signed
+          ? 'Ping signé (X-Pulsar-Signature, HMAC SHA-256).'
+          : 'Aucun secret configuré : les livraisons ne seront pas signées.',
+      },
+    ];
+    return {
+      status: result.ok ? (signed ? 'ok' : 'warning') : 'blocked',
+      summary: result.ok
+        ? `Ping livré en ${result.latencyMs} ms.`
+        : `Ping en échec : ${result.error ?? 'erreur inconnue'}.`,
+      checkedAt,
+      live: true,
+      ...(result.statusCode !== undefined ? { statusCode: result.statusCode } : {}),
+      latencyMs: result.latencyMs,
+      checks,
+    };
   }
 
   async dryRun(tenantId: string, id: string, input: DryRunInput = {}) {
     const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
     if (!integration) throw new NotFoundException('Integration not found');
     const config = this.crypto.decryptJson(integration.config);
+    const mappings = input.mappings ?? normalizeMappingRows(config.mappings);
+    const mappingErrors = validateMappingPaths(normalizeMappingRows(mappings));
+    if (mappingErrors.length > 0) throw new BadRequestException(mappingErrors.join('; '));
     return buildDryRunMapping({
       samplePayload: input.samplePayload ?? asString(config.samplePayload),
-      mappings: input.mappings ?? asMappingRows(config.mappings),
+      mappings,
     });
+  }
+
+  /**
+   * Re-queue one delivery and retry it inline. Tenant-scoped: a delivery of
+   * another tenant is a 404, never a replay.
+   */
+  async replayDelivery(
+    tenantId: string,
+    integrationId: string,
+    deliveryId: string,
+    userId?: string,
+  ) {
+    const delivery = await this.prisma.webhookDelivery.findFirst({
+      where: { id: deliveryId, tenantId, integrationId },
+      select: { id: true },
+    });
+    if (!delivery) throw new NotFoundException('Delivery not found');
+
+    // Conditional claim (TOCTOU): only a delivery that is NOT already queued can
+    // be re-queued, so two concurrent replays can't double-send, and we never
+    // steal a delivery the cron is about to pick up.
+    // `deliveredAt` is left untouched — it records the last successful delivery.
+    const claimed = await this.prisma.webhookDelivery.updateMany({
+      where: { id: delivery.id, tenantId, integrationId, status: { not: 'PENDING' } },
+      data: { status: 'PENDING', attempts: 0, nextAttemptAt: new Date(), lastError: null },
+    });
+    if (claimed.count === 0) {
+      throw new ConflictException('Delivery is already queued for another attempt');
+    }
+
+    await this.webhooks.attempt(delivery.id);
+    await this.audit.log({
+      tenantId,
+      userId: auditActor(userId),
+      action: AuditAction.UPDATE,
+      entityType: 'integration',
+      entityId: integrationId,
+      after: { action: 'replay', deliveryId: delivery.id },
+    });
+    return this.prisma.webhookDelivery.findUnique({ where: { id: delivery.id } });
+  }
+
+  /**
+   * Issues (or rotates) the inbound webhook token of an integration.
+   *
+   * The raw token is returned ONCE and never stored: only its sha256 lands in
+   * the indexed `inboundTokenHash` column, the same way API keys are handled.
+   * Re-issuing invalidates the previous token immediately (single active token
+   * per receiver). The audit trail records the rotation, never the secret.
+   *
+   * Authorization: `core.integrations.manage` (controller) AND the permission of
+   * the configured `config.target` (here) — see `assertInboundConfigAllowed`.
+   */
+  async issueInboundToken(tenantId: string, id: string, actor?: ConfiguringUser) {
+    const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
+    if (!integration) throw new NotFoundException('Integration not found');
+
+    // Handing a partner a token for this receiver grants it the target's write
+    // permission: the issuing user must hold that permission themselves (403).
+    const storedConfig = this.crypto.decryptJson<Record<string, unknown>>(integration.config);
+    this.assertInboundConfigAllowed(storedConfig, actor);
+    // An EDI receiver carries no `config.target`: its own gate applies here too
+    // (under the same `mentionsEdi` predicate), otherwise handing out a token
+    // would grant what saving the config refused.
+    await this.assertEdiConfigAllowed(tenantId, integration.key, storedConfig, actor);
+
+    const token = randomBytes(32).toString('base64url');
+    const inboundTokenHash = createHash('sha256').update(token).digest('hex');
+    await this.prisma.integration.update({
+      where: { id: integration.id },
+      data: { inboundTokenHash },
+    });
+
+    await this.audit.log({
+      tenantId,
+      userId: auditActor(actor?.id),
+      action: AuditAction.UPDATE,
+      entityType: 'integration',
+      entityId: integration.id,
+      after: { action: 'issue-inbound-token', rotated: integration.inboundTokenHash !== null },
+    });
+
+    const config = storedConfig;
+    const target = typeof config.target === 'string' ? config.target : null;
+    const apiUrl = this.config.get<string>('API_URL', 'http://localhost:3000').replace(/\/+$/, '');
+    return {
+      token,
+      url: `${apiUrl}/api/v1/public/hooks/${token}`,
+      target,
+      targetValid: target !== null && getInboundHookTarget(target) !== undefined,
+      signed: typeof config.inboundSecret === 'string' && config.inboundSecret.length > 0,
+      status: integration.status,
+    };
   }
 
   async listDeliveries(tenantId: string, integrationId: string) {

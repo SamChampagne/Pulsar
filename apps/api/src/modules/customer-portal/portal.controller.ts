@@ -1,128 +1,22 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
-import { MODULE_KEYS, PERMISSIONS, TransportMode } from '@pulsar/shared';
-import {
-  IsDateString, IsEnum, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Matches, MaxLength, Min,
-} from 'class-validator';
+import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
+import { IsOptional, IsString, Matches } from 'class-validator';
 import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { RequireModule } from '../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import {
+  CreateOrderTemplateDtoClass,
+  PortalChangeRequestDtoClass,
+  PortalOrderDto,
+  PortalOrdersQueryDto,
+  ShipmentCommentDto,
+} from './dto/portal.dto';
+import { PortalChangeRequestsService } from './portal-change-requests.service';
 import { PortalService } from './portal.service';
-import type { CreateOrderTemplateInput, PortalChangeRequestInput } from './portal.service';
-
-class PortalOrderDto {
-  @IsOptional()
-  @IsString()
-  originLocationId?: string;
-
-  @IsOptional()
-  @IsString()
-  destinationLocationId?: string;
-
-  @IsOptional()
-  @IsString()
-  customerReference?: string;
-
-  @IsOptional()
-  @IsDateString()
-  requestedPickupEarly?: string;
-
-  @IsOptional()
-  @IsDateString()
-  requestedPickupLate?: string;
-
-  @IsOptional()
-  @IsDateString()
-  requestedDeliveryEarly?: string;
-
-  @IsOptional()
-  @IsDateString()
-  requestedDeliveryLate?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  totalWeightKg?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  palletCount?: number;
-
-  @IsOptional()
-  @IsString()
-  notes?: string;
-
-  @IsOptional()
-  @IsEnum(TransportMode)
-  mode?: TransportMode;
-
-  @IsOptional()
-  @IsString()
-  templateId?: string;
-}
-
-class CreateOrderTemplateDtoClass implements CreateOrderTemplateInput {
-  @IsString()
-  name!: string;
-
-  @IsOptional()
-  @IsString()
-  originLocationId?: string;
-
-  @IsOptional()
-  @IsString()
-  destinationLocationId?: string;
-
-  @IsOptional()
-  @IsEnum(TransportMode)
-  mode?: TransportMode;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  totalWeightKg?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  totalVolumeM3?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  palletCount?: number;
-
-  @IsOptional()
-  @IsString()
-  notes?: string;
-}
-
-class PortalChangeRequestDtoClass implements PortalChangeRequestInput {
-  @IsOptional()
-  @IsString()
-  orderId?: string;
-
-  @IsOptional()
-  @IsString()
-  shipmentId?: string;
-
-  @IsIn(['DATE', 'ADDRESS', 'CANCEL', 'OTHER'])
-  kind!: string;
-
-  @IsString()
-  note!: string;
-}
-
-class ShipmentCommentDto {
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(2000)
-  body!: string;
-}
 
 class SetBrandingDto {
   @IsOptional()
@@ -131,7 +25,9 @@ class SetBrandingDto {
 
   @IsOptional()
   @IsString()
-  @Matches(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/, { message: 'accentColor must be a hex color (e.g. #RRGGBB)' })
+  @Matches(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/, {
+    message: 'accentColor must be a hex color (e.g. #RRGGBB)',
+  })
   accentColor?: string;
 }
 
@@ -176,7 +72,10 @@ export class PortalAdminController {
 @Public()
 @Controller('public/portal')
 export class PortalPublicController {
-  constructor(private readonly portal: PortalService) {}
+  constructor(
+    private readonly portal: PortalService,
+    private readonly changeRequests: PortalChangeRequestsService,
+  ) {}
 
   @Get(':token')
   view(@Param('token') token: string) {
@@ -189,16 +88,38 @@ export class PortalPublicController {
     return this.portal.createOrder(token, dto);
   }
 
+  /** Token twin of `GET /portal/orders` — same payload, same scoping. */
+  @Get(':token/orders')
+  listOrders(@Param('token') token: string, @Query() query: PortalOrdersQueryDto) {
+    return this.portal.listOrders(token, query);
+  }
+
+  @Get(':token/shipments/:shipmentId')
+  getShipment(@Param('token') token: string, @Param('shipmentId') shipmentId: string) {
+    return this.portal.getShipmentTracking(token, shipmentId);
+  }
+
   @Get(':token/invoices')
   listInvoices(@Param('token') token: string) {
     return this.portal.listInvoices(token);
   }
 
-  @Get(':token/shipments/:shipmentId/documents')
-  listShipmentDocuments(
+  @Get(':token/invoices/:invoiceId/pdf')
+  async downloadInvoicePdf(
     @Param('token') token: string,
-    @Param('shipmentId') shipmentId: string,
+    @Param('invoiceId') invoiceId: string,
+    @Res() res: Response,
   ) {
+    const { stream, fileName, mimeType } = await this.portal.downloadInvoicePdf(token, invoiceId);
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+    });
+    stream.pipe(res);
+  }
+
+  @Get(':token/shipments/:shipmentId/documents')
+  listShipmentDocuments(@Param('token') token: string, @Param('shipmentId') shipmentId: string) {
     return this.portal.listShipmentDocuments(token, shipmentId);
   }
 
@@ -208,7 +129,10 @@ export class PortalPublicController {
     @Param('documentId') documentId: string,
     @Res() res: Response,
   ) {
-    const { stream, fileName, mimeType } = await this.portal.downloadShipmentDocument(token, documentId);
+    const { stream, fileName, mimeType } = await this.portal.downloadShipmentDocument(
+      token,
+      documentId,
+    );
     res.set({
       'Content-Type': mimeType,
       'Content-Disposition': `attachment; filename="${fileName}"`,
@@ -222,34 +146,30 @@ export class PortalPublicController {
   }
 
   @Post(':token/templates')
-  createTemplate(
-    @Param('token') token: string,
-    @Body() dto: CreateOrderTemplateDtoClass,
-  ) {
+  createTemplate(@Param('token') token: string, @Body() dto: CreateOrderTemplateDtoClass) {
     return this.portal.createTemplate(token, dto);
   }
 
   @Delete(':token/templates/:id')
-  deleteTemplate(
-    @Param('token') token: string,
-    @Param('id') id: string,
-  ) {
+  deleteTemplate(@Param('token') token: string, @Param('id') id: string) {
     return this.portal.deleteTemplate(token, id);
   }
 
+  @Get(':token/change-requests')
+  async listChangeRequests(@Param('token') token: string) {
+    return this.changeRequests.listFor(await this.portal.contextFromToken(token));
+  }
+
   @Post(':token/change-requests')
-  createChangeRequest(
+  async createChangeRequest(
     @Param('token') token: string,
     @Body() dto: PortalChangeRequestDtoClass,
   ) {
-    return this.portal.createChangeRequest(token, dto);
+    return this.changeRequests.createFor(await this.portal.contextFromToken(token), dto);
   }
 
   @Get(':token/shipments/:shipmentId/comments')
-  listShipmentComments(
-    @Param('token') token: string,
-    @Param('shipmentId') shipmentId: string,
-  ) {
+  listShipmentComments(@Param('token') token: string, @Param('shipmentId') shipmentId: string) {
     return this.portal.listShipmentComments(token, shipmentId);
   }
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { COUNTRIES, regionsFor } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import {
@@ -13,7 +14,10 @@
     Field,
     Input,
     Select,
+    ReferenceSelect,
   } from '$lib/components/ui';
+
+  const COUNTRY_OPTIONS = COUNTRIES.map((c) => ({ value: c.code, label: c.name }));
 
   type EndpointType = 'LOCATION' | 'CITY' | 'STATE' | 'COUNTRY';
 
@@ -135,12 +139,31 @@
     return carriers.find((c) => c.id === id)?.name ?? id;
   }
 
+  /** Distinct cities across the tenant's locations, for the free-text city field. */
+  const cityOptions = $derived(
+    [...new Set(locations.map((l) => l.city).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+  );
+
+  const originRegions = $derived(
+    regionsFor(originCountry).map((r) => ({ value: r.code, label: r.name })),
+  );
+  const destinationRegions = $derived(
+    regionsFor(destinationCountry).map((r) => ({ value: r.code, label: r.name })),
+  );
+
+  function resetOriginState() {
+    originState = '';
+  }
+  function resetDestinationState() {
+    destinationState = '';
+  }
+
   // ─── Load ────────────────────────────────────────────────────────────────────
   async function load() {
     try {
       const [lanesRes, locsRes, carriersRes] = await Promise.all([
         api<Paginated<Lane>>('/transportation/lanes', { query: { pageSize: 100 } }),
-        api<Paginated<LocationOption>>('/transportation/locations', { query: { pageSize: 100 } }),
+        api<Paginated<LocationOption>>('/locations', { query: { pageSize: 100 } }),
         api<Paginated<CarrierOption>>('/transportation/carriers', { query: { pageSize: 100 } }),
       ]);
       lanes = lanesRes.items;
@@ -160,7 +183,13 @@
     try {
       const body: Record<string, unknown> = {
         originType,
-        origin: buildEndpointBody(originType, originLocationId, originCity, originState, originCountry),
+        origin: buildEndpointBody(
+          originType,
+          originLocationId,
+          originCity,
+          originState,
+          originCountry,
+        ),
         destinationType,
         destination: buildEndpointBody(
           destinationType,
@@ -269,7 +298,12 @@
 
 <PageHeader title="Corridors" count={total}>
   {#snippet actions()}
-    <Button onclick={() => { resetForm(); showForm = true; }}>Nouveau corridor</Button>
+    <Button
+      onclick={() => {
+        resetForm();
+        showForm = true;
+      }}>Nouveau corridor</Button
+    >
   {/snippet}
 </PageHeader>
 
@@ -287,39 +321,65 @@
   <Card>
     <EmptyState message="Aucun corridor défini pour le moment.">
       {#snippet children()}
-        <Button onclick={() => { resetForm(); showForm = true; }}>Nouveau corridor</Button>
+        <Button
+          onclick={() => {
+            resetForm();
+            showForm = true;
+          }}>Nouveau corridor</Button
+        >
       {/snippet}
     </EmptyState>
   </Card>
 {:else}
   <Table>
     {#snippet head()}
-      <th>Corridor</th><th>Origine</th><th>Destination</th><th>Préférences transporteurs</th><th></th>
+      <th>Corridor</th><th>Origine</th><th>Destination</th><th>Préférences transporteurs</th><th
+      ></th>
     {/snippet}
     {#snippet body()}
       {#each lanes as lane (lane.id)}
         <tr class="cursor-pointer" onclick={() => startEditCarriers(lane)}>
           <td><span class="font-semibold text-ink">{lane.name ?? '—'}</span></td>
           <td>
-            <span class="mr-1 rounded border border-edge px-1.5 font-mono text-[11px] text-neutral">{ENDPOINT_LABELS[lane.originType]}</span>
+            <span class="mr-1 rounded border border-edge px-1.5 font-mono text-[11px] text-neutral"
+              >{ENDPOINT_LABELS[lane.originType]}</span
+            >
             {endpointLabel(lane, 'origin')}
           </td>
           <td>
-            <span class="mr-1 rounded border border-edge px-1.5 font-mono text-[11px] text-neutral">{ENDPOINT_LABELS[lane.destinationType]}</span>
+            <span class="mr-1 rounded border border-edge px-1.5 font-mono text-[11px] text-neutral"
+              >{ENDPOINT_LABELS[lane.destinationType]}</span
+            >
             {endpointLabel(lane, 'destination')}
           </td>
           <td>
             {#if lane.carrierPreferences.length > 0}
-              <span class="text-sm text-ink">{lane.carrierPreferences.map((p) => p.carrier.name).join(', ')}</span>
-              <span class="ml-1 font-mono text-xs text-ink-muted">({lane.carrierPreferences.length})</span>
+              <span class="text-sm text-ink"
+                >{lane.carrierPreferences.map((p) => p.carrier.name).join(', ')}</span
+              >
+              <span class="ml-1 font-mono text-xs text-ink-muted"
+                >({lane.carrierPreferences.length})</span
+              >
             {:else}
               <span class="text-sm text-ink-faint">Aucune</span>
             {/if}
           </td>
           <td class="text-right">
             <div class="inline-flex gap-2">
-              <Button variant="secondary" onclick={(e: MouseEvent) => { e.stopPropagation(); startEditCarriers(lane); }}>Transporteurs</Button>
-              <Button variant="danger" onclick={(e: MouseEvent) => { e.stopPropagation(); deleteLane(lane.id); }}>Supprimer</Button>
+              <Button
+                variant="secondary"
+                onclick={(e: MouseEvent) => {
+                  e.stopPropagation();
+                  startEditCarriers(lane);
+                }}>Transporteurs</Button
+              >
+              <Button
+                variant="danger"
+                onclick={(e: MouseEvent) => {
+                  e.stopPropagation();
+                  deleteLane(lane.id);
+                }}>Supprimer</Button
+              >
             </div>
           </td>
         </tr>
@@ -337,7 +397,9 @@
       </Field>
 
       <fieldset class="space-y-2 rounded-inner border border-edge p-3">
-        <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Origine</legend>
+        <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase"
+          >Origine</legend
+        >
         <Field label="Niveau">
           <Select bind:value={originType}>
             {#each Object.keys(ENDPOINT_LABELS) as t (t)}
@@ -357,30 +419,56 @@
           </Field>
         {:else if originType === 'CITY'}
           <Field label="Ville">
-            <Input bind:value={originCity} required placeholder="Montréal" />
+            <input
+              bind:value={originCity}
+              required
+              list="lane-city-list"
+              placeholder="Montréal"
+              class="min-h-9 w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink transition-colors placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+            />
           </Field>
           <Field label="Province / État">
-            <Input bind:value={originState} required placeholder="QC" />
+            {#if originRegions.length}
+              <ReferenceSelect options={originRegions} bind:value={originState} required />
+            {:else}
+              <Input bind:value={originState} required placeholder="QC" />
+            {/if}
           </Field>
           <Field label="Pays">
-            <Input bind:value={originCountry} required placeholder="CA" />
+            <ReferenceSelect
+              options={COUNTRY_OPTIONS}
+              bind:value={originCountry}
+              onchange={resetOriginState}
+              required
+            />
           </Field>
         {:else if originType === 'STATE'}
           <Field label="Province / État">
-            <Input bind:value={originState} required placeholder="QC" />
+            {#if originRegions.length}
+              <ReferenceSelect options={originRegions} bind:value={originState} required />
+            {:else}
+              <Input bind:value={originState} required placeholder="QC" />
+            {/if}
           </Field>
           <Field label="Pays">
-            <Input bind:value={originCountry} required placeholder="CA" />
+            <ReferenceSelect
+              options={COUNTRY_OPTIONS}
+              bind:value={originCountry}
+              onchange={resetOriginState}
+              required
+            />
           </Field>
         {:else if originType === 'COUNTRY'}
           <Field label="Pays">
-            <Input bind:value={originCountry} required placeholder="CA" />
+            <ReferenceSelect options={COUNTRY_OPTIONS} bind:value={originCountry} />
           </Field>
         {/if}
       </fieldset>
 
       <fieldset class="space-y-2 rounded-inner border border-edge p-3">
-        <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Destination</legend>
+        <legend class="px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase"
+          >Destination</legend
+        >
         <Field label="Niveau">
           <Select bind:value={destinationType}>
             {#each Object.keys(ENDPOINT_LABELS) as t (t)}
@@ -400,27 +488,63 @@
           </Field>
         {:else if destinationType === 'CITY'}
           <Field label="Ville">
-            <Input bind:value={destinationCity} required placeholder="Toronto" />
+            <input
+              bind:value={destinationCity}
+              required
+              list="lane-city-list"
+              placeholder="Toronto"
+              class="min-h-9 w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink transition-colors placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+            />
           </Field>
           <Field label="Province / État">
-            <Input bind:value={destinationState} required placeholder="ON" />
+            {#if destinationRegions.length}
+              <ReferenceSelect
+                options={destinationRegions}
+                bind:value={destinationState}
+                required
+              />
+            {:else}
+              <Input bind:value={destinationState} required placeholder="ON" />
+            {/if}
           </Field>
           <Field label="Pays">
-            <Input bind:value={destinationCountry} required placeholder="CA" />
+            <ReferenceSelect
+              options={COUNTRY_OPTIONS}
+              bind:value={destinationCountry}
+              onchange={resetDestinationState}
+              required
+            />
           </Field>
         {:else if destinationType === 'STATE'}
           <Field label="Province / État">
-            <Input bind:value={destinationState} required placeholder="ON" />
+            {#if destinationRegions.length}
+              <ReferenceSelect
+                options={destinationRegions}
+                bind:value={destinationState}
+                required
+              />
+            {:else}
+              <Input bind:value={destinationState} required placeholder="ON" />
+            {/if}
           </Field>
           <Field label="Pays">
-            <Input bind:value={destinationCountry} required placeholder="CA" />
+            <ReferenceSelect
+              options={COUNTRY_OPTIONS}
+              bind:value={destinationCountry}
+              onchange={resetDestinationState}
+              required
+            />
           </Field>
         {:else if destinationType === 'COUNTRY'}
           <Field label="Pays">
-            <Input bind:value={destinationCountry} required placeholder="CA" />
+            <ReferenceSelect options={COUNTRY_OPTIONS} bind:value={destinationCountry} />
           </Field>
         {/if}
       </fieldset>
+
+      <datalist id="lane-city-list">
+        {#each cityOptions as city (city)}<option value={city}></option>{/each}
+      </datalist>
 
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
         <Button variant="secondary" onclick={resetForm}>Annuler</Button>
@@ -431,7 +555,12 @@
 </Modal>
 
 <!-- ─── Carrier preferences Modal ─────────────────────────────────────────────── -->
-<Modal bind:open={showCarrierPanel} title="Préférences — {carrierPanelLane?.name ?? '—'}" onclose={cancelEditCarriers} size="md">
+<Modal
+  bind:open={showCarrierPanel}
+  title="Préférences — {carrierPanelLane?.name ?? '—'}"
+  onclose={cancelEditCarriers}
+  size="md"
+>
   {#snippet children()}
     <div class="space-y-3">
       <Field label="Ajouter un transporteur">
@@ -451,18 +580,29 @@
       {#if editingCarrierIds.length > 0}
         <ol class="space-y-1">
           {#each editingCarrierIds as id, index (id)}
-            <li class="flex items-center justify-between rounded-inner border border-edge px-3 py-2 text-sm">
-              <span class="text-ink"><span class="font-mono text-ink-muted">{index + 1}.</span> {carrierName(id)}</span>
+            <li
+              class="flex items-center justify-between rounded-inner border border-edge px-3 py-2 text-sm"
+            >
+              <span class="text-ink"
+                ><span class="font-mono text-ink-muted">{index + 1}.</span> {carrierName(id)}</span
+              >
               <div class="flex gap-1">
                 <Button variant="secondary" onclick={() => move(index, -1)}>↑</Button>
                 <Button variant="secondary" onclick={() => move(index, 1)}>↓</Button>
-                <Button variant="danger" onclick={() => { editingCarrierIds = editingCarrierIds.filter((c) => c !== id); }}>✕</Button>
+                <Button
+                  variant="danger"
+                  onclick={() => {
+                    editingCarrierIds = editingCarrierIds.filter((c) => c !== id);
+                  }}>✕</Button
+                >
               </div>
             </li>
           {/each}
         </ol>
       {:else}
-        <p class="text-sm text-ink-faint">Aucun transporteur dans la liste — enregistrer pour vider les préférences.</p>
+        <p class="text-sm text-ink-faint">
+          Aucun transporteur dans la liste — enregistrer pour vider les préférences.
+        </p>
       {/if}
 
       <div class="flex justify-end gap-2 border-t border-edge pt-3">

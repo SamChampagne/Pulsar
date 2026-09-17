@@ -13,16 +13,11 @@
     Select,
     Skeleton,
     ErrorNotice,
+    EntityPicker,
     Drawer,
     Modal,
   } from '$lib/components/ui';
-  import {
-    CrmDealStage,
-    isDealOpen,
-    PERMISSIONS,
-    type CrmSequenceStep,
-    type Paginated,
-  } from '@pulsar/shared';
+  import { CrmDealStage, isDealOpen, PERMISSIONS, type CrmSequenceStep } from '@pulsar/shared';
   import PipelineEditor from '$lib/components/crm/PipelineEditor.svelte';
   import StageAutomation from '$lib/components/crm/StageAutomation.svelte';
   type Stage = { id: string; name: string; kind: CrmDealStage };
@@ -65,10 +60,7 @@
     pipelineName = $state('');
   let createStage = $state(''),
     dealTitle = $state(''),
-    companyId = $state(''),
-    companySearch = $state('');
-  let companies = $state<{ id: string; name: string }[]>([]),
-    companyTotal = $state(0);
+    companyId = $state('');
   let dragging = $state<{ id: string; from: string; revision: number } | null>(null),
     target = $state('');
   let editorBusy = $state(false),
@@ -185,17 +177,6 @@
       }).format(Number(amount));
     } catch {
       return String(amount) + ' ' + currency;
-    }
-  }
-  async function findCompanies() {
-    try {
-      const result = await api<Paginated<{ id: string; name: string }>>('/crm/companies', {
-        query: { search: companySearch, pageSize: 100 },
-      });
-      companies = result.items;
-      companyTotal = result.total;
-    } catch (e) {
-      error = (e as Error).message;
     }
   }
   async function quickCreate() {
@@ -342,20 +323,13 @@
       <div class="grid gap-3 md:grid-cols-2">
         <Field label="Titre de l’opportunité"><Input bind:value={dealTitle} required /></Field
         ><Field label="Entreprise CRM"
-          ><Select bind:value={companyId} required
-            ><option value="">Choisir une entreprise</option>{#each companies as company}<option
-                value={company.id}>{company.name}</option
-              >{/each}</Select
-          ></Field
+          ><EntityPicker
+            endpoint="/crm/companies"
+            label="Entreprise CRM"
+            labelKey="name"
+            bind:value={companyId}
+          /></Field
         >
-      </div>
-      <div class="flex flex-wrap items-end gap-2">
-        <Field label="Rechercher une entreprise"><Input bind:value={companySearch} /></Field><Button
-          variant="secondary"
-          onclick={findCompanies}>Rechercher</Button
-        >{#if companyTotal > 100}<span class="text-xs text-ink-muted"
-            >100 sur {companyTotal} : affinez la recherche.</span
-          >{/if}
       </div>
       <p class="text-sm text-ink-muted">
         Vous choisirez le contact principal sur la fiche. Aucun suivi ne démarre sans destinataire à
@@ -491,7 +465,6 @@
                   createStage = col.id;
                   dealTitle = '';
                   companyId = '';
-                  void findCompanies();
                 }}>Ajouter une opportunité</Button
               >{/if}
           </div>

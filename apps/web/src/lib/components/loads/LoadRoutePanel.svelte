@@ -4,6 +4,7 @@
   import LoadMap from '$lib/components/LoadMap.svelte';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import { formatDateTime } from '$lib/format';
   import type { RouteDetail, EditStop, LoadDetail } from './types';
 
   interface Props {
@@ -24,7 +25,8 @@
 
   // Derive map stops from route for LoadMap
   const mapStops = $derived(
-    route?.stops.map((s) => ({ sequence: s.sequence, locationId: s.locationId, type: s.type })) ?? [],
+    route?.stops.map((s) => ({ sequence: s.sequence, locationId: s.locationId, type: s.type })) ??
+      [],
   );
 
   function toLocalInput(value: string | null): string {
@@ -157,14 +159,24 @@
     </div>
     <div class="flex flex-col gap-2">
       {#each editStops as stop, index (index)}
-        <div class="grid grid-cols-[90px_1fr_auto_80px] items-center gap-2 border-b border-edge py-2 text-sm">
+        <div
+          class="grid grid-cols-[90px_1fr_auto_80px] items-center gap-2 border-b border-edge py-2 text-sm"
+        >
           <span class="text-ink-muted">#{index + 1} {stop.type}</span>
           <span>{stop.label}</span>
           <div class="flex flex-wrap items-center gap-1">
             <span class="text-xs text-ink-muted whitespace-nowrap">Arrival from</span>
-            <input type="datetime-local" bind:value={stop.plannedArrivalEarly} class="rounded border border-edge bg-surface px-1.5 py-0.5 text-xs text-ink" />
+            <input
+              type="datetime-local"
+              bind:value={stop.plannedArrivalEarly}
+              class="rounded border border-edge bg-surface px-1.5 py-0.5 text-xs text-ink"
+            />
             <span class="text-xs text-ink-muted">to</span>
-            <input type="datetime-local" bind:value={stop.plannedArrivalLate} class="rounded border border-edge bg-surface px-1.5 py-0.5 text-xs text-ink" />
+            <input
+              type="datetime-local"
+              bind:value={stop.plannedArrivalLate}
+              class="rounded border border-edge bg-surface px-1.5 py-0.5 text-xs text-ink"
+            />
           </div>
           <span class="flex gap-1">
             <Button variant="secondary" onclick={() => moveStop(index, -1)}>↑</Button>
@@ -175,7 +187,12 @@
     </div>
     <div class="mt-3 flex gap-2">
       <Button variant="primary" onclick={saveRoute}>Save route</Button>
-      <Button variant="secondary" onclick={() => { editingRoute = false; }}>Cancel</Button>
+      <Button
+        variant="secondary"
+        onclick={() => {
+          editingRoute = false;
+        }}>Cancel</Button
+      >
     </div>
   {:else if route}
     {#if route.totalDistanceKm != null || route.estimatedDurationMin != null}
@@ -213,7 +230,9 @@
               <td class="py-2 pr-2">{stop.location.name}, {stop.location.city}</td>
               <td class="py-2 pr-2 text-xs text-ink-muted">
                 {#if stop.plannedArrivalEarly}
-                  {new Date(stop.plannedArrivalEarly).toLocaleString()}{stop.plannedArrivalLate ? ' → ' + new Date(stop.plannedArrivalLate).toLocaleString() : ''}
+                  {formatDateTime(stop.plannedArrivalEarly)}{stop.plannedArrivalLate
+                    ? ' → ' + formatDateTime(stop.plannedArrivalLate)
+                    : ''}
                 {:else}
                   —
                 {/if}
@@ -223,9 +242,13 @@
               </td>
               <td class="py-2 text-right whitespace-nowrap">
                 {#if executing && stop.status === 'PENDING'}
-                  <Button variant="primary" onclick={() => stopAction(stop.id, 'ARRIVED')}>Arrive</Button>
+                  <Button variant="primary" onclick={() => stopAction(stop.id, 'ARRIVED')}
+                    >Arrive</Button
+                  >
                 {:else if executing && stop.status === 'ARRIVED'}
-                  <Button variant="primary" onclick={() => stopAction(stop.id, 'DEPARTED')}>Depart</Button>
+                  <Button variant="primary" onclick={() => stopAction(stop.id, 'DEPARTED')}
+                    >Depart</Button
+                  >
                 {/if}
               </td>
             </tr>

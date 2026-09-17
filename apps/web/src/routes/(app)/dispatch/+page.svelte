@@ -2,6 +2,7 @@
   import type { Paginated } from '@pulsar/shared';
   import { suggestConsolidations, DEFAULT_TRAILER_CAPACITY } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { formatDate, formatTime } from '$lib/format';
   import { Badge, Card, PageHeader, type Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
   import DispatchBacklog from '$lib/components/dispatch/DispatchBacklog.svelte';
@@ -262,13 +263,11 @@
   }
 
   function fmtDate(value: string | null | undefined) {
-    if (!value) return '—';
-    return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return formatDate(value);
   }
 
   function fmtTime(value: string | null | undefined) {
-    if (!value) return '—';
-    return new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    return formatTime(value);
   }
 
   function statusTone(status: string): 'neutral' | 'info' | 'ok' | 'warn' | 'danger' {

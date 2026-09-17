@@ -1,6 +1,7 @@
 import { PartialType } from '@nestjs/swagger';
 import { LocationType } from '@pulsar/shared';
 import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
+import { ListQueryDto } from '../../../common/dto/list-query.dto';
 
 export class CreateLocationDto {
   @IsString()
@@ -55,4 +56,10 @@ export class UpdateLocationDto extends PartialType(CreateLocationDto) {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+}
+
+export class LocationsListQueryDto extends ListQueryDto {
+  @IsOptional()
+  @IsEnum(LocationType)
+  type?: LocationType;
 }

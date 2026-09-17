@@ -130,7 +130,10 @@ async function setup(page: Page, url = '/yard') {
     if (r.request().method() !== 'GET')
       return r.fulfill({ status: 500, json: { message: 'Aucune mutation WMS dans ce test.' } });
     const path = new URL(r.request().url()).pathname;
-    if (path.endsWith('/wms/sites')) return r.fulfill({ json: { items: [{ ...site, type: 'WAREHOUSE' }], total: 1, page: 1, pageSize: 100 } });
+    if (path.endsWith('/wms/sites'))
+      return r.fulfill({
+        json: { items: [{ ...site, type: 'WAREHOUSE' }], total: 1, page: 1, pageSize: 100 },
+      });
     if (path.endsWith('/receipts/linked-receipt'))
       return r.fulfill({
         json: {
@@ -192,7 +195,7 @@ test('legacy gate inherits the booked direction and resets an incompatible site 
     await page.route(`**/api/v1/transportation/${entity}?**`, (r) =>
       r.fulfill({ json: { items: [], total: 0 } }),
     );
-  await page.route('**/api/v1/transportation/locations?**', (r) =>
+  await page.route('**/api/v1/locations?**', (r) =>
     r.fulfill({
       json: {
         items: [
@@ -211,7 +214,13 @@ test('legacy gate inherits the booked direction and resets an incompatible site 
     'OUTBOUND',
   );
   await expect(page.getByRole('combobox', { name: 'Direction', exact: true })).toBeDisabled();
-  await page.getByRole('combobox', { name: 'Site', exact: true }).selectOption('other-site');
+  // Site is a search picker (entity picker), not a native select — open it and
+  // choose the other warehouse from its option list.
+  await page.getByRole('button', { name: /^Site :/ }).click();
+  await page
+    .getByRole('dialog', { name: 'Site', exact: true })
+    .getByRole('option', { name: /Autre site/ })
+    .click();
   await expect(
     page.getByRole('combobox', { name: 'Rendez-vous (optionnel)', exact: true }),
   ).toHaveValue('');

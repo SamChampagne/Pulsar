@@ -23,6 +23,8 @@
   import WarehouseZones from '$lib/components/wms/WarehouseZones.svelte';
   import WarehouseFlow from '$lib/components/wms/WarehouseFlow.svelte';
   import WarehouseBinDrawer from '$lib/components/wms/WarehouseBinDrawer.svelte';
+  import LocationFormModal from '$lib/components/locations/LocationFormModal.svelte';
+  import type { LocationRecord } from '$lib/components/locations/types';
   let siteId = $state(''),
     initialized = $state(false),
     query = $state(''),
@@ -34,17 +36,26 @@
   let binId = $state(''),
     generation = 0,
     pendingBin = '';
+  let sitesEmpty = $state(false);
+  let showCreateSite = $state(false);
   const yard = $derived(
     !!$auth?.tenant.enabledModules.includes(MODULE_KEYS.YARD) &&
       !!$auth?.user.permissions.includes(PERMISSIONS.YARD.READ),
   );
   const canManage = $derived(!!$auth?.user.permissions.includes(PERMISSIONS.WMS.MANAGE));
+  const canManageLocations = $derived(
+    !!$auth?.user.permissions.includes(PERMISSIONS.CORE.LOCATIONS_MANAGE),
+  );
+  const canReadLocations = $derived(
+    !!$auth?.user.permissions.includes(PERMISSIONS.CORE.LOCATIONS_READ),
+  );
   async function init() {
     initError = '';
     loading = true;
     try {
       const params = new URL(window.location.href).searchParams;
       const sites = await api<Paginated<WmsSite>>('/wms/sites');
+      sitesEmpty = sites.total === 0;
       pendingBin = params.get('bin') ?? '';
       siteId = params.get('site') ?? sites.items[0]?.id ?? '';
       initialized = true;
@@ -53,6 +64,11 @@
     } finally {
       loading = false;
     }
+  }
+  async function onSiteCreated(loc: LocationRecord) {
+    showCreateSite = false;
+    await init();
+    siteId = loc.id;
   }
   async function load() {
     const id = siteId,
@@ -144,6 +160,14 @@
     <p class="mb-1.5 text-xs font-medium text-ink-muted">Site de travail</p>
     <EntityPicker endpoint="/wms/sites" label="Entrepôt" bind:value={siteId} disabled={!!binId} />
   </div>
+  {#if canManageLocations}
+    <Button
+      variant="secondary"
+      onclick={() => {
+        showCreateSite = true;
+      }}>+ Entrepôt</Button
+    >
+  {/if}
   <Button variant="secondary" disabled={loading || !siteId || !!binId} onclick={load}
     >Actualiser</Button
   >
@@ -163,6 +187,26 @@
   />
 </div>
 {#if loading && !data}<Skeleton rows={8} />
+{:else if !error && !initError && !siteId && sitesEmpty}<Card
+    ><EmptyState
+      title="Aucun entrepôt"
+      message={canManageLocations
+        ? 'Créez votre premier entrepôt pour commencer à réceptionner, ranger et préparer.'
+        : 'Demandez à un administrateur de créer un lieu de type entrepôt.'}
+    >
+      {#snippet children()}
+        {#if canManageLocations}
+          <Button
+            onclick={() => {
+              showCreateSite = true;
+            }}>Créer un entrepôt</Button
+          >
+        {:else if canReadLocations}
+          <Button variant="secondary" href="/locations">Voir les lieux</Button>
+        {/if}
+      {/snippet}
+    </EmptyState></Card
+  >
 {:else if !error && !initError && !siteId}<Card
     ><EmptyState
       title="Choisissez un entrepôt"
@@ -257,3 +301,9 @@
       await load();
     }}
   />{/if}
+<LocationFormModal
+  bind:open={showCreateSite}
+  location={null}
+  lockedType="WAREHOUSE"
+  oncreated={onSiteCreated}
+/>

@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 
 // Minimal fake dependencies — the gates fire before any other dependency is used.
@@ -48,5 +48,59 @@ describe('AuthService.issueSession — status gates', () => {
       tenant: { id: 't1', slug: 'acme', name: 'Acme', status: 'SUSPENDED' },
     });
     await expect(service.issueSession('u1')).rejects.toThrow(UnauthorizedException);
+  });
+});
+
+// Fresh, unused, unexpired token record — the shape resetPassword expects
+// past its initial validity gate.
+function liveTokenRecord() {
+  return {
+    id: 'tok1',
+    userId: 'u1',
+    usedAt: null,
+    expiresAt: new Date(Date.now() + 3600_000),
+  };
+}
+
+function makeResetPasswordService(opts: { tokenRecord: unknown; userStatus: string | null }) {
+  const fakePrisma = {
+    userActionToken: {
+      findUnique: async () => opts.tokenRecord,
+      update: async (_args: unknown) => ({}),
+    },
+    user: {
+      findUnique: async () => (opts.userStatus === null ? null : { status: opts.userStatus }),
+      update: async (_args: unknown) => ({}),
+    },
+    refreshToken: {
+      updateMany: async (_args: unknown) => ({ count: 0 }),
+    },
+    $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),
+  };
+  const fakeJwt = {};
+  const fakeConfig = {};
+  const fakeAudit = {};
+  const fakeEmail = {};
+
+  return new AuthService(
+    fakePrisma as never,
+    fakeJwt as never,
+    fakeConfig as never,
+    fakeAudit as never,
+    fakeEmail as never,
+  );
+}
+
+describe('AuthService.resetPassword — finding 1(b): disabled accounts', () => {
+  it('rejects with BadRequestException before writing anything when the token owner is DISABLED', async () => {
+    const service = makeResetPasswordService({ tokenRecord: liveTokenRecord(), userStatus: 'DISABLED' });
+    await expect(service.resetPassword('sometoken', 'new-Passw0rd!')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('still succeeds for a live token whose user is not disabled', async () => {
+    const service = makeResetPasswordService({ tokenRecord: liveTokenRecord(), userStatus: 'INVITED' });
+    await expect(service.resetPassword('sometoken', 'new-Passw0rd!')).resolves.toEqual({ ok: true });
   });
 });

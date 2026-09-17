@@ -6,6 +6,7 @@
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     Field,
     FilterBar,
     Input,
@@ -465,7 +466,15 @@
             <Input bind:value={formCode} disabled={Boolean(editId)} placeholder="NOM-001" />
           </Field>
           <Field label="Produit">
-            <Input bind:value={formProductRef} placeholder="SKU WMS exact" />
+            <EntityPicker
+              endpoint="/wms/choices/items"
+              label="Produit"
+              placeholder="Optionnel"
+              labelKey="name"
+              valueKey="sku"
+              selectedLabel={formProductRef}
+              bind:value={formProductRef}
+            />
           </Field>
         </div>
         <Field label="Nom">
@@ -511,7 +520,14 @@
             <div class="space-y-2 rounded-md border border-edge bg-surface-muted p-3">
               <div class="grid grid-cols-3 gap-2">
                 <Field label="Référence matière">
-                  <Input bind:value={lineRef} placeholder="MAT-001" />
+                  <EntityPicker
+                    endpoint="/wms/choices/items"
+                    label="Référence matière"
+                    placeholder="MAT-001"
+                    labelKey="name"
+                    valueKey="sku"
+                    bind:value={lineRef}
+                  />
                 </Field>
                 <Field label="Désignation">
                   <Input bind:value={lineName} placeholder="Optionnel" />

@@ -35,6 +35,24 @@ describe('assertProductionSecrets', () => {
     ).toThrow(/JWT_SECRET/);
   });
 
+  it('refuses production with the private-URL webhook escape hatch on', () => {
+    expect(() =>
+      assertProductionSecrets({
+        NODE_ENV: 'production',
+        PLATFORM_ADMIN_PASSWORD: 'S0lid-P@ss',
+        WEBHOOK_ALLOW_PRIVATE_URLS: 'true',
+      }),
+    ).toThrow(/WEBHOOK_ALLOW_PRIVATE_URLS/);
+    // Only the literal 'true' arms the hatch — anything else is inert.
+    expect(() =>
+      assertProductionSecrets({
+        NODE_ENV: 'production',
+        PLATFORM_ADMIN_PASSWORD: 'S0lid-P@ss',
+        WEBHOOK_ALLOW_PRIVATE_URLS: 'false',
+      }),
+    ).not.toThrow();
+  });
+
   it('boots in production with real secrets', () => {
     expect(() =>
       assertProductionSecrets({

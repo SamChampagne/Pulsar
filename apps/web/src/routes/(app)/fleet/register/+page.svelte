@@ -2,6 +2,7 @@
   import { confirmAction } from '$lib/stores/confirmation';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { formatDate } from '$lib/format';
   import {
     Badge,
     Button,
@@ -148,7 +149,7 @@
   }
 
   function fmtDate(d: string | null): string {
-    return d ? new Date(d).toLocaleDateString() : '—';
+    return formatDate(d);
   }
 
   // Internal fleet = no carrier assigned.
@@ -214,13 +215,13 @@
   function intervalLabel(s: Schedule): string {
     const parts: string[] = [];
     if (s.intervalDays) parts.push(`${s.intervalDays} j`);
-    if (s.intervalKm) parts.push(`${s.intervalKm.toLocaleString()} km`);
+    if (s.intervalKm) parts.push(`${s.intervalKm.toLocaleString('fr-CA')} km`);
     return parts.join(' · ') || '—';
   }
   function nextDueLabel(s: Schedule): string {
     const parts: string[] = [];
     if (s.due.nextDueDate) parts.push(fmtDate(s.due.nextDueDate));
-    if (s.due.nextDueKm != null) parts.push(`${s.due.nextDueKm.toLocaleString()} km`);
+    if (s.due.nextDueKm != null) parts.push(`${s.due.nextDueKm.toLocaleString('fr-CA')} km`);
     return parts.join(' · ') || '—';
   }
 

@@ -169,7 +169,7 @@ async function moveForm(page: Page) {
   await p.getByRole('button', { name: /^Destination :/ }).click();
   await page
     .getByRole('dialog', { name: 'Destination', exact: true })
-    .getByRole('button', { name: 'A-01 · Allée A', exact: true })
+    .getByRole('option', { name: 'A-01 · Allée A', exact: true })
     .click();
   await p.getByRole('spinbutton', { name: 'Quantité (EA)', exact: true }).fill('4');
   return p;
@@ -318,7 +318,7 @@ test('warehouse selection and empty-site setup never reuse the other site stock'
   await page.getByRole('button', { name: 'Entrepôt : Centre Laval', exact: true }).click();
   await page
     .getByRole('dialog', { name: 'Entrepôt', exact: true })
-    .getByRole('button', { name: 'Centre Lévis', exact: true })
+    .getByRole('option', { name: 'Centre Lévis', exact: true })
     .click();
   await expect(page.getByText('Aucun emplacement configuré', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Emplacement RC-01 — Avec stock' })).toHaveCount(0);

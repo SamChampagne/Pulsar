@@ -14,15 +14,19 @@
     Textarea,
   } from '$lib/components/ui';
   import {
+    LEGACY_WEBHOOK_EVENTS,
     PERMISSIONS,
+    WEBHOOK_FORMATS,
     buildIntegrationRoadmap,
     inferIntegrationKind,
     integrationAttentionRank,
     summarizeIntegrationReadiness,
+    type DomainEventCatalogEntry,
     type IntegrationKind,
     type IntegrationConnectorStatus,
     type IntegrationOperationsInput,
     type IntegrationSeverity,
+    type WebhookFormat,
   } from '@pulsar/shared';
 
   type IntegrationRecord = IntegrationOperationsInput & {
@@ -288,6 +292,8 @@
     mappings: IntegrationMapping[];
     samplePayload: string;
     notes: string;
+    format: WebhookFormat;
+    events: string[];
   };
 
   let integrations = $state<IntegrationRecord[]>([]);
@@ -300,6 +306,7 @@
   let form = $state<IntegrationForm>(blankForm('erp'));
   let connectionReport = $state<ConnectionTestReport | null>(null);
   let dryRunReport = $state<DryRunReport | null>(null);
+  let eventCatalog = $state<DomainEventCatalogEntry[]>([]);
 
   const canManage = $derived(
     $auth?.user.permissions.includes(PERMISSIONS.CORE.INTEGRATIONS_MANAGE) ?? false,
@@ -359,6 +366,12 @@
       mappings: defaultMappings(kind),
       samplePayload: defaultSample(kind),
       notes: '',
+      format: 'json',
+      // Seeded with the legacy 6-event TMS allowlist, not `[]` — an empty
+      // allowlist means "every catalog event" (portal notes, PII-adjacent
+      // events included), which must stay an explicit user choice (the
+      // « Tout » toggle below), never a silent default on a new webhook.
+      events: kind === 'webhook' ? [...LEGACY_WEBHOOK_EVENTS] : [],
     };
   }
 
@@ -386,6 +399,13 @@
   function stringArrayConfig(config: Record<string, unknown> | undefined, key: string): string[] {
     const raw = config?.[key];
     return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === 'string') : [];
+  }
+
+  function formatFromConfig(config: Record<string, unknown> | undefined): WebhookFormat {
+    const raw = config?.format;
+    return (WEBHOOK_FORMATS as readonly string[]).includes(raw as string)
+      ? (raw as WebhookFormat)
+      : 'json';
   }
 
   function mappingsFromConfig(
@@ -476,6 +496,8 @@
       mappings: mappingsFromConfig(integration.config, kind),
       samplePayload: stringConfig(integration.config, 'samplePayload') || defaultSample(kind),
       notes: stringConfig(integration.config, 'notes'),
+      format: formatFromConfig(integration.config),
+      events: stringArrayConfig(integration.config, 'events'),
     };
     formOpen = true;
     notice = '';
@@ -493,6 +515,9 @@
     form.schedule = kind === 'webhook' ? 'webhook' : 'manual';
     form.mappings = defaultMappings(kind);
     form.samplePayload = defaultSample(kind);
+    // Re-seed the legacy allowlist when (re)picking "webhook" during creation —
+    // same reasoning as blankForm: never default a new connector to "all events".
+    form.events = kind === 'webhook' ? [...LEGACY_WEBHOOK_EVENTS] : [];
     if (!form.name) form.name = template.label;
     if (!form.id) form.key = slugify(form.name || kind);
   }
@@ -531,6 +556,19 @@
     form.mappings = form.mappings.filter((_, mappingIndex) => mappingIndex !== index);
   }
 
+  function toggleEvent(type: string) {
+    form.events = form.events.includes(type)
+      ? form.events.filter((item) => item !== type)
+      : [...form.events, type];
+  }
+
+  // An empty allowlist means "diffuse every catalog event" server-side —
+  // this must only ever happen through this explicit toggle, never as a
+  // silent default (blankForm/setKind always seed the legacy 6-event list).
+  function toggleAllEvents() {
+    form.events = form.events.length === 0 ? [...LEGACY_WEBHOOK_EVENTS] : [];
+  }
+
   function compactConfig() {
     const config: Record<string, unknown> = {
       kind: form.kind,
@@ -541,6 +579,10 @@
       schedule: form.schedule,
       mappings: form.mappings.filter((mapping) => mapping.source || mapping.target),
     };
+    if (form.kind === 'webhook') {
+      config.format = form.format;
+      config.events = form.events;
+    }
     for (const key of [
       'endpointUrl',
       'apiKey',
@@ -560,7 +602,10 @@
     loading = true;
     error = '';
     try {
-      integrations = await api<IntegrationRecord[]>('/integrations');
+      [integrations, eventCatalog] = await Promise.all([
+        api<IntegrationRecord[]>('/integrations'),
+        api<DomainEventCatalogEntry[]>('/integrations/events'),
+      ]);
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Failed to load integrations';
     } finally {
@@ -976,6 +1021,82 @@
                 </Select>
               </label>
             </div>
+            {#if form.kind === 'webhook'}
+              <div class="mt-4 rounded-xl bg-surface-muted p-3">
+                <label class="space-y-1 text-xs font-semibold text-ink-muted">
+                  Format du corps
+                  <Select bind:value={form.format}>
+                    {#each WEBHOOK_FORMATS as fmt (fmt)}
+                      <option value={fmt}
+                        >{fmt === 'json'
+                          ? 'JSON — enveloppe Pulsar'
+                          : fmt === 'slack'
+                            ? 'Slack — webhook entrant'
+                            : fmt === 'teams'
+                              ? 'Teams — MessageCard'
+                              : 'EDI X12 — texte brut'}</option
+                      >
+                    {/each}
+                  </Select>
+                </label>
+                <p class="mt-2 text-[11px] leading-4 text-ink-faint">
+                  Le format ne change pas d’adaptateur : c’est la même livraison, mise en forme pour
+                  l’endpoint cible.
+                </p>
+              </div>
+              <div class="mt-3 rounded-xl bg-surface-muted p-3">
+                <div class="flex items-center justify-between gap-2">
+                  <p class="text-xs font-bold text-ink">Événements diffusés</p>
+                  <label
+                    class="flex shrink-0 items-center gap-1.5 text-[11px] font-semibold text-ink-muted"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.events.length === 0}
+                      onchange={toggleAllEvents}
+                    />
+                    Tout
+                  </label>
+                </div>
+                {#if form.events.length === 0}
+                  <p class="mt-1 text-[11px] leading-4 text-warn">
+                    Attention : tous les événements du catalogue seront diffusés, y compris les
+                    notes du portail client et tout futur événement — décochez « Tout » pour revenir
+                    à une liste précise.
+                  </p>
+                {:else}
+                  <p class="mt-1 text-[11px] leading-4 text-ink-faint">
+                    Seuls les événements cochés ci-dessous sont diffusés.
+                  </p>
+                {/if}
+                {#if form.events.length === 0}
+                  <!-- "Tout" is active — the per-event list is moot until it's turned off. -->
+                {:else if eventCatalog.length === 0}
+                  <p class="mt-2 text-xs text-ink-muted">Catalogue d’événements indisponible.</p>
+                {:else}
+                  <div class="mt-2 grid max-h-56 gap-1 overflow-y-auto pr-1">
+                    {#each eventCatalog as entry (entry.type)}
+                      <label
+                        class="flex items-start gap-2 rounded-lg bg-surface px-2 py-2 text-xs text-ink-muted"
+                      >
+                        <input
+                          type="checkbox"
+                          class="mt-0.5"
+                          checked={form.events.includes(entry.type)}
+                          onchange={() => toggleEvent(entry.type)}
+                        />
+                        <span>
+                          <span class="block font-mono text-[11px] font-semibold text-ink"
+                            >{entry.type}</span
+                          >
+                          <span class="block text-[11px] text-ink-faint">{entry.description}</span>
+                        </span>
+                      </label>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/if}
           </section>
 
           <section class="rounded-2xl border border-edge p-4">

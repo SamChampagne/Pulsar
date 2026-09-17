@@ -181,7 +181,7 @@ for (const kind of ['receipt', 'pick-order'] as const) {
     await p.getByRole('button', { name: /^Emplacement :/ }).click();
     await page
       .getByRole('dialog', { name: 'Emplacement', exact: true })
-      .getByRole('button', { name: 'A-02 · Allée A', exact: true })
+      .getByRole('option', { name: 'A-02 · Allée A', exact: true })
       .click();
     await p.getByRole('button', { name: 'Enregistrer la ligne' }).click();
     await expect(p.getByRole('alert')).toContainText('bloqué');
@@ -245,11 +245,11 @@ test('add-line search is server-backed and has no stock side effect', async ({ p
   );
   await picker.getByRole('textbox', { name: 'Rechercher : article' }).fill('VIS');
   await request;
-  await picker.getByRole('button', { name: 'VIS — Visserie · EA', exact: true }).click();
+  await picker.getByRole('option', { name: 'VIS — Visserie · EA', exact: true }).click();
   await p.getByRole('button', { name: /^Emplacement :/ }).click();
   await page
     .getByRole('dialog', { name: 'Emplacement', exact: true })
-    .getByRole('button', { name: 'R-01 · Réception', exact: true })
+    .getByRole('option', { name: 'R-01 · Réception', exact: true })
     .click();
   await p.getByRole('spinbutton', { name: 'Quantité (EA)' }).fill('0.125');
   await expect(p).toContainText('ne modifie aucun stock');

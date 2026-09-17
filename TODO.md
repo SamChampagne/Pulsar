@@ -83,6 +83,7 @@ Contrats, migration et preuves : [finance-connected-flow.md](docs/plans/finance-
 ## Phase 1 — Usable TMS happy path
 
 ### API
+
 - [x] Per-tenant number sequences (TO/SH/LD) — atomic `number_sequences` table
       (`SequencesService`)
 - [x] Validate tenant ownership of all referenced ids in write payloads (`OwnershipService`)
@@ -93,6 +94,7 @@ Contrats, migration et preuves : [finance-connected-flow.md](docs/plans/finance-
 - [ ] Standardized error codes (machine-readable `code` field alongside message)
 
 ### Web
+
 - [x] Transport order detail page (shipments, timeline, actions)
 - [x] Shipments page with "assign to load" flow (pick existing load or create one)
 - [x] Loads page: list + detail (assign resources, dispatch/start-transit/complete/cancel)
@@ -272,7 +274,7 @@ Contrats, migration et preuves : [finance-connected-flow.md](docs/plans/finance-
       lignes cascade à la suppression de la facture, RESTRICT sur l'ordre)
 - [x] Séquence CINV (`customer-invoice`) via `SequencesService.nextNumber`
 - [x] Seed : taux client démo FLAT 1 450 CAD (lane city, rattaché au customer de démo)
-- [x] `RatingService.rateOrder` : taux *client* uniquement (`customerId`), correspondance lane ou
+- [x] `RatingService.rateOrder` : taux _client_ uniquement (`customerId`), correspondance lane ou
       catch-all client, date de référence = dernier `actualDeliveryAt` des shipments sinon today,
       évaluation via `compareRateOptions` → le moins cher retenu
 - [x] `CustomerInvoicesService` : preview billable (`ratable` / `unratable: NO_APPLICABLE_RATE`),
@@ -385,6 +387,7 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
 ## Phase 11 (palier 1) — Agent governance + MCP exposure
 
 ### Shared + DB
+
 - [x] `@pulsar/shared` agent vocabulary: `RiskTier`/`AgentStatus`/`ProposalStatus` enums +
       pure helpers `isExecutableLive`/`evaluateAmountCap`/`evaluateRateCap`/`deriveIdempotencyKey`
       (vitest, browser-safe — `node:crypto` resolved lazily)
@@ -392,6 +395,7 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
 - [x] Prisma `Agent` + `ProposedAction` models (+ 3 enums), 18th migration
 
 ### API
+
 - [x] `AgentsService` — register/list/revoke + one hidden DISABLED service-user per agent +
       `validateKey` → `AgentPrincipal` (rule 13)
 - [x] `AgentsController` — JWT-auth CRUD (`agents.read`/`agents.manage`)
@@ -404,13 +408,16 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
 - [x] E2E governance flow (`phase11-agents.e2e-spec.ts`, 7 tests)
 
 ### Web
+
 - [x] Settings → Agents page (register, scopes, caps, one-time key reveal)
 - [x] Agent-actions inbox + nav badge (gated on `core.agents.actions.read`; actions gated on approve)
 
 ### Docs
+
 - [x] `docs/agents.md` Hermes/MCP connection guide; CLAUDE.md hard rules 21–23; status + TODO
 
 ### Deferred (noted at reviews — do not "fix" silently)
+
 - [ ] `caps.autoApprove` bypasses the proposed-actions queue and its audit entity; audit then
       relies on the underlying TMS services' own `@Audit`/`AuditLogsService.log`. If autoApprove
       is used for SENSITIVE tools, add an explicit agent-action audit trail for it.
@@ -432,6 +439,7 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
 ## Phase 11 (palier 2a) — Employee-agents (Hermes brain in Pulsar)
 
 ### Shared + DB
+
 - [x] `@pulsar/shared` `AgentAutonomy` enum (`PROPOSE`/`ACT_LOW`/`AUTONOMOUS`) + helper
       (`packages/shared/src/agents/autonomy.ts`, vitest `autonomy.spec`)
 - [x] `core.agents.chat` permission catalog entry
@@ -439,6 +447,7 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
       fields on `Agent` (persona/role/model/autonomy/avatar) + agent-conversations/messages tables
 
 ### API
+
 - [x] Agent session token (short-lived, signed with `AGENT_SESSION_SECRET` → `JWT_SECRET` →
       dev default) so the Hermes runtime calls `/mcp` as the agent (`agent-session-token.spec`)
 - [x] `HermesAcpClient` — ACP transport (stdio, newline-framed) + fake ACP server for tests
@@ -453,10 +462,12 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
 - [x] E2E suite `phase11b-agents-employes.e2e-spec.ts`
 
 ### Web
+
 - [x] Settings → Agents employee fields (persona/role/model/autonomy/avatar)
 - [x] ⌘K "AI assistant" panel — streaming conversation + proposed-action cards
 
 ### Deferred (noted at reviews — do not silently fix)
+
 - [ ] Set `AGENT_SESSION_SECRET` (or `JWT_SECRET`) in non-dev — the dev fallback is silent and
       insecure.
 - [ ] Rate cap is NOT enforced on the auto-approve path (only the amount cap is) — auto-approved
@@ -484,6 +495,7 @@ Tous les items de la dette phase 6 sont soldés (voir annotations ci-dessus).
 Goal: Hermes is **installable and configurable from Pulsar**, per tenant, without editing `.env`.
 
 ### Install + shared
+
 - [x] `scripts/setup-agents.mjs` (`pnpm agents:setup`): installs Hermes into `hermes-agent/.venv`
       via **uv** (auto-fetches a standalone CPython 3.12 — Hermes pins 3.11–3.13, so no manual
       Python install; idempotent venv create + always re-run pip install)
@@ -491,18 +503,20 @@ Goal: Hermes is **installable and configurable from Pulsar**, per tenant, withou
       import; api-key vs login providers, `keyEnvVar`/`loginCommand`)
 
 ### API
+
 - [x] `AgentRuntimeConfig` Prisma model + 20th migration `20260613211931_phase11r1_agent_runtime_config`
-- [x] `agent-runtime-env.ts` env builder (per-tenant `HERMES_HOME`, provider key env var or login)
-      + `runtime-config.service.ts` (encrypts the API key via `CryptoService`, never returns it)
+- [x] `agent-runtime-env.ts` env builder (per-tenant `HERMES_HOME`, provider key env var or login) + `runtime-config.service.ts` (encrypts the API key via `CryptoService`, never returns it)
 - [x] `runtime-config.controller.ts` — `/agent-runtime` REST (`GET providers`, `GET`/`PUT`,
       `POST test`) + `POST connect` **SSE** login (streams device code + URL); gated `agents.manage`
 - [x] `openSession` injects the resolved runtime config (env + decrypted key) into the spawned child
 - [x] E2E `phase11r1-agent-runtime.e2e-spec.ts`
 
 ### Web
+
 - [x] **Settings → Runtime agents** page (pick provider, paste key or "Connecter" login over SSE)
 
 ### Deferred (noted at reviews — do not "fix" silently)
+
 - [ ] **Vendoring**: decide whether `hermes-agent/` ships in the repo (commit) or as a git
       submodule, so a fresh clone has it — today it's local/untracked (`.gitignore` only covers
       `.venv`/`.hermes-home`).
@@ -528,11 +542,13 @@ Goal: agents are **first-class citizens** of the UI — a roster, a per-agent pr
 config, an activity view, and a dedicated chat surface.
 
 ### Shared
+
 - [x] `@pulsar/shared` `AGENT_ROLE_PRESETS` (pure data, browser-safe): dispatcher / billing-clerk /
       analyst, each with persona + suggested permissions + suggested autonomy (`role-presets.ts`,
       vitest `role-presets.spec`)
 
 ### API
+
 - [x] `GET /agents/:id` projects the profile (`role`/`persona`/`autonomyLevel`/`permissions`) and
       **never leaks `secretHash`/`serviceUserId`** (shared `agentSelect`)
 - [x] `GET /agents/:id/activity` → `{ conversations, proposedActions, stats }` scoped tenant+agent
@@ -541,11 +557,13 @@ config, an activity view, and a dedicated chat surface.
       empty-then-populated activity)
 
 ### Web
+
 - [x] Top-level **Agents** nav (gated `core.agents.read`) → roster of employee cards
 - [x] Per-agent page `/agents/[id]` — **Profil & config guidée** (inline help + role presets),
       **Activité** (conversations + proposed actions + counters), **Chat** (talk to this employee)
 
 ### Deferred (noted at reviews — do not "fix" silently)
+
 - [ ] `tool_call` → `proposalId` linkage on the activity list (today the proposed-action list and
       the conversation list are shown side by side, not threaded — needs `AgentMessage.proposalId`
       persistence carried forward from palier 2a).
@@ -561,6 +579,7 @@ config, an activity view, and a dedicated chat surface.
 - [ ] Unifier `CrmExceptionsService.detectStaleDeals` sur le helper partagé `isDealStale`/`DEFAULT_STALE_DAYS` (`@pulsar/shared`) — actuellement une 3e copie inline du seuil 7j (équivalente mais divergence latente). Aussi: enrichir `GET /crm/pipeline` avec `ownerName` (kanban affiche l'UUID brut) ; totaux kanban multi-devise = devise du 1er deal.
 
 ## Billing — ligne de facture libre (backlog, post Cycle 6)
+
 - `CustomerInvoiceLine.transportOrderId` est NOT NULL @unique FK → `TransportOrder` : impossible de représenter une ligne de produit libre. Les factures issues d'une commande de vente CRM (`createDraftFromSalesOrder`) sont donc des **en-têtes** (total correct + snapshot dans `customData.soLines`), sans `CustomerInvoiceLine` → l'envoi/PDF affiche un total mais pas de détail de lignes. Fix futur : migration billing pour un type de ligne polymorphe/libre (`transportOrderId` nullable + `source`/`description`/`amount`/`salesOrderLineId?`), puis itemiser les factures SO et rendre les lignes dans `send()`.
 - Minor: `createDraftFromSalesOrder` → `assertOwnedIfSet('customer', ...)` pour un skip propre si le Customer a été hard-deleted (sinon P2003→FAILED). Minor: retirer le `catch (BadRequestException)` mort dans `draftInvoiceFromSalesOrder`.
 
@@ -590,3 +609,332 @@ CRM SalesOrder→TMS TransportOrder + passe de durcissement P0→P2). Branche no
       API, pas encore en navigateur.
 - [ ] **Nettoyage `pulsar_rc`** : base de qualif jetable ; accumulation de données de test (ex. >200
       locations) — recréer proprement (`prisma migrate reset` + seed) avant une prochaine campagne.
+
+## Référentiel partagé & Accès — dette issue de l'audit 2026-09-16
+
+Contexte : branche `access-module-core-locations` (non mergée), suite à l'audit des dépendances
+cachées de `docs/superpowers/specs/2026-09-16-access-module-core-locations-design.md` §4. Ce
+chantier a fait des **Lieux** la première entité de master-data du cœur (`core/locations`,
+règle 50) ; le reste du master-data partagé garde un seul point d'écriture TMS.
+
+- [ ] **Arc suivant recommandé — `core/master-data`** : appliquer le même patron que les Lieux à
+      `Customer`, `Carrier`, `Vehicle`, `Trailer`, `Driver`, `Lane` (module cœur + alias TMS
+      conservés), puis rendre le roster Fleet, les pickers Billing/Procurement et l'admin des
+      portails autonomes du TMS.
+- [ ] Yard : formulaires porte/rendez-vous (`gate`, `appointments`) lisent `Carrier`/`Trailer` via
+      `transportation/*` — bloquant sans TMS.
+- [ ] Fabrication : `WmsItem` (nomenclatures) n'a qu'un seul point d'écriture, `wms/items` — bloquant
+      sans module WMS activé.
+- [ ] Fleet : `/assets` (accueil Fleet) appelle `transportation/{vehicles,trailers,drivers}` sans
+      `.catch` (`assets/+page.svelte:84`) — propriétaire d'entité (Fleet vs TMS) à décider avant fix.
+- [ ] Achats (Procurement) : RFP n'a aucun lien vers `Carrier`/`Lane` propres au module — dépend du TMS.
+- [ ] Facturation (Billing) : pickers `Customer`/`Carrier` avalent l'erreur (`.catch → []`), liste
+      vide silencieuse en cas de panne TMS au lieu d'un état d'erreur explicite.
+- [ ] Portails client/transporteur/chauffeur : l'admin des liens (activation, jetons) ne vit que
+      dans les pages TMS `customers`/`carriers` — pas d'écran dédié hors TMS ; les comptes portail
+      restent **nommés** (pas de compte utilisateur dédié par contact externe).
+- [ ] Nav Transport : domaine sans `anyPerms` (visible même sans aucune permission Transport) ;
+      liens Partenaires (Clients/Transporteurs) sans `perm` → 403 après clic. Seul le lien « Lieux »
+      a été gardé par permission dans ce chantier.
+
+### Dette différée (revues Tasks 1-11, à ne pas « réparer » en silence)
+
+- [x] ~~INVITED admin ne peut pas être révoqué quand c'est le seul admin « actif » du tenant~~ —
+      **corrigé** (passe finale 2026-09-16) : `isLastActiveAdmin` lit désormais le statut de la cible
+      et renvoie `false` si elle n'est pas ACTIVE (une cible INVITED/DISABLED ne compte pas dans le
+      total d'admins ACTIVE, donc la révoquer ne peut pas verrouiller le tenant). Couvert par 2 tests
+      unitaires + l'étape e2e 9b.
+- [ ] Changement de rôle d'un utilisateur : pas d'audit before/after dédié (seul l'audit générique
+      de la mutation existe) — ajouter un `AuditLogsService.log` explicite si le suivi de rôle
+      devient sensible en prod.
+- [ ] Le message d'erreur 409 sur `P2034` (conflit Serializable, ex. dernier-admin) dit « réessayer »
+      alors qu'aucun retry automatique n'existe côté client — corriger le message ou ajouter un
+      retry UI.
+- [ ] `Button.svelte` n'a pas de passe-plat `title`/props restantes — un bouton d'action ne peut pas
+      recevoir de tooltip natif sans modifier le composant partagé.
+- [ ] Naviguer vers `/locations` depuis Réglages fait basculer le domaine actif de la sidebar sur
+      Transport (résolution du domaine par préfixe d'URL, pré-existante) — UX mineure, pas de perte
+      de droits.
+- [ ] Un rôle personnalisé créé **avant** ce chantier et limité à l'ancien
+      `transportation.master-data.read` (aucun n'existe en pratique aujourd'hui — seul `admin` avait
+      ce type d'accès, régénéré via `PermissionsSyncService`) perdrait les sélecteurs de lieux tant
+      que `core.locations.read` ne lui est pas ajouté à la main.
+- [ ] `pnpm format` non relancé sur cette branche (dérive Prettier préexistante hors mission, comme
+      notée sur `operational-convergence`).
+- [ ] `UsersService.update()` : ordre des erreurs — l'`assertRolesOwned` (403/404 de propriété) est
+      évalué avant le 404 « utilisateur introuvable », donc un PATCH sur un id inexistant avec un
+      `roleIds` d'un autre tenant répond sur la propriété du rôle plutôt que sur l'utilisateur.
+- [ ] `UsersService` : deux `findFirst` successifs dans la transaction Serializable (le lookup de
+      statut puis celui d'`isLastActiveAdmin`) — correct mais redondant, fusionnable en une lecture.
+- [ ] `auth/reset-password` : le message « Account is disabled » distingue, pour le porteur d'un jeton
+      encore vivant, un compte désactivé d'un jeton invalide (divulgation mineure sur le chemin
+      pré-authentification) — uniformiser le message si ça devient sensible.
+- [ ] `users.service.spec.ts` : le faux `$transaction` renvoie le même objet prisma, donc il ne
+      prouve pas que les écritures sont bien liées au client transactionnel (`tx`) — un faux
+      distinguant `tx` du client racine rendrait le test de TOCTOU réellement contraignant.
+- [ ] Jetons/sessions déjà émis pour des utilisateurs désactivés **avant** cet arc : la désactivation
+      révoque maintenant jetons d'action et refresh tokens, mais les refresh tokens historiques d'un
+      compte désactivé plus tôt restent en base (mitigé par la garde `DISABLED` de `resetPassword` et
+      par la vérification de statut au login) — purge ponctuelle à prévoir si besoin.
+- [ ] e2e `access-module` : les utilisateurs jetables créés par la suite restent DISABLED dans la base
+      de dev (pas de suppression physique, par conception) — bruit cumulatif sur `/settings/users` au
+      fil des exécutions locales.
+- [ ] Page Rôles : « Tout lire » / « Tout gérer » sont **additifs** (ils ajoutent sans retirer), ce que
+      l'étiquette ne dit pas — seul « Aucun » retire. Renommer ou rendre le comportement bascule.
+- [ ] Page Rôles : deux `<th>` sans intitulé (colonne badge système et colonne d'actions) — en-têtes
+      invisibles pour un lecteur d'écran.
+- [ ] Page Utilisateurs : la cellule d'actions reste un `<td>` vide quand l'utilisateur n'a pas
+      `core.users.manage` — préférer un tiret ou masquer la colonne.
+- [ ] `PermissionsSyncService` : ~84 `upsert` séquentiels à chaque démarrage, puis attribution aux
+      rôles `admin` de **toutes** les lignes `Permission` en base (pas seulement les clés du catalogue
+      `@pulsar/shared`) — regrouper en `createMany`/batch et restreindre l'octroi aux clés du catalogue.
+- [ ] Page Utilisateurs : le filtre de statut et la recherche s'appliquent **côté client** sur une
+      unique page de 100 lignes — au-delà, le filtrage ment silencieusement ; passer au filtrage serveur.
+- [ ] Autres minors de revue non bloquants : `resolveRoleTemplates` — chemin de dédoublonnage non
+      testé unitairement ; `typeLabel()` dupliqué entre `LocationFormModal` et la
+      page `/locations` ; double-fetch bénin sur `onSiteCreated` (accueil Yard, réponse périmée
+      ignorée) ; `invitationLabel` a des branches mortes et l'arrondi `Math.ceil` des jours restants
+      surestime légèrement le temps avant expiration ; reset-password sur un jeton déjà utilisé
+      renvoie 401 avant 400 (comportement déterministe, juste pas celui documenté en premier).
+
+## Portail client (comptes nommés) & Quoi de neuf — dette 2026-09-17
+
+Contexte : branche `access-module-core-locations` (suite, non mergée), livrant Pages fix, le fil
+« Quoi de neuf » (`ReleaseNote`, règle 52) et les comptes portail client nommés (`PortalUser`,
+troisième plan d'auth, règle 51). Spec :
+`docs/superpowers/specs/2026-09-16-portal-accounts-whats-new-design.md` §5.
+
+- [ ] `TransportOrder` n'a pas de colonne `portalUserId` : l'attribution d'une action portail à un
+      utilisateur nommé passe uniquement par l'audit/les commentaires, jamais une FK dédiée.
+- [ ] Aucun throttling sur `public/portal/:token` (lien de compatibilité) — énumération possible en
+      théorie, atténuée par le coût du token. `/portal/auth/*`, lui, EST throttlé
+      (`@UseGuards(ThrottlerGuard)` classe + méthode, 20 req/min/IP, `portal-auth.controller.ts`).
+- [ ] `GET /portal/view` renvoie toute la liste des lieux actifs du shipper (tenant-scopée, pas
+      scopée client) — décision produit à prendre (restreindre aux sites du client + hubs publics).
+- [ ] `unpublish` (`ReleaseNotesService`) repasse le statut à DRAFT sans effacer `publishedAt` ; un
+      republish réutilise `note.publishedAt ?? new Date()` donc garde l'ancienne date — une note
+      déjà vue (seenAt postérieur) republiée ne repasse pas « non vue ». À documenter ou à clarifier
+      (`publishedAt: null` sur unpublish ?).
+- [ ] `PUT /me/preferences` accepte un `releaseNotesSeenAt` fourni par le client (`@IsDateString`),
+      plus large que `POST /release-notes/seen` qui, lui, horodate côté serveur — un client pourrait
+      avancer arbitrairement sa date de dernière lecture.
+- [ ] `requestPasswordReset` n'agit que sur un compte `ACTIVE` — un utilisateur `INVITED` qui a
+      perdu son lien d'invitation n'a aucun parcours self-service ; seul le staff peut renvoyer
+      l'invitation.
+- [ ] Aucune tâche de rétention/nettoyage pour `portal_action_tokens`/`portal_refresh_tokens` —
+      les lignes expirées/révoquées s'accumulent indéfiniment.
+- [ ] `PortalAuthService.login` renvoie 401 sur un email inconnu sans passer par `bcrypt.compare`
+      (retour anticipé sur `candidates.length === 0`) — oracle de timing théorique, à parité avec
+      `core/auth` (dette déjà connue là-bas, pas un régression du portail).
+- [ ] `sites.e2e-spec.ts` : la numérotation des cas est incohérente en fin de fichier (10, 11, 12,
+      14, 13) — les cas 13/14 ont été ajoutés dans le désordre ; à renuméroter si le fichier est
+      retouché.
+- [ ] Spec §2.4 mentionne un lien de navigation « Image de marque » (ancre sur la carte existante)
+      qui n'a pas été implémenté — seul « Clients & portail » existe dans le domaine « Portail
+      client » (`apps/web/src/lib/modules/navigation.ts`).
+- [ ] `CrmContact` et `PortalUser` ne sont pas liés — un contact CRM et un compte portail du même
+      client restent deux identités séparées sans pont.
+- [ ] Page jeton (`Customer.portalToken` / `public/portal/:token`) à déprécier une fois les comptes
+      nommés adoptés — actuellement conservée comme mode de compatibilité (délègue au même
+      `PortalContext`/`PortalService`).
+- [x] Le mail de réinitialisation de mot de passe portail (`PortalAuthService.requestPasswordReset`)
+      résout désormais le transport SMTP du tenant (`await emailConfig.resolve(user.tenantId)`,
+      injecté via `EmailConfigService` — `EmailModule` global) avant `EmailService.send` ; retombe
+      sur le transport plateforme (`undefined`) si le tenant n'a rien configuré.
+- [ ] Les liens d'invitation portail restent visibles par le staff via l'outbox (`MailService`) —
+      voulu pour les invitations (règle : le lien de réinitialisation, lui, ne passe jamais par
+      l'outbox), mais à documenter si le modèle de menace change.
+- [ ] `issueInvitation` (PortalUsersService) n'est pas transactionnelle (création du compte puis du
+      jeton en deux étapes) — fenêtre TOCTOU théorique sans conséquence connue aujourd'hui.
+- [ ] Les jetons de réinitialisation/invitation ne sont pas « supersédés » : redemander un reset
+      laisse le jeton précédent valide jusqu'à expiration (parité avec `core/auth`, pas un bug neuf).
+- [ ] `lastLoginAt` est écrit avant les gates de session (statut compte/client/module) — un login
+      qui échoue ensuite sur une garde a quand même avancé l'horodatage.
+- [x] Schéma Prisma : commentaire `ShipmentComment.authorId` mis à jour (couvre désormais les trois
+      cas — `userId` STAFF, `customerId` lien partagé, `portalUserId` compte nommé — soft ref,
+      jamais exposé).
+- [ ] `TemplatesPanel` (web, fiche client) refetch les gabarits à chaque réouverture du panneau au
+      lieu de mettre en cache/invalider explicitement.
+- [ ] `DocumentsPanel.downloadDoc` (web) n'a pas de `try/catch` — un échec de téléchargement ne
+      montre aucune erreur à l'utilisateur.
+- [ ] `deleteTemplateFor` : la forme de l'entrée d'audit diffère des autres mutations de gabarits
+      (à harmoniser si les gabarits deviennent un objet audité de premier ordre).
+- [ ] Le gabarit de rôle du dispatcher porte une clé `CUSTOMER_PORTAL` même quand ce module n'est
+      pas activé pour le tenant (`resolveRoleTemplates` filtre les gabarits par module, pas leurs
+      clés internes) — une clé orpheline sans effet, pas une fuite de permission.
+- [ ] `/whats-new` (web) : le `try/catch` englobe à la fois le chargement des notes et le marquage
+      « vu » — un échec du second donne un message d'erreur trompeur sur le premier.
+- [ ] Page plateforme « Notes de version » : les boutons de ligne (publier/archiver) ne se
+      désactivent pas pendant la requête — double-clic possible.
+- [ ] Aucun audit sur les mutations plateforme de `ReleaseNote` (create/publish/archive) —
+      `AuditLogsService` exige un `tenantId`, précédent déjà accepté sur `platform/tenants`.
+- [ ] Le paramètre `search` de `GET /release-notes` (et `/platform/release-notes`) n'est pas
+      exploité côté service (filtrage à ajouter si le volume de notes le justifie).
+- [ ] `HTTPS://` (schéma en majuscules) est rejeté par le validateur de `cta.href` des pages —
+      fail-safe volontaire (cohérent avec le rejet des tentatives d'obfuscation `\`/`//`), mais un
+      lien HTTPS légitime en majuscules serait refusé sans message explicite.
+- [ ] Domaine de nav « Portail client » : pas de `anyPerms` (visible même sans aucune permission du
+      module) — même dette que le domaine Transport (voir section Référentiel partagé ci-dessus).
+- [ ] Messages d'erreur serveur du portail (ex. « Account is disabled », « Invalid token ») restés
+      en anglais — pas de traduction FR contrairement au reste de l'UI web.
+- [ ] `Toasts.svelte` (web) n'a pas de `role`/`aria-live` — les notifications transitoires ne sont
+      pas annoncées par un lecteur d'écran.
+- [ ] `portalApi` (client web) : une rotation de jeton (refresh) n'est pas répercutée dans le store
+      de session tant que la page ne relit pas l'état — décalage possible entre le jeton en mémoire
+      HTTP et l'état affiché.
+
+## Pickers, portail v2 & connecteurs — dette 2026-09-17
+
+Contexte : branche `access-module-core-locations` (suite, non mergée), arc 3 — aide à la saisie
+(pickers partout), refonte du portail client, connecteurs (webhooks sortants/entrants, EDI X12,
+clés API partenaires, flux iCal). Règles 53-55. Spec :
+`docs/superpowers/specs/2026-09-17-pickers-portal-connectors-design.md` §C2.7 + minors des revues
+(registre `.superpowers/sdd/2026-09-17-pickers-portal-connectors/progress.md`).
+
+### Aide à la saisie (pickers)
+
+- [ ] `apps/web/src/routes/(app)/crm/lists/+page.svelte` : recherche + sélection écrites à la main
+      (duplique `EntityPicker`) — à convertir, c'est le dernier gros doublon repéré par la revue de
+      couverture A5.
+- [ ] `EntityPicker` n'a pas de prop `required`
+      (`apps/web/src/lib/components/ui/EntityPicker.svelte`) : la validation native HTML est perdue
+      partout où un `<Select required>` a été remplacé — les pages compensent par des vérifications
+      manuelles à la soumission.
+- [ ] Les lignes d'options du modal `EntityPicker` n'ont pas de `tabindex="-1"` : elles restent
+      atteignables au `Tab` alors que la navigation prévue est ↑/↓/Entrée.
+- [ ] `REGIONS_BY_COUNTRY` (`packages/shared/src/reference/geo.ts`) stocke des codes **nus**
+      (`BC`, `TX`) et non les codes ISO-3166-2 composés (`CA-BC`, `US-TX`) — cohérent avec ce que la
+      BD contient aujourd'hui, à trancher si un export normalisé devient nécessaire.
+- [ ] Heuristique de genre des libellés FR par clé dans `EntityPicker`/`ReferenceSelect`
+      (« Sélectionner un/une … ») — approximative, non pilotée par une table.
+- [ ] `apps/web/src/routes/(app)/wms/cycle-counts/+page.svelte` : chargeur de bins devenu mort après
+      le passage au picker ; `wms/bins` : le picker Entrepôt n'a pas `allowCreate` (contrairement aux
+      autres écrans WMS) ; picker d'articles : le SKU s'affiche deux fois (libellé + détail).
+- [ ] `LoadResourcesPanel` : le picker Chauffeur n'utilise qu'un champ (`labelKey="lastName"`,
+      `detailKey="firstName"`) au lieu d'un libellé composé « Prénom Nom ».
+- [ ] `selectedLabel` redondant sur les pickers produit de `manufacturing/boms` et
+      `manufacturing/routings` (le composant sait déjà résoudre) ; `type="url"` manquant sur le champ
+      « issuer » SSO.
+- [ ] Libellé « Excédent » vs « Excès » incohérent entre écrans de capacité (TMS).
+- [ ] `apps/web/src/routes/(app)/fleet/maintenance/+page.svelte` garde deux préchargements
+      `pageSize: 100` (`vehicles`/`trailers`) uniquement pour afficher le nom de l'actif d'une ligne —
+      acceptable tant que le roster reste petit, à convertir si la flotte grossit.
+
+- [ ] `apps/web/src/lib/format.ts` : `formatTime` renvoie `—` sur une date invalide mais `formatDate` /
+      `formatDateTime` renvoient encore `"Invalid Date"` — aligner les trois ; le badge de retard du
+      tableau de dispatch affiche désormais `2026-09-16` (format long) au lieu de `16 sept.` — offrir un
+      `formatDateShort` fr-CA si la largeur gêne.
+
+### Portail client v2
+
+- [ ] `PortalService.downloadInvoicePdfFor`
+      (`apps/api/src/modules/customer-portal/portal.service.ts`) ne filtre pas
+      `mimeType: 'application/pdf'` comme le fait `customer-invoices.service.ts` : un autre document
+      attaché à la facture pourrait être renvoyé à la place du PDF (bug latent, aucun cas observé).
+- [ ] Les panneaux paresseux du portail (`DocumentsPanel`, `ChangeRequestsPanel`, `InvoicesPanel`
+      dans `apps/web/src/lib/portal/components/`) réessaient **indéfiniment** quand un `fetch`
+      échoue : le drapeau `loaded` n'est pas posé en cas d'erreur (patron hérité d'`InvoicesPanel`).
+- [ ] `KpiTile.svelte` (portail) n'a pas de `data-testid` : les assertions Playwright ciblent le
+      texte, fragile à toute reformulation.
+- [ ] `PortalMap.svelte` n'a pas de `ResizeObserver` (parité avec `OpsMap`) : la carte ne se
+      redimensionne pas quand le conteneur change de taille sans redimensionnement de fenêtre.
+- [ ] `OrdersTable.svelte` : le minuteur de debounce de la recherche n'est pas annulé au démontage.
+- [ ] Le compteur d'en-tête des Commandes affiche brièvement `0` avant le premier chargement.
+- [ ] Les lignes `<tr>` cliquables des tableaux du portail ne sont pas opérables au clavier
+      (convention pré-existante de toute l'app, pas une régression de l'arc).
+- [ ] Nommage `recordedAt` (projection de suivi) vs `occurredAt` (événements) non unifié — le web
+      lit défensivement les deux.
+- [ ] `GET /customer-portal/change-requests` (file staff) renvoie un tableau nu plafonné à 200
+      lignes, pas un `Paginated<T>`.
+- [ ] Le filtre de période des Commandes s'applique **côté navigateur** sur la page chargée
+      (`PortalOrdersQueryDto` n'expose que `status`/`search`/`page`/`pageSize`) — une ligne explicite
+      annonce les lignes masquées, mais un filtre serveur serait plus juste.
+
+### Webhooks sortants & récepteur entrant
+
+- [ ] Le garde d'egress (`packages/shared/src/integrations/webhook-target.ts`) est **au niveau de la
+      chaîne** : il refuse loopback/lien-local/plages privées, IPv4-mapped/translated, 6to4 et ISATAP,
+      mais **pas** les préfixes NAT64 « local-use » plus courts que /96 ni Teredo. Le correctif
+      durable est un `resolve-then-check` (résolution DNS puis vérification de l'IP) au moment de la
+      connexion, pas une liste de motifs.
+- [ ] `WebhooksService.attempt()` (`apps/api/src/core/integrations/webhooks.service.ts`) ne rejoue
+      **pas** le garde d'egress : l'URL est validée à l'écriture et au test, mais une livraison en
+      file (ou rejouée) part sans nouvelle vérification (compromis assumé).
+- [ ] `transport-order.create` par récepteur entrant est **at-least-once** : une ligne
+      `InboundMessage` restée `RECEIVED` est ré-exécutée après 2 minutes, ce qui peut créer une
+      seconde commande. Clé métier à ajouter (`customerReference` ou n° de document) pour rendre la
+      cible idempotente (`apps/api/src/core/connect/record-writer.service.ts`).
+- [ ] `PATCH /integrations/:id` avec le seul `{ status: 'ENABLED' }` rouvre un récepteur déjà
+      configuré **sans** exiger la permission de la cible (le gate ne se déclenche que si `config`
+      est fourni) — `apps/api/src/core/integrations/integrations.service.ts`.
+- [ ] Messages d'erreur partenaire génériques : un refus de mapping ou d'écriture renvoie
+      `status: 'FAILED'` + un texte peu actionnable ; le détail n'est visible que dans l'inbox
+      (`apps/api/src/core/connect/inbound-hooks.service.ts`).
+- [ ] Aucune **validation typée** des valeurs mappées (`packages/shared/src/integrations/mapping.ts`)
+      : les transformations sont appliquées mais rien ne vérifie que la valeur produite correspond au
+      type attendu par le champ cible — l'erreur ne remonte qu'au niveau du service métier.
+- [ ] Aucune **expiration** des clés de déduplication : `InboundMessage.dedupKey` s'accumule
+      indéfiniment (pas de purge, pas de fenêtre glissante).
+- [ ] Deux plafonds de corps se chevauchent : le body-parser JSON de Nest tranche à **100 Ko** avant
+      que le service n'applique son plafond de **256 Ko** — le 413 vient donc toujours de Nest.
+      Harmoniser (ou documenter le plafond réel comme 100 Ko).
+- [ ] Studio `/integrations` : le formulaire d'édition générique (`compactConfig()`,
+      `apps/web/src/routes/(app)/integrations/+page.svelte`) ne réécrit que les clés qu'il connaît —
+      enregistrer un récepteur entrant depuis cet écran **perd** `config.target` et
+      `config.inboundSecret`. Préserver les clés inconnues, ou rediriger les récepteurs vers
+      `/connect/inbound-hooks`.
+- [ ] La section « boîte de réception » de `/connect/inbound-hooks` appelle `GET /connect/inbox`
+      (permission `core.connect.read`) sans conditionner son affichage à cette permission : un
+      utilisateur qui n'a que `core.integrations.manage` voit un bloc en erreur.
+- [ ] `GET /public/ical/yard/:token` n'a ni `Cache-Control` ni throttling (cohérent avec les autres
+      routes `@Public()` — à traiter dans une passe globale).
+
+- [ ] `DomainEventsService.bridgeToWebhooks` → `WebhooksService.emit` exécute un
+      `integration.findMany` par événement métier, même pour un tenant sans webhook : ajouter un
+      indicateur en cache « tenant a des webhooks » (`apps/api/src/core/operating/domain-events.service.ts`).
+- [ ] Un nouveau webhook créé avec `events: []` s'abonne à tout le catalogue (dont
+      `portal.change-request` avec la note libre du client) ; le studio pré-remplit désormais la
+      liste héritée, mais l'API accepte toujours `[]` = tout — envisager d'exiger un choix explicite.
+
+### EDI X12
+
+- [ ] La déduplication des **210** est applicative (`findFirst` sur
+      `(tenantId, carrierId, carrierInvoiceNumber)`, `apps/api/src/core/connect/edi.service.ts`) :
+      un index unique serait plus sûr, mais il impacterait aussi la saisie manuelle des factures
+      transporteur — migration + décision produit à prendre ensemble.
+- [ ] Un interchange entrant **multi-ST** n'est traité que pour sa **première** transaction ; les ST
+      suivants sont lus mais ignorés (`packages/shared/src/edi/`).
+- [ ] Un 204 `CANCELLATION`/`CHANGE` est traité comme un `ORIGINAL` : `B2A-01` est lu par la couche
+      pure mais pas exploité — chaque interchange distinct crée une commande.
+- [ ] Aucun **fuseau horaire** dans les dates X12 : elles sont rendues telles quelles et interprétées
+      en heure locale du serveur.
+- [ ] Les numéros de contrôle sortants `ISA13`/`GS06` sont dérivés de l'horloge, pas d'un compteur
+      persisté (`SequencesService` serait le bon support).
+- [ ] `X-Idempotency-Key` est volontairement **ignoré** sur la porte EDI (l'interchange EST
+      l'identité) — divergence assumée avec le récepteur JSON, à documenter côté partenaire.
+- [ ] `serializeX12(null)` lève (protégé par le typage seulement) ; les champs de volume du segment
+      `N7` ne sont pas couverts par les tests (`packages/shared/src/edi/`).
+- [ ] Pas d'AS2/VAN, pas de 997, séparateur de répétition détecté mais non appliqué, composites non
+      éclatés, motif `K1` tronqué à 60 caractères (limites v1 assumées).
+
+### Clés API partenaires & flux iCal
+
+- [ ] Le jeton iCal de la cour est stocké **en clair** dans `TenantModule.settings.icalToken`
+      (`apps/api/src/modules/yard/ical/ical.service.ts`), alors que les autres secrets de l'arc sont
+      hachés (`Integration.inboundTokenHash`, `ApiKey.keyHash`) — hacher (sha256) et comparer le hachage,
+      ou déplacer vers une colonne dédiée.
+
+- [ ] L'expiration d'une clé API est saisie en **date** et convertie en fin de journée _locale du
+      navigateur_ (`apps/web/src/routes/(app)/settings/api-keys/+page.svelte`) : un administrateur
+      dans un autre fuseau que le serveur peut être surpris de l'instant exact d'expiration.
+- [ ] Aucune notification ni écran d'alerte avant l'expiration d'une clé : elle cesse simplement de
+      fonctionner (401 générique, indistinguable d'une clé révoquée — choix de sécurité assumé).
+- [ ] La remorque affichée dans la description iCal est « meilleur effort » (dernière `YardVisit`
+      liée) : `DockAppointment` ne porte pas de référence de remorque.
+- [ ] Le jeton iCal vit dans `TenantModule.settings.icalToken` (yard) en clair : c'est un jeton de
+      capacité en lecture seule, mais il n'est pas haché contrairement aux jetons entrants.
+
+### Hors périmètre v1 (assumé, spec §C2.7)
+
+- [ ] SFTP/FTP, OAuth client (QuickBooks, Shopify), télématique, AS2/VAN, SCIM, file durable
+      partagée entre les deux outbox, export vers un entrepôt de données.

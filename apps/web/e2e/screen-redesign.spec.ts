@@ -65,7 +65,7 @@ test('company picker searches by name inside a contact form, Escape only closes 
   await form.getByRole('button', { name: 'Société : Associer une société' }).click();
   const picker = page.getByRole('dialog', { name: 'Société', exact: true });
   await picker.getByLabel('Rechercher : société').fill('recherchée');
-  await picker.getByRole('button', { name: 'Société recherchée', exact: true }).click();
+  await picker.getByRole('option', { name: 'Société recherchée', exact: true }).click();
   await expect(picker).toHaveCount(0);
   await expect(form.getByRole('button', { name: 'Société : Société recherchée' })).toBeVisible();
   await form.getByRole('button', { name: 'Société : Société recherchée' }).click();

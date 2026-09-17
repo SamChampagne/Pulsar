@@ -50,7 +50,9 @@
     ($auth?.user?.permissions ?? []).includes('carrier-portal.links.manage'),
   );
   let showPortalModal = $state(false);
-  let portalModal = $state<{ carrierId: string; carrierName: string; url: string | null } | null>(null);
+  let portalModal = $state<{ carrierId: string; carrierName: string; url: string | null } | null>(
+    null,
+  );
   let portalLoading = $state(false);
 
   async function load() {
@@ -170,7 +172,9 @@
     <input
       placeholder="Rechercher nom, code, SCAC…"
       bind:value={search}
-      onkeydown={(e) => { if (e.key === 'Enter') void load(); }}
+      onkeydown={(e) => {
+        if (e.key === 'Enter') void load();
+      }}
       class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
     />
   </div>
@@ -196,7 +200,11 @@
       {#each carriers as carrier (carrier.id)}
         <tr>
           <td class="font-mono font-semibold text-ink">{carrier.code}</td>
-          <td><a href={`/carriers/${carrier.id}`} class="hover:underline text-accent font-medium">{carrier.name}</a></td>
+          <td
+            ><a href={`/carriers/${carrier.id}`} class="hover:underline text-accent font-medium"
+              >{carrier.name}</a
+            ></td
+          >
           <td class="font-mono text-ink-muted">{carrier.scacCode ?? '—'}</td>
           <td>{carrier.contactName ?? '—'}</td>
           <td class="font-mono text-ink-muted">{carrier.phone ?? '—'}</td>
@@ -250,8 +258,11 @@
         <Input bind:value={form.name} required />
       </Field>
       <Field label="SCAC">
-        <Input bind:value={form.scacCode} />
+        <Input bind:value={form.scacCode} pattern={'[A-Z]{2,4}'} placeholder="ex. ABCD" />
       </Field>
+      <p class="-mt-2 text-xs text-ink-faint">
+        2 à 4 lettres majuscules (Standard Carrier Alpha Code).
+      </p>
       <Field label="Contact">
         <Input bind:value={form.contactName} />
       </Field>
@@ -259,14 +270,23 @@
         <Input bind:value={form.phone} />
       </Field>
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
-        <Button variant="secondary" onclick={() => { showForm = false; }}>Annuler</Button>
+        <Button
+          variant="secondary"
+          onclick={() => {
+            showForm = false;
+          }}>Annuler</Button
+        >
         <Button variant="primary" type="submit" loading={saving}>Créer</Button>
       </div>
     </form>
   {/snippet}
 </Modal>
 
-<Modal bind:open={showPortalModal} title="Portail transporteur — {portalModal?.carrierName ?? ''}" size="md">
+<Modal
+  bind:open={showPortalModal}
+  title="Portail transporteur — {portalModal?.carrierName ?? ''}"
+  size="md"
+>
   {#snippet children()}
     {#if portalModal}
       {#if portalModal.url}
@@ -276,8 +296,16 @@
           <Button variant="secondary" onclick={copyPortalUrl}>Copier</Button>
         </div>
         <div class="flex justify-end gap-2 border-t border-edge pt-3">
-          <Button variant="danger" onclick={revokePortalLink} loading={portalLoading}>Révoquer</Button>
-          <Button variant="secondary" onclick={() => { portalModal = null; showPortalModal = false; }}>Fermer</Button>
+          <Button variant="danger" onclick={revokePortalLink} loading={portalLoading}
+            >Révoquer</Button
+          >
+          <Button
+            variant="secondary"
+            onclick={() => {
+              portalModal = null;
+              showPortalModal = false;
+            }}>Fermer</Button
+          >
         </div>
       {:else}
         <p class="text-sm text-ink-muted">Génération du lien…</p>

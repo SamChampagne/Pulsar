@@ -1,11 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@pulsar/database';
-import { ListQueryDto } from '../../../common/dto/list-query.dto';
-import { paginated, paginationArgs } from '../../../common/pagination';
-import { OwnershipService } from '../../../prisma/ownership.service';
-import { PrismaService } from '../../../prisma/prisma.service';
-import { RoutingService } from '../../../core/routing/routing.service';
-import { CreateLocationDto, UpdateLocationDto } from './dto/location.dto';
+import { paginated, paginationArgs } from '../../common/pagination';
+import { OwnershipService } from '../../prisma/ownership.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import { RoutingService } from '../routing/routing.service';
+import { CreateLocationDto, LocationsListQueryDto, UpdateLocationDto } from './dto/location.dto';
 
 @Injectable()
 export class LocationsService {
@@ -15,7 +14,7 @@ export class LocationsService {
     private readonly routing: RoutingService,
   ) {}
 
-  async list(tenantId: string, query: ListQueryDto) {
+  async list(tenantId: string, query: LocationsListQueryDto) {
     const { page, pageSize, skip, take } = paginationArgs(query);
     const where: Prisma.LocationWhereInput = {
       tenantId,
@@ -28,6 +27,7 @@ export class LocationsService {
             ],
           }
         : {}),
+      ...(query.type ? { type: query.type } : {}),
     };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.location.findMany({ where, skip, take, orderBy: { name: 'asc' } }),

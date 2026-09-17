@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { WMS_UNITS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import {
     Badge,
@@ -11,6 +12,7 @@
     Input,
     Modal,
     PageHeader,
+    ReferenceSelect,
     Skeleton,
     Table,
   } from '$lib/components/ui';
@@ -32,6 +34,8 @@
   function replTone(status?: string): 'ok' | 'warn' | 'danger' | 'neutral' {
     return status === 'BELOW_MIN' ? 'danger' : status === 'LOW' ? 'warn' : 'ok';
   }
+
+  const UNIT_OPTIONS = WMS_UNITS.map((u) => ({ value: u.code, label: u.name }));
 
   let items = $state<Item[]>([]);
   let total = $state(0);
@@ -220,7 +224,7 @@
         <Input bind:value={formName} placeholder="Désignation" />
       </Field>
       <Field label="Unité">
-        <Input bind:value={formUnit} placeholder="EA" />
+        <ReferenceSelect options={UNIT_OPTIONS} bind:value={formUnit} />
       </Field>
       <Field label="Code-barres">
         <Input bind:value={formBarcode} placeholder="Optionnel" />

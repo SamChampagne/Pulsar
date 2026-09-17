@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/format';
+
   export interface TimelineEvent {
     id: string;
     type: string;
@@ -32,14 +34,18 @@
         ></span>
         <div>
           <div class="flex items-baseline gap-2 text-xs">
-            <strong class="text-sm font-semibold text-ink">{event.type.replaceAll('_', ' ')}</strong>
-            <span class="text-ink-muted">{new Date(event.occurredAt).toLocaleString()}</span>
+            <strong class="text-sm font-semibold text-ink">{event.type.replaceAll('_', ' ')}</strong
+            >
+            <span class="text-ink-muted">{formatDateTime(event.occurredAt)}</span>
           </div>
           {#if event.message}
             <div class="mt-0.5 text-sm text-ink-muted">{event.message}</div>
           {/if}
           {#if event.recordedBy}
-            <div class="mt-0.5 text-xs text-ink-faint">par {event.recordedBy.firstName} {event.recordedBy.lastName}</div>
+            <div class="mt-0.5 text-xs text-ink-faint">
+              par {event.recordedBy.firstName}
+              {event.recordedBy.lastName}
+            </div>
           {/if}
         </div>
       </li>

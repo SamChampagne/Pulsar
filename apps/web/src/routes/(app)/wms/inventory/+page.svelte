@@ -18,12 +18,12 @@
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     ErrorNotice,
     Field,
     Input,
     Modal,
     PageHeader,
-    Select,
     Skeleton,
     Textarea,
   } from '$lib/components/ui';
@@ -89,10 +89,6 @@
       })
       .sort((a, b) => a.item.sku.localeCompare(b.item.sku) || a.bin.code.localeCompare(b.bin.code)),
   );
-
-  function binLabel(b: Bin): string {
-    return `${b.code} (${b.kind})`;
-  }
 
   async function load() {
     loading = true;
@@ -281,28 +277,33 @@
 <Modal bind:open={moveOpen} title="Déplacer du stock" dismissible={!moveSaving}>
   <fieldset class="min-w-0 space-y-3" disabled={moveSaving || !!$pendingMove}>
     <Field label="Article">
-      <Select bind:value={moveItemId}>
-        <option value="">— Sélectionner —</option>
-        {#each items as it (it.id)}
-          <option value={it.id}>{it.sku} — {it.name}</option>
-        {/each}
-      </Select>
+      <EntityPicker
+        endpoint="/wms/choices/items"
+        label="Article"
+        labelKey="name"
+        detailKey="sku"
+        bind:value={moveItemId}
+      />
     </Field>
     <Field label="Bin source">
-      <Select bind:value={moveFromBinId}>
-        <option value="">— Sélectionner —</option>
-        {#each bins as b (b.id)}
-          <option value={b.id}>{binLabel(b)}</option>
-        {/each}
-      </Select>
+      <EntityPicker
+        endpoint="/wms/bins"
+        label="Bin source"
+        labelKey="code"
+        detailKey="kind"
+        listShape="array"
+        bind:value={moveFromBinId}
+      />
     </Field>
     <Field label="Bin destination">
-      <Select bind:value={moveToBinId}>
-        <option value="">— Sélectionner —</option>
-        {#each bins as b (b.id)}
-          <option value={b.id}>{binLabel(b)}</option>
-        {/each}
-      </Select>
+      <EntityPicker
+        endpoint="/wms/bins"
+        label="Bin destination"
+        labelKey="code"
+        detailKey="kind"
+        listShape="array"
+        bind:value={moveToBinId}
+      />
     </Field>
     <Field label="Quantité">
       <Input type="number" bind:value={moveQty} min={0} step="any" />
@@ -328,20 +329,23 @@
 <Modal bind:open={adjustOpen} title="Ajuster le stock">
   <div class="space-y-3">
     <Field label="Article">
-      <Select bind:value={adjustItemId}>
-        <option value="">— Sélectionner —</option>
-        {#each items as it (it.id)}
-          <option value={it.id}>{it.sku} — {it.name}</option>
-        {/each}
-      </Select>
+      <EntityPicker
+        endpoint="/wms/choices/items"
+        label="Article"
+        labelKey="name"
+        detailKey="sku"
+        bind:value={adjustItemId}
+      />
     </Field>
     <Field label="Bin">
-      <Select bind:value={adjustBinId}>
-        <option value="">— Sélectionner —</option>
-        {#each bins as b (b.id)}
-          <option value={b.id}>{binLabel(b)}</option>
-        {/each}
-      </Select>
+      <EntityPicker
+        endpoint="/wms/bins"
+        label="Bin"
+        labelKey="code"
+        detailKey="kind"
+        listShape="array"
+        bind:value={adjustBinId}
+      />
     </Field>
     <Field label="Delta (peut être négatif)">
       <Input type="number" bind:value={adjustDelta} step="any" />
