@@ -18,6 +18,7 @@
     Card,
     Skeleton,
     ErrorNotice,
+    EntityPicker,
     toneFor,
     labelFor,
     ViewToggle,
@@ -197,7 +198,6 @@
 
   // "Assign to load" picker state
   let assigning = $state<ShipmentRow | null>(null);
-  let openLoads = $state<LoadOption[]>([]);
   let selectedLoadId = $state('');
   let assignCapacityExcesses = $state<CapacityExcess[]>([]);
   let assignForce = $state(false);
@@ -251,17 +251,20 @@
     else await loadMap();
   }
 
-  async function openAssign(shipment: ShipmentRow) {
+  function openAssign(shipment: ShipmentRow) {
     assigning = shipment;
     selectedLoadId = '';
     assignCapacityExcesses = [];
     assignForce = false;
     pendingLoadId = '';
-    const result = await api<Paginated<LoadOption>>('/transportation/loads', {
-      query: { pageSize: 100 },
-    });
-    openLoads = result.items.filter((l) => l.status === 'OPEN' || l.status === 'PLANNED');
   }
+
+  // A newly picked load supersedes any capacity warning shown for the previous pick.
+  $effect(() => {
+    void selectedLoadId;
+    assignCapacityExcesses = [];
+    assignForce = false;
+  });
 
   async function assign(force = false) {
     if (!assigning) return;
@@ -676,20 +679,18 @@
           </div>
         {:else}
           <Field label="Load">
-            <select
+            <EntityPicker
+              endpoint="/transportation/loads"
+              label="Load"
+              labelKey="loadNumber"
+              filters={{ status: 'OPEN' }}
+              placeholder="+ Créer un nouveau load"
               bind:value={selectedLoadId}
-              onchange={() => {
-                assignCapacityExcesses = [];
-                assignForce = false;
-              }}
-              class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-            >
-              <option value="">+ Créer un nouveau load</option>
-              {#each openLoads as l (l.id)}
-                <option value={l.id}>{l.loadNumber} ({l.status})</option>
-              {/each}
-            </select>
+            />
           </Field>
+          <p class="mt-1 text-xs text-ink-muted">
+            Laisser vide pour créer un nouveau load. Seuls les loads OPEN apparaissent ici.
+          </p>
 
           {#if assignCapacityExcesses.length > 0}
             <div class="mt-3 rounded-card border border-warn bg-warn-soft p-3">

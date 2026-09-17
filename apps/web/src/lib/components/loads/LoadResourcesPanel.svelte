@@ -1,6 +1,6 @@
 <script lang="ts">
   import { TransportMode } from '@pulsar/shared';
-  import { Badge, Button, Card, Field, Select } from '$lib/components/ui';
+  import { Button, Card, EntityPicker, Field, Select } from '$lib/components/ui';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import type { Option, CapacityExcess } from './types';
@@ -27,7 +27,11 @@
     onReload: () => Promise<void>;
   }
 
-  const { loadId, editable, carriers, drivers, vehicles, trailers, rates, form, onFormChange, onReload }: Props = $props();
+  // `carriers`/`drivers`/`vehicles`/`trailers`/`rates` stay in Props for the parent's
+  // call site (loads/[id]/+page.svelte, out of scope here) but are no longer read:
+  // each field below searches its own endpoint through EntityPicker (hard rule 53)
+  // instead of a capped `pageSize: 100` preload.
+  const { loadId, editable, form, onFormChange, onReload }: Props = $props();
 
   let resourcesCapacityExcesses = $state<CapacityExcess[]>([]);
   let resourcesForce = $state(false);
@@ -73,38 +77,60 @@
 <Card>
   <h2 class="mb-3 font-semibold text-ink">Resources</h2>
   <div class="flex flex-col gap-3">
-    <Field label="Carrier">
-      <Select value={form.carrierId} onchange={(e) => onFormChange({ ...form, carrierId: (e.currentTarget as HTMLSelectElement).value })} disabled={!editable}>
-        <option value="">—</option>
-        {#each carriers as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
-      </Select>
+    <Field label="Transporteur">
+      <EntityPicker
+        endpoint="/transportation/carriers"
+        label="Transporteur"
+        labelKey="name"
+        detailKey="code"
+        disabled={!editable}
+        bind:value={() => form.carrierId, (v) => onFormChange({ ...form, carrierId: v })}
+      />
     </Field>
-    <Field label="Driver">
-      <Select value={form.driverId} onchange={(e) => onFormChange({ ...form, driverId: (e.currentTarget as HTMLSelectElement).value })} disabled={!editable}>
-        <option value="">—</option>
-        {#each drivers as o (o.id)}<option value={o.id}>{o.firstName} {o.lastName}</option>{/each}
-      </Select>
+    <Field label="Chauffeur">
+      <EntityPicker
+        endpoint="/transportation/drivers"
+        label="Chauffeur"
+        labelKey="lastName"
+        detailKey="firstName"
+        disabled={!editable}
+        bind:value={() => form.driverId, (v) => onFormChange({ ...form, driverId: v })}
+      />
     </Field>
-    <Field label="Vehicle">
-      <Select value={form.vehicleId} onchange={(e) => onFormChange({ ...form, vehicleId: (e.currentTarget as HTMLSelectElement).value })} disabled={!editable}>
-        <option value="">—</option>
-        {#each vehicles as o (o.id)}<option value={o.id}>{o.unitNumber}</option>{/each}
-      </Select>
+    <Field label="Véhicule">
+      <EntityPicker
+        endpoint="/transportation/vehicles"
+        label="Véhicule"
+        labelKey="unitNumber"
+        disabled={!editable}
+        bind:value={() => form.vehicleId, (v) => onFormChange({ ...form, vehicleId: v })}
+      />
     </Field>
-    <Field label="Trailer">
-      <Select value={form.trailerId} onchange={(e) => onFormChange({ ...form, trailerId: (e.currentTarget as HTMLSelectElement).value })} disabled={!editable}>
-        <option value="">—</option>
-        {#each trailers as o (o.id)}<option value={o.id}>{o.unitNumber}</option>{/each}
-      </Select>
+    <Field label="Remorque">
+      <EntityPicker
+        endpoint="/transportation/trailers"
+        label="Remorque"
+        labelKey="unitNumber"
+        disabled={!editable}
+        bind:value={() => form.trailerId, (v) => onFormChange({ ...form, trailerId: v })}
+      />
     </Field>
-    <Field label="Rate">
-      <Select value={form.rateId} onchange={(e) => onFormChange({ ...form, rateId: (e.currentTarget as HTMLSelectElement).value })} disabled={!editable}>
-        <option value="">—</option>
-        {#each rates as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
-      </Select>
+    <Field label="Tarif">
+      <EntityPicker
+        endpoint="/transportation/rates"
+        label="Tarif"
+        labelKey="name"
+        disabled={!editable}
+        bind:value={() => form.rateId, (v) => onFormChange({ ...form, rateId: v })}
+      />
     </Field>
     <Field label="Mode">
-      <Select value={form.mode} onchange={(e) => onFormChange({ ...form, mode: (e.currentTarget as HTMLSelectElement).value })} disabled={!editable}>
+      <Select
+        value={form.mode}
+        onchange={(e) =>
+          onFormChange({ ...form, mode: (e.currentTarget as HTMLSelectElement).value })}
+        disabled={!editable}
+      >
         <option value="">— inherit —</option>
         {#each Object.values(TransportMode) as m (m)}
           <option value={m}>{m}</option>

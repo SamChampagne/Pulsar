@@ -15,6 +15,7 @@
     Card,
     Skeleton,
     ErrorNotice,
+    EntityPicker,
     toneFor,
     labelFor,
     ViewToggle,
@@ -38,11 +39,6 @@
     originLocation: { name: string; city: string };
     destinationLocation: { name: string; city: string };
     customData?: Record<string, unknown>;
-  }
-
-  interface Option {
-    id: string;
-    name: string;
   }
 
   let view = $state<ViewId>('table');
@@ -87,8 +83,6 @@
   let customData = $state<Record<string, unknown>>({});
 
   // Create form state
-  let customers = $state<Option[]>([]);
-  let locations = $state<Option[]>([]);
   let form = $state({
     customerId: '',
     originLocationId: '',
@@ -161,16 +155,9 @@
   async function openForm() {
     showForm = true;
     customData = {};
-    const [customersResult, locationsResult, fieldDefs] = await Promise.all([
-      api<Paginated<Option>>('/transportation/customers', { query: { pageSize: 100 } }),
-      api<Paginated<Option>>('/locations', { query: { pageSize: 100 } }),
-      api<CustomFieldDef[]>('/transportation/custom-fields', {
-        query: { entityType: 'TRANSPORT_ORDER' },
-      }).catch(() => [] as CustomFieldDef[]),
-    ]);
-    customers = customersResult.items;
-    locations = locationsResult.items;
-    orderFieldDefs = fieldDefs;
+    orderFieldDefs = await api<CustomFieldDef[]>('/transportation/custom-fields', {
+      query: { entityType: 'TRANSPORT_ORDER' },
+    }).catch(() => [] as CustomFieldDef[]);
   }
 
   async function createOrder(event: SubmitEvent) {
@@ -502,31 +489,34 @@
     <form onsubmit={createOrder}>
       <div class="grid grid-cols-2 gap-x-4 gap-y-3">
         <Field label="Client">
-          <Select bind:value={form.customerId} required>
-            <option value="" disabled>Sélectionner…</option>
-            {#each customers as c (c.id)}
-              <option value={c.id}>{c.name}</option>
-            {/each}
-          </Select>
+          <EntityPicker
+            endpoint="/transportation/customers"
+            label="Client"
+            labelKey="name"
+            detailKey="code"
+            bind:value={form.customerId}
+          />
         </Field>
         <Field label="Référence client">
           <Input bind:value={form.customerReference} placeholder="PO-12345" />
         </Field>
         <Field label="Origine">
-          <Select bind:value={form.originLocationId} required>
-            <option value="" disabled>Sélectionner…</option>
-            {#each locations as l (l.id)}
-              <option value={l.id}>{l.name}</option>
-            {/each}
-          </Select>
+          <EntityPicker
+            endpoint="/locations"
+            label="Origine"
+            labelKey="name"
+            detailKey="code"
+            bind:value={form.originLocationId}
+          />
         </Field>
         <Field label="Destination">
-          <Select bind:value={form.destinationLocationId} required>
-            <option value="" disabled>Sélectionner…</option>
-            {#each locations as l (l.id)}
-              <option value={l.id}>{l.name}</option>
-            {/each}
-          </Select>
+          <EntityPicker
+            endpoint="/locations"
+            label="Destination"
+            labelKey="name"
+            detailKey="code"
+            bind:value={form.destinationLocationId}
+          />
         </Field>
         <Field label="Enlèvement à partir de">
           <Input type="date" bind:value={form.requestedPickupEarly} />

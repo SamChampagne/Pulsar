@@ -4,7 +4,6 @@
   import { PERMISSIONS } from '@pulsar/shared';
   import { confirmAction } from '$lib/stores/confirmation';
   import { page as route } from '$app/state';
-  import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { getAccessToken } from '$lib/stores/auth';
   import { toast } from '$lib/stores/toast';
@@ -23,6 +22,7 @@
     Skeleton,
     Tabs,
     ErrorNotice,
+    EntityPicker,
     toneFor,
     labelFor,
   } from '$lib/components/ui';
@@ -79,11 +79,6 @@
     carrier: { id: string; name: string };
     lines: LineRow[];
   }
-  interface CarrierOption {
-    id: string;
-    name: string;
-  }
-
   const REASON_CODES = [
     'RATE_MISMATCH',
     'QUANTITY_MISMATCH',
@@ -93,7 +88,6 @@
   ];
 
   let invoices = $state<InvoiceRow[]>([]);
-  let carriers = $state<CarrierOption[]>([]);
   let selectedCarrierId = $state('');
   let statusFilter = $state('');
   let expanded = $state('');
@@ -216,12 +210,9 @@
     loadingCarrier = true;
     error = '';
     try {
-      const [rows, carrierOptions] = await Promise.all([
-        api<InvoiceRow[]>('/billing/invoices', { query: { status: statusFilter || undefined } }),
-        api<Paginated<CarrierOption>>('/transportation/carriers', {
-          query: { pageSize: 100 },
-        }).catch(() => ({ items: [] as CarrierOption[] })),
-      ]);
+      const rows = await api<InvoiceRow[]>('/billing/invoices', {
+        query: { status: statusFilter || undefined },
+      });
       if (request !== carrierRequest) return;
       const target = route.url.searchParams.get('invoice');
       if (
@@ -234,7 +225,6 @@
         rows.unshift(linked);
       }
       invoices = rows;
-      carriers = carrierOptions.items;
       if (target && target !== lastInvoiceTarget) {
         lastInvoiceTarget = target;
         activeTab = 'carrier';
@@ -475,15 +465,9 @@
     orderNumber: string;
     reason: string;
   }
-  interface CustomerOption {
-    id: string;
-    code: string;
-    name: string;
-  }
 
   // Customer statements state
   let customerStatements = $state<StatementRow[]>([]);
-  let customerOptions = $state<CustomerOption[]>([]);
   let selectedCustomerId = $state('');
   let statementsStatusFilter = $state('');
   let stmtError = $state('');
@@ -515,19 +499,13 @@
     loadingCustomer = true;
     stmtError = '';
     try {
-      const [stmts, customers] = await Promise.all([
-        api<StatementRow[]>('/billing/customer-invoices', {
-          query: {
-            status: statementsStatusFilter || undefined,
-          },
-        }),
-        api<Paginated<CustomerOption>>('/transportation/customers', {
-          query: { pageSize: 100 },
-        }).catch(() => ({ items: [] as CustomerOption[] })),
-      ]);
+      const stmts = await api<StatementRow[]>('/billing/customer-invoices', {
+        query: {
+          status: statementsStatusFilter || undefined,
+        },
+      });
       if (request !== customerRequest) return;
       customerStatements = stmts;
-      customerOptions = customers.items;
       const target = route.url.searchParams.get('statement');
       if (target && (target !== lastStatementTarget || stmtExpanded === target)) {
         let index = stmts.findIndex((s) => s.id === target);
@@ -800,14 +778,15 @@
           </Select>
         </div>
         <Button variant="secondary" onclick={exportCsv}>Export CSV</Button>
-        <select
-          aria-label="Transporteur à facturer"
-          bind:value={selectedCarrierId}
-          class="rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none w-56"
-        >
-          <option value="" disabled>Transporteur à facturer…</option>
-          {#each carriers as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
-        </select>
+        <div class="w-56">
+          <EntityPicker
+            endpoint="/transportation/carriers"
+            label="Transporteur à facturer"
+            labelKey="name"
+            placeholder="Transporteur à facturer…"
+            bind:value={selectedCarrierId}
+          />
+        </div>
         <Button
           disabled={!selectedCarrierId || !canManageInvoices}
           loading={invoiceBusy}
@@ -906,15 +885,16 @@
       <Card>
         <h2 class="text-sm font-bold text-ink mb-3">Préparer les relevés clients</h2>
         <div class="flex gap-2 items-center flex-wrap">
-          <select
-            aria-label="Client à facturer"
-            bind:value={selectedCustomerId}
-            class="rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none w-64"
-          >
-            <option value="" disabled>Client à facturer…</option>
-            {#each customerOptions as c (c.id)}<option value={c.id}>{c.code} — {c.name}</option
-              >{/each}
-          </select>
+          <div class="w-64">
+            <EntityPicker
+              endpoint="/transportation/customers"
+              label="Client à facturer"
+              labelKey="name"
+              detailKey="code"
+              placeholder="Client à facturer…"
+              bind:value={selectedCustomerId}
+            />
+          </div>
           <Button
             variant="secondary"
             disabled={!selectedCustomerId || previewLoading || invoiceBusy || !canManageStatements}
