@@ -7,8 +7,8 @@
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     Field,
-    Input,
     PageHeader,
     Select,
     Skeleton,
@@ -24,18 +24,6 @@
     code: string;
     name: string;
     type: string;
-  }
-
-  interface TrailerOption {
-    id: string;
-    unitNumber: string;
-    plate: string | null;
-    carrierId: string | null;
-  }
-
-  interface CarrierOption {
-    id: string;
-    name: string;
   }
 
   interface SpotOption {
@@ -81,8 +69,6 @@
   const DIRECTIONS = [YardDirection.INBOUND, YardDirection.OUTBOUND, YardDirection.OTHER];
 
   let locations = $state<LocationOption[]>([]);
-  let trailers = $state<TrailerOption[]>([]);
-  let carriers = $state<CarrierOption[]>([]);
   let spots = $state<SpotOption[]>([]);
   let appointments = $state<AppointmentOption[]>([]);
   let visits = $state<Visit[]>([]);
@@ -99,9 +85,17 @@
 
   // Check-in form
   let formLocationId = $state('');
-  let formTrailerId = $state('');
-  let formTrailerRef = $state('');
+  // Remorque : `formTrailerPick` holds either a fleet trailer id (catalog pick) or a
+  // raw plate/reference (free text, "chauffeur externe"); `formTrailerIsFreeText`
+  // disambiguates which one it is at submit time (rule: id when picked, text when free).
+  let formTrailerPick = $state('');
+  let formTrailerIsFreeText = $state(false);
   let formCarrierId = $state('');
+  // Chauffeur : the API only ever stores free text (`driverName` — no driver FK on a
+  // visit). A catalog pick still resolves to the driver's display name below, so
+  // `formDriverName` remains the single value sent to the API either way.
+  let formDriverPick = $state('');
+  let formDriverIsFreeText = $state(false);
   let formDriverName = $state('');
   let formDirection = $state<string>(YardDirection.INBOUND);
   let formSpotId = $state('');
@@ -110,6 +104,32 @@
   let visitFieldDefs = $state<CustomFieldDef[]>([]);
   let customData = $state<Record<string, unknown>>({});
   let spotWarnings = $state<string[]>([]);
+
+  $effect(() => {
+    const id = formDriverPick;
+    const isFree = formDriverIsFreeText;
+    if (!id) {
+      formDriverName = '';
+      return;
+    }
+    if (isFree) {
+      formDriverName = id;
+      return;
+    }
+    let cancelled = false;
+    api<{ firstName: string; lastName: string }>(
+      `/transportation/drivers/${encodeURIComponent(id)}`,
+    )
+      .then((d) => {
+        if (!cancelled) formDriverName = [d.firstName, d.lastName].filter(Boolean).join(' ');
+      })
+      .catch(() => {
+        if (!cancelled) formDriverName = '';
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
 
   function statusTone(status: string): Tone {
     switch (status) {
@@ -172,10 +192,10 @@
   );
 
   async function loadStatic() {
-    const [locs, trls, crs, spts, appts, defs] = await Promise.all([
-      api<Paginated<LocationOption>>('/locations', { query: { pageSize: 100 } }),
-      api<Paginated<TrailerOption>>('/transportation/trailers', { query: { pageSize: 100 } }),
-      api<Paginated<CarrierOption>>('/transportation/carriers', { query: { pageSize: 100 } }),
+    const [locs, spts, appts, defs] = await Promise.all([
+      api<Paginated<LocationOption>>('/locations', {
+        query: { type: 'WAREHOUSE', pageSize: 100 },
+      }),
       api<SpotOption[]>('/yard/spots'),
       api<AppointmentOption[]>('/yard/appointments', { query: { status: 'SCHEDULED' } }),
       api<CustomFieldDef[]>('/yard/custom-fields', { query: { entityType: 'YARD_VISIT' } }).catch(
@@ -183,15 +203,10 @@
       ),
     ]);
     locations = locs.items;
-    trailers = trls.items;
-    carriers = crs.items;
     spots = spts;
     appointments = appts;
     visitFieldDefs = defs;
-    if (!formLocationId) {
-      const dc = locations.find((l) => l.type === 'WAREHOUSE') ?? locations[0];
-      formLocationId = dc?.id ?? '';
-    }
+    if (!formLocationId) formLocationId = locations[0]?.id ?? '';
   }
 
   async function loadVisits() {
@@ -221,7 +236,7 @@
       toast.error('Sélectionnez un site');
       return;
     }
-    if (!formTrailerId && !formTrailerRef.trim()) {
+    if (!formTrailerPick) {
       toast.error('Une remorque (flotte) ou une référence est requise');
       return;
     }
@@ -230,8 +245,8 @@
     try {
       const body: Record<string, unknown> = {
         locationId: formLocationId,
-        trailerId: formTrailerId || undefined,
-        trailerRef: formTrailerId ? undefined : formTrailerRef.trim() || undefined,
+        trailerId: formTrailerIsFreeText ? undefined : formTrailerPick,
+        trailerRef: formTrailerIsFreeText ? formTrailerPick.trim() : undefined,
         carrierId: formCarrierId || undefined,
         driverName: formDriverName.trim() || undefined,
         direction: formDirection,
@@ -247,9 +262,11 @@
         spotWarnings = result.spotWarnings;
       }
       toast.success('Check-in effectué');
-      formTrailerId = '';
-      formTrailerRef = '';
+      formTrailerPick = '';
+      formTrailerIsFreeText = false;
       formCarrierId = '';
+      formDriverPick = '';
+      formDriverIsFreeText = false;
       formDriverName = '';
       formSpotId = '';
       formAppointmentId = '';
@@ -298,36 +315,61 @@
       <h2 class="mb-3 font-semibold text-ink">Check-in</h2>
       <div class="space-y-3">
         <Field label="Site">
-          <Select bind:value={formLocationId}>
-            <option value="">— Sélectionner —</option>
-            {#each locations as l (l.id)}
-              <option value={l.id}>{l.code} — {l.name}</option>
-            {/each}
-          </Select>
+          <EntityPicker
+            endpoint="/locations"
+            label="Site"
+            filters={{ type: 'WAREHOUSE' }}
+            labelKey="name"
+            detailKey="code"
+            bind:value={formLocationId}
+          />
         </Field>
-        <Field label="Remorque (flotte)">
-          <Select bind:value={formTrailerId}>
-            <option value="">— Aucune (référence libre) —</option>
-            {#each trailers as t (t.id)}
-              <option value={t.id}>{t.unitNumber}{t.plate ? ` (${t.plate})` : ''}</option>
-            {/each}
-          </Select>
+        <Field label="Remorque (flotte ou référence)">
+          <EntityPicker
+            endpoint="/transportation/trailers"
+            label="Remorque (flotte ou référence)"
+            labelKey="unitNumber"
+            detailKey="plate"
+            allowFreeText
+            bind:value={
+              () => formTrailerPick,
+              (v) => {
+                formTrailerPick = v;
+                formTrailerIsFreeText = false;
+              }
+            }
+            onfreetext={() => {
+              formTrailerIsFreeText = true;
+            }}
+          />
         </Field>
-        {#if !formTrailerId}
-          <Field label="Référence remorque">
-            <Input bind:value={formTrailerRef} placeholder="ABC123" />
-          </Field>
-        {/if}
         <Field label="Transporteur">
-          <Select bind:value={formCarrierId}>
-            <option value="">— Aucun —</option>
-            {#each carriers as c (c.id)}
-              <option value={c.id}>{c.name}</option>
-            {/each}
-          </Select>
+          <EntityPicker
+            endpoint="/transportation/carriers"
+            label="Transporteur"
+            labelKey="name"
+            detailKey="code"
+            bind:value={formCarrierId}
+          />
         </Field>
         <Field label="Chauffeur">
-          <Input bind:value={formDriverName} placeholder="Nom du chauffeur" />
+          <EntityPicker
+            endpoint="/transportation/drivers"
+            label="Chauffeur"
+            labelKey="lastName"
+            detailKey="firstName"
+            allowFreeText
+            bind:value={
+              () => formDriverPick,
+              (v) => {
+                formDriverPick = v;
+                formDriverIsFreeText = false;
+              }
+            }
+            onfreetext={() => {
+              formDriverIsFreeText = true;
+            }}
+          />
         </Field>
         <Field label="Direction">
           <Select bind:value={formDirection} disabled={!!selectedAppointment}>

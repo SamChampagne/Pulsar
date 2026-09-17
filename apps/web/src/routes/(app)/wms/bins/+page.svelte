@@ -8,6 +8,7 @@
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     Field,
     FilterBar,
     Input,
@@ -174,12 +175,12 @@
 <FilterBar>
   <a href="/wms" class="text-sm text-accent hover:underline">← Entrepôt</a>
   <div class="w-64">
-    <Select bind:value={filterLocationId}>
-      <option value="">Tous les entrepôts</option>
-      {#each warehouses as w (w.id)}
-        <option value={w.id}>{w.code} — {w.name}</option>
-      {/each}
-    </Select>
+    <EntityPicker
+      endpoint="/wms/sites"
+      label="Entrepôt"
+      placeholder="Tous les entrepôts"
+      bind:value={filterLocationId}
+    />
   </div>
   {#if canManageLocations}
     <Button
@@ -234,12 +235,7 @@
   {#snippet children()}
     <div class="space-y-3">
       <Field label="Entrepôt">
-        <Select bind:value={formLocationId}>
-          <option value="">— Sélectionner —</option>
-          {#each warehouses as w (w.id)}
-            <option value={w.id}>{w.code} — {w.name}</option>
-          {/each}
-        </Select>
+        <EntityPicker endpoint="/wms/sites" label="Entrepôt" bind:value={formLocationId} />
       </Field>
       <Field label="Code">
         <Input bind:value={formCode} placeholder="A-01-01" />

@@ -173,6 +173,7 @@
         ><EntityPicker
           endpoint={`/wms/sites/${encodeURIComponent(document.locationId)}/bins`}
           label="Emplacement"
+          pageSize={50}
           bind:value={binId}
           disabled={busy || uncertain}
         /></Field

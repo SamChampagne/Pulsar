@@ -9,9 +9,9 @@
   import {
     Button,
     Drawer,
+    EntityPicker,
     ErrorNotice,
     Field,
-    Input,
     Select,
     Textarea,
     Skeleton,
@@ -30,7 +30,17 @@
     onsaved: (id: string) => void | Promise<void>;
   } = $props();
   let open = $state(true),
-    trailerRef = $state(''),
+    // Remorque : holds either a fleet trailer id (catalog pick) or a raw
+    // reference (free text) — `trailerIsFreeText` says which, so `save()`
+    // sends `trailerId` or `trailerRef` accordingly (rule: id when picked,
+    // text when free — never both).
+    trailerPick = $state(''),
+    trailerIsFreeText = $state(false),
+    // Chauffeur : the API only stores free text (`driverName` — a visit has no
+    // driver FK). A catalog pick still resolves to the driver's display name
+    // below, so `driverName` stays the single value the API ever sees.
+    driverPick = $state(''),
+    driverIsFreeText = $state(false),
     driverName = $state(''),
     direction = $state(untrack(() => appointment?.direction ?? 'INBOUND')),
     notes = $state(''),
@@ -71,11 +81,38 @@
       disposed = true;
     };
   });
+  // Resolves a catalog driver pick to its display name; a free-text pick is
+  // already the name itself.
+  $effect(() => {
+    const id = driverPick;
+    const isFree = driverIsFreeText;
+    if (!id) {
+      driverName = '';
+      return;
+    }
+    if (isFree) {
+      driverName = id;
+      return;
+    }
+    let cancelled = false;
+    api<{ firstName: string; lastName: string }>(
+      `/transportation/drivers/${encodeURIComponent(id)}`,
+    )
+      .then((d) => {
+        if (!cancelled) driverName = [d.firstName, d.lastName].filter(Boolean).join(' ');
+      })
+      .catch(() => {
+        if (!cancelled) driverName = '';
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
   function close() {
     if (saving) return false;
     if (
-      trailerRef ||
-      driverName ||
+      trailerPick ||
+      driverPick ||
       notes ||
       spotId ||
       Object.values(customData).some((v) => v !== '' && v !== false)
@@ -96,6 +133,10 @@
   async function save(e: SubmitEvent) {
     e.preventDefault();
     if (saving || loading || definitionsFailed || uncertain) return;
+    if (!trailerPick) {
+      error = 'La remorque ou une référence de véhicule est requise.';
+      return;
+    }
     saving = true;
     error = '';
     try {
@@ -103,7 +144,8 @@
         method: 'POST',
         body: {
           locationId: workspace.site.id,
-          trailerRef: trailerRef.trim(),
+          trailerId: trailerIsFreeText ? undefined : trailerPick,
+          trailerRef: trailerIsFreeText ? trailerPick.trim() : undefined,
           driverName: driverName.trim() || undefined,
           direction,
           spotId: spotId || undefined,
@@ -146,13 +188,42 @@
     <form id="yard-arrival" class="space-y-4" onsubmit={save}>
       <fieldset disabled={saving} class="space-y-4">
         <Field label="Remorque ou référence du véhicule"
-          ><Input
-            bind:value={trailerRef}
-            required
-            maxlength={100}
-            placeholder="Ex. RF-218"
+          ><EntityPicker
+            endpoint="/transportation/trailers"
+            label="Remorque ou référence du véhicule"
+            labelKey="unitNumber"
+            detailKey="plate"
+            allowFreeText
+            bind:value={
+              () => trailerPick,
+              (v) => {
+                trailerPick = v;
+                trailerIsFreeText = false;
+              }
+            }
+            onfreetext={() => {
+              trailerIsFreeText = true;
+            }}
           /></Field
-        ><Field label="Chauffeur"><Input bind:value={driverName} maxlength={100} /></Field>
+        ><Field label="Chauffeur"
+          ><EntityPicker
+            endpoint="/transportation/drivers"
+            label="Chauffeur"
+            labelKey="lastName"
+            detailKey="firstName"
+            allowFreeText
+            bind:value={
+              () => driverPick,
+              (v) => {
+                driverPick = v;
+                driverIsFreeText = false;
+              }
+            }
+            onfreetext={() => {
+              driverIsFreeText = true;
+            }}
+          /></Field
+        >
         <Field label="Opération"
           ><Select bind:value={direction} disabled={!!appointment}
             >{#each ['INBOUND', 'OUTBOUND', 'OTHER'] as d (d)}<option value={d}

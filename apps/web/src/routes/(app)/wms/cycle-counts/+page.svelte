@@ -6,9 +6,9 @@
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     Field,
     PageHeader,
-    Select,
     Skeleton,
     Table,
     ViewToggle,
@@ -212,11 +212,14 @@
       <h2 class="mb-3 text-sm font-bold text-ink">Nouveau comptage</h2>
       <div class="space-y-3">
         <Field label="Emplacement">
-          <Select bind:value={createBinId}>
-            <option value="">Choisir…</option>
-            {#each bins as b (b.id)}<option value={b.id}>{b.code} · {b.location.code}</option
-              >{/each}
-          </Select>
+          <EntityPicker
+            endpoint="/wms/bins"
+            label="Emplacement"
+            labelKey="code"
+            detailKey="kind"
+            listShape="array"
+            bind:value={createBinId}
+          />
         </Field>
         <Field label="Note">
           <input

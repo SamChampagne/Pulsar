@@ -117,6 +117,7 @@
       ><EntityPicker
         endpoint={`/wms/sites/${encodeURIComponent(source.locationId)}/bins`}
         label="Destination"
+        pageSize={50}
         bind:value={destination}
         disabled={busy || !!$pendingMove}
       /></Field

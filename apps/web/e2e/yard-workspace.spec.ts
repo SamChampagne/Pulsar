@@ -1,5 +1,23 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 import { login } from './helpers';
+
+// The YardArrival drawer's trailer/driver fields are entity pickers backed by
+// the transportation catalogs; keep them empty and deterministic here — these
+// tests only exercise the free-text path.
+async function mockEmptyTransportationCatalogs(page: Page) {
+  for (const entity of ['trailers', 'drivers', 'carriers'])
+    await page.route(`**/api/v1/transportation/${entity}?**`, (r) =>
+      r.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 20 } }),
+    );
+}
+
+/** Opens a picker field, types free text and picks the "use as typed" option. */
+async function pickFreeText(page: Page, scope: Page | Locator, label: string, text: string) {
+  await scope.getByRole('button', { name: new RegExp(`^${label} :`) }).click();
+  const dialog = page.getByRole('dialog', { name: label, exact: true });
+  await dialog.getByRole('textbox', { name: `Rechercher : ${label.toLowerCase()}` }).fill(text);
+  await dialog.getByRole('option', { name: `Utiliser “${text}”`, exact: true }).click();
+}
 
 function fixture() {
   const site = {
@@ -86,6 +104,7 @@ function fixture() {
 }
 async function setup(page: Page) {
   await login(page);
+  await mockEmptyTransportationCatalogs(page);
   const data = fixture();
   await page.route('**/api/v1/yard/**', async (route) => {
     const url = new URL(route.request().url()),
@@ -270,13 +289,18 @@ test('dock planning identifies conflicts and links a booking to arrival without 
   await expect(arrival.getByRole('combobox', { name: 'Opération', exact: true })).toHaveValue(
     'OUTBOUND',
   );
-  await arrival.getByLabel('Remorque ou référence du véhicule').fill('RF-NEW');
+  await pickFreeText(page, arrival, 'Remorque ou référence du véhicule', 'RF-NEW');
   await page.keyboard.press('Escape');
   await page
     .getByRole('dialog', { name: 'Fermer la saisie', exact: true })
     .getByRole('button', { name: 'Annuler', exact: true })
     .click();
-  await expect(arrival.getByLabel('Remorque ou référence du véhicule')).toHaveValue('RF-NEW');
+  await expect(
+    arrival.getByRole('button', {
+      name: 'Remorque ou référence du véhicule : RF-NEW',
+      exact: true,
+    }),
+  ).toBeVisible();
 });
 test('a failed arrival can be corrected and retried without losing its fields', async ({
   page,
@@ -287,10 +311,15 @@ test('a failed arrival can be corrected and retried without losing its fields', 
   );
   await page.getByRole('button', { name: 'Enregistrer une arrivée', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'Enregistrer une arrivée', exact: true });
-  await panel.getByLabel('Remorque ou référence du véhicule').fill('RF-RETRY');
+  await pickFreeText(page, panel, 'Remorque ou référence du véhicule', 'RF-RETRY');
   await panel.getByRole('button', { name: 'Enregistrer l’arrivée', exact: true }).click();
   await expect(panel.getByRole('alert')).toContainText('Chauffeur à vérifier');
-  await expect(panel.getByLabel('Remorque ou référence du véhicule')).toHaveValue('RF-RETRY');
+  await expect(
+    panel.getByRole('button', {
+      name: 'Remorque ou référence du véhicule : RF-RETRY',
+      exact: true,
+    }),
+  ).toBeVisible();
   await expect(
     panel.getByRole('button', { name: 'Enregistrer l’arrivée', exact: true }),
   ).toBeEnabled();
@@ -301,13 +330,18 @@ test('an uncertain arrival is not replayed and keeps the operator’s input', as
   await page.route('**/api/v1/yard/visits', (r) => r.abort('failed'));
   await page.getByRole('button', { name: 'Enregistrer une arrivée', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'Enregistrer une arrivée', exact: true });
-  await panel.getByLabel('Remorque ou référence du véhicule').fill('RF-UNCERTAIN');
+  await pickFreeText(page, panel, 'Remorque ou référence du véhicule', 'RF-UNCERTAIN');
   await panel.getByRole('button', { name: 'Enregistrer l’arrivée', exact: true }).click();
   await expect(panel.getByRole('alert')).toContainText('a peut-être été enregistrée');
   await expect(
     panel.getByRole('button', { name: 'Enregistrer l’arrivée', exact: true }),
   ).toBeDisabled();
-  await expect(panel.getByLabel('Remorque ou référence du véhicule')).toHaveValue('RF-UNCERTAIN');
+  await expect(
+    panel.getByRole('button', {
+      name: 'Remorque ou référence du véhicule : RF-UNCERTAIN',
+      exact: true,
+    }),
+  ).toBeVisible();
 });
 
 test('a valid drawing saves display geometry only and survives a reload', async ({ page }) => {

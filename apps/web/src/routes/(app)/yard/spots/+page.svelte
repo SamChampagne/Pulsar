@@ -8,6 +8,7 @@
     Button,
     Card,
     EmptyState,
+    EntityPicker,
     Field,
     FilterBar,
     Input,
@@ -89,7 +90,7 @@
 
   async function loadLocations() {
     const res = await api<Paginated<LocationOption>>('/locations', {
-      query: { pageSize: 100 },
+      query: { type: 'WAREHOUSE', pageSize: 100 },
     });
     locations = res.items;
   }
@@ -172,12 +173,15 @@
 <FilterBar>
   <a href="/yard" class="text-sm text-accent hover:underline">← Cour</a>
   <div class="w-64">
-    <Select bind:value={filterLocationId}>
-      <option value="">Tous les sites</option>
-      {#each locations as l (l.id)}
-        <option value={l.id}>{l.code} — {l.name}</option>
-      {/each}
-    </Select>
+    <EntityPicker
+      endpoint="/locations"
+      label="Site"
+      placeholder="Tous les sites"
+      filters={{ type: 'WAREHOUSE' }}
+      labelKey="name"
+      detailKey="code"
+      bind:value={filterLocationId}
+    />
   </div>
   {#if canManageLocations}
     <Button
@@ -228,12 +232,14 @@
   {#snippet children()}
     <div class="space-y-3">
       <Field label="Site">
-        <Select bind:value={formLocationId}>
-          <option value="">— Sélectionner —</option>
-          {#each locations as l (l.id)}
-            <option value={l.id}>{l.code} — {l.name}</option>
-          {/each}
-        </Select>
+        <EntityPicker
+          endpoint="/locations"
+          label="Site"
+          filters={{ type: 'WAREHOUSE' }}
+          labelKey="name"
+          detailKey="code"
+          bind:value={formLocationId}
+        />
       </Field>
       <Field label="Code">
         <Input bind:value={formCode} placeholder="DOOR-1" />
