@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { MODULE_CATALOG, MODULE_KEYS, slugify } from '@pulsar/shared';
+  import { MODULE_CATALOG, MODULE_KEYS, PERMISSIONS, slugify } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { auth } from '$lib/stores/auth';
   import { toast } from '$lib/stores/toast';
@@ -67,6 +67,10 @@
 
   const customRoleCount = $derived(roles.filter((r) => !r.isSystem).length);
 
+  const canManage = $derived(
+    ($auth?.user.permissions ?? []).includes(PERMISSIONS.CORE.ROLES_MANAGE),
+  );
+
   // French domain labels from the sidebar catalogue, keyed by module.
   const moduleLabels = $derived.by(() => {
     const map = new Map<string, string>();
@@ -76,9 +80,21 @@
     return map;
   });
 
+  // Modules with no sidebar domain of their own (not yet built out) fall back to the
+  // English MODULE_CATALOG name; a tiny French override keeps the group headers consistent.
+  const MODULE_LABEL_OVERRIDES: Record<string, string> = {
+    [MODULE_KEYS.CUSTOMER_PORTAL]: 'Portail client',
+    [MODULE_KEYS.CARRIER_PORTAL]: 'Portail transporteur',
+  };
+
   function labelForModule(key: string): string {
     if (key === MODULE_KEYS.CORE) return 'Plateforme';
-    return moduleLabels.get(key) ?? MODULE_CATALOG.find((m) => m.key === key)?.name ?? key;
+    return (
+      moduleLabels.get(key) ??
+      MODULE_LABEL_OVERRIDES[key] ??
+      MODULE_CATALOG.find((m) => m.key === key)?.name ??
+      key
+    );
   }
 
   const allowedModuleKeys = $derived<string[]>([
@@ -135,6 +151,7 @@
   }
 
   function openNew() {
+    if (!canManage) return;
     editingRole = null;
     keyTouched = false;
     form = { name: '', key: '', description: '', permissionKeys: [] };
@@ -143,6 +160,7 @@
   }
 
   function openEdit(role: RoleRow) {
+    if (!canManage) return;
     editingRole = role;
     keyTouched = true;
     form = {
@@ -199,7 +217,9 @@
           method: 'PATCH',
           body: {
             name: form.name,
-            description: form.description || undefined,
+            // Unlike create, an edit must be able to CLEAR the description — sending
+            // `undefined` here would be dropped by the DTO and the field left unchanged.
+            description: form.description,
             ...(editingRole.isSystem ? {} : { permissionKeys: form.permissionKeys }),
           },
         });
@@ -228,6 +248,7 @@
   }
 
   async function createFromTemplate(t: TemplateRow) {
+    if (!canManage) return;
     try {
       await api('/roles/from-template', { method: 'POST', body: { templateKey: t.key } });
       toast.success(`Rôle « ${t.name} » créé`);
@@ -238,7 +259,7 @@
   }
 
   async function remove(role: RoleRow) {
-    if (role.isSystem || role._count.users > 0) return;
+    if (!canManage || role.isSystem || role._count.users > 0) return;
     if (!(await confirmAction(`Supprimer le rôle « ${role.name} » ?`))) return;
     try {
       await api(`/roles/${role.id}`, { method: 'DELETE' });
@@ -262,7 +283,9 @@
   count={roles.length}
 >
   {#snippet actions()}
-    <Button onclick={openNew}>Créer un rôle</Button>
+    {#if canManage}
+      <Button onclick={openNew}>Créer un rôle</Button>
+    {/if}
   {/snippet}
 </PageHeader>
 
@@ -277,7 +300,9 @@
         message="Aucun rôle personnalisé — commencez par un rôle suggéré ou créez le vôtre."
       >
         {#snippet children()}
-          <Button onclick={openNew}>Créer un rôle</Button>
+          {#if canManage}
+            <Button onclick={openNew}>Créer un rôle</Button>
+          {/if}
         {/snippet}
       </EmptyState>
     </Card>
@@ -303,29 +328,31 @@
             >{#if role.isSystem}<Badge tone="info">Système</Badge>{/if}</td
           >
           <td class="text-right">
-            <div class="flex justify-end gap-2">
-              <Button variant="secondary" onclick={() => openEdit(role)}>Modifier</Button>
-              {#if role.isSystem}
-                <span title="Rôle système : ne peut pas être supprimé">
-                  <Button variant="danger" disabled>Supprimer</Button>
-                </span>
-              {:else if role._count.users > 0}
-                <span
-                  title={`Assigné à ${role._count.users} utilisateur(s) : retirez-le avant de supprimer`}
-                >
-                  <Button variant="danger" disabled>Supprimer</Button>
-                </span>
-              {:else}
-                <Button variant="danger" onclick={() => remove(role)}>Supprimer</Button>
-              {/if}
-            </div>
+            {#if canManage}
+              <div class="flex justify-end gap-2">
+                <Button variant="secondary" onclick={() => openEdit(role)}>Modifier</Button>
+                {#if role.isSystem}
+                  <span title="Rôle système : ne peut pas être supprimé">
+                    <Button variant="danger" disabled>Supprimer</Button>
+                  </span>
+                {:else if role._count.users > 0}
+                  <span
+                    title={`Assigné à ${role._count.users} utilisateur(s) : retirez-le avant de supprimer`}
+                  >
+                    <Button variant="danger" disabled>Supprimer</Button>
+                  </span>
+                {:else}
+                  <Button variant="danger" onclick={() => remove(role)}>Supprimer</Button>
+                {/if}
+              </div>
+            {/if}
           </td>
         </tr>
       {/each}
     {/snippet}
   </Table>
 
-  {#if templates.filter((t) => !t.exists).length > 0}
+  {#if canManage && templates.filter((t) => !t.exists).length > 0}
     <Card>
       <h2 class="mb-3 text-sm font-semibold text-ink">Rôles suggérés</h2>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -350,6 +377,9 @@
   bind:open={showForm}
   title={editingRole ? `Modifier « ${editingRole.name} »` : 'Créer un rôle'}
   size="xl"
+  onclose={() => {
+    error = '';
+  }}
 >
   {#snippet children()}
     <form onsubmit={submit} class="space-y-4">
@@ -417,6 +447,7 @@
           variant="secondary"
           onclick={() => {
             showForm = false;
+            error = '';
           }}>Annuler</Button
         >
         <Button variant="primary" type="submit" loading={saving} disabled={!!keyError}>
