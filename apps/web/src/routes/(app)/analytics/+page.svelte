@@ -16,7 +16,7 @@
 
   function fmt(v: number | null, suffix = ''): string {
     if (v === null) return '—';
-    return `${v.toLocaleString()}${suffix}`;
+    return `${v.toLocaleString('fr-CA')}${suffix}`;
   }
 
   function fmtCurrency(v: number | null): string {

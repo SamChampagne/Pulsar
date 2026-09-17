@@ -5,6 +5,7 @@
   import { page } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { formatDate } from '$lib/format';
   import {
     Badge,
     Button,
@@ -413,9 +414,9 @@
         <div class="rounded-card bg-warn-soft text-warn p-3 text-sm">
           <strong>{w.shipmentNumber}</strong> —
           {w.field === 'pickup' ? 'pickup' : 'delivery'} planifié
-          {w.kind === 'BEFORE_EARLY' ? 'avant' : 'après'} la fenêtre demandée (demandé {new Date(
+          {w.kind === 'BEFORE_EARLY' ? 'avant' : 'après'} la fenêtre demandée (demandé {formatDate(
             w.requested,
-          ).toLocaleDateString()}, planifié {new Date(w.planned).toLocaleDateString()})
+          )}, planifié {formatDate(w.planned)})
         </div>
       {/each}
     </div>

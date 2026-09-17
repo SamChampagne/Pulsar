@@ -133,7 +133,9 @@
         { method: 'POST', body: { carrierId: opt.carrier.id } },
       );
       toast.success(
-        t.emailedTo ? `Tender envoyé à ${opt.carrier.name} (${t.emailedTo})` : `Tender envoyé à ${opt.carrier.name}`,
+        t.emailedTo
+          ? `Tender envoyé à ${opt.carrier.name} (${t.emailedTo})`
+          : `Tender envoyé à ${opt.carrier.name}`,
       );
       onChanged();
     } catch (e) {
@@ -196,7 +198,8 @@
                     {/if}
                   </div>
                   <span class="font-semibold whitespace-nowrap">
-                    {opt.breakdown.total.toLocaleString()} {opt.currency}
+                    {opt.breakdown.total.toLocaleString('fr-CA')}
+                    {opt.currency}
                   </span>
                 </div>
                 <div class="mt-0.5 text-xs text-ink-muted">
@@ -213,7 +216,9 @@
                     {#each opt.breakdown.lines as line (line.label)}
                       <tr>
                         <td class="py-0.5 text-ink-muted">{line.label}</td>
-                        <td class="py-0.5 text-right">{line.amount.toLocaleString()} {opt.currency}</td>
+                        <td class="py-0.5 text-right"
+                          >{line.amount.toLocaleString('fr-CA')} {opt.currency}</td
+                        >
                       </tr>
                     {/each}
                   </tbody>

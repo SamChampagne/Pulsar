@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Badge, Button, Card, toneFor, labelFor } from '$lib/components/ui';
+  import { formatDateTime } from '$lib/format';
 
   type ShipmentOnLoad = {
     id: string;
@@ -58,7 +59,9 @@
   } = $props();
 
   const shipments = $derived(selectedLoad?.shipments ?? []);
-  const stops = $derived([...(selectedLoad?.route?.stops ?? [])].sort((a, b) => a.sequence - b.sequence));
+  const stops = $derived(
+    [...(selectedLoad?.route?.stops ?? [])].sort((a, b) => a.sequence - b.sequence),
+  );
 
   /** Sum a numeric axis across assigned shipments (fields may be absent on the load payload). */
   function sumAxis(key: 'weightKg' | 'volumeM3' | 'palletCount'): number {
@@ -71,11 +74,11 @@
 
   const fmtCost = $derived(
     selectedLoad?.estimatedCost != null && selectedLoad.estimatedCost !== ''
-      ? `${Number(selectedLoad.estimatedCost).toLocaleString()} ${selectedLoad.costCurrency ?? ''}`.trim()
+      ? `${Number(selectedLoad.estimatedCost).toLocaleString('fr-CA')} ${selectedLoad.costCurrency ?? ''}`.trim()
       : '—',
   );
 
-  const fmtTime = (d?: string | null) => (d ? new Date(d).toLocaleString() : '—');
+  const fmtTime = (d?: string | null) => formatDateTime(d);
 
   function handleSelect(e: Event) {
     const value = (e.currentTarget as HTMLSelectElement).value;
@@ -123,18 +126,20 @@
 
       <!-- Capacity (used totals; no per-axis maxima exposed on the load payload) -->
       <Card>
-        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">Capacité (utilisée)</h3>
+        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          Capacité (utilisée)
+        </h3>
         <div class="grid grid-cols-3 gap-3 text-center">
           <div>
-            <div class="text-lg font-semibold text-ink">{usedWeight.toLocaleString()}</div>
+            <div class="text-lg font-semibold text-ink">{usedWeight.toLocaleString('fr-CA')}</div>
             <div class="text-xs text-ink-muted">kg</div>
           </div>
           <div>
-            <div class="text-lg font-semibold text-ink">{usedVolume.toLocaleString()}</div>
+            <div class="text-lg font-semibold text-ink">{usedVolume.toLocaleString('fr-CA')}</div>
             <div class="text-xs text-ink-muted">m³</div>
           </div>
           <div>
-            <div class="text-lg font-semibold text-ink">{usedPallets.toLocaleString()}</div>
+            <div class="text-lg font-semibold text-ink">{usedPallets.toLocaleString('fr-CA')}</div>
             <div class="text-xs text-ink-muted">pal</div>
           </div>
         </div>
@@ -149,12 +154,16 @@
           {:else}
             <ol class="flex flex-col gap-2">
               {#each stops as stop (stop.id)}
-                <li class="flex items-center gap-2 border-b border-edge pb-2 text-sm last:border-0 last:pb-0">
+                <li
+                  class="flex items-center gap-2 border-b border-edge pb-2 text-sm last:border-0 last:pb-0"
+                >
                   <Badge tone={stop.type === 'PICKUP' ? 'info' : 'ok'}>{stop.type}</Badge>
                   <span class="min-w-0 flex-1 truncate text-ink">
                     {[stop.location?.name, stop.location?.city].filter(Boolean).join(', ') || '—'}
                   </span>
-                  <span class="text-xs text-ink-muted whitespace-nowrap">{fmtTime(stop.plannedArrivalEarly)}</span>
+                  <span class="text-xs text-ink-muted whitespace-nowrap"
+                    >{fmtTime(stop.plannedArrivalEarly)}</span
+                  >
                 </li>
               {/each}
             </ol>
@@ -174,7 +183,9 @@
           {:else}
             <ul class="flex flex-col gap-1.5">
               {#each shipments as s (s.id)}
-                <li class="flex items-center justify-between gap-2 rounded-md border border-edge px-2 py-1.5 text-sm">
+                <li
+                  class="flex items-center justify-between gap-2 rounded-md border border-edge px-2 py-1.5 text-sm"
+                >
                   <span class="flex items-center gap-2">
                     <span class="font-medium text-ink">{s.shipmentNumber}</span>
                     <Badge tone={toneFor(s.status)}>{labelFor(s.status)}</Badge>

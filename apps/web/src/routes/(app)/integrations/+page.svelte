@@ -14,6 +14,7 @@
     Textarea,
   } from '$lib/components/ui';
   import {
+    LEGACY_WEBHOOK_EVENTS,
     PERMISSIONS,
     WEBHOOK_FORMATS,
     buildIntegrationRoadmap,
@@ -366,7 +367,11 @@
       samplePayload: defaultSample(kind),
       notes: '',
       format: 'json',
-      events: [],
+      // Seeded with the legacy 6-event TMS allowlist, not `[]` — an empty
+      // allowlist means "every catalog event" (portal notes, PII-adjacent
+      // events included), which must stay an explicit user choice (the
+      // « Tout » toggle below), never a silent default on a new webhook.
+      events: kind === 'webhook' ? [...LEGACY_WEBHOOK_EVENTS] : [],
     };
   }
 
@@ -510,6 +515,9 @@
     form.schedule = kind === 'webhook' ? 'webhook' : 'manual';
     form.mappings = defaultMappings(kind);
     form.samplePayload = defaultSample(kind);
+    // Re-seed the legacy allowlist when (re)picking "webhook" during creation —
+    // same reasoning as blankForm: never default a new connector to "all events".
+    form.events = kind === 'webhook' ? [...LEGACY_WEBHOOK_EVENTS] : [];
     if (!form.name) form.name = template.label;
     if (!form.id) form.key = slugify(form.name || kind);
   }
@@ -552,6 +560,13 @@
     form.events = form.events.includes(type)
       ? form.events.filter((item) => item !== type)
       : [...form.events, type];
+  }
+
+  // An empty allowlist means "diffuse every catalog event" server-side —
+  // this must only ever happen through this explicit toggle, never as a
+  // silent default (blankForm/setKind always seed the legacy 6-event list).
+  function toggleAllEvents() {
+    form.events = form.events.length === 0 ? [...LEGACY_WEBHOOK_EVENTS] : [];
   }
 
   function compactConfig() {
@@ -1030,11 +1045,33 @@
                 </p>
               </div>
               <div class="mt-3 rounded-xl bg-surface-muted p-3">
-                <p class="text-xs font-bold text-ink">Événements diffusés</p>
-                <p class="mt-1 text-[11px] leading-4 text-ink-faint">
-                  Aucune case cochée = tous les événements du catalogue sont diffusés.
-                </p>
-                {#if eventCatalog.length === 0}
+                <div class="flex items-center justify-between gap-2">
+                  <p class="text-xs font-bold text-ink">Événements diffusés</p>
+                  <label
+                    class="flex shrink-0 items-center gap-1.5 text-[11px] font-semibold text-ink-muted"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.events.length === 0}
+                      onchange={toggleAllEvents}
+                    />
+                    Tout
+                  </label>
+                </div>
+                {#if form.events.length === 0}
+                  <p class="mt-1 text-[11px] leading-4 text-warn">
+                    Attention : tous les événements du catalogue seront diffusés, y compris les
+                    notes du portail client et tout futur événement — décochez « Tout » pour revenir
+                    à une liste précise.
+                  </p>
+                {:else}
+                  <p class="mt-1 text-[11px] leading-4 text-ink-faint">
+                    Seuls les événements cochés ci-dessous sont diffusés.
+                  </p>
+                {/if}
+                {#if form.events.length === 0}
+                  <!-- "Tout" is active — the per-event list is moot until it's turned off. -->
+                {:else if eventCatalog.length === 0}
                   <p class="mt-2 text-xs text-ink-muted">Catalogue d’événements indisponible.</p>
                 {:else}
                   <div class="mt-2 grid max-h-56 gap-1 overflow-y-auto pr-1">

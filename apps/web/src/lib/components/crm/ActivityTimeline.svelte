@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatDateTime } from '$lib/format';
+  import { formatDate, formatDateTime } from '$lib/format';
 
   // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -22,23 +22,35 @@
 
   function typeIcon(type: string): string {
     switch (type) {
-      case 'NOTE':    return '📝';
-      case 'CALL':    return '📞';
-      case 'EMAIL':   return '✉️';
-      case 'MEETING': return '🤝';
-      case 'TASK':    return '✅';
-      default:        return '•';
+      case 'NOTE':
+        return '📝';
+      case 'CALL':
+        return '📞';
+      case 'EMAIL':
+        return '✉️';
+      case 'MEETING':
+        return '🤝';
+      case 'TASK':
+        return '✅';
+      default:
+        return '•';
     }
   }
 
   function typeLabel(type: string): string {
     switch (type) {
-      case 'NOTE':    return 'Note';
-      case 'CALL':    return 'Appel';
-      case 'EMAIL':   return 'Courriel';
-      case 'MEETING': return 'Réunion';
-      case 'TASK':    return 'Tâche';
-      default:        return type;
+      case 'NOTE':
+        return 'Note';
+      case 'CALL':
+        return 'Appel';
+      case 'EMAIL':
+        return 'Courriel';
+      case 'MEETING':
+        return 'Réunion';
+      case 'TASK':
+        return 'Tâche';
+      default:
+        return type;
     }
   }
 
@@ -54,13 +66,13 @@
     const now = new Date();
     const diffMs = now.getTime() - d.getTime();
     const diffMin = Math.floor(diffMs / 60_000);
-    if (diffMin < 1) return 'À l\'instant';
+    if (diffMin < 1) return "À l'instant";
     if (diffMin < 60) return `Il y a ${diffMin}m`;
     const diffH = Math.floor(diffMin / 60);
     if (diffH < 24) return `Il y a ${diffH}h`;
     const diffD = Math.floor(diffH / 24);
     if (diffD < 7) return `Il y a ${diffD}j`;
-    return d.toLocaleDateString();
+    return formatDate(iso);
   }
 </script>
 
@@ -98,7 +110,9 @@
           {#if activity.type === 'TASK'}
             <div class="mt-1 flex items-center gap-2">
               {#if activity.doneAt}
-                <span class="inline-flex items-center gap-1 rounded-full bg-ok-soft px-2 py-0.5 text-[10px] font-semibold text-ok">
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-ok-soft px-2 py-0.5 text-[10px] font-semibold text-ok"
+                >
                   ✓ Terminée {relativeTime(activity.doneAt)}
                 </span>
               {:else if activity.dueAt}
@@ -108,7 +122,7 @@
                     overdue ? 'bg-danger-soft text-danger' : 'bg-warn-soft text-warn'
                   }`}
                 >
-                  ⏱ Échéance : {new Date(activity.dueAt).toLocaleDateString()}
+                  ⏱ Échéance : {formatDate(activity.dueAt)}
                 </span>
               {:else}
                 <span class="text-[10px] text-ink-faint">Aucune échéance</span>

@@ -740,6 +740,24 @@ export function navCatalogue(): NavDomain[] {
  * - Sections with no remaining links are dropped; domains with no remaining sections are
  *   dropped UNLESS they are the `dashboard` domain.
  */
+/**
+ * Where clicking a domain's icon/card should navigate: `domain.home` when the
+ * user can actually reach it (it appears among the domain's own — already
+ * perm-filtered — links), otherwise the first link the user DOES have access
+ * to. Some domains gate their `home` route behind a permission narrower than
+ * the domain's own visibility gate (e.g. Portail client is visible on the
+ * module alone, but `/customer-portal/requests` needs
+ * `customer-portal.users.read` — a user with only
+ * `customer-portal.links.manage` would otherwise land on a 403). `domain`
+ * must be one already produced by `visibleDomains()` so its `sections` are
+ * pre-filtered for the current user.
+ */
+export function domainHome(domain: NavDomain): string {
+  const links = domain.sections.flatMap((s) => s.links);
+  if (links.some((l) => l.href === domain.home)) return domain.home;
+  return links[0]?.href ?? domain.home;
+}
+
 export function visibleDomains(caps: NavCaps): NavDomain[] {
   return navCatalogue()
     .filter((d) => {

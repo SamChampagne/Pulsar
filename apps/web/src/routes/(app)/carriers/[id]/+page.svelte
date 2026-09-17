@@ -2,9 +2,15 @@
   import { page } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { formatDate } from '$lib/format';
   import {
-    Badge, Card, PageHeader, ErrorNotice, Skeleton,
-    toneFor, labelFor,
+    Badge,
+    Card,
+    PageHeader,
+    ErrorNotice,
+    Skeleton,
+    toneFor,
+    labelFor,
   } from '$lib/components/ui';
 
   interface CarrierDetail {
@@ -42,7 +48,7 @@
   let loadsError = $state('');
 
   function fmtDate(v: string | null): string {
-    return v ? new Date(v).toLocaleDateString() : '—';
+    return formatDate(v);
   }
 
   // Derive simple performance stats from fetched loads
@@ -91,7 +97,6 @@
   <div class="grid gap-4 lg:grid-cols-3">
     <!-- Left 2/3 -->
     <div class="flex flex-col gap-4 lg:col-span-2">
-
       <!-- Performance snapshot derived from loads -->
       <Card>
         <h2 class="mb-3 font-semibold text-ink">Performance</h2>
@@ -140,7 +145,10 @@
                 {#each loads as l (l.id)}
                   <tr class="border-b border-edge last:border-0 hover:bg-canvas/60">
                     <td class="py-2 pr-3">
-                      <a href={`/loads/${l.id}`} class="font-mono font-semibold text-accent hover:underline">
+                      <a
+                        href={`/loads/${l.id}`}
+                        class="font-mono font-semibold text-accent hover:underline"
+                      >
                         {l.loadNumber}
                       </a>
                     </td>

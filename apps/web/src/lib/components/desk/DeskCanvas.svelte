@@ -6,7 +6,7 @@
   import { goto } from '$app/navigation';
   import { onDestroy } from 'svelte';
   import { MODULE_UNIVERSES } from '$lib/modules/universe';
-  import type { NavDomain } from '$lib/modules/navigation';
+  import { domainHome, type NavDomain } from '$lib/modules/navigation';
   import {
     FRAMEWORK_FOLDER_ID,
     DESK_CANVAS_W,
@@ -82,7 +82,10 @@
             if (bgImageUrl) URL.revokeObjectURL(bgImageUrl);
             bgImageUrl = url;
           })
-          .catch(() => { bgImageUrl = null; toast.error("Impossible de charger l'image de fond"); });
+          .catch(() => {
+            bgImageUrl = null;
+            toast.error("Impossible de charger l'image de fond");
+          });
       }
     } else if (bgImageUrl) {
       URL.revokeObjectURL(bgImageUrl);
@@ -90,7 +93,9 @@
       bgImageForId = null;
     }
   });
-  onDestroy(() => { if (bgImageUrl) URL.revokeObjectURL(bgImageUrl); });
+  onDestroy(() => {
+    if (bgImageUrl) URL.revokeObjectURL(bgImageUrl);
+  });
 
   // ── Identity helpers ─────────────────────────────────────────────────────
   function deskId(item: DeskItem): string {
@@ -113,11 +118,24 @@
   let canvasW = $state(0);
   let canvasH = $state(0);
 
-  function onDragStart(id: string) { movingId = id; suppressClick = true; }
-  function onDragMove(x: number, y: number) { movingPos = { x, y }; }
-  function onFolderIntent(id: string | null) { folderTargetId = id; }
-  function clampX(x: number) { const w = canvasW || DESK_CANVAS_W; return Math.max(0, Math.min(x, w - tilePx)); }
-  function clampY(y: number) { const h = canvasH || 600; return Math.max(0, Math.min(y, h - tilePx)); }
+  function onDragStart(id: string) {
+    movingId = id;
+    suppressClick = true;
+  }
+  function onDragMove(x: number, y: number) {
+    movingPos = { x, y };
+  }
+  function onFolderIntent(id: string | null) {
+    folderTargetId = id;
+  }
+  function clampX(x: number) {
+    const w = canvasW || DESK_CANVAS_W;
+    return Math.max(0, Math.min(x, w - tilePx));
+  }
+  function clampY(y: number) {
+    const h = canvasH || 600;
+    return Math.max(0, Math.min(y, h - tilePx));
+  }
 
   function toChild(item: Extract<DeskItem, { type: 'module' | 'link' }>): DeskFolderChild {
     return item.type === 'module'
@@ -134,13 +152,24 @@
     if (target.type === 'folder') {
       const folderCopy: Extract<DeskItem, { type: 'folder' }> = {
         ...target,
-        items: [...target.items, toChild(dragged as Extract<DeskItem, { type: 'module' | 'link' }>)],
+        items: [
+          ...target.items,
+          toChild(dragged as Extract<DeskItem, { type: 'module' | 'link' }>),
+        ],
       };
-      layout = { ...layout, items: items.filter((it) => deskId(it) !== dragId).map((it) => (deskId(it) === targetId ? folderCopy : it)) };
+      layout = {
+        ...layout,
+        items: items
+          .filter((it) => deskId(it) !== dragId)
+          .map((it) => (deskId(it) === targetId ? folderCopy : it)),
+      };
     } else {
       const folder: Extract<DeskItem, { type: 'folder' }> = {
         type: 'folder',
-        id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `folder-${Date.now()}`,
+        id:
+          typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `folder-${Date.now()}`,
         name: 'Dossier',
         pos: target.pos,
         items: [
@@ -148,7 +177,12 @@
           toChild(dragged as Extract<DeskItem, { type: 'module' | 'link' }>),
         ],
       };
-      layout = { ...layout, items: items.filter((it) => deskId(it) !== dragId).map((it) => (deskId(it) === targetId ? folder : it)) };
+      layout = {
+        ...layout,
+        items: items
+          .filter((it) => deskId(it) !== dragId)
+          .map((it) => (deskId(it) === targetId ? folder : it)),
+      };
     }
   }
 
@@ -158,24 +192,42 @@
     if (from === -1) return;
     const [moved] = items.splice(from, 1);
     const insertAt = items.findIndex((it: DeskItem) => deskId(it) === targetId);
-    if (insertAt === -1) { items.splice(from, 0, moved); return; }
+    if (insertAt === -1) {
+      items.splice(from, 0, moved);
+      return;
+    }
     items.splice(insertAt, 0, moved);
     layout = { ...layout, items };
   }
 
-  function onDragDrop(id: string, x: number, y: number, dwellId: string | null, overId: string | null) {
-    movingId = null; movingPos = null; folderTargetId = null;
+  function onDragDrop(
+    id: string,
+    x: number,
+    y: number,
+    dwellId: string | null,
+    overId: string | null,
+  ) {
+    movingId = null;
+    movingPos = null;
+    folderTargetId = null;
     const dragged = itemById(id);
     if (!dragged) return;
     if (dwellId && dragged.type !== 'folder') {
       foldInto(id, dwellId);
     } else if (layout.mode === 'free') {
-      layout = { ...layout, items: layout.items.map((it: DeskItem) => (deskId(it) === id ? { ...it, pos: { x: clampX(x), y: clampY(y) } } : it)) };
+      layout = {
+        ...layout,
+        items: layout.items.map((it: DeskItem) =>
+          deskId(it) === id ? { ...it, pos: { x: clampX(x), y: clampY(y) } } : it,
+        ),
+      };
     } else if (layout.mode === 'reorder' && overId && overId !== id) {
       reorderBefore(id, overId);
     }
     commit();
-    setTimeout(() => { suppressClick = false; }, 0);
+    setTimeout(() => {
+      suppressClick = false;
+    }, 0);
   }
 
   function removeItem(item: DeskItem) {
@@ -189,7 +241,8 @@
     const keys = new Set<string>();
     for (const it of layout.items as DeskItem[]) {
       if (it.type === 'module') keys.add(it.moduleKey);
-      else if (it.type === 'folder') for (const c of it.items) if (c.type === 'module') keys.add(c.moduleKey);
+      else if (it.type === 'folder')
+        for (const c of it.items) if (c.type === 'module') keys.add(c.moduleKey);
     }
     return [...keys];
   });
@@ -197,7 +250,8 @@
     const hrefs = new Set<string>();
     for (const it of layout.items as DeskItem[]) {
       if (it.type === 'link') hrefs.add(it.href);
-      else if (it.type === 'folder') for (const c of it.items) if (c.type === 'link') hrefs.add(c.href);
+      else if (it.type === 'folder')
+        for (const c of it.items) if (c.type === 'link') hrefs.add(c.href);
     }
     return [...hrefs];
   });
@@ -248,7 +302,13 @@
     const restored: DeskItem =
       child.type === 'module'
         ? { type: 'module', moduleKey: child.moduleKey, pos: defaultPosition(layout.items.length) }
-        : { type: 'link', href: child.href, label: child.label, icon: child.icon, pos: defaultPosition(layout.items.length) };
+        : {
+            type: 'link',
+            href: child.href,
+            label: child.label,
+            icon: child.icon,
+            pos: defaultPosition(layout.items.length),
+          };
     layout = {
       ...layout,
       items: [
@@ -271,22 +331,48 @@
   }
   function commitRename() {
     const item = renamingItem;
-    if (!item || item.type === 'module') { renamingItem = null; return; }
+    if (!item || item.type === 'module') {
+      renamingItem = null;
+      return;
+    }
     const val = renameValue.trim() || (item.type === 'folder' ? item.name : item.label);
-    const updated: DeskItem = item.type === 'folder' ? { ...item, name: val } : { ...item, label: val };
+    const updated: DeskItem =
+      item.type === 'folder' ? { ...item, name: val } : { ...item, label: val };
     layout = { ...layout, items: layout.items.map((it: DeskItem) => (it === item ? updated : it)) };
     renamingItem = null;
     commit();
   }
   function onRenameKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
-    if (e.key === 'Escape') { renamingItem = null; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitRename();
+    }
+    if (e.key === 'Escape') {
+      renamingItem = null;
+    }
   }
-  function focusOnMount(node: HTMLElement) { node.focus(); }
+  function focusOnMount(node: HTMLElement) {
+    node.focus();
+  }
 
   function makeEmptyFolder() {
-    const id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `folder-${Date.now()}`;
-    layout = { ...layout, items: [...layout.items, { type: 'folder' as const, id, name: 'Dossier', items: [], pos: defaultPosition(layout.items.length) }] };
+    const id =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `folder-${Date.now()}`;
+    layout = {
+      ...layout,
+      items: [
+        ...layout.items,
+        {
+          type: 'folder' as const,
+          id,
+          name: 'Dossier',
+          items: [],
+          pos: defaultPosition(layout.items.length),
+        },
+      ],
+    };
     commit();
   }
 
@@ -298,20 +384,28 @@
   function openMenu(e: MouseEvent, item: DeskItem) {
     if (!editing) return;
     e.preventDefault();
-    menuX = e.clientX; menuY = e.clientY;
+    menuX = e.clientX;
+    menuY = e.clientY;
     const common = [
       { label: 'Nouveau dossier', run: () => makeEmptyFolder() },
       { label: 'Ajouter au bureau', run: () => openAddPicker() },
     ];
-    if (item.type === 'module') menuActions = [...common, { label: 'Retirer', run: () => removeItem(item) }];
-    else menuActions = [...common, { label: 'Renommer', run: () => startRename(item) }, { label: 'Retirer', run: () => removeItem(item) }];
+    if (item.type === 'module')
+      menuActions = [...common, { label: 'Retirer', run: () => removeItem(item) }];
+    else
+      menuActions = [
+        ...common,
+        { label: 'Renommer', run: () => startRename(item) },
+        { label: 'Retirer', run: () => removeItem(item) },
+      ];
     menuOpen = true;
   }
   function openCanvasMenu(e: MouseEvent) {
     if (!editing) return;
     if ((e.target as HTMLElement)?.closest('[data-desk-id]')) return;
     e.preventDefault();
-    menuX = e.clientX; menuY = e.clientY;
+    menuX = e.clientX;
+    menuY = e.clientY;
     menuActions = [
       { label: 'Nouveau dossier', run: () => makeEmptyFolder() },
       { label: 'Ajouter au bureau', run: () => openAddPicker() },
@@ -323,21 +417,36 @@
   let openFolderId = $state<string | null>(null);
   let folderIsOpen = $state(false);
   const openFolder = $derived(
-    layout.items.find((i: DeskItem): i is Extract<DeskItem, { type: 'folder' }> => i.type === 'folder' && i.id === openFolderId) ?? null,
+    layout.items.find(
+      (i: DeskItem): i is Extract<DeskItem, { type: 'folder' }> =>
+        i.type === 'folder' && i.id === openFolderId,
+    ) ?? null,
   );
-  function openFolderById(id: string) { openFolderId = id; folderIsOpen = true; }
-  function closeFolder() { folderIsOpen = false; openFolderId = null; }
+  function openFolderById(id: string) {
+    openFolderId = id;
+    folderIsOpen = true;
+  }
+  function closeFolder() {
+    folderIsOpen = false;
+    openFolderId = null;
+  }
 
   // ── Search ───────────────────────────────────────────────────────────────
   const term = $derived(search.trim().toLowerCase());
   function itemMatchesSearch(item: DeskItem): boolean {
     if (term === '') return true;
-    if (item.type === 'module') { const d = domainByKey(item.moduleKey); return (d?.label ?? item.moduleKey).toLowerCase().includes(term); }
+    if (item.type === 'module') {
+      const d = domainByKey(item.moduleKey);
+      return (d?.label ?? item.moduleKey).toLowerCase().includes(term);
+    }
     if (item.type === 'link') return item.label.toLowerCase().includes(term);
     if (item.type === 'folder') {
       if (item.name.toLowerCase().includes(term)) return true;
       return item.items.some((child) => {
-        if (child.type === 'module') { const d = domainByKey(child.moduleKey); return (d?.label ?? child.moduleKey).toLowerCase().includes(term); }
+        if (child.type === 'module') {
+          const d = domainByKey(child.moduleKey);
+          return (d?.label ?? child.moduleKey).toLowerCase().includes(term);
+        }
         return child.label.toLowerCase().includes(term);
       });
     }
@@ -351,20 +460,60 @@
     {@const domain = domainByKey(item.moduleKey)}
     {#if domain}
       {@const universe = MODULE_UNIVERSES[domain.key] ?? MODULE_UNIVERSES['dashboard']}
-      <DeskIcon label={domain.label} icon={domain.icon} accent={universe.accent} {editing} size={tilePx} onDark={bgIsDark}
-        onactivate={() => { if (!suppressClick && !editing) goto(domain.home); }}
-        onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
+      <DeskIcon
+        label={domain.label}
+        icon={domain.icon}
+        accent={universe.accent}
+        {editing}
+        size={tilePx}
+        onDark={bgIsDark}
+        onactivate={() => {
+          if (!suppressClick && !editing) goto(domainHome(domain));
+        }}
+        onremove={() => removeItem(item)}
+        oncontext={(e) => openMenu(e, item)}
+      />
     {/if}
   {:else if item.type === 'link'}
-    <DeskIcon label={renamingItem === item ? renameValue : item.label} icon={linkIcon(item.href)} accent={linkAccent(item.href)} {editing} size={tilePx} onDark={bgIsDark}
-      onactivate={() => { if (!suppressClick && !editing) goto(item.href); }}
-      onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
-    {#if renamingItem === item}<input class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none" bind:value={renameValue} onblur={commitRename} onkeydown={onRenameKeydown} use:focusOnMount />{/if}
+    <DeskIcon
+      label={renamingItem === item ? renameValue : item.label}
+      icon={linkIcon(item.href)}
+      accent={linkAccent(item.href)}
+      {editing}
+      size={tilePx}
+      onDark={bgIsDark}
+      onactivate={() => {
+        if (!suppressClick && !editing) goto(item.href);
+      }}
+      onremove={() => removeItem(item)}
+      oncontext={(e) => openMenu(e, item)}
+    />
+    {#if renamingItem === item}<input
+        class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none"
+        bind:value={renameValue}
+        onblur={commitRename}
+        onkeydown={onRenameKeydown}
+        use:focusOnMount
+      />{/if}
   {:else if item.type === 'folder'}
-    <DeskFolderTile name={renamingItem === item ? renameValue : item.name} {editing} size={tilePx} onDark={bgIsDark}
-      onopen={() => { if (!suppressClick) openFolderById(item.id); }}
-      onremove={() => removeItem(item)} oncontext={(e) => openMenu(e, item)} />
-    {#if renamingItem === item}<input class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none" bind:value={renameValue} onblur={commitRename} onkeydown={onRenameKeydown} use:focusOnMount />{/if}
+    <DeskFolderTile
+      name={renamingItem === item ? renameValue : item.name}
+      {editing}
+      size={tilePx}
+      onDark={bgIsDark}
+      onopen={() => {
+        if (!suppressClick) openFolderById(item.id);
+      }}
+      onremove={() => removeItem(item)}
+      oncontext={(e) => openMenu(e, item)}
+    />
+    {#if renamingItem === item}<input
+        class="mt-1 w-full rounded border border-accent bg-surface px-1 py-0.5 text-center text-xs text-ink focus:outline-none"
+        bind:value={renameValue}
+        onblur={commitRename}
+        onkeydown={onRenameKeydown}
+        use:focusOnMount
+      />{/if}
   {/if}
 {/snippet}
 
@@ -375,7 +524,9 @@
   oncontextmenu={openCanvasMenu}
 >
   {#if layout.background?.type === 'image'}
-    <div class={`pointer-events-none absolute inset-0 ${bgIsDark ? 'bg-black/30' : 'bg-surface/35'}`}></div>
+    <div
+      class={`pointer-events-none absolute inset-0 ${bgIsDark ? 'bg-black/30' : 'bg-surface/35'}`}
+    ></div>
   {/if}
 
   {#if editing}
@@ -401,7 +552,9 @@
     style={`width:min(100%, ${DESK_CANVAS_W}px); min-height:0`}
   >
     {#if term}
-      <div class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6">
+      <div
+        class="mx-auto grid max-w-[780px] grid-cols-3 justify-items-center gap-x-10 gap-y-11 sm:grid-cols-4 lg:grid-cols-6"
+      >
         {#each visibleItems as item, i (deskId(item) + '#' + i)}
           <div>{@render tile(item)}</div>
         {/each}
@@ -409,11 +562,21 @@
     {:else if layout.mode === 'free'}
       {#each layout.items as item, i (deskId(item) + '#' + i)}
         {@const id = deskId(item)}
-        {@const pos = (movingId === id && movingPos) ? movingPos : (item.pos ?? defaultPosition(i))}
-        <div data-desk-id={id}
+        {@const pos = movingId === id && movingPos ? movingPos : (item.pos ?? defaultPosition(i))}
+        <div
+          data-desk-id={id}
           class={`absolute ${folderTargetId === id ? 'ring-2 ring-accent rounded-2xl' : ''}`}
           style={`left:${pos.x}px; top:${pos.y}px; touch-action:none;${movingId === id ? ' z-index:20; pointer-events:none;' : ''}`}
-          use:freeDrag={{ id, pos: item.pos ?? defaultPosition(i), enabled: editing, onstart: () => onDragStart(id), onmove: onDragMove, onfolderintent: onFolderIntent, ondrop: (x, y, d, o) => onDragDrop(id, x, y, d, o) }}>
+          use:freeDrag={{
+            id,
+            pos: item.pos ?? defaultPosition(i),
+            enabled: editing,
+            onstart: () => onDragStart(id),
+            onmove: onDragMove,
+            onfolderintent: onFolderIntent,
+            ondrop: (x, y, d, o) => onDragDrop(id, x, y, d, o),
+          }}
+        >
           {@render tile(item)}
         </div>
       {/each}
@@ -421,10 +584,20 @@
       <div class="flex flex-wrap justify-center gap-x-10 gap-y-11 px-2 py-4">
         {#each layout.items as item, i (deskId(item) + '#' + i)}
           {@const id = deskId(item)}
-          <div data-desk-id={id}
+          <div
+            data-desk-id={id}
             style={layout.mode === 'reorder' ? 'touch-action:none;' : ''}
             class={folderTargetId === id ? 'ring-2 ring-accent rounded-2xl' : ''}
-            use:freeDrag={{ id, pos: { x: 0, y: 0 }, enabled: editing && layout.mode === 'reorder', onstart: () => onDragStart(id), onmove: () => {}, onfolderintent: onFolderIntent, ondrop: (x, y, d, o) => onDragDrop(id, x, y, d, o) }}>
+            use:freeDrag={{
+              id,
+              pos: { x: 0, y: 0 },
+              enabled: editing && layout.mode === 'reorder',
+              onstart: () => onDragStart(id),
+              onmove: () => {},
+              onfolderintent: onFolderIntent,
+              ondrop: (x, y, d, o) => onDragDrop(id, x, y, d, o),
+            }}
+          >
             {@render tile(item)}
           </div>
         {/each}
@@ -441,18 +614,36 @@
         {@const domain = domainByKey(child.moduleKey)}
         {#if domain}
           {@const universe = MODULE_UNIVERSES[domain.key] ?? MODULE_UNIVERSES['dashboard']}
-          <DeskIcon label={domain.label} icon={domain.icon} accent={universe.accent}
+          <DeskIcon
+            label={domain.label}
+            icon={domain.icon}
+            accent={universe.accent}
             onSurface
-            editing={editing}
-            onactivate={() => { if (!editing) { closeFolder(); goto(domain.home); } }}
-            onremove={editing ? () => removeFromFolder(folderId, ci) : undefined} />
+            {editing}
+            onactivate={() => {
+              if (!editing) {
+                closeFolder();
+                goto(domainHome(domain));
+              }
+            }}
+            onremove={editing ? () => removeFromFolder(folderId, ci) : undefined}
+          />
         {/if}
       {:else if child.type === 'link'}
-        <DeskIcon label={child.label} icon={linkIcon(child.href)} accent={linkAccent(child.href)}
+        <DeskIcon
+          label={child.label}
+          icon={linkIcon(child.href)}
+          accent={linkAccent(child.href)}
           onSurface
-          editing={editing}
-          onactivate={() => { if (!editing) { closeFolder(); goto(child.href); } }}
-          onremove={editing ? () => removeFromFolder(folderId, ci) : undefined} />
+          {editing}
+          onactivate={() => {
+            if (!editing) {
+              closeFolder();
+              goto(child.href);
+            }
+          }}
+          onremove={editing ? () => removeFromFolder(folderId, ci) : undefined}
+        />
       {/if}
     {:else}
       <p class="col-span-full py-6 text-center text-sm text-ink-faint">
@@ -462,10 +653,14 @@
     {#snippet footer()}
       {#if editing}
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <span class="text-xs text-ink-muted">× pour sortir un élément · ou glissez une tuile sur le dossier.</span>
-          <button type="button"
+          <span class="text-xs text-ink-muted"
+            >× pour sortir un élément · ou glissez une tuile sur le dossier.</span
+          >
+          <button
+            type="button"
             class="inline-flex items-center gap-1 rounded-full bg-accent px-3 py-1 text-sm font-semibold text-white transition hover:opacity-90"
-            onclick={() => openAddPicker(folderId)}>
+            onclick={() => openAddPicker(folderId)}
+          >
             <Plus class="size-4" /> Ajouter à ce dossier
           </button>
         </div>
@@ -475,5 +670,11 @@
 {/if}
 
 <!-- Rendered last so the picker/menu stack above the folder overlay. -->
-<AddLinkPicker bind:open={addLinkOpen} {domains} {presentModuleKeys} {presentLinkHrefs} onpick={addToDesk} />
+<AddLinkPicker
+  bind:open={addLinkOpen}
+  {domains}
+  {presentModuleKeys}
+  {presentLinkHrefs}
+  onpick={addToDesk}
+/>
 <DeskContextMenu bind:open={menuOpen} x={menuX} y={menuY} actions={menuActions} />

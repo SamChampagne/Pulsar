@@ -820,15 +820,15 @@
                   >
                 </td>
                 <td>{invoice.carrier.name}</td>
-                <td>{Number(invoice.totalAmount).toLocaleString()} {invoice.currency}</td>
+                <td>{Number(invoice.totalAmount).toLocaleString('fr-CA')} {invoice.currency}</td>
                 <td>
                   {invoice.invoicedTotal !== null
-                    ? `${Number(invoice.invoicedTotal).toLocaleString()} ${invoice.currency}`
+                    ? `${Number(invoice.invoicedTotal).toLocaleString('fr-CA')} ${invoice.currency}`
                     : '—'}
                 </td>
                 <td>
                   {invoice.varianceGross !== null
-                    ? `${Number(invoice.varianceTotal).toLocaleString()} / ${Number(invoice.varianceGross).toLocaleString()}`
+                    ? `${Number(invoice.varianceTotal).toLocaleString('fr-CA')} / ${Number(invoice.varianceGross).toLocaleString('fr-CA')}`
                     : '—'}
                 </td>
                 <td><Badge tone={toneFor(invoice.status)}>{labelFor(invoice.status)}</Badge></td>
@@ -927,7 +927,7 @@
                       <tr>
                         <td>{row.orderNumber}</td>
                         <td class="text-right"
-                          >{Number(row.amount).toLocaleString()} {row.currency}</td
+                          >{Number(row.amount).toLocaleString('fr-CA')} {row.currency}</td
                         >
                       </tr>
                     {/each}
@@ -996,7 +996,7 @@
                 <td><Badge tone={toneFor(stmt.status)}>{labelFor(stmt.status)}</Badge></td>
                 <td>{stmt.currency}</td>
                 <td class="text-right"
-                  >{Number(stmt.totalAmount).toLocaleString()} {stmt.currency}</td
+                  >{Number(stmt.totalAmount).toLocaleString('fr-CA')} {stmt.currency}</td
                 >
                 <td>{formatDate(stmt.createdAt)}</td>
               </tr>
@@ -1081,7 +1081,7 @@
                     >{/if}</td
                 >
                 <td class="py-1.5 text-right pr-4 text-ink-muted">
-                  {Number(line.amount).toLocaleString()}
+                  {Number(line.amount).toLocaleString('fr-CA')}
                   {invoice.currency}
                 </td>
                 <td class="py-1.5 text-right w-40">
@@ -1094,7 +1094,7 @@
                       class="w-28 rounded border border-edge bg-surface px-2 py-0.5 text-right text-sm text-ink focus:border-accent focus:outline-none"
                     />
                   {:else if line.invoicedAmount !== null}
-                    {Number(line.invoicedAmount).toLocaleString()}
+                    {Number(line.invoicedAmount).toLocaleString('fr-CA')}
                     {#if line.variance !== null && Number(line.variance) !== 0}
                       <span class="text-danger text-xs ml-1">
                         ({Number(line.variance) > 0 ? '+' : ''}{line.variance})
@@ -1169,17 +1169,17 @@
         <div class="rounded-md border border-edge bg-surface p-3 space-y-1 text-sm">
           <div class="flex justify-between text-ink-muted">
             <span>Net</span>
-            <span>{net.toLocaleString()} {invoice.currency}</span>
+            <span>{net.toLocaleString('fr-CA')} {invoice.currency}</span>
           </div>
           {#each invoice.taxDetail.lines as tl (tl.description)}
             <div class="flex justify-between text-ink-muted">
               <span>{tl.description} ({tl.rate}%)</span>
-              <span>{Number(tl.amount).toLocaleString()} {invoice.currency}</span>
+              <span>{Number(tl.amount).toLocaleString('fr-CA')} {invoice.currency}</span>
             </div>
           {/each}
           <div class="flex justify-between font-semibold border-t border-edge pt-1 text-ink">
             <span>Total</span>
-            <span>{total.toLocaleString()} {invoice.currency}</span>
+            <span>{total.toLocaleString('fr-CA')} {invoice.currency}</span>
           </div>
         </div>
       {:else}
@@ -1187,7 +1187,7 @@
           <div class="flex justify-between font-semibold text-ink">
             <span>Total</span>
             <span
-              >{Number(invoice.totalAmount).toLocaleString()}
+              >{Number(invoice.totalAmount).toLocaleString('fr-CA')}
               {invoice.currency}</span
             >
           </div>
@@ -1290,7 +1290,9 @@
                   >{:else}—{/if}</td
               >
               <td>{line.description}</td>
-              <td class="text-right">{Number(line.amount).toLocaleString()} {stmt.currency}</td>
+              <td class="text-right"
+                >{Number(line.amount).toLocaleString('fr-CA')} {stmt.currency}</td
+              >
               <td class="text-right">
                 {#if line.priceDetail}
                   <button
@@ -1321,14 +1323,14 @@
                           <tr>
                             <td class="py-0.5">{pline.label}</td>
                             <td class="py-0.5 text-right"
-                              >{pline.amount.toLocaleString()} {stmt.currency}</td
+                              >{pline.amount.toLocaleString('fr-CA')} {stmt.currency}</td
                             >
                           </tr>
                         {/each}
                         <tr class="border-t border-edge font-semibold">
                           <td class="py-0.5">Total</td>
                           <td class="py-0.5 text-right"
-                            >{pd.result.total.toLocaleString()} {stmt.currency}</td
+                            >{pd.result.total.toLocaleString('fr-CA')} {stmt.currency}</td
                           >
                         </tr>
                       </tbody>
@@ -1369,24 +1371,24 @@
         <div class="rounded-md border border-edge bg-surface p-3 space-y-1 text-sm">
           <div class="flex justify-between text-ink-muted">
             <span>Net</span>
-            <span>{net.toLocaleString()} {stmt.currency}</span>
+            <span>{net.toLocaleString('fr-CA')} {stmt.currency}</span>
           </div>
           {#each stmt.taxDetail.lines as tl (tl.description)}
             <div class="flex justify-between text-ink-muted">
               <span>{tl.description} ({tl.rate}%)</span>
-              <span>{Number(tl.amount).toLocaleString()} {stmt.currency}</span>
+              <span>{Number(tl.amount).toLocaleString('fr-CA')} {stmt.currency}</span>
             </div>
           {/each}
           <div class="flex justify-between font-semibold border-t border-edge pt-1 text-ink">
             <span>Total</span>
-            <span>{total.toLocaleString()} {stmt.currency}</span>
+            <span>{total.toLocaleString('fr-CA')} {stmt.currency}</span>
           </div>
         </div>
       {:else}
         <div class="rounded-md border border-edge bg-surface p-3 text-sm">
           <div class="flex justify-between font-semibold text-ink">
             <span>Total</span>
-            <span>{Number(stmt.totalAmount).toLocaleString()} {stmt.currency}</span>
+            <span>{Number(stmt.totalAmount).toLocaleString('fr-CA')} {stmt.currency}</span>
           </div>
         </div>
       {/if}

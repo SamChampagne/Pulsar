@@ -5,6 +5,7 @@
   import { PERMISSIONS } from '@pulsar/shared';
   import { auth } from '$lib/stores/auth';
   import { api, ApiError } from '$lib/api/client';
+  import { formatDate, formatDateTime } from '$lib/format';
   import {
     PageHeader,
     Button,
@@ -56,10 +57,7 @@
   }
 
   const fmtWindow = (early: string | null, late?: string | null) =>
-    early
-      ? new Date(early).toLocaleDateString() +
-        (late ? ' → ' + new Date(late).toLocaleDateString() : '')
-      : '—';
+    early ? formatDate(early) + (late ? ' → ' + formatDate(late) : '') : '—';
 
   interface LoadOption {
     id: string;
@@ -355,7 +353,7 @@
 
   function fmtDims(row: ShipmentRow): string {
     const parts: string[] = [];
-    if (row.totalWeightKg != null) parts.push(`${row.totalWeightKg.toLocaleString()} kg`);
+    if (row.totalWeightKg != null) parts.push(`${row.totalWeightKg.toLocaleString('fr-CA')} kg`);
     if (row.totalVolumeM3 != null) parts.push(`${row.totalVolumeM3} m³`);
     if (row.palletCount != null) parts.push(`${row.palletCount} pal`);
     return parts.length > 0 ? parts.join(' · ') : '—';
@@ -774,9 +772,7 @@
               <Badge tone={comment.authorType === 'STAFF' ? 'info' : 'neutral'}>
                 {comment.authorType === 'STAFF' ? 'Équipe' : 'Client'}
               </Badge>
-              <span class="text-xs text-ink-faint"
-                >{new Date(comment.createdAt).toLocaleString()}</span
-              >
+              <span class="text-xs text-ink-faint">{formatDateTime(comment.createdAt)}</span>
             </div>
             <p class="whitespace-pre-wrap text-sm text-ink">{comment.body}</p>
           </li>

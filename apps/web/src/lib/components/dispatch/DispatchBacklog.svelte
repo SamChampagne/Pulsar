@@ -1,13 +1,19 @@
 <script lang="ts">
   import { Badge } from '$lib/components/ui';
+  import { formatDate } from '$lib/format';
 
   type ShipmentRow = {
-    id: string; shipmentNumber: string; status: string;
-    plannedPickupEarly: string | null; plannedDeliveryEarly: string | null;
+    id: string;
+    shipmentNumber: string;
+    status: string;
+    plannedPickupEarly: string | null;
+    plannedDeliveryEarly: string | null;
     transportOrder: { id: string; orderNumber: string };
     originLocation: { name: string; city: string };
     destinationLocation: { name: string; city: string };
-    weightKg?: number | null; volumeM3?: number | null; palletCount?: number | null;
+    weightKg?: number | null;
+    volumeM3?: number | null;
+    palletCount?: number | null;
   };
 
   let {
@@ -22,7 +28,7 @@
     onToggle: (id: string) => void;
   } = $props();
 
-  const fmt = (d: string | null) => (d ? new Date(d).toLocaleDateString() : '—');
+  const fmt = (d: string | null) => formatDate(d);
   const isLate = (d: string | null) => !!d && new Date(d).getTime() < Date.now();
 </script>
 
@@ -48,9 +54,13 @@
             <span class="font-semibold text-ink">{s.shipmentNumber}</span>
             <span class="text-ink-faint">{s.transportOrder.orderNumber}</span>
           </div>
-          <div class="mt-1 text-ink-muted">{s.originLocation.city} → {s.destinationLocation.city}</div>
+          <div class="mt-1 text-ink-muted">
+            {s.originLocation.city} → {s.destinationLocation.city}
+          </div>
           <div class="mt-1.5 flex flex-wrap items-center gap-1">
-            <Badge tone={isLate(s.plannedPickupEarly) ? 'danger' : 'neutral'}>{fmt(s.plannedPickupEarly)} → {fmt(s.plannedDeliveryEarly)}</Badge>
+            <Badge tone={isLate(s.plannedPickupEarly) ? 'danger' : 'neutral'}
+              >{fmt(s.plannedPickupEarly)} → {fmt(s.plannedDeliveryEarly)}</Badge
+            >
             {#if s.weightKg != null}<Badge tone="neutral">{s.weightKg} kg</Badge>{/if}
             {#if s.volumeM3 != null}<Badge tone="neutral">{s.volumeM3} m³</Badge>{/if}
             {#if s.palletCount != null}<Badge tone="neutral">{s.palletCount} pal</Badge>{/if}

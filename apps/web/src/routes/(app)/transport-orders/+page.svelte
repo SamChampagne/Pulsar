@@ -2,6 +2,7 @@
   import type { Paginated } from '@pulsar/shared';
   import { suggestMode, TransportMode } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { formatDate } from '$lib/format';
   import {
     PageHeader,
     Button,
@@ -104,10 +105,7 @@
   });
 
   const fmtWindow = (early: string | null, late?: string | null) =>
-    early
-      ? new Date(early).toLocaleDateString() +
-        (late ? ' → ' + new Date(late).toLocaleDateString() : '')
-      : '—';
+    early ? formatDate(early) + (late ? ' → ' + formatDate(late) : '') : '—';
 
   const orderScope = $derived(view === 'kanban' ? kanbanRows : orders);
   const draftCount = $derived(orderScope.filter((o) => o.status === 'DRAFT').length);

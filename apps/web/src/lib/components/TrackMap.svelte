@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { formatDateTime } from '$lib/format';
   import 'leaflet/dist/leaflet.css';
 
   interface Point {
@@ -58,7 +59,7 @@
         add(
           lastPosition,
           '#15803d',
-          `Dernière position — ${new Date(lastPosition.occurredAt).toLocaleString()}`,
+          `Dernière position — ${formatDateTime(lastPosition.occurredAt)}`,
         );
       }
 
@@ -73,4 +74,7 @@
   });
 </script>
 
-<div bind:this={el} class={`h-56 w-full rounded-card border border-edge ${hasPoints ? '' : 'hidden'}`}></div>
+<div
+  bind:this={el}
+  class={`h-56 w-full rounded-card border border-edge ${hasPoints ? '' : 'hidden'}`}
+></div>

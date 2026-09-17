@@ -5,6 +5,7 @@
   import { PERMISSIONS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { auth } from '$lib/stores/auth';
+  import { formatDate as formatDateShared } from '$lib/format';
   import {
     Badge,
     Button,
@@ -126,7 +127,7 @@
   }
 
   function fmtDate(iso: string): string {
-    return new Date(iso).toLocaleDateString();
+    return formatDateShared(iso);
   }
 
   async function load() {

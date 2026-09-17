@@ -14,10 +14,12 @@
     client,
     view,
     onOrderCreated,
+    active,
   }: {
     client: PortalClient;
     view: PortalView;
     onOrderCreated: () => void | Promise<void>;
+    active: boolean;
   } = $props();
 
   let createOpen = $state(false);
@@ -31,4 +33,4 @@
   >
 </div>
 
-<OrdersTable {client} {view} bind:createOpen {onOrderCreated} />
+<OrdersTable {client} {view} bind:createOpen {onOrderCreated} {active} />

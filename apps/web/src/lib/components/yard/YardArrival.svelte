@@ -137,6 +137,10 @@
       error = 'La remorque ou une référence de véhicule est requise.';
       return;
     }
+    if (trailerIsFreeText && trailerPick.trim().length > 100) {
+      error = 'La référence de véhicule ne peut dépasser 100 caractères.';
+      return;
+    }
     saving = true;
     error = '';
     try {

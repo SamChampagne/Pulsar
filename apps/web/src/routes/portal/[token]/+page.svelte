@@ -59,7 +59,7 @@
       <DashboardPanel {client} {view} active={activeTab === 'dashboard'} />
     </div>
     <div hidden={activeTab !== 'orders'}>
-      <OrdersPanel {client} {view} onOrderCreated={load} />
+      <OrdersPanel {client} {view} onOrderCreated={load} active={activeTab === 'orders'} />
     </div>
     <div hidden={activeTab !== 'invoices'}>
       <InvoicesPanel {client} active={activeTab === 'invoices'} />

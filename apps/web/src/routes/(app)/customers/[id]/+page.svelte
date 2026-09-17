@@ -6,6 +6,7 @@
   import { auth } from '$lib/stores/auth';
   import { toast } from '$lib/stores/toast';
   import { confirmAction } from '$lib/stores/confirmation';
+  import { formatDate, formatDateTime } from '$lib/format';
   import {
     Badge,
     Card,
@@ -87,11 +88,11 @@
   );
 
   function fmtDate(v: string | null): string {
-    return v ? new Date(v).toLocaleDateString() : '—';
+    return formatDate(v);
   }
 
   function fmtDateTime(v: string | null): string {
-    return v ? new Date(v).toLocaleString() : '—';
+    return formatDateTime(v);
   }
 
   async function load() {

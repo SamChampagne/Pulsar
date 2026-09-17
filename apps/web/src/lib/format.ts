@@ -38,3 +38,10 @@ export function formatDate(iso: string | null | undefined): string {
 export function formatDateTime(iso: string | null | undefined): string {
   return iso ? new Date(iso).toLocaleString(LOCALE, TIME_OPTIONS) : '—';
 }
+
+/** Time only (no date), e.g. "14:02". */
+export function formatTime(iso: string | null | undefined): string {
+  return iso
+    ? new Date(iso).toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' })
+    : '—';
+}

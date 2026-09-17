@@ -139,6 +139,7 @@ IEA*1*000000102~`;
 
   let formOpen = $state(false);
   let editingId = $state<string | null>(null);
+  let editingConfig = $state<IntegrationRecord['config'] | undefined>(undefined);
   let formName = $state('');
   let formKey = $state('');
   let keyTouched = $state(false);
@@ -264,6 +265,7 @@ IEA*1*000000102~`;
 
   function openCreate() {
     editingId = null;
+    editingConfig = undefined;
     formName = '';
     formKey = '';
     keyTouched = false;
@@ -280,6 +282,7 @@ IEA*1*000000102~`;
 
   function openEdit(partner: IntegrationRecord) {
     editingId = partner.id;
+    editingConfig = partner.config;
     formName = partner.name;
     formKey = partner.key;
     keyTouched = true;
@@ -306,28 +309,47 @@ IEA*1*000000102~`;
     return v ? v : undefined;
   }
 
-  // Config sent to the API. Blank/unset fields are OMITTED, not sent as `''`
-  // or `null`: `PATCH /integrations` replaces the whole config with exactly
-  // the keys present in the request body (`mergePreservingMasked` maps over
-  // `incoming`'s own keys — it never carries over a key the client didn't
-  // resend), so omitting a key both (a) lets a blank ISA/GS id on create fall
-  // through to the server default, and (b) removes a previously-set value
-  // when the user clears the field while editing. One code path covers both.
-  function buildConfig(): Record<string, unknown> {
+  // `PATCH /integrations/:id` now MERGES `config` into the stored config
+  // (rather than replacing it): a key present with a non-null value is
+  // set/overwritten, a key present with `null` is deleted, and a key simply
+  // absent from the body is left untouched. So on CREATE a blank field must
+  // still be OMITTED (there's nothing to merge into yet — omitting lets the
+  // server default apply), while on EDIT a field that WAS set and is now
+  // cleared must be sent as `null` (to actually delete it) — omitting it
+  // there would leave the old value in place. A field that was already
+  // blank and stays blank is omitted either way (nothing changed).
+  function buildConfig(original?: IntegrationRecord['config']): Record<string, unknown> {
     const config: Record<string, unknown> = { format: 'x12' };
-    const isaSenderId = trimmedOrUndefined(formIsaSender);
-    if (isaSenderId) config.isaSenderId = isaSenderId;
-    const isaReceiverId = trimmedOrUndefined(formIsaReceiver);
-    if (isaReceiverId) config.isaReceiverId = isaReceiverId;
-    const gsSenderId = trimmedOrUndefined(formGsSender);
-    if (gsSenderId) config.gsSenderId = gsSenderId;
-    const gsReceiverId = trimmedOrUndefined(formGsReceiver);
-    if (gsReceiverId) config.gsReceiverId = gsReceiverId;
+    setOptionalField(config, 'isaSenderId', formIsaSender, original);
+    setOptionalField(config, 'isaReceiverId', formIsaReceiver, original);
+    setOptionalField(config, 'gsSenderId', formGsSender, original);
+    setOptionalField(config, 'gsReceiverId', formGsReceiver, original);
     if (formCustomerId) config.customerId = formCustomerId;
     if (formCarrierId) config.carrierId = formCarrierId;
-    const url = trimmedOrUndefined(formUrl);
-    if (url) config.url = url;
+    setOptionalField(config, 'url', formUrl, original);
     return config;
+  }
+
+  // Sets `config[key]` to the trimmed value when non-blank; when blank AND the
+  // original config held a non-blank value for that key, sets it to `null` so
+  // the merge on the server deletes it; otherwise (blank and was already
+  // blank/unset — includes CREATE, where `original` is undefined) omits the
+  // key entirely.
+  function setOptionalField(
+    config: Record<string, unknown>,
+    key: string,
+    value: string,
+    original?: Record<string, unknown>,
+  ) {
+    const trimmed = trimmedOrUndefined(value);
+    if (trimmed) {
+      config[key] = trimmed;
+      return;
+    }
+    const originalValue = original?.[key];
+    if (typeof originalValue === 'string' && originalValue.trim()) {
+      config[key] = null;
+    }
   }
 
   async function submitForm(event: SubmitEvent) {
@@ -336,7 +358,7 @@ IEA*1*000000102~`;
     saving = true;
     saveError = '';
     try {
-      const config = buildConfig();
+      const config = buildConfig(editingId ? editingConfig : undefined);
       if (editingId) {
         await api<IntegrationRecord>(`/integrations/${editingId}`, {
           method: 'PATCH',

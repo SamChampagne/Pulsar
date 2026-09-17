@@ -1,16 +1,31 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api/client';
+  import { formatDateTime } from '$lib/format';
   import 'leaflet/dist/leaflet.css';
 
-  interface StopIn { sequence: number; locationId: string; type: string }
+  interface StopIn {
+    sequence: number;
+    locationId: string;
+    type: string;
+  }
   let { stops = [] as StopIn[], loadId, geometry = null as unknown } = $props();
 
   let el: HTMLDivElement;
   let hasPoints = $state(false);
 
-  interface Loc { id: string; latitude: number | null; longitude: number | null; name: string }
-  interface TrackingEvent { type: string; latitude: number | null; longitude: number | null; occurredAt: string }
+  interface Loc {
+    id: string;
+    latitude: number | null;
+    longitude: number | null;
+    name: string;
+  }
+  interface TrackingEvent {
+    type: string;
+    latitude: number | null;
+    longitude: number | null;
+    occurredAt: string;
+  }
 
   onMount(() => {
     let map: import('leaflet').Map | null = null;
@@ -46,7 +61,12 @@
       // Leaflet draws outside the CSS cascade — literal brand colors accepted here.
       points.forEach((p, i) => {
         // Using circleMarker instead of marker to avoid default icon 404 under bundlers.
-        L.circleMarker(latlngs[i], { radius: 8, color: '#1d4ed8', fillColor: '#1d4ed8', fillOpacity: 0.8 })
+        L.circleMarker(latlngs[i], {
+          radius: 8,
+          color: '#1d4ed8',
+          fillColor: '#1d4ed8',
+          fillOpacity: 0.8,
+        })
           .addTo(map!)
           .bindTooltip(`${i + 1}. ${p.loc!.name} (${p.s.type})`);
       });
@@ -63,15 +83,24 @@
       }
 
       try {
-        const events = await api<TrackingEvent[]>('/transportation/tracking/events', { query: { loadId } });
+        const events = await api<TrackingEvent[]>('/transportation/tracking/events', {
+          query: { loadId },
+        });
         if (destroyed) return;
         const pos = events.find((e) => e.latitude != null && e.longitude != null);
         if (pos) {
-          L.circleMarker([pos.latitude!, pos.longitude!], { radius: 7, color: '#15803d', fillColor: '#15803d', fillOpacity: 0.9 })
+          L.circleMarker([pos.latitude!, pos.longitude!], {
+            radius: 7,
+            color: '#15803d',
+            fillColor: '#15803d',
+            fillOpacity: 0.9,
+          })
             .addTo(map!)
-            .bindTooltip(`Dernière position — ${new Date(pos.occurredAt).toLocaleString()}`);
+            .bindTooltip(`Dernière position — ${formatDateTime(pos.occurredAt)}`);
         }
-      } catch { /* tracking optional */ }
+      } catch {
+        /* tracking optional */
+      }
 
       if (latlngs.length === 1) {
         map.setView(latlngs[0], 12);
@@ -87,4 +116,7 @@
   });
 </script>
 
-<div bind:this={el} class={`h-64 w-full rounded-card border border-edge ${hasPoints ? '' : 'hidden'}`}></div>
+<div
+  bind:this={el}
+  class={`h-64 w-full rounded-card border border-edge ${hasPoints ? '' : 'hidden'}`}
+></div>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
+  import { formatDate } from '$lib/format';
   import {
     Badge,
     Button,
@@ -161,7 +162,7 @@
     if (diffH < 24) return `Il y a ${diffH}h`;
     const diffD = Math.floor(diffH / 24);
     if (diffD < 7) return `Il y a ${diffD}j`;
-    return d.toLocaleDateString();
+    return formatDate(iso);
   }
 </script>
 

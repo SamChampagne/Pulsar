@@ -29,7 +29,11 @@
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
   import AssistantPanel from '$lib/components/agents/AssistantPanel.svelte';
   import { MODULE_UNIVERSES } from '$lib/modules/universe';
-  import { visibleDomains as buildVisibleDomains, type NavDomain } from '$lib/modules/navigation';
+  import {
+    visibleDomains as buildVisibleDomains,
+    domainHome,
+    type NavDomain,
+  } from '$lib/modules/navigation';
 
   let { children } = $props();
 
@@ -494,7 +498,7 @@
         {@const Icon = domain.icon}
         {@const universe = MODULE_UNIVERSES[domain.key] ?? MODULE_UNIVERSES.dashboard}
         <a
-          href={lastRoutes[domain.key] ?? domain.home}
+          href={lastRoutes[domain.key] ?? domainHome(domain)}
           onclick={() => (switcherOpen = false)}
           class="flex min-h-24 flex-col items-center gap-2 rounded-lg p-2 text-center text-xs text-ink hover:bg-surface-muted"
         >

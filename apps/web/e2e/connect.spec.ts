@@ -246,3 +246,46 @@ test('creating a partner omits blank envelope ids so the server default applies'
   expect(capturedCreateBody?.config?.isaReceiverId).toBeUndefined();
   expect(capturedCreateBody?.config?.url).toBeUndefined();
 });
+
+test('editing a partner sends null for a cleared envelope id (PATCH merge semantics)', async ({
+  page,
+}) => {
+  await login(page);
+
+  let capturedPatchBody: { name?: string; config?: Record<string, unknown> } | null = null;
+
+  await page.route('**/api/v1/integrations', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: [EDI_PARTNER] });
+  });
+  await page.route('**/api/v1/integrations/int-edi-acme', async (route) => {
+    if (route.request().method() !== 'PATCH') return route.fallback();
+    capturedPatchBody = route.request().postDataJSON();
+    return route.fulfill({
+      json: { ...EDI_PARTNER, name: capturedPatchBody?.name, config: capturedPatchBody?.config },
+    });
+  });
+  await page.route('**/api/v1/connect/inbox**', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 10 } });
+  });
+
+  await page.goto('/connect/edi');
+  await expect(page.getByRole('article').getByText('Acme Shipper — EDI')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Modifier' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Modifier le partenaire EDI' });
+  await expect(dialog).toBeVisible();
+
+  // GS02 was previously set ('PULSARTMS') — clearing it must delete the key
+  // (PATCH now merges: an omitted key is left untouched, so a clear has to be
+  // sent explicitly as `null`), while the untouched ISA06 field ('PULSARTMS')
+  // is resent as-is and the already-blank URL stays omitted.
+  await dialog.getByRole('textbox', { name: /GS02/ }).fill('');
+  await dialog.getByRole('button', { name: 'Enregistrer' }).click();
+
+  await expect(dialog).toBeHidden();
+  expect(capturedPatchBody?.config?.gsSenderId).toBeNull();
+  expect(capturedPatchBody?.config?.isaSenderId).toBe('PULSARTMS');
+  expect(capturedPatchBody?.config?.url).toBeUndefined();
+});

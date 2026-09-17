@@ -81,9 +81,7 @@
   }
 
   const fmtWindow = (early: string | null, late?: string | null) =>
-    early
-      ? formatDateTime(early) + (late ? ' → ' + formatDateTime(late) : '')
-      : '—';
+    early ? formatDateTime(early) + (late ? ' → ' + formatDateTime(late) : '') : '—';
 
   const totalWeight = $derived(
     tender?.load.shipments.reduce((acc, s) => acc + (s.weightKg ?? 0), 0) ?? 0,
@@ -106,7 +104,9 @@
   {#if error}
     <p class="text-sm text-danger">{error}</p>
   {:else if tender}
-    <p class="mb-1 text-sm text-ink-muted">Transport offer from <strong>{tender.shipper}</strong></p>
+    <p class="mb-1 text-sm text-ink-muted">
+      Transport offer from <strong>{tender.shipper}</strong>
+    </p>
     <div class="mb-1 flex items-center gap-3">
       <h1 class="text-xl font-bold text-ink">{tender.load.loadNumber}</h1>
       <Badge tone={toneFor(tender.status)}>{labelFor(tender.status)}</Badge>
@@ -124,7 +124,10 @@
       <Card>
         <p class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Offered rate</p>
         <p class="text-2xl font-bold text-ink">
-          {tender.offeredRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {tender.offeredRate.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
           <span class="text-base font-semibold text-ink-muted">{tender.offeredCurrency ?? ''}</span>
         </p>
       </Card>
@@ -133,8 +136,8 @@
     <Card>
       <p class="text-sm text-ink">
         <strong>{tender.load.shipments.length}</strong> shipment(s) ·
-        <strong>{totalWeight.toLocaleString()}</strong> kg
-        {#if totalVolume > 0}· <strong>{totalVolume.toLocaleString()}</strong> m³{/if}
+        <strong>{totalWeight.toLocaleString('fr-CA')}</strong> kg
+        {#if totalVolume > 0}· <strong>{totalVolume.toLocaleString('fr-CA')}</strong> m³{/if}
         · <strong>{totalPallets}</strong> pallets
         {#if tender.load.mode}· <strong>{tender.load.mode}</strong>{/if}
         {#if tender.load.totalDistanceKm}· {tender.load.totalDistanceKm} km{/if}
@@ -169,7 +172,9 @@
       <div class="mt-4 overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="border-b border-edge text-left text-xs font-semibold text-ink-muted uppercase tracking-wide">
+            <tr
+              class="border-b border-edge text-left text-xs font-semibold text-ink-muted uppercase tracking-wide"
+            >
               <th class="pb-2 pr-4">#</th>
               <th class="pb-2 pr-4">Type</th>
               <th class="pb-2 pr-4">Location</th>
@@ -182,9 +187,13 @@
                 <td class="py-2 pr-4 text-ink-muted">{stop.sequence}</td>
                 <td class="py-2 pr-4 font-medium text-ink">{stop.type}</td>
                 <td class="py-2 pr-4 text-ink">
-                  {stop.location.name}, {stop.location.city}{stop.location.state ? `, ${stop.location.state}` : ''}
+                  {stop.location.name}, {stop.location.city}{stop.location.state
+                    ? `, ${stop.location.state}`
+                    : ''}
                 </td>
-                <td class="py-2 text-ink-muted">{fmtWindow(stop.plannedArrivalEarly, stop.plannedArrivalLate)}</td>
+                <td class="py-2 text-ink-muted"
+                  >{fmtWindow(stop.plannedArrivalEarly, stop.plannedArrivalLate)}</td
+                >
               </tr>
             {/each}
           </tbody>
@@ -195,7 +204,13 @@
     {#if tender.status === 'PENDING'}
       <div class="mt-6 flex gap-3">
         <Button variant="primary" disabled={busy} onclick={() => respond(true)}>Accept</Button>
-        <Button variant="danger" disabled={busy} onclick={() => { showDecline = !showDecline; }}>
+        <Button
+          variant="danger"
+          disabled={busy}
+          onclick={() => {
+            showDecline = !showDecline;
+          }}
+        >
           Decline
         </Button>
       </div>
@@ -214,7 +229,9 @@
     {:else if tender.status === 'DECLINED'}
       <p class="mt-4 text-sm text-ink-muted">This offer was declined.</p>
     {:else}
-      <p class="mt-4 text-sm text-ink-muted">This offer is no longer open ({tender.status.toLowerCase()}).</p>
+      <p class="mt-4 text-sm text-ink-muted">
+        This offer is no longer open ({tender.status.toLowerCase()}).
+      </p>
     {/if}
 
     <p class="mt-6 text-center text-xs text-ink-faint">Powered by Pulsar</p>

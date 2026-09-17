@@ -2,6 +2,7 @@
   import type { Paginated } from '@pulsar/shared';
   import { YardDirection } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { formatDateTime } from '$lib/format';
   import {
     Badge,
     Button,
@@ -292,7 +293,7 @@
   function fmtDate(value: string | null): string {
     if (!value) return '—';
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+    return Number.isNaN(d.getTime()) ? '—' : formatDateTime(value);
   }
 </script>
 

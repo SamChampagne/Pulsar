@@ -998,9 +998,9 @@
           {/if}
           <span class="text-xs text-ink-muted">
             {#if agent.lastSeenAt}
-              Vu : {new Date(agent.lastSeenAt).toLocaleString()}
+              Vu : {formatDateTime(agent.lastSeenAt)}
             {:else if agent.lastRunAt}
-              Dernière exécution : {new Date(agent.lastRunAt).toLocaleString()}
+              Dernière exécution : {formatDateTime(agent.lastRunAt)}
             {:else}
               Jamais vu
             {/if}

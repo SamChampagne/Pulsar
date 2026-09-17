@@ -4,6 +4,7 @@
   import { api, ApiError } from '$lib/api/client';
   import { downloadDocument, fetchDocumentObjectUrl } from '$lib/api/files';
   import { toast } from '$lib/stores/toast';
+  import { formatDate, formatDateTime } from '$lib/format';
   import {
     PageHeader,
     Button,
@@ -272,7 +273,7 @@
               </td>
               <td class="font-mono text-xs">{humanSize(row.sizeBytes)}</td>
               <td class="text-sm">{row.uploadedByName ?? '—'}</td>
-              <td class="text-xs text-ink-muted">{new Date(row.createdAt).toLocaleString()}</td>
+              <td class="text-xs text-ink-muted">{formatDateTime(row.createdAt)}</td>
               <td class="text-right">
                 <div class="inline-flex items-center gap-1.5">
                   <button
@@ -357,7 +358,7 @@
                   {#if item.reference}· {item.reference}{/if}
                 </div>
                 <div class="mt-0.5 text-xs text-ink-faint">
-                  Échéance : {new Date(item.expiresAt).toLocaleDateString()}
+                  Échéance : {formatDate(item.expiresAt)}
                 </div>
               </div>
               <Badge tone={item.status === 'EXPIRED' ? 'danger' : 'warn'}>

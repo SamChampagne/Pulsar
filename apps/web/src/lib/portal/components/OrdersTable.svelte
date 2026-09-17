@@ -41,6 +41,7 @@
     createOpen = $bindable(false),
     total = $bindable(0),
     onOrderCreated = undefined,
+    active = true,
   }: {
     client: PortalClient;
     view: PortalView;
@@ -50,6 +51,13 @@
     total?: number;
     /** Lets the caller refresh whatever else depends on the order list. */
     onOrderCreated?: (() => void | Promise<void>) | undefined;
+    /**
+     * Lazy-load gate, mirroring `InvoicesPanel`: the session workspace
+     * (`/portal/orders`) has no tabs and doesn't pass this, so it defaults to
+     * `true` (load immediately) — the capability-link plane (`/portal/:token`)
+     * passes `activeTab === 'orders'` so the first fetch waits for the tab.
+     */
+    active?: boolean;
   } = $props();
 
   const pageSize = 20;
@@ -150,10 +158,14 @@
   }
 
   // Server-side filters reset the paging and reload; the period is local.
+  // `active` is read outside `untrack` so becoming active (first tab switch)
+  // re-triggers this effect and fires the first load then, not at mount.
   $effect(() => {
     const _status = statusFilter;
     const _search = search;
+    const _active = active;
     untrack(() => {
+      if (!_active) return;
       page = 1;
       void load();
     });

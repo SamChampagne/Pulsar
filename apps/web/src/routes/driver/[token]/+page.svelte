@@ -3,7 +3,7 @@
   import { api, ApiError } from '$lib/api/client';
   import { Badge, Card } from '$lib/components/ui';
   import { toneFor, labelFor } from '$lib/components/ui';
-  import { formatDateTime } from '$lib/format';
+  import { formatDateTime, formatTime } from '$lib/format';
 
   interface DriverView {
     shipper: string;
@@ -177,9 +177,7 @@
   }
 
   const fmtWindow = (early: string | null, late?: string | null) =>
-    early
-      ? formatDateTime(early) + (late ? ' → ' + formatDateTime(late) : '')
-      : '—';
+    early ? formatDateTime(early) + (late ? ' → ' + formatDateTime(late) : '') : '—';
 
   // A COMPLETED/CANCELLED load is closed — the server blocks all driver mutations (state
   // machine is source of truth), so the UI hides stop actions + POD capture to match.
@@ -259,11 +257,13 @@
     </div>
 
     {#if activeLoad}
-      <div class="flex items-center justify-between rounded-card border border-edge bg-surface px-3 py-2 text-xs text-ink-muted">
+      <div
+        class="flex items-center justify-between rounded-card border border-edge bg-surface px-3 py-2 text-xs text-ink-muted"
+      >
         <span>
           {sharing ? 'Position sharing active' : 'Position sharing paused'}
           {#if sharing && lastSentAt}
-            · last sent {new Date(lastSentAt).toLocaleTimeString()}
+            · last sent {formatTime(new Date(lastSentAt).toISOString())}
           {/if}
         </span>
         <button
@@ -294,11 +294,15 @@
             <p class="font-semibold text-ink">#{stop.sequence} — {stop.type}</p>
             <p class="text-sm text-ink-muted">
               {stop.location.name}<br />
-              {stop.location.addressLine1}, {stop.location.city}{stop.location.state ? `, ${stop.location.state}` : ''}
+              {stop.location.addressLine1}, {stop.location.city}{stop.location.state
+                ? `, ${stop.location.state}`
+                : ''}
             </p>
             {#if stop.notes}<p class="mt-1 text-xs text-ink-muted italic">{stop.notes}</p>{/if}
             {#if stop.plannedArrivalEarly}
-              <p class="mt-1 text-xs text-ink-muted">Planned: {fmtWindow(stop.plannedArrivalEarly, stop.plannedArrivalLate)}</p>
+              <p class="mt-1 text-xs text-ink-muted">
+                Planned: {fmtWindow(stop.plannedArrivalEarly, stop.plannedArrivalLate)}
+              </p>
             {/if}
           </div>
           <Badge tone={toneFor(stop.status)}>{labelFor(stop.status)}</Badge>
@@ -348,7 +352,10 @@
       <button
         type="button"
         class="w-full rounded-md border border-edge bg-surface px-3 py-2 text-sm font-medium text-ink-muted hover:bg-surface-muted"
-        onclick={() => { showException = !showException; if (!showException) excNotice = ''; }}
+        onclick={() => {
+          showException = !showException;
+          if (!showException) excNotice = '';
+        }}
       >
         {showException ? 'Annuler' : 'Signaler un problème'}
       </button>
@@ -357,8 +364,15 @@
           <h2 class="mb-3 text-base font-semibold text-ink">Signaler un problème</h2>
           <div class="flex flex-col gap-3">
             <div>
-              <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="excKind">Type</label>
-              <select id="excKind" bind:value={excKind} class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none">
+              <label
+                class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase"
+                for="excKind">Type</label
+              >
+              <select
+                id="excKind"
+                bind:value={excKind}
+                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+              >
                 <option value="DAMAGE">Dommage</option>
                 <option value="DELAY">Retard</option>
                 <option value="REFUSED">Refusé</option>
@@ -366,8 +380,15 @@
               </select>
             </div>
             <div>
-              <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="excShipment">Envoi (optionnel)</label>
-              <select id="excShipment" bind:value={excShipmentId} class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none">
+              <label
+                class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase"
+                for="excShipment">Envoi (optionnel)</label
+              >
+              <select
+                id="excShipment"
+                bind:value={excShipmentId}
+                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+              >
                 <option value="">— Général —</option>
                 {#each view.shipments as s (s.id)}
                   <option value={s.id}>{s.shipmentNumber}</option>
@@ -375,8 +396,15 @@
               </select>
             </div>
             <div>
-              <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="excStop">Arrêt (optionnel)</label>
-              <select id="excStop" bind:value={excStopId} class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none">
+              <label
+                class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase"
+                for="excStop">Arrêt (optionnel)</label
+              >
+              <select
+                id="excStop"
+                bind:value={excStopId}
+                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+              >
                 <option value="">— Aucun —</option>
                 {#each view.stops as st (st.id)}
                   <option value={st.id}>#{st.sequence} {st.type} — {st.location.name}</option>
@@ -384,11 +412,25 @@
               </select>
             </div>
             <div>
-              <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="excNote">Note</label>
-              <textarea id="excNote" rows={3} bind:value={excNote} class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"></textarea>
+              <label
+                class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase"
+                for="excNote">Note</label
+              >
+              <textarea
+                id="excNote"
+                rows={3}
+                bind:value={excNote}
+                class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+              ></textarea>
             </div>
             {#if excNotice}
-              <p class="text-sm" class:text-danger={!excNotice.startsWith('Problème signalé')} class:text-success={excNotice.startsWith('Problème signalé')}>{excNotice}</p>
+              <p
+                class="text-sm"
+                class:text-danger={!excNotice.startsWith('Problème signalé')}
+                class:text-success={excNotice.startsWith('Problème signalé')}
+              >
+                {excNotice}
+              </p>
             {/if}
             <button
               type="button"
@@ -409,12 +451,17 @@
         <h2 class="mb-3 text-base font-semibold text-ink">Proof of delivery</h2>
         <form onsubmit={submitPod} class="flex flex-col gap-3">
           <div>
-            <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="podShipment">Shipment</label>
+            <label
+              class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase"
+              for="podShipment">Shipment</label
+            >
             <select
               id="podShipment"
               bind:value={podShipmentId}
               required
-              onchange={() => { sigNotice = ''; }}
+              onchange={() => {
+                sigNotice = '';
+              }}
               class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
             >
               <option value="" disabled>Select…</option>
@@ -424,7 +471,10 @@
             </select>
           </div>
           <div>
-            <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="signedBy">Received by</label>
+            <label
+              class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase"
+              for="signedBy">Received by</label
+            >
             <input
               id="signedBy"
               bind:value={signedByName}
@@ -433,7 +483,10 @@
             />
           </div>
           <div>
-            <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="podNotes">Notes</label>
+            <label
+              class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase"
+              for="podNotes">Notes</label
+            >
             <textarea
               id="podNotes"
               rows={2}
@@ -442,7 +495,10 @@
             ></textarea>
           </div>
           <div>
-            <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase" for="photo">Photo (optional)</label>
+            <label
+              class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase"
+              for="photo">Photo (optional)</label
+            >
             <input
               id="photo"
               type="file"
@@ -454,22 +510,62 @@
           </div>
           <div>
             <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Signature</label>
+            <label class="mb-1 block text-xs font-semibold tracking-wide text-ink-muted uppercase"
+              >Signature</label
+            >
             <canvas
               bind:this={sigCanvas}
               width={340}
               height={160}
               class="w-full touch-none rounded-md border border-edge bg-white"
-              onpointerdown={(e) => { sigDrawing = true; const ctx = sigCanvas!.getContext('2d')!; const r = sigCanvas!.getBoundingClientRect(); ctx.beginPath(); ctx.moveTo(e.clientX - r.left, e.clientY - r.top); }}
-              onpointermove={(e) => { if (!sigDrawing) return; const ctx = sigCanvas!.getContext('2d')!; const r = sigCanvas!.getBoundingClientRect(); ctx.lineTo(e.clientX - r.left, e.clientY - r.top); ctx.stroke(); }}
-              onpointerup={() => { sigDrawing = false; }}
-              onpointerleave={() => { sigDrawing = false; }}
+              onpointerdown={(e) => {
+                sigDrawing = true;
+                const ctx = sigCanvas!.getContext('2d')!;
+                const r = sigCanvas!.getBoundingClientRect();
+                ctx.beginPath();
+                ctx.moveTo(e.clientX - r.left, e.clientY - r.top);
+              }}
+              onpointermove={(e) => {
+                if (!sigDrawing) return;
+                const ctx = sigCanvas!.getContext('2d')!;
+                const r = sigCanvas!.getBoundingClientRect();
+                ctx.lineTo(e.clientX - r.left, e.clientY - r.top);
+                ctx.stroke();
+              }}
+              onpointerup={() => {
+                sigDrawing = false;
+              }}
+              onpointerleave={() => {
+                sigDrawing = false;
+              }}
             ></canvas>
             <div class="mt-1 flex gap-2">
-              <button type="button" class="text-xs text-ink-muted hover:text-ink underline" onclick={() => { const ctx = sigCanvas?.getContext('2d'); if (ctx && sigCanvas) ctx.clearRect(0, 0, sigCanvas.width, sigCanvas.height); sigNotice = ''; }}>Effacer</button>
-              <button type="button" disabled={sigBusy} class="text-xs font-semibold text-accent hover:underline disabled:opacity-50" onclick={() => { if (podShipmentId) void submitSignature(podShipmentId); else sigNotice = 'Sélectionnez un envoi d\'abord'; }}>Enregistrer signature</button>
+              <button
+                type="button"
+                class="text-xs text-ink-muted hover:text-ink underline"
+                onclick={() => {
+                  const ctx = sigCanvas?.getContext('2d');
+                  if (ctx && sigCanvas) ctx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+                  sigNotice = '';
+                }}>Effacer</button
+              >
+              <button
+                type="button"
+                disabled={sigBusy}
+                class="text-xs font-semibold text-accent hover:underline disabled:opacity-50"
+                onclick={() => {
+                  if (podShipmentId) void submitSignature(podShipmentId);
+                  else sigNotice = "Sélectionnez un envoi d'abord";
+                }}>Enregistrer signature</button
+              >
             </div>
-            {#if sigNotice}<p class="mt-1 text-xs" class:text-danger={sigNotice !== 'Signature saved'} class:text-success={sigNotice === 'Signature saved'}>{sigNotice}</p>{/if}
+            {#if sigNotice}<p
+                class="mt-1 text-xs"
+                class:text-danger={sigNotice !== 'Signature saved'}
+                class:text-success={sigNotice === 'Signature saved'}
+              >
+                {sigNotice}
+              </p>{/if}
           </div>
           <button
             type="submit"

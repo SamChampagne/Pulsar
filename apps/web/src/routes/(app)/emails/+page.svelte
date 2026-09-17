@@ -3,6 +3,7 @@
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
+  import { formatDateTime } from '$lib/format';
   import type { Tone } from '$lib/components/ui';
   import {
     PageHeader,
@@ -332,7 +333,7 @@
             {/if}
           </td>
           <td class="text-xs text-ink-muted">
-            {row.sentAt ? new Date(row.sentAt).toLocaleString() : '—'}
+            {formatDateTime(row.sentAt)}
           </td>
           <td class="text-right">
             <button
@@ -398,9 +399,7 @@
       <div class="flex items-center gap-2">
         <Badge tone={statusTone(detailEmail.status)}>{statusLabel(detailEmail.status)}</Badge>
         {#if detailEmail.sentAt}
-          <span class="text-xs text-ink-muted"
-            >Envoyé le {new Date(detailEmail.sentAt).toLocaleString()}</span
-          >
+          <span class="text-xs text-ink-muted">Envoyé le {formatDateTime(detailEmail.sentAt)}</span>
         {/if}
       </div>
 
