@@ -466,6 +466,18 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     Le schéma est extensible vers une entité `FiscalYear` future (périodes nommées, arrêtés de
     comptes) sans rupture : `fiscalYearBounds` sera alors le calcul de repli.
 
+## Hard rules (continued, module Accès & Lieux cœur)
+
+50. Les `Location` sont une **entité du cœur** : création/modification via `core/locations`
+    (`/locations`, perms `core.locations.*`), jamais via un module métier ; `transportation/locations`
+    n'est qu'un alias gardé TMS. Tout module qui dépend d'un type de lieu (WAREHOUSE, PLANT, site Yard)
+    doit offrir un raccourci de création dans son UI (conditionné à `core.locations.manage`) plutôt
+    que renvoyer vers un administrateur. Les nouvelles clés de permission sont synchronisées au
+    démarrage (`PermissionsSyncService`) et accordées automatiquement aux rôles système `admin` ;
+    les gabarits de rôles humains vivent dans `ROLE_TEMPLATES` (`@pulsar/shared`, pure data) et sont
+    résolus côté serveur (`POST /roles/from-template`). Le dernier administrateur actif d'un tenant
+    ne peut être ni désactivé ni privé du rôle `admin`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

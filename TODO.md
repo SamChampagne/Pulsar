@@ -566,3 +566,60 @@ CRM SalesOrder→TMS TransportOrder + passe de durcissement P0→P2). Branche no
       API, pas encore en navigateur.
 - [ ] **Nettoyage `pulsar_rc`** : base de qualif jetable ; accumulation de données de test (ex. >200
       locations) — recréer proprement (`prisma migrate reset` + seed) avant une prochaine campagne.
+
+## Référentiel partagé & Accès — dette issue de l'audit 2026-09-16
+
+Contexte : branche `access-module-core-locations` (non mergée), suite à l'audit des dépendances
+cachées de `docs/superpowers/specs/2026-09-16-access-module-core-locations-design.md` §4. Ce
+chantier a fait des **Lieux** la première entité de master-data du cœur (`core/locations`,
+règle 50) ; le reste du master-data partagé garde un seul point d'écriture TMS.
+
+- [ ] **Arc suivant recommandé — `core/master-data`** : appliquer le même patron que les Lieux à
+      `Customer`, `Carrier`, `Vehicle`, `Trailer`, `Driver`, `Lane` (module cœur + alias TMS
+      conservés), puis rendre le roster Fleet, les pickers Billing/Procurement et l'admin des
+      portails autonomes du TMS.
+- [ ] Yard : formulaires porte/rendez-vous (`gate`, `appointments`) lisent `Carrier`/`Trailer` via
+      `transportation/*` — bloquant sans TMS.
+- [ ] Fabrication : `WmsItem` (nomenclatures) n'a qu'un seul point d'écriture, `wms/items` — bloquant
+      sans module WMS activé.
+- [ ] Fleet : `/assets` (accueil Fleet) appelle `transportation/{vehicles,trailers,drivers}` sans
+      `.catch` (`assets/+page.svelte:84`) — propriétaire d'entité (Fleet vs TMS) à décider avant fix.
+- [ ] Achats (Procurement) : RFP n'a aucun lien vers `Carrier`/`Lane` propres au module — dépend du TMS.
+- [ ] Facturation (Billing) : pickers `Customer`/`Carrier` avalent l'erreur (`.catch → []`), liste
+      vide silencieuse en cas de panne TMS au lieu d'un état d'erreur explicite.
+- [ ] Portails client/transporteur/chauffeur : l'admin des liens (activation, jetons) ne vit que
+      dans les pages TMS `customers`/`carriers` — pas d'écran dédié hors TMS ; les comptes portail
+      restent **nommés** (pas de compte utilisateur dédié par contact externe).
+- [ ] Nav Transport : domaine sans `anyPerms` (visible même sans aucune permission Transport) ;
+      liens Partenaires (Clients/Transporteurs) sans `perm` → 403 après clic. Seul le lien « Lieux »
+      a été gardé par permission dans ce chantier.
+
+### Dette différée (revues Tasks 1-11, à ne pas « réparer » en silence)
+
+- [ ] INVITED admin ne peut pas être révoqué (retrait du rôle admin / désactivation) quand c'est le
+      seul administrateur actif du tenant, même s'il n'a jamais activé son compte — garde volontairement
+      stricte, cas à couvrir explicitement si un tenant reste bloqué avec un seul INVITED admin.
+- [ ] Changement de rôle d'un utilisateur : pas d'audit before/after dédié (seul l'audit générique
+      de la mutation existe) — ajouter un `AuditLogsService.log` explicite si le suivi de rôle
+      devient sensible en prod.
+- [ ] Le message d'erreur 409 sur `P2034` (conflit Serializable, ex. dernier-admin) dit « réessayer »
+      alors qu'aucun retry automatique n'existe côté client — corriger le message ou ajouter un
+      retry UI.
+- [ ] `Button.svelte` n'a pas de passe-plat `title`/props restantes — un bouton d'action ne peut pas
+      recevoir de tooltip natif sans modifier le composant partagé.
+- [ ] Naviguer vers `/locations` depuis Réglages fait basculer le domaine actif de la sidebar sur
+      Transport (résolution du domaine par préfixe d'URL, pré-existante) — UX mineure, pas de perte
+      de droits.
+- [ ] Un rôle personnalisé créé **avant** ce chantier et limité à l'ancien
+      `transportation.master-data.read` (aucun n'existe en pratique aujourd'hui — seul `admin` avait
+      ce type d'accès, régénéré via `PermissionsSyncService`) perdrait les sélecteurs de lieux tant
+      que `core.locations.read` ne lui est pas ajouté à la main.
+- [ ] `pnpm format` non relancé sur cette branche (dérive Prettier préexistante hors mission, comme
+      notée sur `operational-convergence`).
+- [ ] Autres minors de revue non bloquants : `resolveRoleTemplates` — chemin de dédoublonnage non
+      testé unitairement ; audit explicite (DELETE de rôle) ne filtre pas le `userId` des principals
+      `apikey:` (convention pré-existante) ; `typeLabel()` dupliqué entre `LocationFormModal` et la
+      page `/locations` ; double-fetch bénin sur `onSiteCreated` (accueil Yard, réponse périmée
+      ignorée) ; `invitationLabel` a des branches mortes et l'arrondi `Math.ceil` des jours restants
+      surestime légèrement le temps avant expiration ; reset-password sur un jeton déjà utilisé
+      renvoie 401 avant 400 (comportement déterministe, juste pas celui documenté en premier).

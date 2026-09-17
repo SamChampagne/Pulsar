@@ -6,6 +6,24 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Accès & Lieux cœur (2026-09-16) — `access-module-core-locations` (non mergée).**
+> `Location` devient une entité du cœur (`core/locations`, perms `core.locations.*` synchronisées
+> au démarrage par `PermissionsSyncService` sur tous les tenants) ; `transportation/locations`
+> n'est plus qu'un alias TMS. Raccourcis « Créer un entrepôt / + Site » dans WMS et Yard
+> (gated `core.locations.manage`). Nouveau module Accès : page `/settings/roles` (permissions
+> groupées par module, gabarits `ROLE_TEMPLATES` → `POST /roles/from-template`, garde de
+> suppression d'un rôle assigné) et `/settings/users` enrichie (édition, expiration d'invitation,
+> renvoi, réactivation) ; dernier administrateur actif protégé (auto-désactivation, réactivation,
+> retrait du rôle admin) via transaction Serializable + claim conditionnel. Règle 50 ajoutée.
+> Gates mesurées : typecheck **0 erreur** (web/api/shared/database) ; unit **958** (shared 650,
+> web 49, api 259) ; e2e ciblé **84/84** (8 suites : `access-module`, phase3-6, WMS/Yard/Fleet
+> configurables, collaboration) ; Playwright **32/32** (`access-roles`, `wms-workspace`,
+> `yard-workspace`) ; `git diff --check` propre. Limites : comptes portail client/transporteur/
+> chauffeur toujours nommés (pas de compte utilisateur dédié) ; le master-data partagé restant
+> (`Customer`/`Carrier`/`Vehicle`/`Trailer`/`Driver`/`Lane`) n'a toujours qu'un point d'écriture
+> TMS. Suite recommandée : arc « Référentiel partagé » (`core/master-data`, même patron que les
+> Lieux). Détail, contrats et dette : [access-module-core-locations.md](./plans/access-module-core-locations.md).
+
 > **Livraison regroupée (2026-09-14).** Les 14 lots récents sont désormais réunis
 > dans la [PR unique #79](https://github.com/SamChampagne/Pulsar/pull/79), vers `main`.
 > Les PR #66 à #78 sont remplacées, sans suppression de leurs branches. Les tests web
