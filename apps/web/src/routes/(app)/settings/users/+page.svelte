@@ -1,13 +1,17 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { PERMISSIONS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
   import { toast } from '$lib/stores/toast';
+  import { confirmAction } from '$lib/stores/confirmation';
   import { formatDateTime } from '$lib/format';
   import {
     PageHeader,
     Button,
     Field,
     Input,
+    Select,
     Table,
     Badge,
     EmptyState,
@@ -24,10 +28,12 @@
     status: string;
     lastLoginAt: string | null;
     roles: { role: { id: string; key: string; name: string } }[];
+    invitation: { expiresAt: string; expired: boolean } | null;
   }
 
   interface RoleOption {
     id: string;
+    key: string;
     name: string;
   }
 
@@ -38,7 +44,24 @@
   let loading = $state(true);
   let saving = $state(false);
   let inviteUrl = $state('');
+  let statusFilter = $state('');
   let form = $state({ email: '', firstName: '', lastName: '', roleIds: [] as string[] });
+
+  let editingUser = $state<UserRow | null>(null);
+  let showEdit = $state(false);
+  let editForm = $state({ firstName: '', lastName: '', roleIds: [] as string[] });
+  let editError = $state('');
+  let editSaving = $state(false);
+
+  const canManage = $derived(
+    ($auth?.user.permissions ?? []).includes(PERMISSIONS.CORE.USERS_MANAGE),
+  );
+
+  const hasLimitedRoles = $derived(roles.filter((r) => r.key !== 'admin').length > 0);
+
+  const filteredUsers = $derived(
+    statusFilter ? users.filter((u) => u.status === statusFilter) : users,
+  );
 
   async function load() {
     try {
@@ -65,6 +88,12 @@
     form.roleIds = form.roleIds.includes(id)
       ? form.roleIds.filter((r) => r !== id)
       : [...form.roleIds, id];
+  }
+
+  function toggleEditRole(id: string) {
+    editForm.roleIds = editForm.roleIds.includes(id)
+      ? editForm.roleIds.filter((r) => r !== id)
+      : [...editForm.roleIds, id];
   }
 
   async function invite(event: SubmitEvent) {
@@ -100,7 +129,64 @@
     toast.success("Lien d'invitation copié");
   }
 
+  function openEdit(user: UserRow) {
+    editingUser = user;
+    editForm = {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      roleIds: user.roles.map((r) => r.role.id),
+    };
+    editError = '';
+    showEdit = true;
+  }
+
+  function closeEdit() {
+    showEdit = false;
+    editingUser = null;
+  }
+
+  async function saveEdit(event: SubmitEvent) {
+    event.preventDefault();
+    if (!editingUser) return;
+    editError = '';
+    editSaving = true;
+    try {
+      await api(`/users/${editingUser.id}`, {
+        method: 'PATCH',
+        body: {
+          firstName: editForm.firstName,
+          lastName: editForm.lastName,
+          roleIds: editForm.roleIds,
+        },
+      });
+      toast.success('Utilisateur mis à jour');
+      showEdit = false;
+      editingUser = null;
+      await load();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Échec de la mise à jour';
+      editError = msg;
+      toast.error(msg);
+    } finally {
+      editSaving = false;
+    }
+  }
+
+  async function resendInvitation(user: UserRow) {
+    try {
+      const result = await api<{ inviteUrl: string }>(`/users/${user.id}/resend-invitation`, {
+        method: 'POST',
+      });
+      inviteUrl = result.inviteUrl;
+      toast.success(`Invitation renvoyée à ${user.email}`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Échec du renvoi de l'invitation");
+    }
+  }
+
   async function deactivate(user: UserRow) {
+    if (!(await confirmAction(`Désactiver ${user.email} ?`))) return;
     try {
       await api(`/users/${user.id}`, { method: 'DELETE' });
       toast.success(`${user.email} désactivé`);
@@ -110,6 +196,28 @@
     }
   }
 
+  async function reactivate(user: UserRow) {
+    try {
+      const result = await api<UserRow & { inviteUrl?: string }>(`/users/${user.id}/reactivate`, {
+        method: 'POST',
+      });
+      if (result.inviteUrl) inviteUrl = result.inviteUrl;
+      toast.success(`${user.email} réactivé`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Échec de la réactivation');
+    }
+  }
+
+  function invitationLabel(user: UserRow): string {
+    if (!user.invitation) return '';
+    if (user.invitation.expired) return '';
+    const ms = new Date(user.invitation.expiresAt).getTime() - Date.now();
+    const hours = Math.max(0, Math.ceil(ms / (1000 * 60 * 60)));
+    if (hours > 48) return `expire dans ${Math.ceil(hours / 24)}j`;
+    return `expire dans ${hours}h`;
+  }
+
   $effect(() => {
     void load();
   });
@@ -117,13 +225,19 @@
 
 <PageHeader title="Utilisateurs" count={users.length}>
   {#snippet actions()}
-    <Button onclick={openNew}>Inviter un utilisateur</Button>
+    {#if canManage}
+      <Button onclick={openNew}>Inviter un utilisateur</Button>
+    {/if}
   {/snippet}
 </PageHeader>
 
-<p class="mb-4 text-sm text-ink-muted">
+<p class="mb-1 text-sm text-ink-muted">
   Invitez vos collègues et attribuez-leur des rôles. L'invité reçoit un lien par courriel valide
   72 h.
+</p>
+<p class="mb-4 text-sm text-ink-muted">
+  Les changements de rôle prennent effet à la prochaine reconnexion de l'utilisateur (au plus 15
+  minutes).
 </p>
 
 {#if error && !showForm}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
@@ -142,13 +256,26 @@
   </Card>
 {/if}
 
+<div class="mb-3 flex flex-wrap items-center gap-3">
+  <div class="w-52">
+    <Select bind:value={statusFilter} aria-label="Filtrer par statut">
+      <option value="">Tous les statuts</option>
+      <option value="ACTIVE">Actifs</option>
+      <option value="INVITED">Invités</option>
+      <option value="DISABLED">Désactivés</option>
+    </Select>
+  </div>
+</div>
+
 {#if loading}
   <Card padded={false}><Skeleton rows={6} /></Card>
-{:else if users.length === 0}
+{:else if filteredUsers.length === 0}
   <Card>
     <EmptyState message="Aucun utilisateur pour le moment.">
       {#snippet children()}
-        <Button onclick={openNew}>Inviter un utilisateur</Button>
+        {#if canManage}
+          <Button onclick={openNew}>Inviter un utilisateur</Button>
+        {/if}
       {/snippet}
     </EmptyState>
   </Card>
@@ -163,7 +290,7 @@
       <th></th>
     {/snippet}
     {#snippet body()}
-      {#each users as user (user.id)}
+      {#each filteredUsers as user (user.id)}
         <tr>
           <td class="font-semibold text-ink">{user.email}</td>
           <td>{user.firstName} {user.lastName}</td>
@@ -172,20 +299,52 @@
             {#if user.status === 'ACTIVE'}
               <Badge tone="ok">Actif</Badge>
             {:else if user.status === 'INVITED'}
-              <Badge tone="warn">Invité</Badge>
+              {#if user.invitation?.expired}
+                <Badge tone="danger">Invitation expirée</Badge>
+              {:else if user.invitation}
+                <Badge tone="warn">Invité · {invitationLabel(user)}</Badge>
+              {:else}
+                <Badge tone="warn">Invité</Badge>
+              {/if}
             {:else if user.status === 'DISABLED'}
-              <Badge tone="danger">Désactivé</Badge>
+              <Badge tone="neutral">Désactivé</Badge>
             {:else}
               <Badge tone="neutral">{user.status}</Badge>
             {/if}
           </td>
           <td class="font-mono text-ink-muted">{formatDateTime(user.lastLoginAt)}</td>
-          <td class="text-right">
-            {#if user.status !== 'DISABLED'}
-              <Button
-                variant="danger"
-                onclick={(e) => { e.stopPropagation(); void deactivate(user); }}
-              >Désactiver</Button>
+          <td class="text-right whitespace-nowrap">
+            {#if canManage}
+              <Button variant="secondary" onclick={(e) => { e.stopPropagation(); openEdit(user); }}
+                >Modifier</Button
+              >
+              {#if user.status === 'INVITED'}
+                <Button
+                  variant="secondary"
+                  onclick={(e) => { e.stopPropagation(); void resendInvitation(user); }}
+                  >Renvoyer l'invitation</Button
+                >
+              {/if}
+              {#if user.status === 'DISABLED'}
+                <Button
+                  variant="secondary"
+                  onclick={(e) => { e.stopPropagation(); void reactivate(user); }}
+                  >Réactiver</Button
+                >
+              {:else}
+                <span
+                  title={user.id === $auth?.user.id
+                    ? 'Vous ne pouvez pas désactiver votre propre compte'
+                    : undefined}
+                >
+                  <Button
+                    variant="danger"
+                    disabled={user.id === $auth?.user.id}
+                    onclick={(e) => { e.stopPropagation(); void deactivate(user); }}
+                    >Désactiver</Button
+                  >
+                </span>
+              {/if}
             {/if}
           </td>
         </tr>
@@ -228,10 +387,59 @@
           </div>
         </div>
       {/if}
+      {#if !hasLimitedRoles}
+        <p class="text-xs text-ink-muted">
+          Aucun rôle limité n'existe encore — créez-en dans
+          <a href="/settings/roles" class="text-accent hover:underline">Rôles</a>.
+        </p>
+      {/if}
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
         <Button variant="secondary" onclick={() => { showForm = false; }}>Annuler</Button>
         <Button variant="primary" type="submit" loading={saving}>Envoyer l'invitation</Button>
       </div>
     </form>
+  {/snippet}
+</Modal>
+
+<Modal bind:open={showEdit} onclose={closeEdit} title="Modifier l'utilisateur" size="md">
+  {#snippet children()}
+    {#if editingUser}
+      <form onsubmit={saveEdit} class="space-y-3">
+        {#if editError}<p class="text-sm text-danger">{editError}</p>{/if}
+        <Field label="Prénom">
+          <Input bind:value={editForm.firstName} required />
+        </Field>
+        <Field label="Nom">
+          <Input bind:value={editForm.lastName} required />
+        </Field>
+        {#if roles.length > 0}
+          <div>
+            <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Rôles</span>
+            <div class="flex flex-wrap gap-3">
+              {#each roles as role (role.id)}
+                <label class="flex cursor-pointer items-center gap-1.5 text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    checked={editForm.roleIds.includes(role.id)}
+                    onchange={() => toggleEditRole(role.id)}
+                  />
+                  {role.name}
+                </label>
+              {/each}
+            </div>
+          </div>
+        {/if}
+        {#if !hasLimitedRoles}
+          <p class="text-xs text-ink-muted">
+            Aucun rôle limité n'existe encore — créez-en dans
+            <a href="/settings/roles" class="text-accent hover:underline">Rôles</a>.
+          </p>
+        {/if}
+        <div class="flex justify-end gap-2 border-t border-edge pt-3">
+          <Button variant="secondary" onclick={closeEdit}>Annuler</Button>
+          <Button variant="primary" type="submit" loading={editSaving}>Enregistrer</Button>
+        </div>
+      </form>
+    {/if}
   {/snippet}
 </Modal>
