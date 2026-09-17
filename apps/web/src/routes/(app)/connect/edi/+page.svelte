@@ -324,8 +324,8 @@ IEA*1*000000102~`;
     setOptionalField(config, 'isaReceiverId', formIsaReceiver, original);
     setOptionalField(config, 'gsSenderId', formGsSender, original);
     setOptionalField(config, 'gsReceiverId', formGsReceiver, original);
-    if (formCustomerId) config.customerId = formCustomerId;
-    if (formCarrierId) config.carrierId = formCarrierId;
+    setOptionalField(config, 'customerId', formCustomerId, original);
+    setOptionalField(config, 'carrierId', formCarrierId, original);
     setOptionalField(config, 'url', formUrl, original);
     return config;
   }

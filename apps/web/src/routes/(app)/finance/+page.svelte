@@ -49,7 +49,7 @@
   const paidReceivables = $derived(customerInvoices.filter((i) => i.status === 'PAID').length);
 
   function money(value: string | null, currency: string): string {
-    return `${Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`;
+    return `${Number(value ?? 0).toLocaleString('fr-CA', { maximumFractionDigits: 2 })} ${currency}`;
   }
 
   interface WorkItem {

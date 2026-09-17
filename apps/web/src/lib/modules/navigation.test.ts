@@ -23,7 +23,7 @@ vi.mock('lucide-svelte', () =>
     ].map((name) => [name, () => null]),
   ),
 );
-import { visibleDomains } from './navigation';
+import { visibleDomains, domainHome, type NavDomain } from './navigation';
 
 describe('Platform: Quoi de neuf link', () => {
   const platformLinks = (modules: string[] = [], permissions: string[] = []) =>
@@ -133,6 +133,44 @@ describe('Customer portal navigation domain', () => {
     const found = domain(['customer-portal'], ['customer-portal.links.manage']);
     expect(found).toBeDefined();
     expect(found?.sections.flatMap((s) => s.links).map((l) => l.href)).toContain('/customers');
+  });
+});
+
+describe('domainHome', () => {
+  it('returns domain.home when the user can see that link', () => {
+    const domain = visibleDomains({
+      enabledModules: ['customer-portal'],
+      can: (p) => p === 'customer-portal.users.read',
+    }).find((d) => d.key === 'customer-portal');
+    expect(domain).toBeDefined();
+    expect(domainHome(domain!)).toBe('/customer-portal/requests');
+  });
+
+  it('falls back to the first visible link when home is gated behind a permission the user lacks', () => {
+    // customer-portal.links.manage sees /customers but not the home route
+    // (/customer-portal/requests needs customer-portal.users.read) — this is
+    // the exact case that used to 403 before domainHome existed.
+    const domain = visibleDomains({
+      enabledModules: ['customer-portal'],
+      can: (p) => p === 'customer-portal.links.manage',
+    }).find((d) => d.key === 'customer-portal');
+    expect(domain).toBeDefined();
+    const hrefs = domain!.sections.flatMap((s) => s.links).map((l) => l.href);
+    expect(hrefs).not.toContain('/customer-portal/requests');
+    expect(domainHome(domain!)).toBe(hrefs[0]);
+    expect(domainHome(domain!)).toBe('/customers');
+  });
+
+  it('falls back to domain.home when the user sees no links at all', () => {
+    const domain: NavDomain = {
+      key: 'empty',
+      label: 'Empty',
+      icon: (() => null) as unknown as NavDomain['icon'],
+      home: '/empty',
+      prefixes: ['/empty'],
+      sections: [],
+    };
+    expect(domainHome(domain)).toBe('/empty');
   });
 });
 

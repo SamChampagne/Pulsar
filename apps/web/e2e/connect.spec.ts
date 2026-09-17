@@ -269,6 +269,13 @@ test('editing a partner sends null for a cleared envelope id (PATCH merge semant
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 10 } });
   });
+  // The Client EntityPicker resolves its current value's label by id when the
+  // edit form opens (it just needs to not 404 — the "Effacer" clear button's
+  // visibility depends only on the bound value, not on this resolution).
+  await page.route('**/api/v1/transportation/customers/cust-1', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: { id: 'cust-1', name: 'Cust One', code: 'CUST1' } });
+  });
 
   await page.goto('/connect/edi');
   await expect(page.getByRole('article').getByText('Acme Shipper — EDI')).toBeVisible();
@@ -282,10 +289,17 @@ test('editing a partner sends null for a cleared envelope id (PATCH merge semant
   // sent explicitly as `null`), while the untouched ISA06 field ('PULSARTMS')
   // is resent as-is and the already-blank URL stays omitted.
   await dialog.getByRole('textbox', { name: /GS02/ }).fill('');
+  // Client (customerId: 'cust-1') is cleared via the EntityPicker's own
+  // "Effacer" button — the same merge semantics apply to FK fields, not just
+  // the free-text ISA/GS ids: a silently-kept FK after a visible clear would
+  // be a real bug (success toast, unchanged server state).
+  await dialog.getByRole('button', { name: 'Effacer client' }).click();
   await dialog.getByRole('button', { name: 'Enregistrer' }).click();
 
   await expect(dialog).toBeHidden();
   expect(capturedPatchBody?.config?.gsSenderId).toBeNull();
   expect(capturedPatchBody?.config?.isaSenderId).toBe('PULSARTMS');
   expect(capturedPatchBody?.config?.url).toBeUndefined();
+  expect(capturedPatchBody?.config?.customerId).toBeNull();
+  expect(capturedPatchBody?.config?.carrierId).toBeUndefined();
 });

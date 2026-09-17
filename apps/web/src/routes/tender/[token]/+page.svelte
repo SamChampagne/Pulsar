@@ -124,7 +124,7 @@
       <Card>
         <p class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Offered rate</p>
         <p class="text-2xl font-bold text-ink">
-          {tender.offeredRate.toLocaleString(undefined, {
+          {tender.offeredRate.toLocaleString('fr-CA', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
           })}

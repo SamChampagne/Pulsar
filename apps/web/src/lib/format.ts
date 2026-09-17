@@ -39,9 +39,11 @@ export function formatDateTime(iso: string | null | undefined): string {
   return iso ? new Date(iso).toLocaleString(LOCALE, TIME_OPTIONS) : '—';
 }
 
-/** Time only (no date), e.g. "14:02". */
+/** Time only (no date), e.g. "14:02". Falls back to the placeholder for an unparseable value too. */
 export function formatTime(iso: string | null | undefined): string {
-  return iso
-    ? new Date(iso).toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' })
-    : '—';
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? '—'
+    : d.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' });
 }
