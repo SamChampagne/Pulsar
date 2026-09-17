@@ -146,7 +146,7 @@ test('late invoice responses cannot overwrite a newly selected party', async ({ 
   await expect.poll(() => oldRequested).toBe(true);
   await page.getByRole('button', { name: /^Client :/ }).click();
   const picker = page.getByRole('dialog', { name: 'Client', exact: true });
-  await picker.getByRole('button', { name: 'Second client', exact: true }).click();
+  await picker.getByRole('option', { name: 'Second client', exact: true }).click();
   await expect(page.getByLabel('Allocation · CI-SECOND', { exact: true })).toBeVisible();
   const oldFinished = page.waitForResponse(
     (r) =>
@@ -279,7 +279,7 @@ test('a linked invoice preselects only itself and client search is not limited t
   );
   await picker.getByLabel('Rechercher : client').fill('Bor');
   expect(new URL((await request).url()).searchParams.get('pageSize')).toBe('20');
-  await picker.getByRole('button', { name: 'Atelier Boréal', exact: true }).click();
+  await picker.getByRole('option', { name: 'Atelier Boréal', exact: true }).click();
   await expect(picker).toHaveCount(0);
 });
 

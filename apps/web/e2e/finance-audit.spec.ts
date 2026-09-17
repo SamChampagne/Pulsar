@@ -172,7 +172,7 @@ test('intake uses a carrier picker and keeps failed submissions in the drawer', 
   await panel.getByRole('button', { name: /^Transporteur :/ }).click();
   await page
     .getByRole('dialog', { name: 'Transporteur', exact: true })
-    .getByRole('button', { name: carrier.name, exact: true })
+    .getByRole('option', { name: carrier.name, exact: true })
     .click();
   await panel.getByLabel('Numéro de facture transporteur', { exact: true }).fill('FA-NEW-21');
   await panel.getByLabel('Devise', { exact: true }).fill('usd');
