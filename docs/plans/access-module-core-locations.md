@@ -1,6 +1,7 @@
 # Accès & Lieux cœur
 
-Date : 2026-09-16. Branche : `access-module-core-locations` (base `5c985e7`, HEAD `bb62bde`, non mergée).
+Date : 2026-09-16. Branche : `access-module-core-locations` (base `5c985e7`, dernier commit de code
+`2fd87d3` — passe de correction finale ; suivi du seul commit de documentation, non mergée).
 Spec : `docs/superpowers/specs/2026-09-16-access-module-core-locations-design.md`.
 
 ## Résultat métier
@@ -30,8 +31,17 @@ Préfixe `/api/v1`, tenant toujours dérivé du JWT (règle 1).
   `POST /users/:id/reactivate`, projection `invitation` (statut, expiration). Gardes du dernier
   administrateur actif (auto-désactivation, désactivation du dernier admin actif, retrait du rôle
   admin du dernier actif) appliquées dans une transaction Prisma **Serializable** avec claim
-  compte+écriture ; `P2034` → 409. La désactivation invalide les jetons d'invitation/reset non
-  utilisés ; `auth/reset-password` rejette un compte `DISABLED`.
+  compte+écriture ; `P2034` → 409. La garde ne vise que des cibles **ACTIVE** : un admin INVITED ou
+  DISABLED ne compte pas dans le total d'admins actifs, donc il reste révocable même s'il ne reste
+  qu'un seul admin ACTIVE dans le tenant. La désactivation invalide les jetons d'invitation/reset
+  non utilisés **et révoque les refresh tokens** du compte (même transaction) ;
+  `auth/reset-password` rejette un compte `DISABLED`. Les `AuditLogsService.log` explicites
+  (users/roles) passent l'acteur par `auditActor()` : un principal `apikey:` laisse la FK à null.
+- Gabarits de rôles : le gabarit `viewer` (lecture seule dynamique) **exclut** les lectures
+  sensibles de la plateforme (`VIEWER_EXCLUDED_KEYS` de `@pulsar/shared` : `core.audit.read`,
+  `core.email.read`, `core.api-keys.read`, `core.users.read`, `core.roles.read`) — un rôle
+  « lecture seule » n'ouvre pas la surface de sécurité du tenant. La carte de gabarit de
+  `/settings/roles` liste les clés accordées (`<details>`) avant « Créer ce rôle ».
 
 ## Web
 
@@ -48,8 +58,8 @@ Préfixe `/api/v1`, tenant toujours dérivé du JWT (règle 1).
 | Gate | Commande | Résultat |
 | --- | --- | --- |
 | Typecheck | `pnpm typecheck` | **0 erreur** (shared/database/api/web), 12 avertissements a11y préexistants (web, hors périmètre) |
-| Unit | `pnpm test` | **958 tests / 134 suites** verts (shared 650/71, web 49/7, api 259/56) |
-| E2E ciblé | `pnpm --filter @pulsar/api test:e2e -- test/access-module.e2e-spec.ts test/phase3.e2e-spec.ts test/phase4.e2e-spec.ts test/phase5.e2e-spec.ts test/configurable-wms-yard-fleet.e2e-spec.ts test/collaboration.e2e-spec.ts test/phase6-platform.e2e-spec.ts test/wms-module.e2e-spec.ts` | **84 tests / 8 suites** verts |
+| Unit | `pnpm test` | **962 tests / 134 suites** verts (shared 652/71, web 49/7, api 261/56) |
+| E2E **complet** | `pnpm test:e2e` (`--runInBand`, 81 suites) | **751 passés / 7 échoués / 1 ignoré** sur 759 ; 77 suites vertes, 1 ignorée, **3 en échec pour une cause externe** : `aps-runtime`, `manufacturing-scheduling`, `manufacturing-agent-tools` — toutes dépendent du moteur APS Python (HTTP 500 / 503 « APS engine error »), hors périmètre de cette branche. `access-module.e2e-spec.ts` : **PASS** |
 | Playwright | `pnpm --filter @pulsar/web exec playwright test e2e/access-roles.spec.ts e2e/wms-workspace.spec.ts e2e/yard-workspace.spec.ts` | **32/32** verts |
 | Diff | `git diff --check` | propre |
 

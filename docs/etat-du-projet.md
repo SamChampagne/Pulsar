@@ -14,11 +14,16 @@
 > groupées par module, gabarits `ROLE_TEMPLATES` → `POST /roles/from-template`, garde de
 > suppression d'un rôle assigné) et `/settings/users` enrichie (édition, expiration d'invitation,
 > renvoi, réactivation) ; dernier administrateur actif protégé (auto-désactivation, réactivation,
-> retrait du rôle admin) via transaction Serializable + claim conditionnel. Règle 50 ajoutée.
-> Gates mesurées : typecheck **0 erreur** (web/api/shared/database) ; unit **958** (shared 650,
-> web 49, api 259) ; e2e ciblé **84/84** (8 suites : `access-module`, phase3-6, WMS/Yard/Fleet
-> configurables, collaboration) ; Playwright **32/32** (`access-roles`, `wms-workspace`,
-> `yard-workspace`) ; `git diff --check` propre. Limites : comptes portail client/transporteur/
+> retrait du rôle admin) via transaction Serializable + claim conditionnel — la garde ne vise que
+> des cibles **ACTIVE**, un admin INVITED reste donc révocable. Le gabarit `viewer` exclut les
+> lectures sensibles de la plateforme (`core.audit.read`, `core.email.read`, `core.api-keys.read`,
+> `core.users.read`, `core.roles.read`) et la carte de gabarit liste ses clés avant création.
+> Règle 50 ajoutée.
+> Gates mesurées : typecheck **0 erreur** (web/api/shared/database) ; unit **962** (shared 652,
+> web 49, api 261) ; e2e **complet** `pnpm test:e2e` **751/759** (1 skip ; 3 suites en échec pour
+> cause externe — moteur APS Python indisponible : `aps-runtime`, `manufacturing-scheduling`,
+> `manufacturing-agent-tools` ; `access-module` PASS) ; Playwright **32/32** (`access-roles`,
+> `wms-workspace`, `yard-workspace`) ; `git diff --check` propre. Limites : comptes portail client/transporteur/
 > chauffeur toujours nommés (pas de compte utilisateur dédié) ; le master-data partagé restant
 > (`Customer`/`Carrier`/`Vehicle`/`Trailer`/`Driver`/`Lane`) n'a toujours qu'un point d'écriture
 > TMS. Suite recommandée : arc « Référentiel partagé » (`core/master-data`, même patron que les

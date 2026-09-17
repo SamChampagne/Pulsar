@@ -596,9 +596,11 @@ règle 50) ; le reste du master-data partagé garde un seul point d'écriture TM
 
 ### Dette différée (revues Tasks 1-11, à ne pas « réparer » en silence)
 
-- [ ] INVITED admin ne peut pas être révoqué (retrait du rôle admin / désactivation) quand c'est le
-      seul administrateur actif du tenant, même s'il n'a jamais activé son compte — garde volontairement
-      stricte, cas à couvrir explicitement si un tenant reste bloqué avec un seul INVITED admin.
+- [x] ~~INVITED admin ne peut pas être révoqué quand c'est le seul admin « actif » du tenant~~ —
+      **corrigé** (passe finale 2026-09-16) : `isLastActiveAdmin` lit désormais le statut de la cible
+      et renvoie `false` si elle n'est pas ACTIVE (une cible INVITED/DISABLED ne compte pas dans le
+      total d'admins ACTIVE, donc la révoquer ne peut pas verrouiller le tenant). Couvert par 2 tests
+      unitaires + l'étape e2e 9b.
 - [ ] Changement de rôle d'un utilisateur : pas d'audit before/after dédié (seul l'audit générique
       de la mutation existe) — ajouter un `AuditLogsService.log` explicite si le suivi de rôle
       devient sensible en prod.
@@ -616,9 +618,37 @@ règle 50) ; le reste du master-data partagé garde un seul point d'écriture TM
       que `core.locations.read` ne lui est pas ajouté à la main.
 - [ ] `pnpm format` non relancé sur cette branche (dérive Prettier préexistante hors mission, comme
       notée sur `operational-convergence`).
+- [ ] `UsersService.update()` : ordre des erreurs — l'`assertRolesOwned` (403/404 de propriété) est
+      évalué avant le 404 « utilisateur introuvable », donc un PATCH sur un id inexistant avec un
+      `roleIds` d'un autre tenant répond sur la propriété du rôle plutôt que sur l'utilisateur.
+- [ ] `UsersService` : deux `findFirst` successifs dans la transaction Serializable (le lookup de
+      statut puis celui d'`isLastActiveAdmin`) — correct mais redondant, fusionnable en une lecture.
+- [ ] `auth/reset-password` : le message « Account is disabled » distingue, pour le porteur d'un jeton
+      encore vivant, un compte désactivé d'un jeton invalide (divulgation mineure sur le chemin
+      pré-authentification) — uniformiser le message si ça devient sensible.
+- [ ] `users.service.spec.ts` : le faux `$transaction` renvoie le même objet prisma, donc il ne
+      prouve pas que les écritures sont bien liées au client transactionnel (`tx`) — un faux
+      distinguant `tx` du client racine rendrait le test de TOCTOU réellement contraignant.
+- [ ] Jetons/sessions déjà émis pour des utilisateurs désactivés **avant** cet arc : la désactivation
+      révoque maintenant jetons d'action et refresh tokens, mais les refresh tokens historiques d'un
+      compte désactivé plus tôt restent en base (mitigé par la garde `DISABLED` de `resetPassword` et
+      par la vérification de statut au login) — purge ponctuelle à prévoir si besoin.
+- [ ] e2e `access-module` : les utilisateurs jetables créés par la suite restent DISABLED dans la base
+      de dev (pas de suppression physique, par conception) — bruit cumulatif sur `/settings/users` au
+      fil des exécutions locales.
+- [ ] Page Rôles : « Tout lire » / « Tout gérer » sont **additifs** (ils ajoutent sans retirer), ce que
+      l'étiquette ne dit pas — seul « Aucun » retire. Renommer ou rendre le comportement bascule.
+- [ ] Page Rôles : deux `<th>` sans intitulé (colonne badge système et colonne d'actions) — en-têtes
+      invisibles pour un lecteur d'écran.
+- [ ] Page Utilisateurs : la cellule d'actions reste un `<td>` vide quand l'utilisateur n'a pas
+      `core.users.manage` — préférer un tiret ou masquer la colonne.
+- [ ] `PermissionsSyncService` : ~84 `upsert` séquentiels à chaque démarrage, puis attribution aux
+      rôles `admin` de **toutes** les lignes `Permission` en base (pas seulement les clés du catalogue
+      `@pulsar/shared`) — regrouper en `createMany`/batch et restreindre l'octroi aux clés du catalogue.
+- [ ] Page Utilisateurs : le filtre de statut et la recherche s'appliquent **côté client** sur une
+      unique page de 100 lignes — au-delà, le filtrage ment silencieusement ; passer au filtrage serveur.
 - [ ] Autres minors de revue non bloquants : `resolveRoleTemplates` — chemin de dédoublonnage non
-      testé unitairement ; audit explicite (DELETE de rôle) ne filtre pas le `userId` des principals
-      `apikey:` (convention pré-existante) ; `typeLabel()` dupliqué entre `LocationFormModal` et la
+      testé unitairement ; `typeLabel()` dupliqué entre `LocationFormModal` et la
       page `/locations` ; double-fetch bénin sur `onSiteCreated` (accueil Yard, réponse périmée
       ignorée) ; `invitationLabel` a des branches mortes et l'arrondi `Math.ceil` des jours restants
       surestime légèrement le temps avant expiration ; reset-password sur un jeton déjà utilisé
