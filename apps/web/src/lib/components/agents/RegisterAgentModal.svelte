@@ -58,8 +58,9 @@
       alwaysOn: p.alwaysOn ?? false,
       categories: p.handlesCategories ?? [],
       cap: p.suggestedMaxAmountPerAction,
+      toolAllowlist: p.suggestedToolAllowlist,
     })),
-    { id: 'custom', label: 'Personnalisé', persona: '', autonomy: 'PROPOSE' as AutonomyLevel, keys: [] as string[], emoji: '🤖', alwaysOn: false, categories: [] as string[], cap: undefined as number | undefined },
+    { id: 'custom', label: 'Personnalisé', persona: '', autonomy: 'PROPOSE' as AutonomyLevel, keys: [] as string[], emoji: '🤖', alwaysOn: false, categories: [] as string[], cap: undefined as number | undefined, toolAllowlist: undefined as string[] | undefined },
   ];
 
   let step = $state<'template' | 'form'>('template');
@@ -72,6 +73,7 @@
   // Always-on (24/7) employee config, set from a preset.
   let alwaysOn = $state(false);
   let handlesCategories = $state<string[]>([]);
+  let toolAllowlist = $state<string[] | undefined>(undefined);
   // advanced
   let showAdvanced = $state(false);
   let model = $state('');
@@ -88,6 +90,7 @@
     emoji = t.emoji;
     alwaysOn = t.alwaysOn;
     handlesCategories = [...t.categories];
+    toolAllowlist = t.toolAllowlist ? [...t.toolAllowlist] : undefined;
     maxAmountPerAction = t.cap != null ? String(t.cap) : '';
     step = 'form';
   }
@@ -104,13 +107,15 @@
     step = 'template'; name = ''; emoji = '🤖'; persona = ''; autonomyLevel = 'PROPOSE';
     permissions = []; role = ''; showAdvanced = false; model = ''; maxAmountPerAction = '';
     alwaysOn = false; handlesCategories = [];
+    toolAllowlist = undefined;
   }
 
   async function create(event: SubmitEvent) {
     event.preventDefault();
     saving = true;
     try {
-      const caps: { maxAmountPerAction?: number; alwaysOn?: boolean; handlesCategories?: string[] } = {};
+      const caps: { maxAmountPerAction?: number; alwaysOn?: boolean; handlesCategories?: string[]; toolAllowlist?: string[] } = {};
+      if (toolAllowlist) caps.toolAllowlist = toolAllowlist;
       const amount = Number(maxAmountPerAction);
       if (String(maxAmountPerAction ?? '').trim() !== '' && amount > 0) caps.maxAmountPerAction = amount;
       if (alwaysOn) {
@@ -187,6 +192,13 @@
 
         <div>
           <span class="mb-1.5 block text-xs font-semibold tracking-wide text-ink-muted uppercase">Accès</span>
+          {#if handlesCategories.includes('MRP_REVIEW') && toolAllowlist}
+            <div class="rounded-md border border-edge-soft bg-surface-muted p-3 text-sm text-ink">
+              <p>Fabrication et WMS en lecture, sources CRM et tâches MRP. Synthèse et recalcul passent par la gouvernance; aucun achat, OF ou mouvement de stock.</p>
+              <p class="mt-2 text-xs text-ink-muted">Worker réveillé sur les revues MRP affectées. Outils limités à la lecture, la synthèse et le recalcul. Configurez la connexion du modèle avant utilisation.</p>
+              <details class="mt-2"><summary class="cursor-pointer text-xs text-ink-muted">Permissions et outils du rôle</summary><p class="mt-2 break-words font-mono text-xs">{permissions.join(' · ')}</p><p class="mt-2 break-words font-mono text-xs">{toolAllowlist.join(' · ')}</p></details>
+            </div>
+          {:else}
           <div class="space-y-1.5">
             {#each ACCESS_GROUPS as g (g.id)}
               <label class="flex cursor-pointer items-start gap-2.5 rounded-md border p-2.5 transition {groupOn(g) ? 'border-accent bg-accent-soft/40' : 'border-edge-soft hover:border-accent'}">
@@ -198,6 +210,7 @@
               </label>
             {/each}
           </div>
+          {/if}
         </div>
 
         <div>

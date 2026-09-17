@@ -1,7 +1,19 @@
 import { PartialType } from '@nestjs/swagger';
-import { IsBoolean, IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class CreateCalendarDto {
+  @IsOptional()
+  @IsString()
+  locationId?: string;
   @IsString()
   code!: string;
 
@@ -13,7 +25,11 @@ export class CreateCalendarDto {
   isActive?: boolean;
 }
 
-export class UpdateCalendarDto extends PartialType(CreateCalendarDto) {}
+export class UpdateCalendarDto extends PartialType(CreateCalendarDto) {
+  @IsOptional()
+  @IsDateString()
+  expectedUpdatedAt?: string;
+}
 
 export class CreateShiftDto {
   @IsInt()

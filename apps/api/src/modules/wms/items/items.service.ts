@@ -94,7 +94,35 @@ export class ItemsService {
   async update(tenantId: string, id: string, dto: UpdateItemDto) {
     await this.get(tenantId, id);
     try {
-      await this.prisma.wmsItem.updateMany({ where: { id, tenantId }, data: dto });
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+        const current = await tx.wmsItem.findFirst({ where: { id, tenantId } });
+        if (!current) throw new NotFoundException('Item not found');
+        if (
+          (dto.unit !== undefined && dto.unit !== current.unit) ||
+          (dto.sku !== undefined && dto.sku !== current.sku)
+        ) {
+          const used = await Promise.all([
+            tx.stockMovement.count({ where: { tenantId, itemId: id } }),
+            tx.inventoryLevel.count({ where: { tenantId, itemId: id } }),
+            tx.receiptLine.count({ where: { tenantId, itemId: id } }),
+            tx.pickLine.count({ where: { tenantId, itemId: id } }),
+            tx.mrpItemPolicy.count({ where: { tenantId, itemId: id } }),
+            tx.mrpEntry.count({ where: { tenantId, itemId: id } }),
+            tx.mrpProductMapping.count({ where: { tenantId, itemId: id } }),
+            tx.bomRevision.count({ where: { tenantId, outputItemId: id } }),
+            tx.bomRevisionLine.count({ where: { tenantId, itemId: id } }),
+            tx.bom.count({ where: { tenantId, productRef: current.sku } }),
+            tx.bomLine.count({ where: { tenantId, materialRef: current.sku } }),
+            tx.manufacturingOrder.count({ where: { tenantId, productRef: current.sku } }),
+          ]);
+          if (used.some(Boolean))
+            throw new ConflictException(
+              'SKU et unité sont figés après utilisation. Créez un nouvel article pour changer de référence ou d’unité.',
+            );
+        }
+        await tx.wmsItem.updateMany({ where: { id, tenantId }, data: dto });
+      });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException('SKU already exists');

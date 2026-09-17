@@ -242,6 +242,23 @@
     >
   </nav>
   <ErrorNotice message={actionError} />
+  {#if data.materialPurchase}<section
+      class="mb-5 rounded-md border border-edge bg-surface-muted p-4 text-sm"
+      aria-label="Commande matières liée"
+    >
+      <p class="font-medium">Achat matières · {data.materialPurchase.number}</p>
+      <p class="mt-1 text-ink-muted">
+        {data.materialPurchase.received} / {data.materialPurchase.ordered}
+        {data.materialPurchase.unit} validés au stock · reste {data.materialPurchase.remaining}
+        {data.materialPurchase.unit}.
+      </p>
+      {#if $auth?.user.permissions.includes('manufacturing.read')}<a
+          class="mt-2 inline-block text-accent hover:underline"
+          href={`/manufacturing/purchasing?preparationId=${data.materialPurchase.preparationId}`}
+          >Ouvrir l’achat et les autres réceptions →</a
+        >{/if}
+      {#each data.materialPurchase.issues as issue}<p class="mt-2 text-danger">{issue}</p>{/each}
+    </section>{/if}
   {#if loading}<p role="status" class="mb-3 text-xs text-ink-muted">
       Actualisation des lignes et du stock…
     </p>{/if}

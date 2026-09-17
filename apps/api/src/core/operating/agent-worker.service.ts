@@ -8,6 +8,7 @@ import {
   OperationalTaskStatus,
   classifyRunError,
   buildWakePrompt,
+  mrpWorkerEligible,
   type WakeAutonomy,
 } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -15,6 +16,7 @@ import type { AgentCaps } from '../agents/agent-principal';
 import { AgentRuntimeService } from '../agents/agent-runtime.service';
 import { AgentRunsService } from './agent-runs.service';
 import { OperationalTasksService } from './operational-tasks.service';
+import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
 
 const MAX_TASKS_PER_CRON_TICK = 10;
 const MAX_ATTEMPTS = 2; // total tries on connectivity errors
@@ -70,6 +72,7 @@ export class AgentWorkerService {
     private readonly tasks: OperationalTasksService,
     private readonly ledger: AgentRunsService,
     @Optional() private readonly config?: ConfigService,
+    @Optional() private readonly modules?: TenantModulesCacheService,
   ) {
     const base = this.config?.get<string>('APP_URL') ?? 'http://localhost:3000';
     this.mcpUrl = `${base}/api/v1/mcp`;
@@ -248,8 +251,10 @@ export class AgentWorkerService {
           serviceUserId: true,
           status: true,
           autonomyLevel: true,
+          permissions: true,
+          caps: true,
         },
-      })) as (AgentRow & { status: AgentStatus; autonomyLevel: WakeAutonomy }) | null;
+      })) as (AgentRow & { status: AgentStatus; autonomyLevel: WakeAutonomy; permissions: string[]; caps: unknown }) | null;
 
       // Hot kill switch: refuse to start for a non-ACTIVE agent.
       if (!agent || agent.status !== AgentStatus.ACTIVE) {
@@ -258,6 +263,14 @@ export class AgentWorkerService {
         return false;
       }
 
+      const reviewTask = await this.prisma.operationalTask.findFirst({ where: { id: taskId, tenantId }, select: { category: true, details: true, assigneeAgentId: true } });
+      if (reviewTask?.category === 'MRP_REVIEW') {
+        const modules = this.modules ? await this.modules.getEnabledKeys(tenantId) : new Set<string>();
+        if (reviewTask.assigneeAgentId !== agentId || !mrpWorkerEligible(agent, modules, (reviewTask.details as { requiresCrm?: boolean } | null)?.requiresCrm === true)) {
+          await this.ledger.finish(runId, AgentRunStatus.SKIPPED, { error: 'Accès ou configuration du worker MRP insuffisants.' });
+          this.inFlightTasks.delete(taskId); return false;
+        }
+      }
       await this.ledger.markRunning(runId);
       await this.prisma.agent.update({ where: { id: agentId }, data: { lastRunAt: new Date() } }).catch(() => undefined);
       await this.tasks.start(tenantId, taskId, agent.serviceUserId);

@@ -22,6 +22,7 @@ export type ResolvedSettings = Record<string, string | number | boolean>;
 
 /** v1 catalog. Defaults MUST equal current hardcoded behavior. */
 export const MODULE_SETTINGS_CATALOG: ModuleSettingsCatalog[] = [
+  { module: 'manufacturing', settings: [{ key: 'mrpAutomaticReview', label: 'Revue IA des alertes MRP', help: 'Créer une tâche de revue après un calcul humain comportant des alertes. Un worker MRP autorisé peut l’analyser; sans worker, elle reste non assignée. Désactivé par défaut. Aucun achat ni mouvement automatique.', type: 'boolean', default: false }] },
   {
     module: 'transportation',
     settings: [

@@ -1,8 +1,17 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AuditAction, sumLineItems } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
-import { CreateSalesOrderLineItemDto, UpdateSalesOrderLineItemDto } from './dto/sales-order-line-item.dto';
+import {
+  CreateSalesOrderLineItemDto,
+  UpdateSalesOrderLineItemDto,
+} from './dto/sales-order-line-item.dto';
 
 /**
  * CRM sales-order line-items service. All operations are tenant-scoped (rule 1).
@@ -18,8 +27,12 @@ export class SalesOrderLineItemsService {
   ) {}
 
   /** Asserts order exists and is DRAFT. Returns order (for currency). Throws 404/409. */
-  private async assertOrderDraft(tenantId: string, salesOrderId: string) {
-    const order = await this.prisma.salesOrder.findFirst({
+  private async assertOrderDraft(
+    tenantId: string,
+    salesOrderId: string,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
+    const order = await tx.salesOrder.findFirst({
       where: { id: salesOrderId, tenantId },
       select: { id: true, status: true, currency: true },
     });
@@ -31,16 +44,27 @@ export class SalesOrderLineItemsService {
   }
 
   /** Recompute salesOrder.totalAmount = Σ line totals. Must run inside the caller's transaction. */
-  private async recomputeOrderTotal(tx: any, tenantId: string, salesOrderId: string) {
+  private async recomputeOrderTotal(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    salesOrderId: string,
+  ) {
     const lines = await tx.salesOrderLineItem.findMany({ where: { tenantId, salesOrderId } });
     const total = sumLineItems(
-      lines.map((l: any) => ({
+      lines.map((l) => ({
         quantity: Number(l.quantity),
         unitPrice: Number(l.unitPrice),
         discountPct: Number(l.discountPct),
       })),
     );
-    await tx.salesOrder.updateMany({ where: { id: salesOrderId, tenantId }, data: { totalAmount: total } });
+    const parent = await tx.salesOrder.findFirstOrThrow({ where: { id: salesOrderId, tenantId } });
+    await tx.salesOrder.updateMany({
+      where: { id: salesOrderId, tenantId },
+      data: {
+        totalAmount: total,
+        updatedAt: new Date(Math.max(Date.now(), parent.updatedAt.getTime() + 1)),
+      },
+    });
     return total;
   }
 
@@ -56,7 +80,12 @@ export class SalesOrderLineItemsService {
     });
   }
 
-  async create(tenantId: string, userId: string, salesOrderId: string, dto: CreateSalesOrderLineItemDto) {
+  async create(
+    tenantId: string,
+    userId: string,
+    salesOrderId: string,
+    dto: CreateSalesOrderLineItemDto,
+  ) {
     const order = await this.assertOrderDraft(tenantId, salesOrderId);
 
     let name = dto.name;
@@ -75,6 +104,8 @@ export class SalesOrderLineItemsService {
     if (!name) throw new BadRequestException('Line item requires a name (or a productId)');
 
     const created = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+      await this.assertOrderDraft(tenantId, salesOrderId, tx);
       const line = await tx.salesOrderLineItem.create({
         data: {
           tenantId,
@@ -118,8 +149,10 @@ export class SalesOrderLineItemsService {
     if (!existing) throw new NotFoundException('Sales order line item not found');
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.salesOrderLineItem.update({
-        where: { id },
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+      await this.assertOrderDraft(tenantId, salesOrderId, tx);
+      const { count } = await tx.salesOrderLineItem.updateMany({
+        where: { id, tenantId, salesOrderId },
         data: {
           ...(dto.name !== undefined ? { name: dto.name } : {}),
           ...(dto.quantity !== undefined ? { quantity: dto.quantity } : {}),
@@ -127,8 +160,9 @@ export class SalesOrderLineItemsService {
           ...(dto.discountPct !== undefined ? { discountPct: dto.discountPct } : {}),
         },
       });
+      if (!count) throw new NotFoundException('Sales order line item not found');
       await this.recomputeOrderTotal(tx, tenantId, salesOrderId);
-      return tx.salesOrderLineItem.findUnique({ where: { id } });
+      return tx.salesOrderLineItem.findFirstOrThrow({ where: { id, tenantId, salesOrderId } });
     });
 
     await this.audit.log({
@@ -152,7 +186,9 @@ export class SalesOrderLineItemsService {
     if (!existing) throw new NotFoundException('Sales order line item not found');
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.salesOrderLineItem.delete({ where: { id } });
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+      await this.assertOrderDraft(tenantId, salesOrderId, tx);
+      await tx.salesOrderLineItem.deleteMany({ where: { id, tenantId, salesOrderId } });
       await this.recomputeOrderTotal(tx, tenantId, salesOrderId);
     });
 

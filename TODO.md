@@ -2,6 +2,27 @@
 
 Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link PRs when relevant.
 
+## Fabrication / MRP — discret et procédés (2026-09-15)
+
+- [x] M1 : poste Pulsar, politiques par entrepôt, demandes/arrivages, explosion multi-niveaux Decimal, snapshots immuables, garde unités et réception WMS non doublée ([contrats et trajectoire](docs/plans/manufacturing-mrp.md)).
+- [x] M2.1 : BOM Decimal et versions publiées, sélection explicite MRP, unité/SKU après usage figés, site/version et instantané matières des OF ([contrats](docs/plans/manufacturing-definitions.md)).
+- [x] M2.2a : commandes CRM → demandes MRP explicites, prévisions par période consommées sans double comptage, historique et droits croisés ([contrats](docs/plans/manufacturing-demand-sources.md)).
+- [x] M2.2b1 : mappings CRM/WMS et ratios commerciaux exacts réutilisables, capturés sans réécriture des demandes ([contrats](docs/plans/manufacturing-mrp-units-ai.md)).
+- [x] M2.2b2 partiel : validité figée des versions BOM, site des calendriers hérité par les postes, candidats APS gardés par site ([contrats](docs/plans/manufacturing-mrp-preparation.md)).
+- [ ] M2 unités : conversions achat/stock, unités industrielles supplémentaires et quantités fractionnaires OF.
+- [x] M3a : propositions → demandes d'achat internes / OF DRAFT, prévisualisation, confirmation, idempotence, refus des doublons inter-calcul et contexte lisible par l'analyste ([contrats et limites](docs/plans/manufacturing-mrp-preparation.md)).
+- [x] M3b v1 : fournisseurs/conditions, bon mono-demande confirmé humainement, arrivages fermes et réceptions partielles WMS avec rapprochement sans double comptage ([contrats et limites](docs/plans/manufacturing-material-purchases.md)).
+- [x] M3c partiel : poste Arrivages, report d’arrivée confirmée et clôture de reliquat historisés sans stock fictif ([contrats](docs/plans/manufacturing-operational-loop.md)).
+- [ ] M3c suite : regroupement multi-lignes, intake de champs personnalisés WMS, taxes/factures/retours et unités achat/stock.
+- [x] M4 v1 : impacts matières par site, arrivages datés dans APS, date minimale capturée et fraîcheur stock/achats à la publication; contexte courant pour l'analyste ([contrats](docs/plans/manufacturing-operational-loop.md)).
+- [ ] M4 suite : WIP/temps réels par opération, baseline/gel et replanification partielle, APS multi-sites. Un OF actif avec déclarations bloque actuellement le recalcul global.
+- [x] M5 v1 : atelier, consommation explicite/production bonne/rebut, journal WMS atomique et reprise idempotente, preuves au MRP ([contrats](docs/plans/manufacturing-operational-loop.md)).
+- [ ] M5 suite : réservations, scans, correction compensatoire gouvernée, lots/généalogie et coûts réconciliés.
+- [ ] M6 : recettes/batchs, rendements, coproduits, conversions masse/volume contrôlées, généalogie et qualité.
+- [ ] M7 : pilotage et agents gouvernés ; outillage READ puis propositions approuvées, jamais d'achat externe automatique issu du calcul.
+  - [x] M7a : analyste MRP, lectures bornées, tâche/worker/MCP, synthèse approuvée et recalcul sans boucle, suivi Pulsar.
+  - [ ] M7b : qualification fournisseur LLM réel, budgets/évaluations, gros briefs paginés et reprise/observabilité 24/7.
+
 ## Modules visuels — priorité de relance (2026-09-14)
 
 - [x] Cour & quais : poste de travail par site, plan configurable, occupation, planning et panneaux d’action ([contrats et limites](docs/plans/yard-visual-workspace.md)).
@@ -18,7 +39,10 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [ ] Réception/préparation partielles, quantités attendues/réelles, scans, allocations/réservations et règles de conversion d'unités.
 - [x] Flotte visuelle : parc, échéancier UTC, historique paginé et panneaux d’intervention; concurrence multi-ordres et versions ([contrats et limites](docs/plans/fleet-visual-workspace.md)).
 - [ ] Flotte v2 : anciens registres/documents paginés, inspections/relevés, création idempotente; vraie réservation atelier et disponibilité prévisionnelle à concevoir.
-- [ ] Fabrication visuelle : postes, encours, blocages et flux; prochain lot de spécialisation métier.
+- [ ] Fabrication / PlaniAdvance : commencer par le contrat APS complet, les snapshots rejouables, les fuseaux, la publication gardée et la CI moteur; puis Gantt/scénarios et flux métier ([audit et lots](docs/plans/manufacturing-planiadvance-integration.md)).
+- [x] Fabrication A1 : passerelle privée isolée, workflow moteur complet, artefacts/rejeu historique, publication gardée et voie CI APS ([contrats et limites](docs/plans/manufacturing-aps-foundation.md)).
+- [x] Fabrication A2.1 : fuseau commun explicite/DST et fenêtres UTC rejouables, panneaux Pulsar de calcul/revue, comparaison moteur et confirmation versionnée ([contrats et limites](docs/plans/manufacturing-scenario-review.md)).
+- [ ] Fabrication A2 suite : baseline/actions en entrée, arbitrage humain pour `review`, parité WIP/gel avancée, sites/fuseaux distincts, nuit, matières par site et quotas avant Gantt interactif.
 - [ ] Agents : suggestions contextuelles gouvernées, motifs et résultats reliés aux dossiers.
 
 ## Relance UI — dossiers financiers connectés (2026-09-14)

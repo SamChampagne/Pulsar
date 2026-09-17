@@ -33,7 +33,19 @@ export type OwnedEntity =
   | 'workCenter'
   | 'routing'
   | 'bom'
-  | 'manufacturingOrder';
+  | 'bomRevision'
+  | 'mrpEntry'
+  | 'mrpRun'
+  | 'mrpPreparation'
+  | 'materialSupplier'
+  | 'materialPurchaseOrder'
+  | 'mrpProductMapping'
+  | 'crmProduct'
+  | 'agent'
+  | 'operationalTask'
+  | 'salesOrderLineItem'
+  | 'manufacturingOrder'
+  | 'manufacturingOperation';
 
 /**
  * Write-path referential guard: every foreign key accepted from a request body

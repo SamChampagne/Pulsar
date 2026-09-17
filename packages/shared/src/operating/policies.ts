@@ -2,6 +2,7 @@ import { OperationalTaskType } from '../enums/operating';
 
 /** Domain-event type catalog (phase 12). Free strings, like webhook event names. */
 export const DOMAIN_EVENT_TYPES = {
+  MRP_REVIEW_REQUESTED: 'manufacturing.mrp.review-requested',
   STOP_DELAYED: 'stop.delayed',
   TENDER_DECLINED: 'tender.declined',
   TENDER_EXPIRED: 'tender.expired',
@@ -67,6 +68,14 @@ const obj = (v: unknown): Record<string, unknown> =>
 const DELAY_CRITICAL_MINUTES = 60;
 
 const POLICIES: Policy[] = [
+  {
+    eventType: DOMAIN_EVENT_TYPES.MRP_REVIEW_REQUESTED,
+    produce: (event) => {
+      const runId = str(event.payload.runId);
+      if (!runId) return [];
+      return [{ type: OperationalTaskType.EXCEPTION, category: 'MRP_REVIEW', severity: num(event.payload.exceptionCount) > 0 ? 'WARNING' : 'INFO', title: 'Revue du plan matières MRP', subjectType: 'mrp-run', subjectId: runId, dedupKey: `MRP_REVIEW:${runId}`, details: { runId, requiresCrm: event.payload.requiresCrm === true }, assignHint: 'AUTO' }];
+    },
+  },
   {
     eventType: DOMAIN_EVENT_TYPES.STOP_DELAYED,
     produce: (e) => {

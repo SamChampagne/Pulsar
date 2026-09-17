@@ -289,6 +289,13 @@ const SEEDS: CatalogSeed[] = [
     description: "Un formulaire d'une page de destination publique a généré un lead.",
     example: { landingPageId: 'lp_1', slug: 'transport-express' },
   },
+
+  // --- Manufacturing / MRP -------------------------------------------------
+  {
+    type: DOMAIN_EVENT_TYPES.MRP_REVIEW_REQUESTED,
+    description: 'Un calcul MRP a produit des exceptions et demande une revue (opt-in par tenant).',
+    example: { runId: 'run_1', exceptionCount: 3, requiresCrm: false },
+  },
 ];
 
 export const DOMAIN_EVENT_CATALOG: DomainEventCatalogEntry[] = SEEDS.map((seed) => ({

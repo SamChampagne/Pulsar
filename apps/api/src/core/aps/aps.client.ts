@@ -5,10 +5,13 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { MrpResult, MrpSnapshot } from '@pulsar/shared';
 import type {
   ApsHealth,
   ApsReadiness,
   ApsSnapshot,
+  ApsBridgeRequest,
+  ApsBridgeResponse,
   RunFromSnapshotRequest,
   RunScheduleResponse,
   StrategyCapabilitiesResponse,
@@ -39,52 +42,93 @@ export class ApsClient {
   private async call<T>(
     method: 'GET' | 'POST',
     path: string,
-    opts: { body?: unknown; timeoutMs?: number; withKey?: boolean } = {},
+    opts: { body?: unknown; timeoutMs?: number; withKey?: boolean; tenantId?: string } = {},
   ): Promise<T> {
     const { body, timeoutMs = 30_000, withKey = false } = opts;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (opts.tenantId) headers['X-Pulsar-Tenant'] = opts.tenantId;
     if (withKey) {
       const key = this.apiKey();
       if (key) headers['X-API-Key'] = key;
     }
-    let res: Response;
     try {
-      res = await fetch(`${this.baseUrl()}${path}`, {
+      const res = await fetch(`${this.baseUrl()}${path}`, {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        this.logger.warn(`APS ${method} ${path} → HTTP ${res.status}: ${text.slice(0, 300)}`);
+        // 4xx from the engine is a MEANINGFUL business response (e.g. a material
+        // shortage or an invalid snapshot), not a sidecar-unavailable condition.
+        // Surface the engine's own message as a 400 so the user can act on it.
+        // 5xx / network errors remain 503 (the engine is genuinely unavailable).
+        if (res.status >= 400 && res.status < 500) {
+          let detail = `APS engine rejected the request (HTTP ${res.status})`;
+          try {
+            const parsed = JSON.parse(text) as { message?: string; detail?: string };
+            detail = parsed.message ?? parsed.detail ?? detail;
+          } catch {
+            /* non-JSON body — keep the generic detail */
+          }
+          throw new BadRequestException(detail);
+        }
+        throw new ServiceUnavailableException(`APS engine error (HTTP ${res.status})`);
+      }
+      return (await res.json()) as T;
     } catch (err) {
+      if (err instanceof BadRequestException || err instanceof ServiceUnavailableException)
+        throw err;
       const detail = err instanceof Error ? err.message : String(err);
       this.logger.warn(`APS ${method} ${path} failed: ${detail}`);
-      throw new ServiceUnavailableException(`APS engine unreachable (${detail})`);
+      throw new ServiceUnavailableException('APS engine unavailable or invalid response');
     } finally {
+      // Keep the deadline active through body consumption, not just headers.
       clearTimeout(timer);
     }
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      this.logger.warn(`APS ${method} ${path} → HTTP ${res.status}: ${text.slice(0, 300)}`);
-      // 4xx from the engine is a MEANINGFUL business response (e.g. a material
-      // shortage or an invalid snapshot), not a sidecar-unavailable condition.
-      // Surface the engine's own message as a 400 so the user can act on it.
-      // 5xx / network errors remain 503 (the engine is genuinely unavailable).
-      if (res.status >= 400 && res.status < 500) {
-        let detail = `APS engine rejected the request (HTTP ${res.status})`;
-        try {
-          const parsed = JSON.parse(text) as { message?: string; detail?: string };
-          detail = parsed.message ?? parsed.detail ?? detail;
-        } catch {
-          /* non-JSON body — keep the generic detail */
-        }
-        throw new BadRequestException(detail);
-      }
-      throw new ServiceUnavailableException(`APS engine error (HTTP ${res.status})`);
-    }
-    return (await res.json()) as T;
+  }
+
+  runForTenant(tenantId: string, body: ApsBridgeRequest): Promise<ApsBridgeResponse> {
+    return this.call('POST', '/internal/pulsar/run', {
+      body,
+      tenantId,
+      withKey: true,
+      timeoutMs: 60_000,
+    });
+  }
+
+  calculateMrp(tenantId: string, body: MrpSnapshot): Promise<MrpResult> {
+    return this.call('POST', '/internal/pulsar/mrp', {
+      body,
+      tenantId,
+      withKey: true,
+      timeoutMs: 30_000,
+    });
+  }
+
+  checkPublication(tenantId: string, candidate: unknown, baseline: unknown) {
+    return this.call<{ publish_status: string; recommendation: string }>(
+      'POST',
+      '/internal/pulsar/check-publication',
+      { body: { candidate, baseline }, tenantId, withKey: true },
+    );
+  }
+
+  reviewPublication(tenantId: string, candidate: unknown, baseline: unknown) {
+    return this.call<{
+      publish_status: 'publishable' | 'review' | 'blocked';
+      recommendation: string;
+      comparison: Record<string, unknown> | null;
+    }>('POST', '/internal/pulsar/review', {
+      body: { candidate, baseline },
+      tenantId,
+      withKey: true,
+    });
   }
 
   /** Liveness — fast probe (no DB). */
@@ -109,10 +153,7 @@ export class ApsClient {
    * call. Gated by the engine's integration API key. This is the foundation's
    * primary scheduling entry point; later sub-projects add persisted runs.
    */
-  runFromSnapshot(
-    req: RunFromSnapshotRequest,
-    timeoutMs = 60_000,
-  ): Promise<RunScheduleResponse> {
+  runFromSnapshot(req: RunFromSnapshotRequest, timeoutMs = 60_000): Promise<RunScheduleResponse> {
     return this.call<RunScheduleResponse>('POST', '/integration/scheduling/run-from-snapshot', {
       body: req,
       withKey: true,

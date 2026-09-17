@@ -7,6 +7,18 @@ export interface Playbook {
 }
 
 export const PLAYBOOKS: Record<string, Playbook> = {
+  MRP_REVIEW: {
+    slaMinutes: 240,
+    priority: NotificationLevel.WARNING,
+    checklist: [
+      'Lire get_task puis get_mrp_run avec le runId du sujet. Vérifier la fraîcheur, le site, les unités et les sources.',
+      'Utiliser uniquement les quantités, dates et motifs du calcul déterministe; ne pas calculer de conversions ni de promesse client au jugé.',
+      'Consulter les articles concernés via get_mrp_run(itemId) et référencer leurs vrais IDs dans la synthèse.',
+      'Soumettre la synthèse avec submit_mrp_review(runId, taskId, itemIds, summary) : elle passe par la gouvernance et devient visible à la revue humaine.',
+      'Si nécessaire, proposer recalculate_mrp; ne pas inventer de stock, commande fournisseur ou OF. Une proposition en attente n’est pas une action réalisée.',
+      'Ne jamais clôturer une exception matières simplement parce qu’une analyse est rédigée. L’humain arbitre la suite opérationnelle.',
+    ],
+  },
   DELAY: {
     slaMinutes: 120,
     priority: NotificationLevel.CRITICAL,

@@ -393,7 +393,9 @@
           </td>
           <td class="text-xs text-ink-muted">
             {#if task.subjectType && task.subjectId}
-              {task.subjectType} {task.subjectId}
+              {#if task.subjectType === 'mrp-run' && $auth?.user.permissions.includes('manufacturing.read') && $auth?.user.permissions.includes('wms.read') && $auth?.tenant.enabledModules.includes('manufacturing') && $auth?.tenant.enabledModules.includes('wms')}
+                <a class="text-accent hover:underline" href={`/manufacturing/mrp?runId=${encodeURIComponent(task.subjectId)}`}>Ouvrir le calcul MRP</a>
+              {:else}{task.subjectType} {task.subjectId}{/if}
             {:else}—{/if}
           </td>
           <td class="text-xs text-ink-muted">{assigneeLabel(task)}</td>

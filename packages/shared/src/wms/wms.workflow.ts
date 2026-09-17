@@ -1,4 +1,6 @@
 export enum StockMovementType {
+  CONSUMPTION = 'CONSUMPTION',
+  PRODUCTION = 'PRODUCTION',
   RECEIPT = 'RECEIPT',
   MOVE = 'MOVE',
   PICK = 'PICK',

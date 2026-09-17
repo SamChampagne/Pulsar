@@ -1,4 +1,7 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
+import { OperatingModule } from '../../core/operating/operating.module';
+import { ModuleRegistryModule } from '../../core/module-registry/module-registry.module';
+import { MrpAssistanceService } from './mrp/mrp-assistance.service';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { ApsModule } from '../../core/aps/aps.module';
 import { CalendarsController } from './calendars/calendars.controller';
@@ -13,6 +16,17 @@ import { OrdersController } from './orders/orders.controller';
 import { OrdersService } from './orders/orders.service';
 import { SchedulingController } from './scheduling/scheduling.controller';
 import { SchedulingService } from './scheduling/scheduling.service';
+import { MrpController } from './mrp/mrp.controller';
+import { MrpService } from './mrp/mrp.service';
+import { MrpDemandsService } from './mrp/mrp-demands.service';
+import { MrpPreparationService } from './mrp/mrp-preparation.service';
+import { MrpPreparationController } from './mrp/mrp-preparation.controller';
+import { MaterialPurchasesService } from './purchasing/material-purchases.service';
+import { MaterialPurchasesController } from './purchasing/material-purchases.controller';
+import { WmsModule } from '../wms/wms.module';
+import { ShopFloorController } from './shop-floor/shop-floor.controller';
+import { ShopFloorService } from './shop-floor/shop-floor.service';
+import { MaterialImpactService } from './scheduling/material-impact.service';
 
 /**
  * Manufacturing / APS master-data module (sub-project 2). Pulsar owns this
@@ -24,8 +38,18 @@ import { SchedulingService } from './scheduling/scheduling.service';
  * pattern as FleetModule / WmsModule).
  */
 @Module({
-  imports: [AuditLogsModule, ApsModule],
+  imports: [
+    AuditLogsModule,
+    ApsModule,
+    WmsModule,
+    ModuleRegistryModule,
+    forwardRef(() => OperatingModule),
+  ],
   controllers: [
+    ShopFloorController,
+    MaterialPurchasesController,
+    MrpPreparationController,
+    MrpController,
     CalendarsController,
     WorkCentersController,
     RoutingsController,
@@ -34,6 +58,13 @@ import { SchedulingService } from './scheduling/scheduling.service';
     SchedulingController,
   ],
   providers: [
+    MaterialImpactService,
+    ShopFloorService,
+    MaterialPurchasesService,
+    MrpPreparationService,
+    MrpAssistanceService,
+    MrpDemandsService,
+    MrpService,
     CalendarsService,
     WorkCentersService,
     RoutingsService,
@@ -42,6 +73,8 @@ import { SchedulingService } from './scheduling/scheduling.service';
     SchedulingService,
   ],
   exports: [
+    MrpAssistanceService,
+    MrpService,
     CalendarsService,
     WorkCentersService,
     RoutingsService,

@@ -24,6 +24,8 @@ class WorkingCalendar:
     extra_windows: list[TimeWindow] = field(default_factory=list)
     organization_id: str | None = None
     workspace_id: str | None = None
+    # Request-local UTC expansion. None = legacy weekly semantics; [] = closed.
+    resolved_windows: list[TimeWindow] | None = None
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -40,6 +42,8 @@ class WorkingCalendar:
 
     def windows_for_day(self, day: date) -> list[TimeWindow]:
         """Concrete working windows applicable on a given day."""
+        if self.resolved_windows is not None:
+            return [w for w in self.resolved_windows if w.start.date() <= day <= w.end.date()]
         windows: list[TimeWindow] = []
         for shift in self.shifts:
             if shift.applies_to(day):

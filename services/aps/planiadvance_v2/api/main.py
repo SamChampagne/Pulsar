@@ -21,6 +21,7 @@ from .routes import (
     inventory,
     machines,
     planning,
+    pulsar,
     reports,
     resources,
     scheduling,
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(supplies.router)
     app.include_router(workspaces.router)
     app.include_router(planning.router)
+    app.include_router(pulsar.router)
     app.include_router(scheduling.router)
     app.include_router(integration.router)
     app.include_router(reports.router)

@@ -27,7 +27,20 @@ export class WorkCentersService {
         : {}),
     };
     const [items, total] = await this.prisma.$transaction([
-      this.prisma.workCenter.findMany({ where, skip, take, orderBy: { name: 'asc' } }),
+      this.prisma.workCenter.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { name: 'asc' },
+        include: {
+          calendar: {
+            select: {
+              locationId: true,
+              location: { select: { id: true, name: true, code: true } },
+            },
+          },
+        },
+      }),
       this.prisma.workCenter.count({ where }),
     ]);
     return paginated(items, total, page, pageSize);
@@ -45,21 +58,45 @@ export class WorkCentersService {
     });
     if (existing) throw new ConflictException(`Work center code "${dto.code}" already exists`);
     await this.ownership.assertOwned('workingCalendar', dto.calendarId, tenantId);
-    return this.prisma.workCenter.create({ data: { ...dto, tenantId } });
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+      if (!(await tx.workingCalendar.findFirst({ where: { tenantId, id: dto.calendarId } })))
+        throw new NotFoundException('Working calendar not found');
+      return tx.workCenter.create({ data: { ...dto, tenantId } });
+    });
   }
 
   async update(tenantId: string, id: string, dto: UpdateWorkCenterDto) {
-    await this.get(tenantId, id);
     await this.ownership.assertOwnedIfSet('workingCalendar', dto.calendarId, tenantId);
-    const { code: _code, ...data } = dto;
-    const res = await this.prisma.workCenter.updateMany({ where: { id, tenantId }, data });
-    if (res.count === 0) throw new NotFoundException('Work center not found');
-    return this.prisma.workCenter.findFirstOrThrow({ where: { id, tenantId } });
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+      const current = await tx.workCenter.findFirst({
+        where: { id, tenantId },
+        include: { calendar: true },
+      });
+      if (!current) throw new NotFoundException('Work center not found');
+      if (dto.calendarId && dto.calendarId !== current.calendarId) {
+        const next = await tx.workingCalendar.findFirst({
+          where: { id: dto.calendarId, tenantId },
+        });
+        if (
+          !next ||
+          (current.calendar.locationId && current.calendar.locationId !== next.locationId)
+        )
+          throw new ConflictException('Un poste rattaché à un site ne peut pas changer de site.');
+      }
+      const { code: _code, ...data } = dto;
+      await tx.workCenter.updateMany({ where: { id, tenantId }, data });
+      return tx.workCenter.findFirstOrThrow({ where: { id, tenantId } });
+    });
   }
 
   async remove(tenantId: string, id: string) {
-    await this.get(tenantId, id);
-    await this.prisma.workCenter.deleteMany({ where: { id, tenantId } });
-    return { id };
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+      const removed = await tx.workCenter.deleteMany({ where: { id, tenantId } });
+      if (!removed.count) throw new NotFoundException('Work center not found');
+      return { id };
+    });
   }
 }

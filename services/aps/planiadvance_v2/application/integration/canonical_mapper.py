@@ -802,6 +802,10 @@ def _export_calendar(
             for w in calendar.extra_windows
         ),
         site_id=site_id,
+        resolved_windows=(
+            tuple(CanonicalTimeWindow(start=w.start, end=w.end) for w in calendar.resolved_windows)
+            if calendar.resolved_windows is not None else None
+        ),
     )
 
 
@@ -817,6 +821,10 @@ def _import_calendar(calendar: CanonicalCalendar) -> WorkingCalendar:
             TimeWindow(start=w.start, end=w.end)
             for w in calendar.extra_windows
         ],
+        resolved_windows=(
+            [TimeWindow(start=w.start, end=w.end) for w in calendar.resolved_windows]
+            if calendar.resolved_windows is not None else None
+        ),
     )
 
 

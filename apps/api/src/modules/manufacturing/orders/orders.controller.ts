@@ -15,6 +15,7 @@ import {
   UpdateOperationDto,
 } from './dto/order.dto';
 import { OrdersService } from './orders.service';
+import { MaterialContextDto } from './dto/material-context.dto';
 
 @ApiTags('manufacturing/orders')
 @ApiBearerAuth()
@@ -61,6 +62,16 @@ export class OrdersController {
 
   // --- Lifecycle -----------------------------------------------------------
 
+  @Post(':id/material-context')
+  @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE, PERMISSIONS.WMS.READ)
+  materials(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: MaterialContextDto,
+  ) {
+    return this.orders.setMaterialContext(user.tenantId, user.id, id, dto);
+  }
+
   @Post(':id/release')
   @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE)
   release(@CurrentUser() user: AuthUser, @Param('id') id: string) {
@@ -99,6 +110,7 @@ export class OrdersController {
   }
 
   @Patch(':id/operations/:opId')
+  @Audit('manufacturing-operation', AuditAction.UPDATE)
   @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE)
   updateOperation(
     @CurrentUser() user: AuthUser,
@@ -110,6 +122,7 @@ export class OrdersController {
   }
 
   @Delete(':id/operations/:opId')
+  @Audit('manufacturing-operation', AuditAction.DELETE)
   @RequirePermissions(PERMISSIONS.MANUFACTURING.MANAGE)
   removeOperation(
     @CurrentUser() user: AuthUser,
