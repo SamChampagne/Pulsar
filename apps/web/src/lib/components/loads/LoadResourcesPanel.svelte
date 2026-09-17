@@ -17,11 +17,11 @@
   interface Props {
     loadId: string;
     editable: boolean;
-    carriers: Option[];
-    drivers: Option[];
-    vehicles: Option[];
-    trailers: Option[];
-    rates: Option[];
+    carriers?: Option[];
+    drivers?: Option[];
+    vehicles?: Option[];
+    trailers?: Option[];
+    rates?: Option[];
     form: ResourceForm;
     onFormChange: (form: ResourceForm) => void;
     onReload: () => Promise<void>;
@@ -55,9 +55,11 @@
       );
       if (resp?.modeWarning) {
         const { loadMode, orderMode } = resp.modeWarning;
-        toast.error(`Mode mismatch: load ${loadMode} / order ${orderMode} — assigned anyway`);
+        toast.error(
+          `Mode incompatible : load ${loadMode} / commande ${orderMode} — assigné quand même`,
+        );
       }
-      toast.success('Resources assigned');
+      toast.success('Ressources assignées');
       resourcesCapacityExcesses = [];
       resourcesForce = false;
       await onReload();
@@ -69,13 +71,13 @@
           return;
         }
       }
-      toast.error(e instanceof ApiError ? e.message : 'Failed to assign resources');
+      toast.error(e instanceof ApiError ? e.message : "Échec de l'assignation des ressources");
     }
   }
 </script>
 
 <Card>
-  <h2 class="mb-3 font-semibold text-ink">Resources</h2>
+  <h2 class="mb-3 font-semibold text-ink">Ressources</h2>
   <div class="flex flex-col gap-3">
     <Field label="Transporteur">
       <EntityPicker
@@ -131,7 +133,7 @@
           onFormChange({ ...form, mode: (e.currentTarget as HTMLSelectElement).value })}
         disabled={!editable}
       >
-        <option value="">— inherit —</option>
+        <option value="">— hérité —</option>
         {#each Object.values(TransportMode) as m (m)}
           <option value={m}>{m}</option>
         {/each}
@@ -140,20 +142,20 @@
   </div>
   {#if editable}
     <div class="mt-3">
-      <Button variant="primary" onclick={saveResources}>Save resources</Button>
+      <Button variant="primary" onclick={saveResources}>Enregistrer les ressources</Button>
     </div>
   {/if}
 
   {#if resourcesCapacityExcesses.length > 0}
     <div class="mt-3 rounded-card border border-warn bg-warn-soft p-3">
-      <p class="mb-2 text-sm font-semibold text-warn">Trailer capacity exceeded</p>
+      <p class="mb-2 text-sm font-semibold text-warn">Capacité de la remorque dépassée</p>
       <table class="w-full text-xs">
         <thead>
           <tr class="text-ink-muted">
-            <th class="pb-1 text-left">Axis</th>
-            <th class="pb-1 text-right">Capacity</th>
-            <th class="pb-1 text-right">Requested</th>
-            <th class="pb-1 text-right">Excess</th>
+            <th class="pb-1 text-left">Axe</th>
+            <th class="pb-1 text-right">Capacité</th>
+            <th class="pb-1 text-right">Demandé</th>
+            <th class="pb-1 text-right">Excédent</th>
           </tr>
         </thead>
         <tbody>
@@ -170,11 +172,11 @@
       {#if editable}
         <label class="mt-2 flex cursor-pointer items-center gap-2 text-sm text-ink">
           <input type="checkbox" bind:checked={resourcesForce} />
-          Force assignment (audited)
+          Forcer l'assignation (audité)
         </label>
         {#if resourcesForce}
           <div class="mt-2">
-            <Button variant="danger" onclick={saveResources}>Confirm force assign</Button>
+            <Button variant="danger" onclick={saveResources}>Confirmer l'assignation forcée</Button>
           </div>
         {/if}
       {/if}

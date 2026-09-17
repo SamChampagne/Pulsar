@@ -90,11 +90,16 @@ export class LoadsService {
     private readonly transportOrders: TransportOrdersService,
   ) {}
 
-  async list(tenantId: string, query: ListQueryDto & { status?: LoadStatus }) {
+  async list(tenantId: string, query: ListQueryDto & { status?: LoadStatus | LoadStatus[] }) {
     const { page, pageSize, skip, take } = paginationArgs(query);
+    const statuses = query.status
+      ? Array.isArray(query.status)
+        ? query.status
+        : [query.status]
+      : [];
     const where: Prisma.LoadWhereInput = {
       tenantId,
-      ...(query.status ? { status: query.status } : {}),
+      ...(statuses.length ? { status: { in: statuses } } : {}),
       ...(query.search ? { loadNumber: { contains: query.search, mode: 'insensitive' } } : {}),
     };
     const [items, total] = await this.prisma.$transaction([

@@ -64,7 +64,6 @@
   interface LoadOption {
     id: string;
     loadNumber: string;
-    status: string;
   }
 
   interface CapacityExcess {
@@ -683,13 +682,14 @@
               endpoint="/transportation/loads"
               label="Load"
               labelKey="loadNumber"
-              filters={{ status: 'OPEN' }}
+              filters={{ status: 'OPEN,PLANNED' }}
               placeholder="+ Créer un nouveau load"
               bind:value={selectedLoadId}
             />
           </Field>
           <p class="mt-1 text-xs text-ink-muted">
-            Laisser vide pour créer un nouveau load. Seuls les loads OPEN apparaissent ici.
+            Laisser vide pour créer un nouveau load. Seuls les loads ouverts ou planifiés
+            apparaissent ici.
           </p>
 
           {#if assignCapacityExcesses.length > 0}
