@@ -121,3 +121,46 @@ export interface ShipmentComment {
 export function positionAt(position: PortalPosition | null | undefined): string | null {
   return position?.recordedAt ?? position?.occurredAt ?? null;
 }
+
+/** One point of the tracking projection (`GET /portal/shipments/:id`). */
+export interface PortalTrackingPoint {
+  city: string;
+  state: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+/** One entry of the tracking timeline. */
+export interface PortalTrackingEvent {
+  id: string;
+  type: string;
+  message: string | null;
+  occurredAt: string;
+}
+
+/**
+ * `GET /portal/shipments/:id` — the same projection the public tracking page
+ * gets (rule 20: one position, never a history, never the other stops).
+ * `proofOfDelivery.notes` is optional: today's projection carries the signer
+ * and the signature date only.
+ */
+export interface PortalShipmentTracking {
+  shipper: string;
+  shipmentNumber: string;
+  status: string;
+  origin: PortalTrackingPoint | null;
+  destination: PortalTrackingPoint | null;
+  plannedPickupEarly: string | null;
+  plannedPickupLate: string | null;
+  plannedDeliveryEarly: string | null;
+  plannedDeliveryLate: string | null;
+  actualPickupAt: string | null;
+  actualDeliveryAt: string | null;
+  proofOfDelivery: {
+    signedByName: string | null;
+    signedAt: string | null;
+    notes?: string | null;
+  } | null;
+  events: PortalTrackingEvent[];
+  lastPosition: PortalPosition | null;
+}
