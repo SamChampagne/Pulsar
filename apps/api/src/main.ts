@@ -58,6 +58,10 @@ async function bootstrap() {
     .setDescription('Modular logistics platform — REST API')
     .setVersion('0.1.0')
     .addBearerAuth()
+    // Machine-to-machine auth: JwtAuthGuard accepts X-Api-Key in place of a
+    // bearer token (see ApiKeysService.validate) — documented as its own scheme
+    // rather than folded into addBearerAuth so Swagger UI offers both.
+    .addApiKey({ type: 'apiKey', name: 'x-api-key', in: 'header' }, 'api-key')
     .build();
   SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, swaggerConfig));
 

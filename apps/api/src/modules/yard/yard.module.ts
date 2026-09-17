@@ -16,6 +16,9 @@ import { YardWorkspaceService } from './workspace/workspace.service';
 import { YardWorkspaceController } from './workspace/workspace.controller';
 import { YardDossiersController } from './dossiers/dossiers.controller';
 import { YardDossiersService } from './dossiers/dossiers.service';
+import { YardIcalService } from './ical/ical.service';
+import { YardIcalTokenController } from './ical/ical-token.controller';
+import { YardPublicIcalController } from './public-ical.controller';
 
 /**
  * Yard Management module (spots master-data + gate visits + dock appointments +
@@ -42,6 +45,8 @@ import { YardDossiersService } from './dossiers/dossiers.service';
     VisitsController,
     AppointmentsController,
     YardOverviewController,
+    YardIcalTokenController,
+    YardPublicIcalController,
   ],
   providers: [
     YardDossiersService,
@@ -50,6 +55,7 @@ import { YardDossiersService } from './dossiers/dossiers.service';
     VisitsService,
     AppointmentsService,
     YardOverviewService,
+    YardIcalService,
   ],
   exports: [VisitsService, AppointmentsService, YardOverviewService],
 })
