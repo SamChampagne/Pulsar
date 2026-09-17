@@ -87,7 +87,7 @@
       <a
         href={block.href}
         target={isExternalHref(block.href) ? '_blank' : undefined}
-        rel={isExternalHref(block.href) ? 'noopener' : undefined}
+        rel={isExternalHref(block.href) ? 'noopener noreferrer' : undefined}
         class="inline-flex items-center justify-center rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
       >
         {block.label}

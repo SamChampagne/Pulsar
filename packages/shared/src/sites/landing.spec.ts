@@ -62,6 +62,24 @@ describe('validateLandingContent', () => {
     expect(validateLandingContent([{ type: 'cta', label: 'Cliquez' }])).toBe(false);
     expect(validateLandingContent([{ type: 'cta', label: 'Cliquez', href: '' }])).toBe(false);
   });
+
+  it('rejects a protocol-relative cta href (open redirect)', () => {
+    expect(
+      validateLandingContent([{ type: 'cta', label: 'Cliquez', href: '//evil.com' }]),
+    ).toBe(false);
+  });
+
+  it('accepts a single-leading-slash relative cta href', () => {
+    expect(
+      validateLandingContent([{ type: 'cta', label: 'Connexion', href: '/portal/login' }]),
+    ).toBe(true);
+  });
+
+  it('accepts a full https cta href', () => {
+    expect(
+      validateLandingContent([{ type: 'cta', label: 'Visiter', href: 'https://x.y' }]),
+    ).toBe(true);
+  });
 });
 
 describe('LandingPageStatus', () => {

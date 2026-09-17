@@ -42,8 +42,12 @@ export function mapSubmissionToContact(data: Record<string, unknown>): {
   return out;
 }
 
-/** cta href: relative path or absolute http(s) URL only — never javascript:/data:/etc. */
-const CTA_HREF_PATTERN = /^(\/|https:\/\/|http:\/\/)/;
+/**
+ * cta href: a single-leading-slash relative path, or an absolute http(s) URL —
+ * never javascript:/data:/etc, and never protocol-relative (`//evil.com`), which
+ * browsers resolve to an external origin while looking like an internal link.
+ */
+const CTA_HREF_PATTERN = /^(\/(?!\/)|https:\/\/|http:\/\/)/;
 
 /** Permissive shape check: content must be an array of blocks with a known type. */
 export function validateLandingContent(content: unknown): boolean {

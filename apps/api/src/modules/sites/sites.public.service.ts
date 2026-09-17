@@ -41,8 +41,9 @@ export class SitesPublicService {
 
   /**
    * Project a page's content blocks to display-safe shape (R10).
-   * Form blocks expose only { type, fields }; other blocks are passed through
-   * with all keys EXCEPT internal refs (id, tenantId, etc.).
+   * Form blocks expose only { type, fields }; cta blocks expose only
+   * { type, label, href }; other blocks are passed through with all keys
+   * EXCEPT internal refs (id, tenantId, etc.).
    */
   private projectBlocks(content: unknown): unknown[] {
     if (!Array.isArray(content)) return [];
@@ -52,6 +53,14 @@ export class SitesPublicService {
         return {
           type: 'form',
           fields: (block as Record<string, unknown>).fields ?? [],
+        };
+      }
+      if (block && typeof block === 'object' && (block as Record<string, unknown>).type === 'cta') {
+        // CTA blocks: expose only type + label + href (rule 40 explicit projection)
+        return {
+          type: 'cta',
+          label: (block as Record<string, unknown>).label ?? '',
+          href: (block as Record<string, unknown>).href ?? '',
         };
       }
       // Other blocks: pass through as-is (they contain only display data)
