@@ -8,6 +8,7 @@ import { ListQueryDto } from '../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../common/pagination';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { auditActor } from '../audit-logs/audit-actor';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { MailService } from '../email/mail.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
@@ -73,6 +74,10 @@ export class UsersService {
    * the last ACTIVE user holding it. Must be checked with `db` bound to the
    * same transaction as the mutation (deactivate / role removal) that could
    * break this — otherwise the count-then-write is a TOCTOU race.
+   *
+   * A target that is not itself ACTIVE (INVITED / DISABLED) is never counted by
+   * the ACTIVE-admin tally, so it can never *be* the last active admin: revoking
+   * it leaves the tenant exactly as many active admins as before.
    */
   private async isLastActiveAdmin(
     db: Prisma.TransactionClient,
@@ -81,9 +86,13 @@ export class UsersService {
   ): Promise<boolean> {
     const user = await db.user.findFirst({
       where: { id: userId, tenantId },
-      select: { roles: { select: { role: { select: { isSystem: true, key: true } } } } },
+      select: {
+        status: true,
+        roles: { select: { role: { select: { isSystem: true, key: true } } } },
+      },
     });
     if (!user) return false;
+    if (user.status !== 'ACTIVE') return false;
     const hasAdminRole = user.roles.some((r) => r.role.isSystem && r.role.key === 'admin');
     if (!hasAdminRole) return false;
     const activeAdminCount = await db.user.count({
@@ -294,6 +303,12 @@ export class UsersService {
           // invitation or password-reset link (see auth.service resetPassword,
           // which now also rejects DISABLED users as defense in depth).
           await this.invalidateOpenTokens(tx, id);
+          // ...and neither through a refresh token issued before the account was
+          // disabled (the access token still expires on its own within 15 min).
+          await tx.refreshToken.updateMany({
+            where: { userId: id, revokedAt: null },
+            data: { revokedAt: new Date() },
+          });
           return { changed: true, previousStatus };
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -305,7 +320,7 @@ export class UsersService {
     if (outcome.changed) {
       await this.audit.log({
         tenantId,
-        userId: actorId,
+        userId: auditActor(actorId),
         action: AuditAction.STATUS_CHANGE,
         entityType: 'user',
         entityId: id,
@@ -328,7 +343,7 @@ export class UsersService {
     const inviteUrl = await this.issueInvitation(tenantId, { id: user.id, email: user.email });
     await this.audit.log({
       tenantId,
-      userId: actorId,
+      userId: auditActor(actorId),
       action: AuditAction.UPDATE,
       entityType: 'user',
       entityId: id,
@@ -361,7 +376,7 @@ export class UsersService {
     if (nextStatus === 'ACTIVE') {
       await this.audit.log({
         tenantId,
-        userId: actorId,
+        userId: auditActor(actorId),
         action: AuditAction.STATUS_CHANGE,
         entityType: 'user',
         entityId: id,
@@ -374,7 +389,7 @@ export class UsersService {
     const inviteUrl = await this.issueInvitation(tenantId, { id: user.id, email: user.email });
     await this.audit.log({
       tenantId,
-      userId: actorId,
+      userId: auditActor(actorId),
       action: AuditAction.STATUS_CHANGE,
       entityType: 'user',
       entityId: id,

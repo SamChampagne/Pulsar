@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MODULE_KEYS } from './modules';
 import { PERMISSION_CATALOG } from './permissions';
-import { ROLE_TEMPLATES, resolveRoleTemplates } from './role-templates';
+import { ROLE_TEMPLATES, VIEWER_EXCLUDED_KEYS, resolveRoleTemplates } from './role-templates';
 
 const catalogKeys = new Set(PERMISSION_CATALOG.map((p) => p.key));
 
@@ -25,6 +25,23 @@ describe('resolveRoleTemplates', () => {
     expect(keys).toContain('warehouse-operator');
     expect(keys).not.toContain('dispatcher');
   });
+  it('viewer never contains a sensitive platform read (audit, email, api keys, users, roles)', () => {
+    const viewer = resolveRoleTemplates([MODULE_KEYS.WMS, MODULE_KEYS.BILLING]).find(
+      (t) => t.key === 'viewer',
+    )!;
+    for (const excluded of VIEWER_EXCLUDED_KEYS) {
+      expect(viewer.permissionKeys, excluded).not.toContain(excluded);
+    }
+    // ...while still granting the ordinary module reads.
+    expect(viewer.permissionKeys).toContain('wms.read');
+    expect(viewer.permissionKeys).toContain('core.locations.read');
+  });
+  it('every excluded key is a real catalog key ending in .read', () => {
+    for (const k of VIEWER_EXCLUDED_KEYS) {
+      expect(catalogKeys.has(k), k).toBe(true);
+      expect(k.endsWith('.read'), k).toBe(true);
+    }
+  });
   it('viewer resolves to every .read key of core + enabled modules only', () => {
     const viewer = resolveRoleTemplates([MODULE_KEYS.BILLING]).find((t) => t.key === 'viewer')!;
     expect(viewer.permissionKeys.length).toBeGreaterThan(0);
@@ -32,6 +49,7 @@ describe('resolveRoleTemplates', () => {
       expect(k.endsWith('.read')).toBe(true);
       const d = PERMISSION_CATALOG.find((p) => p.key === k)!;
       expect([MODULE_KEYS.CORE, MODULE_KEYS.BILLING]).toContain(d.module);
+      expect(VIEWER_EXCLUDED_KEYS).not.toContain(k);
     }
   });
 });

@@ -99,6 +99,14 @@ describe('Access module (e2e)', () => {
       .send({ templateKey: 'warehouse-manager' });
     expect([201, 409]).toContain(create.status);
 
+    // A5: whatever the first call did, the role now exists — a second create
+    // from the same template must be a deterministic 409 (no upsert, no dupe).
+    await request(http)
+      .post('/api/v1/roles/from-template')
+      .set(auth(adminToken))
+      .send({ templateKey: 'warehouse-manager' })
+      .expect(409);
+
     const list = await request(http).get('/api/v1/roles').set(auth(adminToken)).expect(200);
     const role = (list.body as RoleDto[]).find((r) => r.key === 'warehouse-manager');
     expect(role).toBeTruthy();
@@ -299,6 +307,31 @@ describe('Access module (e2e)', () => {
     },
     60000,
   );
+
+  it('9b. an INVITED admin can be deactivated even though the seeded admin is the only ACTIVE one', async () => {
+    // At this point step 9 left exactly one ACTIVE admin in the tenant (the seeded
+    // one). An admin who never activated their invitation is not part of that
+    // tally, so revoking them must not be blocked by the last-admin guard.
+    const invitedAdminEmail = `admin3-${suffix}@acme.test`;
+    const created = await request(http)
+      .post('/api/v1/users')
+      .set(auth(adminToken))
+      .send({
+        email: invitedAdminEmail,
+        firstName: 'Invited',
+        lastName: 'Admin',
+        roleIds: [adminRoleId],
+      })
+      .expect(201);
+    const invitedAdmin = created.body as UserDto;
+    expect(invitedAdmin.status).toBe('INVITED');
+
+    const deactivated = await request(http)
+      .delete(`/api/v1/users/${invitedAdmin.id}`)
+      .set(auth(adminToken))
+      .expect(200);
+    expect((deactivated.body as UserDto).status).toBe('DISABLED');
+  });
 
   it('10. a deactivated user cannot consume a still-open invitation token', async () => {
     const email = `du-${suffix}@acme.test`;

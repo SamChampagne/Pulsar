@@ -114,14 +114,16 @@ readOnlyOfEnabledModules?: true }` + fonction pure
 
 - exclut les gabarits dont `module` n'est pas activé (`null` = toujours) ;
 - pour `readOnlyOfEnabledModules`, calcule toutes les clés du catalogue se terminant par `.read`
-  dont le module ∈ `core` ∪ modules activés ;
+  dont le module ∈ `core` ∪ modules activés, **privées de `VIEWER_EXCLUDED_KEYS`** (annuaire
+  utilisateurs/rôles, journal d'audit, courriels, clés API — un rôle « lecture seule » ne doit pas
+  ouvrir la surface de sécurité du tenant ; un admin peut toujours les accorder à la main) ;
 - ne renvoie que des clés présentes dans `PERMISSION_CATALOG` (filtre défensif).
 
 Gabarits v1 (noms FR affichés) :
 
 | key | module | contenu |
 | --- | --- | --- |
-| `viewer` | — | lecture seule sur core + modules activés (dynamique) |
+| `viewer` | — | lecture seule sur core + modules activés (dynamique), **moins** les lectures sensibles de la plateforme (`VIEWER_EXCLUDED_KEYS` : `core.audit.read`, `core.email.read`, `core.api-keys.read`, `core.users.read`, `core.roles.read`) |
 | `dispatcher` | transportation | master-data read, orders/planning/execution manage, tracking read+write, rates/accessorials/fuel read, tms analytics read, core.locations read+manage, documents read, operating tasks read+manage, agents chat |
 | `billing-clerk` | billing | invoices manage+pay, freight-audit manage, customer-invoices manage+send+pay, payments manage, taxes read, subscriptions read, ledger read, documents read |
 | `accountant` | billing | ledger manage, taxes manage, assets manage, payments read, invoices read, customer-invoices read, subscriptions manage |

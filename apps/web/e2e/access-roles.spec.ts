@@ -139,6 +139,12 @@ test('creating a role from a template posts the template key', async ({ page }) 
   const writes = await mockRolesEndpoints(page);
   await page.goto('/settings/roles');
   await expect(page.getByRole('heading', { name: 'Rôles suggérés' })).toBeVisible();
+  // The card must disclose what the template actually grants before it is applied.
+  const details = page.getByText('1 permissions', { exact: true });
+  await expect(details).toBeVisible();
+  await expect(page.getByText('core.users.read', { exact: true })).toBeHidden();
+  await details.click();
+  await expect(page.getByText('core.users.read', { exact: true })).toBeVisible();
   const [request] = await Promise.all([
     page.waitForRequest(
       (r) => r.url().includes('/api/v1/roles/from-template') && r.method() === 'POST',

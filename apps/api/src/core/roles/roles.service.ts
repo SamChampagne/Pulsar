@@ -7,6 +7,7 @@ import {
 import { AuditAction, resolveRoleTemplates, type ModuleKey } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
+import { auditActor } from '../audit-logs/audit-actor';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CreateRoleDto, UpdateRoleDto } from './dto/role.dto';
 
@@ -118,7 +119,7 @@ export class RolesService {
     await this.prisma.role.delete({ where: { id } });
     await this.auditLogs.log({
       tenantId,
-      userId,
+      userId: auditActor(userId),
       action: AuditAction.DELETE,
       entityType: 'role',
       entityId: id,

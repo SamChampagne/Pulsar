@@ -360,7 +360,16 @@
           <div class="flex flex-col rounded-lg border border-edge-soft p-3">
             <div class="font-semibold text-ink">{t.name}</div>
             <p class="mt-1 flex-1 text-xs text-ink-muted">{t.description}</p>
-            <p class="mt-2 text-xs text-ink-faint">{t.permissionKeys.length} permissions</p>
+            <details class="mt-2 text-xs text-ink-faint">
+              <summary class="cursor-pointer select-none"
+                >{t.permissionKeys.length} permissions</summary
+              >
+              <ul class="mt-1 max-h-40 space-y-0.5 overflow-y-auto font-mono">
+                {#each t.permissionKeys as key (key)}
+                  <li>{key}</li>
+                {/each}
+              </ul>
+            </details>
             <div class="mt-3">
               <Button variant="secondary" onclick={() => createFromTemplate(t)}
                 >Créer ce rôle</Button

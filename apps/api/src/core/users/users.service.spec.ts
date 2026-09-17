@@ -74,6 +74,7 @@ function fakePrisma(opts: { users: FakeUser[]; activeAdminCount?: number }) {
     return { ...newUser, actionTokens: [] };
   });
   const count = jest.fn(async () => opts.activeAdminCount ?? 0);
+  const refreshTokenUpdateMany = jest.fn(async () => ({ count: 1 }));
   const userActionTokenUpdateMany = jest.fn(async () => ({ count: 1 }));
   // Simulates the `actionTokens` relation well enough for project(): the most
   // recently created (unused) token becomes the owning user's visible one.
@@ -86,6 +87,7 @@ function fakePrisma(opts: { users: FakeUser[]; activeAdminCount?: number }) {
   const prisma = {
     user: { findFirst, findUnique, create, update, updateMany, count },
     userActionToken: { updateMany: userActionTokenUpdateMany, create: userActionTokenCreate },
+    refreshToken: { updateMany: refreshTokenUpdateMany },
     $transaction: jest.fn(async (arg: any) => {
       if (Array.isArray(arg)) return Promise.all(arg);
       return arg(prisma);
@@ -176,6 +178,11 @@ describe('UsersService.deactivate', () => {
       where: { userId: 'u3', usedAt: null },
       data: { usedAt: expect.any(Date) },
     });
+    // A4: a live refresh token must not outlive the account either.
+    expect((prisma as any).refreshToken.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'u3', revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
     expect(audit.log).toHaveBeenCalledWith(
       expect.objectContaining({
         tenantId: TENANT,
@@ -208,6 +215,25 @@ describe('UsersService.deactivate', () => {
     expect((prisma as any).user.updateMany).not.toHaveBeenCalled();
     expect((prisma as any).userActionToken.updateMany).not.toHaveBeenCalled();
     expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  it('A1: deactivates an INVITED admin even when a single ACTIVE admin remains', async () => {
+    const target: FakeUser = {
+      id: 'u-invited-admin',
+      tenantId: TENANT,
+      email: 'invited-admin@acme.test',
+      status: 'INVITED',
+      lastLoginAt: null,
+      roles: [{ role: ADMIN_ROLE }],
+    };
+    // Exactly one OTHER active admin exists tenant-wide; the INVITED target is
+    // not part of that tally, so revoking it cannot lock the tenant out.
+    const prisma = fakePrisma({ users: [target], activeAdminCount: 1 });
+    const svc = await build(prisma);
+    const result = await svc.deactivate(TENANT, 'u-invited-admin', 'actor1');
+    expect(result.status).toBe('DISABLED');
+    // The guard short-circuits on the target's status: no tenant-wide count needed.
+    expect((prisma as any).user.count).not.toHaveBeenCalled();
   });
 
   it('maps a Postgres serialization failure (P2034) to ConflictException', async () => {
@@ -260,6 +286,22 @@ describe('UsersService.update', () => {
     const svc = await build(fakePrisma({ users: [target], activeAdminCount: 2 }));
     const result = await svc.update(TENANT, 'u6', { roleIds: [OTHER_ROLE.id] } as any, 'actor1');
     expect(result).toBeDefined();
+  });
+
+  it('A1: removes the admin role from an INVITED admin even with a single ACTIVE admin left', async () => {
+    const target: FakeUser = {
+      id: 'u-invited-admin2',
+      tenantId: TENANT,
+      email: 'invited-admin2@acme.test',
+      status: 'INVITED',
+      lastLoginAt: null,
+      roles: [{ role: ADMIN_ROLE }],
+    };
+    const prisma = fakePrisma({ users: [target], activeAdminCount: 1 });
+    const svc = await build(prisma);
+    const result = await svc.update(TENANT, 'u-invited-admin2', { roleIds: [OTHER_ROLE.id] } as any, 'actor1');
+    expect(result).toBeDefined();
+    expect((prisma as any).user.count).not.toHaveBeenCalled();
   });
 
   it('maps a Postgres serialization failure (P2034) to ConflictException', async () => {

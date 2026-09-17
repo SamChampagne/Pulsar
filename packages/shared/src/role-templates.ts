@@ -31,11 +31,27 @@ export interface ResolvedRoleTemplate {
 
 const P = PERMISSIONS;
 
+/**
+ * Platform reads a "read-only" role must NOT get: the audit trail, the tenant's
+ * sent email, the API keys, and the user/role directory. They are read-only in
+ * the literal sense but expose the tenant's security surface, so a template
+ * meant for « lecture seule » stays out of them — an admin can still grant them
+ * explicitly on a hand-made role.
+ */
+export const VIEWER_EXCLUDED_KEYS: PermissionKey[] = [
+  P.CORE.AUDIT_READ,
+  P.CORE.EMAIL_READ,
+  P.CORE.API_KEYS_READ,
+  P.CORE.USERS_READ,
+  P.CORE.ROLES_READ,
+];
+
 export const ROLE_TEMPLATES: RoleTemplate[] = [
   {
     key: 'viewer',
     name: 'Lecture seule',
-    description: 'Consulte tout ce qui est activé, ne modifie rien.',
+    description:
+      "Consulte les modules activés, sans accès aux utilisateurs, rôles, journal d'audit, courriels ni clés API.",
     module: null,
     permissionKeys: [],
     readOnlyOfEnabledModules: true,
@@ -202,17 +218,18 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
  * Resolves the role templates applicable to a tenant given its enabled modules:
  * - drops templates whose `module` is not enabled (`null` = always available);
  * - for `readOnlyOfEnabledModules`, computes every `.read` catalog key whose module is
- *   core or one of the enabled modules;
+ *   core or one of the enabled modules, minus `VIEWER_EXCLUDED_KEYS` (sensitive platform reads);
  * - defensively filters out any key not present in `PERMISSION_CATALOG`.
  */
 export function resolveRoleTemplates(enabledModules: ModuleKey[]): ResolvedRoleTemplate[] {
   const allowed = new Set<ModuleKey>([MODULE_KEYS.CORE, ...enabledModules]);
   const catalog = new Set(PERMISSION_CATALOG.map((p) => p.key));
+  const excluded = new Set<string>(VIEWER_EXCLUDED_KEYS);
   return ROLE_TEMPLATES.filter((t) => t.module === null || allowed.has(t.module)).map((t) => {
     const keys = t.readOnlyOfEnabledModules
-      ? PERMISSION_CATALOG.filter((p) => allowed.has(p.module) && p.key.endsWith('.read')).map(
-          (p) => p.key,
-        )
+      ? PERMISSION_CATALOG.filter(
+          (p) => allowed.has(p.module) && p.key.endsWith('.read') && !excluded.has(p.key),
+        ).map((p) => p.key)
       : t.permissionKeys.filter((k) => catalog.has(k));
     return {
       key: t.key,
