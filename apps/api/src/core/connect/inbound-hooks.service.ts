@@ -23,6 +23,7 @@ import { ApiKeysService } from '../api-keys/api-keys.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { ConnectRecordWriter } from './record-writer.service';
+import { EdiService, MAX_EDI_BYTES } from './edi.service';
 
 /** Hard cap on the accepted JSON body (the platform body parser caps first). */
 export const MAX_HOOK_BODY_BYTES = 256 * 1024;
@@ -40,7 +41,7 @@ const SENSITIVE_KEY = /secret|password|token|apikey|api_key|authorization|signat
 export interface InboundHookRequest {
   /** Raw token from the URL (never logged, never echoed). */
   token: string;
-  /** Parsed JSON body. */
+  /** Parsed JSON body, or the raw interchange string for an EDI receiver. */
   body: unknown;
   /** Exact bytes as received — required for HMAC and for the default dedup key. */
   rawBody?: Buffer;
@@ -63,6 +64,8 @@ export interface InboundHookResponse {
   replayed?: boolean;
   entityType?: string;
   entityId?: string;
+  /** EDI receivers only: the 990 interchange answering a 204 (accept or decline). */
+  ack?: string;
 }
 
 const sha256 = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
@@ -114,20 +117,26 @@ export class InboundHooksService {
     private readonly writer: ConnectRecordWriter,
     private readonly audit: AuditLogsService,
     private readonly apiKeys: ApiKeysService,
+    private readonly edi: EdiService,
   ) {}
 
   async receive(input: InboundHookRequest): Promise<InboundHookResponse> {
     const { integration, config } = await this.resolveIntegration(input.token);
     const tenantId = integration.tenantId;
 
+    // An EDI receiver has no `config.target`: the transaction set inside the
+    // interchange decides what is written, and EdiService re-checks the module
+    // of whichever business service it ends up calling (rule 15).
+    const isEdi = config.format === 'x12';
+
     const targetKey = typeof config.target === 'string' ? config.target : '';
     const target = getInboundHookTarget(targetKey);
-    if (!target) {
+    if (!isEdi && !target) {
       throw new BadRequestException('This receiver has no valid inbound target configured');
     }
 
     // Rule 15: a public route bypasses ModulesGuard, so the module is re-checked here.
-    if (target.module) {
+    if (target?.module) {
       const enabled = await this.modulesCache.getEnabledKeys(tenantId);
       if (!enabled.has(target.module)) {
         throw new ForbiddenException(`Module "${target.module}" is not enabled for this tenant`);
@@ -135,21 +144,33 @@ export class InboundHooksService {
     }
 
     const rawBody = input.rawBody;
-    if (rawBody && rawBody.length > MAX_HOOK_BODY_BYTES) {
-      throw new PayloadTooLargeException('Payload exceeds 256 KB');
+    const maxBytes = isEdi ? MAX_EDI_BYTES : MAX_HOOK_BODY_BYTES;
+    if (rawBody && rawBody.length > maxBytes) {
+      throw new PayloadTooLargeException(
+        isEdi ? 'Payload exceeds 512 KB' : 'Payload exceeds 256 KB',
+      );
     }
 
     this.verifySignature(config, rawBody, input.signature);
 
     const body = input.body;
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      throw new BadRequestException('Body must be a JSON object');
+    let content = '';
+    let payload: Record<string, unknown> = {};
+    if (isEdi) {
+      content = (typeof body === 'string' ? body : (rawBody?.toString('utf-8') ?? '')).trim();
+      if (!content) {
+        throw new BadRequestException('Body must be a raw X12 interchange (text/plain)');
+      }
+    } else {
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        throw new BadRequestException('Body must be a JSON object');
+      }
+      payload = body as Record<string, unknown>;
     }
-    const payload = body as Record<string, unknown>;
 
     const dedupKey =
       input.idempotencyKey?.trim() ||
-      sha256(rawBody ?? Buffer.from(JSON.stringify(payload), 'utf-8'));
+      sha256(rawBody ?? Buffer.from(isEdi ? content : JSON.stringify(payload), 'utf-8'));
 
     const existing = await this.findByDedupKey(tenantId, dedupKey);
     let messageId: string | undefined;
@@ -166,16 +187,23 @@ export class InboundHooksService {
         const created = await this.prisma.inboundMessage.create({
           data: {
             tenantId,
-            source: 'WEBHOOK',
+            source: isEdi ? 'EDI' : 'WEBHOOK',
             status: 'RECEIVED' as InboundStatus,
-            kind: target.key,
-            summary: `Webhook entrant — ${integration.name} (${target.label})`,
+            kind: isEdi ? 'edi' : target!.key,
+            summary: isEdi
+              ? `EDI entrant — ${integration.name}`
+              : `Webhook entrant — ${integration.name} (${target!.label})`,
             dedupKey,
-            parsed: {
-              integrationId: integration.id,
-              target: target.key,
-              payload: redactStoredPayload(payload),
-            } as Prisma.InputJsonValue,
+            parsed: isEdi
+              ? ({
+                  integrationId: integration.id,
+                  bytes: Buffer.byteLength(content, 'utf-8'),
+                } as Prisma.InputJsonValue)
+              : ({
+                  integrationId: integration.id,
+                  target: target!.key,
+                  payload: redactStoredPayload(payload),
+                } as Prisma.InputJsonValue),
           },
           select: { id: true },
         });
@@ -194,19 +222,41 @@ export class InboundHooksService {
     }
     const message = { id: messageId };
 
+    // EDI plane: the interchange decides what is written. EdiService owns the
+    // rest of the row's lifecycle (status, refs, audit) — same service account,
+    // same journalling, no duplicated write path here.
+    if (isEdi) {
+      const outcome = await this.edi.processDelivery({
+        tenantId,
+        integrationId: integration.id,
+        integrationName: integration.name,
+        config,
+        content,
+        inboxId: message.id,
+      });
+      return {
+        inboxId: message.id,
+        status: outcome.status,
+        ...(outcome.error ? { error: outcome.error } : {}),
+        ...(outcome.entityType ? { entityType: outcome.entityType } : {}),
+        ...(outcome.entityId ? { entityId: outcome.entityId } : {}),
+        ...(outcome.ack ? { ack: outcome.ack } : {}),
+      };
+    }
+
     // Rule 13: the write is attributed to the tenant's hidden service account,
     // scoped to the single permission of the configured target.
     const serviceUserId = await this.apiKeys.ensureServiceUser(tenantId);
     const principal = {
       id: serviceUserId,
       tenantId,
-      permissions: [target.permission],
+      permissions: [target!.permission],
     };
 
     let response: InboundHookResponse;
     try {
       const mapped = this.mapPayload(config, payload);
-      const written = await this.writer.writeHookTarget(principal, target.key, mapped);
+      const written = await this.writer.writeHookTarget(principal, target!.key, mapped);
       await this.prisma.inboundMessage.update({
         where: { id: message.id },
         data: {
@@ -244,7 +294,7 @@ export class InboundHooksService {
         after: {
           source: 'WEBHOOK',
           integrationId: integration.id,
-          target: target.key,
+          target: target!.key,
           status: response.status,
           ...(response.entityType ? { refType: response.entityType } : {}),
           ...(response.entityId ? { refId: response.entityId } : {}),

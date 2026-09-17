@@ -12,6 +12,7 @@ import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { CryptoService } from '../crypto/crypto.service';
 import { InboundHooksService, redactStoredPayload } from './inbound-hooks.service';
 import type { ConnectRecordWriter } from './record-writer.service';
+import type { EdiService } from './edi.service';
 
 const TOKEN = 'tok_'.padEnd(48, 'x');
 const HASH = createHash('sha256').update(TOKEN).digest('hex');
@@ -106,8 +107,13 @@ function harness(options: HarnessOptions = {}) {
     ensureServiceUser: async () => 'svc_user_1',
   } as unknown as ApiKeysService;
 
+  // The EDI plane is only reached when config.format === 'x12' (own spec file).
+  const edi = {
+    processDelivery: async () => ({ status: 'IMPORTED', summary: 'edi' }),
+  } as unknown as EdiService;
+
   return {
-    svc: new InboundHooksService(prisma, crypto, modulesCache, writer, audit, apiKeys),
+    svc: new InboundHooksService(prisma, crypto, modulesCache, writer, audit, apiKeys, edi),
     messages,
     audits,
     writes,

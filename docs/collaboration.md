@@ -8,17 +8,17 @@ account**: design, security model and endpoints. Functional walkthrough:
 
 Three kinds of capability links, each carrying the narrowest possible scope:
 
-| Link    | Token lives on       | Grants                                            | Revocation                      |
-| ------- | --------------------- | ------------------------------------------------- | ------------------------------- |
-| Tender  | `Tender.token`        | View load summary; accept or decline **once**     | Cancel tender / expiry (lazy)   |
-| Tracking| `Shipment.trackingToken` | Read-only status page (no tenant internals)    | `DELETE /shipments/:id/share`   |
-| Driver  | `Load.driverToken`    | Stop ARRIVED/DEPARTED + POD (+photo) on that load | `DELETE /loads/:id/driver-link` |
-| Portal  | `Customer.portalToken`| Read-only order/shipment list for one customer (customer-portal module) | `DELETE /customer-portal/customers/:id/portal-link` |
+| Link     | Token lives on           | Grants                                                                  | Revocation                                          |
+| -------- | ------------------------ | ----------------------------------------------------------------------- | --------------------------------------------------- |
+| Tender   | `Tender.token`           | View load summary; accept or decline **once**                           | Cancel tender / expiry (lazy)                       |
+| Tracking | `Shipment.trackingToken` | Read-only status page (no tenant internals)                             | `DELETE /shipments/:id/share`                       |
+| Driver   | `Load.driverToken`       | Stop ARRIVED/DEPARTED + POD (+photo) on that load                       | `DELETE /loads/:id/driver-link`                     |
+| Portal   | `Customer.portalToken`   | Read-only order/shipment list for one customer (customer-portal module) | `DELETE /customer-portal/customers/:id/portal-link` |
 
 Principles:
 
 - Tokens are 24 random bytes (base64url, `node:crypto`), stored in plain text — they are
-  *capabilities*, not credentials; revocation is a column update.
+  _capabilities_, not credentials; revocation is a column update.
 - Public endpoints live under `/api/v1/public/**`, marked `@Public()` (skip JwtAuthGuard);
   Modules/Permissions guards pass because no metadata is attached. **The token is the
   credential** — every handler revalidates it on each call.
@@ -59,13 +59,13 @@ manual handling.
 
 Current senders:
 
-| Channel | Wording | Gating | Source |
-| ------- | ------- | ------ | ------ |
-| Tender link to carrier | — | carrier has email address | `tenders.service.ts` |
-| User invitation | — | always sent | `users.service.ts` |
-| Password reset | — | always sent | `auth.service.ts` |
-| Delivered notification | — | order has customer contact email | `loads.service.ts` |
-| Billing statement | `Billing statement <CINV-number>` | customer has email; `EmailService.send` must return `true`; statement must be APPROVED | `customer-invoices.service.ts` |
+| Channel                | Wording                           | Gating                                                                                 | Source                         |
+| ---------------------- | --------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------ |
+| Tender link to carrier | —                                 | carrier has email address                                                              | `tenders.service.ts`           |
+| User invitation        | —                                 | always sent                                                                            | `users.service.ts`             |
+| Password reset         | —                                 | always sent                                                                            | `auth.service.ts`              |
+| Delivered notification | —                                 | order has customer contact email                                                       | `loads.service.ts`             |
+| Billing statement      | `Billing statement <CINV-number>` | customer has email; `EmailService.send` must return `true`; statement must be APPROVED | `customer-invoices.service.ts` |
 
 Tender responses include `emailedTo` so callers/tests know whether the email was handed off.
 
@@ -74,7 +74,6 @@ Tender responses include `emailedTo` so callers/tests know whether the email was
 `TenantModulesCacheService` (30 s TTL, in-memory) backs `ModulesGuard` — no DB hit per guarded
 request. Toggling a module invalidates the tenant's entry immediately. Single-process by design;
 move to Redis when the API scales horizontally.
-
 
 ## Auth: refresh tokens
 
@@ -153,11 +152,11 @@ renvoient tous le **même 404 générique** — une sonde n'apprend rien.
 
 **Configuration** (dans `Integration.config`, chiffré) :
 
-| Clé              | Rôle                                                                        |
-| ---------------- | --------------------------------------------------------------------------- |
-| `target`         | cible métier (obligatoire, voir ci-dessous)                                  |
-| `mappings`       | `[{ source, target, transform?, required? }]` — chemins pointés (`a.b.c`)     |
-| `inboundSecret`  | optionnel : active la vérification HMAC (masqué en lecture, `***`)            |
+| Clé             | Rôle                                                                      |
+| --------------- | ------------------------------------------------------------------------- |
+| `target`        | cible métier (obligatoire, voir ci-dessous)                               |
+| `mappings`      | `[{ source, target, transform?, required? }]` — chemins pointés (`a.b.c`) |
+| `inboundSecret` | optionnel : active la vérification HMAC (masqué en lecture, `***`)        |
 
 **Cibles** (`GET /integrations/inbound-targets`) : `transport-order.create` (module
 transportation, permission `transportation.orders.manage`), `location.upsert` (cœur,
@@ -210,21 +209,104 @@ journalisés — le jeton porté par l'URL est caviardé dans le log HTTP
 
 **Réponses.**
 
-| Code  | Cas                                                                                |
-| ----- | ---------------------------------------------------------------------------------- |
+| Code  | Cas                                                                                                                                                                          |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `202` | livraison traitée — `{ inboxId, status: 'IMPORTED' \| 'FAILED', error?, entityType?, entityId? }` ; `status: 'RECEIVED'` = une livraison de même clé est en cours, réessayer |
-| `200` | rejeu idempotent — même corps, statut réel d'origine, `replayed: true`, rien de ré-exécuté |
-| `400` | corps non-objet, cible non configurée                                               |
-| `401` | signature HMAC absente ou invalide                                                  |
-| `403` | module de la cible désactivé pour le tenant                                         |
-| `404` | jeton inconnu / récepteur désactivé (réponse générique)                             |
-| `413` | corps trop volumineux : le body-parser JSON de Nest (**100 Ko** par défaut) tranche en premier ; le service garde un plafond de 256 Ko en défense en profondeur |
+| `200` | rejeu idempotent — même corps, statut réel d'origine, `replayed: true`, rien de ré-exécuté                                                                                   |
+| `400` | corps non-objet, cible non configurée                                                                                                                                        |
+| `401` | signature HMAC absente ou invalide                                                                                                                                           |
+| `403` | module de la cible désactivé pour le tenant                                                                                                                                  |
+| `404` | jeton inconnu / récepteur désactivé (réponse générique)                                                                                                                      |
+| `413` | corps trop volumineux : le body-parser JSON de Nest (**100 Ko** par défaut) tranche en premier ; le service garde un plafond de 256 Ko en défense en profondeur              |
 
 Choix assumé : une livraison **acceptée** répond toujours `202`, même quand le mapping ou
 l'écriture métier échoue (`status: 'FAILED'` + `error`). Le partenaire a un contrat unique et la
 ligne d'inbox fait foi ; seules les erreurs d'accès (jeton, signature, module) sont des codes
 d'erreur HTTP. La route est `@Public()` + `ThrottlerGuard`, et `NestFactory.create(AppModule,
 { rawBody: true })` est requis pour la vérification HMAC (activé dans `main.ts`).
+
+## EDI X12 (204 / 990 / 210 / 214)
+
+Le parsing et la génération vivent dans `@pulsar/shared/edi` (pur, browser-safe, fixtures
+incluses — règle 55) ; l'API n'est que transport + gouvernance (`core/connect/edi.service.ts`).
+
+**Intégration.** Un partenaire EDI = une `Integration` de clé **`edi-<partenaire>`** (le préfixe est
+la seule chose qui distingue le plan EDI d'un webhook). Config :
+
+| Clé             | Rôle                                                                |
+| --------------- | ------------------------------------------------------------------- |
+| `isaSenderId`   | ISA06 — notre identifiant chez ce partenaire (≤ 15 caractères)      |
+| `isaReceiverId` | ISA08 — l'identifiant du partenaire (≤ 15 caractères)               |
+| `gsSenderId`    | GS02, par défaut `isaSenderId`                                      |
+| `gsReceiverId`  | GS03, par défaut `isaReceiverId`                                    |
+| `customerId`    | **obligatoire pour un 204** — le client dont la commande sera créée |
+| `carrierId`     | **obligatoire pour un 210** — le transporteur facturant             |
+| `url`           | destination des 214 sortants (livrés par l'outbox webhook)          |
+| `format`        | `"x12"` — marque le récepteur public comme porte EDI                |
+
+`customerId`/`carrierId` sont vérifiés par `OwnershipService` **à l'enregistrement** (règle 9) et
+`url` passe le garde d'egress SSRF (`checkWebhookUrl`), comme une intégration `webhook*`.
+
+**Entrée.** Deux portes, un seul service :
+
+| Porte                              | Auth                                             | Corps                                                                                         |
+| ---------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `POST /connect/edi/inbound`        | JWT + `core.connect.manage`                      | `text/plain` (+ en-tête `X-Integration-Key: edi-…`) **ou** JSON `{ integrationKey, content }` |
+| `POST /public/hooks/:inboundToken` | jeton entrant (récepteur `config.format: "x12"`) | `text/plain` — même idempotence, même HMAC, même inbox que le récepteur JSON                  |
+
+Nest n'enregistre que les parsers JSON/urlencoded : le middleware `rawTextBody` (ConnectModule)
+bufferise les corps `text/*` en exposant `req.body` (chaîne) **et** `req.rawBody` (octets, pour
+l'HMAC). Plafond 512 Ko.
+
+Réponse `202` : `{ inboxId, status: 'IMPORTED' | 'FAILED', transactionSetId, ack?, error?,
+entityType?, entityId? }`. Idempotence sur le **sha256 de l'interchange**
+(`InboundMessage.dedupKey = "edi:<sha256>"`) : un renvoi répond `replayed: true` sans rien
+réécrire. Toute livraison est journalisée en `InboundMessage{ source: 'EDI', kind: 'edi' }`,
+attribuée au service-account du tenant (règle 13) et auditée (règle 6) ; le 990 répondu est
+conservé dans `parsed.ack`.
+
+**204 → commande de transport.** `read204` → `TransportOrdersService.create` en **DRAFT** pour
+`config.customerId`, numérotée par `SequencesService` (règle 8). Origine = premier arrêt `PICKUP`,
+destination = **dernier** arrêt `DELIVERY`. Les adresses deviennent des `Location`
+`CUSTOMER_SITE` créées via `core/locations` sous le code déterministe
+**`EDI-<sha1(adresse normalisée)[0..12]>`** : re-tendre la même voie réutilise la même fiche. Les
+poids en livres (`L`) sont convertis en kilogrammes ; les fenêtres viennent des `G62`
+(qualificatifs 10/37/53/64/69/78 = au plus tôt, 38/54/65/70/77 = au plus tard).
+
+**990 (notre réponse).** Toujours renvoyé dans `ack` :
+
+- succès → `B1-04 = 'A'` + un `N9*CN` portant le numéro de commande créé ;
+- refus → `B1-04 = 'D'` + le motif en `K1` (≤ 60 caractères) et `InboundMessage` `FAILED`.
+  Motifs de refus : module Transportation désactivé (règle 15), `customerId` absent ou inconnu,
+  `B2-04` vide, aucun ramassage ou aucune livraison, ville d'arrêt manquante (`N4`).
+  Un interchange **structurellement** cassé (ISA illisible, `IEA` manquant, `SE01`/numéros de
+  contrôle incohérents) est refusé **sans** 990 : on ne peut pas acquitter ce qu'on n'a pas lu.
+
+**210 → facture transporteur.** `read210` → `FreightAuditService.create` (`sourceRef: 'edi-210'`)
+avec une ligne par boucle `LX` (`lineRef` = code de charge `L1-08`, sinon n° de ligne), montants en
+`N2` (2 décimales implicites) et devise `C3-01`. Le module **Billing** est re-vérifié dans le
+service (règle 15) ; `carrierId` manquant/inconnu ⇒ `FAILED`. Aucune variance n'est calculée ici :
+le service compare ensuite au `Load.estimatedCost` figé (règles 16/31). Pas de 990 pour un 210.
+
+**214 (sortant).** `GET /transportation/shipments/:id/edi/214?integrationKey=edi-…`
+(`@RequireModule(TRANSPORTATION)` + `transportation.tracking.read`) renvoie l'interchange brut en
+`text/plain`. Les statuts viennent des `TrackingEvent` de l'expédition (ordre chronologique,
+projection partagée avec le portail — règle 10/20), traduits en codes AT7 par
+`at7ForTrackingEvent`, puis clos par le statut courant (`at7ForShipmentStatus`) s'il diffère du
+dernier. `MS1` porte la ville d'origine ou de destination selon le côté de l'AT7 ; `MS2` le SCAC du
+transporteur et le n° de remorque. Références `L11` : commande (`CN`), référence client (`PO`),
+load (`SI`).
+
+`POST /transportation/shipments/:id/edi/214/send?integrationKey=edi-…`
+(`transportation.tracking.write`) met le même message dans **l'outbox webhook** existante
+(`format: 'x12'` ⇒ corps `text/plain` = `data.x12`, signature `X-Pulsar-Signature`, 5 tentatives
+avec backoff). Requiert `config.url`.
+
+**Limites v1** (héritées de la couche pure) : un seul GS/ST par interchange émis ; séparateur de
+répétition détecté mais non appliqué ; composites non éclatés ; motif `K1` tronqué à 60
+caractères ; **aucun fuseau horaire** (les dates X12 sont rendues telles quelles, heure locale du
+partenaire) ; pas d'AS2/VAN ni de 997. Les numéros de contrôle sortants (ISA13/GS06) sont dérivés
+de l'horloge, pas d'un compteur persisté.
 
 ## Inbound API keys
 
@@ -287,6 +369,7 @@ identified by `Load.driverToken`. The driver token is the only credential; the i
 and document id are **never** exposed in the public payload (they are resolved server-side).
 
 Responses:
+
 - `200 application/pdf` — binary stream, `Content-Disposition: attachment; filename=<BOL-number>.pdf`.
 - `404` — token unknown, or no BOL has been generated for this load yet.
 

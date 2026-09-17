@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import type { PrismaService } from '../../prisma/prisma.service';
+import type { OwnershipService } from '../../prisma/ownership.service';
 import type { CryptoService } from '../crypto/crypto.service';
 import { IntegrationsService } from './integrations.service';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -51,8 +52,10 @@ function harness(delivery: any | null, options: { allowPrivate?: boolean } = {})
     get: (key: string) =>
       key === 'WEBHOOK_ALLOW_PRIVATE_URLS' && options.allowPrivate ? 'true' : undefined,
   } as any;
+  // Only reached for `edi-*` keys (own spec file).
+  const ownership = { assertOwnedIfSet: async () => {} } as unknown as OwnershipService;
   return {
-    svc: new IntegrationsService(prisma, crypto, webhooks, audit, config),
+    svc: new IntegrationsService(prisma, crypto, webhooks, audit, config, ownership),
     updates,
     attempted,
     audits,
@@ -196,8 +199,9 @@ function updateHarness(integration: { id: string; tenantId: string; key: string;
   const webhooks = {} as unknown as WebhooksService;
   const audit = { log: async () => {} } as unknown as AuditLogsService;
   const config = { get: () => undefined } as any;
+  const ownership = { assertOwnedIfSet: async () => {} } as unknown as OwnershipService;
   return {
-    svc: new IntegrationsService(prisma, crypto, webhooks, audit, config),
+    svc: new IntegrationsService(prisma, crypto, webhooks, audit, config, ownership),
     updates,
     integration,
   };

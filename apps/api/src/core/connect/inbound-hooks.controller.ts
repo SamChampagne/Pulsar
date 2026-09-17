@@ -41,7 +41,9 @@ export class InboundHooksController {
   async receive(
     @Param('inboundToken') inboundToken: string,
     @Req() req: RawBodyRequest<Request>,
-    @Body() body: Record<string, unknown>,
+    // `unknown`: a JSON receiver gets an object, an EDI one the raw interchange
+    // string (parsed by the ConnectModule `rawTextBody` middleware).
+    @Body() body: unknown,
     @Headers('x-signature') signature: string | undefined,
     @Headers('x-idempotency-key') idempotencyKey: string | undefined,
     @Res({ passthrough: true }) res: Response,

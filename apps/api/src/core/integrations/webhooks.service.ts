@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma } from '@pulsar/database';
 import {
@@ -85,6 +85,47 @@ export class WebhooksService {
 
     // First attempt inline; failures fall back to the cron.
     await Promise.allSettled(deliveries.map((d) => this.attempt(d.id)));
+  }
+
+  /**
+   * Queues ONE delivery on a specific integration, bypassing the `webhook*` key
+   * filter and the event allowlist of {@link emit}.
+   *
+   * Used by push surfaces that address a named partner rather than broadcasting
+   * a domain event — today the outbound EDI 214 (`edi-*` integration, format
+   * `x12`). Everything after the row is the ordinary outbox: same signing, same
+   * formatting, same retry cron. Tenant-scoped (rule 1): an integration of
+   * another tenant is a plain error, never a delivery.
+   */
+  async emitToIntegration(
+    tenantId: string,
+    integrationId: string,
+    event: string,
+    data: Record<string, unknown>,
+  ): Promise<{ id: string }> {
+    const integration = await this.prisma.integration.findFirst({
+      where: { id: integrationId, tenantId, status: 'ENABLED' },
+      select: { id: true },
+    });
+    if (!integration) throw new NotFoundException('Integration not found');
+    const delivery = await this.prisma.webhookDelivery.create({
+      data: {
+        tenantId,
+        integrationId: integration.id,
+        event,
+        payload: {
+          event,
+          occurredAt: new Date().toISOString(),
+          data,
+        } as Prisma.InputJsonValue,
+      },
+      select: { id: true },
+    });
+    // First attempt inline; a failure falls back to the retry cron.
+    await this.attempt(delivery.id).catch((err) =>
+      this.logger.warn(`Inline attempt of ${delivery.id} failed: ${String(err)}`),
+    );
+    return delivery;
   }
 
   @Cron(CronExpression.EVERY_MINUTE)

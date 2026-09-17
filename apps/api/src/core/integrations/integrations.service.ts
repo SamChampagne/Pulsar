@@ -18,6 +18,7 @@ import {
   normalizeMappingRules,
   resolveWebhookTarget,
 } from '@pulsar/shared';
+import { OwnershipService } from '../../prisma/ownership.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { auditActor } from '../audit-logs/audit-actor';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -278,6 +279,7 @@ export class IntegrationsService {
     private readonly webhooks: WebhooksService,
     private readonly audit: AuditLogsService,
     private readonly config: ConfigService,
+    private readonly ownership: OwnershipService,
   ) {}
 
   /** Dev/CI escape hatch for loopback endpoints (WEBHOOK_ALLOW_PRIVATE_URLS=true). */
@@ -286,15 +288,49 @@ export class IntegrationsService {
   }
 
   /**
-   * Egress guard (SSRF): a `webhook*` integration may only point at a public
-   * http/https endpoint. Applied on every write and before a live ping.
+   * Egress guard (SSRF): an integration that Pulsar will POST to — `webhook*`
+   * and `edi-*` (outbound 214) — may only point at a public http/https
+   * endpoint. Applied on every write and before a live ping.
    */
   private assertSafeWebhookConfig(key: string, config: Record<string, unknown>) {
-    if (!key.startsWith('webhook')) return;
+    if (!key.startsWith('webhook') && !key.startsWith('edi-')) return;
     const target = resolveWebhookTarget(config);
     if (!target) return;
     const check = checkWebhookUrl(target.url, { allowPrivate: this.allowPrivateUrls });
     if (!check.ok) throw new BadRequestException(check.reason);
+  }
+
+  /**
+   * Config guard for an `edi-<partner>` integration.
+   *
+   * The two foreign keys an interchange is written against — `customerId` (the
+   * shipper a 204 becomes an order for) and `carrierId` (the carrier a 210 is
+   * billed by) — are checked at SAVE time (rule 9), so the intake path can never
+   * be pointed at another tenant's master data. Partner ids are bounded to the
+   * 15 characters ISA05..ISA08 accept.
+   */
+  private async assertEdiConfigAllowed(
+    tenantId: string,
+    key: string,
+    config: Record<string, unknown>,
+  ) {
+    if (!key.startsWith('edi-')) return;
+    await this.ownership.assertOwnedIfSet(
+      'customer',
+      asString(config.customerId) || undefined,
+      tenantId,
+    );
+    await this.ownership.assertOwnedIfSet(
+      'carrier',
+      asString(config.carrierId) || undefined,
+      tenantId,
+    );
+    for (const field of ['isaSenderId', 'isaReceiverId', 'gsSenderId', 'gsReceiverId']) {
+      const value = asString(config[field]);
+      if (value.length > 15) {
+        throw new BadRequestException(`"${field}" must be at most 15 characters (X12 ISA width)`);
+      }
+    }
   }
 
   /** Documented business events a webhook integration can subscribe to. */
@@ -364,6 +400,7 @@ export class IntegrationsService {
     if (existing) throw new ConflictException(`Integration "${input.key}" already exists`);
     this.assertSafeWebhookConfig(input.key, input.config ?? {});
     this.assertInboundConfigAllowed(input.config ?? {}, actor);
+    await this.assertEdiConfigAllowed(tenantId, input.key, input.config ?? {});
     // A webhook integration created here already follows the current semantics
     // (empty `events` = every catalog event), so it must never be picked up by
     // WebhookEventsBackfillService — stamp the marker straight away.
@@ -399,6 +436,7 @@ export class IntegrationsService {
     if (merged) {
       this.assertSafeWebhookConfig(integration.key, merged);
       this.assertInboundConfigAllowed(merged, actor);
+      await this.assertEdiConfigAllowed(tenantId, integration.key, merged);
     }
     const updated = await this.prisma.integration.update({
       where: { id },
