@@ -621,6 +621,11 @@ export function navCatalogue(): NavDomain[] {
             { href: '/connect/imports', label: 'Imports', perm: PERMISSIONS.CORE.CONNECT_READ },
             { href: '/integrations', label: 'Studio avancé' },
             {
+              href: '/connect/inbound-hooks',
+              label: 'Récepteurs entrants',
+              perm: PERMISSIONS.CORE.INTEGRATIONS_READ,
+            },
+            {
               href: '/connect/email',
               label: 'Courriel SMTP / IMAP',
               perm: PERMISSIONS.EMAIL.MANAGE,
