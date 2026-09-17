@@ -6,7 +6,16 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@pulsar/database';
-import { AuditAction, checkWebhookUrl, DOMAIN_EVENT_CATALOG, resolveWebhookTarget } from '@pulsar/shared';
+import { createHash, randomBytes } from 'node:crypto';
+import {
+  applyIntegrationMapping,
+  AuditAction,
+  getInboundHookTarget,
+  checkWebhookUrl,
+  DOMAIN_EVENT_CATALOG,
+  normalizeMappingRules,
+  resolveWebhookTarget,
+} from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { auditActor } from '../audit-logs/audit-actor';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -70,46 +79,9 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-function asMappingRows(value: unknown): StudioMappingRow[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item))
-    .map((item) => ({
-      source: asString(item.source),
-      target: asString(item.target),
-      transform: asString(item.transform) || 'none',
-      required: Boolean(item.required),
-    }))
-    .filter((item) => item.source || item.target);
-}
-
-function getPath(source: Record<string, unknown>, path: string): unknown {
-  return path.split('.').reduce<unknown>((current, segment) => {
-    if (!current || typeof current !== 'object' || Array.isArray(current)) return undefined;
-    return (current as Record<string, unknown>)[segment];
-  }, source);
-}
-
-function setPath(target: Record<string, unknown>, path: string, value: unknown) {
-  const segments = path.split('.').filter(Boolean);
-  if (!segments.length) return;
-  let cursor = target;
-  for (const segment of segments.slice(0, -1)) {
-    const next = cursor[segment];
-    if (!next || typeof next !== 'object' || Array.isArray(next)) cursor[segment] = {};
-    cursor = cursor[segment] as Record<string, unknown>;
-  }
-  cursor[segments.at(-1)!] = value;
-}
-
-function applyTransform(value: unknown, transform?: string): unknown {
-  if (value == null) return value;
-  const op = transform || 'none';
-  if (op === 'trim' && typeof value === 'string') return value.trim();
-  if (op === 'uppercase' && typeof value === 'string') return value.toUpperCase();
-  if (op === 'number') return Number(value);
-  if (op === 'date.iso') return new Date(String(value)).toISOString();
-  return value;
+/** `config.mappings` (unknown JSON) → studio rows. Shape lives in @pulsar/shared. */
+function normalizeMappingRows(value: unknown): StudioMappingRow[] {
+  return normalizeMappingRules(value);
 }
 
 function redactUrl(url: string): string {
@@ -132,7 +104,7 @@ export function buildConnectionTestReport(integration: {
   const endpointUrl = asString(config.endpointUrl);
   const hasEndpoint = /^https?:\/\//i.test(endpointUrl);
   const hasCredential = ['apiKey', 'secret', 'webhookSecret', 'tenantReference'].some((key) => Boolean(asString(config[key])));
-  const mappings = asMappingRows(config.mappings);
+  const mappings = normalizeMappingRows(config.mappings);
   const objects = Array.isArray(config.objects) ? config.objects.filter((item) => typeof item === 'string') : [];
   const checks: StudioCheck[] = [
     {
@@ -182,8 +154,7 @@ export function buildConnectionTestReport(integration: {
 }
 
 export function buildDryRunMapping(input: DryRunInput): DryRunReport {
-  const mappings = asMappingRows(input.mappings);
-  const errors: string[] = [];
+  const mappings = normalizeMappingRows(input.mappings);
   let payload: Record<string, unknown> = {};
   try {
     payload = asObject(input.samplePayload ? JSON.parse(input.samplePayload) : {});
@@ -198,20 +169,9 @@ export function buildDryRunMapping(input: DryRunInput): DryRunReport {
     };
   }
 
-  const output: Record<string, unknown> = {};
-  const rows = mappings.map((mapping) => {
-    if (!mapping.source || !mapping.target) {
-      return { ...mapping, status: 'skipped' as const };
-    }
-    const raw = getPath(payload, mapping.source);
-    if (raw == null || raw === '') {
-      if (mapping.required) errors.push(`Champ requis manquant: ${mapping.source}`);
-      return { ...mapping, status: 'missing' as const };
-    }
-    const value = applyTransform(raw, mapping.transform);
-    setPath(output, mapping.target, value);
-    return { ...mapping, status: 'mapped' as const, value };
-  });
+  // Lenient mode: an unknown transform stays a no-op in the studio preview
+  // (the inbound receiver runs the same engine with strictTransforms).
+  const { output, rows, errors } = applyIntegrationMapping(payload, mappings);
   const status = errors.length ? 'warning' : rows.some((row) => row.status === 'mapped') ? 'ok' : 'blocked';
   return {
     status,
@@ -457,7 +417,7 @@ export class IntegrationsService {
     const config = this.crypto.decryptJson(integration.config);
     return buildDryRunMapping({
       samplePayload: input.samplePayload ?? asString(config.samplePayload),
-      mappings: input.mappings ?? asMappingRows(config.mappings),
+      mappings: input.mappings ?? normalizeMappingRows(config.mappings),
     });
   }
 
@@ -499,6 +459,44 @@ export class IntegrationsService {
       after: { action: 'replay', deliveryId: delivery.id },
     });
     return this.prisma.webhookDelivery.findUnique({ where: { id: delivery.id } });
+  }
+
+  /**
+   * Issues (or rotates) the inbound webhook token of an integration.
+   *
+   * The raw token is returned ONCE and never stored: only its sha256 lands in
+   * the indexed `inboundTokenHash` column, the same way API keys are handled.
+   * Re-issuing invalidates the previous token immediately (single active token
+   * per receiver). The audit trail records the rotation, never the secret.
+   */
+  async issueInboundToken(tenantId: string, id: string, userId?: string) {
+    const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
+    if (!integration) throw new NotFoundException('Integration not found');
+
+    const token = randomBytes(32).toString('base64url');
+    const inboundTokenHash = createHash('sha256').update(token).digest('hex');
+    await this.prisma.integration.update({ where: { id: integration.id }, data: { inboundTokenHash } });
+
+    await this.audit.log({
+      tenantId,
+      userId: auditActor(userId),
+      action: AuditAction.UPDATE,
+      entityType: 'integration',
+      entityId: integration.id,
+      after: { action: 'issue-inbound-token', rotated: integration.inboundTokenHash !== null },
+    });
+
+    const config = this.crypto.decryptJson(integration.config);
+    const target = typeof config.target === 'string' ? config.target : null;
+    const apiUrl = this.config.get<string>('API_URL', 'http://localhost:3000').replace(/\/+$/, '');
+    return {
+      token,
+      url: `${apiUrl}/api/v1/public/hooks/${token}`,
+      target,
+      targetValid: target !== null && getInboundHookTarget(target) !== undefined,
+      signed: typeof config.inboundSecret === 'string' && config.inboundSecret.length > 0,
+      status: integration.status,
+    };
   }
 
   async listDeliveries(tenantId: string, integrationId: string) {

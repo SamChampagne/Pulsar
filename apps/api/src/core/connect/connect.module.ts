@@ -1,5 +1,6 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { CryptoModule } from '../crypto/crypto.module';
 import { DocumentsModule } from '../documents/documents.module';
 import { CoreLocationsModule } from '../locations/locations.module';
 import { OperatingModule } from '../operating/operating.module';
@@ -11,6 +12,9 @@ import { ImportsController } from './imports.controller';
 import { ImportsService } from './imports.service';
 import { InboundController } from './inbound.controller';
 import { InboundService } from './inbound.service';
+import { InboundHooksController } from './inbound-hooks.controller';
+import { InboundHooksService } from './inbound-hooks.service';
+import { ConnectRecordWriter } from './record-writer.service';
 
 /**
  * ConnectModule — core ingestion surface (CSV importer + PDF/document inbound + inbox).
@@ -25,12 +29,16 @@ import { InboundService } from './inbound.service';
  *  - CustomersService / CarriersService / VehiclesService / TrailersService:
  *    exported by TransportationModule
  *  - ItemsService: exported by WmsModule
+ *  - TransportOrdersService: exported by TransportationModule (inbound hook target)
+ *  - CryptoService: from CryptoModule (inbound receivers read the encrypted config)
+ *  - ApiKeysService: global (@Global ApiKeysModule) — tenant service account (rule 13)
  *  - FreightAuditService: exported by BillingModule (forwardRef to guard against potential
  *    future circular dep via OperatingModule ↔ AgentsModule chain)
  */
 @Module({
   imports: [
     AuditLogsModule,
+    CryptoModule,
     DocumentsModule,
     CoreLocationsModule,
     OperatingModule,
@@ -39,7 +47,7 @@ import { InboundService } from './inbound.service';
     WmsModule,
     forwardRef(() => BillingModule),
   ],
-  controllers: [ImportsController, InboundController],
-  providers: [ImportsService, InboundService],
+  controllers: [ImportsController, InboundController, InboundHooksController],
+  providers: [ImportsService, InboundService, InboundHooksService, ConnectRecordWriter],
 })
 export class ConnectModule {}

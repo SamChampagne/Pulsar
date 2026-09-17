@@ -31,7 +31,11 @@ function resolveCorsOrigin(config: ConfigService): boolean | string | string[] {
 
 async function bootstrap() {
   assertProductionSecrets(process.env);
-  const app = await NestFactory.create(AppModule);
+  // rawBody: keeps the exact request bytes on `req.rawBody` so the inbound
+  // webhook receiver can verify an HMAC signature over what was really sent
+  // (a re-serialized body would change key order and whitespace). Additive:
+  // the normal parsed `req.body` is untouched for every other route.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   const config = app.get(ConfigService);
 
   app.use(requestIdMiddleware);

@@ -137,6 +137,75 @@ keys (5 s timeout; other kinds get a clearly-labelled configuration simulation).
 claim — 409 if it is already PENDING). Both are audited (`entityType: 'integration'`).
 Inspect deliveries: `GET /integrations/:id/deliveries`.
 
+## Webhooks entrants (récepteur)
+
+`POST /api/v1/public/hooks/<inboundToken>` — un partenaire pousse du JSON, Pulsar écrit dans ses
+propres services métier. Aucune clé API, aucun JWT : le jeton de l'URL **est** la crédentiale.
+
+**Jeton.** `POST /integrations/:id/inbound-token` (permission `core.integrations.manage`) génère
+32 octets base64url et les renvoie **une seule fois**, avec l'URL complète à donner au partenaire.
+Seul le `sha256` est stocké, dans la colonne indexée `Integration.inboundTokenHash` (jamais dans
+`config`, qui est chiffré donc non indexable). Ré-émettre **rotationne** : l'ancien jeton devient
+invalide immédiatement. Un jeton inconnu, une intégration non `ENABLED` ou une config illisible
+renvoient tous le **même 404 générique** — une sonde n'apprend rien.
+
+**Configuration** (dans `Integration.config`, chiffré) :
+
+| Clé              | Rôle                                                                        |
+| ---------------- | --------------------------------------------------------------------------- |
+| `target`         | cible métier (obligatoire, voir ci-dessous)                                  |
+| `mappings`       | `[{ source, target, transform?, required? }]` — chemins pointés (`a.b.c`)     |
+| `inboundSecret`  | optionnel : active la vérification HMAC (masqué en lecture, `***`)            |
+
+**Cibles** (`GET /integrations/inbound-targets`) : `transport-order.create` (module
+transportation, permission `transportation.orders.manage`), `location.upsert` (cœur,
+`core.locations.manage`), `customer.upsert` et `carrier.upsert` (transportation,
+`transportation.master-data.manage`), `item.upsert` (WMS, `wms.manage`). Les `*.upsert` matchent
+la **clé naturelle** du tenant (`code`, ou `sku` pour les articles) : deux livraisons identiques
+mettent à jour la même ligne au lieu de la dupliquer. `transport-order.create` accepte des codes
+(`customerCode`, `originCode`, `destinationCode`) résolus côté serveur, ou directement les ids.
+
+**Mapping.** `applyIntegrationMapping` (`@pulsar/shared`, pur — le même moteur que le dry run du
+studio) avec les transformations `trim | uppercase | number | date.iso | default:<valeur> |
+concat:<séparateur>`. En entrant le moteur est **strict** : une transformation inconnue est une
+erreur, jamais un passage silencieux. Sans `mappings`, le corps est pris tel quel (mapping
+identité). Seuls les champs de la liste blanche de la cible sont transmis au service métier —
+`tenantId`, `id`, `status` et consorts ne peuvent pas être injectés.
+
+**HMAC.** Si `inboundSecret` est présent, le partenaire doit envoyer
+`X-Signature: sha256=<hex HMAC-SHA256 du corps brut>` ; comparaison à temps constant sur les
+**octets bruts** reçus (`rawBody`), pas sur une re-sérialisation. Signature absente ou invalide →
+`401`.
+
+**Idempotence.** Clé = en-tête `X-Idempotency-Key`, sinon `sha256` du corps brut. Elle est stockée
+dans `InboundMessage.dedupKey` avec un unique `(tenantId, dedupKey)` : un rejeu renvoie le
+**résultat original** (`200`, `replayed: true`) sans ré-exécuter l'écriture.
+
+**Traçabilité.** Chaque livraison acceptée crée un `InboundMessage{ source: 'WEBHOOK', status }`
+visible dans `GET /connect/inbox`, avec une copie **caviardée et plafonnée** (8 Ko) du payload
+(clés `secret|password|token|apikey|authorization|signature` → `***`). L'écriture est attribuée au
+service-account du tenant (`service-account@pulsar.local`, règle 13) et **scopée à la seule
+permission de la cible** ; le module de la cible est re-vérifié (règle 15 — `/public/**` contourne
+le `ModulesGuard`). Audit sous le service-account ; le jeton et le secret ne sont jamais journalisés.
+
+**Réponses.**
+
+| Code  | Cas                                                                                |
+| ----- | ---------------------------------------------------------------------------------- |
+| `202` | livraison traitée — `{ inboxId, status: 'IMPORTED' \| 'FAILED', error?, entityType?, entityId? }` |
+| `200` | rejeu idempotent — même corps, `replayed: true`, rien de ré-exécuté                  |
+| `400` | corps non-objet, cible non configurée                                               |
+| `401` | signature HMAC absente ou invalide                                                  |
+| `403` | module de la cible désactivé pour le tenant                                         |
+| `404` | jeton inconnu / récepteur désactivé (réponse générique)                             |
+| `413` | corps > 256 Ko                                                                      |
+
+Choix assumé : une livraison **acceptée** répond toujours `202`, même quand le mapping ou
+l'écriture métier échoue (`status: 'FAILED'` + `error`). Le partenaire a un contrat unique et la
+ligne d'inbox fait foi ; seules les erreurs d'accès (jeton, signature, module) sont des codes
+d'erreur HTTP. La route est `@Public()` + `ThrottlerGuard`, et `NestFactory.create(AppModule,
+{ rawBody: true })` est requis pour la vérification HMAC (activé dans `main.ts`).
+
 ## Inbound API keys
 
 `POST /api-keys` (permission `core.api-keys.manage`) returns the full key **once**

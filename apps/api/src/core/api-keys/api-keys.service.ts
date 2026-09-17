@@ -33,8 +33,12 @@ const SERVICE_ACCOUNT_EMAIL = 'service-account@pulsar.local';
 export class ApiKeysService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** One hidden service-account user per tenant, created lazily. */
-  private async ensureServiceUser(tenantId: string): Promise<string> {
+  /**
+   * One hidden service-account user per tenant, created lazily.
+   * Public: every machine write path (API keys, inbound webhooks) attributes
+   * its actions to this user (rule 13) instead of inventing a fake id.
+   */
+  async ensureServiceUser(tenantId: string): Promise<string> {
     const existing = await this.prisma.user.findUnique({
       where: { tenantId_email: { tenantId, email: SERVICE_ACCOUNT_EMAIL } },
       select: { id: true },

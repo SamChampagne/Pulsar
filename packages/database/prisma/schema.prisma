@@ -214,6 +214,8 @@ model ApiKey {
   keyHash     String    @unique
   scopes      String[]
   lastUsedAt  DateTime?
+  // Optional expiry for partner keys; a key past this instant is rejected.
+  expiresAt   DateTime?
   revokedAt   DateTime?
   createdById String?
   createdAt   DateTime  @default(now())
@@ -416,14 +418,18 @@ enum IntegrationStatus {
 }
 
 model Integration {
-  id        String            @id @default(cuid())
-  tenantId  String
-  key       String // e.g. "telematics-samsara", "edi-204"
-  name      String
-  status    IntegrationStatus @default(DISABLED)
-  config    Json              @default("{}")
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  id       String            @id @default(cuid())
+  tenantId String
+  key      String // e.g. "telematics-samsara", "edi-204"
+  name     String
+  status   IntegrationStatus @default(DISABLED)
+  config   Json              @default("{}")
+  // sha256 of the inbound webhook token (POST /public/hooks/:inboundToken).
+  // Column, not config: the receiver looks the integration up BY this hash, and
+  // an encrypted Json blob cannot be indexed. The raw token is shown once.
+  inboundTokenHash String?  @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   tenant     Tenant            @relation(fields: [tenantId], references: [id])
   deliveries WebhookDelivery[]
@@ -2809,12 +2815,17 @@ model InboundMessage {
   error       String?
   refType     String?
   refId       String?
+  // Idempotency key of an inbound webhook delivery (X-Idempotency-Key header,
+  // else sha256 of the raw body). Nullable-unique per tenant: Postgres allows
+  // many NULLs, so CSV/PDF/document messages are unaffected.
+  dedupKey    String?
   createdById String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
+  @@unique([tenantId, dedupKey])
   @@index([tenantId, status, createdAt])
   @@map("inbound_messages")
 }
