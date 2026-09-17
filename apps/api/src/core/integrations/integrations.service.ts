@@ -20,6 +20,7 @@ import {
   resolveWebhookTarget,
 } from '@pulsar/shared';
 import { OwnershipService } from '../../prisma/ownership.service';
+import { mentionsEdi, normalizeEdiConfig } from './edi-identity';
 import { PrismaService } from '../../prisma/prisma.service';
 import { auditActor } from '../audit-logs/audit-actor';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -290,11 +291,13 @@ export class IntegrationsService {
 
   /**
    * Egress guard (SSRF): an integration that Pulsar will POST to — `webhook*`
-   * and `edi-*` (outbound 214) — may only point at a public http/https
-   * endpoint. Applied on every write and before a live ping.
+   * and EDI (outbound 214) — may only point at a public http/https endpoint.
+   * Applied on every write and before a live ping. EDI is recognised by EITHER
+   * half of its identity (`mentionsEdi`), so a half-declared receiver is checked
+   * too instead of slipping past on its key alone.
    */
   private assertSafeWebhookConfig(key: string, config: Record<string, unknown>) {
-    if (!key.startsWith('webhook') && !key.startsWith('edi-')) return;
+    if (!key.startsWith('webhook') && !mentionsEdi(key, config)) return;
     const target = resolveWebhookTarget(config);
     if (!target) return;
     const check = checkWebhookUrl(target.url, { allowPrivate: this.allowPrivateUrls });
@@ -302,7 +305,13 @@ export class IntegrationsService {
   }
 
   /**
-   * Config guard for an `edi-<partner>` integration.
+   * Config guard for an EDI integration.
+   *
+   * Keyed on `mentionsEdi` — EITHER an `edi-*` key OR `config.format: 'x12'` —
+   * not on the key alone: the public receiver used to dispatch on the format,
+   * so a receiver declaring only the format reached the EDI plane while this
+   * gate never ran. `normalizeEdiConfig` then makes the two halves agree before
+   * anything is persisted.
    *
    * The two foreign keys an interchange is written against — `customerId` (the
    * shipper a 204 becomes an order for) and `carrierId` (the carrier a 210 is
@@ -316,7 +325,7 @@ export class IntegrationsService {
     config: Record<string, unknown>,
     actor?: ConfiguringUser,
   ) {
-    if (!key.startsWith('edi-')) return;
+    if (!mentionsEdi(key, config)) return;
     const customerId = asString(config.customerId) || undefined;
     const carrierId = asString(config.carrierId) || undefined;
     await this.ownership.assertOwnedIfSet('customer', customerId, tenantId);
@@ -416,11 +425,14 @@ export class IntegrationsService {
     if (existing) throw new ConflictException(`Integration "${input.key}" already exists`);
     this.assertSafeWebhookConfig(input.key, input.config ?? {});
     this.assertInboundConfigAllowed(input.config ?? {}, actor);
-    await this.assertEdiConfigAllowed(tenantId, input.key, input.config ?? {}, actor);
+    // Reconcile the two halves of the EDI identity BEFORE the gate, so the gate
+    // sees exactly what will be stored (and a mismatched pair is a 400).
+    const ediConfig = normalizeEdiConfig(input.key, input.config ?? {});
+    await this.assertEdiConfigAllowed(tenantId, input.key, ediConfig, actor);
     // A webhook integration created here already follows the current semantics
     // (empty `events` = every catalog event), so it must never be picked up by
     // WebhookEventsBackfillService — stamp the marker straight away.
-    const config = withEventsBackfillStamp(input.key, input.config ?? {});
+    const config = withEventsBackfillStamp(input.key, ediConfig);
     const created = await this.prisma.integration.create({
       data: {
         tenantId,
@@ -442,7 +454,7 @@ export class IntegrationsService {
     const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
     if (!integration) throw new NotFoundException('Integration not found');
     const stored = this.crypto.decryptJson<Record<string, unknown>>(integration.config);
-    const merged = input.config
+    let merged = input.config
       ? withEventsBackfillStamp(
           integration.key,
           mergePreservingMasked(input.config, stored),
@@ -452,6 +464,7 @@ export class IntegrationsService {
     if (merged) {
       this.assertSafeWebhookConfig(integration.key, merged);
       this.assertInboundConfigAllowed(merged, actor);
+      merged = normalizeEdiConfig(integration.key, merged);
       await this.assertEdiConfigAllowed(tenantId, integration.key, merged, actor);
     }
     const updated = await this.prisma.integration.update({
@@ -640,8 +653,9 @@ export class IntegrationsService {
     // permission: the issuing user must hold that permission themselves (403).
     const storedConfig = this.crypto.decryptJson<Record<string, unknown>>(integration.config);
     this.assertInboundConfigAllowed(storedConfig, actor);
-    // An `edi-*` receiver carries no `config.target`: its own gate applies here too,
-    // otherwise handing out a token would grant what saving the config refused.
+    // An EDI receiver carries no `config.target`: its own gate applies here too
+    // (under the same `mentionsEdi` predicate), otherwise handing out a token
+    // would grant what saving the config refused.
     await this.assertEdiConfigAllowed(tenantId, integration.key, storedConfig, actor);
 
     const token = randomBytes(32).toString('base64url');

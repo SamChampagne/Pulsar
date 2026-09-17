@@ -553,6 +553,18 @@ describe('EdiService — 214 outbound status', () => {
   it('refuses to send when the integration has no outbound url', async () => {
     const h = harness();
     await expect(h.svc.send214(TENANT, 'user_1', 'ship_1', 'edi-acme')).rejects.toThrow(/url/);
+    // A form posts every field: a blank url is "not configured", not a target.
+    const blank = harness({ config: { url: '   ' } });
+    await expect(blank.svc.send214(TENANT, 'user_1', 'ship_1', 'edi-acme')).rejects.toThrow(/url/);
+  });
+
+  it('falls back to the ISA ids when the GS ids are saved blank', async () => {
+    const h = harness({ config: { gsSenderId: '', gsReceiverId: '   ' } });
+    const built = await h.svc.build214ForShipment(TENANT, 'ship_1', 'edi-acme');
+    const gs = parseX12(built.x12).document!.groups[0].gs;
+    // GS02 / GS03 must never go out empty.
+    expect(gs.elements[1]).toBe('PULSARTMS');
+    expect(gs.elements[2]).toBe('ACMESHIPPER');
   });
 
   it('queues the 214 on the webhook outbox when a url is configured', async () => {

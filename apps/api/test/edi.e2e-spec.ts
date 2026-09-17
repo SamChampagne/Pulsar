@@ -20,6 +20,9 @@
  *                      accepts the right one over the RAW text/plain bytes.
  *   S9  duplicate      the same carrier invoice number in a new envelope is
  *                      refused (business-key dedup on top of the byte hash).
+ *   S10 identity       `format: 'x12'` outside the `edi-` namespace is a 400 for
+ *                      everyone — the two halves of the EDI identity cannot be
+ *                      split to dodge the permission gate.
  *
  * Fully offline: the fixtures are the ones C3 ships in @pulsar/shared.
  * Prerequisites: reachable PostgreSQL with the seed applied.
@@ -536,5 +539,72 @@ describe('EDI X12 (e2e)', () => {
       .expect(202);
     expect(response.body.status).toBe('FAILED');
     expect(response.body.error).toBe(`Duplicate carrier invoice ${invoiceRef}`);
+  });
+  // S10 -----------------------------------------------------------------------
+  it('identity: format x12 requires an edi-* key, and an edi-* key stays gated', async () => {
+    // The bypass: an arbitrary key + format x12 would have reached the EDI plane
+    // through the public door while every `edi-*`-keyed gate stayed silent.
+    // Refused for the ADMIN too — this is a shape rule, not a permission.
+    const denied = await request(http)
+      .post('/api/v1/integrations')
+      .set(auth())
+      .send({
+        key: `partner-acme-${suffix}`,
+        name: 'Porte deguisee',
+        status: 'ENABLED',
+        config: { format: 'x12', customerId },
+      })
+      .expect(400);
+    expect(String(denied.body.message)).toContain('edi-');
+
+    // …and the same shape refused to the under-privileged user.
+    const login = await request(http)
+      .post('/api/v1/auth/login')
+      .send({ email: limitedEmail, password: LIMITED_PASSWORD, tenant: 'acme' })
+      .expect(200);
+    const limitedAuth = () => ({ Authorization: `Bearer ${login.body.accessToken}` });
+    await request(http)
+      .post('/api/v1/integrations')
+      .set(limitedAuth())
+      .send({
+        key: `partner-bis-${suffix}`,
+        name: 'Porte deguisee bis',
+        status: 'ENABLED',
+        config: { format: 'x12', customerId },
+      })
+      .expect(400);
+
+    // The properly-named receiver is still gated on the business permission (403,
+    // not 400): the identity rule does not replace the privilege gate.
+    await request(http)
+      .post('/api/v1/integrations')
+      .set(limitedAuth())
+      .send({
+        key: `edi-gated-${suffix}`,
+        name: 'Porte EDI gatee',
+        status: 'ENABLED',
+        config: { format: 'x12', customerId },
+      })
+      .expect(403);
+
+    // An edi-* key saved without a format is completed to x12 (the halves agree
+    // at rest), so the receiver the public door sees is fully declared.
+    const completed = await request(http)
+      .post('/api/v1/integrations')
+      .set(auth())
+      .send({
+        key: `edi-nofmt-${suffix}`,
+        name: 'Format implicite',
+        config: { isaSenderId: 'PULSARTMS' },
+      })
+      .expect(201);
+    expect(completed.body.config.format).toBe('x12');
+
+    // An edi-* key cannot be pushed to another wire format either.
+    await request(http)
+      .patch(`/api/v1/integrations/${completed.body.id}`)
+      .set(auth())
+      .send({ config: { format: 'slack' } })
+      .expect(400);
   });
 });

@@ -39,6 +39,7 @@ import { WebhooksService } from '../integrations/webhooks.service';
 import { TransportOrdersService } from '../../modules/transportation/transport-orders/transport-orders.service';
 import { FreightAuditService } from '../../modules/billing/freight-audit/freight-audit.service';
 import { buildShipmentTrackingView } from '../../modules/transportation/public/shipment-tracking.view';
+import { EDI_KEY_PREFIX, isEdiIntegration } from '../integrations/edi-identity';
 
 /** Hard cap on an accepted interchange (the largest 204 seen in the wild is a few KB). */
 export const MAX_EDI_BYTES = 512 * 1024;
@@ -158,6 +159,15 @@ export function ediLocationCode(parts: Array<string | undefined>): string {
   return `EDI-${createHash('sha1').update(normalized).digest('hex').slice(0, 12)}`;
 }
 
+/**
+ * Trimmed value, or the fallback when it is absent OR blank. A configuration
+ * form posts every field, so "not set" reaches us as `''` — `??` would keep it.
+ */
+export function nonEmpty(value: string | undefined | null, fallback: string): string {
+  const trimmed = (value ?? '').trim();
+  return trimmed || fallback;
+}
+
 /** X12 weight + unit qualifier → kilograms (`L` = pounds, anything else taken as kg). */
 export function ediWeightToKg(weight?: number, unit?: string): number | undefined {
   if (weight === undefined || !Number.isFinite(weight)) return undefined;
@@ -229,11 +239,18 @@ export class EdiService {
   async processDelivery(args: {
     tenantId: string;
     integrationId: string;
+    integrationKey: string;
     integrationName: string;
     config: Record<string, unknown>;
     content: string;
     inboxId: string;
   }): Promise<EdiOutcome> {
+    // Defence in depth: the caller already dispatched on `isEdiIntegration`,
+    // but nothing that is not a fully-declared EDI receiver may ever reach the
+    // business writes below.
+    if (!isEdiIntegration(args.integrationKey, args.config)) {
+      throw new ForbiddenException('This integration is not a fully declared EDI receiver');
+    }
     const serviceUserId = await this.apiKeys.ensureServiceUser(args.tenantId);
     const outcome = await this.handleInterchange(
       args.tenantId,
@@ -812,7 +829,7 @@ export class EdiService {
    */
   async send214(tenantId: string, userId: string, shipmentId: string, integrationKey?: string) {
     const integration = await this.resolveIntegrationByKey(tenantId, integrationKey);
-    if (!(integration.config.url ?? '').trim()) {
+    if (!nonEmpty(integration.config.url, '')) {
       throw new BadRequestException('This EDI integration has no outbound url configured');
     }
     const built = await this.build214ForShipment(tenantId, shipmentId, integration.key);
@@ -855,7 +872,7 @@ export class EdiService {
   async resolveIntegrationByKey(tenantId: string, key: string | undefined) {
     const wanted = (key ?? '').trim();
     if (!wanted) throw new BadRequestException('integrationKey is required');
-    if (!wanted.startsWith('edi-')) {
+    if (!wanted.startsWith(EDI_KEY_PREFIX)) {
       throw new BadRequestException('integrationKey must name an "edi-<partner>" integration');
     }
     const integration = await this.prisma.integration.findUnique({
@@ -882,13 +899,15 @@ export class EdiService {
    */
   private envelope(config: EdiIntegrationConfig): X12EnvelopeOptions {
     const control = Number(String(Date.now()).slice(-9));
-    const sender = (config.isaSenderId ?? 'PULSARTMS').slice(0, ISA_ID_WIDTH);
-    const receiver = (config.isaReceiverId ?? 'PARTNER').slice(0, ISA_ID_WIDTH);
+    // A partner form saves every field, so an unused GS id arrives as `''`, not
+    // as `undefined` — `??` would let it through and emit an EMPTY GS02/GS03.
+    const sender = nonEmpty(config.isaSenderId, 'PULSARTMS').slice(0, ISA_ID_WIDTH);
+    const receiver = nonEmpty(config.isaReceiverId, 'PARTNER').slice(0, ISA_ID_WIDTH);
     return {
       senderId: sender,
       receiverId: receiver,
-      applicationSender: (config.gsSenderId ?? sender).slice(0, ISA_ID_WIDTH),
-      applicationReceiver: (config.gsReceiverId ?? receiver).slice(0, ISA_ID_WIDTH),
+      applicationSender: nonEmpty(config.gsSenderId, sender).slice(0, ISA_ID_WIDTH),
+      applicationReceiver: nonEmpty(config.gsReceiverId, receiver).slice(0, ISA_ID_WIDTH),
       interchangeControlNumber: control,
       groupControlNumber: control % 1_000_000,
       transactionControlNumber: 1,

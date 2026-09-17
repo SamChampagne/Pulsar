@@ -101,7 +101,15 @@ POD photos from the driver page land as documents with `entityType=proof-of-deli
 required metric is missing — never silently 0. `LoadCostService.recompute` persists
 `Load.estimatedCost` and runs after resource assignment and route (re)builds.
 
-## Webhooks (durable outbox)
+## Connecteurs
+
+Un seul chapitre pour tout ce qui relie Pulsar à l'extérieur, dans l'ordre du flux : sortie
+(webhooks), entrée (récepteur JSON), EDI X12, accès partenaire (clés API) et calendrier (iCal).
+Le hub `/connect` (catalogue `CONNECTION_CATALOG`, `@pulsar/shared`) est la porte d'entrée UI ;
+`/integrations` reste le studio de configuration, `/connect/inbound-hooks` et `/connect/edi` les
+écrans dédiés aux deux plans entrants.
+
+### Webhooks sortants (outbox durable)
 
 `WebhooksService.emit(tenantId, event, data)` persists one `webhook_deliveries` row per ENABLED
 integration whose key starts with `webhook` and matches the event, then attempts delivery
@@ -136,7 +144,7 @@ keys (5 s timeout; other kinds get a clearly-labelled configuration simulation).
 claim — 409 if it is already PENDING). Both are audited (`entityType: 'integration'`).
 Inspect deliveries: `GET /integrations/:id/deliveries`.
 
-## Webhooks entrants (récepteur)
+### Webhooks entrants (récepteur)
 
 `POST /api/v1/public/hooks/<inboundToken>` — un partenaire pousse du JSON, Pulsar écrit dans ses
 propres services métier. Aucune clé API, aucun JWT : le jeton de l'URL **est** la crédentiale.
@@ -225,13 +233,15 @@ ligne d'inbox fait foi ; seules les erreurs d'accès (jeton, signature, module) 
 d'erreur HTTP. La route est `@Public()` + `ThrottlerGuard`, et `NestFactory.create(AppModule,
 { rawBody: true })` est requis pour la vérification HMAC (activé dans `main.ts`).
 
-## EDI X12 (204 / 990 / 210 / 214)
+### EDI X12 (204 / 990 / 210 / 214)
 
 Le parsing et la génération vivent dans `@pulsar/shared/edi` (pur, browser-safe, fixtures
 incluses — règle 55) ; l'API n'est que transport + gouvernance (`core/connect/edi.service.ts`).
 
-**Intégration.** Un partenaire EDI = une `Integration` de clé **`edi-<partenaire>`** (le préfixe est
-la seule chose qui distingue le plan EDI d'un webhook). Config :
+**Intégration.** Un partenaire EDI = une `Integration` de clé **`edi-<partenaire>`** **et**
+`config.format: "x12"` — les deux moitiés sont exigées partout (gardes, portes d'entrée) : poser
+`format: "x12"` sur une clé hors du namespace `edi-` est refusé (400), et une clé `edi-*` sans
+format se voit compléter à `x12`. Config :
 
 | Clé             | Rôle                                                                |
 | --------------- | ------------------------------------------------------------------- |
@@ -345,7 +355,7 @@ avec backoff). Requiert `config.url`.
 - plafonds de corps : **512 Ko** sur la porte authentifiée, **256 Ko** (comme le JSON) sur la porte
   publique — rien n'est connu de l'intégration avant la bufferisation.
 
-## Inbound API keys
+### Clés API partenaires
 
 `POST /api-keys` (permission `core.api-keys.manage`) returns the full key **once**
 (`pk_…`, SHA-256 hash at rest). Requests authenticate with the `X-Api-Key` header instead of a
@@ -353,6 +363,43 @@ JWT; the key carries its own scope list (read **and** write). Key requests act a
 hidden **service account** user (`service-account@pulsar.local`, status DISABLED — can never
 sign in), so write paths get a real user id for audit/FK attribution. Revocation is immediate;
 `lastUsedAt` is stamped on use.
+
+**Expiration (optionnelle).** `POST /api-keys` accepte un `expiresAt` (date future, sinon 400).
+Passé cette date, la clé est refusée avec **exactement le même** `401 Invalid API key` qu'une clé
+inconnue ou révoquée — un client ne peut pas distinguer les trois cas. L'UI
+(`Réglages → Clés API`) saisit une date et envoie la **fin de journée locale** du navigateur, et
+affiche une pastille « Expirée » sur les lignes concernées.
+
+**Modèles de portée** (`API_KEY_SCOPE_PRESETS`, `@pulsar/shared`, pure data) — pré-remplissent les
+cases de permissions à la création, toujours ajustables ensuite :
+
+| Modèle              | Portées                                                                                            |
+| ------------------- | -------------------------------------------------------------------------------------------------- |
+| `read-only`         | toutes les permissions `*.read` du catalogue (**calculé**, jamais listé à la main)                  |
+| `orders-intake`     | `transportation.orders.manage`, `transportation.master-data.read`, `core.locations.read`            |
+| `tracking`          | `transportation.tracking.read`                                                                      |
+
+**Swagger.** `/api/docs` déclare désormais le schéma `api-key` (en-tête `x-api-key`,
+`DocumentBuilder().addApiKey(...)`) à côté du bearer JWT — un partenaire lit la surface REST sans
+qu'on lui explique l'en-tête à la main.
+
+### Flux iCal — rendez-vous de quai (module Yard)
+
+`POST /yard/ical-token` (`@RequireModule(YARD)` + `yard.manage`, audité) génère 24 octets
+base64url stockés dans `TenantModule.settings.icalToken` (module `yard`) et renvoie
+`{ token, url }` — l'URL est construite depuis la configuration (`API_URL`), jamais depuis
+l'en-tête `Host` de la requête. `GET /yard/ical-token` (`yard.read`) renvoie seulement
+`{ hasToken, rotatedAt? }` — **jamais** le jeton : la page de configuration sait donc qu'un lien
+existe après un rechargement et demande confirmation avant de le régénérer. Régénérer invalide
+l'ancien lien immédiatement.
+
+`GET /public/ical/yard/:token` (`@Public()`) renvoie un `text/calendar; charset=utf-8` des
+rendez-vous de quai des **90 prochains jours** (hors `CANCELLED`/`NO_SHOW`), à abonner dans
+Outlook/Google Calendar. Le corps est produit par `buildIcs` (`@pulsar/shared`, pur, RFC 5545 :
+CRLF, pliage à 75 octets sur les points de code, échappement `\`/`,`/`;`/saut de ligne, dates UTC
+`YYYYMMDDTHHMMSSZ`). Projection d'affichage seulement (règle 10) : créneau, quai (`spot.code`),
+transporteur, remorque au mieux — jamais d'id interne ni de `tenantId`. Jeton inconnu, ligne
+`TenantModule` désactivée ou module Yard désactivé donnent tous le même `404`.
 
 ## Declarative audit
 

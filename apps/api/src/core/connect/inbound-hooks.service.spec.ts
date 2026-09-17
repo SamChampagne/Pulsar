@@ -19,6 +19,8 @@ const HASH = createHash('sha256').update(TOKEN).digest('hex');
 
 interface HarnessOptions {
   config?: Record<string, unknown>;
+  /** Integration key — the EDI plane needs `edi-*` AND `config.format: 'x12'`. */
+  key?: string;
   status?: string;
   tenantStatus?: string;
   enabledModules?: string[];
@@ -43,6 +45,7 @@ function harness(options: HarnessOptions = {}) {
           ? {
               id: 'int_1',
               tenantId: 't1',
+              key: options.key ?? 'webhook-partner',
               name: 'Partner',
               status: options.status ?? 'ENABLED',
               config,
@@ -107,9 +110,14 @@ function harness(options: HarnessOptions = {}) {
     ensureServiceUser: async () => 'svc_user_1',
   } as unknown as ApiKeysService;
 
-  // The EDI plane is only reached when config.format === 'x12' (own spec file).
+  // The EDI plane is only reached by a FULLY declared EDI receiver: an `edi-*`
+  // key AND config.format === 'x12' (the plane itself has its own spec file).
+  const ediCalls: any[] = [];
   const edi = {
-    processDelivery: async () => ({ status: 'IMPORTED', summary: 'edi' }),
+    processDelivery: async (args: any) => {
+      ediCalls.push(args);
+      return { status: 'IMPORTED', summary: 'edi' };
+    },
   } as unknown as EdiService;
 
   return {
@@ -118,6 +126,7 @@ function harness(options: HarnessOptions = {}) {
     audits,
     writes,
     reclaims,
+    ediCalls,
   };
 }
 
@@ -152,6 +161,39 @@ describe('InboundHooksService — token resolution', () => {
     await expect(
       svc.receive({ token: TOKEN, body: {}, rawBody: rawOf({}) }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  /**
+   * Round 2 of the security review: the door used to dispatch on
+   * `config.format` alone, so a receiver on ANY key could reach the EDI plane
+   * while every `edi-*`-keyed configuration gate stayed silent. Both halves of
+   * the identity are now required — a half-declared row is an ordinary JSON
+   * webhook (and here, one without a valid target: a 400, not an EDI write).
+   */
+  it('never treats a format:x12 receiver on a non-edi key as EDI', async () => {
+    const { svc, ediCalls } = harness({
+      key: 'partner-acme',
+      config: { format: 'x12', customerId: 'cus_1' },
+    });
+    await expect(
+      svc.receive({ token: TOKEN, body: 'ISA*00*…', rawBody: Buffer.from('ISA*00*…', 'utf-8') }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(ediCalls).toHaveLength(0);
+  });
+
+  it('routes a fully declared EDI receiver to the EDI plane', async () => {
+    const { svc, ediCalls } = harness({
+      key: 'edi-acme',
+      config: { format: 'x12', customerId: 'cus_1' },
+    });
+    const result = await svc.receive({
+      token: TOKEN,
+      body: 'ISA*00*…',
+      rawBody: Buffer.from('ISA*00*…', 'utf-8'),
+    });
+    expect(result.status).toBe('IMPORTED');
+    expect(ediCalls).toHaveLength(1);
+    expect(ediCalls[0].integrationKey).toBe('edi-acme');
   });
 });
 

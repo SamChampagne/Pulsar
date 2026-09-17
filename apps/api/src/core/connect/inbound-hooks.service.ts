@@ -23,6 +23,7 @@ import { ApiKeysService } from '../api-keys/api-keys.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { ConnectRecordWriter } from './record-writer.service';
+import { isEdiIntegration } from '../integrations/edi-identity';
 import { ediDedupKey, EdiService, MAX_EDI_BYTES } from './edi.service';
 
 /** Hard cap on the accepted JSON body (the platform body parser caps first). */
@@ -137,7 +138,14 @@ export class InboundHooksService {
     // An EDI receiver has no `config.target`: the transaction set inside the
     // interchange decides what is written, and EdiService re-checks the module
     // of whichever business service it ends up calling (rule 15).
-    const isEdi = config.format === 'x12';
+    //
+    // BOTH halves of the identity are required here (`edi-*` key AND format
+    // `x12`). Dispatching on the format alone was a bypass: a receiver on an
+    // arbitrary key could reach the EDI plane while the `edi-*`-keyed
+    // configuration gates never ran. A legacy row declaring only the format is
+    // therefore handled as an ordinary JSON webhook (and refused for want of a
+    // valid `config.target`), never as EDI.
+    const isEdi = isEdiIntegration(integration.key, config);
 
     const targetKey = typeof config.target === 'string' ? config.target : '';
     const target = getInboundHookTarget(targetKey);
@@ -244,6 +252,7 @@ export class InboundHooksService {
       const outcome = await this.edi.processDelivery({
         tenantId,
         integrationId: integration.id,
+        integrationKey: integration.key,
         integrationName: integration.name,
         config,
         content,
@@ -400,6 +409,7 @@ export class InboundHooksService {
       select: {
         id: true,
         tenantId: true,
+        key: true,
         name: true,
         status: true,
         config: true,
