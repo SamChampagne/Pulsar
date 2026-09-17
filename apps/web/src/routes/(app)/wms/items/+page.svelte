@@ -35,7 +35,7 @@
     return status === 'BELOW_MIN' ? 'danger' : status === 'LOW' ? 'warn' : 'ok';
   }
 
-  const BASE_UNIT_OPTIONS = WMS_UNITS.map((u) => ({ value: u.code, label: u.name }));
+  const UNIT_OPTIONS = WMS_UNITS.map((u) => ({ value: u.code, label: u.name }));
 
   let items = $state<Item[]>([]);
   let total = $state(0);
@@ -54,14 +54,6 @@
   let formReorderQty = $state('');
   let formActive = $state(true);
   let saving = $state(false);
-
-  /** The closed vocabulary, plus the current value when it's an unknown unit
-   *  already stored on an existing item — never silently dropped. */
-  const unitOptions = $derived(
-    formUnit && !BASE_UNIT_OPTIONS.some((o) => o.value === formUnit)
-      ? [...BASE_UNIT_OPTIONS, { value: formUnit, label: formUnit }]
-      : BASE_UNIT_OPTIONS,
-  );
 
   async function load() {
     loading = true;
@@ -232,7 +224,7 @@
         <Input bind:value={formName} placeholder="Désignation" />
       </Field>
       <Field label="Unité">
-        <ReferenceSelect options={unitOptions} bind:value={formUnit} />
+        <ReferenceSelect options={UNIT_OPTIONS} bind:value={formUnit} />
       </Field>
       <Field label="Code-barres">
         <Input bind:value={formBarcode} placeholder="Optionnel" />

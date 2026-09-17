@@ -343,7 +343,7 @@
                 </Field>
                 <Field label="Province / État">
                   {#if originRegions.length}
-                    <ReferenceSelect options={originRegions} bind:value={originState} />
+                    <ReferenceSelect options={originRegions} bind:value={originState} required />
                   {:else}
                     <Input bind:value={originState} required placeholder="QC" />
                   {/if}
@@ -353,12 +353,13 @@
                     options={COUNTRY_OPTIONS}
                     bind:value={originCountry}
                     onchange={resetOriginState}
+                    required
                   />
                 </Field>
               {:else if originType === 'STATE'}
                 <Field label="Province / État">
                   {#if originRegions.length}
-                    <ReferenceSelect options={originRegions} bind:value={originState} />
+                    <ReferenceSelect options={originRegions} bind:value={originState} required />
                   {:else}
                     <Input bind:value={originState} required placeholder="QC" />
                   {/if}
@@ -368,6 +369,7 @@
                     options={COUNTRY_OPTIONS}
                     bind:value={originCountry}
                     onchange={resetOriginState}
+                    required
                   />
                 </Field>
               {:else if originType === 'COUNTRY'}
@@ -408,7 +410,11 @@
                 </Field>
                 <Field label="Province / État">
                   {#if destinationRegions.length}
-                    <ReferenceSelect options={destinationRegions} bind:value={destinationState} />
+                    <ReferenceSelect
+                      options={destinationRegions}
+                      bind:value={destinationState}
+                      required
+                    />
                   {:else}
                     <Input bind:value={destinationState} required placeholder="ON" />
                   {/if}
@@ -418,12 +424,17 @@
                     options={COUNTRY_OPTIONS}
                     bind:value={destinationCountry}
                     onchange={resetDestinationState}
+                    required
                   />
                 </Field>
               {:else if destinationType === 'STATE'}
                 <Field label="Province / État">
                   {#if destinationRegions.length}
-                    <ReferenceSelect options={destinationRegions} bind:value={destinationState} />
+                    <ReferenceSelect
+                      options={destinationRegions}
+                      bind:value={destinationState}
+                      required
+                    />
                   {:else}
                     <Input bind:value={destinationState} required placeholder="ON" />
                   {/if}
@@ -433,6 +444,7 @@
                     options={COUNTRY_OPTIONS}
                     bind:value={destinationCountry}
                     onchange={resetDestinationState}
+                    required
                   />
                 </Field>
               {:else if destinationType === 'COUNTRY'}

@@ -7,6 +7,12 @@
   The leading placeholder option carries the empty value and is disabled, so the
   control has no accidental default. Pass `clearable` when the empty value is a
   legitimate choice (a filter meaning "all").
+
+  A stored value outside the catalog (a legacy record, or a code the catalog
+  dropped) is never silently blanked: when `value` is non-empty and absent from
+  `options`, an extra `{ value, label: value }` option is appended so the select
+  still displays it. Callers don't need to build this themselves (see
+  `wms/items` before this generalization).
 -->
 <script lang="ts">
   import Select from './Select.svelte';
@@ -37,11 +43,17 @@
     'aria-label'?: string;
     onchange?: ((e: Event & { currentTarget: HTMLSelectElement }) => void) | undefined;
   } = $props();
+
+  const effectiveOptions = $derived(
+    value.trim() && !options.some((o) => o.value === value)
+      ? [...options, { value, label: value }]
+      : options,
+  );
 </script>
 
 <Select bind:value {disabled} {name} {required} aria-label={ariaLabel} {onchange}>
   <option value="" disabled={!clearable}>{placeholder}</option>
-  {#each options as option (option.value)}
+  {#each effectiveOptions as option (option.value)}
     <option value={option.value}>{option.label}</option>
   {/each}
 </Select>
