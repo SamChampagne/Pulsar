@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { Paginated } from '@pulsar/shared';
+  import { PERMISSIONS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
   import {
     Badge,
     Button,
@@ -17,6 +19,8 @@
   } from '$lib/components/ui';
   import type { Tone } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import LocationFormModal from '$lib/components/locations/LocationFormModal.svelte';
+  import type { LocationRecord } from '$lib/components/locations/types';
 
   interface Bin {
     id: string;
@@ -46,6 +50,18 @@
   let loading = $state(true);
   let error = $state('');
   let filterLocationId = $state('');
+  let showCreateWarehouse = $state(false);
+
+  const canManageLocations = $derived(
+    !!$auth?.user.permissions.includes(PERMISSIONS.CORE.LOCATIONS_MANAGE),
+  );
+
+  async function onWarehouseCreated(loc: LocationRecord) {
+    showCreateWarehouse = false;
+    await loadWarehouses();
+    filterLocationId = loc.id;
+    await load();
+  }
 
   // Create / edit panel
   let formOpen = $state(false);
@@ -165,6 +181,14 @@
       {/each}
     </Select>
   </div>
+  {#if canManageLocations}
+    <Button
+      variant="secondary"
+      onclick={() => {
+        showCreateWarehouse = true;
+      }}>+ Entrepôt</Button
+    >
+  {/if}
 </FilterBar>
 
 {#if loading}
@@ -243,3 +267,10 @@
     </div>
   {/snippet}
 </Modal>
+
+<LocationFormModal
+  bind:open={showCreateWarehouse}
+  location={null}
+  lockedType="WAREHOUSE"
+  oncreated={onWarehouseCreated}
+/>

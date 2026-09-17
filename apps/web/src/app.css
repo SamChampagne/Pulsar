@@ -131,6 +131,15 @@
   --t-neutral-soft: #2a221c;
 }
 
+/* Leaflet panes/controls carry inline z-index up to 1000 — confine that stacking
+   context to the map itself so it can never paint above app overlays (modals,
+   drawers, the app switcher) that use Tailwind's z-50. */
+.leaflet-container {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
+}
+
 body {
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;

@@ -83,12 +83,13 @@ export function navCatalogue(): NavDomain[] {
       label: 'Plateforme',
       icon: LayoutDashboard,
       home: '/apps',
-      prefixes: ['/apps', '/framework', '/dashboard', '/onboarding'],
+      prefixes: ['/apps', '/framework', '/dashboard', '/onboarding', '/whats-new'],
       // Always visible; no module or perm gate.
       sections: [
         {
           links: [
             { href: '/dashboard', label: 'Tableau de bord' },
+            { href: '/whats-new', label: 'Quoi de neuf' },
             { href: '/apps', label: 'Pulsar Desk' },
             { href: '/onboarding', label: 'Onboarding' },
           ],
@@ -202,6 +203,11 @@ export function navCatalogue(): NavDomain[] {
         {
           label: 'Données',
           links: [
+            {
+              href: '/wms/warehouses',
+              label: 'Entrepôts',
+              perm: PERMISSIONS.CORE.LOCATIONS_READ,
+            },
             { href: '/wms/items', label: 'Articles' },
             { href: '/wms/bins', label: 'Emplacements' },
           ],

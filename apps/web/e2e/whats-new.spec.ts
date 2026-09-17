@@ -51,7 +51,9 @@ test.describe("what's new feed", () => {
     await mockReleaseNotes(page);
 
     await page.goto('/dashboard');
-    const sparklesButton = page.getByRole('link', { name: 'Quoi de neuf' });
+    // Scoped to the top-bar Sparkles shortcut: the sidebar now also links to
+    // /whats-new (Plateforme domain), so a plain name-based role query is ambiguous.
+    const sparklesButton = page.locator('a.shell-icon[aria-label="Quoi de neuf"]');
     await expect(sparklesButton).toBeVisible();
     await expect(sparklesButton.locator('.bg-danger')).toBeVisible();
   });
@@ -63,7 +65,7 @@ test.describe("what's new feed", () => {
     const state = await mockReleaseNotes(page);
 
     await page.goto('/dashboard');
-    const sparklesButton = page.getByRole('link', { name: 'Quoi de neuf' });
+    const sparklesButton = page.locator('a.shell-icon[aria-label="Quoi de neuf"]');
     await expect(sparklesButton.locator('.bg-danger')).toBeVisible();
 
     await sparklesButton.click();
