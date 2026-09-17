@@ -10,6 +10,7 @@ import type { PortalJwtPayload, PortalLoginResponse, PortalUserRole } from '@pul
 import { MODULE_KEYS, PortalActionTokenKind, PortalUserStatus } from '@pulsar/shared';
 import { compare, hash } from 'bcryptjs';
 import { createHash, randomBytes } from 'node:crypto';
+import { EmailConfigService } from '../../../core/email/email-config.service';
 import { EmailService } from '../../../core/email/email.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
@@ -45,6 +46,7 @@ export class PortalAuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly email: EmailService,
+    private readonly emailConfig: EmailConfigService,
     private readonly modulesCache: TenantModulesCacheService,
   ) {}
 
@@ -203,7 +205,7 @@ export class PortalAuthService {
         status: PortalUserStatus.ACTIVE,
         ...(tenantSlug ? { tenant: { slug: tenantSlug } } : {}),
       },
-      select: { id: true, email: true, firstName: true },
+      select: { id: true, email: true, firstName: true, tenantId: true },
     });
     if (user) {
       const token = randomBytes(32).toString('base64url');
@@ -221,13 +223,17 @@ export class PortalAuthService {
       // the shipper's staff, and a live reset link is a credential — it must
       // never be stored where anyone but the recipient can replay it.
       // Invitations stay on the outbox: their link is legitimately staff-visible.
+      const transport = await this.emailConfig.resolve(user.tenantId);
       await this.email
-        .send({
-          to: user.email,
-          subject: 'Réinitialisation de votre mot de passe',
-          html: `<p>Bonjour ${user.firstName},</p><p>Pour choisir un nouveau mot de passe, suivez ce lien : <a href="${url}">${url}</a></p><p>Ce lien expire dans 1 heure. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.</p>`,
-          text: `Réinitialisez votre mot de passe : ${url} (ce lien expire dans 1 heure)`,
-        })
+        .send(
+          {
+            to: user.email,
+            subject: 'Réinitialisation de votre mot de passe',
+            html: `<p>Bonjour ${user.firstName},</p><p>Pour choisir un nouveau mot de passe, suivez ce lien : <a href="${url}">${url}</a></p><p>Ce lien expire dans 1 heure. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.</p>`,
+            text: `Réinitialisez votre mot de passe : ${url} (ce lien expire dans 1 heure)`,
+          },
+          transport ?? undefined,
+        )
         .catch(() => undefined);
     }
     return { ok: true };

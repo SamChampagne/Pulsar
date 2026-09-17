@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { MODULE_KEYS, PortalUserRole, PortalUserStatus } from '@pulsar/shared';
 import { hash } from 'bcryptjs';
 import { createHash } from 'node:crypto';
+import { EmailConfigService } from '../../../core/email/email-config.service';
 import { EmailService } from '../../../core/email/email.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
@@ -68,6 +69,8 @@ function makeService(opts: {
   tenant?: Partial<typeof TENANT>;
   customer?: Partial<typeof CUSTOMER>;
   enabledModules?: string[];
+  /** Sentinel transport `EmailConfigService.resolve` should hand back, if any. */
+  emailTransport?: Record<string, unknown> | null;
 }) {
   const users = opts.users ?? [];
   const actionTokens = opts.actionTokens ?? [];
@@ -186,6 +189,9 @@ function makeService(opts: {
     ),
   } as unknown as ConfigService;
   const email = { send: jest.fn(async () => true) } as unknown as EmailService;
+  const emailConfig = {
+    resolve: jest.fn(async () => opts.emailTransport ?? null),
+  } as unknown as EmailConfigService;
   const modulesCache = {
     getEnabledKeys: jest.fn(
       async () => new Set(opts.enabledModules ?? [MODULE_KEYS.CUSTOMER_PORTAL]),
@@ -197,9 +203,20 @@ function makeService(opts: {
     jwt as unknown as JwtService,
     config,
     email,
+    emailConfig,
     modulesCache,
   );
-  return { service, prisma, jwt, email, users, actionTokens, refreshTokens, portalUser };
+  return {
+    service,
+    prisma,
+    jwt,
+    email,
+    emailConfig,
+    users,
+    actionTokens,
+    refreshTokens,
+    portalUser,
+  };
 }
 
 const PASSWORD = 'correct horse battery';
@@ -415,6 +432,25 @@ describe('PortalAuthService.requestPasswordReset', () => {
     const [message] = (email.send as jest.Mock).mock.calls[0];
     expect(message.to).toBe('jane@client.test');
     expect(message.html).toContain('https://app.test/portal/reset/');
+  });
+
+  it("uses the tenant's SMTP transport when one is configured", async () => {
+    const sentinelTransport = { host: 'smtp.tenant.test', port: 2525, secure: false };
+    const { service, email, emailConfig } = makeService({
+      users: [userFixture()],
+      emailTransport: sentinelTransport,
+    });
+    await service.requestPasswordReset('jane@client.test');
+    expect(emailConfig.resolve).toHaveBeenCalledWith('t1');
+    const [, transport] = (email.send as jest.Mock).mock.calls[0];
+    expect(transport).toBe(sentinelTransport);
+  });
+
+  it('falls back to the platform transport when the tenant has none configured', async () => {
+    const { service, email } = makeService({ users: [userFixture()], emailTransport: null });
+    await service.requestPasswordReset('jane@client.test');
+    const [, transport] = (email.send as jest.Mock).mock.calls[0];
+    expect(transport).toBeUndefined();
   });
 
   it('sends the link once, through the low-level channel only', async () => {

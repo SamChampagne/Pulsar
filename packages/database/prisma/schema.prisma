@@ -1001,7 +1001,7 @@ model ShipmentComment {
   tenantId   String
   shipmentId String
   authorType String // 'CUSTOMER' | 'STAFF'
-  authorId   String? // userId (STAFF) | customerId (CUSTOMER) — internal, never exposed publicly
+  authorId   String? // userId (STAFF) | customerId (CUSTOMER via shared portal link) | portalUserId (CUSTOMER via named portal account) — soft ref, never exposed
   authorName String
   body       String
   createdAt  DateTime @default(now())
