@@ -44,10 +44,12 @@ export function mapSubmissionToContact(data: Record<string, unknown>): {
 
 /**
  * cta href: a single-leading-slash relative path, or an absolute http(s) URL —
- * never javascript:/data:/etc, and never protocol-relative (`//evil.com`), which
- * browsers resolve to an external origin while looking like an internal link.
+ * never javascript:/data:/etc, and never protocol-relative (`//evil.com` or
+ * `/\evil.com` — browsers normalize a backslash to a forward slash in http(s)
+ * URLs, so `/\evil.com` resolves to `//evil.com`, the same open redirect).
+ * Backslashes are rejected outright (no legitimate use in a cta href).
  */
-const CTA_HREF_PATTERN = /^(\/(?!\/)|https:\/\/|http:\/\/)/;
+const CTA_HREF_PATTERN = /^(\/(?![\\/])|https:\/\/|http:\/\/)/;
 
 /** Permissive shape check: content must be an array of blocks with a known type. */
 export function validateLandingContent(content: unknown): boolean {
@@ -62,7 +64,12 @@ export function validateLandingContent(content: unknown): boolean {
       if (typeof label !== 'string' || label.trim().length === 0 || label.length > 80) {
         return false;
       }
-      if (typeof href !== 'string' || href.length === 0 || !CTA_HREF_PATTERN.test(href)) {
+      if (
+        typeof href !== 'string' ||
+        href.length === 0 ||
+        href.includes('\\') ||
+        !CTA_HREF_PATTERN.test(href)
+      ) {
         return false;
       }
     }

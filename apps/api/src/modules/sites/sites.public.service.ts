@@ -56,7 +56,9 @@ export class SitesPublicService {
         };
       }
       if (block && typeof block === 'object' && (block as Record<string, unknown>).type === 'cta') {
-        // CTA blocks: expose only type + label + href (rule 40 explicit projection)
+        // CTA blocks: expose only type + label + href (rule 40 explicit projection).
+        // validateLandingContent guarantees label/href are non-empty strings at write
+        // time, so the `?? ''` below is defensive only (never the actual fallback path).
         return {
           type: 'cta',
           label: (block as Record<string, unknown>).label ?? '',

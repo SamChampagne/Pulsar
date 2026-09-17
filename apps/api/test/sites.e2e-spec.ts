@@ -14,7 +14,8 @@
  *  8. Tenant isolation: admin GET /sites/pages returns only acme's pages.
  *  10. POST /sites/pages with a valid `cta` block → 201; with an invalid
  *      `href: 'javascript:alert(1)'` → 400.
- *  11-12. cta href validation: javascript: and protocol-relative (//evil.com) → 400.
+ *  11-14. cta href validation: javascript:, protocol-relative (//evil.com), and
+ *        backslash-relative (/\evil.com) → 400.
  *  13. GET /public/sites/:slug projects a `cta` block to exactly { type, label, href }.
  *
  * Prerequisites: reachable PostgreSQL with seed applied (admin@pulsar.dev / admin123, tenant acme).
@@ -385,6 +386,18 @@ describe('Sites module (e2e)', () => {
       .send({
         title: `CTA Open Redirect Page ${suffix}`,
         content: [{ type: 'cta', label: 'Cliquez', href: '//evil.com' }],
+      })
+      .expect(400);
+  });
+
+  it('14. POST /sites/pages with a cta block using a backslash-relative href (/\\evil.com) → 400', async () => {
+    const suffix = uniq();
+    await request(srv())
+      .post('/api/v1/sites/pages')
+      .set(auth())
+      .send({
+        title: `CTA Backslash Redirect Page ${suffix}`,
+        content: [{ type: 'cta', label: 'Cliquez', href: '/\\evil.com' }],
       })
       .expect(400);
   });

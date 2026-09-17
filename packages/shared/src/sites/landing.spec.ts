@@ -80,6 +80,16 @@ describe('validateLandingContent', () => {
       validateLandingContent([{ type: 'cta', label: 'Visiter', href: 'https://x.y' }]),
     ).toBe(true);
   });
+
+  it('rejects a backslash-relative cta href (browsers normalize \\ to / — same open redirect)', () => {
+    expect(
+      validateLandingContent([{ type: 'cta', label: 'Cliquez', href: '/\\evil.com' }]),
+    ).toBe(false);
+  });
+
+  it('rejects any cta href containing a backslash', () => {
+    expect(validateLandingContent([{ type: 'cta', label: 'Cliquez', href: '/a\\b' }])).toBe(false);
+  });
 });
 
 describe('LandingPageStatus', () => {
