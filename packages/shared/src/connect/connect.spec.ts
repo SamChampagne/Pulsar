@@ -42,11 +42,13 @@ describe('IMPORT_TARGETS', () => {
 });
 
 describe('const arrays', () => {
-  it('INBOUND_SOURCES contains CSV, PDF, DOCUMENT, WEBHOOK', () => {
+  it('INBOUND_SOURCES contains CSV, PDF, DOCUMENT, WEBHOOK, EDI', () => {
     expect(INBOUND_SOURCES).toContain('CSV');
     expect(INBOUND_SOURCES).toContain('PDF');
     expect(INBOUND_SOURCES).toContain('DOCUMENT');
     expect(INBOUND_SOURCES).toContain('WEBHOOK');
+    expect(INBOUND_SOURCES).toContain('EDI');
+    expect(INBOUND_SOURCES).toHaveLength(5);
   });
 
   it('INBOUND_STATUSES contains all 5 values', () => {

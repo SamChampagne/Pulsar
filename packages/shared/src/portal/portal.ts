@@ -19,3 +19,46 @@ export enum PortalActionTokenKind {
   INVITATION = 'INVITATION',
   PASSWORD_RESET = 'PASSWORD_RESET',
 }
+
+/**
+ * Portal change requests (Task B1 of "Aide à la saisie + portail v2 + connecteurs", spec §B2.2).
+ * A customer-portal user asks staff to change a date, an address, cancel an order/shipment, or
+ * something else (`OTHER`) — persisted so staff can track and respond to it.
+ */
+export enum PortalChangeRequestKind {
+  DATE = 'DATE',
+  ADDRESS = 'ADDRESS',
+  CANCEL = 'CANCEL',
+  OTHER = 'OTHER',
+}
+
+export enum PortalChangeRequestStatus {
+  OPEN = 'OPEN',
+  ACKNOWLEDGED = 'ACKNOWLEDGED',
+  RESOLVED = 'RESOLVED',
+  REJECTED = 'REJECTED',
+}
+
+const PORTAL_CHANGE_REQUEST_TRANSITIONS: Record<
+  PortalChangeRequestStatus,
+  PortalChangeRequestStatus[]
+> = {
+  [PortalChangeRequestStatus.OPEN]: [
+    PortalChangeRequestStatus.ACKNOWLEDGED,
+    PortalChangeRequestStatus.RESOLVED,
+    PortalChangeRequestStatus.REJECTED,
+  ],
+  [PortalChangeRequestStatus.ACKNOWLEDGED]: [
+    PortalChangeRequestStatus.RESOLVED,
+    PortalChangeRequestStatus.REJECTED,
+  ],
+  [PortalChangeRequestStatus.RESOLVED]: [],
+  [PortalChangeRequestStatus.REJECTED]: [],
+};
+
+export function canTransitionPortalChangeRequest(
+  from: PortalChangeRequestStatus,
+  to: PortalChangeRequestStatus,
+): boolean {
+  return PORTAL_CHANGE_REQUEST_TRANSITIONS[from]?.includes(to) ?? false;
+}

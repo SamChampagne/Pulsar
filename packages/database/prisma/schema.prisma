@@ -136,6 +136,7 @@ model Tenant {
   manufacturingOrders     ManufacturingOrder[]
   schedulingRuns          SchedulingRun[]
   portalUsers             PortalUser[]
+  portalChangeRequests    PortalChangeRequest[]
 
   @@map("tenants")
 }
@@ -517,6 +518,7 @@ model Customer {
   orderTemplates   OrderTemplate[]
   subscriptions    Subscription[]
   portalUsers      PortalUser[]
+  changeRequests   PortalChangeRequest[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -553,10 +555,11 @@ model PortalUser {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  tenant        Tenant               @relation(fields: [tenantId], references: [id])
-  customer      Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  actionTokens  PortalActionToken[]
-  refreshTokens PortalRefreshToken[]
+  tenant         Tenant                @relation(fields: [tenantId], references: [id])
+  customer       Customer              @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  actionTokens   PortalActionToken[]
+  refreshTokens  PortalRefreshToken[]
+  changeRequests PortalChangeRequest[]
 
   @@unique([tenantId, email])
   @@index([tenantId, customerId])
@@ -598,6 +601,49 @@ model PortalRefreshToken {
 
   @@index([portalUserId])
   @@map("portal_refresh_tokens")
+}
+
+// Mirrors PortalChangeRequestKind from @pulsar/shared/portal (rule 3).
+enum PortalChangeRequestKind {
+  DATE
+  ADDRESS
+  CANCEL
+  OTHER
+}
+
+// Mirrors PortalChangeRequestStatus from @pulsar/shared/portal (rule 3).
+enum PortalChangeRequestStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  REJECTED
+}
+
+// A customer-portal user's request to change something on an order/shipment (date, address,
+// cancel) or a free-form ask (OTHER). `orderId`/`shipmentId` are soft references (plain String?,
+// no FK): the underlying TransportOrder/Shipment may be deleted/archived independently and this
+// history should survive that. Status only changes via canTransitionPortalChangeRequest (rule 2).
+model PortalChangeRequest {
+  id            String                    @id @default(cuid())
+  tenantId      String
+  customerId    String
+  portalUserId  String?
+  orderId       String?
+  shipmentId    String?
+  kind          PortalChangeRequestKind
+  note          String
+  status        PortalChangeRequestStatus @default(OPEN)
+  staffResponse String?
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  resolvedAt    DateTime?
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  customer   Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  portalUser PortalUser? @relation(fields: [portalUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, customerId, status])
+  @@map("portal_change_requests")
 }
 
 enum LocationType {
@@ -2728,6 +2774,7 @@ enum InboundSource {
   PDF
   DOCUMENT
   WEBHOOK
+  EDI
 }
 
 enum InboundStatus {

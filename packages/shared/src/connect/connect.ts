@@ -4,8 +4,8 @@
 
 // ---------- Enums as TS unions + const arrays --------------------------------
 
-export type InboundSource = 'CSV' | 'PDF' | 'DOCUMENT' | 'WEBHOOK';
-export const INBOUND_SOURCES: InboundSource[] = ['CSV', 'PDF', 'DOCUMENT', 'WEBHOOK'];
+export type InboundSource = 'CSV' | 'PDF' | 'DOCUMENT' | 'WEBHOOK' | 'EDI';
+export const INBOUND_SOURCES: InboundSource[] = ['CSV', 'PDF', 'DOCUMENT', 'WEBHOOK', 'EDI'];
 
 export type InboundStatus = 'RECEIVED' | 'PARSED' | 'IMPORTED' | 'FAILED' | 'IGNORED';
 export const INBOUND_STATUSES: InboundStatus[] = [
