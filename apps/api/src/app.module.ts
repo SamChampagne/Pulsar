@@ -43,6 +43,7 @@ import { ManufacturingModule } from './modules/manufacturing/manufacturing.modul
 import { OperatingModule } from './core/operating/operating.module';
 import { AutomationModule } from './core/automation/automation.module';
 import { PreferencesModule } from './core/preferences/preferences.module';
+import { ReleaseNotesModule } from './core/release-notes/release-notes.module';
 import { ConnectModule } from './core/connect/connect.module';
 
 @Module({
@@ -81,6 +82,7 @@ import { ConnectModule } from './core/connect/connect.module';
     OperatingModule,
     AutomationModule,
     PreferencesModule,
+    ReleaseNotesModule,
     ConnectModule,
     // Business modules (activable per tenant — see ModulesGuard)
     TransportationModule,

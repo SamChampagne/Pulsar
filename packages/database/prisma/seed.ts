@@ -14,9 +14,18 @@ import {
   ManufacturingOrderStatus,
   ManufacturingPriority,
   ManufacturingFirmness,
+  ReleaseNoteKind,
+  ReleaseNoteStatus,
 } from '@prisma/client';
 import { hashSync } from 'bcryptjs';
-import { MODULE_CATALOG, PERMISSION_CATALOG, LaneEndpointType, buildEndpointKey, sumLineItems, DEFAULT_CHART } from '@pulsar/shared';
+import {
+  MODULE_CATALOG,
+  PERMISSION_CATALOG,
+  LaneEndpointType,
+  buildEndpointKey,
+  sumLineItems,
+  DEFAULT_CHART,
+} from '@pulsar/shared';
 
 const prisma = new PrismaClient();
 
@@ -33,7 +42,12 @@ async function main() {
   for (const m of MODULE_CATALOG) {
     await prisma.moduleDefinition.upsert({
       where: { key: m.key },
-      update: { name: m.name, description: m.description, isCore: m.isCore, available: m.available },
+      update: {
+        name: m.name,
+        description: m.description,
+        isCore: m.isCore,
+        available: m.available,
+      },
       create: {
         key: m.key,
         name: m.name,
@@ -285,7 +299,11 @@ async function main() {
   });
   await prisma.laneCarrierPreference.upsert({
     where: {
-      tenantId_laneId_carrierId: { tenantId: tenant.id, laneId: siteLane.id, carrierId: carrier.id },
+      tenantId_laneId_carrierId: {
+        tenantId: tenant.id,
+        laneId: siteLane.id,
+        carrierId: carrier.id,
+      },
     },
     update: { rank: 1 },
     create: { tenantId: tenant.id, laneId: siteLane.id, carrierId: carrier.id, rank: 1 },
@@ -425,7 +443,11 @@ async function main() {
         enabled: true,
         match: 'ALL',
         conditions: [],
-        action: { kind: 'RUN_ACTION', action: 'create_picks_for_order', args: { orderId: '{orderId}' } },
+        action: {
+          kind: 'RUN_ACTION',
+          action: 'create_picks_for_order',
+          args: { orderId: '{orderId}' },
+        },
         createdById: admin.id,
       },
     });
@@ -444,7 +466,11 @@ async function main() {
         enabled: true,
         match: 'ALL',
         conditions: [],
-        action: { kind: 'RUN_ACTION', action: 'draft_customer_invoice', args: { loadId: '{loadId}' } },
+        action: {
+          kind: 'RUN_ACTION',
+          action: 'draft_customer_invoice',
+          args: { loadId: '{loadId}' },
+        },
         createdById: admin.id,
       },
     });
@@ -463,7 +489,11 @@ async function main() {
         enabled: true,
         match: 'ALL',
         conditions: [],
-        action: { kind: 'RUN_ACTION', action: 'draft_invoice_from_sales_order', args: { salesOrderId: '{salesOrderId}' } },
+        action: {
+          kind: 'RUN_ACTION',
+          action: 'draft_invoice_from_sales_order',
+          args: { salesOrderId: '{salesOrderId}' },
+        },
         createdById: admin.id,
       },
     });
@@ -482,7 +512,11 @@ async function main() {
         enabled: true,
         match: 'ALL',
         conditions: [],
-        action: { kind: 'RUN_ACTION', action: 'fulfill_sales_order', args: { salesOrderId: '{sourceSalesOrderId}' } },
+        action: {
+          kind: 'RUN_ACTION',
+          action: 'fulfill_sales_order',
+          args: { salesOrderId: '{sourceSalesOrderId}' },
+        },
         createdById: admin.id,
       },
     });
@@ -497,7 +531,9 @@ async function main() {
       // No natural unique key; use a stable name+tenant lookup pattern via findFirst then upsert by id trick.
       // Instead, we rely on a findFirst + create-or-skip pattern to stay idempotent.
       id: (
-        (await prisma.crmCompany.findFirst({ where: { tenantId: tenant.id, name: 'Northern Retail Group' } })) ?? {
+        (await prisma.crmCompany.findFirst({
+          where: { tenantId: tenant.id, name: 'Northern Retail Group' },
+        })) ?? {
           id: 'crm-company-northern-retail',
         }
       ).id,
@@ -517,7 +553,9 @@ async function main() {
   const crmCompanyProspect = await prisma.crmCompany.upsert({
     where: {
       id: (
-        (await prisma.crmCompany.findFirst({ where: { tenantId: tenant.id, name: 'Boréal Logistics Inc.' } })) ?? {
+        (await prisma.crmCompany.findFirst({
+          where: { tenantId: tenant.id, name: 'Boréal Logistics Inc.' },
+        })) ?? {
           id: 'crm-company-boreal-logistics',
         }
       ).id,
@@ -537,7 +575,9 @@ async function main() {
   await prisma.crmContact.upsert({
     where: {
       id: (
-        (await prisma.crmContact.findFirst({ where: { tenantId: tenant.id, email: 'marie.tremblay@northernretail.example' } })) ?? {
+        (await prisma.crmContact.findFirst({
+          where: { tenantId: tenant.id, email: 'marie.tremblay@northernretail.example' },
+        })) ?? {
           id: 'crm-contact-marie',
         }
       ).id,
@@ -557,7 +597,9 @@ async function main() {
   await prisma.crmContact.upsert({
     where: {
       id: (
-        (await prisma.crmContact.findFirst({ where: { tenantId: tenant.id, email: 'pierre.cote@boreal-logistics.example' } })) ?? {
+        (await prisma.crmContact.findFirst({
+          where: { tenantId: tenant.id, email: 'pierre.cote@boreal-logistics.example' },
+        })) ?? {
           id: 'crm-contact-pierre',
         }
       ).id,
@@ -581,7 +623,9 @@ async function main() {
   await prisma.crmDeal.upsert({
     where: {
       id: (
-        (await prisma.crmDeal.findFirst({ where: { tenantId: tenant.id, title: 'Renouvellement contrat transport 2027' } })) ?? {
+        (await prisma.crmDeal.findFirst({
+          where: { tenantId: tenant.id, title: 'Renouvellement contrat transport 2027' },
+        })) ?? {
           id: 'crm-deal-renewal-stale',
         }
       ).id,
@@ -603,7 +647,9 @@ async function main() {
   await prisma.crmDeal.upsert({
     where: {
       id: (
-        (await prisma.crmDeal.findFirst({ where: { tenantId: tenant.id, title: 'Nouveau corridor Québec–Ontario' } })) ?? {
+        (await prisma.crmDeal.findFirst({
+          where: { tenantId: tenant.id, title: 'Nouveau corridor Québec–Ontario' },
+        })) ?? {
           id: 'crm-deal-qc-on-qualified',
         }
       ).id,
@@ -625,7 +671,9 @@ async function main() {
   await prisma.crmDeal.upsert({
     where: {
       id: (
-        (await prisma.crmDeal.findFirst({ where: { tenantId: tenant.id, title: 'Contrat spot été 2026' } })) ?? {
+        (await prisma.crmDeal.findFirst({
+          where: { tenantId: tenant.id, title: 'Contrat spot été 2026' },
+        })) ?? {
           id: 'crm-deal-spot-won',
         }
       ).id,
@@ -648,7 +696,9 @@ async function main() {
   await prisma.crmActivity.upsert({
     where: {
       id: (
-        (await prisma.crmActivity.findFirst({ where: { tenantId: tenant.id, body: 'Envoyer la proposition de renouvellement révisée' } })) ?? {
+        (await prisma.crmActivity.findFirst({
+          where: { tenantId: tenant.id, body: 'Envoyer la proposition de renouvellement révisée' },
+        })) ?? {
           id: 'crm-activity-task-overdue',
         }
       ).id,
@@ -671,23 +721,64 @@ async function main() {
   const prodA = await prisma.crmProduct.upsert({
     where: { id: 'crm-product-tr-pal' },
     update: {},
-    create: { id: 'crm-product-tr-pal', tenantId: tenant.id, name: 'Transport palette', sku: 'TR-PAL', unitPrice: 120, currency: 'CAD' },
+    create: {
+      id: 'crm-product-tr-pal',
+      tenantId: tenant.id,
+      name: 'Transport palette',
+      sku: 'TR-PAL',
+      unitPrice: 120,
+      currency: 'CAD',
+    },
   });
   const prodB = await prisma.crmProduct.upsert({
     where: { id: 'crm-product-wh-mo' },
     update: {},
-    create: { id: 'crm-product-wh-mo', tenantId: tenant.id, name: 'Entreposage (mois)', sku: 'WH-MO', unitPrice: 350, currency: 'CAD' },
+    create: {
+      id: 'crm-product-wh-mo',
+      tenantId: tenant.id,
+      name: 'Entreposage (mois)',
+      sku: 'WH-MO',
+      unitPrice: 350,
+      currency: 'CAD',
+    },
   });
   await prisma.crmProduct.upsert({
     where: { id: 'crm-product-hnd' },
     update: {},
-    create: { id: 'crm-product-hnd', tenantId: tenant.id, name: 'Manutention', sku: 'HND', unitPrice: 45, currency: 'CAD' },
+    create: {
+      id: 'crm-product-hnd',
+      tenantId: tenant.id,
+      name: 'Manutention',
+      sku: 'HND',
+      unitPrice: 45,
+      currency: 'CAD',
+    },
   });
 
   // CRM Deal Line Items — attached to deal 'crm-deal-qc-on-qualified'
   const lineItemsData = [
-    { id: 'crm-li-1', tenantId: tenant.id, dealId: 'crm-deal-qc-on-qualified', productId: prodA.id, name: 'Transport palette', quantity: 10, unitPrice: 120, discountPct: 0, currency: 'CAD' },
-    { id: 'crm-li-2', tenantId: tenant.id, dealId: 'crm-deal-qc-on-qualified', productId: prodB.id, name: 'Entreposage (mois)', quantity: 2, unitPrice: 350, discountPct: 0, currency: 'CAD' },
+    {
+      id: 'crm-li-1',
+      tenantId: tenant.id,
+      dealId: 'crm-deal-qc-on-qualified',
+      productId: prodA.id,
+      name: 'Transport palette',
+      quantity: 10,
+      unitPrice: 120,
+      discountPct: 0,
+      currency: 'CAD',
+    },
+    {
+      id: 'crm-li-2',
+      tenantId: tenant.id,
+      dealId: 'crm-deal-qc-on-qualified',
+      productId: prodB.id,
+      name: 'Entreposage (mois)',
+      quantity: 2,
+      unitPrice: 350,
+      discountPct: 0,
+      currency: 'CAD',
+    },
   ];
   for (const li of lineItemsData) {
     await prisma.crmDealLineItem.upsert({ where: { id: li.id }, update: {}, create: li });
@@ -696,15 +787,22 @@ async function main() {
     { quantity: 10, unitPrice: 120, discountPct: 0 },
     { quantity: 2, unitPrice: 350, discountPct: 0 },
   ]);
-  await prisma.crmDeal.update({ where: { id: 'crm-deal-qc-on-qualified' }, data: { amount: computedAmount } });
+  await prisma.crmDeal.update({
+    where: { id: 'crm-deal-qc-on-qualified' },
+    data: { amount: computedAmount },
+  });
 
-  console.log('CRM demo data ready (2 companies, 2 contacts, 3 deals, 3 products, 2 line items, 1 overdue task).');
+  console.log(
+    'CRM demo data ready (2 companies, 2 contacts, 3 deals, 3 products, 2 line items, 1 overdue task).',
+  );
 
   // --- CRM Lists & Campaigns (idempotent, acme tenant) --------------------------
   const crmList = await prisma.crmList.upsert({
     where: {
       id: (
-        (await prisma.crmList.findFirst({ where: { tenantId: tenant.id, name: 'Prospects Québec' } })) ?? {
+        (await prisma.crmList.findFirst({
+          where: { tenantId: tenant.id, name: 'Prospects Québec' },
+        })) ?? {
           id: 'crm-list-prospects-qc',
         }
       ).id,
@@ -733,7 +831,9 @@ async function main() {
   await prisma.crmCampaign.upsert({
     where: {
       id: (
-        (await prisma.crmCampaign.findFirst({ where: { tenantId: tenant.id, name: 'Newsletter T3' } })) ?? {
+        (await prisma.crmCampaign.findFirst({
+          where: { tenantId: tenant.id, name: 'Newsletter T3' },
+        })) ?? {
           id: 'crm-campaign-newsletter-t3',
         }
       ).id,
@@ -750,7 +850,9 @@ async function main() {
     },
   });
 
-  console.log('CRM lists & campaigns ready (1 list "Prospects Québec", 2 members, 1 DRAFT campaign).');
+  console.log(
+    'CRM lists & campaigns ready (1 list "Prospects Québec", 2 members, 1 DRAFT campaign).',
+  );
 
   // --- Email templates (idempotent, acme tenant) --------------------------------
   await prisma.emailTemplate.upsert({
@@ -761,7 +863,7 @@ async function main() {
       key: 'welcome',
       name: 'Bienvenue',
       subject: 'Bienvenue sur Pulsar',
-      html: '<p>Bonjour <strong>{{customerName}}</strong>,</p><p>Bienvenue sur la plateforme Pulsar. Nous sommes ravis de vous accueillir.</p><p>Cordialement,<br/>L\'équipe Pulsar</p>',
+      html: "<p>Bonjour <strong>{{customerName}}</strong>,</p><p>Bienvenue sur la plateforme Pulsar. Nous sommes ravis de vous accueillir.</p><p>Cordialement,<br/>L'équipe Pulsar</p>",
       category: 'onboarding',
     },
   });
@@ -774,7 +876,7 @@ async function main() {
       key: 'invoice',
       name: 'Facture client',
       subject: 'Facture {{invoiceNumber}}',
-      html: '<p>Bonjour <strong>{{customerName}}</strong>,</p><p>Veuillez trouver ci-joint votre facture <strong>{{invoiceNumber}}</strong>.</p><p>Cordialement,<br/>L\'équipe Pulsar</p>',
+      html: "<p>Bonjour <strong>{{customerName}}</strong>,</p><p>Veuillez trouver ci-joint votre facture <strong>{{invoiceNumber}}</strong>.</p><p>Cordialement,<br/>L'équipe Pulsar</p>",
       category: 'billing',
     },
   });
@@ -812,35 +914,76 @@ async function main() {
   const calendar = await prisma.workingCalendar.upsert({
     where: { tenantId_code: { tenantId: tenant.id, code: 'CAL-MAIN' } },
     update: { name: 'Atelier principal (Lun–Ven 08:00–16:00)' },
-    create: { tenantId: tenant.id, code: 'CAL-MAIN', name: 'Atelier principal (Lun–Ven 08:00–16:00)' },
+    create: {
+      tenantId: tenant.id,
+      code: 'CAL-MAIN',
+      name: 'Atelier principal (Lun–Ven 08:00–16:00)',
+    },
   });
   await prisma.workCenterShift.deleteMany({ where: { calendarId: calendar.id } });
   for (const weekday of [0, 1, 2, 3, 4]) {
     await prisma.workCenterShift.create({
-      data: { tenantId: tenant.id, calendarId: calendar.id, weekday, startTime: '08:00', endTime: '16:00' },
+      data: {
+        tenantId: tenant.id,
+        calendarId: calendar.id,
+        weekday,
+        startTime: '08:00',
+        endTime: '16:00',
+      },
     });
   }
   const wcCut = await prisma.workCenter.upsert({
     where: { tenantId_code: { tenantId: tenant.id, code: 'WC-CUT' } },
     update: { name: 'Découpe', calendarId: calendar.id },
-    create: { tenantId: tenant.id, code: 'WC-CUT', name: 'Découpe', calendarId: calendar.id, capabilities: ['cnc'] },
+    create: {
+      tenantId: tenant.id,
+      code: 'WC-CUT',
+      name: 'Découpe',
+      calendarId: calendar.id,
+      capabilities: ['cnc'],
+    },
   });
   const wcAsm = await prisma.workCenter.upsert({
     where: { tenantId_code: { tenantId: tenant.id, code: 'WC-ASM' } },
     update: { name: 'Assemblage', calendarId: calendar.id },
-    create: { tenantId: tenant.id, code: 'WC-ASM', name: 'Assemblage', calendarId: calendar.id, capabilities: ['manual'] },
+    create: {
+      tenantId: tenant.id,
+      code: 'WC-ASM',
+      name: 'Assemblage',
+      calendarId: calendar.id,
+      capabilities: ['manual'],
+    },
   });
   const routing = await prisma.routing.upsert({
     where: { tenantId_code: { tenantId: tenant.id, code: 'RT-WIDGET' } },
     update: { name: 'Gamme widget', productRef: 'WIDGET-1' },
-    create: { tenantId: tenant.id, code: 'RT-WIDGET', name: 'Gamme widget', productRef: 'WIDGET-1' },
+    create: {
+      tenantId: tenant.id,
+      code: 'RT-WIDGET',
+      name: 'Gamme widget',
+      productRef: 'WIDGET-1',
+    },
   });
   await prisma.routingStep.deleteMany({ where: { routingId: routing.id } });
   await prisma.routingStep.create({
-    data: { tenantId: tenant.id, routingId: routing.id, sequence: 1, name: 'Découpe', durationMinutes: 120, eligibleWorkCenterIds: [wcCut.id] },
+    data: {
+      tenantId: tenant.id,
+      routingId: routing.id,
+      sequence: 1,
+      name: 'Découpe',
+      durationMinutes: 120,
+      eligibleWorkCenterIds: [wcCut.id],
+    },
   });
   await prisma.routingStep.create({
-    data: { tenantId: tenant.id, routingId: routing.id, sequence: 2, name: 'Assemblage', durationMinutes: 90, eligibleWorkCenterIds: [wcAsm.id] },
+    data: {
+      tenantId: tenant.id,
+      routingId: routing.id,
+      sequence: 2,
+      name: 'Assemblage',
+      durationMinutes: 90,
+      eligibleWorkCenterIds: [wcAsm.id],
+    },
   });
   const releaseDate = new Date();
   const dueDate = new Date(releaseDate.getTime() + 7 * 86_400_000);
@@ -863,12 +1006,28 @@ async function main() {
   });
   await prisma.manufacturingOperation.deleteMany({ where: { orderId: mo.id } });
   await prisma.manufacturingOperation.create({
-    data: { tenantId: tenant.id, orderId: mo.id, sequence: 1, name: 'Découpe', durationMinutes: 120, eligibleWorkCenterIds: [wcCut.id] },
+    data: {
+      tenantId: tenant.id,
+      orderId: mo.id,
+      sequence: 1,
+      name: 'Découpe',
+      durationMinutes: 120,
+      eligibleWorkCenterIds: [wcCut.id],
+    },
   });
   await prisma.manufacturingOperation.create({
-    data: { tenantId: tenant.id, orderId: mo.id, sequence: 2, name: 'Assemblage', durationMinutes: 90, eligibleWorkCenterIds: [wcAsm.id] },
+    data: {
+      tenantId: tenant.id,
+      orderId: mo.id,
+      sequence: 2,
+      name: 'Assemblage',
+      durationMinutes: 90,
+      eligibleWorkCenterIds: [wcAsm.id],
+    },
   });
-  console.log('Manufacturing demo data ready (1 calendar, 2 work centers, 1 routing, 1 RELEASED MO).');
+  console.log(
+    'Manufacturing demo data ready (1 calendar, 2 work centers, 1 routing, 1 RELEASED MO).',
+  );
 
   // --- Sites demo data (acme tenant) ------------------------------------------
   // The sites module is enabled via the available-module loop above.
@@ -884,7 +1043,10 @@ async function main() {
       publishedAt: new Date(),
       content: [
         { type: 'heading', text: 'Bienvenue chez Acme' },
-        { type: 'text', text: 'Acme Manufacturing est votre partenaire logistique de confiance au Québec.' },
+        {
+          type: 'text',
+          text: 'Acme Manufacturing est votre partenaire logistique de confiance au Québec.',
+        },
         { type: 'form', fields: ['name', 'email', 'company'] },
       ],
     },
@@ -901,7 +1063,9 @@ async function main() {
       create: { tenantId: tenant.id, code: account.code, name: account.name, type: account.type },
     });
   }
-  console.log(`Billing chart of accounts ready (${DEFAULT_CHART.length} accounts seeded for acme).`);
+  console.log(
+    `Billing chart of accounts ready (${DEFAULT_CHART.length} accounts seeded for acme).`,
+  );
 
   // --- Billing: default modes of payment (acme tenant) --------------------------
   for (const m of [
@@ -958,7 +1122,29 @@ async function main() {
       data: tmpl.lines.map((l) => ({ tenantId: tenant.id, templateId: record.id, ...l })),
     });
   }
-  console.log('Billing tax templates ready (Canada GST 5%, HST 15%, Québec GST+QST, Achat GST 5%).');
+  console.log(
+    'Billing tax templates ready (Canada GST 5%, HST 15%, Québec GST+QST, Achat GST 5%).',
+  );
+
+  // --- Release notes ("what's new" feed) ----------------------------------------
+  await prisma.releaseNote.upsert({
+    where: { id: 'release-note-welcome' },
+    update: {},
+    create: {
+      id: 'release-note-welcome',
+      title: 'Bienvenue dans Pulsar',
+      body:
+        'Pulsar est votre nouvelle plateforme logistique **tout-en-un**.\n\n' +
+        '- Suivez vos envois et vos transporteurs en **temps réel**\n' +
+        '- Consultez vos factures et vos relevés depuis le portail client\n' +
+        '- Retrouvez ici les nouveautés au fil des mises à jour',
+      kind: ReleaseNoteKind.FEATURE,
+      status: ReleaseNoteStatus.PUBLISHED,
+      publishedAt: new Date(),
+      createdByEmail: 'platform@pulsar.dev',
+    },
+  });
+  console.log('Release notes ready (1 PUBLISHED welcome note).');
 }
 
 main()
