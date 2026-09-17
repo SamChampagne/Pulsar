@@ -625,7 +625,7 @@ model Location {
   latitude     Float?
   longitude    Float?
   timezone     String?
-  yardPlan     Json? // Display-only Yard buildings / zones; never operational state
+  yardPlan     Json?        // Display-only Yard buildings / zones; never operational state
   isActive     Boolean      @default(true)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -709,9 +709,9 @@ model Driver {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  tenant            Tenant             @relation(fields: [tenantId], references: [id])
-  carrier           Carrier?           @relation(fields: [carrierId], references: [id])
-  loads             Load[]
+  tenant  Tenant   @relation(fields: [tenantId], references: [id])
+  carrier Carrier? @relation(fields: [carrierId], references: [id])
+  loads   Load[]
   inspectionReports InspectionReport[]
 
   @@index([tenantId])
@@ -733,21 +733,21 @@ enum VehicleType {
 }
 
 model Vehicle {
-  id           String      @id @default(cuid())
-  tenantId     String
-  carrierId    String?
-  unitNumber   String
-  type         VehicleType @default(TRACTOR)
-  make         String?
-  model        String?
-  year         Int?
-  vin          String?
-  plate        String?
-  status       AssetStatus @default(AVAILABLE)
-  fixedAssetId String? // soft FK to billing FixedAsset (book value display; ownership checked in service)
-  customData   Json?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id         String      @id @default(cuid())
+  tenantId   String
+  carrierId  String?
+  unitNumber String
+  type       VehicleType @default(TRACTOR)
+  make       String?
+  model      String?
+  year       Int?
+  vin        String?
+  plate      String?
+  status     AssetStatus @default(AVAILABLE)
+  fixedAssetId String?   // soft FK to billing FixedAsset (book value display; ownership checked in service)
+  customData Json?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
 
   tenant               Tenant                @relation(fields: [tenantId], references: [id])
   carrier              Carrier?              @relation(fields: [carrierId], references: [id])
@@ -782,7 +782,7 @@ model Trailer {
   capacityPallets  Int?
   plate            String?
   status           AssetStatus @default(AVAILABLE)
-  fixedAssetId     String? // soft FK to billing FixedAsset (book value display; ownership checked in service)
+  fixedAssetId     String?     // soft FK to billing FixedAsset (book value display; ownership checked in service)
   customData       Json?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
@@ -1103,24 +1103,24 @@ enum TenderStatus {
 // Offer sent to a carrier to haul a load. The carrier responds through a
 // public tokenized link — no Pulsar account required.
 model Tender {
-  id              String       @id @default(cuid())
-  tenantId        String
-  loadId          String
-  carrierId       String
-  status          TenderStatus @default(PENDING)
+  id            String       @id @default(cuid())
+  tenantId      String
+  loadId        String
+  carrierId     String
+  status        TenderStatus @default(PENDING)
   // Part of an automatic sequence: on decline/expiry the next carrier in the
   // lane preference list is tendered automatically.
-  isAuto          Boolean      @default(false)
-  token           String       @unique
-  message         String?
-  declineReason   String?
-  expiresAt       DateTime
-  sentAt          DateTime     @default(now())
-  respondedAt     DateTime?
+  isAuto        Boolean      @default(false)
+  token         String       @unique
+  message       String?
+  declineReason String?
+  expiresAt     DateTime
+  sentAt        DateTime     @default(now())
+  respondedAt   DateTime?
   // Frozen offer snapshot taken at send time from Load.estimatedCost/costCurrency.
   // The carrier-facing projection reads THIS, never the live load cost — a later
   // recompute of the load must not change an offer already sent (immutability).
-  offeredAmount   Decimal?     @db.Decimal(12, 2)
+  offeredAmount   Decimal?   @db.Decimal(12, 2)
   offeredCurrency String?
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
@@ -1532,9 +1532,9 @@ model Invoice {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant        Tenant                  @relation(fields: [tenantId], references: [id])
-  carrier       Carrier                 @relation(fields: [carrierId], references: [id])
-  lines         InvoiceLine[]
+  tenant  Tenant        @relation(fields: [tenantId], references: [id])
+  carrier Carrier       @relation(fields: [carrierId], references: [id])
+  lines   InvoiceLine[]
   incomingAudit IncomingCarrierInvoice?
 
   @@unique([tenantId, id])
@@ -1650,10 +1650,10 @@ model IncomingCarrierInvoice {
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
-  tenant            Tenant                @relation(fields: [tenantId], references: [id])
-  carrier           Carrier               @relation(fields: [carrierId], references: [id])
-  lines             IncomingInvoiceLine[]
-  accountingInvoice Invoice?              @relation(fields: [tenantId, accountingInvoiceId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict, map: "incoming_carrier_invoices_accounting_invoice_fkey")
+  tenant  Tenant                @relation(fields: [tenantId], references: [id])
+  carrier Carrier               @relation(fields: [carrierId], references: [id])
+  lines   IncomingInvoiceLine[]
+  accountingInvoice Invoice? @relation(fields: [tenantId, accountingInvoiceId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict, map: "incoming_carrier_invoices_accounting_invoice_fkey")
 
   @@unique([tenantId, accountingInvoiceId])
   @@index([tenantId, status])
@@ -2033,16 +2033,16 @@ enum OdometerSource {
 /// Append-only odometer history per asset (vehicle XOR trailer). Drives cost/km and
 /// utilisation KPIs. Never the source of asset status (rule 32 preserved).
 model OdometerReading {
-  id          String         @id @default(cuid())
-  tenantId    String
-  vehicleId   String?
-  trailerId   String?
-  readingKm   Int
-  readAt      DateTime       @default(now())
-  source      OdometerSource @default(MANUAL)
-  note        String?
+  id        String         @id @default(cuid())
+  tenantId  String
+  vehicleId String?
+  trailerId String?
+  readingKm Int
+  readAt    DateTime       @default(now())
+  source    OdometerSource @default(MANUAL)
+  note      String?
   createdById String?
-  createdAt   DateTime       @default(now())
+  createdAt DateTime       @default(now())
 
   tenant  Tenant   @relation(fields: [tenantId], references: [id])
   vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
@@ -2107,15 +2107,15 @@ enum InspectionResult {
 
 /// Reusable DVIR / inspection checklist template (a named list of items).
 model InspectionTemplate {
-  id        String            @id @default(cuid())
+  id        String                   @id @default(cuid())
   tenantId  String
   name      String
-  appliesTo InspectionSubject @default(ANY)
-  isActive  Boolean           @default(true)
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  appliesTo InspectionSubject        @default(ANY)
+  isActive  Boolean                  @default(true)
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
 
-  tenant  Tenant                   @relation(fields: [tenantId], references: [id])
+  tenant  Tenant                     @relation(fields: [tenantId], references: [id])
   items   InspectionTemplateItem[]
   reports InspectionReport[]
 
@@ -2124,12 +2124,12 @@ model InspectionTemplate {
 }
 
 model InspectionTemplateItem {
-  id         String  @id @default(cuid())
+  id         String             @id @default(cuid())
   tenantId   String
   templateId String
   label      String
   category   String?
-  order      Int     @default(0)
+  order      Int                @default(0)
 
   tenant   Tenant             @relation(fields: [tenantId], references: [id])
   template InspectionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
@@ -2397,7 +2397,7 @@ model Bin {
   tenantId   String
   locationId String
   code       String
-  zone       String? // Display grouping only; never a stock location or capacity rule.
+  zone       String?  // Display grouping only; never a stock location or capacity rule.
   kind       BinKind  @default(STORAGE)
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
@@ -2436,32 +2436,32 @@ model InventoryLevel {
 }
 
 model StockMovement {
-  id                 String            @id @default(cuid())
-  tenantId           String
-  type               StockMovementType
-  itemId             String
-  fromBinId          String?
-  toBinId            String?
-  qty                Decimal           @db.Decimal(14, 3)
-  refType            String?
-  refId              String?
-  note               String?
-  createdById        String?
-  createdAt          DateTime          @default(now())
+  id          String            @id @default(cuid())
+  tenantId    String
+  type        StockMovementType
+  itemId      String
+  fromBinId   String?
+  toBinId     String?
+  qty         Decimal           @db.Decimal(14, 3)
+  refType     String?
+  refId       String?
+  note        String?
+  createdById String?
+  createdAt   DateTime          @default(now())
   // Durable identity for explicit MOVE requests; legacy/internal movements keep NULL.
-  operationKey       String?
+  operationKey String?
   requestFingerprint String?
-  unitSnapshot       String?
+  unitSnapshot String?
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
   item    WmsItem @relation(fields: [itemId], references: [id])
   fromBin Bin?    @relation("MovementFromBin", fields: [fromBinId], references: [id])
   toBin   Bin?    @relation("MovementToBin", fields: [toBinId], references: [id])
 
-  @@unique([tenantId, operationKey])
   @@index([tenantId, itemId])
   @@index([tenantId, createdAt])
   @@index([tenantId, refType, refId])
+  @@unique([tenantId, operationKey])
   @@index([tenantId, fromBinId, createdAt])
   @@index([tenantId, toBinId, createdAt])
   @@map("wms_stock_movements")
@@ -2481,9 +2481,9 @@ model Receipt {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  tenant           Tenant            @relation(fields: [tenantId], references: [id])
-  location         Location          @relation(fields: [locationId], references: [id])
-  lines            ReceiptLine[]
+  tenant   Tenant        @relation(fields: [tenantId], references: [id])
+  location Location      @relation(fields: [locationId], references: [id])
+  lines    ReceiptLine[]
   yardDossierLinks YardDossierLink[]
 
   @@unique([tenantId, number])
@@ -2522,10 +2522,10 @@ model PickOrder {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
-  tenant           Tenant            @relation(fields: [tenantId], references: [id])
-  location         Location          @relation(fields: [locationId], references: [id])
-  shipment         Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
-  lines            PickLine[]
+  tenant   Tenant     @relation(fields: [tenantId], references: [id])
+  location Location   @relation(fields: [locationId], references: [id])
+  shipment Shipment?  @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  lines    PickLine[]
   yardDossierLinks YardDossierLink[]
 
   @@unique([tenantId, number])
@@ -2622,13 +2622,13 @@ model YardVisit {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  tenant       Tenant            @relation(fields: [tenantId], references: [id])
-  location     Location          @relation(fields: [locationId], references: [id])
-  trailer      Trailer?          @relation(fields: [trailerId], references: [id])
-  carrier      Carrier?          @relation(fields: [carrierId], references: [id])
-  spot         YardSpot?         @relation(fields: [spotId], references: [id])
-  appointment  DockAppointment?  @relation(fields: [appointmentId], references: [id])
-  moves        YardMove[]
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  location    Location         @relation(fields: [locationId], references: [id])
+  trailer     Trailer?         @relation(fields: [trailerId], references: [id])
+  carrier     Carrier?         @relation(fields: [carrierId], references: [id])
+  spot        YardSpot?        @relation(fields: [spotId], references: [id])
+  appointment DockAppointment? @relation(fields: [appointmentId], references: [id])
+  moves       YardMove[]
   dossierLinks YardDossierLink[]
 
   @@unique([tenantId, visitNumber])
@@ -2674,11 +2674,11 @@ model DockAppointment {
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
 
-  tenant       Tenant            @relation(fields: [tenantId], references: [id])
-  location     Location          @relation(fields: [locationId], references: [id])
-  spot         YardSpot?         @relation(fields: [spotId], references: [id])
-  carrier      Carrier?          @relation(fields: [carrierId], references: [id])
-  visits       YardVisit[]
+  tenant   Tenant      @relation(fields: [tenantId], references: [id])
+  location Location    @relation(fields: [locationId], references: [id])
+  spot     YardSpot?   @relation(fields: [spotId], references: [id])
+  carrier  Carrier?    @relation(fields: [carrierId], references: [id])
+  visits   YardVisit[]
   dossierLinks YardDossierLink[]
 
   @@unique([tenantId, appointmentNumber])
@@ -2962,23 +2962,23 @@ enum CrmActivityType {
 }
 
 model CrmCompany {
-  id          String           @id @default(cuid())
-  tenantId    String
-  name        String
-  domain      String?
-  industry    String?
-  status      CrmCompanyStatus @default(PROSPECT)
-  ownerUserId String?
-  customerId  String?
-  carrierId   String?
-  customData  Json?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  tenant      Tenant           @relation(fields: [tenantId], references: [id])
-  contacts    CrmContact[]
-  deals       CrmDeal[]
-  activities  CrmActivity[]
-  salesOrders SalesOrder[]
+  id           String           @id @default(cuid())
+  tenantId     String
+  name         String
+  domain       String?
+  industry     String?
+  status       CrmCompanyStatus @default(PROSPECT)
+  ownerUserId  String?
+  customerId   String?
+  carrierId    String?
+  customData   Json?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  tenant       Tenant           @relation(fields: [tenantId], references: [id])
+  contacts     CrmContact[]
+  deals        CrmDeal[]
+  activities   CrmActivity[]
+  salesOrders  SalesOrder[]
 
   @@index([tenantId])
   @@index([tenantId, status])
@@ -3007,27 +3007,27 @@ model CrmContact {
 }
 
 model CrmDeal {
-  id                  String            @id @default(cuid())
+  id                  String       @id @default(cuid())
   tenantId            String
   title               String
   companyId           String
-  stage               CrmDealStage      @default(LEAD)
+  stage               CrmDealStage @default(LEAD)
   pipelineId          String?
   pipelineStageId     String?
   primaryContactId    String?
-  stageRevision       Int               @default(0)
+  stageRevision       Int          @default(0)
   amount              Decimal?
-  currency            String            @default("CAD")
+  currency            String       @default("CAD")
   ownerUserId         String?
   expectedCloseDate   DateTime?
   lastActivityAt      DateTime?
   convertedCustomerId String?
   customData          Json?
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-  tenant              Tenant            @relation(fields: [tenantId], references: [id])
-  company             CrmCompany        @relation(fields: [companyId], references: [id])
-  pipeline            CrmPipeline?      @relation(fields: [pipelineId], references: [id])
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  tenant              Tenant       @relation(fields: [tenantId], references: [id])
+  company             CrmCompany   @relation(fields: [companyId], references: [id])
+  pipeline            CrmPipeline? @relation(fields: [pipelineId], references: [id])
   pipelineStage       CrmPipelineStage? @relation(fields: [pipelineStageId], references: [id])
   lineItems           CrmDealLineItem[]
 
@@ -3051,8 +3051,8 @@ model CrmProduct {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tenant              Tenant               @relation(fields: [tenantId], references: [id])
-  lineItems           CrmDealLineItem[]
+  tenant    Tenant            @relation(fields: [tenantId], references: [id])
+  lineItems CrmDealLineItem[]
   salesOrderLineItems SalesOrderLineItem[]
 
   @@index([tenantId, active])
@@ -3115,27 +3115,26 @@ enum SalesOrderStatus {
 }
 
 model SalesOrder {
-  id                String               @id @default(cuid())
-  tenantId          String
-  number            String // SO-xxxx via SequencesService
-  status            SalesOrderStatus     @default(DRAFT)
-  companyId         String // CRM company (source commerciale)
-  customerId        String? // Customer lié (si converti)
-  dealId            String? // deal d'origine
-  ownerUserId       String?
-  currency          String               @default("CAD")
-  totalAmount       Decimal              @default(0) // recalculé depuis les lignes
-  notes             String?
-  customData        Json?
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
-  tenant            Tenant               @relation(fields: [tenantId], references: [id])
-  company           CrmCompany           @relation(fields: [companyId], references: [id])
-  lineItems         SalesOrderLineItem[]
+  id           String           @id @default(cuid())
+  tenantId     String
+  number       String                       // SO-xxxx via SequencesService
+  status       SalesOrderStatus @default(DRAFT)
+  companyId    String                        // CRM company (source commerciale)
+  customerId   String?                       // Customer lié (si converti)
+  dealId       String?                       // deal d'origine
+  ownerUserId  String?
+  currency     String           @default("CAD")
+  totalAmount  Decimal          @default(0)  // recalculé depuis les lignes
+  notes        String?
+  customData   Json?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  tenant   Tenant       @relation(fields: [tenantId], references: [id])
+  company  CrmCompany   @relation(fields: [companyId], references: [id])
+  lineItems SalesOrderLineItem[]
   // Fulfillment bridge: a sales order can request 0..N transport orders (rule 9
   // ownership + explicit logistics data supplied at creation, never inferred).
-  fulfillmentOrders TransportOrder[]     @relation("SalesOrderFulfillment")
-
+  fulfillmentOrders TransportOrder[] @relation("SalesOrderFulfillment")
   @@unique([tenantId, number])
   @@index([tenantId, status])
   @@index([tenantId, companyId])
@@ -3143,20 +3142,19 @@ model SalesOrder {
 }
 
 model SalesOrderLineItem {
-  id           String      @id @default(cuid())
+  id           String   @id @default(cuid())
   tenantId     String
   salesOrderId String
   productId    String?
   name         String
-  quantity     Decimal     @default(1)
-  unitPrice    Decimal     @default(0)
-  discountPct  Decimal     @default(0)
-  currency     String      @default("CAD")
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  salesOrder   SalesOrder  @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
-  product      CrmProduct? @relation(fields: [productId], references: [id])
-
+  quantity     Decimal  @default(1)
+  unitPrice    Decimal  @default(0)
+  discountPct  Decimal  @default(0)
+  currency     String   @default("CAD")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  salesOrder SalesOrder  @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  product    CrmProduct? @relation(fields: [productId], references: [id])
   @@index([tenantId, salesOrderId])
   @@map("sales_order_line_items")
 }
@@ -3204,20 +3202,20 @@ model CrmListMember {
 }
 
 model CrmCampaign {
-  id                 String            @id @default(cuid())
-  tenantId           String
-  name               String
-  listId             String
-  subject            String
-  html               String
-  templateKey        String?
-  status             CrmCampaignStatus @default(DRAFT)
-  recipientCount     Int?
-  enqueueFailedCount Int               @default(0)
-  ownerUserId        String?
-  sentAt             DateTime?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  id          String            @id @default(cuid())
+  tenantId    String
+  name        String
+  listId      String
+  subject     String
+  html        String
+  templateKey String?
+  status      CrmCampaignStatus @default(DRAFT)
+  recipientCount Int?
+  enqueueFailedCount Int @default(0)
+  ownerUserId String?
+  sentAt      DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
   tenant Tenant  @relation(fields: [tenantId], references: [id])
   list   CrmList @relation(fields: [listId], references: [id])
@@ -3256,31 +3254,31 @@ enum EmailDirection {
 
 /// Per-tenant SMTP configuration. Password encrypted via CryptoService (never returned in clear).
 model TenantEmailConfig {
-  id              String      @id @default(cuid())
-  tenantId        String      @unique
-  driver          EmailDriver @default(SMTP)
-  host            String?
-  port            Int?
-  secure          Boolean     @default(false)
-  username        String?
-  passwordEnc     String?
-  fromName        String?
-  fromEmail       String?
-  replyTo         String?
+  id           String      @id @default(cuid())
+  tenantId     String      @unique
+  driver       EmailDriver @default(SMTP)
+  host         String?
+  port         Int?
+  secure       Boolean     @default(false)
+  username     String?
+  passwordEnc  String?
+  fromName     String?
+  fromEmail    String?
+  replyTo      String?
   // Inbound (IMAP) — password encrypted via CryptoService, never returned in clear.
   imapHost        String?
   imapPort        Int?
-  imapSecure      Boolean     @default(true)
+  imapSecure      Boolean   @default(true)
   imapUsername    String?
   imapPasswordEnc String?
-  inboundActive   Boolean     @default(false)
+  inboundActive   Boolean   @default(false)
   lastPollAt      DateTime?
   lastPollOk      Boolean?
-  active          Boolean     @default(true)
-  lastTestAt      DateTime?
-  lastTestOk      Boolean?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  active       Boolean     @default(true)
+  lastTestAt   DateTime?
+  lastTestOk   Boolean?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
@@ -3289,16 +3287,16 @@ model TenantEmailConfig {
 
 /// Durable outbox + history for every email sent by the platform.
 model EmailMessage {
-  id              String         @id @default(cuid())
+  id              String      @id @default(cuid())
   tenantId        String
   dedupKey        String?
   toAddresses     String[]
-  cc              String[]       @default([])
+  cc              String[]    @default([])
   subject         String
   html            String
   text            String?
-  status          EmailStatus    @default(QUEUED)
-  attempts        Int            @default(0)
+  status          EmailStatus @default(QUEUED)
+  attempts        Int         @default(0)
   lastError       String?
   provider        String?
   relatedType     String?
@@ -3306,41 +3304,40 @@ model EmailMessage {
   templateKey     String?
   createdByUserId String?
   agentId         String?
-  threadId        String?
-  direction       EmailDirection @default(OUTBOUND)
-  messageId       String?
-  inReplyTo       String?
-  references      String?
-  fromAddress     String?
+  threadId    String?
+  direction   EmailDirection @default(OUTBOUND)
+  messageId   String?
+  inReplyTo   String?
+  references  String?
+  fromAddress String?
   sentAt          DateTime?
   nextAttemptAt   DateTime?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   tenant      Tenant            @relation(fields: [tenantId], references: [id])
   attachments EmailAttachment[]
 
-  @@unique([tenantId, dedupKey])
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
   @@index([status, nextAttemptAt])
   @@index([tenantId, threadId])
   @@index([tenantId, messageId])
+  @@unique([tenantId, dedupKey])
   @@map("email_messages")
 }
 
 model CrmPipeline {
-  id        String             @id @default(cuid())
-  tenantId  String
-  key       String
-  name      String
-  revision  Int                @default(0)
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
-  stages    CrmPipelineStage[]
-  deals     CrmDeal[]
-
+  id String @id @default(cuid())
+  tenantId String
+  key String
+  name String
+  revision Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  stages CrmPipelineStage[]
+  deals CrmDeal[]
   @@unique([tenantId, key])
   @@index([tenantId])
   @@map("crm_pipelines")
@@ -3348,36 +3345,34 @@ model CrmPipeline {
 
 /// Labels and ordering are configurable; kind preserves CRM business invariants.
 model CrmPipelineStage {
-  id         String       @id @default(cuid())
-  tenantId   String
+  id String @id @default(cuid())
+  tenantId String
   pipelineId String
-  name       String
-  kind       CrmDealStage
-  position   Int
-  archived   Boolean      @default(false)
-  pipeline   CrmPipeline  @relation(fields: [pipelineId], references: [id], onDelete: Restrict)
-  deals      CrmDeal[]
-
+  name String
+  kind CrmDealStage
+  position Int
+  archived Boolean @default(false)
+  pipeline CrmPipeline @relation(fields: [pipelineId], references: [id], onDelete: Restrict)
+  deals CrmDeal[]
   @@index([tenantId, pipelineId, archived, position])
   @@map("crm_pipeline_stages")
 }
 
 /// Durable stage-entry outbox. Created in the same transaction as the deal move.
 model CrmStageEntry {
-  id               String    @id @default(cuid())
-  tenantId         String
-  dealId           String
-  stageId          String
-  revision         Int
-  contactId        String?
-  sequenceId       String?
+  id String @id @default(cuid())
+  tenantId String
+  dealId String
+  stageId String
+  revision Int
+  contactId String?
+  sequenceId String?
   sequenceSnapshot Json?
-  userId           String
-  createdAt        DateTime  @default(now())
-  processedAt      DateTime?
-  reason           String?
-  runId            String?
-
+  userId String
+  createdAt DateTime @default(now())
+  processedAt DateTime?
+  reason String?
+  runId String?
   @@unique([tenantId, dealId, revision])
   @@index([processedAt, createdAt])
   @@index([tenantId, dealId, createdAt])
@@ -3388,13 +3383,11 @@ enum CrmSequenceMode {
   SIMULATION
   GOVERNED
 }
-
 enum CrmSequenceTrigger {
   MANUAL
   CONTACT_CREATED
   DEAL_STAGE_ENTERED
 }
-
 enum CrmSequenceRunStatus {
   ACTIVE
   PAUSED
@@ -3402,7 +3395,6 @@ enum CrmSequenceRunStatus {
   COMPLETED
   FAILED
 }
-
 enum CrmSequenceStepStatus {
   PENDING
   PROPOSED
@@ -3412,7 +3404,6 @@ enum CrmSequenceStepStatus {
   CANCELLED
   FAILED
 }
-
 enum CommunicationConsent {
   UNKNOWN
   GRANTED
@@ -3421,44 +3412,42 @@ enum CommunicationConsent {
 
 /// Frozen on enrollment; editing a scenario never changes a running sequence.
 model CrmSequence {
-  id              String             @id @default(cuid())
-  tenantId        String
-  name            String
-  enabled         Boolean            @default(false)
-  mode            CrmSequenceMode    @default(SIMULATION)
-  trigger         CrmSequenceTrigger @default(MANUAL)
-  agentId         String?
-  pipelineStageId String?            @unique
-  steps           Json
-  createdById     String
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  runs            CrmSequenceRun[]
-
+  id String @id @default(cuid())
+  tenantId String
+  name String
+  enabled Boolean @default(false)
+  mode CrmSequenceMode @default(SIMULATION)
+  trigger CrmSequenceTrigger @default(MANUAL)
+  agentId String?
+  pipelineStageId String? @unique
+  steps Json
+  createdById String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  runs CrmSequenceRun[]
   @@index([tenantId, enabled, trigger])
   @@map("crm_sequences")
 }
 
 model CrmSequenceRun {
-  id              String               @id @default(cuid())
-  tenantId        String
-  sequenceId      String
-  contactId       String
-  enrollmentKey   String               @default("manual")
-  dealId          String?
+  id String @id @default(cuid())
+  tenantId String
+  sequenceId String
+  contactId String
+  enrollmentKey String @default("manual")
+  dealId String?
   pipelineStageId String?
-  stageRevision   Int?
-  email           String
-  mode            CrmSequenceMode
-  agentId         String?
-  status          CrmSequenceRunStatus @default(ACTIVE)
-  reason          String?
-  createdById     String
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-  sequence        CrmSequence          @relation(fields: [sequenceId], references: [id], onDelete: Restrict)
-  steps           CrmSequenceStepRun[]
-
+  stageRevision Int?
+  email String
+  mode CrmSequenceMode
+  agentId String?
+  status CrmSequenceRunStatus @default(ACTIVE)
+  reason String?
+  createdById String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sequence CrmSequence @relation(fields: [sequenceId], references: [id], onDelete: Restrict)
+  steps CrmSequenceStepRun[]
   @@unique([tenantId, sequenceId, contactId, enrollmentKey])
   @@index([tenantId, dealId])
   @@index([tenantId, status])
@@ -3467,22 +3456,21 @@ model CrmSequenceRun {
 }
 
 model CrmSequenceStepRun {
-  id           String                @id @default(cuid())
-  tenantId     String
-  runId        String
-  position     Int
+  id String @id @default(cuid())
+  tenantId String
+  runId String
+  position Int
   delayMinutes Int
-  subject      String
-  body         String
-  status       CrmSequenceStepStatus @default(PENDING)
-  dueAt        DateTime?
-  proposalId   String?
-  emailId      String?
-  detail       String?
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
-  run          CrmSequenceRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
-
+  subject String
+  body String
+  status CrmSequenceStepStatus @default(PENDING)
+  dueAt DateTime?
+  proposalId String?
+  emailId String?
+  detail String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  run CrmSequenceRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   @@unique([tenantId, runId, position])
   @@index([tenantId, status, dueAt])
   @@map("crm_sequence_step_runs")
@@ -3490,15 +3478,14 @@ model CrmSequenceStepRun {
 
 /// Address-bound: changing a contact's address does not transfer consent.
 model CrmEmailPreference {
-  id               String               @id @default(cuid())
-  tenantId         String
-  email            String
-  consent          CommunicationConsent @default(UNKNOWN)
-  source           String?
-  unsubscribeToken String               @unique
-  updatedById      String?
-  updatedAt        DateTime             @updatedAt
-
+  id String @id @default(cuid())
+  tenantId String
+  email String
+  consent CommunicationConsent @default(UNKNOWN)
+  source String?
+  unsubscribeToken String @unique
+  updatedById String?
+  updatedAt DateTime @updatedAt
   @@unique([tenantId, email])
   @@map("crm_email_preferences")
 }
@@ -3841,11 +3828,11 @@ enum LandingPageStatus {
 model LandingPage {
   id            String            @id @default(cuid())
   tenantId      String
-  slug          String // public id, globally unique
+  slug          String                          // public id, globally unique
   title         String
   status        LandingPageStatus @default(DRAFT)
-  content       Json // ordered blocks
-  captureListId String? // optional CrmList to add leads to
+  content       Json                            // ordered blocks
+  captureListId String?                         // optional CrmList to add leads to
   publishedAt   DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
@@ -3862,8 +3849,8 @@ model LandingPageSubmission {
   id            String   @id @default(cuid())
   tenantId      String
   landingPageId String
-  data          Json // raw submitted fields
-  contactId     String? // matched/created CrmContact (if CRM active)
+  data          Json                            // raw submitted fields
+  contactId     String?                         // matched/created CrmContact (if CRM active)
   createdAt     DateTime @default(now())
 
   page LandingPage @relation(fields: [landingPageId], references: [id], onDelete: Cascade)
@@ -3964,18 +3951,18 @@ model JournalEntry {
   tenant Tenant        @relation(fields: [tenantId], references: [id])
   lines  JournalLine[]
 
-  @@unique([tenantId, sourceType, sourceId, sourceKind])
   @@index([tenantId, date])
+  @@unique([tenantId, sourceType, sourceId, sourceKind])
   @@map("journal_entries")
 }
 
 model JournalLine {
-  id             String  @id @default(cuid())
+  id             String   @id @default(cuid())
   tenantId       String
   journalEntryId String
   accountId      String
-  debit          Decimal @default(0)
-  credit         Decimal @default(0)
+  debit          Decimal  @default(0)
+  credit         Decimal  @default(0)
   memo           String?
 
   entry   JournalEntry   @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
@@ -4000,7 +3987,6 @@ model ModeOfPayment {
   updatedAt   DateTime  @updatedAt
   tenant      Tenant    @relation(fields: [tenantId], references: [id])
   payments    Payment[]
-
   @@unique([tenantId, name])
   @@index([tenantId])
   @@map("modes_of_payment")
@@ -4029,7 +4015,6 @@ model Payment {
   tenant          Tenant              @relation(fields: [tenantId], references: [id])
   modeOfPayment   ModeOfPayment       @relation(fields: [modeOfPaymentId], references: [id])
   allocations     PaymentAllocation[]
-
   @@unique([tenantId, paymentNumber])
   @@index([tenantId, status])
   @@index([tenantId, partyType, partyId])
@@ -4044,7 +4029,6 @@ model PaymentAllocation {
   targetId   String
   amount     Decimal           @db.Decimal(12, 2)
   payment    Payment           @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-
   @@index([tenantId, targetType, targetId])
   @@index([tenantId, paymentId])
   @@map("payment_allocations")
@@ -4091,40 +4075,38 @@ model TaxTemplateLine {
 // ============================================================================
 
 model BankAccount {
-  id            String            @id @default(cuid())
+  id            String   @id @default(cuid())
   tenantId      String
   name          String
-  accountNumber String? // masqué à l'affichage (4 derniers)
-  glAccountCode String            @default("1010")
-  currency      String            @default("CAD")
-  isDefault     Boolean           @default(false)
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  tenant        Tenant            @relation(fields: [tenantId], references: [id])
+  accountNumber String?            // masqué à l'affichage (4 derniers)
+  glAccountCode String   @default("1010")
+  currency      String   @default("CAD")
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
   transactions  BankTransaction[]
-
   @@unique([tenantId, name])
   @@index([tenantId])
   @@map("bank_accounts")
 }
 
 model BankTransaction {
-  id                String        @id @default(cuid())
-  tenantId          String
-  bankAccountId     String
-  date              DateTime
-  description       String
-  amount            Decimal       @db.Decimal(12, 2) // signé
-  reference         String?
+  id               String        @id @default(cuid())
+  tenantId         String
+  bankAccountId    String
+  date             DateTime
+  description      String
+  amount           Decimal       @db.Decimal(12, 2)   // signé
+  reference        String?
   importFingerprint String?
-  status            BankTxnStatus @default(UNRECONCILED)
-  matchedPaymentId  String?       @unique
-  createdAt         DateTime      @default(now())
-  bankAccount       BankAccount   @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
-
-  @@unique([tenantId, bankAccountId, importFingerprint], map: "bank_transactions_import_fingerprint_key")
+  status           BankTxnStatus @default(UNRECONCILED)
+  matchedPaymentId String?       @unique
+  createdAt        DateTime      @default(now())
+  bankAccount      BankAccount   @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
   @@index([tenantId, bankAccountId, status])
   @@index([tenantId, bankAccountId, date])
+  @@unique([tenantId, bankAccountId, importFingerprint], map: "bank_transactions_import_fingerprint_key")
   @@map("bank_transactions")
 }
 
@@ -4133,16 +4115,15 @@ model BankTransaction {
 // ============================================================================
 
 model Budget {
-  id         String       @id @default(cuid())
+  id         String   @id @default(cuid())
   tenantId   String
   name       String
   fiscalYear Int
-  isActive   Boolean      @default(true)
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
-  tenant     Tenant       @relation(fields: [tenantId], references: [id])
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
   lines      BudgetLine[]
-
   @@unique([tenantId, name, fiscalYear])
   @@index([tenantId, fiscalYear])
   @@map("budgets")
@@ -4155,7 +4136,6 @@ model BudgetLine {
   accountCode String
   amount      Decimal @db.Decimal(12, 2)
   budget      Budget  @relation(fields: [budgetId], references: [id], onDelete: Cascade)
-
   @@index([tenantId, budgetId])
   @@map("budget_lines")
 }
@@ -4165,40 +4145,38 @@ model BudgetLine {
 // ============================================================================
 
 model FixedAsset {
-  id                                 String              @id @default(cuid())
-  tenantId                           String
-  assetCode                          String
-  name                               String
-  category                           String?
-  acquisitionDate                    DateTime
-  cost                               Decimal             @db.Decimal(12, 2)
-  salvageValue                       Decimal             @default(0) @db.Decimal(12, 2)
-  usefulLifeMonths                   Int
-  method                             DepreciationMethod  @default(STRAIGHT_LINE)
-  status                             FixedAssetStatus    @default(DRAFT)
-  accumulatedDepreciation            Decimal             @default(0) @db.Decimal(12, 2)
-  depreciationExpenseAccountCode     String              @default("5100")
-  accumulatedDepreciationAccountCode String              @default("1590")
-  disposedAt                         DateTime?
-  createdAt                          DateTime            @default(now())
-  updatedAt                          DateTime            @updatedAt
-  tenant                             Tenant              @relation(fields: [tenantId], references: [id])
-  depreciations                      DepreciationEntry[]
-
+  id              String   @id @default(cuid())
+  tenantId        String
+  assetCode       String
+  name            String
+  category        String?
+  acquisitionDate DateTime
+  cost            Decimal  @db.Decimal(12, 2)
+  salvageValue    Decimal  @default(0) @db.Decimal(12, 2)
+  usefulLifeMonths Int
+  method          DepreciationMethod @default(STRAIGHT_LINE)
+  status          FixedAssetStatus   @default(DRAFT)
+  accumulatedDepreciation Decimal @default(0) @db.Decimal(12, 2)
+  depreciationExpenseAccountCode      String @default("5100")
+  accumulatedDepreciationAccountCode  String @default("1590")
+  disposedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  depreciations   DepreciationEntry[]
   @@unique([tenantId, assetCode])
   @@index([tenantId, status])
   @@map("fixed_assets")
 }
 
 model DepreciationEntry {
-  id       String     @id @default(cuid())
-  tenantId String
-  assetId  String
-  period   DateTime
-  amount   Decimal    @db.Decimal(12, 2)
-  postedAt DateTime   @default(now())
-  asset    FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
-
+  id        String   @id @default(cuid())
+  tenantId  String
+  assetId   String
+  period    DateTime
+  amount    Decimal  @db.Decimal(12, 2)
+  postedAt  DateTime @default(now())
+  asset     FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
   @@unique([tenantId, assetId, period])
   @@index([tenantId, assetId])
   @@map("depreciation_entries")
@@ -4209,22 +4187,21 @@ model DepreciationEntry {
 // ============================================================================
 
 model Subscription {
-  id          String                @id @default(cuid())
+  id          String               @id @default(cuid())
   tenantId    String
   name        String
   customerId  String
-  status      SubscriptionStatus    @default(ACTIVE)
-  interval    SubscriptionInterval  @default(MONTHLY)
+  status      SubscriptionStatus   @default(ACTIVE)
+  interval    SubscriptionInterval @default(MONTHLY)
   startDate   DateTime
   nextRunDate DateTime
-  currency    String                @default("CAD")
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
-  tenant      Tenant                @relation(fields: [tenantId], references: [id])
-  customer    Customer              @relation(fields: [customerId], references: [id])
+  currency    String               @default("CAD")
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  tenant      Tenant               @relation(fields: [tenantId], references: [id])
+  customer    Customer             @relation(fields: [customerId], references: [id])
   lines       SubscriptionLine[]
   generated   SubscriptionInvoice[]
-
   @@index([tenantId, status, nextRunDate])
   @@map("subscriptions")
 }
@@ -4236,7 +4213,6 @@ model SubscriptionLine {
   description    String
   amount         Decimal      @db.Decimal(12, 2)
   subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-
   @@index([tenantId, subscriptionId])
   @@map("subscription_lines")
 }
@@ -4249,7 +4225,6 @@ model SubscriptionInvoice {
   customerInvoiceId String
   createdAt         DateTime     @default(now())
   subscription      Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-
   @@unique([tenantId, subscriptionId, periodStart])
   @@index([tenantId, subscriptionId])
   @@map("subscription_invoices")
