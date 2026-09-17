@@ -478,6 +478,24 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     résolus côté serveur (`POST /roles/from-template`). Le dernier administrateur actif d'un tenant
     ne peut être ni désactivé ni privé du rôle `admin`.
 
+## Hard rules (continued, portail client & Quoi de neuf)
+
+51. (Portail client — comptes nommés) Le portail client possède son **propre plan d'auth**
+    (`PortalUser`, JWT `portal: true`, `PortalJwtStrategy`/`PortalGuard`) : les stratégies tenant et
+    plateforme DOIVENT rejeter un jeton portail et réciproquement. Toute route `/portal/**` porte
+    `@PortalController()` (jamais `@Public()` seul) ; `PortalGuard` relit le statut du compte, l'état du
+    client et l'activation du module CUSTOMER_PORTAL à chaque requête (règle 15). Chaque requête est
+    scopée `(tenantId, customerId)` du principal — jamais depuis le body. Le lien partagé
+    `Customer.portalToken` reste un mode de compatibilité qui délègue au même `PortalService` via un
+    `PortalContext`. Les payloads portail n'exposent que des codes (jamais de PK de `Location`).
+    Le dernier ADMIN actif d'un client ne peut être désactivé ; invitations 72 h à usage unique,
+    désactivation = jetons invalidés + refresh révoqués.
+52. (Quoi de neuf) `ReleaseNote` est une entité **plateforme** (sans tenantId) écrite UNIQUEMENT via
+    `/platform/release-notes` (`@PlatformController()`) ; les tenants la lisent en lecture seule
+    (`PUBLISHED`). Le corps est rendu par la fonction pure `renderReleaseNoteBody` (`@pulsar/shared`,
+    HTML échappé) — jamais de HTML brut, jamais de dépendance Markdown. L'état « vu » est par
+    utilisateur (`UserPreferences.releaseNotesSeenAt`), jamais par tenant.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

@@ -653,3 +653,64 @@ règle 50) ; le reste du master-data partagé garde un seul point d'écriture TM
       ignorée) ; `invitationLabel` a des branches mortes et l'arrondi `Math.ceil` des jours restants
       surestime légèrement le temps avant expiration ; reset-password sur un jeton déjà utilisé
       renvoie 401 avant 400 (comportement déterministe, juste pas celui documenté en premier).
+
+## Portail client (comptes nommés) & Quoi de neuf — dette 2026-09-17
+
+Contexte : branche `access-module-core-locations` (suite, non mergée), livrant Pages fix, le fil
+« Quoi de neuf » (`ReleaseNote`, règle 52) et les comptes portail client nommés (`PortalUser`,
+troisième plan d'auth, règle 51). Spec :
+`docs/superpowers/specs/2026-09-16-portal-accounts-whats-new-design.md` §5.
+
+- [ ] `TransportOrder` n'a pas de colonne `portalUserId` : l'attribution d'une action portail à un
+      utilisateur nommé passe uniquement par l'audit/les commentaires, jamais une FK dédiée.
+- [ ] Aucun throttling sur `public/portal/:token` (lien de compatibilité) ni sur `/portal/auth/*` —
+      énumération/force brute possibles en théorie, atténuées par le coût du token/mot de passe.
+- [ ] `CrmContact` et `PortalUser` ne sont pas liés — un contact CRM et un compte portail du même
+      client restent deux identités séparées sans pont.
+- [ ] Page jeton (`Customer.portalToken` / `public/portal/:token`) à déprécier une fois les comptes
+      nommés adoptés — actuellement conservée comme mode de compatibilité (délègue au même
+      `PortalContext`/`PortalService`).
+- [ ] Le mail de réinitialisation de mot de passe portail (`PortalAuthService.forgotPassword`) passe
+      par `EmailService.send` sans résoudre le transport SMTP du tenant — utilise le transport
+      plateforme par défaut au lieu de `await emailConfig.resolve(tenantId)` (le tenant est pourtant
+      connu à ce point, contrairement au reset core/auth pré-authentification).
+- [ ] Les liens d'invitation portail restent visibles par le staff via l'outbox (`MailService`) —
+      voulu pour les invitations (règle : le lien de réinitialisation, lui, ne passe jamais par
+      l'outbox), mais à documenter si le modèle de menace change.
+- [ ] `issueInvitation` (PortalUsersService) n'est pas transactionnelle (création du compte puis du
+      jeton en deux étapes) — fenêtre TOCTOU théorique sans conséquence connue aujourd'hui.
+- [ ] Les jetons de réinitialisation/invitation ne sont pas « supersédés » : redemander un reset
+      laisse le jeton précédent valide jusqu'à expiration (parité avec `core/auth`, pas un bug neuf).
+- [ ] `lastLoginAt` est écrit avant les gates de session (statut compte/client/module) — un login
+      qui échoue ensuite sur une garde a quand même avancé l'horodatage.
+- [ ] Schéma Prisma : commentaire obsolète sur `ShipmentComment.authorId` (parle encore d'un unique
+      plan d'auth utilisateur, alors que le portail en ajoute un second).
+- [ ] `TemplatesPanel` (web, fiche client) refetch les gabarits à chaque réouverture du panneau au
+      lieu de mettre en cache/invalider explicitement.
+- [ ] `DocumentsPanel.downloadDoc` (web) n'a pas de `try/catch` — un échec de téléchargement ne
+      montre aucune erreur à l'utilisateur.
+- [ ] `deleteTemplateFor` : la forme de l'entrée d'audit diffère des autres mutations de gabarits
+      (à harmoniser si les gabarits deviennent un objet audité de premier ordre).
+- [ ] Le gabarit de rôle du dispatcher porte une clé `CUSTOMER_PORTAL` même quand ce module n'est
+      pas activé pour le tenant (`resolveRoleTemplates` filtre les gabarits par module, pas leurs
+      clés internes) — une clé orpheline sans effet, pas une fuite de permission.
+- [ ] `/whats-new` (web) : le `try/catch` englobe à la fois le chargement des notes et le marquage
+      « vu » — un échec du second donne un message d'erreur trompeur sur le premier.
+- [ ] Page plateforme « Notes de version » : les boutons de ligne (publier/archiver) ne se
+      désactivent pas pendant la requête — double-clic possible.
+- [ ] Aucun audit sur les mutations plateforme de `ReleaseNote` (create/publish/archive) —
+      `AuditLogsService` exige un `tenantId`, précédent déjà accepté sur `platform/tenants`.
+- [ ] Le paramètre `search` de `GET /release-notes` (et `/platform/release-notes`) n'est pas
+      exploité côté service (filtrage à ajouter si le volume de notes le justifie).
+- [ ] `HTTPS://` (schéma en majuscules) est rejeté par le validateur de `cta.href` des pages —
+      fail-safe volontaire (cohérent avec le rejet des tentatives d'obfuscation `\`/`//`), mais un
+      lien HTTPS légitime en majuscules serait refusé sans message explicite.
+- [ ] Domaine de nav « Portail client » : pas de `anyPerms` (visible même sans aucune permission du
+      module) — même dette que le domaine Transport (voir section Référentiel partagé ci-dessus).
+- [ ] Messages d'erreur serveur du portail (ex. « Account is disabled », « Invalid token ») restés
+      en anglais — pas de traduction FR contrairement au reste de l'UI web.
+- [ ] `Toasts.svelte` (web) n'a pas de `role`/`aria-live` — les notifications transitoires ne sont
+      pas annoncées par un lecteur d'écran.
+- [ ] `portalApi` (client web) : une rotation de jeton (refresh) n'est pas répercutée dans le store
+      de session tant que la page ne relit pas l'état — décalage possible entre le jeton en mémoire
+      HTTP et l'état affiché.

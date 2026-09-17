@@ -6,6 +6,33 @@
 > **audit TMS vs référentiel entreprise : [audit-tms-2026-06-10.md](./audit-tms-2026-06-10.md)**
 > (à lire avant de prioriser quoi que ce soit).
 
+> **Portail client (comptes nommés) + Quoi de neuf (2026-09-17) — `access-module-core-locations`
+> (non mergée).** Trois lots : (1) Pages fix — lien public masqué sur brouillon, bloc `cta` avec
+> validateur d'URL durci (rejette `javascript:`, protocole-relatif `//host`, antislash
+> d'obfuscation) ; (2) fil « Quoi de neuf » — `ReleaseNote` entité **plateforme** (règle 52),
+> `renderReleaseNoteBody` pur, état « vu » par utilisateur (`UserPreferences.releaseNotesSeenAt`),
+> pages `/platform/release-notes` et `/whats-new` + badge Sparkles ; (3) **comptes portail
+> client** — troisième plan d'authentification complet (`PortalUser`/`PortalActionToken`/
+> `PortalRefreshToken`, JWT `portal: true`, `PortalJwtStrategy`/`PortalGuard`, rejet croisé avec
+> les plans tenant et plateforme), invitation/connexion/désactivation avec garde du dernier ADMIN
+> actif, gestion staff (`customer-portal/customers/:id/users`) et self-service ADMIN
+> (`portal/users`), lien à jeton legacy (`Customer.portalToken`) conservé en compatibilité via un
+> `PortalContext` commun. Règles 51-52 ajoutées.
+> Gates mesurées : typecheck **0 erreur** (shared/database/api/web, 12 avertissements a11y
+> préexistants) ; unit **1065** (shared 671/74 suites, web 52/7, api 342/64) ; e2e **complet**
+> `pnpm test:e2e` **782/790 tests** (79 suites vertes, **3 en échec pour cause externe** — moteur
+> APS Python indisponible : `aps-runtime`, `manufacturing-scheduling`, `manufacturing-agent-tools` ;
+> 1 suite ignorée `phase10-osrm-real`, pré-existante ; `portal-accounts`/`release-notes` e2e PASS) ;
+> Playwright `access-roles`/`whats-new`/`portal-accounts`/`wms-workspace` **22/22** verts ;
+> `git diff --check` propre. Limites : `TransportOrder` n'a
+> pas de colonne d'attribution portail (audit/commentaires seulement) ; le lien à jeton reste actif
+> en compatibilité ; aucun throttling sur `public/portal/:token` ni `/portal/auth/*` ;
+> `CrmContact` et `PortalUser` non liés ; invitations toujours via l'outbox (voulu, contrairement
+> au reset qui passe en direct). Suite recommandée : déprécier le lien à jeton, lier
+> `PortalUser` ↔ `CrmContact`, colonne d'attribution portail sur `TransportOrder` si la traçabilité
+> fine devient un besoin produit. Détail, contrats et dette :
+> [portal-accounts-whats-new.md](./plans/portal-accounts-whats-new.md).
+
 > **Accès & Lieux cœur (2026-09-16) — `access-module-core-locations` (non mergée).**
 > `Location` devient une entité du cœur (`core/locations`, perms `core.locations.*` synchronisées
 > au démarrage par `PermissionsSyncService` sur tous les tenants) ; `transportation/locations`
