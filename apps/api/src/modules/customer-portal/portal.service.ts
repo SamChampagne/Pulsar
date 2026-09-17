@@ -655,7 +655,12 @@ export class PortalService {
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
     const document = await this.prisma.document.findFirst({
-      where: { tenantId: ctx.tenantId, entityType: 'customer-invoice', entityId: invoice.id },
+      where: {
+        tenantId: ctx.tenantId,
+        entityType: 'customer-invoice',
+        entityId: invoice.id,
+        mimeType: 'application/pdf',
+      },
       orderBy: { createdAt: 'desc' },
       select: { id: true },
     });

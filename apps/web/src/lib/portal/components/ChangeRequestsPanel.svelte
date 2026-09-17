@@ -59,6 +59,8 @@
       requests = [];
       error = e instanceof PortalApiError ? e.message : 'Impossible de charger les demandes.';
     } finally {
+      // A failed fetch still counts as an attempt: the lazy-load effect must not loop on the error.
+      loaded = true;
       loading = false;
     }
   }
