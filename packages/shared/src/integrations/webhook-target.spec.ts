@@ -107,6 +107,10 @@ describe('checkWebhookUrl (egress guard)', () => {
       'http://[64:ff9b::7f00:1]/x', // NAT64 well-known prefix wrapping 127.0.0.1
       'http://[::ffff:0:7f00:1]/x', // IPv4-translated (SIIT) loopback
       'http://[::ffff:0:a9fe:a9fe]/x', // IPv4-translated cloud metadata
+      'http://[2002:7f00:1::]/x', // 6to4 embedding 127.0.0.1
+      'http://[2002:a00:1::]/x', // 6to4 embedding 10.0.0.1
+      'http://[::5efe:127.0.0.1]/x', // ISATAP short form, loopback
+      'http://[::200:5efe:10.0.0.1]/x', // ISATAP long form, RFC1918
     ]) {
       expect(isSafeWebhookUrl(url)).toBe(false);
     }
@@ -123,6 +127,8 @@ describe('checkWebhookUrl (egress guard)', () => {
 
   it('still allows a genuinely public IPv6/IPv4 address, including a mapped public one', () => {
     expect(isSafeWebhookUrl('https://[2606:4700::6810:84e5]/x')).toBe(true);
+    expect(isSafeWebhookUrl('http://[2002:808:808::]/x')).toBe(true); // 6to4 public
+    expect(isSafeWebhookUrl('http://[::5efe:8.8.8.8]/x')).toBe(true); // ISATAP public
     expect(isSafeWebhookUrl('https://8.8.8.8/x')).toBe(true);
     expect(isSafeWebhookUrl('http://[::ffff:8.8.8.8]/x')).toBe(true);
   });

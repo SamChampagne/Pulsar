@@ -139,6 +139,19 @@ function isPrivateEmbeddedIPv4(hextets: string[]): boolean {
   if ([h0, h1, h2, h3].every(isZero) && h4 === 'ffff' && isZero(h5)) {
     return isPrivateIPv4(hextetsToIPv4(h6, h7));
   }
+  // 6to4 (RFC 3056) 2002:V4HI:V4LO::/16 — the IPv4 sits in hextets 1-2.
+  if (h0 === '2002') {
+    return isPrivateIPv4(hextetsToIPv4(h1, h2));
+  }
+  // ISATAP (RFC 5214) zero-prefix literal forms ::5efe:a.b.c.d / ::200:5efe:a.b.c.d.
+  if ([h0, h1, h2, h3, h4].every(isZero) && h5 === '5efe') {
+    return isPrivateIPv4(hextetsToIPv4(h6, h7));
+  }
+  if ([h0, h1, h2, h3].every(isZero) && h4 === '200' && h5 === '5efe') {
+    return isPrivateIPv4(hextetsToIPv4(h6, h7));
+  }
+  // Known gaps (string guard only, no DNS resolution): NAT64 local-use prefixes
+  // shorter than /96 (RFC 6052 bit-interleaving) and Teredo (XOR-obfuscated).
   return false;
 }
 
