@@ -212,20 +212,31 @@ export class PortalUsersService {
     }
 
     const role = dto.role ?? PortalUserRole.MEMBER;
-    const created = await this.prisma.portalUser.create({
-      data: {
-        tenantId,
-        customerId,
-        email,
-        // Placeholder until the invitee sets a real one; never login-usable.
-        passwordHash: await hash(randomBytes(32).toString('hex'), 10),
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        role,
-        status: PortalUserStatus.INVITED,
-      },
-      select: { id: true },
-    });
+    let created: { id: string };
+    try {
+      created = await this.prisma.portalUser.create({
+        data: {
+          tenantId,
+          customerId,
+          email,
+          // Placeholder until the invitee sets a real one; never login-usable.
+          passwordHash: await hash(randomBytes(32).toString('hex'), 10),
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          role,
+          status: PortalUserStatus.INVITED,
+        },
+        select: { id: true },
+      });
+    } catch (err) {
+      // The pre-check above is a snapshot: two concurrent invites of the same
+      // address both pass it, and the `tenantId_email` unique index arbitrates.
+      // The loser must get the same 409 as the sequential case, not a 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('A portal user with this email already exists');
+      }
+      throw err;
+    }
 
     const inviteUrl = await this.issueInvitation(
       tenantId,

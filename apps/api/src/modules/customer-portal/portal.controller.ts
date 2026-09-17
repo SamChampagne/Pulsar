@@ -1,128 +1,20 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
-import { MODULE_KEYS, PERMISSIONS, TransportMode } from '@pulsar/shared';
-import {
-  IsDateString, IsEnum, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Matches, MaxLength, Min,
-} from 'class-validator';
+import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
+import { IsOptional, IsString, Matches } from 'class-validator';
 import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { RequireModule } from '../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import {
+  CreateOrderTemplateDtoClass,
+  PortalChangeRequestDtoClass,
+  PortalOrderDto,
+  ShipmentCommentDto,
+} from './dto/portal.dto';
 import { PortalService } from './portal.service';
-import type { CreateOrderTemplateInput, PortalChangeRequestInput } from './portal.service';
-
-class PortalOrderDto {
-  @IsOptional()
-  @IsString()
-  originLocationId?: string;
-
-  @IsOptional()
-  @IsString()
-  destinationLocationId?: string;
-
-  @IsOptional()
-  @IsString()
-  customerReference?: string;
-
-  @IsOptional()
-  @IsDateString()
-  requestedPickupEarly?: string;
-
-  @IsOptional()
-  @IsDateString()
-  requestedPickupLate?: string;
-
-  @IsOptional()
-  @IsDateString()
-  requestedDeliveryEarly?: string;
-
-  @IsOptional()
-  @IsDateString()
-  requestedDeliveryLate?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  totalWeightKg?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  palletCount?: number;
-
-  @IsOptional()
-  @IsString()
-  notes?: string;
-
-  @IsOptional()
-  @IsEnum(TransportMode)
-  mode?: TransportMode;
-
-  @IsOptional()
-  @IsString()
-  templateId?: string;
-}
-
-class CreateOrderTemplateDtoClass implements CreateOrderTemplateInput {
-  @IsString()
-  name!: string;
-
-  @IsOptional()
-  @IsString()
-  originLocationId?: string;
-
-  @IsOptional()
-  @IsString()
-  destinationLocationId?: string;
-
-  @IsOptional()
-  @IsEnum(TransportMode)
-  mode?: TransportMode;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  totalWeightKg?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  totalVolumeM3?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  palletCount?: number;
-
-  @IsOptional()
-  @IsString()
-  notes?: string;
-}
-
-class PortalChangeRequestDtoClass implements PortalChangeRequestInput {
-  @IsOptional()
-  @IsString()
-  orderId?: string;
-
-  @IsOptional()
-  @IsString()
-  shipmentId?: string;
-
-  @IsIn(['DATE', 'ADDRESS', 'CANCEL', 'OTHER'])
-  kind!: string;
-
-  @IsString()
-  note!: string;
-}
-
-class ShipmentCommentDto {
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(2000)
-  body!: string;
-}
 
 class SetBrandingDto {
   @IsOptional()

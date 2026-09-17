@@ -48,9 +48,13 @@ compatibilité ; il devient un mode dégradé que le tenant peut révoquer.
 - Auth (`/portal/auth/*`, `@Public()`, `@UseGuards(ThrottlerGuard)` 20/min comme la plateforme) :
   `login { email, password, tenant? }` (slug optionnel ; si l'email existe dans plusieurs tenants
   sans slug → 400 « tenant required »), `refresh`, `logout`, `forgot-password` (toujours `{ok:true}`,
-  jeton PASSWORD_RESET 1 h, lien `${WEB_URL}/portal/reset/<token>`), `reset-password`
-  (consomme INVITATION ou PASSWORD_RESET ; refuse DISABLED ; active le compte ; révoque les refresh
-  tokens), `GET me`. Access token 8 h + refresh 30 j (mêmes durées que le plan tenant). Toute émission
+  jeton PASSWORD_RESET 1 h, lien `${WEB_URL}/portal/reset/<token>` **envoyé via `EmailService`
+  (canal bas niveau), jamais via la boîte d'envoi `MailService` lisible par le staff — un lien de
+  réinitialisation vivant est une crédence ; les invitations, elles, restent sur la boîte d'envoi**),
+  `reset-password`
+  (consomme INVITATION ou PASSWORD_RESET ; refuse DISABLED — **écriture conditionnelle
+  `updateMany status != DISABLED` dans la transaction, pour fermer le TOCTOU avec une désactivation
+  concurrente** ; active le compte ; révoque les refresh tokens), `GET me`. Access token 8 h + refresh 30 j (mêmes durées que le plan tenant). Toute émission
   passe par `issuePortalSession(portalUserId)` (re-gate statut user, customer actif, module actif,
   tenant non suspendu).
 

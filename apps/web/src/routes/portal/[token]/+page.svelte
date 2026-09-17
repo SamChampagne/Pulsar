@@ -37,8 +37,10 @@
   interface Template {
     id: string;
     name: string;
-    originLocationId: string | null;
-    destinationLocationId: string | null;
+    // Opaque location codes (the API never exposes location PKs) — the same
+    // values the order form binds to.
+    originCode: string | null;
+    destinationCode: string | null;
     mode: string | null;
     totalWeightKg: number | null;
     totalVolumeM3: number | null;
@@ -372,8 +374,8 @@
     if (!selectedTemplateId) return;
     const tpl = templates.find((t) => t.id === selectedTemplateId);
     if (!tpl) return;
-    if (tpl.originLocationId) request.originLocationId = tpl.originLocationId;
-    if (tpl.destinationLocationId) request.destinationLocationId = tpl.destinationLocationId;
+    if (tpl.originCode) request.originLocationId = tpl.originCode;
+    if (tpl.destinationCode) request.destinationLocationId = tpl.destinationCode;
     if (tpl.mode) request.mode = tpl.mode;
     if (tpl.totalWeightKg != null) request.totalWeightKg = String(tpl.totalWeightKg);
     if (tpl.palletCount != null) request.palletCount = String(tpl.palletCount);

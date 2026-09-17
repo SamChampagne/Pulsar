@@ -4,7 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { MODULE_KEYS, PortalUserRole, PortalUserStatus } from '@pulsar/shared';
 import { hash } from 'bcryptjs';
 import { createHash } from 'node:crypto';
-import { MailService } from '../../../core/email/mail.service';
+import { EmailService } from '../../../core/email/email.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
 import { PortalAuthService } from './portal-auth.service';
@@ -111,6 +111,13 @@ function makeService(opts: {
       if (found) Object.assign(found, data);
       return found;
     }),
+    updateMany: jest.fn(async ({ where, data }: any) => {
+      const hits = users
+        .filter((u) => (where.id === undefined ? true : u.id === where.id))
+        .filter((u) => matches(u.status, where.status));
+      hits.forEach((u) => Object.assign(u, data));
+      return { count: hits.length };
+    }),
   };
 
   const portalActionToken = {
@@ -178,7 +185,7 @@ function makeService(opts: {
       key === 'WEB_URL' ? 'https://app.test' : fallback,
     ),
   } as unknown as ConfigService;
-  const mail = { queue: jest.fn(async () => ({ id: 'em1' })) } as unknown as MailService;
+  const email = { send: jest.fn(async () => true) } as unknown as EmailService;
   const modulesCache = {
     getEnabledKeys: jest.fn(
       async () => new Set(opts.enabledModules ?? [MODULE_KEYS.CUSTOMER_PORTAL]),
@@ -189,10 +196,10 @@ function makeService(opts: {
     prisma,
     jwt as unknown as JwtService,
     config,
-    mail,
+    email,
     modulesCache,
   );
-  return { service, prisma, jwt, mail, users, actionTokens, refreshTokens, portalUser };
+  return { service, prisma, jwt, email, users, actionTokens, refreshTokens, portalUser };
 }
 
 const PASSWORD = 'correct horse battery';
@@ -400,22 +407,29 @@ describe('PortalAuthService.refresh / logout', () => {
 
 describe('PortalAuthService.requestPasswordReset', () => {
   it('always answers { ok: true } and emails a 1h link for a known ACTIVE account', async () => {
-    const { service, mail, actionTokens } = makeService({ users: [userFixture()] });
+    const { service, email, actionTokens } = makeService({ users: [userFixture()] });
     await expect(service.requestPasswordReset('Jane@Client.test')).resolves.toEqual({ ok: true });
     expect(actionTokens).toHaveLength(1);
     expect(actionTokens[0].kind).toBe('PASSWORD_RESET');
     expect(actionTokens[0].expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(3600_000);
-    const [tenantId, message] = (mail.queue as jest.Mock).mock.calls[0];
-    expect(tenantId).toBe('t1');
-    expect(message.toAddresses).toEqual(['jane@client.test']);
+    const [message] = (email.send as jest.Mock).mock.calls[0];
+    expect(message.to).toBe('jane@client.test');
     expect(message.html).toContain('https://app.test/portal/reset/');
   });
 
+  it('sends the link once, through the low-level channel only', async () => {
+    const { service, email } = makeService({ users: [userFixture()] });
+    await service.requestPasswordReset('jane@client.test');
+    // The service is not wired to MailService at all: a live reset link is a
+    // credential and must never land in the staff-readable outbox.
+    expect(email.send).toHaveBeenCalledTimes(1);
+  });
+
   it('answers { ok: true } for an unknown email without writing a token or sending mail', async () => {
-    const { service, mail, actionTokens } = makeService({ users: [userFixture()] });
+    const { service, email, actionTokens } = makeService({ users: [userFixture()] });
     await expect(service.requestPasswordReset('ghost@client.test')).resolves.toEqual({ ok: true });
     expect(actionTokens).toHaveLength(0);
-    expect(mail.queue).not.toHaveBeenCalled();
+    expect(email.send).not.toHaveBeenCalled();
   });
 
   it('answers { ok: true } for a DISABLED account without issuing a token', async () => {
@@ -484,6 +498,26 @@ describe('PortalAuthService.resetPassword', () => {
     await expect(service.resetPassword('nope', 'a-new-password')).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
+  });
+
+  it('400s when the account is disabled between the pre-check and the write (TOCTOU)', async () => {
+    const { service, users, portalUser } = makeService({
+      users: [userFixture()],
+      actionTokens: [tokenFixture()],
+    });
+    // The pre-check sees an ACTIVE account; a concurrent deactivate lands right
+    // after it. Only the conditional write can catch this.
+    (portalUser.findUnique as jest.Mock).mockImplementationOnce(async () => {
+      const snapshot = { ...users[0] };
+      users[0].status = PortalUserStatus.DISABLED;
+      return snapshot;
+    });
+
+    await expect(service.resetPassword(raw, 'a-new-password')).rejects.toThrow(
+      new BadRequestException('Account is disabled'),
+    );
+    expect(users[0].status).toBe(PortalUserStatus.DISABLED);
+    expect(users[0].passwordHash).toBe(PASSWORD_HASH);
   });
 
   it('400s when the token owner has been disabled (a live link must not resurrect it)', async () => {

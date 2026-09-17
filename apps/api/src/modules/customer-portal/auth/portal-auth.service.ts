@@ -10,7 +10,7 @@ import type { PortalJwtPayload, PortalLoginResponse, PortalUserRole } from '@pul
 import { MODULE_KEYS, PortalActionTokenKind, PortalUserStatus } from '@pulsar/shared';
 import { compare, hash } from 'bcryptjs';
 import { createHash, randomBytes } from 'node:crypto';
-import { MailService } from '../../../core/email/mail.service';
+import { EmailService } from '../../../core/email/email.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
 
@@ -44,7 +44,7 @@ export class PortalAuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
-    private readonly mail: MailService,
+    private readonly email: EmailService,
     private readonly modulesCache: TenantModulesCacheService,
   ) {}
 
@@ -203,7 +203,7 @@ export class PortalAuthService {
         status: PortalUserStatus.ACTIVE,
         ...(tenantSlug ? { tenant: { slug: tenantSlug } } : {}),
       },
-      select: { id: true, email: true, firstName: true, tenantId: true },
+      select: { id: true, email: true, firstName: true },
     });
     if (user) {
       const token = randomBytes(32).toString('base64url');
@@ -216,10 +216,14 @@ export class PortalAuthService {
         },
       });
       const url = `${this.webUrl()}/portal/reset/${token}`;
-      // Durable outbox, recorded in the shipper's email history.
-      await this.mail
-        .queue(user.tenantId, {
-          toAddresses: [user.email],
+      // Deliberately the low-level EmailService, NOT the MailService outbox
+      // (same reasoning as core/auth/auth.service.ts): the outbox is readable by
+      // the shipper's staff, and a live reset link is a credential — it must
+      // never be stored where anyone but the recipient can replay it.
+      // Invitations stay on the outbox: their link is legitimately staff-visible.
+      await this.email
+        .send({
+          to: user.email,
           subject: 'Réinitialisation de votre mot de passe',
           html: `<p>Bonjour ${user.firstName},</p><p>Pour choisir un nouveau mot de passe, suivez ce lien : <a href="${url}">${url}</a></p><p>Ce lien expire dans 1 heure. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.</p>`,
           text: `Réinitialisez votre mot de passe : ${url} (ce lien expire dans 1 heure)`,
@@ -262,10 +266,17 @@ export class PortalAuthService {
       if (claimed.count === 0) {
         throw new UnauthorizedException('Invalid or expired link');
       }
-      await tx.portalUser.update({
-        where: { id: record.portalUserId },
+      // Conditional write, not a blind update: the status read above is a
+      // snapshot, so a deactivate landing between the two would otherwise be
+      // overwritten and the account resurrected (TOCTOU). A rejected claim
+      // rolls the token consumption back with the transaction.
+      const activated = await tx.portalUser.updateMany({
+        where: { id: record.portalUserId, status: { not: PortalUserStatus.DISABLED } },
         data: { passwordHash, status: PortalUserStatus.ACTIVE },
       });
+      if (activated.count === 0) {
+        throw new BadRequestException('Account is disabled');
+      }
       await tx.portalRefreshToken.updateMany({
         where: { portalUserId: record.portalUserId, revokedAt: null },
         data: { revokedAt: new Date() },

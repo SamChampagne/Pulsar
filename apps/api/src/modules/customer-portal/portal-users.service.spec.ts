@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@pulsar/database';
 import { AuditAction, PortalUserRole, PortalUserStatus } from '@pulsar/shared';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { MailService } from '../../core/email/mail.service';
@@ -282,6 +283,22 @@ describe('PortalUsersService.invite', () => {
     await expect(
       service.invite(TENANT, CUSTOMER, { ...dto, email: 'JANE@client.test' }, STAFF),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('409s when the unique index rejects the insert (race with the pre-check)', async () => {
+    const { service, portalUser } = makeService({ users: [] });
+    // The pre-check found nothing; a concurrent invite of the same address wins
+    // the insert. Only the unique index catches this.
+    (portalUser.create as jest.Mock).mockImplementationOnce(async () => {
+      throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+        meta: { target: ['tenantId', 'email'] },
+      });
+    });
+    await expect(service.invite(TENANT, CUSTOMER, dto, STAFF)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
   });
 
   it('records a portal-plane inviter in the payload, never as AuditLog.userId', async () => {
