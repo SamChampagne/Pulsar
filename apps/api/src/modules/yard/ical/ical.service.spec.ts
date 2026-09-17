@@ -1,4 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
+import type { AuditEntry, AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import type { PrismaService } from '../../../prisma/prisma.service';
 import type { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
 import { YardIcalService } from './ical.service';
@@ -15,10 +17,12 @@ function harness(
     tenantModules?: TenantModuleRow[];
     appointments?: unknown[];
     yardEnabledKeys?: Set<string>;
+    apiUrl?: string;
   } = {},
 ) {
   const tenantModules = opts.tenantModules ?? [];
   const appointments = opts.appointments ?? [];
+  const auditCalls: AuditEntry[] = [];
   const yardModuleId = 'mod-yard';
 
   const prisma = {
@@ -80,17 +84,32 @@ function harness(
     getEnabledKeys: async () => opts.yardEnabledKeys ?? new Set(['yard']),
   } as unknown as TenantModulesCacheService;
 
-  return { svc: new YardIcalService(prisma, modulesCache), tenantModules };
+  const audit = {
+    log: async (entry: AuditEntry) => {
+      auditCalls.push(entry);
+    },
+  } as unknown as AuditLogsService;
+
+  const config = {
+    get: (_key: string, fallback?: string) => opts.apiUrl ?? fallback,
+  } as unknown as ConfigService;
+
+  return {
+    svc: new YardIcalService(prisma, modulesCache, audit, config),
+    tenantModules,
+    auditCalls,
+  };
 }
 
 describe('YardIcalService', () => {
   describe('generateToken', () => {
-    it('creates the TenantModule row when none exists yet and stores icalToken', async () => {
+    it('creates the TenantModule row when none exists yet and stores icalToken + icalTokenRotatedAt', async () => {
       const { svc, tenantModules } = harness();
-      const { token } = await svc.generateToken('t1');
+      const { token } = await svc.generateToken('t1', 'u1');
       expect(token).toMatch(/^[A-Za-z0-9_-]{20,}$/);
       expect(tenantModules).toHaveLength(1);
       expect(tenantModules[0].settings.icalToken).toBe(token);
+      expect(typeof tenantModules[0].settings.icalTokenRotatedAt).toBe('string');
     });
 
     it('rotating overwrites the previous token and preserves other settings', async () => {
@@ -104,10 +123,67 @@ describe('YardIcalService', () => {
           },
         ],
       });
-      const { token } = await svc.generateToken('t1');
+      const { token } = await svc.generateToken('t1', 'u1');
       expect(token).not.toBe('old-token');
       expect(tenantModules[0].settings.icalToken).toBe(token);
       expect(tenantModules[0].settings.foo).toBe('bar');
+    });
+
+    it('audits a first-time generation as CREATE, actor = userId, never logging the token', async () => {
+      const { svc, auditCalls } = harness();
+      await svc.generateToken('t1', 'u1');
+      expect(auditCalls).toHaveLength(1);
+      expect(auditCalls[0]).toMatchObject({
+        tenantId: 't1',
+        userId: 'u1',
+        action: 'CREATE',
+        entityType: 'yard-ical-token',
+      });
+      expect(JSON.stringify(auditCalls[0])).not.toMatch(/[A-Za-z0-9_-]{30,}/);
+    });
+
+    it('audits a rotation as UPDATE', async () => {
+      const { svc, auditCalls } = harness({
+        tenantModules: [
+          { tenantId: 't1', moduleId: 'mod-yard', enabled: true, settings: { icalToken: 'old' } },
+        ],
+      });
+      await svc.generateToken('t1', 'u1');
+      expect(auditCalls).toHaveLength(1);
+      expect(auditCalls[0].action).toBe('UPDATE');
+    });
+  });
+
+  describe('getStatus', () => {
+    it('reports hasToken: false when nothing was ever generated', async () => {
+      const { svc } = harness();
+      expect(await svc.getStatus('t1')).toEqual({ hasToken: false });
+    });
+
+    it('reports hasToken: true + rotatedAt after generation, without leaking the token value', async () => {
+      const { svc } = harness();
+      const { token } = await svc.generateToken('t1', 'u1');
+      const status = await svc.getStatus('t1');
+      expect(status.hasToken).toBe(true);
+      expect(typeof status.rotatedAt).toBe('string');
+      expect(Object.keys(status).sort()).toEqual(['hasToken', 'rotatedAt']);
+      expect(JSON.stringify(status)).not.toContain(token);
+    });
+  });
+
+  describe('buildPublicUrl', () => {
+    it('builds the URL from API_URL config, not a request host', () => {
+      const { svc } = harness({ apiUrl: 'https://api.example.com' });
+      expect(svc.buildPublicUrl('tok123')).toBe(
+        'https://api.example.com/api/v1/public/ical/yard/tok123',
+      );
+    });
+
+    it('strips a trailing slash from API_URL', () => {
+      const { svc } = harness({ apiUrl: 'https://api.example.com/' });
+      expect(svc.buildPublicUrl('tok123')).toBe(
+        'https://api.example.com/api/v1/public/ical/yard/tok123',
+      );
     });
   });
 

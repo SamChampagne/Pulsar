@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildIcs } from './ical';
 
 /** Reverses RFC 5545 line folding: a CRLF immediately followed by a space is a fold, not a line break. */
@@ -14,14 +14,6 @@ function byteLength(s: string): number {
 }
 
 describe('buildIcs', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   it('wraps events in VCALENDAR/VEVENT with CRLF line endings', () => {
     const ics = buildIcs([
       {
@@ -41,19 +33,40 @@ describe('buildIcs', () => {
     expect(lines[lines.length - 1]).toBe('END:VCALENDAR');
   });
 
-  it('formats DTSTART/DTEND as UTC YYYYMMDDTHHMMSSZ and stamps DTSTAMP from "now"', () => {
-    const ics = buildIcs([
-      {
-        uid: 'evt-2@pulsar',
-        start: '2026-09-20T14:05:09.000Z',
-        end: '2026-09-20T15:30:00.000Z',
-        summary: 'Fenêtre',
-      },
-    ]);
+  it('formats DTSTART/DTEND as UTC YYYYMMDDTHHMMSSZ and stamps DTSTAMP from the injected "now"', () => {
+    const ics = buildIcs(
+      [
+        {
+          uid: 'evt-2@pulsar',
+          start: '2026-09-20T14:05:09.000Z',
+          end: '2026-09-20T15:30:00.000Z',
+          summary: 'Fenêtre',
+        },
+      ],
+      { now: new Date('2026-09-17T12:00:00.000Z') },
+    );
     const lines = unfold(ics);
     expect(lines).toContain('DTSTART:20260920T140509Z');
     expect(lines).toContain('DTEND:20260920T153000Z');
     expect(lines).toContain('DTSTAMP:20260917T120000Z');
+  });
+
+  it('defaults DTSTAMP to the system clock when "now" is omitted', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
+    try {
+      const ics = buildIcs([
+        {
+          uid: 'evt-clock@pulsar',
+          start: '2026-01-01T00:00:00Z',
+          end: '2026-01-01T01:00:00Z',
+          summary: 's',
+        },
+      ]);
+      expect(unfold(ics)).toContain('DTSTAMP:20260917T120000Z');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('escapes commas, semicolons, backslashes and newlines in TEXT fields', () => {
@@ -141,7 +154,7 @@ describe('buildIcs', () => {
     expect(lines).toContain(`SUMMARY:${longSummary}`);
   });
 
-  it('is deterministic given fixed dates and system time', () => {
+  it('is deterministic given fixed dates and a fixed "now"', () => {
     const events = [
       {
         uid: 'evt-6@pulsar',
@@ -150,8 +163,9 @@ describe('buildIcs', () => {
         summary: 'Fixe',
       },
     ];
-    const a = buildIcs(events, { calName: 'Cal' });
-    const b = buildIcs(events, { calName: 'Cal' });
+    const now = new Date('2026-09-17T12:00:00.000Z');
+    const a = buildIcs(events, { calName: 'Cal', now });
+    const b = buildIcs(events, { calName: 'Cal', now });
     expect(a).toBe(b);
   });
 

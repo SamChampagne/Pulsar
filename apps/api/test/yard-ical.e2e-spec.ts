@@ -83,6 +83,25 @@ describe('Yard iCal feed (e2e)', () => {
     expect(body.url).toContain(`/public/ical/yard/${body.token}`);
   });
 
+  it('builds the public URL from API_URL config, not the request host', async () => {
+    const res = await request(http).post('/api/v1/yard/ical-token').set(auth()).expect(201);
+    const body = res.body as { token: string; url: string };
+    const expectedBase = (process.env.API_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
+    expect(body.url).toBe(`${expectedBase}/api/v1/public/ical/yard/${body.token}`);
+  });
+
+  it('GET /yard/ical-token reports reload-safe status without ever exposing the token or URL', async () => {
+    const gen = await request(http).post('/api/v1/yard/ical-token').set(auth()).expect(201);
+    const token = (gen.body as { token: string }).token;
+
+    const status = await request(http).get('/api/v1/yard/ical-token').set(auth()).expect(200);
+    const body = status.body as { hasToken: boolean; rotatedAt?: string };
+    expect(body.hasToken).toBe(true);
+    expect(typeof body.rotatedAt).toBe('string');
+    expect(Object.keys(body).sort()).toEqual(['hasToken', 'rotatedAt']);
+    expect(JSON.stringify(body)).not.toContain(token);
+  });
+
   it('GET /public/ical/yard/:token returns 200 text/calendar with a VEVENT for the appointment', async () => {
     const gen = await request(http).post('/api/v1/yard/ical-token').set(auth()).expect(201);
     const token = (gen.body as { token: string }).token;
@@ -112,5 +131,19 @@ describe('Yard iCal feed (e2e)', () => {
 
   it('GET /public/ical/yard/:token returns 404 for an unknown token', async () => {
     await request(http).get('/api/v1/public/ical/yard/not-a-real-token').expect(404);
+  });
+
+  it('audits token generation (rule 6) without ever logging the token value', async () => {
+    const res = await request(http).post('/api/v1/yard/ical-token').set(auth()).expect(201);
+    const token = (res.body as { token: string }).token;
+
+    const logs = await prisma.auditLog.findMany({
+      where: { tenantId, entityType: 'yard-ical-token' },
+      orderBy: { createdAt: 'desc' },
+      take: 1,
+    });
+    expect(logs).toHaveLength(1);
+    expect(logs[0].action).toMatch(/CREATE|UPDATE/);
+    expect(JSON.stringify(logs[0])).not.toContain(token);
   });
 });

@@ -74,6 +74,18 @@
     if (found) scopes = [...found.scopes];
   }
 
+  /**
+   * The date input only carries a calendar day (browser-local, no time). We
+   * expire the key at the end of that day in the browser's local time zone,
+   * not at UTC midnight — otherwise a key picked to "expire on the 20th"
+   * would silently die hours earlier for anyone west of UTC.
+   */
+  function toEndOfDayIso(dateStr: string): string | undefined {
+    if (!dateStr) return undefined;
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d, 23, 59, 59).toISOString();
+  }
+
   async function create(event: SubmitEvent) {
     event.preventDefault();
     error = '';
@@ -81,7 +93,7 @@
     try {
       const created = await api<KeyRow & { key: string }>('/api-keys', {
         method: 'POST',
-        body: { name, scopes, expiresAt: expiresAt || undefined },
+        body: { name, scopes, expiresAt: toEndOfDayIso(expiresAt) },
       });
       createdKey = created.key;
       name = '';
@@ -246,6 +258,9 @@
       </div>
       <Field label="Expiration (optionnelle)">
         <Input type="date" bind:value={expiresAt} />
+        <p class="mt-1 text-xs text-ink-muted">
+          Expire à la fin de la journée choisie (heure locale).
+        </p>
       </Field>
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
         <Button

@@ -5,15 +5,37 @@
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import { confirmAction } from '$lib/stores/confirmation';
+  import { formatDateTime } from '$lib/format';
 
+  interface IcalStatus {
+    hasToken: boolean;
+    rotatedAt?: string;
+  }
+
+  let hasToken = $state(false);
+  let rotatedAt = $state<string | null>(null);
+  let loadingStatus = $state(true);
   let icalUrl = $state('');
   let icalError = $state('');
   let generatingIcal = $state(false);
 
+  async function loadStatus() {
+    loadingStatus = true;
+    try {
+      const res = await api<IcalStatus>('/yard/ical-token');
+      hasToken = res.hasToken;
+      rotatedAt = res.rotatedAt ?? null;
+    } catch {
+      // Best-effort — the generator button still works without the reload-safe hint.
+    } finally {
+      loadingStatus = false;
+    }
+  }
+
   async function generateIcalToken() {
-    if (icalUrl) {
+    if (hasToken) {
       const ok = await confirmAction(
-        "Régénérer le lien iCal ? L'ancien lien cessera de fonctionner immédiatement.",
+        "Régénérer le lien iCal ? Les abonnements de calendrier utilisant l'ancien lien cesseront de fonctionner immédiatement.",
       );
       if (!ok) return;
     }
@@ -22,6 +44,8 @@
     try {
       const res = await api<{ token: string; url: string }>('/yard/ical-token', { method: 'POST' });
       icalUrl = res.url;
+      hasToken = true;
+      rotatedAt = new Date().toISOString();
       toast.success('Lien iCal généré');
     } catch (e) {
       icalError = e instanceof ApiError ? e.message : 'Échec de la génération du lien iCal';
@@ -35,6 +59,10 @@
     await navigator.clipboard.writeText(icalUrl);
     toast.success('Lien copié');
   }
+
+  $effect(() => {
+    void loadStatus();
+  });
 </script>
 
 <PageHeader
@@ -52,8 +80,15 @@
       prochains jours. Régénérer le lien invalide immédiatement l'ancien.
     </p>
     {#if icalError}<p class="mb-2 text-sm text-danger">{icalError}</p>{/if}
+    {#if hasToken && !icalUrl}
+      <p class="mb-3 text-xs text-ink-muted">
+        Un lien actif existe déjà{#if rotatedAt}
+          (généré le {formatDateTime(rotatedAt)}){/if} — il n'est plus affichable pour des raisons de
+        sécurité. Régénérez-le pour en obtenir un nouveau.
+      </p>
+    {/if}
     {#if icalUrl}
-      <div class="mb-3 flex flex-wrap items-center gap-2">
+      <div class="mb-2 flex flex-wrap items-center gap-2">
         <code
           class="min-w-0 flex-1 break-all rounded bg-surface-muted px-2 py-1 font-mono text-xs text-ink"
         >
@@ -61,13 +96,15 @@
         </code>
         <Button variant="secondary" onclick={copyIcalUrl}>Copier</Button>
       </div>
+      <p class="mb-3 text-xs text-ink-muted">Conservez ce lien : il ne sera plus affiché.</p>
     {/if}
     <Button
-      variant={icalUrl ? 'secondary' : 'primary'}
+      variant={hasToken ? 'secondary' : 'primary'}
       loading={generatingIcal}
+      disabled={loadingStatus}
       onclick={generateIcalToken}
     >
-      {icalUrl ? 'Régénérer le lien' : 'Générer le lien iCal'}
+      {hasToken ? 'Régénérer le lien iCal' : 'Générer le lien iCal'}
     </Button>
   </Card>
 </div>

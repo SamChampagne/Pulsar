@@ -23,6 +23,8 @@ export interface IcsOptions {
   prodId?: string;
   /** X-WR-CALNAME — the calendar's display name in most clients. */
   calName?: string;
+  /** "Now" used for DTSTAMP; defaults to `new Date()`. Inject for deterministic tests/output. */
+  now?: Date;
 }
 
 const DEFAULT_PROD_ID = '-//Pulsar//iCal Feed//EN';
@@ -85,11 +87,11 @@ function foldLine(line: string): string {
 
 /**
  * Builds a complete RFC 5545 VCALENDAR document containing one VEVENT per
- * input event. Pure function: given the same events and system time it
+ * input event. Pure function: given the same events and the same `now` it
  * returns the same string (DTSTAMP is the only field derived from "now").
  */
 export function buildIcs(events: IcsEvent[], opts: IcsOptions = {}): string {
-  const dtstamp = toIcsDateUtc(new Date());
+  const dtstamp = toIcsDateUtc(opts.now ?? new Date());
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
