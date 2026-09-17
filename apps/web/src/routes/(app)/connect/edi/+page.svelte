@@ -298,22 +298,45 @@ IEA*1*000000102~`;
     formOpen = true;
   }
 
+  // `undefined` (never set) so a blank field never reaches the request body —
+  // the server derives GS02/03 from ISA06/08 with `??`, which only falls back
+  // for a genuinely absent key, never for `''` (see integrations.service.ts).
+  function trimmedOrUndefined(value: string): string | undefined {
+    const v = value.trim();
+    return v ? v : undefined;
+  }
+
+  // Config sent to the API. Blank/unset fields are OMITTED, not sent as `''`
+  // or `null`: `PATCH /integrations` replaces the whole config with exactly
+  // the keys present in the request body (`mergePreservingMasked` maps over
+  // `incoming`'s own keys — it never carries over a key the client didn't
+  // resend), so omitting a key both (a) lets a blank ISA/GS id on create fall
+  // through to the server default, and (b) removes a previously-set value
+  // when the user clears the field while editing. One code path covers both.
+  function buildConfig(): Record<string, unknown> {
+    const config: Record<string, unknown> = { format: 'x12' };
+    const isaSenderId = trimmedOrUndefined(formIsaSender);
+    if (isaSenderId) config.isaSenderId = isaSenderId;
+    const isaReceiverId = trimmedOrUndefined(formIsaReceiver);
+    if (isaReceiverId) config.isaReceiverId = isaReceiverId;
+    const gsSenderId = trimmedOrUndefined(formGsSender);
+    if (gsSenderId) config.gsSenderId = gsSenderId;
+    const gsReceiverId = trimmedOrUndefined(formGsReceiver);
+    if (gsReceiverId) config.gsReceiverId = gsReceiverId;
+    if (formCustomerId) config.customerId = formCustomerId;
+    if (formCarrierId) config.carrierId = formCarrierId;
+    const url = trimmedOrUndefined(formUrl);
+    if (url) config.url = url;
+    return config;
+  }
+
   async function submitForm(event: SubmitEvent) {
     event.preventDefault();
     if (!canManagePartners) return;
     saving = true;
     saveError = '';
     try {
-      const config: Record<string, unknown> = {
-        isaSenderId: formIsaSender.trim(),
-        isaReceiverId: formIsaReceiver.trim(),
-        gsSenderId: formGsSender.trim(),
-        gsReceiverId: formGsReceiver.trim(),
-        customerId: formCustomerId,
-        carrierId: formCarrierId,
-        url: formUrl.trim(),
-        format: 'x12',
-      };
+      const config = buildConfig();
       if (editingId) {
         await api<IntegrationRecord>(`/integrations/${editingId}`, {
           method: 'PATCH',

@@ -195,3 +195,54 @@ test('"Envoyer un 204" posts to /connect/edi/inbound and shows the mocked 990 ac
   expect(capturedBody?.integrationKey).toBe('edi-acme-shipper');
   expect(capturedBody?.content ?? '').toContain('ISA*00*');
 });
+
+test('creating a partner omits blank envelope ids so the server default applies', async ({
+  page,
+}) => {
+  await login(page);
+
+  let capturedCreateBody: { key?: string; name?: string; config?: Record<string, unknown> } | null =
+    null;
+
+  await page.route('**/api/v1/integrations', async (route) => {
+    const req = route.request();
+    if (req.method() === 'GET') return route.fulfill({ json: [] });
+    if (req.method() === 'POST') {
+      capturedCreateBody = req.postDataJSON();
+      return route.fulfill({
+        json: {
+          id: 'int-edi-new',
+          key: capturedCreateBody?.key,
+          name: capturedCreateBody?.name,
+          status: 'ENABLED',
+          config: capturedCreateBody?.config,
+          hasInboundToken: false,
+          createdAt: '2026-09-17T00:00:00.000Z',
+        },
+      });
+    }
+    return route.fallback();
+  });
+  await page.route('**/api/v1/connect/inbox**', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 10 } });
+  });
+
+  await page.goto('/connect/edi');
+
+  await page.getByRole('button', { name: 'Nouveau partenaire EDI' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Nouveau partenaire EDI' });
+  await expect(dialog).toBeVisible();
+
+  // Only the name is filled — every ISA/GS id and the outbound URL stay blank.
+  await dialog.getByRole('textbox', { name: 'Nom' }).fill('Contoso Freight — EDI');
+  await dialog.getByRole('button', { name: 'Créer le partenaire' }).click();
+
+  await expect(dialog).toBeHidden();
+  expect(capturedCreateBody?.config?.format).toBe('x12');
+  expect(capturedCreateBody?.config?.gsSenderId).toBeUndefined();
+  expect(capturedCreateBody?.config?.gsReceiverId).toBeUndefined();
+  expect(capturedCreateBody?.config?.isaSenderId).toBeUndefined();
+  expect(capturedCreateBody?.config?.isaReceiverId).toBeUndefined();
+  expect(capturedCreateBody?.config?.url).toBeUndefined();
+});
