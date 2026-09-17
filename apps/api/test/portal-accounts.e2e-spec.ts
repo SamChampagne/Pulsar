@@ -56,6 +56,7 @@ describe('Portal accounts (e2e)', () => {
   let memberInviteToken = '';
   let memberPortalUserId = '';
   let memberAccessToken = '';
+  let aOrderNumber = '';
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -192,7 +193,8 @@ describe('Portal accounts (e2e)', () => {
         palletCount: 1,
       })
       .expect(201);
-    expect((created.body as { orderNumber: string }).orderNumber).toMatch(/^TO-/);
+    aOrderNumber = (created.body as { orderNumber: string }).orderNumber;
+    expect(aOrderNumber).toMatch(/^TO-/);
   });
 
   it('6. ADMIN self-service invites a MEMBER -> 201 INVITED', async () => {
@@ -308,5 +310,112 @@ describe('Portal accounts (e2e)', () => {
       .post('/api/v1/portal/auth/refresh')
       .send({ refreshToken: body.refreshToken })
       .expect(401);
+  });
+
+  it('14. ADMIN creates/lists/deletes an order template — codes only, no location PKs or tenantId', async () => {
+    const created = await request(http)
+      .post('/api/v1/portal/templates')
+      .set(auth(adminAccessToken))
+      .send({
+        name: 'Standard lane',
+        originLocationId: originCode,
+        destinationLocationId: destinationCode,
+      })
+      .expect(201);
+    const templateId = (created.body as { id: string }).id;
+    expect(templateId).toBeTruthy();
+
+    const listed = await request(http)
+      .get('/api/v1/portal/templates')
+      .set(auth(adminAccessToken))
+      .expect(200);
+    const templates = listed.body as Array<{
+      id: string;
+      originCode: string | null;
+      destinationCode: string | null;
+    }>;
+    const found = templates.find((t) => t.id === templateId);
+    expect(found).toBeTruthy();
+    expect(found!.originCode).toBe(originCode);
+    expect(found!.destinationCode).toBe(destinationCode);
+    const raw = JSON.stringify(listed.body);
+    expect(raw).not.toContain('LocationId');
+    expect(raw).not.toContain('tenantId');
+
+    await request(http)
+      .delete(`/api/v1/portal/templates/${templateId}`)
+      .set(auth(adminAccessToken))
+      .expect(200);
+  });
+
+  it("15. cross-customer isolation: customer B's portal ADMIN cannot see customer A's data", async () => {
+    const customerB = await request(http)
+      .post('/api/v1/transportation/customers')
+      .set(auth(adminToken))
+      .send({ code: `${suffix}-CUSTB`, name: 'Portal Accounts Customer B' })
+      .expect(201);
+    const customerBId = (customerB.body as { id: string }).id;
+
+    const adminBEmail = `portal-admin-b-${suffix}@example.com`.toLowerCase();
+    const invited = await request(http)
+      .post(`/api/v1/customer-portal/customers/${customerBId}/users`)
+      .set(auth(adminToken))
+      .send({ email: adminBEmail, firstName: 'Bea', lastName: 'AdminB', role: 'ADMIN' })
+      .expect(201);
+    const tokenB = extractActivationToken((invited.body as PortalUserAdminDto).inviteUrl!);
+
+    await request(http)
+      .post('/api/v1/portal/auth/reset-password')
+      .send({ token: tokenB, password: PASSWORD })
+      .expect(200);
+
+    const loginB = await request(http)
+      .post('/api/v1/portal/auth/login')
+      .send({ email: adminBEmail, password: PASSWORD, tenant: 'acme' })
+      .expect(200);
+    const bodyB = loginB.body as PortalLoginResponseDto;
+    expect(bodyB.customer.id).toBe(customerBId);
+    const adminBAccessToken = bodyB.accessToken;
+
+    const viewB = await request(http)
+      .get('/api/v1/portal/view')
+      .set(auth(adminBAccessToken))
+      .expect(200);
+    const viewBBody = viewB.body as {
+      customer: string;
+      orders: Array<{ orderNumber: string }>;
+    };
+    expect(viewBBody.orders.some((o) => o.orderNumber === aOrderNumber)).toBe(false);
+
+    // Locate a shipment on customer A's order, if any exists yet.
+    const viewA = await request(http)
+      .get('/api/v1/portal/view')
+      .set(auth(adminAccessToken))
+      .expect(200);
+    const orderA = (
+      viewA.body as { orders: Array<{ orderNumber: string; shipments: Array<{ id: string }> }> }
+    ).orders.find((o) => o.orderNumber === aOrderNumber);
+    const shipmentIdA = orderA?.shipments?.[0]?.id;
+
+    if (shipmentIdA) {
+      await request(http)
+        .get(`/api/v1/portal/shipments/${shipmentIdA}/comments`)
+        .set(auth(adminBAccessToken))
+        .expect(404);
+    } else {
+      // No shipment exists yet for A's order: fall back to the users list.
+      const usersB = await request(http)
+        .get('/api/v1/portal/users')
+        .set(auth(adminBAccessToken))
+        .expect(200);
+      const emailsB = (usersB.body as Array<{ email: string }>).map((u) => u.email);
+      expect(emailsB).not.toContain(adminEmail);
+      expect(emailsB).not.toContain(memberEmail);
+
+      await request(http)
+        .delete(`/api/v1/portal/users/${memberPortalUserId}`)
+        .set(auth(adminBAccessToken))
+        .expect(404);
+    }
   });
 });
