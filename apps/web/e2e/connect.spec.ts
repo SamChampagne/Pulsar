@@ -92,3 +92,106 @@ test('inbound-hooks page generates a token and displays it exactly once', async 
   );
   expect(tokenRequestCaptured).toBe(true);
 });
+
+/**
+ * Coverage for the EDI partners page (arc 3, task C6b). The client-side 204
+ * preview runs entirely through `@pulsar/shared/edi` in the browser — no
+ * network call — while "Envoyer un 204" goes through the real API contract
+ * (`POST /connect/edi/inbound`, JSON `{ integrationKey, content }`).
+ */
+
+const EDI_PARTNER = {
+  id: 'int-edi-acme',
+  key: 'edi-acme-shipper',
+  name: 'Acme Shipper — EDI',
+  status: 'ENABLED' as const,
+  config: {
+    isaSenderId: 'PULSARTMS',
+    isaReceiverId: 'ACMESHIPPER',
+    gsSenderId: 'PULSARTMS',
+    gsReceiverId: 'ACMESHIPPER',
+    customerId: 'cust-1',
+    carrierId: '',
+    url: '',
+    format: 'x12',
+  },
+  hasInboundToken: false,
+  createdAt: '2026-09-01T00:00:00.000Z',
+};
+
+test('EDI page lists a partner and previews a pasted 204 client-side', async ({ page }) => {
+  await login(page);
+
+  await page.route('**/api/v1/integrations', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: [EDI_PARTNER] });
+  });
+  await page.route('**/api/v1/connect/inbox**', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 10 } });
+  });
+
+  await page.goto('/connect/edi');
+
+  await expect(page.getByRole('article').getByText('Acme Shipper — EDI')).toBeVisible();
+  await expect(page.getByText('edi-acme-shipper')).toBeVisible();
+
+  // The preview textarea comes pre-filled with a valid sample 204 — decoding
+  // it is a pure client-side call, no request is made.
+  await page.getByRole('button', { name: 'Décoder' }).click();
+
+  await expect(page.getByRole('cell', { name: 'ACME MANUFACTURING' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'LOBLAW DC TORONTO' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'MONTREAL' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'TORONTO', exact: true })).toBeVisible();
+});
+
+test('"Envoyer un 204" posts to /connect/edi/inbound and shows the mocked 990 ack', async ({
+  page,
+}) => {
+  await login(page);
+
+  await page.route('**/api/v1/integrations', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: [EDI_PARTNER] });
+  });
+  await page.route('**/api/v1/connect/inbox**', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 10 } });
+  });
+
+  let capturedContentType = '';
+  let capturedBody: { integrationKey?: string; content?: string } | null = null;
+  await page.route('**/api/v1/connect/edi/inbound', async (route) => {
+    const req = route.request();
+    capturedContentType = req.headers()['content-type'] ?? '';
+    capturedBody = req.postDataJSON();
+    return route.fulfill({
+      json: {
+        inboxId: 'inbox-1',
+        status: 'IMPORTED',
+        summary: 'Commande TO-000123 créée',
+        transactionSetId: '204',
+        entityType: 'transport-order',
+        entityId: 'to-123',
+        ack: 'ISA*00*...~GS*GF*ACMESHIPPER*PULSARTMS*20260917*0905*1*X*004010~ST*990*0001~B1*CRXY*SHP-2026-0043*20260917*A~SE*3*0001~GE*1*1~IEA*1*000000001~',
+      },
+    });
+  });
+
+  await page.goto('/connect/edi');
+  await expect(page.getByRole('article').getByText('Acme Shipper — EDI')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Envoyer un 204' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Envoyer un 204' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Envoyer' }).click();
+
+  await expect(dialog.getByText('Importé')).toBeVisible();
+  await expect(dialog.locator('pre')).toContainText('ST*990*0001');
+
+  expect(capturedContentType).toContain('application/json');
+  expect(capturedBody?.integrationKey).toBe('edi-acme-shipper');
+  expect(capturedBody?.content ?? '').toContain('ISA*00*');
+});

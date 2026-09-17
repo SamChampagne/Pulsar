@@ -626,6 +626,11 @@ export function navCatalogue(): NavDomain[] {
               perm: PERMISSIONS.CORE.INTEGRATIONS_READ,
             },
             {
+              href: '/connect/edi',
+              label: 'EDI',
+              perm: PERMISSIONS.CORE.CONNECT_READ,
+            },
+            {
               href: '/connect/email',
               label: 'Courriel SMTP / IMAP',
               perm: PERMISSIONS.EMAIL.MANAGE,
