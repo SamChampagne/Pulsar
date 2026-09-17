@@ -19,10 +19,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
    * Trade-off: a permission change takes effect at next login / token refresh.
    * Revisit when refresh tokens land (see ROADMAP phase 2).
    */
-  validate(payload: JwtPayload & { platformAdmin?: boolean }): AuthUser {
-    // Watertight separation of the two planes: a platform-plane token must
-    // never reach a tenant route (and tenant guards all assume tenantId).
-    if (payload.platformAdmin || !payload.tenantId) {
+  validate(payload: JwtPayload & { platformAdmin?: boolean; portal?: unknown }): AuthUser {
+    // Watertight separation of the three planes: a platform-plane or
+    // customer-portal-plane token must never reach a tenant route (and tenant
+    // guards all assume tenantId). A portal token DOES carry a tenantId, so the
+    // `portal` claim has to be rejected explicitly — any truthy value, since
+    // only tokens we mint are legitimate and they always set `portal: true`.
+    if (payload.platformAdmin || payload.portal || !payload.tenantId) {
       throw new UnauthorizedException('Not a tenant access token');
     }
     return {

@@ -32,4 +32,17 @@ describe('JwtStrategy (tenant)', () => {
       strategy.validate({ sub: 'u1', email: 'a@b.c', permissions: [] } as never),
     ).toThrow(UnauthorizedException);
   });
+
+  it('rejects portal tokens (portal claim, even with a tenantId)', () => {
+    expect(() =>
+      strategy.validate({
+        sub: 'pu1',
+        tenantId: 't1',
+        customerId: 'c1',
+        email: 'jane@acme-client.test',
+        role: 'ADMIN',
+        portal: true,
+      } as never),
+    ).toThrow(UnauthorizedException);
+  });
 });
