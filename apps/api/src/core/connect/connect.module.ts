@@ -20,11 +20,11 @@ import { ImportsService } from './imports.service';
 import { InboundController } from './inbound.controller';
 import { InboundService } from './inbound.service';
 import { InboundHooksController } from './inbound-hooks.controller';
-import { InboundHooksService } from './inbound-hooks.service';
+import { InboundHooksService, MAX_HOOK_BODY_BYTES } from './inbound-hooks.service';
 import { ConnectRecordWriter } from './record-writer.service';
 import { EdiController } from './edi.controller';
 import { EdiShipmentsController } from './edi-shipments.controller';
-import { EdiService } from './edi.service';
+import { EdiService, MAX_EDI_BYTES } from './edi.service';
 import { rawTextBody } from './raw-text.middleware';
 
 /**
@@ -78,10 +78,11 @@ export class ConnectModule implements NestModule {
    */
   configure(consumer: MiddlewareConsumer) {
     consumer
-      .apply(rawTextBody)
-      .forRoutes(
-        { path: 'connect/edi/inbound', method: RequestMethod.POST },
-        { path: 'public/hooks/:inboundToken', method: RequestMethod.POST },
-      );
+      .apply(rawTextBody(MAX_EDI_BYTES))
+      .forRoutes({ path: 'connect/edi/inbound', method: RequestMethod.POST })
+      // The public door knows nothing about the integration before buffering,
+      // so an anonymous caller gets the SAME ceiling as a JSON delivery.
+      .apply(rawTextBody(MAX_HOOK_BODY_BYTES))
+      .forRoutes({ path: 'public/hooks/:inboundToken', method: RequestMethod.POST });
   }
 }

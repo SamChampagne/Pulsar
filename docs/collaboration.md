@@ -258,12 +258,31 @@ Nest n'enregistre que les parsers JSON/urlencoded : le middleware `rawTextBody` 
 bufferise les corps `text/*` en exposant `req.body` (chaîne) **et** `req.rawBody` (octets, pour
 l'HMAC). Plafond 512 Ko.
 
+**Privilège de configuration.** Armer un récepteur EDI, c'est accorder une écriture métier à une
+porte anonyme : en plus de `core.integrations.manage`, l'utilisateur qui pose un `customerId` doit
+détenir `transportation.orders.manage`, et celui qui pose un `carrierId`
+`billing.freight-audit.manage` (403 sinon). Le contrôle s'applique à la **création**, à la **mise à
+jour** (config fusionnée) **et** à l'émission du jeton entrant — exactement comme le gate
+`config.target` des récepteurs JSON.
+
 Réponse `202` : `{ inboxId, status: 'IMPORTED' | 'FAILED', transactionSetId, ack?, error?,
-entityType?, entityId? }`. Idempotence sur le **sha256 de l'interchange**
-(`InboundMessage.dedupKey = "edi:<sha256>"`) : un renvoi répond `replayed: true` sans rien
-réécrire. Toute livraison est journalisée en `InboundMessage{ source: 'EDI', kind: 'edi' }`,
-attribuée au service-account du tenant (règle 13) et auditée (règle 6) ; le 990 répondu est
-conservé dans `parsed.ack`.
+entityType?, entityId? }`.
+
+**Idempotence — une seule clé pour les deux portes** : `InboundMessage.dedupKey =
+"edi:<sha256(interchange détrimé)>"`, calculée à l'identique sur la porte authentifiée et sur la
+porte publique. Un `X-Idempotency-Key` est volontairement **ignoré** en EDI : l'interchange EST
+l'identité. Un renvoi répond `replayed: true` sans rien réécrire, et rejoue le **990 d'origine**
+(conservé dans `parsed.ack`).
+
+**Ce que le partenaire voit.** `error` (réponse HTTP **et** motif `K1` du 990) ne porte JAMAIS
+qu'un refus délibéré (`EdiDeclineError` : module désactivé, FK absente, `B2-04` vide, doublon…).
+Toute autre exception (service métier, ORM, runtime) est rendue génériquement
+(`"Tender could not be processed"` / `"Interchange could not be processed"`) ; le détail complet
+vit uniquement dans `InboundMessage.error` et dans les logs. Le motif partenaire est aussi mémorisé
+(`parsed.publicError`) pour qu'un rejeu ne divulgue rien de plus.
+
+Toute livraison est journalisée en `InboundMessage{ source: 'EDI', kind: 'edi' }`, attribuée au
+service-account du tenant (règle 13) et auditée (règle 6).
 
 **204 → commande de transport.** `read204` → `TransportOrdersService.create` en **DRAFT** pour
 `config.customerId`, numérotée par `SequencesService` (règle 8). Origine = premier arrêt `PICKUP`,
@@ -288,6 +307,12 @@ avec une ligne par boucle `LX` (`lineRef` = code de charge `L1-08`, sinon n° de
 service (règle 15) ; `carrierId` manquant/inconnu ⇒ `FAILED`. Aucune variance n'est calculée ici :
 le service compare ensuite au `Load.estimatedCost` figé (règles 16/31). Pas de 990 pour un 210.
 
+**Doublon de facture.** En plus du hash d'interchange, un garde sur la **clé métier**
+`(tenantId, carrierId, carrierInvoiceNumber)` refuse une facture déjà reçue :
+`Duplicate carrier invoice <n°>` (`FAILED`). Un transporteur qui renvoie la même facture dans une
+nouvelle enveloppe (nouveau numéro de contrôle ISA, nouvelle date) ne crée donc pas un second
+payable. Aucune migration : c'est un `findFirst` avant création.
+
 **214 (sortant).** `GET /transportation/shipments/:id/edi/214?integrationKey=edi-…`
 (`@RequireModule(TRANSPORTATION)` + `transportation.tracking.read`) renvoie l'interchange brut en
 `text/plain`. Les statuts viennent des `TrackingEvent` de l'expédition (ordre chronologique,
@@ -302,11 +327,23 @@ load (`SI`).
 (`format: 'x12'` ⇒ corps `text/plain` = `data.x12`, signature `X-Pulsar-Signature`, 5 tentatives
 avec backoff). Requiert `config.url`.
 
-**Limites v1** (héritées de la couche pure) : un seul GS/ST par interchange émis ; séparateur de
-répétition détecté mais non appliqué ; composites non éclatés ; motif `K1` tronqué à 60
-caractères ; **aucun fuseau horaire** (les dates X12 sont rendues telles quelles, heure locale du
-partenaire) ; pas d'AS2/VAN ni de 997. Les numéros de contrôle sortants (ISA13/GS06) sont dérivés
-de l'horloge, pas d'un compteur persisté.
+**Limites v1** :
+
+- un seul GS/ST par interchange **émis** (limite de la couche pure) ;
+- **seule la première transaction d'un interchange entrant est traitée** — un lot multi-ST est lu
+  intégralement mais les ST suivants sont ignorés ;
+- **un 204 `CANCELLATION`/`CHANGE` est traité comme un `ORIGINAL`** : `B2A-01` est lu par la couche
+  pure mais pas exploité, chaque interchange distinct crée une commande (le même interchange rejoué
+  reste idempotent) ;
+- séparateur de répétition détecté mais non appliqué ; composites non éclatés ;
+- motif `K1` tronqué à 60 caractères ;
+- **aucun fuseau horaire** : les dates X12 sont rendues telles quelles et interprétées en heure
+  locale du serveur ;
+- pas d'AS2/VAN ni de 997 ;
+- les numéros de contrôle sortants (ISA13/GS06) sont dérivés de l'horloge, pas d'un compteur
+  persisté ;
+- plafonds de corps : **512 Ko** sur la porte authentifiée, **256 Ko** (comme le JSON) sur la porte
+  publique — rien n'est connu de l'intégration avant la bufferisation.
 
 ## Inbound API keys
 

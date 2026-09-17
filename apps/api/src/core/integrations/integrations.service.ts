@@ -14,6 +14,7 @@ import {
   getInboundHookTarget,
   validateMappingPaths,
   checkWebhookUrl,
+  PERMISSIONS,
   DOMAIN_EVENT_CATALOG,
   normalizeMappingRules,
   resolveWebhookTarget,
@@ -313,18 +314,33 @@ export class IntegrationsService {
     tenantId: string,
     key: string,
     config: Record<string, unknown>,
+    actor?: ConfiguringUser,
   ) {
     if (!key.startsWith('edi-')) return;
-    await this.ownership.assertOwnedIfSet(
-      'customer',
-      asString(config.customerId) || undefined,
-      tenantId,
-    );
-    await this.ownership.assertOwnedIfSet(
-      'carrier',
-      asString(config.carrierId) || undefined,
-      tenantId,
-    );
+    const customerId = asString(config.customerId) || undefined;
+    const carrierId = asString(config.carrierId) || undefined;
+    await this.ownership.assertOwnedIfSet('customer', customerId, tenantId);
+    await this.ownership.assertOwnedIfSet('carrier', carrierId, tenantId);
+
+    // Privilege gate — same shape as `assertInboundConfigAllowed`, but keyed on
+    // the EDI config instead of `config.target` (an EDI receiver has none).
+    // Setting `customerId` means "a 204 arriving here creates a transport
+    // order"; setting `carrierId` means "a 210 creates an incoming carrier
+    // invoice". Granting that to an anonymous door is granting the permission,
+    // so the configuring user must hold it themselves (rule 13 spirit).
+    if (actor) {
+      for (const [id, permission, label] of [
+        [customerId, PERMISSIONS.TRANSPORTATION.ORDERS_MANAGE, 'transport orders'],
+        [carrierId, PERMISSIONS.BILLING.FREIGHT_AUDIT_MANAGE, 'incoming carrier invoices'],
+      ] as const) {
+        if (id && !actor.permissions.includes(permission)) {
+          throw new ForbiddenException(
+            `Permission "${permission}" is required to configure an inbound receiver writing ${label}`,
+          );
+        }
+      }
+    }
+
     for (const field of ['isaSenderId', 'isaReceiverId', 'gsSenderId', 'gsReceiverId']) {
       const value = asString(config[field]);
       if (value.length > 15) {
@@ -400,7 +416,7 @@ export class IntegrationsService {
     if (existing) throw new ConflictException(`Integration "${input.key}" already exists`);
     this.assertSafeWebhookConfig(input.key, input.config ?? {});
     this.assertInboundConfigAllowed(input.config ?? {}, actor);
-    await this.assertEdiConfigAllowed(tenantId, input.key, input.config ?? {});
+    await this.assertEdiConfigAllowed(tenantId, input.key, input.config ?? {}, actor);
     // A webhook integration created here already follows the current semantics
     // (empty `events` = every catalog event), so it must never be picked up by
     // WebhookEventsBackfillService — stamp the marker straight away.
@@ -436,7 +452,7 @@ export class IntegrationsService {
     if (merged) {
       this.assertSafeWebhookConfig(integration.key, merged);
       this.assertInboundConfigAllowed(merged, actor);
-      await this.assertEdiConfigAllowed(tenantId, integration.key, merged);
+      await this.assertEdiConfigAllowed(tenantId, integration.key, merged, actor);
     }
     const updated = await this.prisma.integration.update({
       where: { id },
@@ -624,6 +640,9 @@ export class IntegrationsService {
     // permission: the issuing user must hold that permission themselves (403).
     const storedConfig = this.crypto.decryptJson<Record<string, unknown>>(integration.config);
     this.assertInboundConfigAllowed(storedConfig, actor);
+    // An `edi-*` receiver carries no `config.target`: its own gate applies here too,
+    // otherwise handing out a token would grant what saving the config refused.
+    await this.assertEdiConfigAllowed(tenantId, integration.key, storedConfig, actor);
 
     const token = randomBytes(32).toString('base64url');
     const inboundTokenHash = createHash('sha256').update(token).digest('hex');

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -102,23 +103,51 @@ export interface EdiOutcome {
   status: InboundStatus;
   /** 990 interchange (accept or decline) — only for a 204. */
   ack?: string;
+  /**
+   * PARTNER-SAFE reason. Travels to the caller (including the anonymous public
+   * door) and into the 990 `K1`, so it only ever carries a deliberate
+   * {@link EdiDeclineError} message — never an exception from a business
+   * service, an ORM or the runtime.
+   */
   error?: string;
+  /** Full internal detail. Journalled in `InboundMessage.error`, NEVER returned. */
+  detail?: string;
   entityType?: string;
   entityId?: string;
+  /** Partner-safe one-liner (inbox display + response). */
   summary: string;
   transactionSetId?: string;
 }
 
-export interface EdiInboundResponse extends EdiOutcome {
+export type EdiInboundResponse = Omit<EdiOutcome, 'detail'> & {
   inboxId: string;
   /** true when the exact same interchange had already been processed. */
   replayed?: boolean;
-}
+};
 
-/** A decline the caller turns into a 990 `D` + a FAILED inbox row. */
+/**
+ * A refusal whose message is safe to hand back to the partner (it describes
+ * THEIR interchange or OUR configuration in business terms). Anything else that
+ * escapes is reported generically — see {@link GENERIC_DECLINE}.
+ */
 class EdiDeclineError extends Error {}
 
+/** What a non-{@link EdiDeclineError} failure tells the partner. */
+const GENERIC_DECLINE = 'Tender could not be processed';
+const GENERIC_FAILURE = 'Interchange could not be processed';
+
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+
+/**
+ * The ONE idempotency namespace of the EDI plane: both doors (authenticated
+ * `POST /connect/edi/inbound` and the public receiver) derive the same key from
+ * the same bytes, so a partner that retries on the other door is still a replay.
+ * An `X-Idempotency-Key` header is deliberately ignored for EDI — the
+ * interchange itself is the identity.
+ */
+export function ediDedupKey(content: string): string {
+  return `edi:${sha256(content.trim())}`;
+}
 
 /** `EDI-<12 hex>` — deterministic location code derived from the stop address. */
 export function ediLocationCode(parts: Array<string | undefined>): string {
@@ -225,19 +254,25 @@ export class EdiService {
     content: string;
   }): Promise<EdiInboundResponse> {
     const { tenantId, content } = args;
-    const dedupKey = `edi:${sha256(content)}`;
+    const dedupKey = ediDedupKey(content);
 
     const existing = await this.prisma.inboundMessage.findFirst({
       where: { tenantId, dedupKey },
-      select: { id: true, status: true, error: true, refType: true, refId: true, parsed: true },
+      select: { id: true, status: true, refType: true, refId: true, parsed: true },
     });
     if (existing) {
-      const parsed = (existing.parsed ?? {}) as { ack?: string; transactionSetId?: string };
+      // The replay answers with the STORED partner-safe reason, never with the
+      // internal detail kept in `InboundMessage.error`.
+      const parsed = (existing.parsed ?? {}) as {
+        ack?: string;
+        publicError?: string;
+        transactionSetId?: string;
+      };
       return {
         inboxId: existing.id,
         status: existing.status as InboundStatus,
         summary: 'Interchange déjà traité',
-        ...(existing.error ? { error: existing.error } : {}),
+        ...(parsed.publicError ? { error: parsed.publicError } : {}),
         ...(existing.refType ? { entityType: existing.refType } : {}),
         ...(existing.refId ? { entityId: existing.refId } : {}),
         ...(parsed.ack ? { ack: parsed.ack } : {}),
@@ -291,7 +326,8 @@ export class EdiService {
       args.content,
     );
     await this.finish(args, outcome, serviceUserId, inboxId);
-    return { inboxId, ...outcome };
+    const { detail: _detail, ...safe } = outcome;
+    return { inboxId, ...safe };
   }
 
   /** Writes the outcome back to the inbox row and audits it under the service account. */
@@ -301,20 +337,33 @@ export class EdiService {
     serviceUserId: string,
     inboxId: string,
   ) {
-    await this.prisma.inboundMessage.update({
-      where: { id: inboxId },
+    // Keep whatever the claim wrote (`bytes`, `integrationId`) — this is an
+    // enrichment of the row, not a replacement.
+    const current = await this.prisma.inboundMessage.findFirst({
+      where: { id: inboxId, tenantId: args.tenantId },
+      select: { parsed: true },
+    });
+    const previous = (current?.parsed ?? {}) as Record<string, unknown>;
+
+    // Tenant-scoped write (rule 1): `updateMany` is the only conditional form.
+    await this.prisma.inboundMessage.updateMany({
+      where: { id: inboxId, tenantId: args.tenantId },
       data: {
         status: outcome.status,
         summary: `EDI ${outcome.transactionSetId ?? '?'} — ${args.integrationName} — ${outcome.summary}`,
         createdById: serviceUserId,
-        ...(outcome.error ? { error: outcome.error } : { error: null }),
+        // `error` keeps the FULL detail — it never leaves the inbox.
+        error: outcome.detail ?? outcome.error ?? null,
         ...(outcome.entityType ? { refType: outcome.entityType } : {}),
         ...(outcome.entityId ? { refId: outcome.entityId } : {}),
         parsed: {
+          ...previous,
           integrationId: args.integrationId,
           transactionSetId: outcome.transactionSetId ?? null,
           // The 990 we answered is part of the audit trail of the exchange.
           ...(outcome.ack ? { ack: outcome.ack } : {}),
+          // What a replay is allowed to tell the partner.
+          ...(outcome.error ? { publicError: outcome.error } : {}),
         } as Prisma.InputJsonValue,
       },
     });
@@ -348,6 +397,7 @@ export class EdiService {
     const result = parseX12(content);
     const fatal = (result.errors ?? []).filter((e: X12ParseError) => FATAL_PARSE_CODES.has(e.code));
     if (!result.document || fatal.length > 0) {
+      // Parse diagnostics describe the PARTNER's own bytes — safe to hand back.
       const error = `Interchange illisible: ${(fatal.length ? fatal : result.errors)
         .map((e: X12ParseError) => e.message)
         .join('; ')
@@ -403,8 +453,13 @@ export class EdiService {
         summary: `Commande ${order.orderNumber}`,
       };
     } catch (err) {
-      const reason = (err instanceof Error ? err.message : String(err)).slice(0, MAX_REASON_CHARS);
-      this.logger.warn(`EDI 204 declined: ${reason}`);
+      // Only a deliberate decline reaches the partner: anything else (a business
+      // service, Prisma, the runtime) would describe our internals, and the
+      // public door echoes this verbatim in a 202 body.
+      const detail = err instanceof Error ? err.message : String(err);
+      const safe = err instanceof EdiDeclineError ? err.message : GENERIC_DECLINE;
+      const reason = safe.slice(0, MAX_REASON_CHARS);
+      this.logger.warn(`EDI 204 declined: ${detail}`);
       const ack = build990(
         {
           shipmentId: tender?.shipmentId ?? '',
@@ -417,7 +472,8 @@ export class EdiService {
         status: 'FAILED',
         transactionSetId: '204',
         ack,
-        error: err instanceof Error ? err.message : String(err),
+        error: safe,
+        detail,
         summary: `Tender refusé — ${reason}`,
       };
     }
@@ -505,17 +561,34 @@ export class EdiService {
     });
     if (existing) return existing.id;
 
-    const created = await this.locations.create(tenantId, {
-      code,
-      name: (stop.name ?? city).slice(0, 120),
-      type: LocationType.CUSTOMER_SITE,
-      addressLine1,
-      ...(stop.address2 ? { addressLine2: stop.address2 } : {}),
-      city,
-      ...(stop.state ? { state: stop.state } : {}),
-      ...(stop.postalCode ? { postalCode: stop.postalCode } : {}),
-      ...(stop.country ? { country: stop.country } : {}),
-    });
+    let created: { id: string };
+    try {
+      created = await this.locations.create(tenantId, {
+        code,
+        name: (stop.name ?? city).slice(0, 120),
+        type: LocationType.CUSTOMER_SITE,
+        addressLine1,
+        ...(stop.address2 ? { addressLine2: stop.address2 } : {}),
+        city,
+        ...(stop.state ? { state: stop.state } : {}),
+        ...(stop.postalCode ? { postalCode: stop.postalCode } : {}),
+        ...(stop.country ? { country: stop.country } : {}),
+      });
+    } catch (err) {
+      // Two interchanges naming the same address can race between the lookup
+      // above and this create (LocationsService answers 409; the unique index
+      // answers P2002). Either way the row now exists — re-read it.
+      const raced =
+        err instanceof ConflictException ||
+        (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002');
+      if (!raced) throw err;
+      const existingNow = await this.prisma.location.findUnique({
+        where: { tenantId_code: { tenantId, code } },
+        select: { id: true },
+      });
+      if (!existingNow) throw err;
+      return existingNow.id;
+    }
     await this.audit
       .log({
         tenantId,
@@ -558,6 +631,17 @@ export class EdiService {
       const lines = this.invoiceLines(invoice);
       if (lines.length === 0) throw new EdiDeclineError('Invoice carries no charge');
 
+      // Business-key dedup on top of the interchange hash: a partner that
+      // re-sends the SAME invoice inside a different envelope (new ISA control
+      // number, new date) would otherwise create a second payable.
+      const duplicate = await this.prisma.incomingCarrierInvoice.findFirst({
+        where: { tenantId, carrierId, carrierInvoiceNumber: invoice.invoiceNumber },
+        select: { id: true },
+      });
+      if (duplicate) {
+        throw new EdiDeclineError(`Duplicate carrier invoice ${invoice.invoiceNumber}`);
+      }
+
       const created = await this.freightAudit.create(
         tenantId,
         serviceUserId,
@@ -577,13 +661,15 @@ export class EdiService {
         summary: `Facture ${invoice.invoiceNumber} (${lines.length} ligne(s))`,
       };
     } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`EDI 210 failed: ${error}`);
+      const detail = err instanceof Error ? err.message : String(err);
+      const safe = err instanceof EdiDeclineError ? err.message : GENERIC_FAILURE;
+      this.logger.warn(`EDI 210 failed: ${detail}`);
       return {
         status: 'FAILED',
         transactionSetId: '210',
-        error,
-        summary: `Facture refusée — ${error.slice(0, MAX_REASON_CHARS)}`,
+        error: safe,
+        detail,
+        summary: `Facture refusée — ${safe.slice(0, MAX_REASON_CHARS)}`,
       };
     }
   }
@@ -740,14 +826,16 @@ export class EdiService {
         x12: built.x12,
       },
     );
-    await this.audit.log({
-      tenantId,
-      userId,
-      action: AuditAction.CREATE,
-      entityType: 'shipment',
-      entityId: shipmentId,
-      after: { action: 'edi-214-send', integrationId: integration.id, deliveryId: delivery.id },
-    });
+    await this.audit
+      .log({
+        tenantId,
+        userId,
+        action: AuditAction.CREATE,
+        entityType: 'shipment',
+        entityId: shipmentId,
+        after: { action: 'edi-214-send', integrationId: integration.id, deliveryId: delivery.id },
+      })
+      .catch((err) => this.logger.warn(`Audit log failed (non-fatal): ${String(err)}`));
     return {
       deliveryId: delivery.id,
       shipmentNumber: built.shipmentNumber,

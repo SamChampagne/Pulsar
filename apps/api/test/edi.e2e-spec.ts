@@ -13,12 +13,20 @@
  *                      with config.format = "x12") journals source = EDI.
  *   S6  guards         a non-`edi-` integrationKey is refused; a config pointing
  *                      at another tenant's customer is refused at save time.
+ *   S7  privilege      a user holding only core.integrations.manage cannot stand
+ *                      up an EDI door writing orders / carrier invoices (403 on
+ *                      create, on PATCH adding carrierId, and on token issue).
+ *   S8  HMAC           a signed x12 receiver refuses a bad signature (401) and
+ *                      accepts the right one over the RAW text/plain bytes.
+ *   S9  duplicate      the same carrier invoice number in a new envelope is
+ *                      refused (business-key dedup on top of the byte hash).
  *
  * Fully offline: the fixtures are the ones C3 ships in @pulsar/shared.
  * Prerequisites: reachable PostgreSQL with the seed applied.
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { at7ForShipmentStatus, parseX12, read214, read990 } from '@pulsar/shared';
@@ -58,6 +66,13 @@ describe('EDI X12 (e2e)', () => {
   let integrationId = '';
   let orderId = '';
   let shipmentId = '';
+
+  const limitedRoleKey = `edi-limited-${suffix}`.slice(0, 40);
+  const limitedEmail = `edi-limited-${suffix}@acme.test`;
+  const LIMITED_PASSWORD = 'EdiLimited123!';
+  const HMAC_SECRET = 'edi-e2e-hmac-secret';
+  let limitedRoleId = '';
+  let limitedUserId = '';
 
   /** The C3 fixture with tenant-unique references (so reruns stay idempotent-safe). */
   const tender204 = () => fixture('204-multistop.edi').replace('SHP-2026-0042', tenderRef);
@@ -112,8 +127,22 @@ describe('EDI X12 (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
-  });
+    if (prisma) {
+      if (limitedUserId) {
+        await prisma.userRole
+          .deleteMany({ where: { userId: limitedUserId } })
+          .catch(() => undefined);
+        await prisma.user.delete({ where: { id: limitedUserId } }).catch(() => undefined);
+      }
+      if (limitedRoleId) {
+        await prisma.rolePermission
+          .deleteMany({ where: { roleId: limitedRoleId } })
+          .catch(() => undefined);
+        await prisma.role.delete({ where: { id: limitedRoleId } }).catch(() => undefined);
+      }
+    }
+    if (app) await app.close();
+  }, 60_000);
 
   // S1 ------------------------------------------------------------------------
   it('204: a raw interchange creates a DRAFT transport order and returns an accepting 990', async () => {
@@ -180,8 +209,12 @@ describe('EDI X12 (e2e)', () => {
   // S2 ------------------------------------------------------------------------
   it('204: a tender without a shipment id is declined with a 990 "D" and FAILED', async () => {
     // Same segment count (so the interchange itself stays structurally valid),
-    // but B2-04 is now empty — there is nothing to tender.
-    const broken = tender204().replace(`B2**CRXY**${tenderRef}**PP`, 'B2**CRXY****PP');
+    // but B2-04 is now empty — there is nothing to tender. The interchange
+    // control number carries the per-run uniqueness the tender ref no longer can
+    // (the dedup key is the hash of these very bytes).
+    const broken = tender204()
+      .replace(/000000101/g, suffix)
+      .replace(`B2**CRXY**${tenderRef}**PP`, 'B2**CRXY****PP');
     expect(broken).toContain('B2**CRXY****PP');
 
     const response = await request(http)
@@ -362,5 +395,146 @@ describe('EDI X12 (e2e)', () => {
       .set(auth())
       .send({ config: { isaSenderId: 'A'.repeat(16) } })
       .expect(400);
+  });
+  // S7 ------------------------------------------------------------------------
+  it('privilege gate: core.integrations.manage alone cannot stand up an EDI door', async () => {
+    const role = await request(http)
+      .post('/api/v1/roles')
+      .set(auth())
+      .send({
+        key: limitedRoleKey,
+        name: `EDI limited ${suffix}`,
+        permissionKeys: ['core.integrations.read', 'core.integrations.manage'],
+      })
+      .expect(201);
+    limitedRoleId = role.body.id;
+
+    const created = await request(http)
+      .post('/api/v1/users')
+      .set(auth())
+      .send({
+        email: limitedEmail,
+        firstName: 'EDI',
+        lastName: 'Limited',
+        roleIds: [limitedRoleId],
+      })
+      .expect(201);
+    limitedUserId = created.body.id;
+    const inviteToken = (created.body.inviteUrl as string).split('/reset-password/')[1];
+    await request(http)
+      .post('/api/v1/auth/reset-password')
+      .send({ token: inviteToken, password: LIMITED_PASSWORD })
+      .expect(200);
+    const login = await request(http)
+      .post('/api/v1/auth/login')
+      .send({ email: limitedEmail, password: LIMITED_PASSWORD, tenant: 'acme' })
+      .expect(200);
+    const limitedAuth = () => ({ Authorization: `Bearer ${login.body.accessToken}` });
+
+    // Cannot CREATE an EDI receiver that would write transport orders...
+    await request(http)
+      .post('/api/v1/integrations')
+      .set(limitedAuth())
+      .send({
+        key: `edi-denied-${suffix}`,
+        name: 'Porte refusee',
+        status: 'ENABLED',
+        config: { customerId, format: 'x12' },
+      })
+      .expect(403);
+
+    // A receiver with NO business FK is fine — nothing is granted yet...
+    const inert = await request(http)
+      .post('/api/v1/integrations')
+      .set(limitedAuth())
+      .send({ key: `edi-inert-${suffix}`, name: 'Porte inerte', config: { format: 'x12' } })
+      .expect(201);
+
+    // ...but arming it with a carrierId later is the same privilege grant.
+    await request(http)
+      .patch(`/api/v1/integrations/${inert.body.id}`)
+      .set(limitedAuth())
+      .send({ config: { carrierId } })
+      .expect(403);
+
+    // ...and they cannot hand out a token for an already-armed door either.
+    await request(http)
+      .post(`/api/v1/integrations/${integrationId}/inbound-token`)
+      .set(limitedAuth())
+      .expect(403);
+
+    // The admin, who holds both permissions, can do the same PATCH.
+    await request(http)
+      .patch(`/api/v1/integrations/${inert.body.id}`)
+      .set(auth())
+      .send({ config: { carrierId } })
+      .expect(200);
+  });
+
+  // S8 ------------------------------------------------------------------------
+  it('HMAC: a signed x12 receiver checks the signature over the raw text bytes', async () => {
+    const created = await request(http)
+      .post('/api/v1/integrations')
+      .set(auth())
+      .send({
+        key: `edi-signed-${suffix}`,
+        name: 'Partenaire EDI signe',
+        status: 'ENABLED',
+        config: {
+          isaSenderId: 'PULSARTMS',
+          customerId,
+          format: 'x12',
+          inboundSecret: HMAC_SECRET,
+        },
+      })
+      .expect(201);
+    const issued = await request(http)
+      .post(`/api/v1/integrations/${created.body.id}/inbound-token`)
+      .set(auth())
+      .expect(201);
+
+    const body = fixture('204-minimal.edi').replace('SHP-2026-0043', `SHP-SIG-${suffix}`);
+
+    await request(http)
+      .post(`/api/v1/public/hooks/${issued.body.token}`)
+      .set('Content-Type', 'text/plain')
+      .set('X-Signature', 'sha256=deadbeef')
+      .send(body)
+      .expect(401);
+
+    const signature = createHmac('sha256', HMAC_SECRET)
+      .update(Buffer.from(body, 'utf-8'))
+      .digest('hex');
+    const ok = await request(http)
+      .post(`/api/v1/public/hooks/${issued.body.token}`)
+      .set('Content-Type', 'text/plain')
+      .set('X-Signature', `sha256=${signature}`)
+      .send(body)
+      .expect(202);
+    expect(ok.body.status).toBe('IMPORTED');
+    expect(read990(firstTransaction(ok.body.ack as string)).accepted).toBe(true);
+
+    // A replay answers with the STORED 990 (and never an internal detail).
+    const replay = await request(http)
+      .post(`/api/v1/public/hooks/${issued.body.token}`)
+      .set('Content-Type', 'text/plain')
+      .set('X-Signature', `sha256=${signature}`)
+      .send(body)
+      .expect(200);
+    expect(replay.body.replayed).toBe(true);
+    expect(replay.body.ack).toBe(ok.body.ack);
+  });
+
+  // S9 ------------------------------------------------------------------------
+  it('210: the same carrier invoice number in a new envelope is a duplicate', async () => {
+    // New ISA control number → new dedup key, but the business key already exists.
+    const resent = invoice210().replace(/000000205/g, '000000206');
+    const response = await request(http)
+      .post('/api/v1/connect/edi/inbound')
+      .set(auth())
+      .send({ integrationKey, content: resent })
+      .expect(202);
+    expect(response.body.status).toBe('FAILED');
+    expect(response.body.error).toBe(`Duplicate carrier invoice ${invoiceRef}`);
   });
 });

@@ -16,7 +16,7 @@ import type { LocationsService } from '../locations/locations.service';
 import type { WebhooksService } from '../integrations/webhooks.service';
 import type { TransportOrdersService } from '../../modules/transportation/transport-orders/transport-orders.service';
 import type { FreightAuditService } from '../../modules/billing/freight-audit/freight-audit.service';
-import { EdiService, ediLocationCode, ediWeightToKg } from './edi.service';
+import { EdiService, ediDedupKey, ediLocationCode, ediWeightToKg } from './edi.service';
 
 const FIXTURES = join(__dirname, '../../../../../packages/shared/src/edi/__fixtures__');
 const fixture = (name: string) => readFileSync(join(FIXTURES, name), 'utf-8');
@@ -29,7 +29,10 @@ interface HarnessOptions {
   customerExists?: boolean;
   carrierExists?: boolean;
   locationExists?: boolean;
+  duplicateInvoice?: boolean;
   status?: 'ENABLED' | 'DISABLED';
+  /** Makes a business service blow up with a NON-decline error (internals). */
+  explodeWith?: string;
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -62,7 +65,10 @@ function harness(options: HarnessOptions = {}) {
       }),
     },
     inboundMessage: {
-      findFirst: async ({ where }: any) => inbox.find((row) => row.dedupKey === where.dedupKey),
+      findFirst: async ({ where }: any) =>
+        where.dedupKey
+          ? inbox.find((row) => row.dedupKey === where.dedupKey)
+          : inbox.find((row) => row.id === where.id),
       create: async ({ data }: any) => {
         if (inbox.some((row) => row.dedupKey === data.dedupKey)) {
           const err: any = new Error('unique');
@@ -74,12 +80,15 @@ function harness(options: HarnessOptions = {}) {
         inbox.push(row);
         return row;
       },
-      update: async ({ where, data }: any) => {
-        updates.push({ id: where.id, ...data });
+      updateMany: async ({ where, data }: any) => {
+        updates.push({ id: where.id, tenantId: where.tenantId, ...data });
         const row = inbox.find((r) => r.id === where.id);
         if (row) Object.assign(row, data);
-        return row;
+        return { count: row ? 1 : 0 };
       },
+    },
+    incomingCarrierInvoice: {
+      findFirst: async () => (options.duplicateInvoice ? { id: 'dup_1' } : null),
     },
     customer: {
       findFirst: async () => (options.customerExists === false ? null : { id: 'cust_1' }),
@@ -174,6 +183,7 @@ function harness(options: HarnessOptions = {}) {
 
   const transportOrders = {
     create: async (_tenantId: string, userId: string, dto: any) => {
+      if (options.explodeWith) throw new Error(options.explodeWith);
       orders.push({ userId, ...dto });
       return { id: `to_${orders.length}`, orderNumber: `TO-00000${orders.length}` };
     },
@@ -181,6 +191,7 @@ function harness(options: HarnessOptions = {}) {
 
   const freightAudit = {
     create: async (_tenantId: string, userId: string, dto: any, sourceRef: string) => {
+      if (options.explodeWith) throw new Error(options.explodeWith);
       invoices.push({ userId, sourceRef, ...dto });
       return { id: `inv_${invoices.length}` };
     },
@@ -285,10 +296,14 @@ describe('EdiService — 204 load tender', () => {
     expect(ack.scac).toBe('CRXY');
     expect(ack.references.map((r) => r.value)).toContain('TO-000001');
 
-    // The inbox row carries the outcome and the ack we answered.
+    // The inbox row carries the outcome and the ack we answered, and the update
+    // is tenant-scoped (rule 1) while keeping what the claim already wrote.
     const update = h.updates.at(-1);
     expect(update.status).toBe('IMPORTED');
     expect(update.refType).toBe('transport-order');
+    expect(update.tenantId).toBe(TENANT);
+    expect(update.parsed.bytes).toBeGreaterThan(0);
+    expect(update.parsed.ack).toBe(result.ack);
     expect(h.audits.some((a) => a.entityType === 'inbound-message')).toBe(true);
     expect(h.audits.some((a) => a.entityType === 'location')).toBe(true);
   });
@@ -430,6 +445,91 @@ describe('EdiService — intake guards', () => {
         content: fixture('204-minimal.edi'),
       }),
     ).rejects.toThrow(/not enabled/);
+  });
+});
+
+describe('EdiService — partner-safe failures', () => {
+  it('204: an unexpected error never reaches the partner, only the inbox', async () => {
+    const h = harness({ explodeWith: 'connect ECONNREFUSED 10.0.0.7:5432 (transport_orders)' });
+    const result = await h.svc.receive(TENANT, {
+      integrationKey: 'edi-acme',
+      content: fixture('204-minimal.edi'),
+    });
+
+    expect(result.status).toBe('FAILED');
+    expect(result.error).toBe('Tender could not be processed');
+    expect(result.summary).not.toContain('ECONNREFUSED');
+    expect(JSON.stringify(result)).not.toContain('10.0.0.7');
+    // The 990 reason is the generic one too.
+    expect(read990(firstTransaction(result.ack!)).reason).toBe('Tender could not be processed');
+    // …while the full detail IS journalled, and only there.
+    const update = h.updates.at(-1);
+    expect(update.error).toContain('ECONNREFUSED');
+    expect(update.parsed.publicError).toBe('Tender could not be processed');
+  });
+
+  it('204: a deliberate decline keeps its business wording', async () => {
+    const h = harness({ config: { customerId: '' } });
+    const result = await h.svc.receive(TENANT, {
+      integrationKey: 'edi-acme',
+      content: fixture('204-minimal.edi'),
+    });
+    expect(result.error).toBe('No customerId on the EDI integration');
+    expect(h.updates.at(-1).error).toBe('No customerId on the EDI integration');
+  });
+
+  it('210: an unexpected error is reported generically', async () => {
+    const h = harness({
+      explodeWith: 'Invalid `prisma.incomingCarrierInvoice.create()` invocation',
+    });
+    const result = await h.svc.receive(TENANT, {
+      integrationKey: 'edi-carrier',
+      content: fixture('210-invoice.edi'),
+    });
+    expect(result.status).toBe('FAILED');
+    expect(result.error).toBe('Interchange could not be processed');
+    expect(h.updates.at(-1).error).toContain('prisma.incomingCarrierInvoice');
+  });
+
+  it('210: the same carrier invoice number is refused as a duplicate', async () => {
+    const h = harness({ duplicateInvoice: true });
+    const result = await h.svc.receive(TENANT, {
+      integrationKey: 'edi-carrier',
+      content: fixture('210-invoice.edi'),
+    });
+    expect(result.status).toBe('FAILED');
+    expect(result.error).toBe('Duplicate carrier invoice INV-77410');
+    expect(h.invoices).toHaveLength(0);
+  });
+
+  it('a replay answers with the stored 990 and the stored partner-safe reason', async () => {
+    const h = harness({ explodeWith: 'internal detail 10.0.0.7' });
+    const content = fixture('204-minimal.edi');
+    const first = await h.svc.receive(TENANT, { integrationKey: 'edi-acme', content });
+    const replay = await h.svc.receive(TENANT, { integrationKey: 'edi-acme', content });
+
+    expect(replay.replayed).toBe(true);
+    expect(replay.inboxId).toBe(first.inboxId);
+    expect(replay.error).toBe('Tender could not be processed');
+    expect(replay.ack).toBe(first.ack);
+    expect(JSON.stringify(replay)).not.toContain('10.0.0.7');
+  });
+
+  it('shares one dedup namespace, computed on the trimmed interchange', async () => {
+    const h = harness();
+    const content = fixture('204-minimal.edi');
+    const first = await h.svc.receive(TENANT, { integrationKey: 'edi-acme', content });
+    // Trailing whitespace must NOT produce a second inbox row.
+    const second = await h.svc.receive(TENANT, {
+      integrationKey: 'edi-acme',
+      content: `${content}
+
+`,
+    });
+    expect(second.inboxId).toBe(first.inboxId);
+    expect(second.replayed).toBe(true);
+    expect(h.inbox).toHaveLength(1);
+    expect(h.inbox[0].dedupKey).toBe(ediDedupKey(content));
   });
 });
 

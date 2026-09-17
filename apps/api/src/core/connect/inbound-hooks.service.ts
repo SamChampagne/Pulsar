@@ -23,7 +23,7 @@ import { ApiKeysService } from '../api-keys/api-keys.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { ConnectRecordWriter } from './record-writer.service';
-import { EdiService, MAX_EDI_BYTES } from './edi.service';
+import { ediDedupKey, EdiService, MAX_EDI_BYTES } from './edi.service';
 
 /** Hard cap on the accepted JSON body (the platform body parser caps first). */
 export const MAX_HOOK_BODY_BYTES = 256 * 1024;
@@ -69,6 +69,16 @@ export interface InboundHookResponse {
 }
 
 const sha256 = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
+
+/** The inbox columns a replay answer is built from. */
+interface ReplayableRow {
+  id: string;
+  status: string;
+  error: string | null;
+  refType: string | null;
+  refId: string | null;
+  parsed: unknown;
+}
 
 /** Drops obvious secrets and caps the size of the payload copy kept in the inbox. */
 export function redactStoredPayload(body: unknown): unknown {
@@ -168,9 +178,14 @@ export class InboundHooksService {
       payload = body as Record<string, unknown>;
     }
 
-    const dedupKey =
-      input.idempotencyKey?.trim() ||
-      sha256(rawBody ?? Buffer.from(isEdi ? content : JSON.stringify(payload), 'utf-8'));
+    // EDI shares ONE idempotency namespace with the authenticated door
+    // (`edi:<sha256 of the trimmed interchange>`), so the same interchange is a
+    // replay whichever door it arrives through. An `X-Idempotency-Key` header is
+    // deliberately ignored there — the interchange itself is the identity.
+    const dedupKey = isEdi
+      ? ediDedupKey(content)
+      : input.idempotencyKey?.trim() ||
+        sha256(rawBody ?? Buffer.from(JSON.stringify(payload), 'utf-8'));
 
     const existing = await this.findByDedupKey(tenantId, dedupKey);
     let messageId: string | undefined;
@@ -315,6 +330,8 @@ export class InboundHooksService {
         refType: true,
         refId: true,
         updatedAt: true,
+        // EDI rows keep the 990 we answered and the partner-safe reason here.
+        parsed: true,
       },
     });
   }
@@ -333,14 +350,7 @@ export class InboundHooksService {
    */
   private async resolveExisting(
     tenantId: string,
-    row: {
-      id: string;
-      status: string;
-      error: string | null;
-      refType: string | null;
-      refId: string | null;
-      updatedAt: Date;
-    },
+    row: ReplayableRow & { updatedAt: Date },
   ): Promise<{ response?: InboundHookResponse; reprocessId?: string }> {
     if (row.status !== 'RECEIVED') return { response: this.asReplay(row) };
 
@@ -360,20 +370,19 @@ export class InboundHooksService {
     return { reprocessId: row.id };
   }
 
-  private asReplay(row: {
-    id: string;
-    status: string;
-    error: string | null;
-    refType: string | null;
-    refId: string | null;
-  }): InboundHookResponse {
+  private asReplay(row: ReplayableRow): InboundHookResponse {
+    // An EDI row stores the 990 it answered and a PARTNER-SAFE reason in
+    // `parsed`; `error` there is the internal detail and must not be echoed.
+    const parsed = (row.parsed ?? {}) as { ack?: string; publicError?: string };
+    const error = parsed.publicError ?? (parsed.ack ? undefined : (row.error ?? undefined));
     return {
       inboxId: row.id,
       // The REAL status — never collapsed to FAILED.
       status: row.status as InboundStatus,
-      ...(row.error ? { error: row.error } : {}),
+      ...(error ? { error } : {}),
       ...(row.refType ? { entityType: row.refType } : {}),
       ...(row.refId ? { entityId: row.refId } : {}),
+      ...(parsed.ack ? { ack: parsed.ack } : {}),
       replayed: true,
     };
   }
