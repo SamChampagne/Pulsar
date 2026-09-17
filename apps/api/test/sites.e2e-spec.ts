@@ -12,6 +12,8 @@
  *     re-submit same email → contact deduped (still one).
  *  7. Honeypot: submit with _hp: 'x' → { ok: true } but NO new submission row.
  *  8. Tenant isolation: admin GET /sites/pages returns only acme's pages.
+ *  10. POST /sites/pages with a valid `cta` block → 201; with an invalid
+ *      `href: 'javascript:alert(1)'` → 400.
  *
  * Prerequisites: reachable PostgreSQL with seed applied (admin@pulsar.dev / admin123, tenant acme).
  */
@@ -345,5 +347,31 @@ describe('Sites module (e2e)', () => {
     expect(row).toBeTruthy();
     expect(row._count).toBeDefined();
     expect(row._count.submissions).toBe(2);
+  });
+
+  it('10. POST /sites/pages with a valid cta block → 201', async () => {
+    const suffix = uniq();
+    const res = await request(srv())
+      .post('/api/v1/sites/pages')
+      .set(auth())
+      .send({
+        title: `CTA Page ${suffix}`,
+        content: [{ type: 'cta', label: 'En savoir plus', href: '/contact' }],
+      })
+      .expect(201);
+
+    expect(res.body.content).toEqual([{ type: 'cta', label: 'En savoir plus', href: '/contact' }]);
+  });
+
+  it('11. POST /sites/pages with a cta block using href: javascript:… → 400', async () => {
+    const suffix = uniq();
+    await request(srv())
+      .post('/api/v1/sites/pages')
+      .set(auth())
+      .send({
+        title: `CTA Bad Page ${suffix}`,
+        content: [{ type: 'cta', label: 'Cliquez', href: 'javascript:alert(1)' }],
+      })
+      .expect(400);
   });
 });

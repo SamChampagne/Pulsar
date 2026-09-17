@@ -7,6 +7,8 @@
     text?: string;
     url?: string;
     fields?: string[];
+    label?: string;
+    href?: string;
   }
 
   let {
@@ -32,6 +34,10 @@
     if (field === 'email') return 'email';
     if (field === 'phone') return 'tel';
     return 'text';
+  }
+
+  function isExternalHref(href: string): boolean {
+    return /^https?:\/\//.test(href);
   }
 
   const firstHeadingIndex = $derived(blocks.findIndex((b) => b.type === 'heading'));
@@ -76,5 +82,16 @@
         </button>
       </div>
     {/if}
+  {:else if block.type === 'cta' && block.href && block.label}
+    <div class="mb-4">
+      <a
+        href={block.href}
+        target={isExternalHref(block.href) ? '_blank' : undefined}
+        rel={isExternalHref(block.href) ? 'noopener' : undefined}
+        class="inline-flex items-center justify-center rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+      >
+        {block.label}
+      </a>
+    </div>
   {/if}
 {/each}

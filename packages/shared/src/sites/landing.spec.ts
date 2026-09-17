@@ -29,6 +29,39 @@ describe('validateLandingContent', () => {
     expect(validateLandingContent({})).toBe(false);
     expect(validateLandingContent([{ type: 'bogus' }])).toBe(false);
   });
+
+  it('accepts a valid cta block', () => {
+    expect(
+      validateLandingContent([{ type: 'cta', label: 'En savoir plus', href: '/contact' }]),
+    ).toBe(true);
+    expect(
+      validateLandingContent([{ type: 'cta', label: 'Visiter', href: 'https://example.com' }]),
+    ).toBe(true);
+    expect(
+      validateLandingContent([{ type: 'cta', label: 'Visiter', href: 'http://example.com' }]),
+    ).toBe(true);
+  });
+
+  it('rejects a cta block with a javascript: href', () => {
+    expect(
+      validateLandingContent([{ type: 'cta', label: 'Cliquez', href: 'javascript:alert(1)' }]),
+    ).toBe(false);
+  });
+
+  it('rejects a cta block with an empty label', () => {
+    expect(validateLandingContent([{ type: 'cta', label: '', href: '/contact' }])).toBe(false);
+  });
+
+  it('rejects a cta block with a label over 80 chars', () => {
+    expect(
+      validateLandingContent([{ type: 'cta', label: 'x'.repeat(81), href: '/contact' }]),
+    ).toBe(false);
+  });
+
+  it('rejects a cta block with a missing or empty href', () => {
+    expect(validateLandingContent([{ type: 'cta', label: 'Cliquez' }])).toBe(false);
+    expect(validateLandingContent([{ type: 'cta', label: 'Cliquez', href: '' }])).toBe(false);
+  });
 });
 
 describe('LandingPageStatus', () => {

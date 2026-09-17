@@ -26,6 +26,8 @@
     text?: string;
     url?: string;
     fields?: string[];
+    label?: string;
+    href?: string;
   }
 
   interface SitePage {
@@ -195,6 +197,10 @@
   function addBlock() {
     const newBlock: LandingBlock = { type: addBlockType };
     if (addBlockType === 'form') newBlock.fields = ['name', 'email'];
+    if (addBlockType === 'cta') {
+      newBlock.label = 'En savoir plus';
+      newBlock.href = '/';
+    }
     blocks = [...blocks, newBlock];
     showAddBlock = false;
   }
@@ -223,6 +229,14 @@
 
   function updateBlockUrl(index: number, value: string) {
     blocks = blocks.map((b, i) => (i === index ? { ...b, url: value } : b));
+  }
+
+  function updateBlockLabel(index: number, value: string) {
+    blocks = blocks.map((b, i) => (i === index ? { ...b, label: value } : b));
+  }
+
+  function updateBlockHref(index: number, value: string) {
+    blocks = blocks.map((b, i) => (i === index ? { ...b, href: value } : b));
   }
 
   function toggleFormField(index: number, field: string) {
@@ -344,6 +358,7 @@
       case 'text':    return 'Texte';
       case 'image':   return 'Image';
       case 'form':    return 'Formulaire';
+      case 'cta':     return 'Bouton';
       default:        return type;
     }
   }
@@ -407,14 +422,18 @@
       <div class="mt-1 flex flex-wrap items-center gap-2">
         <Badge tone={statusTone(sitePage.status)}>{statusLabel(sitePage.status)}</Badge>
         <span class="font-mono text-xs text-ink-muted">/p/{sitePage.slug}</span>
-        <a
-          href="/p/{sitePage.slug}"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="text-xs text-accent hover:underline"
-        >
-          Voir la page ↗
-        </a>
+        {#if sitePage.status === 'PUBLISHED'}
+          <a
+            href="/p/{sitePage.slug}"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-xs text-accent hover:underline"
+          >
+            Voir la page ↗
+          </a>
+        {:else}
+          <span class="text-xs text-ink-faint">Publiez la page pour obtenir un lien public</span>
+        {/if}
       </div>
     </div>
 
@@ -598,6 +617,37 @@
                             {fieldLabel(f)}
                           </label>
                         {/each}
+                      </div>
+                    </div>
+
+                  {:else if block.type === 'cta'}
+                    <div class="space-y-2">
+                      <div>
+                        <label for={`cta-label-${i}`} class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                          Libellé
+                        </label>
+                        <input
+                          id={`cta-label-${i}`}
+                          type="text"
+                          value={block.label ?? ''}
+                          maxlength="80"
+                          oninput={(e) => updateBlockLabel(i, (e.target as HTMLInputElement).value)}
+                          placeholder="En savoir plus"
+                          class="w-full rounded-md border border-edge bg-surface-muted/40 px-2 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                        />
+                      </div>
+                      <div>
+                        <label for={`cta-href-${i}`} class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                          Lien
+                        </label>
+                        <input
+                          id={`cta-href-${i}`}
+                          type="text"
+                          value={block.href ?? ''}
+                          oninput={(e) => updateBlockHref(i, (e.target as HTMLInputElement).value)}
+                          placeholder="/contact ou https://…"
+                          class="w-full rounded-md border border-edge bg-surface-muted/40 px-2 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                        />
                       </div>
                     </div>
                   {/if}
