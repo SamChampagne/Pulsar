@@ -7,8 +7,8 @@
 > (à lire avant de prioriser quoi que ce soit).
 
 > **Aide à la saisie + portail client v2 + connecteurs (arc 3, 2026-09-17) —
-> `access-module-core-locations` (non mergée, non poussée ; 34 commits depuis `a3aedc7`, HEAD
-> `867564b`).** Trois sous-projets. **(A) Pickers partout** : `EntityPicker` v2
+> `access-module-core-locations` (non mergée, non poussée ; 40 commits depuis `a3aedc7`, HEAD
+> `3bb0098` + passe de correction finale).** Trois sous-projets. **(A) Pickers partout** : `EntityPicker` v2
 > (`labelKey`/`detailKey`/`valueKey`/`listShape`/`selectedLabel`/`allowCreate`/`allowFreeText`,
 > clavier ↑/↓/Entrée), `ReferenceSelect` + référentiels purs `@pulsar/shared/reference`
 > (`COUNTRIES`, `REGIONS_BY_COUNTRY`, `CURRENCIES`, `WMS_UNITS`), libellés FR de statuts
@@ -26,20 +26,21 @@
 > `@pulsar/shared/edi` + deux portes d'entrée ; clés API avec expiration et modèles de portée +
 > schéma Swagger `x-api-key` ; flux **iCal** des rendez-vous de quai ; hub `/connect` +
 > `/connect/inbound-hooks` + `/connect/edi`. Règles 53-55 ajoutées.
-> Gates mesurées (HEAD `867564b`) : typecheck **0 erreur** (12 avertissements a11y web,
-> baseline) ; unit **1374 tests / 170 suites** (shared 806/86, web 82/9, api 486/75) ; e2e complet
-> `pnpm test:e2e` **828/838** (1 ignoré ; **7 échecs de cause externe** — moteur APS Python absent :
-> `aps-runtime`, `manufacturing-scheduling`, `manufacturing-agent-tools`) ; Playwright `pickers`,
-> `portal-accounts`, `customer-portal-requests`, `connect`, `whats-new`, `access-roles`,
-> `wms-workspace` **38/38** ; `git diff --check` propre.
-> **Deux échecs e2e à traiter avant merge** : (1) **régression** `phase3.e2e-spec.ts` — le garde
-> d'egress refuse `http://127.0.0.1:9/unreachable` alors que cette suite, contrairement à
-> `integrations.e2e-spec.ts`, ne pose pas `WEBHOOK_ALLOW_PRIVATE_URLS=true` ; (2) **fragilité de
-> données** `access-module.e2e-spec.ts` cas 6 — 176 lieux `WAREHOUSE` accumulés en base locale pour
-> un `GET /wms/sites` qui en rend 100 triés `code asc` (correctif côté test).
-> Suite recommandée : passe de correction (ces deux suites + `downloadInvoicePdfFor` sans filtre
-> `application/pdf` + panneaux portail qui réessaient indéfiniment + `PATCH {status:'ENABLED'}` qui
-> rouvre un récepteur sans permission de cible), puis merge de la branche (elle porte trois arcs).
+> Gates mesurées (HEAD `3bb0098`, après la revue finale de branche et sa passe de correction) :
+> typecheck **0 erreur** (12 avertissements a11y web, baseline) ; unit **1384 tests** (shared 806/86,
+> web 82/9, api 496/76) ; e2e complet `pnpm test:e2e` **832/840** (1 ignoré ; **7 échecs de cause
+> externe** — moteur APS Python absent : `aps-runtime`, `manufacturing-scheduling`,
+> `manufacturing-agent-tools`) ; Playwright `pickers`, `portal-accounts`, `customer-portal-requests`,
+> `connect`, `access-roles`, `wms-workspace` **37/37** ; `git diff --check` propre.
+> La revue finale (opus) a conclu « mergeable après correctifs » ; la passe de correction (commits
+> `6f54124` API + `3bb0098` web) a fermé ses trois points importants : jeton iCal caviardé dans les
+> journaux de requêtes, écritures d'intégration auditées (config masquée), `PATCH /integrations/:id`
+> **fusionne** la config (`null` supprime une clé) au lieu de la remplacer — un enregistrement depuis
+> le studio ne désarme plus le HMAC d'un récepteur ; plus dates **fr-CA** partout (85 appels sans
+> locale → 0), studio pré-rempli avec la liste d'événements héritée, panneau commandes paresseux sur
+> la page à jeton, résolution du `home` de domaine par permission, garde prod contre
+> `WEBHOOK_ALLOW_PRIVATE_URLS`, e2e `phase3`/`access-module` stabilisés.
+> Suite recommandée : ouvrir la PR (la branche porte trois arcs) ; dette restante dans TODO.md.
 > Détail, contrats et dette : [pickers-portal-connectors.md](./plans/pickers-portal-connectors.md)
 > et TODO.md § « Pickers, portail v2 & connecteurs — dette 2026-09-17 ».
 
@@ -363,9 +364,8 @@ seuils de mode (inertes — pas de consommateur API de `suggestMode`). Spec/plan
 
 > **Priorité immédiate (2026-09-17)** : la branche `access-module-core-locations` porte trois arcs
 > non mergés (Accès & Lieux cœur, comptes portail + Quoi de neuf, pickers/portail v2/connecteurs).
-> Faire d'abord la **passe de correction** listée dans le bloc en tête de document (régression e2e
-> `phase3`, fragilité `access-module`, deux correctifs latents du portail, gate de réactivation d'un
-> récepteur entrant), puis ouvrir la PR. Le reste de cette section suit ensuite.
+> La passe de correction post-revue finale est faite (voir le bloc en tête de document) : ouvrir la
+> PR. Le reste de cette section suit ensuite.
 
 La **phase 16 est livrée** (Freight Audit autonome — début de l'Acte II) sur la branche
 `phase-16` (suite des phases 12 → 15-A livrées). PR à ouvrir vers `main`.
