@@ -153,7 +153,11 @@ export function navCatalogue(): NavDomain[] {
           links: [
             { href: '/customers', label: 'Clients' },
             { href: '/carriers', label: 'Transporteurs' },
-            { href: '/locations', label: 'Lieux' },
+            {
+              href: '/locations',
+              label: 'Lieux',
+              perm: PERMISSIONS.CORE.LOCATIONS_READ,
+            },
           ],
         },
         {
@@ -650,6 +654,8 @@ export function navCatalogue(): NavDomain[] {
           label: 'Plateforme',
           links: [
             { href: '/settings/users', label: 'Utilisateurs' },
+            { href: '/settings/roles', label: 'Rôles', perm: PERMISSIONS.CORE.ROLES_READ },
+            { href: '/locations', label: 'Lieux', perm: PERMISSIONS.CORE.LOCATIONS_READ },
             { href: '/settings/api-keys', label: 'Clés API' },
             { href: '/settings/modules', label: 'Modules' },
             { href: '/settings/sso', label: 'SSO' },

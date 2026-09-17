@@ -47,3 +47,41 @@ describe('Fleet cross-module navigation', () => {
     );
   });
 });
+
+describe('Settings: roles and core locations navigation', () => {
+  const settingsLinks = (modules: string[], permissions: string[]) =>
+    visibleDomains({ enabledModules: modules, can: (p) => permissions.includes(p) })
+      .find((d) => d.key === 'settings')
+      ?.sections.flatMap((s) => s.links)
+      .map((l) => l.href) ?? [];
+
+  it('shows /settings/roles with core.roles.read', () => {
+    expect(settingsLinks([], ['core.roles.read'])).toContain('/settings/roles');
+  });
+
+  it('hides /settings/roles without the permission', () => {
+    expect(settingsLinks([], [])).not.toContain('/settings/roles');
+  });
+
+  it('shows /locations under Réglages with core.locations.read (no /settings/locations route)', () => {
+    const links = settingsLinks([], ['core.locations.read']);
+    expect(links).toContain('/locations');
+    expect(links).not.toContain('/settings/locations');
+  });
+});
+
+describe('Transport: Lieux link requires core.locations.read', () => {
+  const transportLinks = (permissions: string[]) =>
+    visibleDomains({ enabledModules: ['transportation'], can: (p) => permissions.includes(p) })
+      .find((d) => d.key === 'transport')
+      ?.sections.flatMap((s) => s.links)
+      .map((l) => l.href) ?? [];
+
+  it('hides /locations from Transport > Partenaires when core.locations.read is missing', () => {
+    expect(transportLinks([])).not.toContain('/locations');
+  });
+
+  it('shows /locations from Transport > Partenaires with core.locations.read', () => {
+    expect(transportLinks(['core.locations.read'])).toContain('/locations');
+  });
+});
