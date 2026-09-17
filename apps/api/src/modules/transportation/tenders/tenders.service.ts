@@ -424,20 +424,30 @@ export class TendersService {
       before: { status: TenderStatus.PENDING },
       after: { status: accept ? TenderStatus.ACCEPTED : TenderStatus.DECLINED },
     });
-    await this.webhooks.emit(tender.tenantId, accept ? 'tender.accepted' : 'tender.declined', {
-      loadId: load.id,
-      loadNumber: load.loadNumber,
-      tenderId: tender.id,
-      carrierId: tender.carrierId,
-      ...(declineReason ? { declineReason } : {}),
-    });
+    // `tender.accepted` has no domain event: it stays a direct webhook emit.
+    // `tender.declined` goes through the domain event, which DomainEventsService
+    // bridges to the same outbox (rule 55) — emitting both would duplicate it.
+    if (accept) {
+      await this.webhooks.emit(tender.tenantId, 'tender.accepted', {
+        loadId: load.id,
+        loadNumber: load.loadNumber,
+        tenderId: tender.id,
+        carrierId: tender.carrierId,
+      });
+    }
 
     if (!accept) {
       await this.domainEvents.emit(
         tender.tenantId,
         'tender.declined',
         { type: 'load', id: load.id },
-        { loadId: load.id, loadNumber: load.loadNumber, carrierId: tender.carrierId, tenderId: tender.id },
+        {
+          loadId: load.id,
+          loadNumber: load.loadNumber,
+          carrierId: tender.carrierId,
+          tenderId: tender.id,
+          ...(declineReason ? { declineReason } : {}),
+        },
       );
       await this.advanceChain(tender.id);
     }

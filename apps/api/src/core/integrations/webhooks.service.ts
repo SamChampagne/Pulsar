@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma } from '@pulsar/database';
+import { formatWebhookBody, resolveWebhookFormat, type WebhookFormat } from '@pulsar/shared';
 import { createHmac } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../crypto/crypto.service';
@@ -10,10 +11,21 @@ interface WebhookConfig {
   secret?: string;
   /** Event allowlist, e.g. ["load.dispatched", "tender.accepted"]. Empty/absent = all. */
   events?: string[];
+  /** Wire format of the body: json (default) | slack | teams | x12. */
+  format?: WebhookFormat;
+}
+
+/** Outcome of a one-shot connectivity probe (POST /integrations/:id/test). */
+export interface WebhookPingResult {
+  ok: boolean;
+  statusCode?: number;
+  latencyMs: number;
+  error?: string;
 }
 
 const MAX_ATTEMPTS = 5;
 const BACKOFF_MINUTES = [1, 5, 30, 120, 360];
+const TIMEOUT_MS = 5000;
 
 /**
  * Durable outbound webhooks: emit() persists one delivery row per matching
@@ -21,6 +33,9 @@ const BACKOFF_MINUTES = [1, 5, 30, 120, 360];
  * deliveries are retried by a 1-minute cron with exponential backoff until
  * DELIVERED or the attempt budget is exhausted (FAILED).
  * Payloads are HMAC-SHA256-signed (X-Pulsar-Signature) when a secret is set.
+ *
+ * Feed: every business event persisted by DomainEventsService is bridged here
+ * (rule 55) — the outbox is the single path from domain events to integrations.
  */
 @Injectable()
 export class WebhooksService {
@@ -76,6 +91,26 @@ export class WebhooksService {
     }
   }
 
+  /** Signed headers for one body (signature only when a secret is configured). */
+  private signedHeaders(
+    config: WebhookConfig,
+    contentType: string,
+    body: string,
+    deliveryId: string,
+    event: string,
+  ): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': contentType,
+      'X-Pulsar-Delivery': deliveryId,
+      'X-Pulsar-Event': event,
+    };
+    if (config.secret) {
+      headers['X-Pulsar-Signature'] =
+        'sha256=' + createHmac('sha256', config.secret).update(body).digest('hex');
+    }
+    return headers;
+  }
+
   async attempt(deliveryId: string): Promise<void> {
     const delivery = await this.prisma.webhookDelivery.findUnique({
       where: { id: deliveryId },
@@ -84,23 +119,24 @@ export class WebhooksService {
     if (!delivery || delivery.status !== 'PENDING') return;
 
     const config = this.crypto.decryptJson<WebhookConfig>(delivery.integration.config);
-    const body = JSON.stringify(delivery.payload);
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'X-Pulsar-Delivery': delivery.id,
-      'X-Pulsar-Event': delivery.event,
-    };
-    if (config.secret) {
-      headers['X-Pulsar-Signature'] =
-        'sha256=' + createHmac('sha256', config.secret).update(body).digest('hex');
-    }
+    const envelope = (delivery.payload ?? {}) as { occurredAt?: string; data?: unknown };
+    const { body, contentType } = formatWebhookBody(
+      delivery.event,
+      envelope.data ?? {},
+      resolveWebhookFormat(config.format),
+      {
+        deliveryId: delivery.id,
+        occurredAt: envelope.occurredAt ?? delivery.createdAt.toISOString(),
+      },
+    );
+    const headers = this.signedHeaders(config, contentType, body, delivery.id, delivery.event);
 
     try {
       const response = await fetch(config.url!, {
         method: 'POST',
         headers,
         body,
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       await this.prisma.webhookDelivery.update({
@@ -121,11 +157,48 @@ export class WebhooksService {
           attempts,
           lastError: String(err).slice(0, 500),
           status: exhausted ? 'FAILED' : 'PENDING',
-          nextAttemptAt: new Date(
-            Date.now() + (BACKOFF_MINUTES[attempts - 1] ?? 360) * 60_000,
-          ),
+          nextAttemptAt: new Date(Date.now() + (BACKOFF_MINUTES[attempts - 1] ?? 360) * 60_000),
         },
       });
+    }
+  }
+
+  /**
+   * One-shot signed `ping` against the configured URL — the real connection test
+   * for `webhook*` integrations. Never throws: transport failures come back as
+   * `{ ok: false, error }`.
+   */
+  async ping(config: WebhookConfig): Promise<WebhookPingResult> {
+    const startedAt = Date.now();
+    if (!config.url) {
+      return { ok: false, latencyMs: 0, error: 'Aucune URL configurée.' };
+    }
+    const { body, contentType } = formatWebhookBody(
+      'ping',
+      {},
+      resolveWebhookFormat(config.format),
+      { deliveryId: 'test', occurredAt: new Date().toISOString() },
+    );
+    const headers = this.signedHeaders(config, contentType, body, 'test', 'ping');
+    try {
+      const response = await fetch(config.url, {
+        method: 'POST',
+        headers,
+        body,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      return {
+        ok: response.ok,
+        statusCode: response.status,
+        latencyMs: Date.now() - startedAt,
+        ...(response.ok ? {} : { error: `HTTP ${response.status}` }),
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        latencyMs: Date.now() - startedAt,
+        error: String(err instanceof Error ? err.message : err).slice(0, 300),
+      };
     }
   }
 }

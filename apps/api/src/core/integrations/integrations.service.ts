@@ -1,7 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@pulsar/database';
+import { DOMAIN_EVENT_CATALOG } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../crypto/crypto.service';
+import { WebhooksService } from './webhooks.service';
 
 export interface UpsertIntegrationInput {
   key: string;
@@ -29,6 +31,10 @@ export interface ConnectionTestReport {
   summary: string;
   checkedAt: string;
   checks: StudioCheck[];
+  /** True for a real network probe (webhook*), false for the config-shape simulation. */
+  live?: boolean;
+  statusCode?: number;
+  latencyMs?: number;
 }
 
 export interface DryRunInput {
@@ -125,7 +131,9 @@ export function buildConnectionTestReport(integration: {
       key: 'endpoint',
       label: 'Endpoint',
       status: hasEndpoint ? 'ok' : 'blocked',
-      detail: hasEndpoint ? `${redactUrl(endpointUrl)} répondra au test réel bientôt` : 'Ajoute une URL https/http avant activation.',
+      detail: hasEndpoint
+        ? `${redactUrl(endpointUrl)} — simulation (contrôle de configuration, aucun appel réseau).`
+        : 'Ajoute une URL https/http avant activation.',
     },
     {
       key: 'credential',
@@ -153,9 +161,15 @@ export function buildConnectionTestReport(integration: {
       : 'ok';
   return {
     status,
-    summary: status === 'ok' ? 'Connexion prête pour un dry run.' : status === 'warning' ? 'Connexion testable, mais portée/mapping incomplet.' : 'Connexion bloquée avant dry run.',
+    summary:
+      status === 'ok'
+        ? 'Simulation : connexion prête pour un dry run.'
+        : status === 'warning'
+          ? 'Simulation : connexion testable, mais portée/mapping incomplet.'
+          : 'Simulation : connexion bloquée avant dry run.',
     checkedAt: new Date().toISOString(),
     checks,
+    live: false,
   };
 }
 
@@ -238,7 +252,13 @@ export class IntegrationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
+    private readonly webhooks: WebhooksService,
   ) {}
+
+  /** Documented business events a webhook integration can subscribe to. */
+  eventCatalog() {
+    return DOMAIN_EVENT_CATALOG;
+  }
 
   /** Internal consumers (webhooks) get the decrypted config. */
   decryptedConfig<T = Record<string, unknown>>(stored: unknown): T {
@@ -295,15 +315,83 @@ export class IntegrationsService {
     return this.present(updated);
   }
 
-  async testConnection(tenantId: string, id: string) {
+  /**
+   * Connection test. `webhook*` integrations get a REAL signed `ping` POST
+   * (5 s timeout); every other kind still gets the configuration-shape
+   * simulation, explicitly labelled as such.
+   */
+  async testConnection(tenantId: string, id: string): Promise<ConnectionTestReport> {
     const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
     if (!integration) throw new NotFoundException('Integration not found');
+    const config = this.crypto.decryptJson(integration.config);
+
+    if (integration.key.startsWith('webhook')) {
+      return this.pingWebhook(config);
+    }
+
     return buildConnectionTestReport({
       id: integration.id,
       name: integration.name,
       status: integration.status,
-      config: this.crypto.decryptJson(integration.config),
+      config,
     });
+  }
+
+  private async pingWebhook(config: Record<string, unknown>): Promise<ConnectionTestReport> {
+    const url = asString(config.url);
+    const checkedAt = new Date().toISOString();
+    if (!url) {
+      return {
+        status: 'blocked',
+        summary: 'Aucune URL de destination configurée.',
+        checkedAt,
+        live: true,
+        checks: [
+          {
+            key: 'endpoint',
+            label: 'Endpoint',
+            status: 'blocked',
+            detail: 'Ajoute une URL https/http avant de tester.',
+          },
+        ],
+      };
+    }
+
+    const result = await this.webhooks.ping({
+      url,
+      secret: asString(config.secret) || undefined,
+      format: config.format as never,
+    });
+    const signed = Boolean(asString(config.secret));
+    const checks: StudioCheck[] = [
+      {
+        key: 'endpoint',
+        label: 'Endpoint',
+        status: result.ok ? 'ok' : 'blocked',
+        detail: result.ok
+          ? `${redactUrl(url)} a répondu ${result.statusCode} en ${result.latencyMs} ms.`
+          : `${redactUrl(url)} n'a pas répondu : ${result.error ?? 'erreur inconnue'}.`,
+      },
+      {
+        key: 'signature',
+        label: 'Signature',
+        status: signed ? 'ok' : 'warning',
+        detail: signed
+          ? 'Ping signé (X-Pulsar-Signature, HMAC SHA-256).'
+          : 'Aucun secret configuré : les livraisons ne seront pas signées.',
+      },
+    ];
+    return {
+      status: result.ok ? (signed ? 'ok' : 'warning') : 'blocked',
+      summary: result.ok
+        ? `Ping livré en ${result.latencyMs} ms.`
+        : `Ping en échec : ${result.error ?? 'erreur inconnue'}.`,
+      checkedAt,
+      live: true,
+      ...(result.statusCode !== undefined ? { statusCode: result.statusCode } : {}),
+      latencyMs: result.latencyMs,
+      checks,
+    };
   }
 
   async dryRun(tenantId: string, id: string, input: DryRunInput = {}) {
@@ -314,6 +402,31 @@ export class IntegrationsService {
       samplePayload: input.samplePayload ?? asString(config.samplePayload),
       mappings: input.mappings ?? asMappingRows(config.mappings),
     });
+  }
+
+  /**
+   * Re-queue one delivery and retry it inline. Tenant-scoped: a delivery of
+   * another tenant is a 404, never a replay.
+   */
+  async replayDelivery(tenantId: string, integrationId: string, deliveryId: string) {
+    const delivery = await this.prisma.webhookDelivery.findFirst({
+      where: { id: deliveryId, tenantId, integrationId },
+      select: { id: true },
+    });
+    if (!delivery) throw new NotFoundException('Delivery not found');
+
+    await this.prisma.webhookDelivery.update({
+      where: { id: delivery.id },
+      data: {
+        status: 'PENDING',
+        attempts: 0,
+        nextAttemptAt: new Date(),
+        lastError: null,
+        deliveredAt: null,
+      },
+    });
+    await this.webhooks.attempt(delivery.id);
+    return this.prisma.webhookDelivery.findUnique({ where: { id: delivery.id } });
   }
 
   async listDeliveries(tenantId: string, integrationId: string) {

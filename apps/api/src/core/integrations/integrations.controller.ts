@@ -76,6 +76,17 @@ export class IntegrationsController {
     return this.integrations.list(user.tenantId);
   }
 
+  /**
+   * Catalog of the business events an integration can subscribe to
+   * (`config.events[]`) — type, module, FR description, example payload.
+   * Static data: no tenant scope needed beyond the permission check.
+   */
+  @Get('events')
+  @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_READ)
+  events() {
+    return this.integrations.eventCatalog();
+  }
+
   @Post()
   @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateIntegrationDto) {
@@ -98,6 +109,17 @@ export class IntegrationsController {
   @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
   dryRun(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: DryRunIntegrationDto) {
     return this.integrations.dryRun(user.tenantId, id, dto);
+  }
+
+  /** Re-queue and retry one delivery (tenant-scoped; 404 when unknown). */
+  @Post(':id/deliveries/:deliveryId/replay')
+  @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
+  replayDelivery(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('deliveryId') deliveryId: string,
+  ) {
+    return this.integrations.replayDelivery(user.tenantId, id, deliveryId);
   }
 
   /** Recent webhook deliveries of an integration (outbox audit/debugging). */

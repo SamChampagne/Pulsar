@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DOMAIN_EVENT_TYPES } from '@pulsar/shared';
 import { MailService } from '../../../core/email/mail.service';
-import { WebhooksService } from '../../../core/integrations/webhooks.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 
@@ -24,7 +23,6 @@ interface LoadRef {
 export class LoadNotificationsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly webhooks: WebhooksService,
     private readonly domainEvents: DomainEventsService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
@@ -32,11 +30,9 @@ export class LoadNotificationsService {
 
   /** Called after a load transitions to DISPATCHED. */
   async onDispatched(tenantId: string, load: LoadRef): Promise<void> {
-    await this.webhooks.emit(tenantId, 'load.dispatched', {
-      loadId: load.id,
-      loadNumber: load.loadNumber,
-      carrierId: load.carrierId,
-    });
+    // Rule 55: the domain event is the single feed — DomainEventsService bridges
+    // it to the webhook outbox (no direct webhooks.emit, which would duplicate
+    // every delivery).
     // Best-effort domain event (rule 27).
     await this.domainEvents.emit(
       tenantId,
@@ -48,17 +44,13 @@ export class LoadNotificationsService {
 
   /** Called after a load transitions to COMPLETED. */
   async onCompleted(tenantId: string, load: LoadRef): Promise<void> {
-    await this.webhooks.emit(tenantId, 'load.completed', {
-      loadId: load.id,
-      loadNumber: load.loadNumber,
-      carrierId: load.carrierId,
-    });
+    // Rule 55: bridged to the webhook outbox by DomainEventsService.
     // Best-effort domain event (rule 27).
     await this.domainEvents.emit(
       tenantId,
       DOMAIN_EVENT_TYPES.LOAD_COMPLETED,
       { type: 'load', id: load.id },
-      { loadId: load.id, loadNumber: load.loadNumber },
+      { loadId: load.id, loadNumber: load.loadNumber, carrierId: load.carrierId ?? null },
     );
     await this.notifyCustomersDelivered(tenantId, load.id);
   }

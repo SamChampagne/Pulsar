@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   DOMAIN_EVENT_MAX_CATCHUP_BATCHES,
@@ -21,6 +21,7 @@ import {
   currentReactionRuleId,
   ReactionExecutorService,
 } from '../automation/reaction-executor.service';
+import { WebhooksService } from '../integrations/webhooks.service';
 
 const SEVERITY_TO_LEVEL: Record<Severity, NotificationLevel> = {
   INFO: NotificationLevel.INFO,
@@ -42,7 +43,33 @@ export class DomainEventsService {
     private readonly sequences: SequencesService,
     private readonly customRuleResolver: CustomRuleResolver,
     private readonly reactionExecutor: ReactionExecutorService,
+    /**
+     * Rule 55: business events reach integrations ONLY through this bridge.
+     * Optional so unit tests (and any future slimmer bootstrap) can construct
+     * the service without the integrations module.
+     */
+    @Optional() private readonly webhooks?: WebhooksService,
   ) {}
+
+  /**
+   * Fan the event out to the tenant's outbound webhook integrations (rule 55).
+   * Fire-and-forget: the outbox does one inline HTTP attempt, so it must never
+   * extend or break the caller's transaction path.
+   */
+  private bridgeToWebhooks(tenantId: string, type: string, payload: Record<string, unknown>): void {
+    if (!this.webhooks) return;
+    try {
+      void this.webhooks.emit(tenantId, type, payload).catch((err) => {
+        this.logger.warn(
+          `webhook bridge failed for ${type}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    } catch (err) {
+      this.logger.warn(
+        `webhook bridge failed for ${type}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   /** Persist a domain event. Best-effort: a failure is logged, never thrown into the caller. */
   async emit(
@@ -63,6 +90,7 @@ export class DomainEventsService {
           reactionRuleId: currentReactionRuleId(),
         },
       });
+      this.bridgeToWebhooks(tenantId, type, payload);
     } catch (err) {
       this.logger.error(
         `emit(${type}) failed: ${err instanceof Error ? err.message : String(err)}`,

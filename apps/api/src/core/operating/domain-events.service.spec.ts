@@ -7,6 +7,7 @@ import { DomainEventsService } from './domain-events.service';
 import { TaskAssignmentResolver } from './event-policies';
 import { CustomRuleResolver } from '../automation/custom-rule.resolver';
 import { ReactionExecutorService } from '../automation/reaction-executor.service';
+import { WebhooksService } from '../integrations/webhooks.service';
 
 // Phase 13: DomainEventsService wakes the always-on worker on task creation.
 // Unit tests stub it out — worker behaviour is covered by agent-worker.service.spec.ts.
@@ -124,5 +125,67 @@ describe('DomainEventsService', () => {
     expect((prisma as any)._events[0].status).toBe('FAILED');
     expect((prisma as any)._events[0].lastError).toContain('boom');
     expect((prisma as any)._tasks).toHaveLength(0);
+  });
+
+  // Rule 55 — the outbound webhook outbox is fed by the domain-event outbox.
+  describe('webhook bridge', () => {
+    function withWebhooks(prisma: PrismaService, webhooks: unknown) {
+      return Test.createTestingModule({
+        providers: [
+          DomainEventsService,
+          TaskAssignmentResolver,
+          { provide: PrismaService, useValue: prisma },
+          { provide: AgentWorkerService, useValue: workerStub },
+          { provide: SequencesService, useValue: sequencesStub },
+          { provide: CustomRuleResolver, useValue: customRuleResolverStub },
+          { provide: ReactionExecutorService, useValue: reactionExecutorStub },
+          { provide: WebhooksService, useValue: webhooks },
+        ],
+      }).compile();
+    }
+
+    it('forwards a persisted event to WebhooksService.emit', async () => {
+      const prisma = makePrismaFake();
+      const calls: any[] = [];
+      const webhooks = { emit: async (...args: any[]) => { calls.push(args); } };
+      const svc = (await withWebhooks(prisma, webhooks)).get(DomainEventsService);
+
+      await svc.emit('tenant1', 'stop.delayed', { type: 'stop', id: 's1' }, { stopId: 's1' });
+
+      expect((prisma as any)._events).toHaveLength(1);
+      expect(calls).toEqual([['tenant1', 'stop.delayed', { stopId: 's1' }]]);
+    });
+
+    it('persists the event even when the webhook bridge rejects (best-effort)', async () => {
+      const prisma = makePrismaFake();
+      const webhooks = { emit: async () => { throw new Error('endpoint down'); } };
+      const svc = (await withWebhooks(prisma, webhooks)).get(DomainEventsService);
+
+      await expect(
+        svc.emit('tenant1', 'stop.delayed', { type: 'stop', id: 's1' }, { stopId: 's1' }),
+      ).resolves.toBeUndefined();
+      expect((prisma as any)._events).toHaveLength(1);
+      expect((prisma as any)._events[0].status).toBe(DomainEventStatus.PENDING);
+    });
+
+    it('persists the event even when the bridge throws synchronously', async () => {
+      const prisma = makePrismaFake();
+      const webhooks = { emit: () => { throw new Error('sync boom'); } };
+      const svc = (await withWebhooks(prisma, webhooks)).get(DomainEventsService);
+
+      await expect(svc.emit('tenant1', 'stop.delayed', null, {})).resolves.toBeUndefined();
+      expect((prisma as any)._events).toHaveLength(1);
+    });
+
+    it('does not bridge when persistence failed', async () => {
+      const prisma = makePrismaFake();
+      (prisma as any).domainEvent.create = async () => { throw new Error('db down'); };
+      const calls: any[] = [];
+      const webhooks = { emit: async (...args: any[]) => { calls.push(args); } };
+      const svc = (await withWebhooks(prisma, webhooks)).get(DomainEventsService);
+
+      await expect(svc.emit('tenant1', 'stop.delayed', null, {})).resolves.toBeUndefined();
+      expect(calls).toHaveLength(0);
+    });
   });
 });
