@@ -1,14 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma } from '@pulsar/database';
-import { formatWebhookBody, resolveWebhookFormat, type WebhookFormat } from '@pulsar/shared';
+import {
+  formatWebhookBody,
+  resolveWebhookFormat,
+  resolveWebhookTarget,
+  type WebhookFormat,
+} from '@pulsar/shared';
 import { createHmac } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../crypto/crypto.service';
 
 interface WebhookConfig {
+  /** Outbox spelling. The studio UI writes `endpointUrl`/`webhookSecret` instead —
+   *  both are read through `resolveWebhookTarget` (@pulsar/shared). */
   url?: string;
   secret?: string;
+  endpointUrl?: string;
+  webhookSecret?: string;
   /** Event allowlist, e.g. ["load.dispatched", "tender.accepted"]. Empty/absent = all. */
   events?: string[];
   /** Wire format of the body: json (default) | slack | teams | x12. */
@@ -52,7 +61,7 @@ export class WebhooksService {
     });
     const matching = hooks.filter((hook) => {
       const config = this.crypto.decryptJson<WebhookConfig>(hook.config);
-      if (!config.url) return false;
+      if (!resolveWebhookTarget(config)) return false;
       return !config.events || config.events.length === 0 || config.events.includes(event);
     });
     if (matching.length === 0) return;
@@ -93,7 +102,7 @@ export class WebhooksService {
 
   /** Signed headers for one body (signature only when a secret is configured). */
   private signedHeaders(
-    config: WebhookConfig,
+    secret: string | undefined,
     contentType: string,
     body: string,
     deliveryId: string,
@@ -104,9 +113,9 @@ export class WebhooksService {
       'X-Pulsar-Delivery': deliveryId,
       'X-Pulsar-Event': event,
     };
-    if (config.secret) {
+    if (secret) {
       headers['X-Pulsar-Signature'] =
-        'sha256=' + createHmac('sha256', config.secret).update(body).digest('hex');
+        'sha256=' + createHmac('sha256', secret).update(body).digest('hex');
     }
     return headers;
   }
@@ -119,6 +128,18 @@ export class WebhooksService {
     if (!delivery || delivery.status !== 'PENDING') return;
 
     const config = this.crypto.decryptJson<WebhookConfig>(delivery.integration.config);
+    const target = resolveWebhookTarget(config);
+    if (!target) {
+      await this.prisma.webhookDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          attempts: delivery.attempts + 1,
+          status: 'FAILED',
+          lastError: 'No destination URL configured',
+        },
+      });
+      return;
+    }
     const envelope = (delivery.payload ?? {}) as { occurredAt?: string; data?: unknown };
     const { body, contentType } = formatWebhookBody(
       delivery.event,
@@ -129,10 +150,16 @@ export class WebhooksService {
         occurredAt: envelope.occurredAt ?? delivery.createdAt.toISOString(),
       },
     );
-    const headers = this.signedHeaders(config, contentType, body, delivery.id, delivery.event);
+    const headers = this.signedHeaders(
+      target.secret,
+      contentType,
+      body,
+      delivery.id,
+      delivery.event,
+    );
 
     try {
-      const response = await fetch(config.url!, {
+      const response = await fetch(target.url, {
         method: 'POST',
         headers,
         body,
@@ -170,7 +197,8 @@ export class WebhooksService {
    */
   async ping(config: WebhookConfig): Promise<WebhookPingResult> {
     const startedAt = Date.now();
-    if (!config.url) {
+    const target = resolveWebhookTarget(config);
+    if (!target) {
       return { ok: false, latencyMs: 0, error: 'Aucune URL configurée.' };
     }
     const { body, contentType } = formatWebhookBody(
@@ -179,9 +207,9 @@ export class WebhooksService {
       resolveWebhookFormat(config.format),
       { deliveryId: 'test', occurredAt: new Date().toISOString() },
     );
-    const headers = this.signedHeaders(config, contentType, body, 'test', 'ping');
+    const headers = this.signedHeaders(target.secret, contentType, body, 'test', 'ping');
     try {
-      const response = await fetch(config.url, {
+      const response = await fetch(target.url, {
         method: 'POST',
         headers,
         body,

@@ -17,9 +17,9 @@ export function resolveWebhookFormat(value: unknown): WebhookFormat {
 }
 
 export interface WebhookFormatMeta {
+  /** Delivery id — travels in the X-Pulsar-Delivery header, never in the body. */
   deliveryId: string;
   occurredAt: string;
-  tenantSlug?: string;
 }
 
 export interface FormattedWebhookBody {
@@ -38,6 +38,14 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function isScalar(value: unknown): value is string | number | boolean {
   return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+}
+
+/**
+ * Slack mrkdwn escaping: `&`, `<` and `>` are control characters there, so raw
+ * payload values could otherwise inject links (`<https://evil|texte>`).
+ */
+export function escapeSlackText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /** `clé: valeur` pairs for the first N scalar fields of the payload (stable order). */
@@ -74,17 +82,18 @@ export function formatWebhookBody(
 
   if (format === 'slack') {
     const fields = summaryFields(data);
-    const lines = fields.map((f) => `*${f.key}*: ${f.value}`);
+    const lines = fields.map((f) => `*${escapeSlackText(f.key)}*: ${escapeSlackText(f.value)}`);
+    const safeEvent = escapeSlackText(event);
     return {
       contentType: 'application/json',
       body: JSON.stringify({
-        text: title,
+        text: escapeSlackText(title),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: lines.length ? `*${event}*\n${lines.join('\n')}` : `*${event}*`,
+              text: lines.length ? `*${safeEvent}*\n${lines.join('\n')}` : `*${safeEvent}*`,
             },
           },
         ],
@@ -115,14 +124,11 @@ export function formatWebhookBody(
     };
   }
 
+  // Byte-identical to the historical envelope: a consumer that signs or schema-
+  // validates the body must not see a new field. The delivery id stays in the
+  // X-Pulsar-Delivery header.
   return {
     contentType: 'application/json',
-    body: JSON.stringify({
-      event,
-      deliveryId: meta.deliveryId,
-      occurredAt: meta.occurredAt,
-      ...(meta.tenantSlug ? { tenantSlug: meta.tenantSlug } : {}),
-      data,
-    }),
+    body: JSON.stringify({ event, occurredAt: meta.occurredAt, data }),
   };
 }

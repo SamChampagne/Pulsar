@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  escapeSlackText,
   formatWebhookBody,
   isWebhookFormat,
   resolveWebhookFormat,
@@ -12,6 +13,10 @@ const META = { deliveryId: 'dlv_1', occurredAt: '2026-09-17T12:00:00.000Z' };
 const DATA = { loadId: 'ld_1', loadNumber: 'LD-000045', carrierId: 'car_1' };
 
 describe('webhook formats', () => {
+  it('escapes slack control characters', () => {
+    expect(escapeSlackText('a & <b> c')).toBe('a &amp; &lt;b&gt; c');
+  });
+
   it('resolves and validates format values', () => {
     expect(WEBHOOK_FORMATS).toEqual(['json', 'slack', 'teams', 'x12']);
     expect(isWebhookFormat('slack')).toBe(true);
@@ -29,22 +34,15 @@ describe('webhook formats', () => {
     expect(summarizeWebhookData('not an object')).toBe('');
   });
 
-  it('json keeps the canonical Pulsar envelope', () => {
+  it('json keeps the historical envelope byte-for-byte', () => {
     const { body, contentType } = formatWebhookBody('load.completed', DATA, 'json', META);
     expect(contentType).toBe('application/json');
-    expect(JSON.parse(body)).toEqual({
-      event: 'load.completed',
-      deliveryId: 'dlv_1',
-      occurredAt: '2026-09-17T12:00:00.000Z',
-      data: DATA,
-    });
-  });
-
-  it('json includes the tenant slug only when provided', () => {
-    const withSlug = JSON.parse(
-      formatWebhookBody('load.completed', DATA, 'json', { ...META, tenantSlug: 'acme' }).body,
+    // Exactly what the outbox sent before formats existed — no extra field,
+    // same key order (the delivery id lives in the X-Pulsar-Delivery header).
+    expect(body).toBe(
+      JSON.stringify({ event: 'load.completed', occurredAt: META.occurredAt, data: DATA }),
     );
-    expect(withSlug.tenantSlug).toBe('acme');
+    expect(JSON.parse(body).deliveryId).toBeUndefined();
   });
 
   it('slack builds a text line plus one mrkdwn section block', () => {
@@ -83,6 +81,21 @@ describe('webhook formats', () => {
     const { body, contentType } = formatWebhookBody('shipment.status', { x12 }, 'x12', META);
     expect(contentType).toBe('text/plain');
     expect(body).toBe(x12);
+  });
+
+  it('slack escapes mrkdwn control characters in the payload', () => {
+    const parsed = JSON.parse(
+      formatWebhookBody(
+        'crm.email.received',
+        { from: '<https://evil|x>', note: 'a & b' },
+        'slack',
+        META,
+      ).body,
+    );
+    expect(parsed.blocks[0].text.text).toContain('&lt;https://evil|x&gt;');
+    expect(parsed.blocks[0].text.text).toContain('a &amp; b');
+    expect(parsed.blocks[0].text.text).not.toContain('<https://evil');
+    expect(parsed.text).not.toContain('<https://evil');
   });
 
   it('x12 falls back to the readable summary when no interchange is present', () => {

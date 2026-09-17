@@ -1,7 +1,15 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@pulsar/database';
-import { DOMAIN_EVENT_CATALOG } from '@pulsar/shared';
+import { AuditAction, checkWebhookUrl, DOMAIN_EVENT_CATALOG, resolveWebhookTarget } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { auditActor } from '../audit-logs/audit-actor';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { WebhooksService } from './webhooks.service';
 
@@ -253,7 +261,26 @@ export class IntegrationsService {
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
     private readonly webhooks: WebhooksService,
+    private readonly audit: AuditLogsService,
+    private readonly config: ConfigService,
   ) {}
+
+  /** Dev/CI escape hatch for loopback endpoints (WEBHOOK_ALLOW_PRIVATE_URLS=true). */
+  private get allowPrivateUrls(): boolean {
+    return this.config.get<string>('WEBHOOK_ALLOW_PRIVATE_URLS') === 'true';
+  }
+
+  /**
+   * Egress guard (SSRF): a `webhook*` integration may only point at a public
+   * http/https endpoint. Applied on every write and before a live ping.
+   */
+  private assertSafeWebhookConfig(key: string, config: Record<string, unknown>) {
+    if (!key.startsWith('webhook')) return;
+    const target = resolveWebhookTarget(config);
+    if (!target) return;
+    const check = checkWebhookUrl(target.url, { allowPrivate: this.allowPrivateUrls });
+    if (!check.ok) throw new BadRequestException(check.reason);
+  }
 
   /** Documented business events a webhook integration can subscribe to. */
   eventCatalog() {
@@ -282,13 +309,23 @@ export class IntegrationsService {
       where: { tenantId_key: { tenantId, key: input.key } },
     });
     if (existing) throw new ConflictException(`Integration "${input.key}" already exists`);
+    this.assertSafeWebhookConfig(input.key, input.config ?? {});
+    // A webhook integration created here already follows the current semantics
+    // (empty `events` = every catalog event), so it must never be picked up by
+    // WebhookEventsBackfillService — stamp the marker straight away.
+    const config = {
+      ...(input.config ?? {}),
+      ...(input.key.startsWith('webhook')
+        ? { eventsBackfilledAt: new Date().toISOString() }
+        : {}),
+    };
     const created = await this.prisma.integration.create({
       data: {
         tenantId,
         key: input.key,
         name: input.name,
         status: input.status ?? 'DISABLED',
-        config: this.crypto.encryptJson(input.config ?? {}) as Prisma.InputJsonValue,
+        config: this.crypto.encryptJson(config) as Prisma.InputJsonValue,
       },
     });
     return this.present(created);
@@ -298,18 +335,14 @@ export class IntegrationsService {
     const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
     if (!integration) throw new NotFoundException('Integration not found');
     const stored = this.crypto.decryptJson(integration.config);
+    const merged = input.config ? mergePreservingMasked(input.config, stored) : undefined;
+    if (merged) this.assertSafeWebhookConfig(integration.key, merged);
     const updated = await this.prisma.integration.update({
       where: { id },
       data: {
         name: input.name,
         status: input.status,
-        ...(input.config
-          ? {
-              config: this.crypto.encryptJson(
-                mergePreservingMasked(input.config, stored),
-              ) as Prisma.InputJsonValue,
-            }
-          : {}),
+        ...(merged ? { config: this.crypto.encryptJson(merged) as Prisma.InputJsonValue } : {}),
       },
     });
     return this.present(updated);
@@ -320,25 +353,38 @@ export class IntegrationsService {
    * (5 s timeout); every other kind still gets the configuration-shape
    * simulation, explicitly labelled as such.
    */
-  async testConnection(tenantId: string, id: string): Promise<ConnectionTestReport> {
+  async testConnection(
+    tenantId: string,
+    id: string,
+    userId?: string,
+  ): Promise<ConnectionTestReport> {
     const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
     if (!integration) throw new NotFoundException('Integration not found');
     const config = this.crypto.decryptJson(integration.config);
 
-    if (integration.key.startsWith('webhook')) {
-      return this.pingWebhook(config);
-    }
+    const report = integration.key.startsWith('webhook')
+      ? await this.pingWebhook(config)
+      : buildConnectionTestReport({
+          id: integration.id,
+          name: integration.name,
+          status: integration.status,
+          config,
+        });
 
-    return buildConnectionTestReport({
-      id: integration.id,
-      name: integration.name,
-      status: integration.status,
-      config,
+    await this.audit.log({
+      tenantId,
+      userId: auditActor(userId),
+      action: AuditAction.UPDATE,
+      entityType: 'integration',
+      entityId: integration.id,
+      after: { action: 'test', live: report.live === true, status: report.status },
     });
+    return report;
   }
 
   private async pingWebhook(config: Record<string, unknown>): Promise<ConnectionTestReport> {
-    const url = asString(config.url);
+    const target = resolveWebhookTarget(config);
+    const url = target?.url ?? '';
     const checkedAt = new Date().toISOString();
     if (!url) {
       return {
@@ -357,12 +403,23 @@ export class IntegrationsService {
       };
     }
 
+    const guard = checkWebhookUrl(url, { allowPrivate: this.allowPrivateUrls });
+    if (!guard.ok) {
+      return {
+        status: 'blocked',
+        summary: guard.reason,
+        checkedAt,
+        live: true,
+        checks: [{ key: 'endpoint', label: 'Endpoint', status: 'blocked', detail: guard.reason }],
+      };
+    }
+
     const result = await this.webhooks.ping({
       url,
-      secret: asString(config.secret) || undefined,
+      secret: target?.secret,
       format: config.format as never,
     });
-    const signed = Boolean(asString(config.secret));
+    const signed = Boolean(target?.secret);
     const checks: StudioCheck[] = [
       {
         key: 'endpoint',
@@ -408,24 +465,39 @@ export class IntegrationsService {
    * Re-queue one delivery and retry it inline. Tenant-scoped: a delivery of
    * another tenant is a 404, never a replay.
    */
-  async replayDelivery(tenantId: string, integrationId: string, deliveryId: string) {
+  async replayDelivery(
+    tenantId: string,
+    integrationId: string,
+    deliveryId: string,
+    userId?: string,
+  ) {
     const delivery = await this.prisma.webhookDelivery.findFirst({
       where: { id: deliveryId, tenantId, integrationId },
       select: { id: true },
     });
     if (!delivery) throw new NotFoundException('Delivery not found');
 
-    await this.prisma.webhookDelivery.update({
-      where: { id: delivery.id },
-      data: {
-        status: 'PENDING',
-        attempts: 0,
-        nextAttemptAt: new Date(),
-        lastError: null,
-        deliveredAt: null,
-      },
+    // Conditional claim (TOCTOU): only a delivery that is NOT already queued can
+    // be re-queued, so two concurrent replays can't double-send, and we never
+    // steal a delivery the cron is about to pick up.
+    // `deliveredAt` is left untouched — it records the last successful delivery.
+    const claimed = await this.prisma.webhookDelivery.updateMany({
+      where: { id: delivery.id, tenantId, integrationId, status: { not: 'PENDING' } },
+      data: { status: 'PENDING', attempts: 0, nextAttemptAt: new Date(), lastError: null },
     });
+    if (claimed.count === 0) {
+      throw new ConflictException('Delivery is already queued for another attempt');
+    }
+
     await this.webhooks.attempt(delivery.id);
+    await this.audit.log({
+      tenantId,
+      userId: auditActor(userId),
+      action: AuditAction.UPDATE,
+      entityType: 'integration',
+      entityId: integrationId,
+      after: { action: 'replay', deliveryId: delivery.id },
+    });
     return this.prisma.webhookDelivery.findUnique({ where: { id: delivery.id } });
   }
 

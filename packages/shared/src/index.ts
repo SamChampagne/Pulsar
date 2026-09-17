@@ -61,6 +61,7 @@ export * from './agents/operations';
 export * from './integrations/operations';
 export * from './integrations/connector-foundation';
 export * from './integrations/webhook-formats';
+export * from './integrations/webhook-target';
 export * from './fleet/maintenance.workflow';
 export * from './fleet/workspace';
 export * from './fleet/compliance';

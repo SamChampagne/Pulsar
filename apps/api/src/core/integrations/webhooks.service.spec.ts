@@ -62,10 +62,11 @@ describe('WebhooksService delivery formats', () => {
     expect(calls[0].init.headers['X-Pulsar-Delivery']).toBe('dlv_1');
     expect(JSON.parse(calls[0].init.body)).toEqual({
       event: 'load.completed',
-      deliveryId: 'dlv_1',
       occurredAt: '2026-09-17T12:00:00.000Z',
       data: { loadId: 'ld_1', loadNumber: 'LD-000045' },
     });
+    // The delivery id travels in the header only — the body shape is unchanged.
+    expect(JSON.parse(calls[0].init.body).deliveryId).toBeUndefined();
     const expected =
       'sha256=' + createHmac('sha256', 's3cr3t').update(calls[0].init.body).digest('hex');
     expect(calls[0].init.headers['X-Pulsar-Signature']).toBe(expected);
@@ -91,6 +92,27 @@ describe('WebhooksService delivery formats', () => {
     const { svc, calls } = harness({ url: 'https://edi.example.com', format: 'x12' });
     await svc.attempt('dlv_1');
     expect(calls[0].init.headers['Content-Type']).toBe('text/plain');
+  });
+
+  it('reads the studio config spelling (endpointUrl / webhookSecret)', async () => {
+    const { svc, calls } = harness({
+      endpointUrl: 'https://studio.example.com/in',
+      webhookSecret: 'studio-secret',
+    });
+    await svc.attempt('dlv_1');
+
+    expect(calls[0].url).toBe('https://studio.example.com/in');
+    expect(calls[0].init.headers['X-Pulsar-Signature']).toBe(
+      'sha256=' + createHmac('sha256', 'studio-secret').update(calls[0].init.body).digest('hex'),
+    );
+  });
+
+  it('fails the delivery when no destination URL is configured at all', async () => {
+    const { svc, calls, updates } = harness({ secret: 'x' });
+    await svc.attempt('dlv_1');
+    expect(calls).toHaveLength(0);
+    expect(updates[0].data.status).toBe('FAILED');
+    expect(updates[0].data.lastError).toContain('No destination URL');
   });
 
   it('falls back to json for an unknown format', async () => {
@@ -133,7 +155,7 @@ describe('WebhooksService.ping', () => {
     expect(calls[0].init.headers['X-Pulsar-Event']).toBe('ping');
     const body = JSON.parse(calls[0].init.body);
     expect(body.event).toBe('ping');
-    expect(body.deliveryId).toBe('test');
+    expect(body.deliveryId).toBeUndefined();
     expect(calls[0].init.headers['X-Pulsar-Signature']).toBe(
       'sha256=' + createHmac('sha256', 'abc').update(calls[0].init.body).digest('hex'),
     );
@@ -155,5 +177,18 @@ describe('WebhooksService.ping', () => {
     const result = await svc.ping({});
     expect(result.ok).toBe(false);
     expect(result.error).toContain('URL');
+  });
+
+  it('pings the studio spelling too (endpointUrl)', async () => {
+    const calls: FetchCall[] = [];
+    global.fetch = (async (url: string, init: any) => {
+      calls.push({ url, init });
+      return { ok: true, status: 200 };
+    }) as unknown as typeof fetch;
+    const svc = new WebhooksService({} as PrismaService, {} as CryptoService);
+
+    const result = await svc.ping({ endpointUrl: 'https://studio.example.com/in' });
+    expect(result.ok).toBe(true);
+    expect(calls[0].url).toBe('https://studio.example.com/in');
   });
 });

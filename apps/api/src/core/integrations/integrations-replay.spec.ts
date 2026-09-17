@@ -1,12 +1,14 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { CryptoService } from '../crypto/crypto.service';
 import { IntegrationsService } from './integrations.service';
+import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { WebhooksService } from './webhooks.service';
 
-function harness(delivery: any | null) {
+function harness(delivery: any | null, options: { allowPrivate?: boolean } = {}) {
   const updates: any[] = [];
   const attempted: string[] = [];
+  const audits: any[] = [];
   const prisma = {
     webhookDelivery: {
       findFirst: async ({ where }: any) => {
@@ -16,22 +18,45 @@ function harness(delivery: any | null) {
         if (where.id !== delivery.id) return null;
         return { id: delivery.id };
       },
-      update: async (args: any) => {
-        updates.push(args);
-        Object.assign(delivery, args.data);
-        return delivery;
+      updateMany: async ({ where, data }: any) => {
+        if (!delivery) return { count: 0 };
+        if (where.status?.not && delivery.status === where.status.not) return { count: 0 };
+        updates.push({ where, data });
+        Object.assign(delivery, data);
+        return { count: 1 };
       },
       findUnique: async () => delivery,
     },
-    integration: { findFirst: async () => null },
+    integration: {
+      findFirst: async () => null,
+      findUnique: async () => null,
+      create: async ({ data }: any) => ({ id: 'int_new', ...data }),
+    },
   } as unknown as PrismaService;
-  const crypto = { decryptJson: () => ({}) } as unknown as CryptoService;
+  const crypto = {
+    decryptJson: () => ({}),
+    encryptJson: (v: Record<string, unknown>) => v,
+  } as unknown as CryptoService;
   const webhooks = {
     attempt: async (id: string) => {
       attempted.push(id);
     },
   } as unknown as WebhooksService;
-  return { svc: new IntegrationsService(prisma, crypto, webhooks), updates, attempted };
+  const audit = {
+    log: async (entry: any) => {
+      audits.push(entry);
+    },
+  } as unknown as AuditLogsService;
+  const config = {
+    get: (key: string) =>
+      key === 'WEBHOOK_ALLOW_PRIVATE_URLS' && options.allowPrivate ? 'true' : undefined,
+  } as any;
+  return {
+    svc: new IntegrationsService(prisma, crypto, webhooks, audit, config),
+    updates,
+    attempted,
+    audits,
+  };
 }
 
 const DELIVERY = {
@@ -45,20 +70,38 @@ const DELIVERY = {
 };
 
 describe('IntegrationsService.replayDelivery', () => {
-  it('resets the delivery and retries it inline', async () => {
-    const { svc, updates, attempted } = harness({ ...DELIVERY });
+  it('claims the delivery conditionally, retries it inline and audits the replay', async () => {
+    const { svc, updates, attempted, audits } = harness({ ...DELIVERY });
 
-    await svc.replayDelivery('t1', 'int_1', 'dlv_1');
+    await svc.replayDelivery('t1', 'int_1', 'dlv_1', 'user_1');
 
     expect(updates).toHaveLength(1);
-    expect(updates[0].data).toMatchObject({
-      status: 'PENDING',
-      attempts: 0,
-      lastError: null,
-      deliveredAt: null,
+    expect(updates[0].where).toMatchObject({
+      id: 'dlv_1',
+      tenantId: 't1',
+      integrationId: 'int_1',
+      status: { not: 'PENDING' },
     });
+    expect(updates[0].data).toMatchObject({ status: 'PENDING', attempts: 0, lastError: null });
+    // deliveredAt records the last successful delivery — a replay never wipes it.
+    expect('deliveredAt' in updates[0].data).toBe(false);
     expect(updates[0].data.nextAttemptAt).toBeInstanceOf(Date);
     expect(attempted).toEqual(['dlv_1']);
+    expect(audits[0]).toMatchObject({
+      tenantId: 't1',
+      userId: 'user_1',
+      entityType: 'integration',
+      entityId: 'int_1',
+      after: { action: 'replay', deliveryId: 'dlv_1' },
+    });
+  });
+
+  it('409s when the delivery is already queued (concurrent replay)', async () => {
+    const { svc, attempted } = harness({ ...DELIVERY, status: 'PENDING' });
+    await expect(svc.replayDelivery('t1', 'int_1', 'dlv_1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(attempted).toHaveLength(0);
   });
 
   it('404s for another tenant (tenant scope, rule 1)', async () => {
@@ -74,6 +117,47 @@ describe('IntegrationsService.replayDelivery', () => {
     await expect(svc.replayDelivery('t1', 'int_1', 'nope')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+});
+
+describe('IntegrationsService webhook URL guard', () => {
+  it('refuses a private endpoint on create', async () => {
+    const { svc } = harness(null);
+    await expect(
+      svc.create('t1', { key: 'webhook-x', name: 'X', config: { url: 'http://127.0.0.1/h' } }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('refuses a non-http scheme, even with the private escape hatch on', async () => {
+    const { svc } = harness(null, { allowPrivate: true });
+    await expect(
+      svc.create('t1', { key: 'webhook-x', name: 'X', config: { url: 'file:///etc/passwd' } }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('accepts a private endpoint when WEBHOOK_ALLOW_PRIVATE_URLS=true', async () => {
+    const { svc } = harness(null, { allowPrivate: true });
+    await expect(
+      svc.create('t1', { key: 'webhook-x', name: 'X', config: { url: 'http://127.0.0.1/h' } }),
+    ).resolves.toBeTruthy();
+  });
+
+  it('checks the studio spelling too (endpointUrl)', async () => {
+    const { svc } = harness(null);
+    await expect(
+      svc.create('t1', {
+        key: 'webhook-x',
+        name: 'X',
+        config: { endpointUrl: 'http://10.0.0.8/h' },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('ignores non-webhook integrations', async () => {
+    const { svc } = harness(null);
+    await expect(
+      svc.create('t1', { key: 'erp-odoo', name: 'Odoo', config: { url: 'http://10.0.0.8/h' } }),
+    ).resolves.toBeTruthy();
   });
 });
 

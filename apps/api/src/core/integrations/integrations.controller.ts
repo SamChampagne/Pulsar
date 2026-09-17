@@ -102,7 +102,7 @@ export class IntegrationsController {
   @Post(':id/test')
   @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
   testConnection(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.integrations.testConnection(user.tenantId, id);
+    return this.integrations.testConnection(user.tenantId, id, user.id);
   }
 
   @Post(':id/dry-run')
@@ -119,7 +119,7 @@ export class IntegrationsController {
     @Param('id') id: string,
     @Param('deliveryId') deliveryId: string,
   ) {
-    return this.integrations.replayDelivery(user.tenantId, id, deliveryId);
+    return this.integrations.replayDelivery(user.tenantId, id, deliveryId, user.id);
   }
 
   /** Recent webhook deliveries of an integration (outbox audit/debugging). */

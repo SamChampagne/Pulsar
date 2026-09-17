@@ -8,6 +8,8 @@
  *                    import) reaches the local endpoint through the outbox (rule 55).
  *   S4  replay       POST /integrations/:id/deliveries/:deliveryId/replay re-sends it.
  *   S5  formats      config.format = 'slack' ships a Slack incoming-webhook body.
+ *   S7  studio keys  an integration configured with endpointUrl/webhookSecret delivers too.
+ *   S8  egress guard a non-http scheme is refused at write time.
  *
  * Every request is captured by an http.createServer bound to an ephemeral port in this
  * process, so the suite is fully offline. HMAC signatures are verified against the raw body.
@@ -45,9 +47,11 @@ describe('Outbound integrations: events → webhooks (e2e)', () => {
   const suffix = `${Date.now()}`;
   const jsonKey = `webhook-test-json-${suffix}`;
   const slackKey = `webhook-test-slack-${suffix}`;
+  const studioKey = `webhook-test-studio-${suffix}`;
   const auth = () => ({ Authorization: `Bearer ${token}` });
   let jsonIntegrationId = '';
   let slackIntegrationId = '';
+  let studioIntegrationId = '';
 
   const signatureOf = (body: string) =>
     'sha256=' + createHmac('sha256', SECRET).update(body).digest('hex');
@@ -76,6 +80,10 @@ describe('Outbound integrations: events → webhooks (e2e)', () => {
   const carrierCodes = [`INTG-C1-${suffix}`, `INTG-C2-${suffix}`];
 
   beforeAll(async () => {
+    // The endpoint is a loopback server: the SSRF guard must be relaxed, exactly
+    // as a developer would do locally (WEBHOOK_ALLOW_PRIVATE_URLS=true).
+    process.env.WEBHOOK_ALLOW_PRIVATE_URLS = 'true';
+
     hookServer = createServer((req, res) => {
       const chunks: Buffer[] = [];
       req.on('data', (chunk) => chunks.push(chunk as Buffer));
@@ -108,7 +116,7 @@ describe('Outbound integrations: events → webhooks (e2e)', () => {
   afterAll(async () => {
     if (prisma) {
       await prisma.integration
-        .deleteMany({ where: { key: { in: [jsonKey, slackKey] } } })
+        .deleteMany({ where: { key: { in: [jsonKey, slackKey, studioKey] } } })
         .catch(() => undefined);
       await prisma.carrier
         .deleteMany({ where: { code: { in: carrierCodes } } })
@@ -144,6 +152,45 @@ describe('Outbound integrations: events → webhooks (e2e)', () => {
       })
       .expect(201);
     slackIntegrationId = (slack.body as { id: string }).id;
+
+    // Same destination, expressed with the integrations-studio config spelling.
+    const studio = await request(http)
+      .post('/api/v1/integrations')
+      .set(auth())
+      .send({
+        key: studioKey,
+        name: 'E2E webhook (studio keys)',
+        status: 'ENABLED',
+        config: { endpointUrl: hookUrl, webhookSecret: SECRET, events: [EVENT] },
+      })
+      .expect(201);
+    studioIntegrationId = (studio.body as { id: string }).id;
+  });
+
+  it('S8: a non-http destination is refused at write time (egress guard)', async () => {
+    await request(http)
+      .post('/api/v1/integrations')
+      .set(auth())
+      .send({
+        key: `${jsonKey}-bad`,
+        name: 'E2E webhook (bad scheme)',
+        config: { url: 'file:///etc/passwd' },
+      })
+      .expect(400);
+  });
+
+  it('S7: the studio spelling (endpointUrl/webhookSecret) is pinged and signed', async () => {
+    received.length = 0;
+    const res = await request(http)
+      .post(`/api/v1/integrations/${studioIntegrationId}/test`)
+      .set(auth())
+      .expect(201);
+    expect((res.body as { status: string; live: boolean }).status).toBe('ok');
+    expect((res.body as { live: boolean }).live).toBe(true);
+
+    expect(received).toHaveLength(1);
+    expect(received[0].headers['x-pulsar-event']).toBe('ping');
+    expect(received[0].headers['x-pulsar-signature']).toBe(signatureOf(received[0].body));
   });
 
   it('S1: POST :id/test really pings the endpoint with a signed ping', async () => {
@@ -168,7 +215,10 @@ describe('Outbound integrations: events → webhooks (e2e)', () => {
     const ping = received[0];
     expect(ping.headers['x-pulsar-event']).toBe('ping');
     expect(ping.headers['x-pulsar-signature']).toBe(signatureOf(ping.body));
-    expect(JSON.parse(ping.body)).toMatchObject({ event: 'ping', deliveryId: 'test' });
+    expect(JSON.parse(ping.body)).toMatchObject({ event: 'ping' });
+    // Historical envelope: no deliveryId in the body, it is a header.
+    expect(JSON.parse(ping.body).deliveryId).toBeUndefined();
+    expect(ping.headers['x-pulsar-delivery']).toBe('test');
   });
 
   it('S1b: a webhook integration without a URL reports a blocked live test', async () => {
@@ -219,9 +269,10 @@ describe('Outbound integrations: events → webhooks (e2e)', () => {
     expect(delivery.headers['x-pulsar-signature']).toBe(signatureOf(delivery.body));
     const envelope = JSON.parse(delivery.body) as {
       event: string;
-      deliveryId: string;
+      occurredAt: string;
       data: { target: string; importedRows: number };
     };
+    expect(Object.keys(envelope)).toEqual(['event', 'occurredAt', 'data']);
     expect(envelope.event).toBe(EVENT);
     expect(envelope.data.target).toBe('carriers');
     expect(envelope.data.importedRows).toBe(1);
@@ -286,11 +337,13 @@ describe('Outbound integrations: events → webhooks (e2e)', () => {
       .set(auth())
       .send({ status: 'DISABLED' })
       .expect(200);
-    await request(http)
-      .patch(`/api/v1/integrations/${slackIntegrationId}`)
-      .set(auth())
-      .send({ status: 'DISABLED' })
-      .expect(200);
+    for (const id of [slackIntegrationId, studioIntegrationId]) {
+      await request(http)
+        .patch(`/api/v1/integrations/${id}`)
+        .set(auth())
+        .send({ status: 'DISABLED' })
+        .expect(200);
+    }
 
     received.length = 0;
     await runImport(carrierCodes[1]);

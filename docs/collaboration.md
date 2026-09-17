@@ -107,9 +107,34 @@ required metric is missing — never silently 0. `LoadCostService.recompute` per
 `WebhooksService.emit(tenantId, event, data)` persists one `webhook_deliveries` row per ENABLED
 integration whose key starts with `webhook` and matches the event, then attempts delivery
 inline. Failures are retried by a 1-minute cron with backoff (1m, 5m, 30m, 2h, 6h — 5 attempts,
-then FAILED). Config JSON: `{ "url", "secret"?, "events"?: [] }`. Headers:
+then FAILED). Config JSON: `{ "url", "secret"?, "events"?: [], "format"?: "json" }` — the
+integrations studio spelling `{ "endpointUrl", "webhookSecret" }` is accepted too
+(`resolveWebhookTarget`, `@pulsar/shared`). Headers:
 `X-Pulsar-Signature: sha256=HMAC(secret, body)`, `X-Pulsar-Event`, `X-Pulsar-Delivery`.
-Events: `tender.sent|accepted|declined|expired`, `load.dispatched|completed`.
+
+**Feed (règle 55).** Every business event persisted by `DomainEventsService.emit` is bridged to
+the outbox (best-effort, fire-and-forget), so the outbox covers the whole catalog, not just the
+TMS events. `tender.sent` and `tender.accepted` have no domain event and stay direct emits.
+
+**`events` vide = tous les événements du catalogue.** An absent or empty `events` array
+subscribes the integration to **every** event of `GET /integrations/events`
+(`DOMAIN_EVENT_CATALOG`) — list the event types explicitly to narrow the egress. Integrations
+created before the bridge are pinned to the 6 historical TMS events at boot by
+`WebhookEventsBackfillService` (idempotent, marked by `config.eventsBackfilledAt`; a boot hook
+rather than a SQL migration because `Integration.config` is encrypted at rest).
+
+**Formats.** `config.format`: `json` (canonical envelope `{ event, occurredAt, data }`),
+`slack` (incoming webhook, mrkdwn escaped), `teams` (MessageCard), `x12` (raw interchange from
+`data.x12`, `text/plain`). Unknown value → `json`.
+
+**Egress guard.** A `webhook*` URL must be public http/https: loopback, link-local and private
+ranges are refused at write time and before a live test, unless `WEBHOOK_ALLOW_PRIVATE_URLS=true`
+(dev/CI).
+
+**Test & replay.** `POST /integrations/:id/test` performs a real signed `ping` for `webhook*`
+keys (5 s timeout; other kinds get a clearly-labelled configuration simulation).
+`POST /integrations/:id/deliveries/:deliveryId/replay` re-queues one delivery (conditional
+claim — 409 if it is already PENDING). Both are audited (`entityType: 'integration'`).
 Inspect deliveries: `GET /integrations/:id/deliveries`.
 
 ## Inbound API keys
