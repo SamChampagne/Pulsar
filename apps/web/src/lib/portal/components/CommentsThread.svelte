@@ -9,12 +9,15 @@
     client,
     shipmentId,
     open,
-    count = $bindable<number | null>(null),
+    // No fallback on purpose: the caller binds a not-yet-seeded map entry
+    // (`bind:count={commentCounts[id]}`), and a fallback would make that a
+    // `props_invalid_value` error on mount.
+    count = $bindable<number | null | undefined>(),
   }: {
     client: PortalClient;
     shipmentId: string;
     open: boolean;
-    count?: number | null;
+    count?: number | null | undefined;
   } = $props();
 
   let comments = $state<ShipmentComment[]>([]);

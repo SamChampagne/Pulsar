@@ -2,30 +2,62 @@
 // by both the token-authenticated (`/public/portal/:token/*`) and
 // session-authenticated (`/portal/*`) routes — same fields either way.
 
+/** The single live position the API exposes for a moving shipment (rule 20). */
+export interface PortalPosition {
+  latitude: number;
+  longitude: number;
+  // `GET /portal/view` names it `recordedAt`; the tracking detail
+  // (`GET /portal/shipments/:id`) names it `occurredAt`. Accept both so one
+  // shape serves the dashboard and the tracking panel.
+  recordedAt?: string | null;
+  occurredAt?: string | null;
+}
+
+export interface PortalShipment {
+  id: string;
+  shipmentNumber: string;
+  status: string;
+  plannedPickupEarly: string | null;
+  plannedPickupLate: string | null;
+  plannedDeliveryEarly: string | null;
+  plannedDeliveryLate: string | null;
+  actualPickupAt: string | null;
+  actualDeliveryAt: string | null;
+  weightKg: number | null;
+  palletCount: number | null;
+  documentCount: number;
+  hasPod: boolean;
+  lastPosition: PortalPosition | null;
+  trackingUrl: string | null;
+}
+
+export interface PortalOrder {
+  id: string;
+  orderNumber: string;
+  customerReference: string | null;
+  status: string;
+  mode: string | null;
+  totalWeightKg: number | null;
+  totalVolumeM3: number | null;
+  palletCount: number | null;
+  notes: string | null;
+  requestedPickupEarly: string | null;
+  requestedPickupLate: string | null;
+  requestedDeliveryEarly: string | null;
+  requestedDeliveryLate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  originLocation: { city: string; state: string | null };
+  destinationLocation: { city: string; state: string | null };
+  shipments: PortalShipment[];
+}
+
 export interface PortalView {
   shipper: string;
   customer: string;
   branding: { logoUrl?: string; accentColor?: string };
   locations: { code: string; name: string; city: string }[];
-  orders: {
-    id: string;
-    orderNumber: string;
-    customerReference: string | null;
-    status: string;
-    requestedPickupEarly: string | null;
-    requestedPickupLate: string | null;
-    requestedDeliveryEarly: string | null;
-    requestedDeliveryLate: string | null;
-    originLocation: { city: string; state: string | null };
-    destinationLocation: { city: string; state: string | null };
-    shipments: {
-      id: string;
-      shipmentNumber: string;
-      status: string;
-      actualDeliveryAt: string | null;
-      trackingUrl: string | null;
-    }[];
-  }[];
+  orders: PortalOrder[];
 }
 
 export interface Template {
@@ -43,12 +75,31 @@ export interface Template {
 }
 
 export interface Invoice {
+  id: string;
   invoiceNumber: string;
   status: string;
   currency: string;
+  // Numbers, never serialized Decimal strings (spec B2.2).
   totalAmount: number;
+  amountPaid: number;
+  taxAmount: number;
+  netAmount: number;
+  approvedAt: string | null;
   sentAt: string | null;
   paidAt: string | null;
+}
+
+/** `GET /portal/change-requests` — the customer-facing projection. */
+export interface PortalChangeRequest {
+  id: string;
+  kind: string;
+  note: string;
+  status: string;
+  staffResponse: string | null;
+  orderNumber: string | null;
+  shipmentNumber: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
 }
 
 export interface PortalDocument {
@@ -64,4 +115,9 @@ export interface ShipmentComment {
   authorName: string;
   body: string;
   createdAt: string;
+}
+
+/** Reads whichever timestamp the payload carried for a position. */
+export function positionAt(position: PortalPosition | null | undefined): string | null {
+  return position?.recordedAt ?? position?.occurredAt ?? null;
 }

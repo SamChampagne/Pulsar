@@ -1,11 +1,18 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { page } from '$app/state';
   import { PortalUserRole } from '@pulsar/shared';
-  import PublicShell from '$lib/components/PublicShell.svelte';
-  import { Button } from '$lib/components/ui';
+  import {
+    FileText,
+    Folder,
+    LayoutDashboard,
+    MessageSquareWarning,
+    Package,
+    Star,
+    Users,
+  } from 'lucide-svelte';
   import { portalApi, PortalApiError } from '$lib/portal/api';
   import { sessionClient } from '$lib/portal/client';
+  import PortalShell, { type PortalNavItem } from '$lib/portal/components/PortalShell.svelte';
   import {
     endPortalSession,
     portalSession,
@@ -24,17 +31,22 @@
 
   const client = sessionClient();
 
-  const links = $derived(
-    [
-      { href: '/portal/orders', label: 'Commandes' },
-      { href: '/portal/invoices', label: 'Factures' },
-      { href: '/portal/documents', label: 'Documents' },
-      { href: '/portal/requests', label: 'Demandes' },
-      ...($portalSession?.user.role === PortalUserRole.ADMIN
-        ? [{ href: '/portal/users', label: 'Utilisateurs' }]
-        : []),
-    ].map((link) => ({ ...link, active: page.url.pathname === link.href })),
-  );
+  const nav = $derived<PortalNavItem[]>([
+    {
+      key: 'dashboard',
+      label: 'Tableau de bord',
+      href: '/portal/dashboard',
+      icon: LayoutDashboard,
+    },
+    { key: 'orders', label: 'Commandes', href: '/portal/orders', icon: Package },
+    { key: 'invoices', label: 'Factures', href: '/portal/invoices', icon: FileText },
+    { key: 'documents', label: 'Documents', href: '/portal/documents', icon: Folder },
+    { key: 'requests', label: 'Demandes', href: '/portal/requests', icon: MessageSquareWarning },
+    { key: 'templates', label: 'Modèles', href: '/portal/templates', icon: Star },
+    ...($portalSession?.user.role === PortalUserRole.ADMIN
+      ? [{ key: 'users', label: 'Utilisateurs', href: '/portal/users', icon: Users }]
+      : []),
+  ]);
 
   async function loadView() {
     try {
@@ -46,6 +58,7 @@
   }
 
   async function logout() {
+    if (loggingOut) return;
     loggingOut = true;
     const refreshToken = $portalSession?.refreshToken;
     if (refreshToken) {
@@ -69,42 +82,20 @@
   });
 </script>
 
-<PublicShell maxWidth="max-w-4xl" brand={$portalSession?.branding}>
-  {#if $portalSession}
-    <p class="mb-1 text-sm text-ink-muted">Portail client · {$portalSession.shipper.name}</p>
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-      <h1 class="text-xl font-bold text-ink">
-        Bonjour {$portalSession.user.firstName} · {$portalSession.customer.name}
-      </h1>
-      <Button variant="ghost" onclick={logout} disabled={loggingOut}>Se déconnecter</Button>
-    </div>
-
-    <nav aria-label="Portail client" class="mb-6 overflow-x-auto border-b border-edge">
-      <div class="flex w-max gap-4">
-        {#each links as link (link.href)}
-          <a
-            href={link.href}
-            aria-current={link.active ? 'page' : undefined}
-            class={`shrink-0 pb-2 text-sm whitespace-nowrap transition-colors ${
-              link.active
-                ? 'border-b-2 border-accent font-semibold text-accent'
-                : 'text-ink-muted hover:text-ink'
-            }`}
-          >
-            {link.label}
-          </a>
-        {/each}
-      </div>
-    </nav>
-
+{#if $portalSession}
+  <PortalShell
+    branding={$portalSession.branding}
+    shipperName={$portalSession.shipper.name}
+    customerName={$portalSession.customer.name}
+    user={$portalSession.user}
+    {nav}
+    onLogout={logout}
+  >
     {#if error}
       <p class="mb-4 text-sm text-danger" role="alert">{error}</p>
     {/if}
-
     {@render children()}
-
-    <p class="mt-6 text-center text-xs text-ink-faint">Powered by Pulsar</p>
-  {:else}
-    <p class="text-sm text-ink-muted">Chargement…</p>
-  {/if}
-</PublicShell>
+  </PortalShell>
+{:else}
+  <p class="p-6 text-sm text-ink-muted">Chargement…</p>
+{/if}

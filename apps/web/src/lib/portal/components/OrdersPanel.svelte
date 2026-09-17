@@ -45,7 +45,7 @@
 
   // Per-shipment comment threads (lazy, cached across toggles).
   let commentsOpen = $state<Record<string, boolean>>({});
-  let commentCounts = $state<Record<string, number | null>>({});
+  let commentCounts = $state<Record<string, number | null | undefined>>({});
 
   const portalModeSuggestion = $derived.by(() => {
     const w = request.totalWeightKg ? Number(request.totalWeightKg) : null;
@@ -129,7 +129,8 @@
       showTemplateSave = false;
       templateNotice = 'Modèle enregistré';
     } catch (e) {
-      templateNotice = e instanceof PortalApiError ? e.message : "Échec de l'enregistrement du modèle";
+      templateNotice =
+        e instanceof PortalApiError ? e.message : "Échec de l'enregistrement du modèle";
     }
   }
 

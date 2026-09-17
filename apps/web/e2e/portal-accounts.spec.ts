@@ -114,7 +114,10 @@ test('a portal admin signs in and lands on the authenticated workspace', async (
   const nav = page.getByRole('navigation', { name: 'Portail client' });
   await expect(nav.getByRole('link', { name: 'Commandes' })).toBeVisible();
   await expect(nav.getByRole('link', { name: 'Utilisateurs' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: /Bonjour Ada · Client Nord/ })).toBeVisible();
+  // The full-width shell replaced the centred card: the company sits in the top
+  // bar and the greeting moved into the account menu button.
+  await expect(page.getByTestId('portal-customer')).toHaveText('Client Nord');
+  await expect(page.getByRole('button', { name: /Votre compte/ })).toBeVisible();
   expect(state.writes[0]).toMatchObject({
     path: '/auth/login',
     body: { email: 'ada@client.test', password: 'portal1234' },
