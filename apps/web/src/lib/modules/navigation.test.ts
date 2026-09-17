@@ -70,6 +70,27 @@ describe('Settings: roles and core locations navigation', () => {
   });
 });
 
+describe('Customer portal navigation domain', () => {
+  const domain = (modules: string[], permissions: string[]) =>
+    visibleDomains({ enabledModules: modules, can: (p) => permissions.includes(p) }).find(
+      (d) => d.key === 'customer-portal',
+    );
+
+  it('is hidden when the customer-portal module is disabled', () => {
+    expect(domain([], ['customer-portal.links.manage'])).toBeUndefined();
+  });
+
+  it('is hidden when the module is enabled but the permission is missing', () => {
+    expect(domain(['customer-portal'], [])).toBeUndefined();
+  });
+
+  it('is visible with the module enabled and the permission granted', () => {
+    const found = domain(['customer-portal'], ['customer-portal.links.manage']);
+    expect(found).toBeDefined();
+    expect(found?.sections.flatMap((s) => s.links).map((l) => l.href)).toContain('/customers');
+  });
+});
+
 describe('Transport: Lieux link requires core.locations.read', () => {
   const transportLinks = (permissions: string[]) =>
     visibleDomains({ enabledModules: ['transportation'], can: (p) => permissions.includes(p) })

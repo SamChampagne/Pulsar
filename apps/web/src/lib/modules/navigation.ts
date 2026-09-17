@@ -520,6 +520,28 @@ export function navCatalogue(): NavDomain[] {
       ],
     },
 
+    // ── Portail client ───────────────────────────────────────────────────
+    {
+      key: 'customer-portal',
+      label: 'Portail client',
+      icon: Globe,
+      home: '/customers',
+      module: MODULE_KEYS.CUSTOMER_PORTAL,
+      prefixes: [],
+      sections: [
+        {
+          label: 'Clients',
+          links: [
+            {
+              href: '/customers',
+              label: 'Clients & portail',
+              perm: PERMISSIONS.CUSTOMER_PORTAL.LINKS_MANAGE,
+            },
+          ],
+        },
+      ],
+    },
+
     // ── Procurement / Bid Board ────────────────────────────────────────────
     {
       key: 'procurement',
