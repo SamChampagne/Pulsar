@@ -13,12 +13,12 @@ then [ROADMAP.md](./ROADMAP.md) / [TODO.md](./TODO.md); domain context in
 
 ## Layout
 
-| Path                | Contents                                                                |
-| ------------------- | ----------------------------------------------------------------------- |
-| `apps/api`          | NestJS REST API. `src/core/*` = platform, `src/modules/*` = business    |
-| `apps/web`          | SvelteKit **SPA** (Svelte 5 runes, `ssr=false`, adapter-static)         |
-| `packages/shared`   | Source of truth: status enums, state machines, permission catalog, types|
-| `packages/database` | Prisma schema + seed; re-exports `@prisma/client`                       |
+| Path                | Contents                                                                 |
+| ------------------- | ------------------------------------------------------------------------ |
+| `apps/api`          | NestJS REST API. `src/core/*` = platform, `src/modules/*` = business     |
+| `apps/web`          | SvelteKit **SPA** (Svelte 5 runes, `ssr=false`, adapter-static)          |
+| `packages/shared`   | Source of truth: status enums, state machines, permission catalog, types |
+| `packages/database` | Prisma schema + seed; re-exports `@prisma/client`                        |
 
 ## Commands
 
@@ -136,7 +136,7 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
 28. (phase 13 — Main-d'œuvre 24/7) Tout réveil d'un agent always-on passe par
     `AgentWorkerService` (dispatcher unique, file en mémoire, concurrence plafonnée
     global/tenant/agent) ; chaque réveil est enregistré comme `AgentRun` (durable). Un run ne
-    *revert* la tâche (IN_PROGRESS→OPEN) QUE s'il l'a réellement *claim* (sinon il finit SKIPPED
+    _revert_ la tâche (IN_PROGRESS→OPEN) QUE s'il l'a réellement _claim_ (sinon il finit SKIPPED
     sans toucher l'état d'un autre run). `PAUSED` est le kill switch à chaud réversible (tue les
     sessions Hermes en vol via `AgentRuntimeService.killAgentSessions`) ; `REVOKED` reste
     permanent. Le retry ne s'applique qu'aux erreurs de connectivité runtime
@@ -240,7 +240,7 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     (`@pulsar/shared`) avant persistance — jamais écrites sans validation (ni sur create, ni sur
     update). Les définitions vivent dans la table dédiée `CustomFieldDefinition` (tenant-scopée,
     `@@unique([tenantId, module, entityType, key])`) ; les valeurs sont tenant-scopées dans la
-    colonne `customData Json?` de chaque entité TMS. Les *réglages de processus* (eux) restent dans
+    colonne `customData Json?` de chaque entité TMS. Les _réglages de processus_ (eux) restent dans
     `TenantModule.settings` via le framework de config. Le compteur de séquence est indexé
     sur la **clé** (`SequenceKey`), jamais sur le préfixe — changer `documentPrefixTransportOrder`
     ne remet pas le compteur à zéro.
@@ -270,6 +270,7 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     `@RequireModule(ANALYTICS)` + `analytics.read`, tenant-scopé (règle 1). `moduleOfEventType`
     (même package) est la seule source de vérité pour la correspondance type→module — ne pas
     réimplémenter.
+
 ## Hard rules (continued, arc B — tressage automatique)
 
 38. (arc B — réactions déterministes `RUN_ACTION`) Les réactions cross-module ne s'exécutent
@@ -337,7 +338,7 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     `sourceId=payment.id`, `sourceKind=undefined`) ; l'annulation poste une écriture inversée
     (`sourceKind='reversal'`) dans la même transaction. Les statuts `Payment` ne changent QUE via
     `canTransitionPayment` (`@pulsar/shared`). Le mark-paid des relevés clients (`POST
-    customer-invoices/:id/pay`) exige le statut `SENT` (pas `APPROVED`) et retourne le relevé
+customer-invoices/:id/pay`) exige le statut `SENT` (pas `APPROVED`) et retourne le relevé
     mis à jour. Le mark-paid des factures transporteur (`POST invoices/:id/mark-paid`) retourne
     la facture mise à jour. Les deux endpoints créent et soumettent un `Payment` en coulisse —
     jamais de GL direct. `ModeOfPayment.accountCode` désigne le compte caisse/banque ; les
@@ -354,7 +355,7 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     (`TaxTemplateLine` : taux + `accountCode`) ; appliquer un gabarit de mauvais type renvoie 400.
     `computeTax` (`@pulsar/shared`, pur) calcule la taxe à partir des lignes : flat-on-net v1
     (`rate × netAmount` par ligne, arrondi à 2 décimales, somme = `taxAmount`). `totalAmount =
-    netAmount + taxAmount` (montant brut, ce qui est dû). Effacer la taxe : passer
+netAmount + taxAmount` (montant brut, ce qui est dû). Effacer la taxe : passer
     `taxTemplateId: null` (remet `taxAmount=0`, `totalAmount=netAmount`). Toute approbation avec
     taxe > 0 génère une écriture GL **fractionnée** best-effort + idempotente (règle 41) :
     relevé client → DR AR gross / CR Revenue net / CR compte-taxe par ligne du gabarit ;
@@ -389,13 +390,13 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     une transaction bancaire 1:1 à un `Payment` dont le `ModeOfPayment.accountCode` égale le
     `glAccountCode` du compte bancaire (filtre des candidats) ; le claim se fait via deux
     `updateMany` conditionnels dans une seule transaction (transaction `UNRECONCILED → RECONCILED`
-    + `Payment.reconciledAt` non nul) — si l'un échoue, les deux rollbackent. `Payment.reconciledAt`
-    est un marqueur de rapprochement uniquement : il ne modifie JAMAIS `Payment.status` ni
-    `amountPaid` (le GL n'est JAMAIS modifié depuis le module Banking — clearing sub-ledger,
-    règle 41 préservée). Le numéro de compte (`accountNumber`) est **masqué dans toutes les
-    projections** (4 derniers caractères + `****` — esprit règle 10). Tout endpoint Banking est
-    `@RequireModule(BILLING)` + `billing.ledger.read|manage`, tenant-scopé (règle 1) ; FK
-    vérifiées (règle 9).
+    - `Payment.reconciledAt` non nul) — si l'un échoue, les deux rollbackent. `Payment.reconciledAt`
+      est un marqueur de rapprochement uniquement : il ne modifie JAMAIS `Payment.status` ni
+      `amountPaid` (le GL n'est JAMAIS modifié depuis le module Banking — clearing sub-ledger,
+      règle 41 préservée). Le numéro de compte (`accountNumber`) est **masqué dans toutes les
+      projections** (4 derniers caractères + `****` — esprit règle 10). Tout endpoint Banking est
+      `@RequireModule(BILLING)` + `billing.ledger.read|manage`, tenant-scopé (règle 1) ; FK
+      vérifiées (règle 9).
 
 ## Hard rules (continued, Billing Budget)
 
@@ -496,6 +497,47 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     HTML échappé) — jamais de HTML brut, jamais de dépendance Markdown. L'état « vu » est par
     utilisateur (`UserPreferences.releaseNotesSeenAt`), jamais par tenant.
 
+## Hard rules (continued, aide à la saisie, portail v2 & connecteurs)
+
+53. (Aide à la saisie) Tout champ de formulaire référençant une entité ou un vocabulaire fermé passe
+    par `EntityPicker` (recherche serveur, `labelKey`/`detailKey`/`valueKey`/`listShape`) ou par
+    `ReferenceSelect` (référentiels purs de `@pulsar/shared/reference` : `COUNTRIES`,
+    `REGIONS_BY_COUNTRY`/`regionsFor`, `CURRENCIES`, `WMS_UNITS`) — jamais un `Input` libre, jamais
+    un `<Select>` alimenté par un `pageSize: 100` silencieusement tronqué. Les statuts s'affichent
+    via `labelFor` (`STATUS_LABELS_FR`, `apps/web/src/lib/components/ui/status.ts`) et les dates via
+    `$lib/format` (locale `fr-CA`). `ReferenceSelect` conserve toujours une valeur stockée absente du
+    catalogue comme option supplémentaire (jamais d'effacement silencieux à l'enregistrement). Sur le
+    **plan portail** (`portalApi`, jeton portail) `EntityPicker` est inutilisable — il parle le client
+    tenant — : les listes du portail viennent de la charge utile `view` via `ReferenceSelect`.
+54. (Portail client v2) Toute donnée exposée au portail passe par une projection explicite scopée
+    `(tenantId, customerId)` du `PortalContext` (les deux portes — session `/portal/*` et lien
+    `/public/portal/:token/*` — appellent le même cœur `…For(ctx, …)`, jamais deux projections
+    parallèles) ; les positions suivent la règle 20 (UNE position, uniquement pour un shipment
+    `DISPATCHED`/`IN_TRANSIT`, jamais d'historique) ; aucune donnée transporteur ni de coût, jamais
+    de `tenantId` ni de PK interne (règle 10). `PortalChangeRequest` ne change de statut que via
+    `canTransitionPortalChangeRequest` (`@pulsar/shared`, règle 2) ; la création écrit la ligne
+    **avant** d'émettre l'événement métier, et la file staff (`/customer-portal/change-requests`,
+    `acknowledge|resolve|reject`) réutilise la permission `customer-portal.users.manage` (aucune
+    nouvelle clé) avec audit (règle 6).
+55. (Connecteurs) Les événements métier atteignent les intégrations UNIQUEMENT via
+    `DomainEventsService.emit → WebhooksService.emit` (pont best-effort, après persistance réussie
+    de la ligne `DomainEvent`, jamais bloquant, jamais de double émission directe) ; le format de
+    livraison vient de `config.format` (`WEBHOOK_FORMATS` de `@pulsar/shared` : `json | slack |
+teams | x12`, inconnu ⇒ `json`) et toute URL `webhook*`/EDI sortante passe le garde d'egress
+    (`checkWebhookUrl`, `@pulsar/shared`) à l'écriture comme au test. Un récepteur entrant est
+    identifié par un `inboundToken` de 32 octets base64url stocké **haché** dans la colonne indexée
+    `Integration.inboundTokenHash` (jamais dans `config`, chiffré donc non indexable ; l'API ne rend
+    qu'un booléen `hasInboundToken`), est idempotent sur `InboundMessage.dedupKey`
+    (`@@unique([tenantId, dedupKey])`) et n'écrit qu'à travers les services métier existants
+    (`createRecord`) sous le service-account du tenant, scopé à la seule permission de la cible, avec
+    module et permission re-vérifiés (règles 13/15). Le **seul** contrôle d'autorisation humain est
+    à la configuration : poser `config.target` (ou `config.customerId`/`carrierId` d'un partenaire
+    EDI) et émettre/rotationner le jeton exigent, en plus de `core.integrations.manage`, la
+    permission de la cible — 403 sinon. Le mapping (`applyIntegrationMapping`), le parsing/génération
+    EDI X12 (204/990/210/214) et `buildIcs` vivent dans `@pulsar/shared` (purs, browser-safe) — ne
+    jamais les réimplémenter dans l'API ; un chemin de mapping traversant `__proto__`/`constructor`/
+    `prototype` est refusé (400 à l'enregistrement, erreur de mapping à la livraison).
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
@@ -539,7 +581,11 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
 - `ModulesGuard` uses a 30 s in-memory cache (single-process; Redis when scaling out).
 - Email: `EMAIL_DRIVER=log` in dev/CI (logs only). Senders: tender links, invitations/resets,
   delivered notices.
-- Webhooks go through a durable outbox (`webhook_deliveries`, 5 retries with backoff).
+- Webhooks go through a durable outbox (`webhook_deliveries`, 5 retries with backoff). Since the
+  domain-event bridge (rule 55) they carry the **whole** `DOMAIN_EVENT_CATALOG`, not just 6 TMS
+  events: an integration with an empty `events` array is subscribed to everything (legacy rows are
+  pinned to the 6 historical events at boot by `WebhookEventsBackfillService`). Formats
+  `json|slack|teams|x12`; the egress guard is **string-level** (no DNS resolution) — see TODO.
 - Auto-tender chains advance best-effort: a failure logs and leaves the load PLANNED.
 - Web route building is v0: stops auto-generated from shipments (pickups then deliveries);
   manual reordering is a phase-1 leftover.
