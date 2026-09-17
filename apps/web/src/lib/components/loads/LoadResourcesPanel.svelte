@@ -3,7 +3,7 @@
   import { Button, Card, EntityPicker, Field, Select } from '$lib/components/ui';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
-  import type { Option, CapacityExcess } from './types';
+  import type { CapacityExcess } from './types';
 
   interface ResourceForm {
     carrierId: string;
@@ -17,20 +17,15 @@
   interface Props {
     loadId: string;
     editable: boolean;
-    carriers?: Option[];
-    drivers?: Option[];
-    vehicles?: Option[];
-    trailers?: Option[];
-    rates?: Option[];
     form: ResourceForm;
     onFormChange: (form: ResourceForm) => void;
     onReload: () => Promise<void>;
   }
 
-  // `carriers`/`drivers`/`vehicles`/`trailers`/`rates` stay in Props for the parent's
-  // call site (loads/[id]/+page.svelte, out of scope here) but are no longer read:
-  // each field below searches its own endpoint through EntityPicker (hard rule 53)
-  // instead of a capped `pageSize: 100` preload.
+  // Each field below searches its own endpoint through EntityPicker (hard rule
+  // 53) instead of a caller-preloaded `pageSize: 100` list — the parent
+  // (loads/[id]/+page.svelte) no longer fetches or passes carrier/driver/
+  // vehicle/trailer/rate options.
   const { loadId, editable, form, onFormChange, onReload }: Props = $props();
 
   let resourcesCapacityExcesses = $state<CapacityExcess[]>([]);

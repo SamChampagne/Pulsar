@@ -36,7 +36,6 @@
     RouteDetail,
     LoadDocument,
     CatalogAccessorial,
-    Option,
   } from '$lib/components/loads/types';
 
   const loadId = $derived(page.params.id as string);
@@ -74,12 +73,9 @@
   // Documents
   let documents = $state<LoadDocument[]>([]);
 
-  // Resource assignment form
-  let carriers = $state<Option[]>([]);
-  let drivers = $state<Option[]>([]);
-  let vehicles = $state<Option[]>([]);
-  let trailers = $state<Option[]>([]);
-  let rates = $state<Option[]>([]);
+  // Resource assignment form — carrier/driver/vehicle/trailer/rate options are no
+  // longer preloaded here: LoadResourcesPanel's EntityPicker fields each search
+  // their own endpoint (hard rule 53) instead of a capped page-size-100 list.
   let form = $state({
     carrierId: '',
     driverId: '',
@@ -275,19 +271,6 @@
     resourcesError = '';
     resourcesLoading = true;
     try {
-      const [c, d, v, t, r] = await Promise.all([
-        api<Paginated<Option>>('/transportation/carriers', { query: { pageSize: 100 } }),
-        api<Paginated<Option>>('/transportation/drivers', { query: { pageSize: 100 } }),
-        api<Paginated<Option>>('/transportation/vehicles', { query: { pageSize: 100 } }),
-        api<Paginated<Option>>('/transportation/trailers', { query: { pageSize: 100 } }),
-        api<Paginated<Option>>('/transportation/rates', { query: { pageSize: 100 } }),
-      ]);
-      carriers = c.items;
-      drivers = d.items;
-      vehicles = v.items;
-      trailers = t.items;
-      rates = r.items;
-
       const catalog = await api<Paginated<CatalogAccessorial>>('/transportation/accessorials', {
         query: { pageSize: 100 },
       });
@@ -522,11 +505,6 @@
           >{:else}<LoadResourcesPanel
             {loadId}
             {editable}
-            {carriers}
-            {drivers}
-            {vehicles}
-            {trailers}
-            {rates}
             {form}
             onFormChange={(f) => {
               form = f;
