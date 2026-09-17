@@ -94,6 +94,18 @@ async function setup(page: Page, readonly = false, legacy = false) {
       return route.fulfill({ json: { items: [bom], total: 1, page: 1, pageSize: 50 } });
     if (path === 'manufacturing/boms/bom') return route.fulfill({ json: bom });
     if (path === 'manufacturing/boms/bom/revisions/rev1') return route.fulfill({ json: revision });
+    if (path === 'wms/choices/items')
+      return route.fulfill({
+        json: {
+          items: [
+            { id: 'raw', sku: 'RAW', name: 'Acier', unit: 'KG' },
+            { id: 'fg', sku: 'FG', name: 'Assemblage', unit: 'EA' },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 20,
+        },
+      });
     if (path === 'manufacturing/mrp/options')
       return route.fulfill({
         json: {
@@ -149,7 +161,11 @@ test('BOM sends exact decimal strings and preserves input on conflict', async ({
   await page.goto('/manufacturing/boms');
   await page.getByRole('button', { name: 'BOM-FG', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Référence matière').fill('RAW');
+  await dialog.getByRole('button', { name: /^Référence matière :/ }).click();
+  const refPicker = page.getByRole('dialog', { name: 'Référence matière' });
+  await expect(refPicker).toBeVisible();
+  await refPicker.getByRole('option', { name: /Acier/ }).click();
+  await expect(refPicker).toBeHidden();
   await dialog.getByLabel('Qté / unité').fill('0.123456789');
   state.fail = true;
   await dialog.getByRole('button', { name: 'Ajouter la ligne' }).click();
