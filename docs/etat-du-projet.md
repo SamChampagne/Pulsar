@@ -8,7 +8,7 @@
 
 > **Aide à la saisie + portail client v2 + connecteurs (arc 3, 2026-09-17) —
 > `access-module-core-locations` (non mergée, non poussée ; 40 commits depuis `a3aedc7`, HEAD
-> `3bb0098` + passe de correction finale).** Trois sous-projets. **(A) Pickers partout** : `EntityPicker` v2
+> `cefd4ea` après la passe de correction finale et sa re-revue).** Trois sous-projets. **(A) Pickers partout** : `EntityPicker` v2
 > (`labelKey`/`detailKey`/`valueKey`/`listShape`/`selectedLabel`/`allowCreate`/`allowFreeText`,
 > clavier ↑/↓/Entrée), `ReferenceSelect` + référentiels purs `@pulsar/shared/reference`
 > (`COUNTRIES`, `REGIONS_BY_COUNTRY`, `CURRENCIES`, `WMS_UNITS`), libellés FR de statuts
@@ -26,7 +26,7 @@
 > `@pulsar/shared/edi` + deux portes d'entrée ; clés API avec expiration et modèles de portée +
 > schéma Swagger `x-api-key` ; flux **iCal** des rendez-vous de quai ; hub `/connect` +
 > `/connect/inbound-hooks` + `/connect/edi`. Règles 53-55 ajoutées.
-> Gates mesurées (HEAD `3bb0098`, après la revue finale de branche et sa passe de correction) :
+> Gates mesurées (HEAD `3bb0098`, puis suivi `047ddf1`/`cefd4ea` re-vérifiés : unit web 88, e2e portail 19/19, connect 6/6) :
 > typecheck **0 erreur** (12 avertissements a11y web, baseline) ; unit **1384 tests** (shared 806/86,
 > web 82/9, api 496/76) ; e2e complet `pnpm test:e2e` **832/840** (1 ignoré ; **7 échecs de cause
 > externe** — moteur APS Python absent : `aps-runtime`, `manufacturing-scheduling`,

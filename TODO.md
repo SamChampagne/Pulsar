@@ -796,6 +796,11 @@ clés API partenaires, flux iCal). Règles 53-55. Spec :
       `pageSize: 100` (`vehicles`/`trailers`) uniquement pour afficher le nom de l'actif d'une ligne —
       acceptable tant que le roster reste petit, à convertir si la flotte grossit.
 
+- [ ] `apps/web/src/lib/format.ts` : `formatTime` renvoie `—` sur une date invalide mais `formatDate` /
+      `formatDateTime` renvoient encore `"Invalid Date"` — aligner les trois ; le badge de retard du
+      tableau de dispatch affiche désormais `2026-09-16` (format long) au lieu de `16 sept.` — offrir un
+      `formatDateShort` fr-CA si la largeur gêne.
+
 ### Portail client v2
 
 - [ ] `PortalService.downloadInvoicePdfFor`
