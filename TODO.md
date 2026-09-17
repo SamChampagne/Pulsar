@@ -860,6 +860,13 @@ clés API partenaires, flux iCal). Règles 53-55. Spec :
 - [ ] `GET /public/ical/yard/:token` n'a ni `Cache-Control` ni throttling (cohérent avec les autres
       routes `@Public()` — à traiter dans une passe globale).
 
+- [ ] `DomainEventsService.bridgeToWebhooks` → `WebhooksService.emit` exécute un
+      `integration.findMany` par événement métier, même pour un tenant sans webhook : ajouter un
+      indicateur en cache « tenant a des webhooks » (`apps/api/src/core/operating/domain-events.service.ts`).
+- [ ] Un nouveau webhook créé avec `events: []` s'abonne à tout le catalogue (dont
+      `portal.change-request` avec la note libre du client) ; le studio pré-remplit désormais la
+      liste héritée, mais l'API accepte toujours `[]` = tout — envisager d'exiger un choix explicite.
+
 ### EDI X12
 
 - [ ] La déduplication des **210** est applicative (`findFirst` sur
@@ -882,6 +889,11 @@ clés API partenaires, flux iCal). Règles 53-55. Spec :
       éclatés, motif `K1` tronqué à 60 caractères (limites v1 assumées).
 
 ### Clés API partenaires & flux iCal
+
+- [ ] Le jeton iCal de la cour est stocké **en clair** dans `TenantModule.settings.icalToken`
+      (`apps/api/src/modules/yard/ical/ical.service.ts`), alors que les autres secrets de l'arc sont
+      hachés (`Integration.inboundTokenHash`, `ApiKey.keyHash`) — hacher (sha256) et comparer le hachage,
+      ou déplacer vers une colonne dédiée.
 
 - [ ] L'expiration d'une clé API est saisie en **date** et convertie en fin de journée _locale du
       navigateur_ (`apps/web/src/routes/(app)/settings/api-keys/+page.svelte`) : un administrateur
