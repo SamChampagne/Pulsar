@@ -70,18 +70,23 @@ export class UsersService {
 
   /**
    * True when `userId` currently holds the tenant's system admin role and is
-   * the last ACTIVE user holding it. Must be checked in the same code path
-   * as the mutation (deactivate / role removal) that could break this.
+   * the last ACTIVE user holding it. Must be checked with `db` bound to the
+   * same transaction as the mutation (deactivate / role removal) that could
+   * break this — otherwise the count-then-write is a TOCTOU race.
    */
-  private async isLastActiveAdmin(tenantId: string, userId: string): Promise<boolean> {
-    const user = await this.prisma.user.findFirst({
+  private async isLastActiveAdmin(
+    db: Prisma.TransactionClient,
+    tenantId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const user = await db.user.findFirst({
       where: { id: userId, tenantId },
       select: { roles: { select: { role: { select: { isSystem: true, key: true } } } } },
     });
     if (!user) return false;
     const hasAdminRole = user.roles.some((r) => r.role.isSystem && r.role.key === 'admin');
     if (!hasAdminRole) return false;
-    const activeAdminCount = await this.prisma.user.count({
+    const activeAdminCount = await db.user.count({
       where: {
         tenantId,
         status: 'ACTIVE',
@@ -89,6 +94,26 @@ export class UsersService {
       },
     });
     return activeAdminCount <= 1;
+  }
+
+  /** Marks every still-open action token as used (optionally scoped to one `kind`). */
+  private async invalidateOpenTokens(
+    db: Prisma.TransactionClient,
+    userId: string,
+    kind?: 'INVITATION' | 'PASSWORD_RESET' | 'OIDC_EXCHANGE',
+  ): Promise<void> {
+    await db.userActionToken.updateMany({
+      where: { userId, usedAt: null, ...(kind ? { kind } : {}) },
+      data: { usedAt: new Date() },
+    });
+  }
+
+  /** Maps a Postgres serialization failure (Serializable isolation) to a retryable 409. */
+  private mapTransactionError(err: unknown): unknown {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') {
+      return new ConflictException('Concurrent modification, retry');
+    }
+    return err;
   }
 
   /**
@@ -101,10 +126,7 @@ export class UsersService {
     tenantId: string,
     user: { id: string; email: string },
   ): Promise<string> {
-    await this.prisma.userActionToken.updateMany({
-      where: { userId: user.id, kind: 'INVITATION', usedAt: null },
-      data: { usedAt: new Date() },
-    });
+    await this.invalidateOpenTokens(this.prisma, user.id, 'INVITATION');
     const token = randomBytes(32).toString('base64url');
     await this.prisma.userActionToken.create({
       data: {
@@ -189,77 +211,116 @@ export class UsersService {
     if (!invited) return project(user);
 
     const inviteUrl = await this.issueInvitation(tenantId, { id: user.id, email });
-    return { ...project(user), inviteUrl };
+    // Re-fetch so the projection reflects the invitation token just created
+    // (project() run on the pre-invitation `user` would report invitation: null).
+    return { ...(await this.get(tenantId, user.id)), inviteUrl };
   }
 
   // `actorId` is accepted for interface parity with deactivate(); the declarative
   // @Audit('user', UPDATE) decorator on the controller already records who acted.
   async update(tenantId: string, id: string, dto: UpdateUserDto, _actorId: string) {
-    const existing = await this.prisma.user.findFirst({
-      where: { id, tenantId },
-      select: { roles: { select: { role: { select: { id: true, isSystem: true, key: true } } } } },
-    });
-    if (!existing) throw new NotFoundException('User not found');
     await this.assertRolesOwned(tenantId, dto.roleIds);
 
-    if (dto.roleIds) {
-      const currentAdminRole = existing.roles.map((r) => r.role).find((r) => r.isSystem && r.key === 'admin');
-      if (
-        currentAdminRole &&
-        !dto.roleIds.includes(currentAdminRole.id) &&
-        (await this.isLastActiveAdmin(tenantId, id))
-      ) {
-        throw new BadRequestException(
-          'Cannot remove the administrator role from the last active administrator',
-        );
-      }
-    }
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          const existing = await tx.user.findFirst({
+            where: { id, tenantId },
+            select: { roles: { select: { role: { select: { id: true, isSystem: true, key: true } } } } },
+          });
+          if (!existing) throw new NotFoundException('User not found');
 
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: {
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        ...(dto.roleIds
-          ? { roles: { deleteMany: {}, create: dto.roleIds.map((roleId) => ({ roleId })) } }
-          : {}),
-      },
-      select: userSelect,
-    });
-    return project(updated);
+          if (dto.roleIds) {
+            const currentAdminRole = existing.roles
+              .map((r) => r.role)
+              .find((r) => r.isSystem && r.key === 'admin');
+            if (
+              currentAdminRole &&
+              !dto.roleIds.includes(currentAdminRole.id) &&
+              (await this.isLastActiveAdmin(tx, tenantId, id))
+            ) {
+              throw new BadRequestException(
+                'Cannot remove the administrator role from the last active administrator',
+              );
+            }
+          }
+
+          const updated = await tx.user.update({
+            where: { id },
+            data: {
+              firstName: dto.firstName,
+              lastName: dto.lastName,
+              ...(dto.roleIds
+                ? { roles: { deleteMany: {}, create: dto.roleIds.map((roleId) => ({ roleId })) } }
+                : {}),
+            },
+            select: userSelect,
+          });
+          return project(updated);
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    } catch (err) {
+      throw this.mapTransactionError(err);
+    }
   }
 
   async deactivate(tenantId: string, id: string, actorId: string) {
     if (id === actorId) throw new BadRequestException('You cannot deactivate your own account');
-    const user = await this.prisma.user.findFirst({ where: { id, tenantId } });
-    if (!user) throw new NotFoundException('User not found');
 
-    if (user.status !== 'DISABLED') {
-      const previousStatus = user.status;
-      if (await this.isLastActiveAdmin(tenantId, id)) {
-        throw new BadRequestException('Cannot deactivate the last active administrator');
-      }
-      const result = await this.prisma.user.updateMany({
-        where: { id, tenantId, status: { not: 'DISABLED' } },
-        data: { status: 'DISABLED' },
+    let outcome: { changed: boolean; previousStatus?: string };
+    try {
+      outcome = await this.prisma.$transaction(
+        async (tx) => {
+          const user = await tx.user.findFirst({
+            where: { id, tenantId },
+            select: { status: true },
+          });
+          if (!user) throw new NotFoundException('User not found');
+          if (user.status === 'DISABLED') return { changed: false };
+          const previousStatus = user.status;
+
+          if (await this.isLastActiveAdmin(tx, tenantId, id)) {
+            throw new BadRequestException('Cannot deactivate the last active administrator');
+          }
+
+          const result = await tx.user.updateMany({
+            where: { id, tenantId, status: { not: 'DISABLED' } },
+            data: { status: 'DISABLED' },
+          });
+          if (result.count === 0) return { changed: false };
+
+          // A disabled account must not be reachable through a still-live
+          // invitation or password-reset link (see auth.service resetPassword,
+          // which now also rejects DISABLED users as defense in depth).
+          await this.invalidateOpenTokens(tx, id);
+          return { changed: true, previousStatus };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    } catch (err) {
+      throw this.mapTransactionError(err);
+    }
+
+    if (outcome.changed) {
+      await this.audit.log({
+        tenantId,
+        userId: actorId,
+        action: AuditAction.STATUS_CHANGE,
+        entityType: 'user',
+        entityId: id,
+        before: { status: outcome.previousStatus },
+        after: { status: 'DISABLED' },
       });
-      if (result.count > 0) {
-        await this.audit.log({
-          tenantId,
-          userId: actorId,
-          action: AuditAction.STATUS_CHANGE,
-          entityType: 'user',
-          entityId: id,
-          before: { status: previousStatus },
-          after: { status: 'DISABLED' },
-        });
-      }
     }
     return this.get(tenantId, id);
   }
 
   async resendInvitation(tenantId: string, id: string, actorId: string): Promise<{ inviteUrl: string }> {
-    const user = await this.prisma.user.findFirst({ where: { id, tenantId } });
+    const user = await this.prisma.user.findFirst({
+      where: { id, tenantId },
+      select: { id: true, email: true, status: true },
+    });
     if (!user) throw new NotFoundException('User not found');
     if (user.status !== 'INVITED') {
       throw new BadRequestException('User is not pending invitation');
@@ -277,28 +338,39 @@ export class UsersService {
   }
 
   async reactivate(tenantId: string, id: string, actorId: string) {
-    const user = await this.prisma.user.findFirst({ where: { id, tenantId } });
+    const user = await this.prisma.user.findFirst({
+      where: { id, tenantId },
+      select: { id: true, email: true, status: true, lastLoginAt: true },
+    });
     if (!user) throw new NotFoundException('User not found');
     if (user.status !== 'DISABLED') {
       throw new BadRequestException('User is not disabled');
     }
-    const before = { status: user.status };
 
-    if (user.lastLoginAt) {
-      await this.prisma.user.update({ where: { id }, data: { status: 'ACTIVE' } });
+    const nextStatus: 'ACTIVE' | 'INVITED' = user.lastLoginAt ? 'ACTIVE' : 'INVITED';
+    // Conditional write: only flips a still-DISABLED row, so a concurrent
+    // reactivate/deactivate race loses cleanly instead of double-applying.
+    const result = await this.prisma.user.updateMany({
+      where: { id, tenantId, status: 'DISABLED' },
+      data: { status: nextStatus },
+    });
+    if (result.count === 0) {
+      return this.get(tenantId, id);
+    }
+
+    if (nextStatus === 'ACTIVE') {
       await this.audit.log({
         tenantId,
         userId: actorId,
         action: AuditAction.STATUS_CHANGE,
         entityType: 'user',
         entityId: id,
-        before,
+        before: { status: 'DISABLED' },
         after: { status: 'ACTIVE' },
       });
       return this.get(tenantId, id);
     }
 
-    await this.prisma.user.update({ where: { id }, data: { status: 'INVITED' } });
     const inviteUrl = await this.issueInvitation(tenantId, { id: user.id, email: user.email });
     await this.audit.log({
       tenantId,
@@ -306,7 +378,7 @@ export class UsersService {
       action: AuditAction.STATUS_CHANGE,
       entityType: 'user',
       entityId: id,
-      before,
+      before: { status: 'DISABLED' },
       after: { status: 'INVITED' },
     });
     const projected = await this.get(tenantId, id);
