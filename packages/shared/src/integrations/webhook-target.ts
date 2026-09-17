@@ -114,7 +114,7 @@ function hextetsToIPv4(hi: string, lo: string): string {
 
 /**
  * An embedded-IPv4 IPv6 literal (IPv4-mapped `::ffff:a.b.c.d`, IPv4-compatible
- * `::a.b.c.d`, or NAT64 `64:ff9b::a.b.c.d`) is only as safe as the address it
+ * `::a.b.c.d`, NAT64 `64:ff9b::a.b.c.d`, or IPv4-translated `::ffff:0:a.b.c.d`) is only as safe as the address it
  * carries — unwrap it and re-run the IPv4 checks, instead of letting the
  * hex form slip past every string-based comparison above.
  */
@@ -132,6 +132,11 @@ function isPrivateEmbeddedIPv4(hextets: string[]): boolean {
   }
   // NAT64 well-known prefix 64:ff9b::/96 wrapping an IPv4 address.
   if (h0 === '64' && h1 === 'ff9b' && [h2, h3, h4, h5].every(isZero)) {
+    return isPrivateIPv4(hextetsToIPv4(h6, h7));
+  }
+  // IPv4-translated (RFC 6145 / SIIT) ::ffff:0:a.b.c.d — the "extra zero group"
+  // variant of the mapped form; routable on 464XLAT/NAT64 networks.
+  if ([h0, h1, h2, h3].every(isZero) && h4 === 'ffff' && isZero(h5)) {
     return isPrivateIPv4(hextetsToIPv4(h6, h7));
   }
   return false;

@@ -105,6 +105,8 @@ describe('checkWebhookUrl (egress guard)', () => {
       'http://[::ffff:169.254.169.254]/x', // IPv4-mapped cloud metadata IP
       'http://[::127.0.0.1]/x', // IPv4-compatible loopback
       'http://[64:ff9b::7f00:1]/x', // NAT64 well-known prefix wrapping 127.0.0.1
+      'http://[::ffff:0:7f00:1]/x', // IPv4-translated (SIIT) loopback
+      'http://[::ffff:0:a9fe:a9fe]/x', // IPv4-translated cloud metadata
     ]) {
       expect(isSafeWebhookUrl(url)).toBe(false);
     }
