@@ -663,17 +663,41 @@ troisième plan d'auth, règle 51). Spec :
 
 - [ ] `TransportOrder` n'a pas de colonne `portalUserId` : l'attribution d'une action portail à un
       utilisateur nommé passe uniquement par l'audit/les commentaires, jamais une FK dédiée.
-- [ ] Aucun throttling sur `public/portal/:token` (lien de compatibilité) ni sur `/portal/auth/*` —
-      énumération/force brute possibles en théorie, atténuées par le coût du token/mot de passe.
+- [ ] Aucun throttling sur `public/portal/:token` (lien de compatibilité) — énumération possible en
+      théorie, atténuée par le coût du token. `/portal/auth/*`, lui, EST throttlé
+      (`@UseGuards(ThrottlerGuard)` classe + méthode, 20 req/min/IP, `portal-auth.controller.ts`).
+- [ ] `GET /portal/view` renvoie toute la liste des lieux actifs du shipper (tenant-scopée, pas
+      scopée client) — décision produit à prendre (restreindre aux sites du client + hubs publics).
+- [ ] `unpublish` (`ReleaseNotesService`) repasse le statut à DRAFT sans effacer `publishedAt` ; un
+      republish réutilise `note.publishedAt ?? new Date()` donc garde l'ancienne date — une note
+      déjà vue (seenAt postérieur) republiée ne repasse pas « non vue ». À documenter ou à clarifier
+      (`publishedAt: null` sur unpublish ?).
+- [ ] `PUT /me/preferences` accepte un `releaseNotesSeenAt` fourni par le client (`@IsDateString`),
+      plus large que `POST /release-notes/seen` qui, lui, horodate côté serveur — un client pourrait
+      avancer arbitrairement sa date de dernière lecture.
+- [ ] `requestPasswordReset` n'agit que sur un compte `ACTIVE` — un utilisateur `INVITED` qui a
+      perdu son lien d'invitation n'a aucun parcours self-service ; seul le staff peut renvoyer
+      l'invitation.
+- [ ] Aucune tâche de rétention/nettoyage pour `portal_action_tokens`/`portal_refresh_tokens` —
+      les lignes expirées/révoquées s'accumulent indéfiniment.
+- [ ] `PortalAuthService.login` renvoie 401 sur un email inconnu sans passer par `bcrypt.compare`
+      (retour anticipé sur `candidates.length === 0`) — oracle de timing théorique, à parité avec
+      `core/auth` (dette déjà connue là-bas, pas un régression du portail).
+- [ ] `sites.e2e-spec.ts` : la numérotation des cas est incohérente en fin de fichier (10, 11, 12,
+      14, 13) — les cas 13/14 ont été ajoutés dans le désordre ; à renuméroter si le fichier est
+      retouché.
+- [ ] Spec §2.4 mentionne un lien de navigation « Image de marque » (ancre sur la carte existante)
+      qui n'a pas été implémenté — seul « Clients & portail » existe dans le domaine « Portail
+      client » (`apps/web/src/lib/modules/navigation.ts`).
 - [ ] `CrmContact` et `PortalUser` ne sont pas liés — un contact CRM et un compte portail du même
       client restent deux identités séparées sans pont.
 - [ ] Page jeton (`Customer.portalToken` / `public/portal/:token`) à déprécier une fois les comptes
       nommés adoptés — actuellement conservée comme mode de compatibilité (délègue au même
       `PortalContext`/`PortalService`).
-- [ ] Le mail de réinitialisation de mot de passe portail (`PortalAuthService.forgotPassword`) passe
-      par `EmailService.send` sans résoudre le transport SMTP du tenant — utilise le transport
-      plateforme par défaut au lieu de `await emailConfig.resolve(tenantId)` (le tenant est pourtant
-      connu à ce point, contrairement au reset core/auth pré-authentification).
+- [x] Le mail de réinitialisation de mot de passe portail (`PortalAuthService.requestPasswordReset`)
+      résout désormais le transport SMTP du tenant (`await emailConfig.resolve(user.tenantId)`,
+      injecté via `EmailConfigService` — `EmailModule` global) avant `EmailService.send` ; retombe
+      sur le transport plateforme (`undefined`) si le tenant n'a rien configuré.
 - [ ] Les liens d'invitation portail restent visibles par le staff via l'outbox (`MailService`) —
       voulu pour les invitations (règle : le lien de réinitialisation, lui, ne passe jamais par
       l'outbox), mais à documenter si le modèle de menace change.
@@ -683,8 +707,9 @@ troisième plan d'auth, règle 51). Spec :
       laisse le jeton précédent valide jusqu'à expiration (parité avec `core/auth`, pas un bug neuf).
 - [ ] `lastLoginAt` est écrit avant les gates de session (statut compte/client/module) — un login
       qui échoue ensuite sur une garde a quand même avancé l'horodatage.
-- [ ] Schéma Prisma : commentaire obsolète sur `ShipmentComment.authorId` (parle encore d'un unique
-      plan d'auth utilisateur, alors que le portail en ajoute un second).
+- [x] Schéma Prisma : commentaire `ShipmentComment.authorId` mis à jour (couvre désormais les trois
+      cas — `userId` STAFF, `customerId` lien partagé, `portalUserId` compte nommé — soft ref,
+      jamais exposé).
 - [ ] `TemplatesPanel` (web, fiche client) refetch les gabarits à chaque réouverture du panneau au
       lieu de mettre en cache/invalider explicitement.
 - [ ] `DocumentsPanel.downloadDoc` (web) n'a pas de `try/catch` — un échec de téléchargement ne

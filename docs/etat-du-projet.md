@@ -26,9 +26,10 @@
 > Playwright `access-roles`/`whats-new`/`portal-accounts`/`wms-workspace` **22/22** verts ;
 > `git diff --check` propre. Limites : `TransportOrder` n'a
 > pas de colonne d'attribution portail (audit/commentaires seulement) ; le lien à jeton reste actif
-> en compatibilité ; aucun throttling sur `public/portal/:token` ni `/portal/auth/*` ;
-> `CrmContact` et `PortalUser` non liés ; invitations toujours via l'outbox (voulu, contrairement
-> au reset qui passe en direct). Suite recommandée : déprécier le lien à jeton, lier
+> en compatibilité ; aucun throttling sur `public/portal/:token` (`/portal/auth/*`, lui, EST
+> throttlé — `ThrottlerGuard` 20 req/min/IP) ; `CrmContact` et `PortalUser` non liés ; invitations
+> toujours via l'outbox (voulu, contrairement au reset qui passe en direct, désormais sur le
+> transport SMTP du tenant quand configuré). Suite recommandée : déprécier le lien à jeton, lier
 > `PortalUser` ↔ `CrmContact`, colonne d'attribution portail sur `TransportOrder` si la traçabilité
 > fine devient un besoin produit. Détail, contrats et dette :
 > [portal-accounts-whats-new.md](./plans/portal-accounts-whats-new.md).

@@ -61,6 +61,9 @@ portail, voir plus bas).
   volontaire, ce sont des invitations, pas des secrets vivants). Reset de mot de passe = envoi bas
   niveau via `EmailService.send` (jamais l'outbox — c'est un lien vivant, patron copié de
   `core/auth`). Désactivation = invalidation des jetons d'action + révocation des refresh tokens.
+- Le mail de réinitialisation utilise le transport SMTP du tenant quand il en a configuré un
+  (`EmailConfigService.resolve(user.tenantId)`, injecté depuis `EmailModule` global) et retombe sur
+  le transport plateforme sinon.
 - Payloads portail : uniquement des **codes** (jamais de PK `Location`) — les gabarits de documents
   et les vues de commande renvoient `originCode`/`destinationCode`, pas d'identifiants internes.
 
@@ -107,7 +110,10 @@ Détail complet (commandes, sorties, suites en échec) :
   `PortalUser`.
 - Le lien à jeton (`Customer.portalToken`) reste un mode de compatibilité actif — pas encore
   déprécié.
-- Aucun throttling sur `public/portal/:token` ni sur `/portal/auth/*`.
+- Aucun throttling sur `public/portal/:token` (lien de compatibilité) ; `/portal/auth/*`, lui, EST
+  throttlé (`ThrottlerGuard` 20 req/min/IP).
+- `GET /portal/view` renvoie toute la liste des lieux actifs du shipper (tenant-scopée, pas
+  scopée client) — décision produit à prendre (restreindre aux sites du client + hubs publics).
 - `CrmContact` et `PortalUser` ne sont pas liés (deux identités séparées pour le même client).
 - Détail complet de la dette (mineurs différés en revue, item par item) : section TODO.md
   « Portail client (comptes nommés) & Quoi de neuf — dette 2026-09-17 ».
@@ -120,5 +126,4 @@ Détail complet (commandes, sorties, suites en échec) :
 4. Ajouter une colonne d'attribution portail sur `TransportOrder` (ou équivalent) si la traçabilité
    fine des actions client devient un besoin produit, plutôt que de rester sur audit/commentaires.
 5. Dette différée des revues (Tasks 1-12) listée dans TODO.md — rien de bloquant, à traiter au fil
-   de l'eau (messages d'erreur, audits before/after, transport SMTP du tenant sur le reset portail,
-   throttling, accessibilité `Toasts.svelte`).
+   de l'eau (messages d'erreur, audits before/after, accessibilité `Toasts.svelte`).
