@@ -166,6 +166,18 @@ renvoient tous le **même 404 générique** — une sonde n'apprend rien.
 | `mappings`      | `[{ source, target, transform?, required? }]` — chemins pointés (`a.b.c`) |
 | `inboundSecret` | optionnel : active la vérification HMAC (masqué en lecture, `***`)        |
 
+**PATCH = fusion, pas remplacement.** `PATCH /integrations/:id` **fusionne** le `config` reçu
+par-dessus celui qui est stocké : les clés que le corps ne mentionne pas sont conservées telles
+quelles. C'est ce qui permet au studio générique (qui ignore `target`, `inboundSecret`,
+`customerId` ou l'identité EDI `isa*`) d'enregistrer un simple renommage sans désarmer le HMAC ni
+perdre la cible d'un récepteur en production. Trois règles : une valeur `"***"` renvoyée telle
+quelle **conserve le secret stocké** (masquage aller-retour — conséquence : un secret dont la
+valeur littérale est `"***"` ne peut pas être posé) ; une valeur `null` **supprime** la clé (seule
+façon d'effacer un réglage) ; toute autre valeur écrase. Les gardes (cible + permission, egress
+SSRF, identité EDI, chemins de mapping) tournent sur le résultat **fusionné** — une fusion ne peut
+donc pas produire une config qu'une écriture directe aurait refusée. Création et mise à jour sont
+auditées (`entityType: 'integration'`, `before`/`after` avec les secrets masqués).
+
 **Cibles** (`GET /integrations/inbound-targets`) : `transport-order.create` (module
 transportation, permission `transportation.orders.manage`), `location.upsert` (cœur,
 `core.locations.manage`), `customer.upsert` et `carrier.upsert` (transportation,

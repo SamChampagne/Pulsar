@@ -37,6 +37,12 @@ describe('redactTokenPath', () => {
     );
   });
 
+  it('redacts the yard iCal feed token', () => {
+    expect(redactTokenPath('/api/v1/public/ical/yard/icaltok')).toBe(
+      '/api/v1/public/ical/yard/<redacted>',
+    );
+  });
+
   it('leaves ordinary paths untouched', () => {
     for (const path of [
       '/api/v1/transportation/loads/ld_1',

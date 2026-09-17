@@ -60,6 +60,7 @@ describe('Inbound webhook receiver (e2e)', () => {
   let signedHookToken = '';
   let locationHookToken = '';
   let orderIntegrationId = '';
+  let signedIntegrationId = '';
 
   /** Partner payload: nothing Pulsar-shaped, everything goes through the mapping. */
   const partnerOrder = (reference: string) => ({
@@ -149,6 +150,7 @@ describe('Inbound webhook receiver (e2e)', () => {
       mappings: orderMappings,
       inboundSecret: SECRET,
     });
+    signedIntegrationId = signedHook.id;
     signedHookToken = signedHook.token;
 
     const locationHook = await createReceiver(locationIntegrationKey, {
@@ -327,6 +329,38 @@ describe('Inbound webhook receiver (e2e)', () => {
       .send(raw)
       .expect(202);
     expect(ok.body.status).toBe('IMPORTED');
+  });
+
+  // S4b -----------------------------------------------------------------------
+  it('S4b a partial PATCH (name only) keeps the receiver armed — config is merged', async () => {
+    // The generic Studio form knows nothing about `target`/`inboundSecret`: a
+    // PATCH that replaced the config would silently disarm the HMAC and drop
+    // the target on the next "Save".
+    await request(http)
+      .patch(`/api/v1/integrations/${signedIntegrationId}`)
+      .set(auth())
+      .send({ name: `Inbound renamed ${suffix}` })
+      .expect(200);
+
+    const reference = `REF-${suffix}-C2`;
+    const raw = JSON.stringify(partnerOrder(reference));
+
+    await request(http)
+      .post(`/api/v1/public/hooks/${signedHookToken}`)
+      .set('Content-Type', 'application/json')
+      .set('X-Signature', 'sha256=deadbeef')
+      .send(raw)
+      .expect(401);
+
+    const signature = 'sha256=' + createHmac('sha256', SECRET).update(raw).digest('hex');
+    const ok = await request(http)
+      .post(`/api/v1/public/hooks/${signedHookToken}`)
+      .set('Content-Type', 'application/json')
+      .set('X-Signature', signature)
+      .send(raw)
+      .expect(202);
+    // Still routed to its target: the merge kept `target` and the mappings.
+    expect(ok.body).toMatchObject({ status: 'IMPORTED', entityType: 'transport-order' });
   });
 
   // S5 ------------------------------------------------------------------------

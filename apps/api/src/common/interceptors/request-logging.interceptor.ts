@@ -18,6 +18,7 @@ const TOKEN_PATH_PREFIXES = [
   'public/carrier-portal',
   'public/rfp-invites',
   'public/crm/unsubscribe',
+  'public/ical/yard',
 ] as const;
 
 const REDACTED = '<redacted>';

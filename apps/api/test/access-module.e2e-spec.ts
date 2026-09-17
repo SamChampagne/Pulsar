@@ -195,7 +195,12 @@ describe('Access module (e2e)', () => {
       .expect(201);
     locationId = (created.body as { id: string }).id;
 
-    const sites = await request(http).get('/api/v1/wms/sites').set(auth(whToken)).expect(200);
+    // Search by code: the default page is 100 rows ordered by `code asc`, so a
+    // tenant with many warehouses would push the fresh one off page 1.
+    const sites = await request(http)
+      .get(`/api/v1/wms/sites?search=${encodeURIComponent(code)}`)
+      .set(auth(whToken))
+      .expect(200);
     const siteItems = (sites.body as { items: Array<{ id: string; code: string }> }).items;
     expect(siteItems.some((i) => i.id === locationId || i.code === code)).toBe(true);
 

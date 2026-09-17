@@ -233,17 +233,37 @@ export function maskConfig(config: Record<string, unknown>): Record<string, unkn
 }
 
 /**
- * A client echoing back "***" means "keep the stored secret unchanged" (flat
- * keys only). Consequence: a literal secret value of "***" cannot be set —
- * the accepted trade-off of echo-back masking.
+ * PATCH semantics for `config` — a true MERGE over what is stored (flat keys).
+ *
+ * The result is the stored config with the incoming keys applied, because a
+ * client only ever sends the keys its form knows about: the generic Studio form
+ * has no idea a receiver carries `target`, `inboundSecret`, `customerId` or the
+ * `isa*` EDI identity, and a replace would silently disarm a live receiver's
+ * HMAC and drop its target on the next "Save".
+ *
+ * Three rules:
+ *  - a key echoed back as "***" keeps the STORED secret (echo-back masking —
+ *    consequence: a literal secret value of "***" cannot be set);
+ *  - a key sent as `null` DELETES it (the only way to clear a setting);
+ *  - any other value overwrites.
+ *
+ * Callers still run the normalize/gate/safe-url checks on the MERGED result,
+ * so a merge can never produce a config a direct write would have refused.
  */
 export function mergePreservingMasked(
   incoming: Record<string, unknown>,
   stored: Record<string, unknown>,
 ): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(incoming).map(([k, v]) => [k, v === MASK ? stored[k] : v]),
-  );
+  const merged: Record<string, unknown> = { ...stored };
+  for (const [k, v] of Object.entries(incoming)) {
+    if (v === MASK) continue; // keep the stored secret
+    if (v === null) {
+      delete merged[k]; // explicit removal
+    } else {
+      merged[k] = v;
+    }
+  }
+  return merged;
 }
 
 /**
@@ -251,9 +271,9 @@ export function mergePreservingMasked(
  * written through this service — on create AND on update — so
  * `WebhookEventsBackfillService` never re-widens an explicit empty allowlist
  * set later via PATCH. Preserves an already-stamped value (from the new
- * config, or — since `mergePreservingMasked` only carries over keys the
- * client resends — from the previously stored config); stamps now (ISO)
- * only when neither has one. No-op for non-webhook kinds.
+ * config, or — for a pre-merge caller that passes it explicitly — from the
+ * previously stored config); stamps now (ISO) only when neither has one.
+ * No-op for non-webhook kinds.
  */
 function withEventsBackfillStamp(
   key: string,
@@ -442,6 +462,22 @@ export class IntegrationsService {
         config: this.crypto.encryptJson(config) as Prisma.InputJsonValue,
       },
     });
+    // Configuring a connector points Pulsar at (or opens it to) a third party:
+    // the write is auditable. Secrets are `maskConfig`-ed — the trail records
+    // that a secret is set, never its value.
+    await this.audit.log({
+      tenantId,
+      userId: auditActor(actor?.id),
+      action: AuditAction.CREATE,
+      entityType: 'integration',
+      entityId: created.id,
+      after: {
+        key: created.key,
+        name: created.name,
+        status: created.status,
+        config: maskConfig(config),
+      },
+    });
     return this.present(created);
   }
 
@@ -473,6 +509,26 @@ export class IntegrationsService {
         name: input.name,
         status: input.status,
         ...(merged ? { config: this.crypto.encryptJson(merged) as Prisma.InputJsonValue } : {}),
+      },
+    });
+    // Same trail as `create`: before/after of the configuration, secrets masked.
+    await this.audit.log({
+      tenantId,
+      userId: auditActor(actor?.id),
+      action: AuditAction.UPDATE,
+      entityType: 'integration',
+      entityId: updated.id,
+      before: {
+        key: integration.key,
+        name: integration.name,
+        status: integration.status,
+        config: maskConfig(stored),
+      },
+      after: {
+        key: updated.key,
+        name: updated.name,
+        status: updated.status,
+        config: maskConfig(merged ?? stored),
       },
     });
     return this.present(updated);

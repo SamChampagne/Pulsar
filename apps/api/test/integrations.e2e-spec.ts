@@ -221,6 +221,33 @@ describe('Outbound integrations: events → webhooks (e2e)', () => {
     expect(ping.headers['x-pulsar-delivery']).toBe('test');
   });
 
+  it('S1c: a partial PATCH (name only) merges — url and secret survive the save', async () => {
+    // The Studio form posts only the fields it knows: a replacing PATCH would
+    // wipe `url`/`secret` and leave the connector pointing nowhere, unsigned.
+    await request(http)
+      .patch(`/api/v1/integrations/${jsonIntegrationId}`)
+      .set(auth())
+      .send({ name: 'E2E webhook (renamed)' })
+      .expect(200);
+
+    const list = await request(http).get('/api/v1/integrations').set(auth()).expect(200);
+    const row = (
+      list.body as Array<{ id: string; name: string; config: Record<string, unknown> }>
+    ).find((i) => i.id === jsonIntegrationId);
+    expect(row?.name).toBe('E2E webhook (renamed)');
+    expect(row?.config.url).toBe(hookUrl);
+    expect(row?.config.secret).toBe('***'); // still set, still masked
+
+    received.length = 0;
+    const res = await request(http)
+      .post(`/api/v1/integrations/${jsonIntegrationId}/test`)
+      .set(auth())
+      .expect(201);
+    expect((res.body as { status: string }).status).toBe('ok');
+    expect(received).toHaveLength(1);
+    expect(received[0].headers['x-pulsar-signature']).toBe(signatureOf(received[0].body));
+  });
+
   it('S1b: a webhook integration without a URL reports a blocked live test', async () => {
     const created = await request(http)
       .post('/api/v1/integrations')
