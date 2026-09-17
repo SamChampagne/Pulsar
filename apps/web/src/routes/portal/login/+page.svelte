@@ -30,7 +30,7 @@
         },
       });
       startPortalSession(session);
-      await goto('/portal/orders');
+      await goto('/portal/dashboard');
     } catch (e) {
       if (!(e instanceof PortalApiError)) {
         error = 'Service indisponible, réessayez dans un instant.';

@@ -56,7 +56,7 @@
   {:else if view}
     <!-- Panels stay mounted (`hidden`) so switching tabs keeps their loaded state. -->
     <div hidden={activeTab !== 'dashboard'}>
-      <DashboardPanel {client} {view} />
+      <DashboardPanel {client} {view} active={activeTab === 'dashboard'} />
     </div>
     <div hidden={activeTab !== 'orders'}>
       <OrdersPanel {client} {view} onOrderCreated={load} />

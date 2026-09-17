@@ -23,21 +23,31 @@
    *
    * `hrefs` is optional so the same panel serves the capability-link plane,
    * which has no sub-routes: tiles there are read-outs instead of links.
+   *
+   * `active` gates the two fetches the way `InvoicesPanel` does: the panel is
+   * mounted-but-hidden when it is one tab among others, and a hidden tab must
+   * not spend the visitor's round-trips before it is ever shown.
    */
   let {
     client,
     view,
     hrefs = {},
+    active = true,
   }: {
     client: PortalClient;
     view: PortalView;
     hrefs?: { orders?: string; invoices?: string; requests?: string };
+    active?: boolean;
   } = $props();
 
   let invoices = $state<Invoice[] | null>(null);
   let requests = $state<PortalChangeRequest[] | null>(null);
-  let loading = $state(true);
+  let loading = $state(false);
   let error = $state('');
+  // Plain (non-reactive) latch: the first activation triggers exactly one load.
+  // A `$state` flag here would make the effect re-run on every `loading` flip
+  // and turn a failed fetch into a retry loop; retries go through `onretry`.
+  let attempted = false;
 
   const OPEN_ORDER_STATUSES = new Set<string>([
     TransportOrderStatus.DRAFT,
@@ -100,6 +110,7 @@
   const latestInvoices = $derived((invoices ?? []).slice(0, 5));
 
   async function load() {
+    if (loading) return;
     loading = true;
     error = '';
     try {
@@ -117,7 +128,10 @@
     }
   }
 
+  // Lazy load: fetch only once the panel is first shown.
   $effect(() => {
+    if (!active || attempted) return;
+    attempted = true;
     void load();
   });
 </script>
@@ -143,18 +157,19 @@
     />
     <KpiTile label="Expéditions en transit" value={moving.length} href={hrefs.orders} />
     <KpiTile label="Livrées (30 j)" value={deliveredRecently.length} href={hrefs.orders} />
+    <!-- A failed fetch reads "—", never "0" (docs/ui-page-standard.md). -->
     <KpiTile
       label="Factures à payer"
-      value={unpaid.length}
+      value={error ? '—' : unpaid.length}
       href={hrefs.invoices}
       hint={dueByCurrency || undefined}
-      tone={unpaid.length > 0 ? 'warn' : 'neutral'}
+      tone={!error && unpaid.length > 0 ? 'warn' : 'neutral'}
     />
     <KpiTile
       label="Demandes ouvertes"
-      value={openRequests.length}
+      value={error ? '—' : openRequests.length}
       href={hrefs.requests}
-      tone={openRequests.length > 0 ? 'warn' : 'neutral'}
+      tone={!error && openRequests.length > 0 ? 'warn' : 'neutral'}
     />
   </div>
 {/if}
@@ -218,6 +233,8 @@
     </div>
     {#if loading}
       <Skeleton rows={3} />
+    {:else if error}
+      <p class="py-6 text-center text-sm text-ink-muted">Relevés indisponibles pour le moment.</p>
     {:else if latestInvoices.length === 0}
       <EmptyState
         title="Aucune facture"

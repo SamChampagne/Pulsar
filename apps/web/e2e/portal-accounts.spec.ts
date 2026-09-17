@@ -72,6 +72,7 @@ async function mockPortalApi(page: Page, role: Role): Promise<State> {
     if (path === '/view') return route.fulfill({ json: portalView });
     if (path === '/templates') return route.fulfill({ json: [] });
     if (path === '/invoices') return route.fulfill({ json: [] });
+    if (path === '/change-requests') return route.fulfill({ json: [] });
     if (path === '/users' && request.method() === 'GET')
       return route.fulfill({ json: state.users });
     if (path === '/users' && request.method() === 'POST') {
@@ -110,7 +111,7 @@ test('a portal admin signs in and lands on the authenticated workspace', async (
   await page.getByLabel('Mot de passe').fill('portal1234');
   await page.getByRole('button', { name: 'Se connecter' }).click();
 
-  await expect(page).toHaveURL(/\/portal\/orders$/);
+  await expect(page).toHaveURL(/\/portal\/dashboard$/);
   const nav = page.getByRole('navigation', { name: 'Portail client' });
   await expect(nav.getByRole('link', { name: 'Commandes' })).toBeVisible();
   await expect(nav.getByRole('link', { name: 'Utilisateurs' })).toBeVisible();
@@ -134,7 +135,7 @@ test('a member never reaches colleague management', async ({ page }) => {
   await expect(nav.getByRole('link', { name: 'Utilisateurs' })).toHaveCount(0);
 
   await page.goto('/portal/users');
-  await expect(page).toHaveURL(/\/portal\/orders$/);
+  await expect(page).toHaveURL(/\/portal\/dashboard$/);
   await expect(page.getByRole('button', { name: 'Inviter un collègue' })).toHaveCount(0);
 });
 

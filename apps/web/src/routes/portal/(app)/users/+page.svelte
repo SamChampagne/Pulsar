@@ -147,7 +147,7 @@
     if (!session) return;
     bootstrapped = true;
     if (session.user.role !== PortalUserRole.ADMIN) {
-      void goto('/portal/orders');
+      void goto('/portal/dashboard');
       return;
     }
     void load();
