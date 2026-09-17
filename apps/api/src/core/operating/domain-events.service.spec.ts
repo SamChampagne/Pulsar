@@ -138,6 +138,7 @@ describe('DomainEventsService', () => {
         providers: [
           DomainEventsService,
           TaskAssignmentResolver,
+          { provide: TenantModulesCacheService, useValue: { getEnabledKeys: async () => new Set() } },
           { provide: PrismaService, useValue: prisma },
           { provide: AgentWorkerService, useValue: workerStub },
           { provide: SequencesService, useValue: sequencesStub },
