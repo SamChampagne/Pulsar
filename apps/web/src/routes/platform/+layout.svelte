@@ -2,13 +2,14 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { clearPlatformToken, getPlatformToken } from '$lib/api/platform';
-  import { Activity, Building2, Boxes, LogOut } from 'lucide-svelte';
+  import { Activity, Building2, Boxes, LogOut, Sparkles } from 'lucide-svelte';
   let { children } = $props();
   const login = $derived(page.url.pathname === '/platform/login');
   const links = [
     { href: '/platform/operations', label: 'Exploitation', icon: Activity },
     { href: '/platform/tenants', label: 'Entreprises', icon: Building2 },
     { href: '/platform/modules', label: 'Catalogue', icon: Boxes },
+    { href: '/platform/release-notes', label: 'Nouveautés', icon: Sparkles },
   ];
   $effect(() => {
     if (!login && !getPlatformToken()) void goto('/platform/login');

@@ -9,11 +9,13 @@
   import { deskSearch } from '$lib/stores/desk';
   import { getPreferences } from '$lib/api/preferences';
   import { loadAppearanceFrom } from '$lib/stores/appearance';
+  import { unseenReleaseNotes } from '$lib/stores/release-notes';
   import {
     Bell,
     LogOut,
     Menu,
     Search,
+    Sparkles,
     X,
     Grid2X2,
     ChevronDown,
@@ -81,14 +83,24 @@
       /* silent */
     }
   }
+  async function loadUnseenReleaseNotes() {
+    try {
+      const { count } = await api<{ count: number }>('/release-notes/unseen-count');
+      unseenReleaseNotes.set(count);
+    } catch {
+      /* non-critical */
+    }
+  }
 
   $effect(() => {
     if ($auth) {
       void loadNotifications();
       void loadPendingActions();
+      void loadUnseenReleaseNotes();
       const interval = setInterval(() => {
         void loadNotifications();
         void loadPendingActions();
+        void loadUnseenReleaseNotes();
       }, 60_000);
       return () => clearInterval(interval);
     }
@@ -388,6 +400,17 @@
             aria-label="Assistant IA"
             title="Assistant IA"><Bot class="size-4" /></button
           >{/if}
+        <a
+          href="/whats-new"
+          class="shell-icon relative"
+          onclick={closeFloaters}
+          aria-label="Quoi de neuf"
+          title="Quoi de neuf"
+        >
+          <Sparkles class="size-4" />{#if $unseenReleaseNotes > 0}<span
+              class="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-danger"
+            ></span>{/if}
+        </a>
         <button
           class="shell-icon relative"
           onclick={() => {
