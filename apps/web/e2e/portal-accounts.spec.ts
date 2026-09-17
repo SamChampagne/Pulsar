@@ -290,6 +290,46 @@ test('« Mon compte » shows the account and can request a password reset', asyn
   await expect(page.getByText(/courriel de réinitialisation a été envoyé/)).toBeVisible();
 });
 
+test('dashboard renders the 5 KPI tiles and the live map for in-transit shipments', async ({
+  page,
+}) => {
+  await mockPortalApi(page, 'MEMBER');
+  const movingShipment = {
+    ...shipment,
+    id: 'sh-2',
+    shipmentNumber: 'SH-2026-002',
+    status: 'IN_TRANSIT',
+    lastPosition: { latitude: 45.5, longitude: -73.57, recordedAt: '2026-09-18T12:00:00Z' },
+  };
+  const dashboardView = {
+    ...portalView,
+    orders: [{ ...order, id: 'to-2', orderNumber: 'TO-2026-0099', shipments: [movingShipment] }],
+  };
+  // Overrides only `/view` — registered after `mockPortalApi`'s catch-all, so
+  // Playwright resolves it first for this one path (last-registered wins).
+  await page.route('**/api/v1/portal/view', (route) => route.fulfill({ json: dashboardView }));
+  await seedSession(page, 'MEMBER');
+  await page.goto('/portal/dashboard');
+
+  // Scoped to the KPI figures (uppercase labels under each big number) — some
+  // of these labels are reused verbatim as section headings further down.
+  const tileLabel = (label: string) => page.locator('.uppercase', { hasText: label }).first();
+  for (const label of [
+    'Commandes actives',
+    'Expéditions en transit',
+    'Livrées (30 j)',
+    'Factures à payer',
+    'Demandes ouvertes',
+  ]) {
+    await expect(tileLabel(label)).toBeVisible();
+  }
+
+  // The live map (rule 20: one position per moving shipment, no history).
+  const map = page.getByRole('img', { name: /Carte des expéditions en transit/ });
+  await expect(map).toBeVisible();
+  await expect(page.locator('.leaflet-container')).toBeVisible();
+});
+
 test('« Suivre » opens the shipment tracking drawer', async ({ page }) => {
   await mockPortalApi(page, 'MEMBER');
   await seedSession(page, 'MEMBER');
