@@ -3,7 +3,7 @@
   import { FileText, Folder, LayoutDashboard, MessageSquareWarning, Package } from 'lucide-svelte';
   import { PortalApiError } from '$lib/portal/api';
   import { tokenClient } from '$lib/portal/client';
-  import ChangeRequestForm from '$lib/portal/components/ChangeRequestForm.svelte';
+  import ChangeRequestsPanel from '$lib/portal/components/ChangeRequestsPanel.svelte';
   import DashboardPanel from '$lib/portal/components/DashboardPanel.svelte';
   import DocumentsPanel from '$lib/portal/components/DocumentsPanel.svelte';
   import InvoicesPanel from '$lib/portal/components/InvoicesPanel.svelte';
@@ -68,7 +68,7 @@
       <DocumentsPanel {client} {view} />
     </div>
     <div hidden={activeTab !== 'change'}>
-      <ChangeRequestForm {client} {view} />
+      <ChangeRequestsPanel {client} {view} />
     </div>
   {:else}
     <p class="text-sm text-ink-muted">Chargement…</p>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { Field, Select, Textarea, Button } from '$lib/components/ui';
   import { PortalApiError } from '../api';
   import type { PortalClient } from '../client';
@@ -8,6 +9,8 @@
     client,
     view,
     order = null,
+    initialOrderId = '',
+    initialShipmentId = '',
     onsent = undefined,
   }: {
     client: PortalClient;
@@ -18,12 +21,22 @@
      * so it is displayed rather than chosen.
      */
     order?: PortalOrder | null;
+    /**
+     * Pre-selects the order/shipment picker when `order` is not fixed (e.g.
+     * the standalone Demandes page opened with `?orderId=`/`?shipmentId=`).
+     * Read once at mount — not kept in sync with a later prop change.
+     */
+    initialOrderId?: string;
+    initialShipmentId?: string;
     onsent?: (() => void) | undefined;
   } = $props();
 
   let changeKind = $state('');
-  let changeOrderId = $state('');
-  let changeShipmentId = $state('');
+  // Deliberate one-time snapshot (see the props' doc comments) — `untrack`
+  // tells the compiler this is not meant to stay in sync with later prop
+  // changes.
+  let changeOrderId = $state(untrack(() => (order ? '' : initialOrderId)));
+  let changeShipmentId = $state(untrack(() => (order ? '' : initialShipmentId)));
   let changeNote = $state('');
   let changeNotice = $state('');
   let changeSending = $state(false);

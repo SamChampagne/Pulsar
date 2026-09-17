@@ -150,6 +150,7 @@ async function mockPortalApi(page: Page, role: Role): Promise<State> {
       return route.fulfill({ json: [] });
     if (path === '/invoices') return route.fulfill({ json: [] });
     if (path === '/change-requests') return route.fulfill({ json: [] });
+    if (path === '/auth/forgot-password') return route.fulfill({ json: { ok: true } });
     if (path === '/users' && request.method() === 'GET')
       return route.fulfill({ json: state.users });
     if (path === '/users' && request.method() === 'POST') {
@@ -265,6 +266,28 @@ test('the orders workspace filters, paginates and opens an order', async ({ page
   await expect(drawer).toBeVisible();
   await expect(drawer.getByText('Quai 3, appeler avant.')).toBeVisible();
   await expect(drawer.getByRole('cell', { name: 'SH-2026-001' })).toBeVisible();
+});
+
+test('« Mon compte » shows the account and can request a password reset', async ({ page }) => {
+  const state = await mockPortalApi(page, 'MEMBER');
+  await seedSession(page, 'MEMBER');
+  await page.goto('/portal/orders');
+
+  const nav = page.getByRole('navigation', { name: 'Portail client' });
+  await nav.getByRole('link', { name: 'Mon compte' }).click();
+  await expect(page).toHaveURL(/\/portal\/account$/);
+
+  await expect(page.getByText('marc@client.test')).toBeVisible();
+  // "Client Nord" also appears in the top bar and the sidebar footer — scope
+  // to the main content, where the account card renders it.
+  await expect(page.locator('#portal-content').getByText('Client Nord')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Réinitialiser mon mot de passe' }).click();
+  await expect.poll(() => state.writes.some((w) => w.path === '/auth/forgot-password')).toBe(true);
+  expect(state.writes.find((w) => w.path === '/auth/forgot-password')?.body).toEqual({
+    email: 'marc@client.test',
+  });
+  await expect(page.getByText(/courriel de réinitialisation a été envoyé/)).toBeVisible();
 });
 
 test('« Suivre » opens the shipment tracking drawer', async ({ page }) => {

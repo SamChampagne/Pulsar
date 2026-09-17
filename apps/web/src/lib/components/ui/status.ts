@@ -112,6 +112,12 @@ export const STATUS_LABELS_FR: Record<string, string> = {
   ACKNOWLEDGED: 'Prise en compte',
   RESOLVED: 'Résolue',
   REJECTED: 'Rejetée',
+  // Portal change request kinds (PortalChangeRequestKind) — OTHER already
+  // covers several unrelated enums, so its "Autre" reading applies here too.
+  DATE: 'Date',
+  ADDRESS: 'Adresse',
+  CANCEL: 'Annulation',
+  OTHER: 'Autre',
 };
 
 export function toneFor(status: string): Tone {

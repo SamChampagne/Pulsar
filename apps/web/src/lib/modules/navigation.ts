@@ -533,7 +533,7 @@ export function navCatalogue(): NavDomain[] {
       icon: Globe,
       home: '/customers',
       module: MODULE_KEYS.CUSTOMER_PORTAL,
-      prefixes: [],
+      prefixes: ['/customer-portal'],
       sections: [
         {
           label: 'Clients',
@@ -542,6 +542,11 @@ export function navCatalogue(): NavDomain[] {
               href: '/customers',
               label: 'Clients & portail',
               perm: PERMISSIONS.CUSTOMER_PORTAL.LINKS_MANAGE,
+            },
+            {
+              href: '/customer-portal/requests',
+              label: 'Demandes',
+              perm: PERMISSIONS.CUSTOMER_PORTAL.USERS_READ,
             },
           ],
         },

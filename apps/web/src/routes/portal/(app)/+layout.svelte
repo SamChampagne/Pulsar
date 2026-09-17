@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import { PortalUserRole } from '@pulsar/shared';
   import {
+    CircleUser,
     FileText,
     Folder,
     LayoutDashboard,
@@ -46,6 +47,7 @@
     ...($portalSession?.user.role === PortalUserRole.ADMIN
       ? [{ key: 'users', label: 'Utilisateurs', href: '/portal/users', icon: Users }]
       : []),
+    { key: 'account', label: 'Mon compte', href: '/portal/account', icon: CircleUser },
   ]);
 
   async function loadView() {
