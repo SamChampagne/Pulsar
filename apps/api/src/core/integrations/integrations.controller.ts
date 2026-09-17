@@ -90,13 +90,19 @@ export class IntegrationsController {
   @Post()
   @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateIntegrationDto) {
-    return this.integrations.create(user.tenantId, dto);
+    // The acting user is forwarded so an inbound receiver can only be pointed at
+    // a business target the user is itself allowed to write (403 otherwise).
+    return this.integrations.create(user.tenantId, dto, user);
   }
 
   @Patch(':id')
   @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
-  update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateIntegrationDto) {
-    return this.integrations.update(user.tenantId, id, dto);
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateIntegrationDto,
+  ) {
+    return this.integrations.update(user.tenantId, id, dto, user);
   }
 
   @Post(':id/test')
@@ -107,7 +113,11 @@ export class IntegrationsController {
 
   @Post(':id/dry-run')
   @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
-  dryRun(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: DryRunIntegrationDto) {
+  dryRun(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: DryRunIntegrationDto,
+  ) {
     return this.integrations.dryRun(user.tenantId, id, dto);
   }
 

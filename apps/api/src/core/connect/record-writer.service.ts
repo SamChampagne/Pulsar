@@ -17,7 +17,19 @@ import { ItemsService } from '../../modules/wms/items/items.service';
  * Whoever the write is attributed to. For CSV it is the signed-in user with the
  * permissions carried by the JWT; for an inbound webhook it is the tenant's
  * service-account (rule 13) scoped to the SINGLE permission of the configured
- * target — so a receiver can never write outside what it was configured for.
+ * target.
+ *
+ * Where authorization actually happens — do not read more into this type:
+ *  - CSV: `ImportsService.runImport` checks the target permission ONCE per
+ *    batch against the signed-in user, before any row is written.
+ *    `createImportRecord` itself performs NO check.
+ *  - Inbound hooks: the real control is at CONFIGURATION time — issuing/rotating
+ *    an inbound token, or saving `config.target`, requires the staff user to
+ *    hold that target's permission on top of `core.integrations.manage`
+ *    (`IntegrationsService`). At delivery time the principal is the
+ *    service-account scoped to that single permission, and `assertPermission`
+ *    below only asserts that invariant still holds (defence in depth, not an
+ *    authorization decision — the presented token is the credential).
  */
 export interface RecordWritePrincipal {
   id: string;
@@ -137,7 +149,12 @@ export class ConnectRecordWriter {
     private readonly transportOrders: TransportOrdersService,
   ) {}
 
-  /** No privilege escalation: the acting principal must hold the target permission. */
+  /**
+   * Invariant guard (not an authorization decision — see `RecordWritePrincipal`):
+   * the principal handed to a hook write must carry exactly the target's
+   * permission, so a future caller cannot reuse this surface with a broader or
+   * unrelated principal.
+   */
   private assertPermission(principal: RecordWritePrincipal, permission: string, label: string) {
     if (!principal.permissions.includes(permission)) {
       throw new ForbiddenException(`Permission "${permission}" is required to write ${label}`);

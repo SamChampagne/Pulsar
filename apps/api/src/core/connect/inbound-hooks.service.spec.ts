@@ -19,9 +19,12 @@ const HASH = createHash('sha256').update(TOKEN).digest('hex');
 interface HarnessOptions {
   config?: Record<string, unknown>;
   status?: string;
+  tenantStatus?: string;
   enabledModules?: string[];
   existingMessage?: Record<string, unknown> | null;
   writeFails?: string;
+  /** Number of rows the conditional re-claim of a stuck row reports. */
+  reclaimCount?: number;
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -29,7 +32,8 @@ function harness(options: HarnessOptions = {}) {
   const messages: any[] = [];
   const audits: any[] = [];
   const writes: any[] = [];
-  let existing = options.existingMessage ?? null;
+  const reclaims: any[] = [];
+  let existing: any = options.existingMessage ?? null;
 
   const prisma = {
     integration: {
@@ -41,6 +45,7 @@ function harness(options: HarnessOptions = {}) {
               name: 'Partner',
               status: options.status ?? 'ENABLED',
               config,
+              tenant: { status: options.tenantStatus ?? 'ACTIVE' },
             }
           : null,
     },
@@ -56,6 +61,15 @@ function harness(options: HarnessOptions = {}) {
         const row = messages.find((m) => m.id === where.id);
         Object.assign(row, data);
         return row;
+      },
+      updateMany: async ({ where, data }: any) => {
+        reclaims.push({ where, data });
+        const count = options.reclaimCount ?? 1;
+        if (count > 0 && existing) {
+          existing = { ...existing, updatedAt: new Date() };
+          messages.push({ ...existing });
+        }
+        return { count };
       },
     },
   } as unknown as PrismaService;
@@ -97,6 +111,7 @@ function harness(options: HarnessOptions = {}) {
     messages,
     audits,
     writes,
+    reclaims,
   };
 }
 
@@ -330,6 +345,105 @@ describe('InboundHooksService — write path', () => {
       apiKey: '***',
       nested: { password: '***' },
     });
+  });
+});
+
+describe('InboundHooksService — stuck RECEIVED rows', () => {
+  const body = { code: 'ACME' };
+  const stuck = (ageMs: number) => ({
+    id: 'inb_stuck',
+    status: 'RECEIVED',
+    error: null,
+    refType: null,
+    refId: null,
+    updatedAt: new Date(Date.now() - ageMs),
+  });
+
+  it('re-processes a row left RECEIVED by a crashed attempt (> 2 min)', async () => {
+    const { svc, writes, reclaims } = harness({ existingMessage: stuck(5 * 60_000) });
+    const res = await svc.receive({ token: TOKEN, body, rawBody: rawOf(body) });
+    expect(res).toMatchObject({ inboxId: 'inb_stuck', status: 'IMPORTED' });
+    expect(res.replayed).toBeUndefined();
+    expect(writes).toHaveLength(1);
+    // Conditional claim so two concurrent replays cannot both re-run the write.
+    expect(reclaims[0].where).toMatchObject({ id: 'inb_stuck', status: 'RECEIVED' });
+    expect(reclaims[0].where.updatedAt.lte).toBeInstanceOf(Date);
+  });
+
+  it('answers RECEIVED without touching a fresh in-flight row (< 2 min)', async () => {
+    const { svc, writes, reclaims } = harness({ existingMessage: stuck(10_000) });
+    const res = await svc.receive({ token: TOKEN, body, rawBody: rawOf(body) });
+    expect(res).toEqual({ inboxId: 'inb_stuck', status: 'RECEIVED' });
+    expect(writes).toHaveLength(0);
+    expect(reclaims).toHaveLength(0);
+  });
+
+  it('answers RECEIVED when another replay won the re-claim race', async () => {
+    const { svc, writes } = harness({
+      existingMessage: stuck(5 * 60_000),
+      reclaimCount: 0,
+    });
+    const res = await svc.receive({ token: TOKEN, body, rawBody: rawOf(body) });
+    expect(res).toEqual({ inboxId: 'inb_stuck', status: 'RECEIVED' });
+    expect(writes).toHaveLength(0);
+  });
+
+  it('a replay reports the REAL stored status, never a collapsed FAILED', async () => {
+    for (const status of ['IMPORTED', 'FAILED', 'IGNORED', 'PARSED']) {
+      const { svc } = harness({
+        existingMessage: {
+          id: 'inb_prev',
+          status,
+          error: status === 'FAILED' ? 'boom' : null,
+          refType: null,
+          refId: null,
+          updatedAt: new Date(),
+        },
+      });
+      const res = await svc.receive({ token: TOKEN, body, rawBody: rawOf(body) });
+      expect(res.status).toBe(status);
+      expect(res.replayed).toBe(true);
+    }
+  });
+});
+
+describe('InboundHooksService — tenant status', () => {
+  it('a SUSPENDED tenant keeps no write surface (generic 404)', async () => {
+    const { svc } = harness({ tenantStatus: 'SUSPENDED' });
+    await expect(
+      svc.receive({ token: TOKEN, body: { code: 'A' }, rawBody: rawOf({ code: 'A' }) }),
+    ).rejects.toThrow('Unknown inbound hook');
+  });
+
+  it('a TRIAL tenant is live (same convention as AuthService)', async () => {
+    const { svc } = harness({ tenantStatus: 'TRIAL' });
+    const res = await svc.receive({
+      token: TOKEN,
+      body: { code: 'A' },
+      rawBody: rawOf({ code: 'A' }),
+    });
+    expect(res.status).toBe('IMPORTED');
+  });
+});
+
+describe('InboundHooksService — prototype pollution', () => {
+  it('records FAILED and never pollutes Object.prototype', async () => {
+    const { svc, messages, writes } = harness({
+      config: {
+        target: 'customer.upsert',
+        mappings: [{ source: 'a', target: '__proto__.polluted' }],
+      },
+    });
+    const res = await svc.receive({
+      token: TOKEN,
+      body: { a: 'boom' },
+      rawBody: rawOf({ a: 'boom' }),
+    });
+    expect(res.status).toBe('FAILED');
+    expect(res.error).toContain('Unsafe mapping target');
+    expect(messages[0].status).toBe('FAILED');
+    expect(writes).toHaveLength(0);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 });
 

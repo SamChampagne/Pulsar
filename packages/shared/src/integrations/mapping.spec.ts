@@ -1,9 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import {
   applyIntegrationMapping,
   applyIntegrationTransform,
+  getMappingPath,
   isKnownTransform,
+  isUnsafeMappingPath,
   normalizeMappingRules,
+  setMappingPath,
+  validateMappingPaths,
 } from './mapping';
 
 describe('applyIntegrationTransform', () => {
@@ -152,5 +156,84 @@ describe('applyIntegrationMapping', () => {
     const input = { a: { b: 'c' } };
     applyIntegrationMapping(input, [{ source: 'a.b', target: 'a.b', transform: 'uppercase' }]);
     expect(input).toEqual({ a: { b: 'c' } });
+  });
+});
+
+describe('prototype pollution guard', () => {
+  afterEach(() => {
+    // Whatever a test attempted, the prototype must stay clean.
+    delete (Object.prototype as Record<string, unknown>).polluted;
+    delete (Object.prototype as Record<string, unknown>).b;
+  });
+
+  it('isUnsafeMappingPath flags the three walking segments, anywhere in the path', () => {
+    expect(isUnsafeMappingPath('__proto__.polluted')).toBe(true);
+    expect(isUnsafeMappingPath('constructor.prototype.polluted')).toBe(true);
+    expect(isUnsafeMappingPath('a.__proto__.b')).toBe(true);
+    expect(isUnsafeMappingPath('a.prototype')).toBe(true);
+    expect(isUnsafeMappingPath('a.b.c')).toBe(false);
+    expect(isUnsafeMappingPath('proto.constructorName')).toBe(false);
+  });
+
+  it('applyIntegrationMapping refuses __proto__.x and never touches Object.prototype', () => {
+    const result = applyIntegrationMapping({ a: 'boom' }, [
+      { source: 'a', target: '__proto__.polluted' },
+    ]);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(result.output).toEqual({});
+    expect(result.rows[0].status).toBe('skipped');
+    expect(result.errors).toEqual(['Unsafe mapping target: "__proto__.polluted"']);
+  });
+
+  it('refuses constructor.prototype.x', () => {
+    const result = applyIntegrationMapping({ a: 'boom' }, [
+      { source: 'a', target: 'constructor.prototype.polluted' },
+    ]);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(result.output).toEqual({});
+    expect(result.errors).toEqual(['Unsafe mapping target: "constructor.prototype.polluted"']);
+  });
+
+  it('refuses a nested a.__proto__.b', () => {
+    const result = applyIntegrationMapping({ a: 'boom' }, [
+      { source: 'a', target: 'a.__proto__.b' },
+    ]);
+    expect(({} as Record<string, unknown>).b).toBeUndefined();
+    expect(result.output).toEqual({});
+    expect(result.errors).toEqual(['Unsafe mapping target: "a.__proto__.b"']);
+  });
+
+  it('refuses an unsafe SOURCE too (no prototype leak into the output)', () => {
+    const result = applyIntegrationMapping({ a: 'x' }, [{ source: 'a.__proto__', target: 'leak' }]);
+    expect(result.output).toEqual({});
+    expect(result.errors).toEqual(['Unsafe mapping source: "a.__proto__"']);
+  });
+
+  it('setMappingPath throws rather than writing an unsafe path', () => {
+    const target: Record<string, unknown> = {};
+    expect(() => setMappingPath(target, '__proto__.polluted', 'x')).toThrow(
+      /Unsafe mapping target/,
+    );
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(target).toEqual({});
+  });
+
+  it('getMappingPath never returns inherited or prototype values', () => {
+    expect(getMappingPath({ a: 1 }, '__proto__')).toBeUndefined();
+    expect(getMappingPath({ a: { b: 2 } }, 'a.__proto__.b')).toBeUndefined();
+    // `toString` exists on the prototype but is not an own property.
+    expect(getMappingPath({ a: 1 }, 'toString')).toBeUndefined();
+    expect(getMappingPath({ a: { b: 2 } }, 'a.b')).toBe(2);
+  });
+
+  it('validateMappingPaths reports every offending row (config save time)', () => {
+    expect(
+      validateMappingPaths([
+        { source: 'a', target: 'ok' },
+        { source: 'a', target: '__proto__.x' },
+        { source: 'constructor.y', target: 'ok2' },
+      ]),
+    ).toEqual(['Unsafe mapping target: "__proto__.x"', 'Unsafe mapping source: "constructor.y"']);
+    expect(validateMappingPaths([{ source: 'a.b', target: 'c.d' }])).toEqual([]);
   });
 });

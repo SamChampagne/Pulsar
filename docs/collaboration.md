@@ -142,10 +142,12 @@ Inspect deliveries: `GET /integrations/:id/deliveries`.
 `POST /api/v1/public/hooks/<inboundToken>` — un partenaire pousse du JSON, Pulsar écrit dans ses
 propres services métier. Aucune clé API, aucun JWT : le jeton de l'URL **est** la crédentiale.
 
-**Jeton.** `POST /integrations/:id/inbound-token` (permission `core.integrations.manage`) génère
-32 octets base64url et les renvoie **une seule fois**, avec l'URL complète à donner au partenaire.
+**Jeton.** `POST /integrations/:id/inbound-token` (permissions `core.integrations.manage` **et**
+celle de la cible configurée — voir ci-dessous) génère 32 octets base64url et les renvoie **une
+seule fois**, avec l'URL complète à donner au partenaire.
 Seul le `sha256` est stocké, dans la colonne indexée `Integration.inboundTokenHash` (jamais dans
-`config`, qui est chiffré donc non indexable). Ré-émettre **rotationne** : l'ancien jeton devient
+`config`, qui est chiffré donc non indexable) ; l'API ne renvoie jamais ce hachage mais un booléen
+`hasInboundToken`. Ré-émettre **rotationne** : l'ancien jeton devient
 invalide immédiatement. Un jeton inconnu, une intégration non `ENABLED` ou une config illisible
 renvoient tous le **même 404 générique** — une sonde n'apprend rien.
 
@@ -165,12 +167,22 @@ la **clé naturelle** du tenant (`code`, ou `sku` pour les articles) : deux livr
 mettent à jour la même ligne au lieu de la dupliquer. `transport-order.create` accepte des codes
 (`customerCode`, `originCode`, `destinationCode`) résolus côté serveur, ou directement les ids.
 
+**Qui peut brancher un récepteur.** Pointer un récepteur vers une cible revient à déléguer cette
+écriture à un partenaire : l'utilisateur qui enregistre `config.target` (POST/PATCH `/integrations`)
+ou qui émet/rotationne le jeton doit donc détenir **la permission de la cible** en plus de
+`core.integrations.manage` — sinon 403. C'est le **seul** contrôle d'autorisation humain du flux :
+à la livraison, le principal est le service-account du tenant scopé à cette unique permission
+(vérification d'invariant, pas décision d'autorisation — le jeton présenté est la crédentiale).
+
 **Mapping.** `applyIntegrationMapping` (`@pulsar/shared`, pur — le même moteur que le dry run du
 studio) avec les transformations `trim | uppercase | number | date.iso | default:<valeur> |
 concat:<séparateur>`. En entrant le moteur est **strict** : une transformation inconnue est une
 erreur, jamais un passage silencieux. Sans `mappings`, le corps est pris tel quel (mapping
 identité). Seuls les champs de la liste blanche de la cible sont transmis au service métier —
-`tenantId`, `id`, `status` et consorts ne peuvent pas être injectés.
+`tenantId`, `id`, `status` et consorts ne peuvent pas être injectés. Un chemin (source ou cible)
+traversant `__proto__`, `constructor` ou `prototype` est **refusé** : 400 à l'enregistrement de la
+config et au dry run, erreur de mapping à la livraison (garde anti-pollution de prototype) —
+jamais d'écriture.
 
 **HMAC.** Si `inboundSecret` est présent, le partenaire doit envoyer
 `X-Signature: sha256=<hex HMAC-SHA256 du corps brut>` ; comparaison à temps constant sur les
@@ -179,26 +191,34 @@ identité). Seuls les champs de la liste blanche de la cible sont transmis au se
 
 **Idempotence.** Clé = en-tête `X-Idempotency-Key`, sinon `sha256` du corps brut. Elle est stockée
 dans `InboundMessage.dedupKey` avec un unique `(tenantId, dedupKey)` : un rejeu renvoie le
-**résultat original** (`200`, `replayed: true`) sans ré-exécuter l'écriture.
+**statut réel** d'origine (`200`, `replayed: true`) sans ré-exécuter l'écriture. Si la ligne est
+restée `RECEIVED` (processus mort entre la réservation et le résultat), un rejeu **ré-exécute**
+la livraison après 2 minutes via un claim conditionnel (deux rejeux concurrents ne peuvent pas
+tous les deux relancer l'écriture) ; avant ce délai, la réponse est `202 { status: 'RECEIVED' }`
+— une livraison est en cours, réessayer plus tard.
 
 **Traçabilité.** Chaque livraison acceptée crée un `InboundMessage{ source: 'WEBHOOK', status }`
 visible dans `GET /connect/inbox`, avec une copie **caviardée et plafonnée** (8 Ko) du payload
 (clés `secret|password|token|apikey|authorization|signature` → `***`). L'écriture est attribuée au
 service-account du tenant (`service-account@pulsar.local`, règle 13) et **scopée à la seule
 permission de la cible** ; le module de la cible est re-vérifié (règle 15 — `/public/**` contourne
-le `ModulesGuard`). Audit sous le service-account ; le jeton et le secret ne sont jamais journalisés.
+le `ModulesGuard`) et un tenant `SUSPENDED` n'a plus aucune surface d'écriture (404 générique, même
+convention que `AuthService`). Audit sous le service-account ; le jeton et le secret ne sont jamais
+journalisés — le jeton porté par l'URL est caviardé dans le log HTTP
+(`/public/hooks/<redacted>`, `redactTokenPath`), comme les autres jetons de capacité
+(portail, chauffeur, appel d'offres, suivi, désabonnement).
 
 **Réponses.**
 
 | Code  | Cas                                                                                |
 | ----- | ---------------------------------------------------------------------------------- |
-| `202` | livraison traitée — `{ inboxId, status: 'IMPORTED' \| 'FAILED', error?, entityType?, entityId? }` |
-| `200` | rejeu idempotent — même corps, `replayed: true`, rien de ré-exécuté                  |
+| `202` | livraison traitée — `{ inboxId, status: 'IMPORTED' \| 'FAILED', error?, entityType?, entityId? }` ; `status: 'RECEIVED'` = une livraison de même clé est en cours, réessayer |
+| `200` | rejeu idempotent — même corps, statut réel d'origine, `replayed: true`, rien de ré-exécuté |
 | `400` | corps non-objet, cible non configurée                                               |
 | `401` | signature HMAC absente ou invalide                                                  |
 | `403` | module de la cible désactivé pour le tenant                                         |
 | `404` | jeton inconnu / récepteur désactivé (réponse générique)                             |
-| `413` | corps > 256 Ko                                                                      |
+| `413` | corps trop volumineux : le body-parser JSON de Nest (**100 Ko** par défaut) tranche en premier ; le service garde un plafond de 256 Ko en défense en profondeur |
 
 Choix assumé : une livraison **acceptée** répond toujours `202`, même quand le mapping ou
 l'écriture métier échoue (`status: 'FAILED'` + `error`). Le partenaire a un contrat unique et la

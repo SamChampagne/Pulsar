@@ -28,6 +28,12 @@ import { ConnectRecordWriter } from './record-writer.service';
 export const MAX_HOOK_BODY_BYTES = 256 * 1024;
 /** Cap on the payload copy kept in `InboundMessage.parsed` (inbox display). */
 const MAX_STORED_PAYLOAD_CHARS = 8 * 1024;
+/**
+ * A row still `RECEIVED` after this long means the process died between the
+ * idempotency claim and the outcome — a replay is allowed to re-process it
+ * instead of answering FAILED forever.
+ */
+const STUCK_RECEIVED_MS = 2 * 60 * 1000;
 
 const SENSITIVE_KEY = /secret|password|token|apikey|api_key|authorization|signature/i;
 
@@ -46,7 +52,12 @@ export interface InboundHookRequest {
 
 export interface InboundHookResponse {
   inboxId: string;
-  status: 'IMPORTED' | 'FAILED';
+  /**
+   * Outcome of THIS delivery, or the real stored status of an earlier one.
+   * `RECEIVED` means another delivery with the same idempotency key is being
+   * processed right now — retry later.
+   */
+  status: InboundStatus;
   error?: string;
   /** true when this delivery was already processed (same idempotency key). */
   replayed?: boolean;
@@ -87,7 +98,10 @@ export function redactStoredPayload(body: unknown): unknown {
  *     leave no inbox row: the delivery was never accepted;
  *   - a delivery that IS accepted always answers 202 with an inbox id, even when
  *     the mapping or the business write failed (`status: 'FAILED'`, `error`).
- *     The partner keeps one contract; the inbox row is the source of truth.
+ *     The partner keeps one contract; the inbox row is the source of truth;
+ *   - a replay answers 200 with the ORIGINAL status, and a row left `RECEIVED`
+ *     by a crashed attempt is re-processed after {@link STUCK_RECEIVED_MS}
+ *     rather than replaying a phantom failure forever.
  */
 @Injectable()
 export class InboundHooksService {
@@ -137,42 +151,48 @@ export class InboundHooksService {
       input.idempotencyKey?.trim() ||
       sha256(rawBody ?? Buffer.from(JSON.stringify(payload), 'utf-8'));
 
-    const replay = await this.prisma.inboundMessage.findFirst({
-      where: { tenantId, dedupKey },
-      select: { id: true, status: true, error: true, refType: true, refId: true },
-    });
-    if (replay) return this.asReplay(replay);
+    const existing = await this.findByDedupKey(tenantId, dedupKey);
+    let messageId: string | undefined;
+    if (existing) {
+      const decision = await this.resolveExisting(tenantId, existing);
+      if (decision.response) return decision.response;
+      messageId = decision.reprocessId;
+    }
 
     // Claim the idempotency key BEFORE doing any work: the unique index
     // (tenantId, dedupKey) makes two concurrent identical deliveries race-safe.
-    let message: { id: string };
-    try {
-      message = await this.prisma.inboundMessage.create({
-        data: {
-          tenantId,
-          source: 'WEBHOOK',
-          status: 'RECEIVED' as InboundStatus,
-          kind: target.key,
-          summary: `Webhook entrant — ${integration.name} (${target.label})`,
-          dedupKey,
-          parsed: {
-            integrationId: integration.id,
-            target: target.key,
-            payload: redactStoredPayload(payload),
-          } as Prisma.InputJsonValue,
-        },
-        select: { id: true },
-      });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        const existing = await this.prisma.inboundMessage.findFirst({
-          where: { tenantId, dedupKey },
-          select: { id: true, status: true, error: true, refType: true, refId: true },
+    if (!messageId) {
+      try {
+        const created = await this.prisma.inboundMessage.create({
+          data: {
+            tenantId,
+            source: 'WEBHOOK',
+            status: 'RECEIVED' as InboundStatus,
+            kind: target.key,
+            summary: `Webhook entrant — ${integration.name} (${target.label})`,
+            dedupKey,
+            parsed: {
+              integrationId: integration.id,
+              target: target.key,
+              payload: redactStoredPayload(payload),
+            } as Prisma.InputJsonValue,
+          },
+          select: { id: true },
         });
-        if (existing) return this.asReplay(existing);
+        messageId = created.id;
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          const raced = await this.findByDedupKey(tenantId, dedupKey);
+          if (raced) {
+            const decision = await this.resolveExisting(tenantId, raced);
+            if (decision.response) return decision.response;
+            messageId = decision.reprocessId;
+          }
+        }
+        if (!messageId) throw err;
       }
-      throw err;
     }
+    const message = { id: messageId };
 
     // Rule 13: the write is attributed to the tenant's hidden service account,
     // scoped to the single permission of the configured target.
@@ -235,6 +255,61 @@ export class InboundHooksService {
     return response;
   }
 
+  private findByDedupKey(tenantId: string, dedupKey: string) {
+    return this.prisma.inboundMessage.findFirst({
+      where: { tenantId, dedupKey },
+      select: {
+        id: true,
+        status: true,
+        error: true,
+        refType: true,
+        refId: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  /**
+   * Decides what to do with an inbox row already carrying this idempotency key.
+   *
+   *  - terminal row (IMPORTED / FAILED / IGNORED / PARSED) → replay the ORIGINAL
+   *    result, nothing is re-executed;
+   *  - RECEIVED and fresh → another delivery is in flight right now: answer 202
+   *    `RECEIVED` without touching it;
+   *  - RECEIVED and older than {@link STUCK_RECEIVED_MS} → the previous attempt
+   *    died between the claim and its outcome; re-process it. The re-claim is a
+   *    conditional `updateMany` (and `@updatedAt` bumps the row), so two
+   *    concurrent replays can never both re-run the write.
+   */
+  private async resolveExisting(
+    tenantId: string,
+    row: {
+      id: string;
+      status: string;
+      error: string | null;
+      refType: string | null;
+      refId: string | null;
+      updatedAt: Date;
+    },
+  ): Promise<{ response?: InboundHookResponse; reprocessId?: string }> {
+    if (row.status !== 'RECEIVED') return { response: this.asReplay(row) };
+
+    const cutoff = new Date(Date.now() - STUCK_RECEIVED_MS);
+    if (row.updatedAt > cutoff) {
+      return { response: { inboxId: row.id, status: 'RECEIVED' } };
+    }
+    const claimed = await this.prisma.inboundMessage.updateMany({
+      where: { id: row.id, tenantId, status: 'RECEIVED', updatedAt: { lte: cutoff } },
+      data: { error: null },
+    });
+    if (claimed.count === 0) {
+      // Lost the race: whoever won is processing it now.
+      return { response: { inboxId: row.id, status: 'RECEIVED' } };
+    }
+    this.logger.warn(`Inbound message ${row.id} was stuck in RECEIVED — re-processing`);
+    return { reprocessId: row.id };
+  }
+
   private asReplay(row: {
     id: string;
     status: string;
@@ -244,7 +319,8 @@ export class InboundHooksService {
   }): InboundHookResponse {
     return {
       inboxId: row.id,
-      status: row.status === 'IMPORTED' ? 'IMPORTED' : 'FAILED',
+      // The REAL status — never collapsed to FAILED.
+      status: row.status as InboundStatus,
       ...(row.error ? { error: row.error } : {}),
       ...(row.refType ? { entityType: row.refType } : {}),
       ...(row.refId ? { entityId: row.refId } : {}),
@@ -262,9 +338,19 @@ export class InboundHooksService {
     if (!token || token.length < 16 || token.length > 128) throw generic;
     const integration = await this.prisma.integration.findUnique({
       where: { inboundTokenHash: sha256(token) },
-      select: { id: true, tenantId: true, name: true, status: true, config: true },
+      select: {
+        id: true,
+        tenantId: true,
+        name: true,
+        status: true,
+        config: true,
+        tenant: { select: { status: true } },
+      },
     });
     if (!integration || integration.status !== 'ENABLED') throw generic;
+    // A suspended tenant keeps no write surface at all — same convention as
+    // AuthService/PortalAuthService (TRIAL and ACTIVE are both live).
+    if (integration.tenant.status === 'SUSPENDED') throw generic;
     let config: Record<string, unknown>;
     try {
       config = this.crypto.decryptJson(integration.config);

@@ -107,25 +107,74 @@ export function applyIntegrationTransform(
   return value;
 }
 
-/** Reads a dotted path out of a plain object (arrays are not traversed). */
+/**
+ * Path segments that must never be read or written through a mapping: writing
+ * them walks onto `Object.prototype` (prototype pollution — a partner-controlled
+ * `target: "__proto__.isAdmin"` would poison every object in the process), and
+ * reading them leaks internals into the output.
+ */
+const UNSAFE_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+
+const hasOwn = (obj: object, key: string) => Object.prototype.hasOwnProperty.call(obj, key);
+
+/** True when any segment of the dotted path is a prototype-walking segment. */
+export function isUnsafeMappingPath(path: string): boolean {
+  return path.split('.').some((segment) => UNSAFE_SEGMENTS.has(segment));
+}
+
+/**
+ * Validates the `target` (and `source`) paths of a mapping set.
+ * Returns one human-readable error per offending row — empty array = safe.
+ * Called both at config save time (400) and at apply time (defence in depth).
+ */
+export function validateMappingPaths(mappings: MappingRule[]): string[] {
+  const errors: string[] = [];
+  for (const mapping of mappings) {
+    if (mapping.target && isUnsafeMappingPath(mapping.target)) {
+      errors.push(`Unsafe mapping target: "${mapping.target}"`);
+    }
+    if (mapping.source && isUnsafeMappingPath(mapping.source)) {
+      errors.push(`Unsafe mapping source: "${mapping.source}"`);
+    }
+  }
+  return errors;
+}
+
+/**
+ * Reads a dotted path out of a plain object (arrays are not traversed).
+ * Only own properties are read, and a prototype-walking segment yields
+ * `undefined` instead of `Object.prototype` & friends.
+ */
 export function getMappingPath(source: Record<string, unknown>, path: string): unknown {
+  if (isUnsafeMappingPath(path)) return undefined;
   return path.split('.').reduce<unknown>((current, segment) => {
     if (!current || typeof current !== 'object' || Array.isArray(current)) return undefined;
+    if (!hasOwn(current, segment)) return undefined;
     return (current as Record<string, unknown>)[segment];
   }, source);
 }
 
-/** Writes a value at a dotted path, creating intermediate objects as needed. */
+/**
+ * Writes a value at a dotted path, creating intermediate objects as needed.
+ *
+ * @throws Error when the path contains `__proto__`, `constructor` or
+ * `prototype` — nothing is written (prototype pollution guard).
+ */
 export function setMappingPath(
   target: Record<string, unknown>,
   path: string,
   value: unknown,
 ): void {
+  if (isUnsafeMappingPath(path)) {
+    throw new Error(`Unsafe mapping target: "${path}"`);
+  }
   const segments = path.split('.').filter(Boolean);
   if (!segments.length) return;
   let cursor = target;
   for (const segment of segments.slice(0, -1)) {
-    const next = cursor[segment];
+    // Only ever descend into an OWN plain object; anything else (missing,
+    // inherited, array, scalar) is replaced by a fresh object.
+    const next = hasOwn(cursor, segment) ? cursor[segment] : undefined;
     if (!next || typeof next !== 'object' || Array.isArray(next)) cursor[segment] = {};
     cursor = cursor[segment] as Record<string, unknown>;
   }
@@ -180,6 +229,17 @@ export function applyIntegrationMapping(
   const output: Record<string, unknown> = {};
   const rows: MappingRowResult[] = mappings.map((mapping) => {
     if (!mapping.source || !mapping.target) {
+      return { ...mapping, status: 'skipped' as const };
+    }
+    // Prototype pollution guard: a path walking `__proto__`/`constructor`/
+    // `prototype` is an ERROR, never a silent write (it is also refused at
+    // config save time, but the receiver never trusts the stored config).
+    if (isUnsafeMappingPath(mapping.target) || isUnsafeMappingPath(mapping.source)) {
+      errors.push(
+        isUnsafeMappingPath(mapping.target)
+          ? `Unsafe mapping target: "${mapping.target}"`
+          : `Unsafe mapping source: "${mapping.source}"`,
+      );
       return { ...mapping, status: 'skipped' as const };
     }
     const op = mapping.transform ?? '';

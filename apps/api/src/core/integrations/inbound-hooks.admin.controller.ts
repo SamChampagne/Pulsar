@@ -28,10 +28,13 @@ export class InboundHooksAdminController {
   /**
    * Generates a fresh inbound token and returns it once, with the URL to hand
    * to the partner. Re-issuing ROTATES: the previous token stops working.
+   *
+   * Requires `core.integrations.manage` AND the permission of the receiver's
+   * configured target (issuing the token delegates that write to a partner).
    */
   @Post(':id/inbound-token')
   @RequirePermissions(PERMISSIONS.CORE.INTEGRATIONS_MANAGE)
   issue(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.integrations.issueInboundToken(user.tenantId, id, user.id);
+    return this.integrations.issueInboundToken(user.tenantId, id, user);
   }
 }

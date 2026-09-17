@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ import {
   applyIntegrationMapping,
   AuditAction,
   getInboundHookTarget,
+  validateMappingPaths,
   checkWebhookUrl,
   DOMAIN_EVENT_CATALOG,
   normalizeMappingRules,
@@ -21,6 +23,17 @@ import { auditActor } from '../audit-logs/audit-actor';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { WebhooksService } from './webhooks.service';
+
+/**
+ * The staff user performing a configuration write. Inbound receivers need more
+ * than `core.integrations.manage`: pointing a receiver at a business target is
+ * granting a partner that target's write permission, so the configuring user
+ * must hold it too (the delivery itself runs as the service-account, rule 13).
+ */
+export interface ConfiguringUser {
+  id: string;
+  permissions: readonly string[];
+}
 
 export interface UpsertIntegrationInput {
   key: string;
@@ -294,8 +307,46 @@ export class IntegrationsService {
     return this.crypto.decryptJson<T>(stored);
   }
 
+  /**
+   * API projection. The token hash never leaves the server (it is the
+   * verifier of a live credential): callers get a boolean instead.
+   */
   private present(integration: { config: unknown } & Record<string, unknown>) {
-    return { ...integration, config: maskConfig(this.crypto.decryptJson(integration.config)) };
+    const { inboundTokenHash, ...rest } = integration;
+    return {
+      ...rest,
+      config: maskConfig(this.crypto.decryptJson(integration.config)),
+      hasInboundToken: typeof inboundTokenHash === 'string' && inboundTokenHash.length > 0,
+    };
+  }
+
+  /**
+   * Guards a configuration write that (re)points an inbound receiver.
+   *
+   * Two checks, both refusing with 403:
+   *  - `config.target` must be a known inbound target;
+   *  - the configuring user must hold that target's own permission, on top of
+   *    the `core.integrations.manage` already enforced by the controller.
+   *
+   * Also rejects prototype-walking mapping paths (`__proto__`, `constructor`,
+   * `prototype`) with a 400 — a bad target never reaches storage.
+   */
+  private assertInboundConfigAllowed(config: Record<string, unknown>, actor?: ConfiguringUser) {
+    const mappingErrors = validateMappingPaths(normalizeMappingRows(config.mappings));
+    if (mappingErrors.length > 0) throw new BadRequestException(mappingErrors.join('; '));
+
+    const targetKey = typeof config.target === 'string' ? config.target.trim() : '';
+    if (!targetKey) return;
+    const target = getInboundHookTarget(targetKey);
+    if (!target) {
+      throw new BadRequestException(`Unknown inbound target: "${targetKey}"`);
+    }
+    if (!actor) return; // internal caller (seed/tests) — no user context to check
+    if (!actor.permissions.includes(target.permission)) {
+      throw new ForbiddenException(
+        `Permission "${target.permission}" is required to configure an inbound receiver writing ${target.label}`,
+      );
+    }
   }
 
   async list(tenantId: string) {
@@ -306,12 +357,13 @@ export class IntegrationsService {
     return rows.map((row) => this.present(row));
   }
 
-  async create(tenantId: string, input: UpsertIntegrationInput) {
+  async create(tenantId: string, input: UpsertIntegrationInput, actor?: ConfiguringUser) {
     const existing = await this.prisma.integration.findUnique({
       where: { tenantId_key: { tenantId, key: input.key } },
     });
     if (existing) throw new ConflictException(`Integration "${input.key}" already exists`);
     this.assertSafeWebhookConfig(input.key, input.config ?? {});
+    this.assertInboundConfigAllowed(input.config ?? {}, actor);
     // A webhook integration created here already follows the current semantics
     // (empty `events` = every catalog event), so it must never be picked up by
     // WebhookEventsBackfillService — stamp the marker straight away.
@@ -328,7 +380,12 @@ export class IntegrationsService {
     return this.present(created);
   }
 
-  async update(tenantId: string, id: string, input: Partial<UpsertIntegrationInput>) {
+  async update(
+    tenantId: string,
+    id: string,
+    input: Partial<UpsertIntegrationInput>,
+    actor?: ConfiguringUser,
+  ) {
     const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
     if (!integration) throw new NotFoundException('Integration not found');
     const stored = this.crypto.decryptJson<Record<string, unknown>>(integration.config);
@@ -339,7 +396,10 @@ export class IntegrationsService {
           stored.eventsBackfilledAt,
         )
       : undefined;
-    if (merged) this.assertSafeWebhookConfig(integration.key, merged);
+    if (merged) {
+      this.assertSafeWebhookConfig(integration.key, merged);
+      this.assertInboundConfigAllowed(merged, actor);
+    }
     const updated = await this.prisma.integration.update({
       where: { id },
       data: {
@@ -458,9 +518,12 @@ export class IntegrationsService {
     const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
     if (!integration) throw new NotFoundException('Integration not found');
     const config = this.crypto.decryptJson(integration.config);
+    const mappings = input.mappings ?? normalizeMappingRows(config.mappings);
+    const mappingErrors = validateMappingPaths(normalizeMappingRows(mappings));
+    if (mappingErrors.length > 0) throw new BadRequestException(mappingErrors.join('; '));
     return buildDryRunMapping({
       samplePayload: input.samplePayload ?? asString(config.samplePayload),
-      mappings: input.mappings ?? normalizeMappingRows(config.mappings),
+      mappings,
     });
   }
 
@@ -511,10 +574,18 @@ export class IntegrationsService {
    * the indexed `inboundTokenHash` column, the same way API keys are handled.
    * Re-issuing invalidates the previous token immediately (single active token
    * per receiver). The audit trail records the rotation, never the secret.
+   *
+   * Authorization: `core.integrations.manage` (controller) AND the permission of
+   * the configured `config.target` (here) — see `assertInboundConfigAllowed`.
    */
-  async issueInboundToken(tenantId: string, id: string, userId?: string) {
+  async issueInboundToken(tenantId: string, id: string, actor?: ConfiguringUser) {
     const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
     if (!integration) throw new NotFoundException('Integration not found');
+
+    // Handing a partner a token for this receiver grants it the target's write
+    // permission: the issuing user must hold that permission themselves (403).
+    const storedConfig = this.crypto.decryptJson<Record<string, unknown>>(integration.config);
+    this.assertInboundConfigAllowed(storedConfig, actor);
 
     const token = randomBytes(32).toString('base64url');
     const inboundTokenHash = createHash('sha256').update(token).digest('hex');
@@ -525,14 +596,14 @@ export class IntegrationsService {
 
     await this.audit.log({
       tenantId,
-      userId: auditActor(userId),
+      userId: auditActor(actor?.id),
       action: AuditAction.UPDATE,
       entityType: 'integration',
       entityId: integration.id,
       after: { action: 'issue-inbound-token', rotated: integration.inboundTokenHash !== null },
     });
 
-    const config = this.crypto.decryptJson(integration.config);
+    const config = storedConfig;
     const target = typeof config.target === 'string' ? config.target : null;
     const apiUrl = this.config.get<string>('API_URL', 'http://localhost:3000').replace(/\/+$/, '');
     return {
