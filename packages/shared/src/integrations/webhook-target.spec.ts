@@ -98,6 +98,32 @@ describe('checkWebhookUrl (egress guard)', () => {
     // A genuinely public host with a trailing root dot is still allowed.
     expect(isSafeWebhookUrl('https://hooks.example.com./x')).toBe(true);
   });
+
+  it('unwraps IPv4-mapped/compatible/NAT64 IPv6 literals and refuses a private embedded address', () => {
+    for (const url of [
+      'http://[::ffff:127.0.0.1]/x', // IPv4-mapped loopback
+      'http://[::ffff:169.254.169.254]/x', // IPv4-mapped cloud metadata IP
+      'http://[::127.0.0.1]/x', // IPv4-compatible loopback
+      'http://[64:ff9b::7f00:1]/x', // NAT64 well-known prefix wrapping 127.0.0.1
+    ]) {
+      expect(isSafeWebhookUrl(url)).toBe(false);
+    }
+  });
+
+  it('refuses localhost.localdomain and the 100.64.0.0/10 CGNAT range', () => {
+    expect(isSafeWebhookUrl('http://localhost.localdomain/x')).toBe(false);
+    expect(isSafeWebhookUrl('http://100.64.0.1/x')).toBe(false);
+    expect(isSafeWebhookUrl('http://100.127.255.255/x')).toBe(false);
+    // Adjacent public ranges stay allowed.
+    expect(isSafeWebhookUrl('http://100.63.0.1/x')).toBe(true);
+    expect(isSafeWebhookUrl('http://100.128.0.1/x')).toBe(true);
+  });
+
+  it('still allows a genuinely public IPv6/IPv4 address, including a mapped public one', () => {
+    expect(isSafeWebhookUrl('https://[2606:4700::6810:84e5]/x')).toBe(true);
+    expect(isSafeWebhookUrl('https://8.8.8.8/x')).toBe(true);
+    expect(isSafeWebhookUrl('http://[::ffff:8.8.8.8]/x')).toBe(true);
+  });
 });
 
 describe('LEGACY_WEBHOOK_EVENTS', () => {
