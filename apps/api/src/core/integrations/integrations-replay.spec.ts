@@ -171,3 +171,86 @@ describe('IntegrationsService.eventCatalog', () => {
     });
   });
 });
+
+/** Harness for tests that need `update()` on a specific stored integration row. */
+function updateHarness(integration: { id: string; tenantId: string; key: string; config: any }) {
+  const updates: any[] = [];
+  const prisma = {
+    integration: {
+      findFirst: async ({ where }: any) => {
+        if (where.id !== integration.id || where.tenantId !== integration.tenantId) return null;
+        return { ...integration };
+      },
+      update: async ({ where, data }: any) => {
+        updates.push({ where, data });
+        Object.assign(integration, data);
+        return { ...integration };
+      },
+    },
+  } as unknown as PrismaService;
+  const crypto = {
+    // Plaintext "encryption" for the harness — config passes through as-is.
+    decryptJson: (v: unknown) => (v ?? {}) as Record<string, unknown>,
+    encryptJson: (v: Record<string, unknown>) => v,
+  } as unknown as CryptoService;
+  const webhooks = {} as unknown as WebhooksService;
+  const audit = { log: async () => {} } as unknown as AuditLogsService;
+  const config = { get: () => undefined } as any;
+  return {
+    svc: new IntegrationsService(prisma, crypto, webhooks, audit, config),
+    updates,
+    integration,
+  };
+}
+
+describe('IntegrationsService.update — eventsBackfilledAt stamping (finding B)', () => {
+  it('stamps eventsBackfilledAt when PATCHing a webhook config that never had one', async () => {
+    const { svc, integration } = updateHarness({
+      id: 'int_1',
+      tenantId: 't1',
+      key: 'webhook-x',
+      config: { url: 'https://hooks.example.com/in' },
+    });
+
+    // Explicitly clears the allowlist — this must NOT be re-widened later by
+    // WebhookEventsBackfillService, so the stamp must land now.
+    await svc.update('t1', 'int_1', {
+      config: { url: 'https://hooks.example.com/in', events: [] },
+    });
+
+    expect(integration.config.events).toEqual([]);
+    expect(typeof integration.config.eventsBackfilledAt).toBe('string');
+  });
+
+  it('preserves an already-stamped value instead of overwriting it', async () => {
+    const { svc, integration } = updateHarness({
+      id: 'int_1',
+      tenantId: 't1',
+      key: 'webhook-x',
+      config: {
+        url: 'https://hooks.example.com/in',
+        events: [],
+        eventsBackfilledAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+
+    await svc.update('t1', 'int_1', {
+      config: { url: 'https://hooks.example.com/in', events: [] },
+    });
+
+    expect(integration.config.eventsBackfilledAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('does not stamp non-webhook integrations', async () => {
+    const { svc, integration } = updateHarness({
+      id: 'int_1',
+      tenantId: 't1',
+      key: 'erp-odoo',
+      config: { url: 'https://erp.example.com' },
+    });
+
+    await svc.update('t1', 'int_1', { config: { url: 'https://erp.example.com/v2' } });
+
+    expect(integration.config.eventsBackfilledAt).toBeUndefined();
+  });
+});

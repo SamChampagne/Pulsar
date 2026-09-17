@@ -47,7 +47,14 @@ export const LEGACY_WEBHOOK_EVENTS: readonly string[] = [
 const PRIVATE_V4_PREFIXES = ['127.', '10.', '192.168.', '169.254.', '0.'];
 
 function isPrivateHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  // Strip brackets (IPv6 literal) then a trailing DNS root dot — Node's URL
+  // normalizes numeric IPv4 forms but leaves a literal hostname's trailing
+  // dot untouched, so `localhost.`/`foo.localhost.` would otherwise slip
+  // past every comparison below (SSRF bypass).
+  const host = hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.+$/, '');
   if (!host) return true;
   if (host === 'localhost' || host.endsWith('.localhost')) return true;
   if (host === '::1' || host === '::') return true;

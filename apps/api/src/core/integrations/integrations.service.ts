@@ -72,7 +72,9 @@ const SENSITIVE_KEY = /secret|password|token|key/i;
 const MASK = '***';
 
 function asObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function asString(value: unknown): string {
@@ -103,9 +105,13 @@ export function buildConnectionTestReport(integration: {
   const config = asObject(integration.config);
   const endpointUrl = asString(config.endpointUrl);
   const hasEndpoint = /^https?:\/\//i.test(endpointUrl);
-  const hasCredential = ['apiKey', 'secret', 'webhookSecret', 'tenantReference'].some((key) => Boolean(asString(config[key])));
+  const hasCredential = ['apiKey', 'secret', 'webhookSecret', 'tenantReference'].some((key) =>
+    Boolean(asString(config[key])),
+  );
   const mappings = normalizeMappingRows(config.mappings);
-  const objects = Array.isArray(config.objects) ? config.objects.filter((item) => typeof item === 'string') : [];
+  const objects = Array.isArray(config.objects)
+    ? config.objects.filter((item) => typeof item === 'string')
+    : [];
   const checks: StudioCheck[] = [
     {
       key: 'endpoint',
@@ -119,19 +125,25 @@ export function buildConnectionTestReport(integration: {
       key: 'credential',
       label: 'Credentials',
       status: hasCredential ? 'ok' : 'blocked',
-      detail: hasCredential ? 'Credential présent et masqué dans le rapport.' : 'API key, secret, webhook secret ou référence projet requis.',
+      detail: hasCredential
+        ? 'Credential présent et masqué dans le rapport.'
+        : 'API key, secret, webhook secret ou référence projet requis.',
     },
     {
       key: 'objects',
       label: 'Objets métier',
       status: objects.length ? 'ok' : 'warning',
-      detail: objects.length ? `${objects.length} objet(s) sélectionné(s).` : 'Sélectionne au moins un objet pour documenter la portée.',
+      detail: objects.length
+        ? `${objects.length} objet(s) sélectionné(s).`
+        : 'Sélectionne au moins un objet pour documenter la portée.',
     },
     {
       key: 'mapping',
       label: 'Mapping',
       status: mappings.length ? 'ok' : 'warning',
-      detail: mappings.length ? `${mappings.length} champ(s) dans le mapping.` : 'Ajoute au moins un mapping source → Pulsar.',
+      detail: mappings.length
+        ? `${mappings.length} champ(s) dans le mapping.`
+        : 'Ajoute au moins un mapping source → Pulsar.',
     },
   ];
   const status = checks.some((check) => check.status === 'blocked')
@@ -172,10 +184,19 @@ export function buildDryRunMapping(input: DryRunInput): DryRunReport {
   // Lenient mode: an unknown transform stays a no-op in the studio preview
   // (the inbound receiver runs the same engine with strictTransforms).
   const { output, rows, errors } = applyIntegrationMapping(payload, mappings);
-  const status = errors.length ? 'warning' : rows.some((row) => row.status === 'mapped') ? 'ok' : 'blocked';
+  const status = errors.length
+    ? 'warning'
+    : rows.some((row) => row.status === 'mapped')
+      ? 'ok'
+      : 'blocked';
   return {
     status,
-    summary: status === 'ok' ? 'Dry run réussi.' : status === 'warning' ? `${errors.length} champ(s) requis à corriger.` : 'Aucun mapping exploitable.',
+    summary:
+      status === 'ok'
+        ? 'Dry run réussi.'
+        : status === 'warning'
+          ? `${errors.length} champ(s) requis à corriger.`
+          : 'Aucun mapping exploitable.',
     checkedAt: new Date().toISOString(),
     rows,
     output,
@@ -207,6 +228,27 @@ export function mergePreservingMasked(
   return Object.fromEntries(
     Object.entries(incoming).map(([k, v]) => [k, v === MASK ? stored[k] : v]),
   );
+}
+
+/**
+ * A `webhook*` integration's config always carries `eventsBackfilledAt` once
+ * written through this service — on create AND on update — so
+ * `WebhookEventsBackfillService` never re-widens an explicit empty allowlist
+ * set later via PATCH. Preserves an already-stamped value (from the new
+ * config, or — since `mergePreservingMasked` only carries over keys the
+ * client resends — from the previously stored config); stamps now (ISO)
+ * only when neither has one. No-op for non-webhook kinds.
+ */
+function withEventsBackfillStamp(
+  key: string,
+  config: Record<string, unknown>,
+  previousStamp?: unknown,
+): Record<string, unknown> {
+  if (!key.startsWith('webhook')) return config;
+  if (config.eventsBackfilledAt) return config;
+  const stamp =
+    typeof previousStamp === 'string' && previousStamp ? previousStamp : new Date().toISOString();
+  return { ...config, eventsBackfilledAt: stamp };
 }
 
 /**
@@ -273,12 +315,7 @@ export class IntegrationsService {
     // A webhook integration created here already follows the current semantics
     // (empty `events` = every catalog event), so it must never be picked up by
     // WebhookEventsBackfillService — stamp the marker straight away.
-    const config = {
-      ...(input.config ?? {}),
-      ...(input.key.startsWith('webhook')
-        ? { eventsBackfilledAt: new Date().toISOString() }
-        : {}),
-    };
+    const config = withEventsBackfillStamp(input.key, input.config ?? {});
     const created = await this.prisma.integration.create({
       data: {
         tenantId,
@@ -294,8 +331,14 @@ export class IntegrationsService {
   async update(tenantId: string, id: string, input: Partial<UpsertIntegrationInput>) {
     const integration = await this.prisma.integration.findFirst({ where: { id, tenantId } });
     if (!integration) throw new NotFoundException('Integration not found');
-    const stored = this.crypto.decryptJson(integration.config);
-    const merged = input.config ? mergePreservingMasked(input.config, stored) : undefined;
+    const stored = this.crypto.decryptJson<Record<string, unknown>>(integration.config);
+    const merged = input.config
+      ? withEventsBackfillStamp(
+          integration.key,
+          mergePreservingMasked(input.config, stored),
+          stored.eventsBackfilledAt,
+        )
+      : undefined;
     if (merged) this.assertSafeWebhookConfig(integration.key, merged);
     const updated = await this.prisma.integration.update({
       where: { id },
@@ -475,7 +518,10 @@ export class IntegrationsService {
 
     const token = randomBytes(32).toString('base64url');
     const inboundTokenHash = createHash('sha256').update(token).digest('hex');
-    await this.prisma.integration.update({ where: { id: integration.id }, data: { inboundTokenHash } });
+    await this.prisma.integration.update({
+      where: { id: integration.id },
+      data: { inboundTokenHash },
+    });
 
     await this.audit.log({
       tenantId,

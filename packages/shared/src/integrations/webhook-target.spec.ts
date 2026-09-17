@@ -90,6 +90,14 @@ describe('checkWebhookUrl (egress guard)', () => {
     // The scheme rule still applies with the escape hatch on.
     expect(isSafeWebhookUrl('file:///tmp/x', { allowPrivate: true })).toBe(false);
   });
+
+  it('strips a trailing DNS root dot before comparing (SSRF bypass)', () => {
+    expect(isSafeWebhookUrl('http://localhost./h')).toBe(false);
+    expect(isSafeWebhookUrl('http://foo.localhost./x')).toBe(false);
+    expect(isSafeWebhookUrl('http://127.0.0.1./x')).toBe(false);
+    // A genuinely public host with a trailing root dot is still allowed.
+    expect(isSafeWebhookUrl('https://hooks.example.com./x')).toBe(true);
+  });
 });
 
 describe('LEGACY_WEBHOOK_EVENTS', () => {
