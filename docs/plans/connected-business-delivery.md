@@ -33,9 +33,9 @@ chaque connexion et actualiser les guides métier sans réinitialiser la premiè
 
 - [x] Chantiers 1–4 implémentés et revue de leurs interactions.
 - [x] Migrations additives testées sur la base isolée, pas sur la base utilisateur.
-- [ ] Tests unitaires, HTTP multi-tenant/droits/concurrence/reprise et navigateur.
-- [ ] Builds, typechecks, documentation intégrée et guide de recette serveur.
-- [ ] Revue des fichiers publiés, commit(s), push et une seule PR attachée à la tâche.
+- [x] Tests unitaires, HTTP multi-tenant/droits/concurrence/reprise et navigateur.
+- [x] Builds, typechecks, documentation intégrée et guide de recette serveur.
+- [x] Revue des fichiers publiés, commit(s), push et une seule PR attachée à la tâche : [PR #81](https://github.com/SamChampagne/Pulsar/pull/81).
 - [ ] Vérification des contrôles CI; aucune fusion ni installation serveur automatique.
 
 ## Contrats et limites
@@ -75,5 +75,12 @@ Vérifications après intégration de main : 106 migrations sur `pulsar_enduser_
 aucune dérive Prisma; 901 tests shared, 118 web et 591 API (dont trois tests de gouvernance
 ajoutés après la suite complète de 588) réussis. 160 tests HTTP dans 12 suites réussis,
 MRP/APS avec adaptateur de moteur contrôlé, pas moteur réel. Build complet réussi;
-typecheck sans erreur, 12 avertissements Svelte préexistants. Recette navigateur en cours.
+typecheck sans erreur, 12 avertissements Svelte préexistants. **119 scénarios navigateur
+uniques réussis** : 95 dans la dernière passe (nouveaux parcours, RH/Qualité, tous les
+postes MRP/achats/atelier/revue et shell responsive), plus 24 autres scénarios de la passe
+précédente (utilisabilité, scanners et suivi compétences). Les erreurs découvertes ont été
+corrigées : prix initial de facturation non défini, attentes de texte/nombre d'étapes de
+tutoriels et préférences manquantes des fixtures MRP. La dernière passe n'a pas de retry.
+La CI GitHub complète de la PR est une preuve séparée; consulter les checks du dernier SHA
+avant fusion. Aucun check n'a été supprimé ou assoupli.
 Jest HTTP utilise encore `--forceExit`; aucune amélioration de cet arrêt historique n'est revendiquée.

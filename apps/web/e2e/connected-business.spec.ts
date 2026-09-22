@@ -169,6 +169,26 @@ test('planning checks and confirms changes, with a real weekly board', async ({
   const r = await request.get(`/api/v1/services/jobs/${job.id}`, { headers });
   expect((await r.json()).scheduledAt).toBe('2032-01-05T15:00:00.000Z');
   await page.screenshot({ path: 'test-results/connected-planning.png', fullPage: true });
+  const card = page.getByRole('table').getByRole('button').filter({ hasText: job.title });
+  const nextDay = page
+    .getByRole('row')
+    .filter({ has: page.getByRole('button').filter({ hasText: job.title }) })
+    .getByRole('cell')
+    .nth(1);
+  await card.dragTo(nextDay);
+  await expect(page.getByLabel('Début dans le fuseau de l’entreprise')).toHaveValue(
+    '2032-01-06T10:00',
+  );
+  const beforeConfirmation = await request.get(`/api/v1/services/jobs/${job.id}`, { headers });
+  expect((await beforeConfirmation.json()).scheduledAt).toBe('2032-01-05T15:00:00.000Z');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('heading', { name: 'Planning des interventions' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: 'test-results/connected-planning-mobile.png', fullPage: true });
 });
 test('workbench shows source alerts and AI prepares without submitting automatically', async ({
   page,

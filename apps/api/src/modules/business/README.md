@@ -1,5 +1,15 @@
 # Business foundations
 
+## Connected delivery (2026-09-22)
+
+The current release adds derived operational attention, timezone-aware Services planning,
+explicit partner CRM/billing mappings, accepted quote snapshots and source-locked invoice
+drafts. Source time/parts stay immutable while billed; deleting a billing DRAFT frees their
+links but does not reuse the request key. Two new agent mutations (schedule, SAV follow-up)
+use the existing governance registry, never a direct model-to-controller path. The original
+workflow descriptions below remain valid; a transition alone still never generates invoices.
+See `docs/plans/connected-business-delivery.md` and the linked server acceptance runbook.
+
 Catalogue owns shared identities for the new applications. Services, Purchasing and Support own
 distinct domain tables and workflows. Existing CRM/TMS/WMS identities are not migrated
 or silently deduplicated. The explicit Catalogue ↔ WMS link and Services parts workflow now
