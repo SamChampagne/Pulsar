@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@pulsar/database';
 import { catalogFor, resolveSettings } from '@pulsar/shared';
 import { PrismaService } from './prisma.service';
 import { TenantModulesCacheService } from './tenant-modules-cache.service';
@@ -30,7 +31,9 @@ export type SequenceKey =
   | 'customer'
   | 'sales-order'
   | 'payment'
-  | 'manufacturing-order';
+  | 'manufacturing-order'
+  | 'material-requisition'
+  | 'material-purchase';
 
 const PREFIXES: Record<SequenceKey, string> = {
   'service-quote': 'DEV',
@@ -60,6 +63,8 @@ const PREFIXES: Record<SequenceKey, string> = {
   'sales-order': 'SO',
   payment: 'PAY',
   'manufacturing-order': 'MO',
+  'material-requisition': 'MR',
+  'material-purchase': 'MP',
 };
 
 /** Sequence keys whose prefix is overridable by a module tenant setting. */
@@ -100,8 +105,12 @@ export class SequencesService {
     private readonly tenantModulesCache: TenantModulesCacheService,
   ) {}
 
-  async next(tenantId: string, key: SequenceKey): Promise<number> {
-    const rows = await this.prisma.$queryRaw<{ value: number }[]>`
+  async next(
+    tenantId: string,
+    key: SequenceKey,
+    tx: Prisma.TransactionClient = this.prisma,
+  ): Promise<number> {
+    const rows = await tx.$queryRaw<{ value: number }[]>`
       INSERT INTO number_sequences (tenant_id, key, value)
       VALUES (${tenantId}, ${key}, 1)
       ON CONFLICT (tenant_id, key)
@@ -124,8 +133,12 @@ export class SequencesService {
     return typeof v === 'string' && v.length > 0 ? v : PREFIXES[key];
   }
 
-  async nextNumber(tenantId: string, key: SequenceKey): Promise<string> {
-    const value = await this.next(tenantId, key); // counter is keyed on `key`, never the prefix
+  async nextNumber(
+    tenantId: string,
+    key: SequenceKey,
+    tx?: Prisma.TransactionClient,
+  ): Promise<string> {
+    const value = await this.next(tenantId, key, tx); // counter is keyed on `key`, never the prefix
     const prefix = await this.prefixFor(tenantId, key);
     return `${prefix}-${String(value).padStart(6, '0')}`;
   }

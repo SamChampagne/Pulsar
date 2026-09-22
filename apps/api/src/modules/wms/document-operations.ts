@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@pulsar/database';
 import { IsDateString, IsOptional } from 'class-validator';
+import { materialReceiptContext } from './receiving/material-purchase-receipt';
 
 export type WmsDocumentKind = 'receipt' | 'pickOrder';
 export class WmsVersionDto {
@@ -143,8 +144,14 @@ export async function readWmsDocument(
           : null,
     };
   });
+  const materialPurchase =
+    kind === 'receipt' ? await materialReceiptContext(db, tenantId, doc, doc.lines) : null;
+  if (applicable && materialPurchase?.issues.length) {
+    for (const check of checks) check.issues.push(...materialPurchase.issues);
+  }
   return {
     ...doc,
+    ...(kind === 'receipt' ? { materialPurchase } : {}),
     readiness: {
       generatedAt: new Date().toISOString(),
       applicable,

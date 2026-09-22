@@ -17,6 +17,9 @@
     ErrorNotice,
   } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import OrderMaterials from '$lib/components/manufacturing/OrderMaterials.svelte';
+  import ShopFloorDrawer from '$lib/components/manufacturing/ShopFloorDrawer.svelte';
+  import type { ManufacturingMaterialSnapshot } from '@pulsar/shared';
 
   type Priority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
   type Status = 'DRAFT' | 'RELEASED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
@@ -44,6 +47,20 @@
     status: Status;
     firmness: Firmness;
     operations: Operation[];
+    updatedAt: string;
+    bomId?: string | null;
+    locationId?: string | null;
+    bomRevisionId?: string | null;
+    location?: { name: string } | null;
+    bomRevision?: {
+      id: string;
+      revision: number;
+      outputSku: string;
+      outputUnit: string;
+      lines: { id: string; sku: string; unit: string; quantityPerUnit: string }[];
+    } | null;
+    materialSnapshot?: ManufacturingMaterialSnapshot | null;
+    mrpPreparation?: { id: string; runId: string; proposalId: string } | null;
   }
 
   interface WorkCenter {
@@ -126,8 +143,8 @@
   let routingId = $state('');
   let routingSaving = $state(false);
 
-  async function load() {
-    loading = true;
+  async function load(quiet = false) {
+    if (!quiet) loading = true;
     error = '';
     try {
       order = await api<Order>(`/manufacturing/orders/${orderId}`);
@@ -295,11 +312,15 @@
     <div class="grid grid-cols-2 gap-4 text-sm md:grid-cols-3">
       <div>
         <div class="text-xs text-ink-faint">Statut</div>
-        <div class="mt-1"><Badge tone={statusTone(order.status)}>{STATUS_LABELS[order.status]}</Badge></div>
+        <div class="mt-1">
+          <Badge tone={statusTone(order.status)}>{STATUS_LABELS[order.status]}</Badge>
+        </div>
       </div>
       <div>
         <div class="text-xs text-ink-faint">Priorité</div>
-        <div class="mt-1"><Badge tone={priorityTone(order.priority)}>{PRIORITY_LABELS[order.priority]}</Badge></div>
+        <div class="mt-1">
+          <Badge tone={priorityTone(order.priority)}>{PRIORITY_LABELS[order.priority]}</Badge>
+        </div>
       </div>
       <div>
         <div class="text-xs text-ink-faint">Fermeté</div>
@@ -323,6 +344,25 @@
       </div>
     </div>
   </Card>
+
+  <OrderMaterials {order} onchange={load} />
+  {#if order.materialSnapshot}<div class="my-4">
+      <ShopFloorDrawer orderId={order.id} onchange={() => load(true)} />
+    </div>{/if}
+  {#if order.mrpPreparation}<div class="my-4 rounded-md border border-edge bg-surface p-4 text-sm">
+      <p>
+        Cet OF provient d’une proposition MRP confirmée. Son produit, sa quantité, son site et sa
+        version restent liés à cette préparation.
+      </p>
+      <a
+        class="mt-2 inline-block text-accent hover:underline"
+        href={`/manufacturing/mrp?runId=${order.mrpPreparation.runId}`}
+        >Revenir au calcul et à ses besoins →</a
+      >
+      {#if order.status === 'DRAFT' && !order.operations.length}<p class="mt-2 text-ink-muted">
+          Prochaine étape : importer une gamme ou ajouter les opérations avant de libérer l’OF.
+        </p>{/if}
+    </div>{/if}
 
   <div class="mt-5 mb-3 flex items-center justify-between">
     <h2 class="text-lg font-semibold text-ink">Opérations</h2>
@@ -349,9 +389,9 @@
   {:else}
     <Table>
       {#snippet head()}
-        <th class="text-right">Séq.</th><th>Nom</th><th class="text-right">Durée (min)</th
-        ><th class="text-right">Setup (min)</th><th class="text-right">Postes éligibles</th
-        ><th>Statut</th><th></th>
+        <th class="text-right">Séq.</th><th>Nom</th><th class="text-right">Durée (min)</th><th
+          class="text-right">Setup (min)</th
+        ><th class="text-right">Postes éligibles</th><th>Statut</th><th></th>
       {/snippet}
       {#snippet body()}
         {#each order!.operations as op (op.id)}
@@ -399,7 +439,9 @@
         {:else}
           <div class="flex flex-wrap gap-2">
             {#each workCenters as wc (wc.id)}
-              <label class="flex items-center gap-1.5 rounded-md border border-edge px-2 py-1 text-sm text-ink">
+              <label
+                class="flex items-center gap-1.5 rounded-md border border-edge px-2 py-1 text-sm text-ink"
+              >
                 <input type="checkbox" bind:checked={opWorkCenters[wc.id]} />
                 {wc.name}
               </label>

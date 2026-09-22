@@ -47,6 +47,7 @@ import { ProductsService } from '../../modules/crm/products.service';
 import { SalesOrdersService } from '../../modules/crm/sales-orders.service';
 import { SequencesService as CrmSequencesService } from '../../modules/crm/sequences.service';
 import { ManufacturingModule } from '../../modules/manufacturing/manufacturing.module';
+import { MrpAssistanceService } from '../../modules/manufacturing/mrp/mrp-assistance.service';
 import { SchedulingService } from '../../modules/manufacturing/scheduling/scheduling.service';
 import { OrdersService as ManufacturingOrdersService } from '../../modules/manufacturing/orders/orders.service';
 import { AgentsController } from './agents.controller';
@@ -87,7 +88,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
     WmsModule,
     AnalyticsModule,
     CrmModule,
-    ManufacturingModule,
+    forwardRef(() => ManufacturingModule),
   ],
   controllers: [
     AgentsController,
@@ -142,6 +143,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         SchedulingService,
         ManufacturingOrdersService,
         CrmSequencesService,
+        MrpAssistanceService,
       ],
       useFactory: (
         business: BusinessService,
@@ -181,6 +183,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
         scheduling: SchedulingService,
         mfgOrders: ManufacturingOrdersService,
         crmSequences: CrmSequencesService,
+        mrp: MrpAssistanceService,
       ): ToolServices => ({
         connectedBusiness: {
           attention: (u, q) => attention.list(u, q),
@@ -199,6 +202,12 @@ import { RuntimeConfigController } from './runtime-config.controller';
               ...dto,
             });
           },
+        },
+        mrp: {
+          workspace: (...args) => mrp.workspace(...args),
+          brief: (...args) => mrp.brief(...args),
+          submit: (...args) => mrp.submit(...args),
+          recalculate: (...args) => mrp.recalculate(...args),
         },
         transportOrders: {
           list: (tenantId, query) => transportOrders.list(tenantId, query as never),

@@ -33,6 +33,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const apsDir = path.join(repoRoot, 'services', 'aps');
 const apsManifest = path.join(apsDir, 'pyproject.toml');
+const apsLock = path.join(apsDir, 'requirements-ci.lock');
 const venvDir = path.join(apsDir, '.venv');
 const apsEnv = path.join(apsDir, '.env');
 const isWin = process.platform === 'win32';
@@ -154,7 +155,9 @@ function installViaUv() {
 
   const editableSpec = `${'.' + path.sep}${path.relative(repoRoot, apsDir)}[cpsat]`;
   console.log(`[setup-aps] Installing ${editableSpec} into the venv (OR-Tools is large — several minutes) ...`);
-  const pipInstall = run('uv', ['pip', 'install', '--python', venvPython, '-e', editableSpec], { cwd: repoRoot });
+  const locked = run('uv', ['pip', 'install', '--python', venvPython, '--require-hashes', '-r', apsLock], { cwd: repoRoot });
+  if (locked.status !== 0) fail('Locked APS dependencies could not be installed. Use the supported Python 3.12 runtime.');
+  const pipInstall = run('uv', ['pip', 'install', '--python', venvPython, '--no-deps', '-e', editableSpec], { cwd: repoRoot });
   if (pipInstall.status !== 0) fail(`\`uv pip install\` failed (exit ${pipInstall.status}). See output above.`);
   return true;
 }
@@ -171,7 +174,9 @@ function installViaSystemPython(py) {
   run(venvPython, ['-m', 'pip', 'install', '--upgrade', 'pip']);
   const editableSpec = `${'.' + path.sep}${path.relative(repoRoot, apsDir)}[cpsat]`;
   console.log(`[setup-aps] Installing ${editableSpec} (several minutes) ...`);
-  const pipInstall = run(venvPython, ['-m', 'pip', 'install', '-e', editableSpec], { cwd: repoRoot });
+  const locked = run(venvPython, ['-m', 'pip', 'install', '--require-hashes', '-r', apsLock], { cwd: repoRoot });
+  if (locked.status !== 0) fail('Locked APS dependencies could not be installed. Use the supported Python 3.12 runtime.');
+  const pipInstall = run(venvPython, ['-m', 'pip', 'install', '--no-deps', '-e', editableSpec], { cwd: repoRoot });
   if (pipInstall.status !== 0) fail(`pip install failed (exit ${pipInstall.status}).`);
   return true;
 }

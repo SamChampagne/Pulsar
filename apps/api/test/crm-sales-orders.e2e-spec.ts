@@ -4,6 +4,7 @@
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { SchedulerRegistry } from '@nestjs/schedule';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -23,6 +24,7 @@ describe('CRM sales orders (e2e)', () => {
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.listen(0);
+    for (const job of app.get(SchedulerRegistry).getCronJobs().values()) job.stop();
     prisma = app.get(PrismaService);
     const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send(ADMIN).expect(200);
     token = login.body.accessToken;

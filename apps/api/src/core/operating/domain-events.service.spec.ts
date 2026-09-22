@@ -5,6 +5,7 @@ import { SequencesService } from '../../prisma/sequences.service';
 import { AgentWorkerService } from './agent-worker.service';
 import { DomainEventsService } from './domain-events.service';
 import { TaskAssignmentResolver } from './event-policies';
+import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
 import { CustomRuleResolver } from '../automation/custom-rule.resolver';
 import { ReactionExecutorService } from '../automation/reaction-executor.service';
 import { WebhooksService } from '../integrations/webhooks.service';
@@ -62,6 +63,7 @@ describe('DomainEventsService', () => {
       providers: [
         DomainEventsService,
         TaskAssignmentResolver,
+        { provide: TenantModulesCacheService, useValue: { getEnabledKeys: async () => new Set() } },
         { provide: PrismaService, useValue: prisma },
         { provide: AgentWorkerService, useValue: workerStub },
         { provide: SequencesService, useValue: sequencesStub },
@@ -92,6 +94,7 @@ describe('DomainEventsService', () => {
       providers: [
         DomainEventsService,
         TaskAssignmentResolver,
+        { provide: TenantModulesCacheService, useValue: { getEnabledKeys: async () => new Set() } },
         { provide: PrismaService, useValue: prisma },
         { provide: AgentWorkerService, useValue: workerStub },
         { provide: SequencesService, useValue: sequencesStub },
@@ -109,6 +112,7 @@ describe('DomainEventsService', () => {
       providers: [
         DomainEventsService,
         TaskAssignmentResolver,
+        { provide: TenantModulesCacheService, useValue: { getEnabledKeys: async () => new Set() } },
         { provide: PrismaService, useValue: prisma },
         { provide: AgentWorkerService, useValue: workerStub },
         { provide: SequencesService, useValue: sequencesStub },
@@ -134,6 +138,7 @@ describe('DomainEventsService', () => {
         providers: [
           DomainEventsService,
           TaskAssignmentResolver,
+          { provide: TenantModulesCacheService, useValue: { getEnabledKeys: async () => new Set() } },
           { provide: PrismaService, useValue: prisma },
           { provide: AgentWorkerService, useValue: workerStub },
           { provide: SequencesService, useValue: sequencesStub },

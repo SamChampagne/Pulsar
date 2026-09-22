@@ -161,6 +161,82 @@ erreur tardive de tutoriel attribuée au test suivant. APS et services tiers non
 > [end-user-workflows.md](./plans/end-user-workflows.md). Restent notamment les zones autonomes,
 > calendrier partagé, recherche mondiale d’adresses et bureau côte à côte. Le lot suivant
 > ci-dessus remplace les guides textuels par des visites interactives et ajoute le scan clavier.
+> **Boucle opérationnelle Fabrication (2026-09-15), implémentée localement.**
+> M3c partiel : arrivages, reports de promesse et clôtures de reliquat historisés.
+> M4 v1 : impacts matières par site, achats datés dans PlaniAdvance et revalidation
+> du stock/arrivages avant publication. M5 v1 : consommation réelle, bons produits
+> et rebuts, preuves WMS atomiques et reprise après coupure. Le worker distingue
+> les preuves figées du MRP et les impacts courants, sans nouveaux outils de mutation.
+> Panneaux/style Pulsar conservés, aucun nouveau thème.
+> [Contrats, limites et reprise](./plans/manufacturing-operational-loop.md).
+>
+> Vérification : **94 tests HTTP** (MRP/APS avec moteur réel, CRM, WMS),
+> **61 tests navigateur**, **666 tests shared**, **287 tests unitaires API**,
+> **34 tests Python du bridge**. Build complet réussi; 0 erreur de type,
+> 12 avertissements Svelte préexistants. 89 migrations dev/test sans dérive Prisma.
+> API prête et web 5173 accessibles. Aucun envoi fournisseur ni test LLM réel.
+>
+> **Limite importante :** un OF actif avec déclaration atelier bloque encore un
+> nouveau scénario APS global. Suite prioritaire : temps réels/restants par opération,
+> gel de l'exécuté et replanification partielle (M4 WIP); ensuite achats multi-lignes,
+> corrections compensatoires/qualité et qualification du worker réel.
+
+> **MRP M3b v1 (2026-09-15), implémenté localement.** Poste Achats matières,
+> fournisseurs versionnés, demandes BUY → bons mono-demande, confirmation humaine
+> de commande passée hors Pulsar, réceptions partielles reliées au WMS et protection
+> contre sur-réception/double comptage. Le MRP absorbe le solde confirmé; le worker
+> peut lire les preuves sans nouveau pouvoir de mutation. UI Pulsar conservée.
+> Aucun envoi fournisseur/LLM ni stock fictif ajouté dans Acme.
+> Suite : achats M3c (multi-lignes, reports/reliquats), boucle matières–capacité M4.
+> [Contrats, limites et reprise](./plans/manufacturing-material-purchases.md).
+>
+> Vérification M3b : **87 tests HTTP** (53 Fabrication/CRM avec moteur réel,
+> 34 WMS), **54 tests navigateur**, **663 tests shared** et **285 tests unitaires API**.
+> Build complet réussi, 0 erreur de type et 12 avertissements Svelte préexistants.
+> 88 migrations dev/test, aucune dérive Prisma. API prête, web 5173 accessible;
+> Acme conserve 0 demande d’achat et 0 fournisseur matières (aucune fixture ajoutée).
+
+> **MRP M2.2b2 partiel + M3a (2026-09-15), implémenté localement.** Sites explicites
+> des calendriers/postes, validité immuable des versions BOM, propositions → demandes
+> d’achat internes / OF DRAFT par prévisualisation-confirmation idempotente. Doublons
+> inter-calcul bloqués; préparations lisibles par le worker, sans nouvel outil de
+> mutation IA. UI Pulsar conservée. Ni commande fournisseur ni stock/arrivage créé.
+> Suite : achats matières M3b et rapprochement réceptions, puis boucle APS M4.
+> [Contrats, limites et reprise](./plans/manufacturing-mrp-preparation.md).
+>
+> Vérification locale M3a : 48 tests HTTP (MRP/APS/CRM, voie moteur réel),
+> 32 tests navigateur à API contrôlée, 661 tests shared et 285 tests unitaires API.
+> Build complet réussi. Typecheck : 0 erreur, 12 avertissements Svelte préexistants hors de ce lot.
+> Schémas Prisma dev/test sans dérive; API prête et web 5173 accessibles.
+
+> **MRP M2.2b1 + M7a (2026-09-15), implémenté localement.** Correspondances
+> produits CRM/articles WMS et ratios commerciaux exacts capturés par demande.
+> Premier worker analyste MRP via les tâches, MCP et approbations existants;
+> synthèses liées au calcul, recalcul gouverné, revue automatique opt-in sans boucle.
+> Panneaux Pulsar conservés. Pas d'achat/OF/stock automatique ni de test LLM réel.
+> Suite : validité/sites M2.2b2, exécution M3, qualification worker M7b.
+> [Contrats, activation et preuves](./plans/manufacturing-mrp-units-ai.md).
+
+> **MRP M2.2a (2026-09-15), implémenté localement.** Commandes CRM confirmées
+> reliées explicitement aux articles/sites/dates MRP, prévisions par période et
+> consommation sans double comptage. Exécution/annulation CRM prises en compte,
+> provenance figée par calcul, droits croisés et concurrence de confirmation
+> durcie. UI Pulsar conservée. Pas de conversion d'unités ni d'exécution achats/OF
+> automatique. Suite : M2.2b puis M3. [Contrats et reprise](./plans/manufacturing-demand-sources.md).
+
+> **MRP M2.1 (2026-09-15), implémenté localement.** Nomenclatures Decimal,
+> versions publiées figées, règles MRP attachées à une version, site et instantané
+> matières à la libération des OF. Unités/SKU WMS utilisés protégés. Panneaux et
+> style Pulsar conservés. Les anciennes règles MAKE nécessitent une sélection
+> explicite; aucun historique n'est inventé. M2 reste partiel, achats/atelier et
+> recettes encore ouverts. [Contrats et reprise](./plans/manufacturing-definitions.md).
+
+> **MRP M1 (2026-09-15), implémenté localement.** Poste `/manufacturing/mrp` :
+> règles article/entrepôt, demandes/arrivages, explosion multi-niveaux Decimal dans
+> le runtime PlaniAdvance, historique immuable et lien réception WMS sans double
+> comptage. UI Pulsar conservée. Ce lot est un calcul de besoins, **pas encore le
+> MRP complet exécutant achats/OF/atelier**. Cible confirmée : discret et procédés
+> à terme. [Contrats, limites et suite M2–M7](./plans/manufacturing-mrp.md).
 
 > 🇫🇷 Document de synthèse pour reprendre le travail (humain ou session Claude Code).
 > Mis à jour à la fin de la **phase 16** (début de l'Acte II). Détail des tâches : [TODO.md](../TODO.md) ·
@@ -257,6 +333,19 @@ erreur tardive de tutoriel attribuée au test suivant. APS et services tiers non
 > TMS. Suite recommandée : arc « Référentiel partagé » (`core/master-data`, même patron que les
 > Lieux). Détail, contrats et dette : [access-module-core-locations.md](./plans/access-module-core-locations.md).
 
+> **Reprise Fabrication / PlaniAdvance (2026-09-15).** #79 est fusionnée; la CI de
+> `main` est verte, tests navigateur inclus. L'audit du projet original confirme
+> que le moteur Python est déjà copié, mais que Pulsar n'expose qu'une partie du
+> workflow industriel. Avant la refonte visuelle : contrat moteur, replay, fuseaux,
+> publication gardée et vraie voie CI APS. **Lot A1 implémenté localement** : entrée
+> moteur isolée par requête, artefacts/rejeu historique et publication gardée; UI
+> inchangée en A1. **A2.1 implémenté localement** : fuseau commun explicite, fenêtres
+> UTC/DST rejouables, panneaux Pulsar de calcul/revue et confirmation versionnée.
+> Le lot A complet reste ouvert : sites distincts, baseline/actions en entrée,
+> WIP/gel avancé, matières et quotas. [Contrats A2.1](./plans/manufacturing-scenario-review.md).
+> [Contrats et limites A1](./plans/manufacturing-aps-foundation.md).
+> [Audit comparatif et lots d'intégration](./plans/manufacturing-planiadvance-integration.md).
+>
 > **Livraison regroupée (2026-09-14).** Les 14 lots récents sont désormais réunis
 > dans la [PR unique #79](https://github.com/SamChampagne/Pulsar/pull/79), vers `main`.
 > Les PR #66 à #78 sont remplacées, sans suppression de leurs branches. Les tests web

@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   AuditAction,
   canTransitionSalesOrder,
@@ -13,7 +18,11 @@ import { SequencesService } from '../../prisma/sequences.service';
 import { DomainEventsService } from '../../core/operating/domain-events.service';
 import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { paginationArgs, paginated } from '../../common/pagination';
-import { CreateSalesOrderDto, SalesOrderListQueryDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
+import {
+  CreateSalesOrderDto,
+  SalesOrderListQueryDto,
+  UpdateSalesOrderDto,
+} from './dto/sales-order.dto';
 
 /**
  * CRM sales orders service. All operations are tenant-scoped (rule 1).
@@ -36,9 +45,7 @@ export class SalesOrdersService {
       tenantId,
       ...(query.status ? { status: query.status as SalesOrderStatus } : {}),
       ...(query.companyId ? { companyId: query.companyId } : {}),
-      ...(query.search
-        ? { number: { contains: query.search, mode: 'insensitive' as const } }
-        : {}),
+      ...(query.search ? { number: { contains: query.search, mode: 'insensitive' as const } } : {}),
     };
     const [items, total] = await Promise.all([
       this.prisma.salesOrder.findMany({
@@ -165,7 +172,9 @@ export class SalesOrdersService {
       where: { tenantId, dealId },
     });
     if (dealLines.length === 0) {
-      throw new BadRequestException('Deal must have at least one line item to create a sales order');
+      throw new BadRequestException(
+        'Deal must have at least one line item to create a sales order',
+      );
     }
 
     const order = await this.prisma.$transaction(async (tx) => {
@@ -241,7 +250,9 @@ export class SalesOrdersService {
     if (to === SalesOrderStatus.INVOICED) {
       const settings = await this.moduleSettings.resolve(tenantId, 'crm');
       if (settings.salesOrderDirectInvoicing === false) {
-        throw new ForbiddenException('Direct invoicing of sales orders is disabled for this tenant');
+        throw new ForbiddenException(
+          'Direct invoicing of sales orders is disabled for this tenant',
+        );
       }
     }
 
@@ -249,9 +260,13 @@ export class SalesOrdersService {
       throw new BadRequestException(`Cannot transition sales order from ${order.status} to ${to}`);
     }
 
-    const res = await this.prisma.salesOrder.updateMany({
-      where: { id, tenantId, status: order.status }, // TOCTOU claim
-      data: { status: to },
+    const res = await this.prisma.$transaction(async (tx) => {
+      // Shared with line edits and MRP source capture: confirmation freezes quantities.
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+      return tx.salesOrder.updateMany({
+        where: { id, tenantId, status: order.status },
+        data: { status: to },
+      });
     });
     if (res.count === 0) throw new BadRequestException('Sales order changed concurrently; retry');
 

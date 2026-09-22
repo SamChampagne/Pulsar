@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { ApsClient } from './aps.client';
@@ -89,10 +84,12 @@ export class ApsRuntimeService implements OnModuleInit, OnModuleDestroy {
         const apsDbUrl = this.config.get<string>('APS_DATABASE_URL');
         if (apsDbUrl) env.DATABASE_URL = apsDbUrl;
         else delete env.DATABASE_URL; // fall back to services/aps/.env
+        const serviceKey = this.config.get<string>('APS_API_KEY');
+        if (serviceKey) env.INTEGRATION_API_KEY = serviceKey;
         child = spawn(
           venvPython(),
           ['-m', 'uvicorn', 'planiadvance_v2.api.main:app', '--host', '127.0.0.1', '--port', port],
-          { stdio: ['pipe', 'pipe', 'pipe'], cwd: apsDir(), env },
+          { stdio: ['pipe', 'pipe', 'pipe'], cwd: apsDir(), env, windowsHide: true },
         ) as ChildProcessWithoutNullStreams;
       } catch (err) {
         this.logger.warn(`Failed to spawn APS engine: ${err instanceof Error ? err.message : err}`);

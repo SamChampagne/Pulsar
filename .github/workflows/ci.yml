@@ -18,6 +18,34 @@ env:
   ENCRYPTION_KEY: 1qK0pZ8Yw3mB6dT9rV2xU5nC7sE4hG1jL0aF3kM8oP4=
 
 jobs:
+  aps-engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # The private Pulsar bridge must work without the standalone APS database.
+      DATABASE_URL: postgresql+psycopg://unused:unused@127.0.0.1:1/unused
+      INTEGRATION_API_KEY: ci-only-aps-service-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/aps/requirements-ci.lock
+      - name: Install locked APS and solver dependencies
+        run: python -m pip install --require-hashes -r services/aps/requirements-ci.lock
+      - name: Engine, canonical contracts and private bridge (real solvers, no DB)
+        working-directory: services/aps
+        run: >-
+          python -m pytest tests/unit/domain tests/unit/scheduling
+          tests/unit/integration tests/unit/api/test_pulsar_bridge.py
+          -q --tb=short --junitxml=aps-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aps-test-results
+          path: services/aps/aps-results.xml
+
   typecheck:
     runs-on: ubuntu-latest
     steps:

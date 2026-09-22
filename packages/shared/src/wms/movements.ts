@@ -1,4 +1,6 @@
 export const WMS_MOVEMENT_LABELS: Record<string, string> = {
+  CONSUMPTION: 'Consommation atelier',
+  PRODUCTION: 'Production atelier',
   RECEIPT: 'Réception',
   MOVE: 'Déplacement',
   PICK: 'Prélèvement',

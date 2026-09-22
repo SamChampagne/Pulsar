@@ -745,6 +745,16 @@ model Tenant {
   hrEmployees HrEmployee[]
   qualityInspections QualityInspection[]
   supportCases SupportCase[]
+  materialSuppliers MaterialSupplier[]
+  materialPurchaseOrders MaterialPurchaseOrder[]
+  materialPurchaseReceipts MaterialPurchaseReceipt[]
+  mrpPreparations MrpPreparation[]
+  mrpProductMappings MrpProductMapping[]
+  mrpReviews MrpReview[]
+  bomRevisions BomRevision[]
+  mrpPolicies MrpItemPolicy[]
+  mrpEntries MrpEntry[]
+  mrpRuns MrpRun[]
   id         String       @id @default(cuid())
   slug       String       @unique
   name       String
@@ -1409,6 +1419,12 @@ enum LocationType {
 }
 
 model Location {
+  workingCalendars WorkingCalendar[]
+  mrpPreparations MrpPreparation[]
+  manufacturingOrders ManufacturingOrder[]
+  mrpPolicies MrpItemPolicy[]
+  mrpEntries MrpEntry[]
+  mrpRuns MrpRun[]
   id           String       @id @default(cuid())
   tenantId     String
   customerId   String?
@@ -3095,6 +3111,8 @@ model CustomFieldDefinition {
 }
 
 enum StockMovementType {
+  CONSUMPTION
+  PRODUCTION
   RECEIPT
   MOVE
   PICK
@@ -3121,6 +3139,12 @@ enum PickOrderStatus {
 }
 
 model WmsItem {
+  mrpPreparations MrpPreparation[]
+  mrpProductMappings MrpProductMapping[]
+  outputBomRevisions BomRevision[]
+  bomRevisionLines BomRevisionLine[]
+  mrpPolicies MrpItemPolicy[]
+  mrpEntries MrpEntry[]
   id           String   @id @default(cuid())
   tenantId     String
   sku          String
@@ -3281,6 +3305,8 @@ model StockMovement {
 
 model Receipt {
   qualityInspections QualityInspection[]
+  materialPurchaseReceipt MaterialPurchaseReceipt?
+  mrpEntries MrpEntry[]
   id          String        @id @default(cuid())
   tenantId    String
   number      String
@@ -3864,6 +3890,7 @@ model CrmDeal {
 }
 
 model CrmProduct {
+  mrpProductMappings MrpProductMapping[]
   id          String   @id @default(cuid())
   tenantId    String
   name        String
@@ -3967,6 +3994,7 @@ model SalesOrder {
 }
 
 model SalesOrderLineItem {
+  mrpDemands MrpEntry[]
   id           String   @id @default(cuid())
   tenantId     String
   salesOrderId String
@@ -4427,6 +4455,8 @@ enum ManufacturingFirmness {
 }
 
 model WorkingCalendar {
+  locationId String? @map("location_id")
+  location Location? @relation(fields: [locationId], references: [id], onDelete: Restrict)
   id        String   @id @default(cuid())
   tenantId  String
   code      String
@@ -4518,6 +4548,8 @@ model RoutingStep {
 }
 
 model Bom {
+  revisions BomRevision[]
+  mrpPolicies MrpItemPolicy[]
   id         String   @id @default(cuid())
   tenantId   String
   code       String
@@ -4541,7 +4573,7 @@ model BomLine {
   bomId           String
   materialRef     String
   materialName    String?
-  quantityPerUnit Float    @default(1)
+  quantityPerUnit Decimal  @default(1) @db.Decimal(24, 9)
   createdAt       DateTime @default(now())
 
   bom Bom @relation(fields: [bomId], references: [id], onDelete: Cascade)
@@ -4552,6 +4584,13 @@ model BomLine {
 
 model ManufacturingOrder {
   qualityInspections QualityInspection[]
+  declarations ManufacturingDeclaration[]
+  mrpPreparation MrpPreparation?
+  locationId String?
+  bomRevisionId String?
+  materialSnapshot Json?
+  location Location? @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  bomRevision BomRevision? @relation(fields: [bomRevisionId], references: [id], onDelete: Restrict)
   id          String                   @id @default(cuid())
   tenantId    String
   number      String
@@ -4601,24 +4640,34 @@ model ManufacturingOperation {
 // --- Manufacturing scheduling (sub-project 3) — persisted APS run results ---
 
 model SchedulingRun {
-  id              String    @id @default(cuid())
-  tenantId        String
-  apsScheduleId   String?
-  strategy        String
-  solverStatus    String
-  objectiveValue  Int       @default(0)
-  wallTimeMs      Int       @default(0)
-  horizonStart    DateTime?
-  horizonEnd      DateTime?
-  orderCount      Int       @default(0)
-  operationCount  Int       @default(0)
-  assignmentCount Int       @default(0)
-  isBaseline      Boolean   @default(false)
-  snapshotHash    String?
-  warnings        String[]  @default([])
-  diagnostics     Json?
-  createdById     String?
-  createdAt       DateTime  @default(now())
+  id               String    @id @default(cuid())
+  tenantId         String
+  apsScheduleId    String?
+  strategy         String
+  solverStatus     String
+  objectiveValue   Int       @default(0)
+  wallTimeMs       Int       @default(0)
+  horizonStart     DateTime?
+  horizonEnd       DateTime?
+  orderCount       Int       @default(0)
+  operationCount   Int       @default(0)
+  assignmentCount  Int       @default(0)
+  isBaseline       Boolean   @default(false)
+  snapshotHash     String?
+  // Immutable bridge artifacts; NULL for legacy runs (never fabricated/backfilled).
+  inputRequest     Json?
+  engineResult     Json?
+  bridgeVersion    String?
+  engineRevision   String?
+  timeZone         String?
+  basedOnRunId     String?
+  replayedFromId   String?
+  publishedAt      DateTime?
+  publicationCheck Json?
+  warnings         String[]  @default([])
+  diagnostics      Json?
+  createdById      String?
+  createdAt        DateTime  @default(now())
 
   tenant      Tenant                            @relation(fields: [tenantId], references: [id])
   assignments ScheduledManufacturingOperation[]
@@ -5058,6 +5107,330 @@ model SubscriptionInvoice {
   @@unique([tenantId, subscriptionId, periodStart])
   @@index([tenantId, subscriptionId])
   @@map("subscription_invoices")
+}
+
+// MRP owns planning inputs and immutable calculations, never stock balances.
+enum MrpSourcingMethod {
+  BUY
+  MAKE
+}
+
+enum MrpEntryKind {
+  DEMAND
+  SUPPLY
+  FORECAST
+}
+
+model MrpItemPolicy {
+  bomRevisionId String?
+  bomRevision BomRevision? @relation(fields: [bomRevisionId], references: [id], onDelete: Restrict)
+  id String @id @default(cuid())
+  tenantId String
+  locationId String
+  itemId String
+  method MrpSourcingMethod @default(BUY)
+  bomId String?
+  unitSnapshot String
+  leadDays Int @default(0)
+  safetyStock Decimal @default(0) @db.Decimal(14, 3)
+  minimumOrder Decimal @default(0) @db.Decimal(14, 3)
+  orderMultiple Decimal @default(0.001) @db.Decimal(14, 3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  location Location @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  item WmsItem @relation(fields: [itemId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  bom Bom? @relation(fields: [bomId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  @@unique([tenantId, locationId, itemId])
+  @@index([tenantId, locationId])
+  @@map("mrp_item_policies")
+}
+
+model MrpEntry {
+  forecastStart DateTime? @db.Date
+  forecastId String?
+  forecast MrpEntry? @relation("MrpForecastConsumption", fields: [forecastId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  consumingDemands MrpEntry[] @relation("MrpForecastConsumption")
+  sourceSalesOrderLineId String?
+  sourceSalesOrderLine SalesOrderLineItem? @relation(fields: [sourceSalesOrderLineId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sourceSnapshot Json?
+  id String @id @default(cuid())
+  tenantId String
+  locationId String
+  itemId String
+  kind MrpEntryKind
+  quantity Decimal @db.Decimal(14, 3)
+  unitSnapshot String
+  dueDate DateTime @db.Date
+  reference String
+  isActive Boolean @default(true)
+  receiptId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  location Location @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  item WmsItem @relation(fields: [itemId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  receipt Receipt? @relation(fields: [receiptId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  @@unique([tenantId, receiptId, itemId])
+  @@unique([tenantId, sourceSalesOrderLineId])
+  @@index([tenantId, forecastId])
+  @@index([tenantId, locationId, isActive, dueDate])
+  @@map("mrp_entries")
+}
+
+model MrpRun {
+  preparations MrpPreparation[]
+  reviews MrpReview[]
+  sourceMetadata Json?
+  id String @id @default(cuid())
+  tenantId String
+  locationId String
+  createdById String
+  asOf DateTime @db.Date
+  horizonEnd DateTime @db.Date
+  sourceHash String
+  inputSnapshot Json
+  result Json
+  proposalCount Int
+  exceptionCount Int
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  location Location @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  @@index([tenantId, locationId, createdAt])
+  @@map("mrp_runs")
+}
+
+model MrpProductMapping {
+  id String @id @default(cuid())
+  tenantId String
+  productId String
+  itemId String
+  commercialUnit String
+  numerator Decimal @db.Decimal(18,6)
+  denominator Decimal @db.Decimal(18,6)
+  unitSnapshot String
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  product CrmProduct @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  item WmsItem @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  @@unique([tenantId, productId])
+  @@index([tenantId, itemId])
+  @@map("mrp_product_mappings")
+}
+
+model MrpReview {
+  id String @id @default(cuid())
+  tenantId String
+  runId String
+  taskId String
+  agentId String
+  createdById String
+  contentHash String
+  summary String
+  itemIds Json
+  staleAtReview Boolean
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  run MrpRun @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  @@unique([tenantId, contentHash])
+  @@index([tenantId, runId, createdAt])
+  @@map("mrp_reviews")
+}
+
+// Published industrial definitions. Append-only; working Bom/BomLine remain editable.
+model BomRevision {
+  validFrom DateTime? @db.Date @map("valid_from")
+  validUntil DateTime? @db.Date @map("valid_until")
+  id String @id @default(cuid())
+  tenantId String
+  bomId String
+  revision Int
+  code String
+  name String
+  outputItemId String
+  outputSku String
+  outputName String
+  outputUnit String
+  contentHash String
+  createdById String
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  bom Bom @relation(fields: [bomId], references: [id], onDelete: Restrict)
+  outputItem WmsItem @relation(fields: [outputItemId], references: [id], onDelete: Restrict)
+  lines BomRevisionLine[]
+  policies MrpItemPolicy[]
+  orders ManufacturingOrder[]
+  @@unique([tenantId, bomId, revision])
+  @@index([tenantId, outputItemId])
+  @@map("bom_revisions")
+}
+
+enum MrpPreparationStatus {
+  DRAFT
+  CANCELLED
+}
+
+// Internal request (BUY) or linked OF (MAKE), never stock or confirmed supply.
+model MrpPreparation {
+  purchaseOrder MaterialPurchaseOrder?
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  runId String @map("run_id")
+  proposalId String @map("proposal_id")
+  operationKey String @map("operation_key")
+  fingerprint String
+  sourceHash String @map("source_hash")
+  proposalSnapshot Json @map("proposal_snapshot")
+  number String
+  method MrpSourcingMethod
+  status MrpPreparationStatus @default(DRAFT)
+  locationId String @map("location_id")
+  itemId String @map("item_id")
+  quantity Decimal @db.Decimal(14, 3)
+  unitSnapshot String @map("unit_snapshot")
+  releaseDate DateTime @db.Date @map("release_date")
+  dueDate DateTime @db.Date @map("due_date")
+  manufacturingOrderId String? @unique @map("manufacturing_order_id")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  run MrpRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  item WmsItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  manufacturingOrder ManufacturingOrder? @relation(fields: [manufacturingOrderId], references: [id], onDelete: Restrict)
+  @@unique([tenantId, runId, proposalId])
+  @@unique([tenantId, operationKey])
+  @@unique([tenantId, number])
+  @@index([tenantId, locationId, itemId])
+  @@map("mrp_preparations")
+}
+
+model BomRevisionLine {
+  id String @id @default(cuid())
+  tenantId String
+  revisionId String
+  itemId String
+  sku String
+  name String
+  unit String
+  quantityPerUnit Decimal @db.Decimal(24, 9)
+  revision BomRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+  item WmsItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  @@index([tenantId, revisionId])
+  @@index([tenantId, itemId])
+  @@map("bom_revision_lines")
+}
+
+enum MaterialPurchaseStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+model MaterialSupplier {
+  id String @id @default(cuid())
+  tenantId String
+  code String
+  name String
+  email String?
+  terms String?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  orders MaterialPurchaseOrder[]
+  @@unique([tenantId, code])
+  @@index([tenantId, isActive])
+  @@map("material_suppliers")
+}
+
+// One exact BUY preparation per order in v1. No hidden unit/quantity conversion.
+model MaterialPurchaseOrder {
+  closedAt DateTime?
+  closedQuantity Decimal @default(0) @db.Decimal(18, 3)
+  amendments MaterialPurchaseAmendment[]
+  id String @id @default(cuid())
+  tenantId String
+  preparationId String @unique
+  supplierId String
+  number String
+  status MaterialPurchaseStatus @default(DRAFT)
+  supplierSnapshot Json
+  unitPrice Decimal @db.Decimal(18, 6)
+  currency String
+  expectedDate DateTime @db.Date
+  terms String?
+  supplierReference String?
+  confirmedAt DateTime?
+  operationKey String
+  fingerprint String
+  createdById String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  preparation MrpPreparation @relation(fields: [preparationId], references: [id], onDelete: Restrict)
+  supplier MaterialSupplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  receipts MaterialPurchaseReceipt[]
+  @@unique([tenantId, number])
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, status, expectedDate])
+  @@map("material_purchase_orders")
+}
+
+// Link created atomically with a draft WMS receipt; received quantity is derived.
+model MaterialPurchaseReceipt {
+  id String @id @default(cuid())
+  tenantId String
+  purchaseOrderId String
+  receiptId String @unique
+  operationKey String
+  fingerprint String
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  purchaseOrder MaterialPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, purchaseOrderId])
+  @@map("material_purchase_receipts")
+}
+
+// Append-only promise/closure history. No stock side effects.
+model MaterialPurchaseAmendment {
+  id String @id @default(cuid())
+  tenantId String
+  purchaseOrderId String
+  kind String
+  reason String
+  previousDate DateTime @db.Date
+  expectedDate DateTime @db.Date
+  closedQuantity Decimal @default(0) @db.Decimal(18, 3)
+  createdById String
+  createdAt DateTime @default(now())
+  purchaseOrder MaterialPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  @@index([tenantId, purchaseOrderId, createdAt])
+  @@map("material_purchase_amendments")
+}
+
+// Atomic declaration with immutable actual consumption/movement proofs.
+model ManufacturingDeclaration {
+  id String @id @default(cuid())
+  tenantId String
+  orderId String
+  goodQuantity Int
+  scrapQuantity Int
+  note String
+  evidence Json
+  operationKey String
+  fingerprint String
+  createdById String
+  createdAt DateTime @default(now())
+  order ManufacturingOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, orderId, createdAt])
+  @@map("manufacturing_declarations")
 }
 
 // ============================================================================

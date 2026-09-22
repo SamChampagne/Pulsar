@@ -18,6 +18,7 @@
   import { toast } from '$lib/stores/toast';
 
   interface WorkCenter {
+    calendar?: { location?: { name: string } | null };
     id: string;
     code: string;
     name: string;
@@ -28,6 +29,7 @@
   }
 
   interface Calendar {
+    location?: { name: string } | null;
     id: string;
     name: string;
   }
@@ -181,8 +183,9 @@
 {:else}
   <Table>
     {#snippet head()}
-      <th>Code</th><th>Nom</th><th>Calendrier</th><th class="text-right">Efficacité</th
-      ><th>Capacités</th><th>Statut</th>
+      <th>Code</th><th>Nom</th><th>Calendrier</th><th class="text-right">Efficacité</th><th
+        >Capacités</th
+      ><th>Statut</th>
     {/snippet}
     {#snippet body()}
       {#each centers as wc (wc.id)}
@@ -191,6 +194,9 @@
           <td>{wc.name}</td>
           <td class="text-ink-muted">
             {wc.calendarId ? (calendarsById.get(wc.calendarId) ?? '—') : '—'}
+            <span class="block text-xs text-ink-muted"
+              >{wc.calendar?.location?.name ?? 'Site non attribué'}</span
+            >
           </td>
           <td class="text-right text-ink">{wc.efficiency}</td>
           <td>
@@ -227,7 +233,7 @@
         <Select bind:value={formCalendarId}>
           <option value="">— Aucun —</option>
           {#each calendars as cal (cal.id)}
-            <option value={cal.id}>{cal.name}</option>
+            <option value={cal.id}>{cal.name} · {cal.location?.name ?? 'Site non attribué'}</option>
           {/each}
         </Select>
       </Field>

@@ -20,6 +20,7 @@ import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { assertMaterialReceipt } from './material-purchase-receipt';
 import {
   assertWmsLine,
   lockWmsDocument,
@@ -147,6 +148,51 @@ export class ReceivingService {
     return this.get(tenantId, id);
   }
 
+  /** Internal adapter. Caller holds the tenant lock; this never posts stock. */
+  async createPurchaseDraft(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    userId: string,
+    input: {
+      locationId: string;
+      itemId: string;
+      toBinId: string;
+      quantity: string;
+      reference: string;
+    },
+  ) {
+    await this.ownership.assertOwned('bin', input.toBinId, tenantId);
+    await assertWmsLine(
+      tx,
+      tenantId,
+      input.locationId,
+      input.itemId,
+      input.toBinId,
+      Number(input.quantity),
+    );
+    const customData = await this.customFields.validateValues(
+      'wms',
+      tenantId,
+      CustomFieldEntity.RECEIPT,
+      undefined,
+      { partial: false },
+    );
+    return tx.receipt.create({
+      data: {
+        tenantId,
+        createdById: userId,
+        locationId: input.locationId,
+        number: await this.sequences.nextNumber(tenantId, 'receipt', tx),
+        reference: input.reference,
+        status: ReceiptStatus.DRAFT,
+        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
+        lines: {
+          create: { tenantId, itemId: input.itemId, toBinId: input.toBinId, qty: input.quantity },
+        },
+      },
+    });
+  }
+
   async addLine(tenantId: string, id: string, dto: AddReceiptLineDto) {
     return this.writeLine(tenantId, id, dto);
   }
@@ -228,6 +274,16 @@ export class ReceivingService {
       throw new BadRequestException(`Cannot post a receipt in status ${receipt.status}`);
     }
     if (receipt.lines.length === 0) throw new BadRequestException('Receipt has no lines');
+    const purchase = await assertMaterialReceipt(tx, tenantId, receipt, receipt.lines);
+    if (purchase) {
+      const order = await tx.materialPurchaseOrder.findFirstOrThrow({
+        where: { tenantId, id: purchase.purchaseOrderId },
+      });
+      await tx.materialPurchaseOrder.update({
+        where: { tenantId, id: order.id },
+        data: { updatedAt: nextWmsVersion(order.updatedAt) },
+      });
+    }
     for (const line of receipt.lines) {
       await assertWmsLine(
         tx,

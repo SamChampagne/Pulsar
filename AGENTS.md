@@ -342,6 +342,106 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     d’atelier ou une disponibilité TMS. Le contexte transport du poste Flotte exige
     Transportation activé ET `transportation.planning.read`.
 
+## Hard rules (continued, Fabrication — passerelle APS)
+
+44. (Fabrication — passerelle APS A1) Les nouveaux calculs métier passent par
+    `/internal/pulsar/run` : clé de service + tenant serveur, repositories mémoire
+    par requête, use cases PlaniAdvance existants. `inputRequest`/`engineResult`
+    sont immuables; le hash couvre la requête exacte. Le contrat A1 est UTC seulement.
+    Le replay produit une simulation historique non publiable. Publication via le
+    gate moteur, baseline attendue, révision des dossiers et verrou transactionnel
+    tenant; préserver l'index partiel unique de baseline. Ne jamais supprimer de
+    demande invalide ni inventer un snapshot pour un ancien run. Aucun effet WMS/TMS
+    à la publication. Voir `docs/plans/manufacturing-aps-foundation.md`.
+
+45. (Fabrication — scénarios A2.1) Le contrat V2 capture le fuseau IANA commun,
+    les bornes UTC et `calendar_windows` dans la requête immuable : le rejeu ne
+    recompile jamais les quarts avec les règles de fuseau courantes. Dans le moteur,
+    `resolved_windows=None` signifie hebdomadaire historique, `[]` signifie fermé;
+    une transformation future doit préserver ces fenêtres, jamais revenir
+    implicitement aux heures locales. La revue utilise `PublishScenario.assess`
+    en lecture seule. L'UI confirme avec `reviewToken`; le gate et les contrôles
+    de publication A1 restent obligatoires. Aucun contournement de `review` ou
+    `blocked` n'est exposé. Voir `docs/plans/manufacturing-scenario-review.md`.
+
+46. (Fabrication — MRP M1) Le calcul MRP passe par le bridge privé PlaniAdvance
+    `/internal/pulsar/mrp`, Decimal et snapshot tenant/entrepôt explicite. Les règles
+    et entrées sont versionnées, les calculs immuables ; aucun stock, OF ou achat
+    n'est créé par un calcul. Une réception WMS POSTED liée réduit l'arrivage attendu
+    sans ajouter du stock. Ne jamais agréger les sites ni convertir les unités
+    implicitement. Le poste exige Fabrication + WMS activés et leurs droits de
+    lecture, y compris sur l'historique. Contrats et limites :
+    `docs/plans/manufacturing-mrp.md`.
+
+47. (Fabrication — MRP M2.1) `BomRevision`/lignes sont des artefacts publiés
+    append-only; aucun writer métier ne les modifie. MAKE utilise une version
+    explicite, jamais le brouillon/la dernière version implicite. SKU/unité WMS
+    utilisés sont protégés sous le verrou tenant partagé. Site/version d'un OF
+    sont choisis sur un DRAFT à jour; libération et `materialSnapshot` sont
+    atomiques, quantités/matières ensuite figées. Aucun backfill historique.
+    APS avec matières lit l'instantané et le stock du site capturé, refuse les
+    OF BOM historiques non capturés et les calculs multi-sites (jusqu'à M4).
+    Aucun stock/achat/OF n'est créé par le calcul MRP. Contrats et compatibilité :
+    `docs/plans/manufacturing-definitions.md`.
+
+48. (Fabrication — MRP M2.2a) Une demande CRM est un rattachement explicite unique
+    par `(tenantId, sourceSalesOrderLineId)` : article/site/source immuables,
+    quantité serveur et unité 1:1 reconnue ou ratio explicite capturé (règle 49).
+    Ne jamais mapper par nom/SKU implicite.
+    La consommation de prévision passe par `deriveDemandCoverage` (pur/exact);
+    FULFILLED/INVOICED continuent de consommer, CANCELLED restitue la prévision.
+    Historique/provenance figés et droits CRM revérifiés sur toute lecture dérivée.
+    Les writers de lignes CRM relisent DRAFT sous le verrou tenant partagé avec
+    confirmation et rattachement MRP. Aucun stock/achat/OF n'est créé par le calcul.
+    Contrats et limites : `docs/plans/manufacturing-demand-sources.md`.
+
+49. (MRP — unités commerciales et worker) `MrpProductMapping` ne convertit que les
+    nouvelles demandes, par ratio explicite exact via `convertMrpCommercialQuantity`.
+    Quantité source/convertie et ratio sont capturés; pas d'arrondi ni de réécriture
+    rétroactive. Les revues MRP utilisent DomainEvents → OperationalTask →
+    AgentWorkerService et le registre MCP, jamais un appel LLM dans le calcul.
+    `submit_mrp_review` et `recalculate_mrp` sont MUTATING, passent par la gouvernance;
+    la synthèse exige le contexte signé `task:<id>`, l'affectation et le service-user
+    valides. `MrpReview` est append-only/idempotent. Le preset PROPOSE n'expose pas
+    `resolve_task`. Revue automatique opt-in, jamais réémise par un recalcul agent.
+    Aucun stock/achat/OF créé. Voir `docs/plans/manufacturing-mrp-units-ai.md`.
+
+50. (MRP — préparation M3a) Un calcul reste une lecture sans effet opérationnel.
+    La préparation humaine utilise `MrpPreparationService` : prévisualisation,
+    hash recontrôlé sous verrou tenant, opération idempotente liée à l'acteur,
+    numéro/document/provenance atomiques. Une proposition ne produit qu'un seul
+    document. Préparation non annulée d'un autre calcul ⇒ blocage conservateur
+    article/site, jamais double achat/OF. BUY reste une demande INTERNE, jamais
+    stock/SUPPLY/commande fournisseur. MAKE réutilise OrdersService et son workflow;
+    pas d'arrondi fractionnaire ni de suppression du lien. Les dates BOM publiées
+    sont figées; aucune sélection automatique. Les postes héritent du site du
+    calendrier et APS filtre les candidats par site. Aucun nouvel outil mutating
+    exposé au worker. Voir `docs/plans/manufacturing-mrp-preparation.md`.
+
+51. (MRP — achats matières M3b) Une commande `MaterialPurchaseOrder` cible une seule
+    préparation BUY immuable. DRAFT ne compte jamais comme supply; CONFIRMED exige
+    une confirmation humaine de commande passée hors Pulsar, jamais un envoi implicite.
+    Statuts via `canTransitionMaterialPurchase`. Écritures sous verrou tenant WMS;
+    créations achat/réception idempotentes (acteur/corps/clé), versions obligatoires.
+    Chaque réception liée revalide article/unité/site/commande active et cumul reçu
+    sous verrou au posting. Stock exclusivement via `InventoryService.postMovement`.
+    MRP compte le reste CONFIRMED, jamais les brouillons ni deux fois les réceptions;
+    une réception liée n'est pas réutilisable en SUPPLY manuel. Le blocage inter-calcul
+    BUY n'est levé que pour une commande capturée dans le snapshot courant. Aucun
+    nouvel outil mutating IA. Voir `docs/plans/manufacturing-material-purchases.md`.
+
+52. (Fabrication — boucle opérationnelle M3c/M4/M5 v1) Avenants d'achat sous verrou
+    tenant et version : clôture de reliquat distincte d'une réception, historique
+    append-only, aucun stock fictif. APS capture stock/arrivages datés et une révision
+    matières revalidée à la revue/publication; promesses échues exclues, date minimale
+    uniquement dans le snapshot. Les déclarations atelier sont append-only/idempotentes,
+    acteur/corps/clé liés; consommation explicite + production bonne passent par
+    InventoryService.postMovement dans la même transaction. Rebut ne crée pas de stock.
+    COMPLETED exige toutes les unités déclarées; pas d'annulation après déclaration.
+    Aucun APS global sur WIP déclaré sans temps par opération. Les preuves MRP sont
+    figées, le contexte IA courant est identifié; aucun nouveau pouvoir mutating.
+    Voir `docs/plans/manufacturing-operational-loop.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;

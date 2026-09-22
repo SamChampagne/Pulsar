@@ -31,6 +31,16 @@ export interface WmsDocumentLine {
   fromBin?: WmsDocumentBin;
 }
 export interface WmsGuidedDocument {
+  materialPurchase?: {
+    purchaseOrderId: string;
+    preparationId: string;
+    number: string;
+    ordered: string;
+    received: string;
+    remaining: string;
+    unit: string;
+    issues: string[];
+  } | null;
   id: string;
   number: string;
   status: string;

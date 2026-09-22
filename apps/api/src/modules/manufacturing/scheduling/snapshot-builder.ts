@@ -5,9 +5,11 @@ import {
   ManufacturingPriority,
 } from '@pulsar/shared';
 import { APS_CONTRACT_VERSION, type ApsSnapshot } from '../../../core/aps/aps.types';
+import { BadRequestException } from '@nestjs/common';
 
 /** Plain row shapes the builder consumes (tenant pre-filtered by the caller). */
 export interface SnapshotCalendarRow {
+  locationId?: string | null;
   id: string;
   name: string;
   shifts: { weekday: number; startTime: string; endTime: string }[];
@@ -20,6 +22,7 @@ export interface SnapshotWorkCenterRow {
   efficiency: number;
 }
 export interface SnapshotOperationRow {
+  status?: string;
   id: string;
   sequence: number;
   name: string;
@@ -29,6 +32,7 @@ export interface SnapshotOperationRow {
   dependsOn: string[];
 }
 export interface SnapshotOrderRow {
+  locationId?: string | null;
   id: string;
   name: string;
   productRef: string;
@@ -55,12 +59,13 @@ function naiveIso(d: Date): string {
 /**
  * Pure mapping of Pulsar manufacturing rows → the APS canonical snapshot
  * (contract validated in SP1). Deterministic: same inputs + `exportedAt` →
- * same snapshot. Orders with no operations, and operations with no eligible
- * work center, are dropped with a recorded warning so demand is never silently
- * lost. When an operation has no explicit `dependsOn`, a finish-to-start chain
+ * same snapshot. Never removes demand: invalid references are rejected by the
+ * service before calling the engine. With no explicit `dependsOn`, a finish-to-start chain
  * is derived from `sequence` (op N depends on the previous op id).
  */
 export interface SnapshotMaterials {
+  readyDates?: Record<string, string>;
+  supplies?: { id: string; materialRef: string; quantity: number; availableAt: string }[];
   /** Aggregated WMS on-hand per material ref (materialRef === WmsItem.sku). */
   inventory: { materialRef: string; onHand: number }[];
   /** Material requirements per order id (from the order's BOM × quantity). */
@@ -76,6 +81,8 @@ export function buildManufacturingSnapshot(input: {
   materials?: SnapshotMaterials;
 }): SnapshotBuildResult {
   const warnings: string[] = [];
+  const siteAware =
+    input.calendars.some((c) => c.locationId) || input.orders.some((o) => o.locationId);
   const onHand = new Map((input.materials?.inventory ?? []).map((i) => [i.materialRef, i.onHand]));
 
   const calendars = input.calendars.map((c) => ({
@@ -100,19 +107,7 @@ export function buildManufacturingSnapshot(input: {
 
   for (const order of input.orders) {
     const sorted = order.operations.slice().sort((a, b) => a.sequence - b.sequence);
-    const usable = sorted.filter((op) => {
-      if (op.eligibleWorkCenterIds.length === 0) {
-        warnings.push(
-          `Operation "${op.name}" (order ${order.name}) has no eligible work center — skipped.`,
-        );
-        return false;
-      }
-      return true;
-    });
-    if (usable.length === 0) {
-      warnings.push(`Order "${order.name}" has no schedulable operations — skipped.`);
-      continue;
-    }
+    const usable = sorted;
     // Material requirements (SP5): the order's BOM-derived needs attach to op 1.
     const reqs = input.materials?.byOrder[order.id] ?? [];
     for (const r of reqs) {
@@ -123,6 +118,24 @@ export function buildManufacturingSnapshot(input: {
       }
     }
     const operations = usable.map((op, idx) => {
+      // Never interpret an empty candidate list as "all sites". Legacy unsited
+      // orders keep working with unsited calendars only, without inventing a site.
+      const eligible = !siteAware
+        ? op.eligibleWorkCenterIds
+        : input.workCenters
+            .filter((w) => {
+              const calendar = input.calendars.find((c) => c.id === w.calendarId);
+              return (
+                calendar &&
+                (calendar.locationId ?? null) === (order.locationId ?? null) &&
+                (!op.eligibleWorkCenterIds.length || op.eligibleWorkCenterIds.includes(w.id))
+              );
+            })
+            .map((w) => w.id);
+      if (siteAware && !eligible.length)
+        throw new BadRequestException(
+          `OF ${order.name} · ${op.name} : aucun poste compatible avec son site. Configurez les calendriers et les postes.`,
+        );
       const dependencies =
         op.dependsOn.length > 0 ? op.dependsOn : idx > 0 ? [usable[idx - 1].id] : [];
       return {
@@ -130,12 +143,18 @@ export function buildManufacturingSnapshot(input: {
         work_order_id: order.id,
         sequence: op.sequence,
         name: op.name,
+        status: op.status?.toLowerCase() ?? 'pending',
         duration_minutes: op.durationMinutes,
-        eligible_machine_ids: op.eligibleWorkCenterIds,
+        eligible_machine_ids: eligible,
         setup_minutes: op.setupMinutes,
         dependencies,
         ...(idx === 0 && reqs.length > 0
-          ? { material_requirements: reqs.map((r) => ({ material_id: r.materialRef, fixed_quantity: r.fixedQuantity })) }
+          ? {
+              material_requirements: reqs.map((r) => ({
+                material_id: r.materialRef,
+                fixed_quantity: r.fixedQuantity,
+              })),
+            }
           : {}),
       };
     });
@@ -146,7 +165,11 @@ export function buildManufacturingSnapshot(input: {
       product_id: order.productRef,
       quantity: order.quantity,
       due_date: naiveIso(order.dueDate),
-      release_date: naiveIso(order.releaseDate),
+      release_date:
+        input.materials?.readyDates?.[order.id] &&
+        input.materials.readyDates[order.id] > naiveIso(order.releaseDate)
+          ? input.materials.readyDates[order.id]
+          : naiveIso(order.releaseDate),
       priority: APS_PRIORITY_WIRE[order.priority],
       firmness: APS_FIRMNESS_WIRE[order.firmness],
       operations,
@@ -166,7 +189,22 @@ export function buildManufacturingSnapshot(input: {
     machines,
     work_orders: workOrders,
     ...(inventory_items.length > 0 ? { inventory_items } : {}),
-    metadata: { tenant_orders: input.orders.length },
+    ...(input.materials?.supplies
+      ? {
+          supplies: input.materials.supplies.map((s) => ({
+            id: s.id,
+            material_id: s.materialRef,
+            quantity: s.quantity,
+            available_at: s.availableAt,
+            source_type: 'purchase',
+          })),
+        }
+      : {}),
+    metadata: {
+      tenant_orders: input.orders.length,
+      time_zone: 'UTC',
+      ...(input.materials?.readyDates ? { material_ready_dates: input.materials.readyDates } : {}),
+    },
   };
 
   return { snapshot, warnings, orderCount: workOrders.length, operationCount };

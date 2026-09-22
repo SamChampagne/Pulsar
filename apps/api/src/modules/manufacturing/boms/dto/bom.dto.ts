@@ -1,11 +1,25 @@
 import { PartialType } from '@nestjs/swagger';
-import { IsBoolean, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsOptional,
+  IsString,
+  IsDateString,
+  Equals,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateBomDto {
   @IsString()
+  @MinLength(1)
+  @MaxLength(100)
   code!: string;
 
   @IsString()
+  @MinLength(1)
+  @MaxLength(200)
   name!: string;
 
   @IsOptional()
@@ -17,10 +31,37 @@ export class CreateBomDto {
   isActive?: boolean;
 }
 
-export class UpdateBomDto extends PartialType(CreateBomDto) {}
+export class BomVersionDto {
+  @IsOptional()
+  @IsDateString()
+  expectedUpdatedAt?: string;
+}
 
-export class CreateBomLineDto {
+export class PublishBomDto extends BomVersionDto {
+  @IsOptional()
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  validFrom?: string;
+
+  @IsOptional()
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  validUntil?: string;
+
+  @Equals(true)
+  acknowledgeUnits!: boolean;
+}
+
+export class UpdateBomDto extends PartialType(CreateBomDto) {
+  @IsOptional()
+  @IsDateString()
+  expectedUpdatedAt?: string;
+}
+
+export class CreateBomLineDto extends BomVersionDto {
   @IsString()
+  @MinLength(1)
+  @MaxLength(200)
   materialRef!: string;
 
   @IsOptional()
@@ -28,9 +69,11 @@ export class CreateBomLineDto {
   materialName?: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  quantityPerUnit?: number;
+  @Transform(({ value }) =>
+    typeof value === 'number' && Number.isFinite(value) ? String(value) : value,
+  )
+  @Matches(/^\d{1,15}(\.\d{1,9})?$/)
+  quantityPerUnit?: string;
 }
 
 export class UpdateBomLineDto extends PartialType(CreateBomLineDto) {}

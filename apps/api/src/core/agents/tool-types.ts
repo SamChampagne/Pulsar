@@ -33,6 +33,34 @@ export interface ToolServices {
       dto: { assigneeUserId: string | null; dueDate: string | null; expectedUpdatedAt: string },
     ): Promise<unknown>;
   };
+  mrp: {
+    workspace(
+      tenantId: string,
+      locationId: string,
+      permissions: readonly string[],
+    ): Promise<unknown>;
+    brief(
+      tenantId: string,
+      runId: string,
+      permissions: readonly string[],
+      itemId?: string,
+      page?: number,
+    ): Promise<unknown>;
+    submit(
+      tenantId: string,
+      userId: string,
+      agentId: string,
+      permissions: readonly string[],
+      input: { runId: string; taskId: string; summary: string; itemIds: string[] },
+      triggeredByRef?: string,
+    ): Promise<unknown>;
+    recalculate(
+      tenantId: string,
+      userId: string,
+      runId: string,
+      permissions: readonly string[],
+    ): Promise<unknown>;
+  };
   transportOrders: {
     list(tenantId: string, query: object): Promise<unknown>;
     createFromSalesOrder(
