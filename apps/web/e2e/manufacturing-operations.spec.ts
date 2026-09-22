@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
+import { EXPERIENCED_PREFERENCES } from './helpers';
 
 async function settleDrawer(page: Page) {
   await expect(page.getByRole('dialog')).toHaveCSS('opacity', '1');
@@ -108,6 +109,7 @@ async function setup(
   const state = { writes: [] as any[], lost: false };
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace('/api/v1', '');
+    if (path === '/me/preferences') return route.fulfill({ json: EXPERIENCED_PREFERENCES });
     if (route.request().method() !== 'GET') {
       const body = route.request().postDataJSON();
       state.writes.push(body);

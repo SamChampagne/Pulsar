@@ -58,7 +58,12 @@ export interface CostDetail {
     validAtReference: boolean;
     breaks: unknown[];
     accessorialPrices: { code: string; amount: number }[];
-    fuel: { pct: number; source: 'TABLE' | 'STATIC' | 'NONE'; tableId?: string; effectiveFrom?: string };
+    fuel: {
+      pct: number;
+      source: 'TABLE' | 'STATIC' | 'NONE';
+      tableId?: string;
+      effectiveFrom?: string;
+    };
   };
   inputs: {
     distanceKm: number | null;
@@ -92,6 +97,7 @@ export interface LoadDocument {
 }
 
 export interface LoadDetail {
+  updatedAt: string;
   id: string;
   loadNumber: string;
   status: string;

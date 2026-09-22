@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@pulsar/database';
+import { canTransitionCarrier, CarrierStatus } from '@pulsar/shared';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../../common/pagination';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -48,10 +49,21 @@ export class CarriersService {
   }
 
   async update(tenantId: string, id: string, dto: UpdateCarrierDto) {
-    await this.prisma.carrier
+    const current = await this.prisma.carrier
       .findFirstOrThrow({ where: { id, tenantId } })
       .catch(() => Promise.reject(new NotFoundException('Carrier not found')));
     const { code: _code, ...data } = dto;
-    return this.prisma.carrier.update({ where: { id }, data });
+    if (
+      dto.status !== undefined &&
+      dto.status !== current.status &&
+      !canTransitionCarrier(current.status as CarrierStatus, dto.status)
+    )
+      throw new ConflictException('Transition du transporteur impossible.');
+    const result = await this.prisma.carrier.updateMany({
+      where: { id, tenantId, status: current.status },
+      data,
+    });
+    if (!result.count) throw new ConflictException('Le transporteur a changé. Rechargez sa fiche.');
+    return this.prisma.carrier.findFirstOrThrow({ where: { id, tenantId } });
   }
 }

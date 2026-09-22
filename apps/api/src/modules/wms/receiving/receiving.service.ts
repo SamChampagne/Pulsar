@@ -243,57 +243,84 @@ export class ReceivingService {
   }
 
   async post(tenantId: string, userId: string, id: string, expectedUpdatedAt?: string) {
-    const receipt = await this.prisma.$transaction(async (tx) => {
-      await lockWmsDocument(tx, tenantId, 'receipt', id, expectedUpdatedAt);
-      const receipt = await tx.receipt.findFirstOrThrow({
-        where: { id, tenantId },
-        include: { lines: true },
-      });
-      if (!canTransitionReceipt(receipt.status as ReceiptStatus, ReceiptStatus.POSTED)) {
-        throw new BadRequestException(`Cannot post a receipt in status ${receipt.status}`);
-      }
-      if (receipt.lines.length === 0) throw new BadRequestException('Receipt has no lines');
-      const purchase = await assertMaterialReceipt(tx, tenantId, receipt, receipt.lines);
-      if (purchase) {
-        const order = await tx.materialPurchaseOrder.findFirstOrThrow({
-          where: { tenantId, id: purchase.purchaseOrderId },
-        });
-        await tx.materialPurchaseOrder.update({
-          where: { tenantId, id: order.id },
-          data: { updatedAt: nextWmsVersion(order.updatedAt) },
-        });
-      }
-      for (const line of receipt.lines) {
-        await assertWmsLine(
-          tx,
-          tenantId,
-          receipt.locationId,
-          line.itemId,
-          line.toBinId,
-          Number(line.qty),
-        );
-      }
-      const claim = await tx.receipt.updateMany({
-        where: { id, tenantId, status: ReceiptStatus.DRAFT },
-        data: { status: ReceiptStatus.POSTED, postedAt: new Date() },
-      });
-      if (claim.count === 0) throw new ConflictException('Receipt already processed');
-      for (const line of receipt.lines) {
-        await this.inventory.postMovement(tx, {
-          tenantId,
-          userId,
-          type: StockMovementType.RECEIPT,
-          itemId: line.itemId,
-          toBinId: line.toBinId,
-          qty: Number(line.qty),
-          locationId: receipt.locationId,
-          refType: 'receipt',
-          refId: id,
-        });
-      }
-      return receipt;
-    });
+    const receipt = await this.prisma.$transaction((tx) =>
+      this.postInTransaction(tx, tenantId, userId, id, expectedUpdatedAt),
+    );
+    await this.afterPost(tenantId, userId, receipt);
+    return this.get(tenantId, id);
+  }
 
+  /** Upstream workflows must also honor required WMS receipt custom fields. */
+  validateCreateFields(tenantId: string, data?: Record<string, unknown>) {
+    return this.customFields.validateValues('wms', tenantId, CustomFieldEntity.RECEIPT, data, {
+      partial: false,
+    });
+  }
+
+  /** Shared writer for a receipt and its upstream supplier allocation in one transaction. */
+  async postInTransaction(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    userId: string,
+    id: string,
+    expectedUpdatedAt?: string,
+  ) {
+    await lockWmsDocument(tx, tenantId, 'receipt', id, expectedUpdatedAt);
+    const receipt = await tx.receipt.findFirstOrThrow({
+      where: { id, tenantId },
+      include: { lines: true },
+    });
+    if (!canTransitionReceipt(receipt.status as ReceiptStatus, ReceiptStatus.POSTED)) {
+      throw new BadRequestException(`Cannot post a receipt in status ${receipt.status}`);
+    }
+    if (receipt.lines.length === 0) throw new BadRequestException('Receipt has no lines');
+    const purchase = await assertMaterialReceipt(tx, tenantId, receipt, receipt.lines);
+    if (purchase) {
+      const order = await tx.materialPurchaseOrder.findFirstOrThrow({
+        where: { tenantId, id: purchase.purchaseOrderId },
+      });
+      await tx.materialPurchaseOrder.update({
+        where: { tenantId, id: order.id },
+        data: { updatedAt: nextWmsVersion(order.updatedAt) },
+      });
+    }
+    for (const line of receipt.lines) {
+      await assertWmsLine(
+        tx,
+        tenantId,
+        receipt.locationId,
+        line.itemId,
+        line.toBinId,
+        Number(line.qty),
+      );
+    }
+    const claim = await tx.receipt.updateMany({
+      where: { id, tenantId, status: ReceiptStatus.DRAFT },
+      data: { status: ReceiptStatus.POSTED, postedAt: new Date() },
+    });
+    if (claim.count === 0) throw new ConflictException('Receipt already processed');
+    for (const line of receipt.lines) {
+      await this.inventory.postMovement(tx, {
+        tenantId,
+        userId,
+        type: StockMovementType.RECEIPT,
+        itemId: line.itemId,
+        toBinId: line.toBinId,
+        qty: Number(line.qty),
+        locationId: receipt.locationId,
+        refType: 'receipt',
+        refId: id,
+      });
+    }
+    return receipt;
+  }
+
+  async afterPost(
+    tenantId: string,
+    userId: string,
+    receipt: { id: string; number: string; lines: unknown[] },
+  ) {
+    const id = receipt.id;
     await this.audit.log({
       tenantId,
       userId,
@@ -310,7 +337,6 @@ export class ReceivingService {
       { type: 'wms-receipt', id },
       { receiptId: id, number: receipt.number },
     );
-    return this.get(tenantId, id);
   }
 
   async cancel(tenantId: string, userId: string, id: string, expectedUpdatedAt?: string) {

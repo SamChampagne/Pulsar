@@ -27,6 +27,10 @@ import {
   Mail,
   Globe,
   Factory,
+  BookOpen,
+  PackageSearch,
+  ShoppingCart,
+  BriefcaseBusiness,
 } from 'lucide-svelte';
 import type { ComponentType } from 'svelte';
 
@@ -77,6 +81,131 @@ export interface NavCaps {
 
 export function navCatalogue(): NavDomain[] {
   return [
+    {
+      key: 'hr',
+      label: 'Ressources humaines',
+      icon: BriefcaseBusiness,
+      home: '/hr',
+      prefixes: ['/hr'],
+      module: MODULE_KEYS.HR,
+      anyPerms: [PERMISSIONS.HR.READ, PERMISSIONS.HR.SELF],
+      sections: [
+        {
+          links: [
+            { href: '/hr', label: 'Accueil RH' },
+            { href: '/hr/employees', label: 'Employés', perm: PERMISSIONS.HR.READ },
+            { href: '/hr/teams', label: 'Équipes', perm: PERMISSIONS.HR.READ },
+            { href: '/hr/skills', label: 'Compétences', perm: PERMISSIONS.HR.READ },
+            { href: '/hr/qualifications', label: 'Habilitations', perm: PERMISSIONS.HR.READ },
+            { href: '/hr/leaves', label: 'Absences d’équipe', perm: PERMISSIONS.HR.READ },
+            { href: '/hr/self', label: 'Mes absences', perm: PERMISSIONS.HR.SELF },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'quality',
+      label: 'Qualité',
+      icon: ClipboardList,
+      home: '/quality',
+      prefixes: ['/quality'],
+      module: MODULE_KEYS.QUALITY,
+      anyPerms: [PERMISSIONS.QUALITY.READ],
+      sections: [
+        {
+          links: [
+            { href: '/quality', label: 'Contrôles', perm: PERMISSIONS.QUALITY.READ },
+            { href: '/quality/plans', label: 'Plans de contrôle', perm: PERMISSIONS.QUALITY.READ },
+            {
+              href: '/quality/nonconformities',
+              label: 'Non-conformités',
+              perm: PERMISSIONS.QUALITY.READ,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'support',
+      label: 'SAV',
+      icon: Handshake,
+      home: '/support',
+      prefixes: ['/support'],
+      module: MODULE_KEYS.SUPPORT,
+      anyPerms: [PERMISSIONS.SUPPORT.READ],
+      sections: [
+        { links: [{ href: '/support', label: 'Demandes client', perm: PERMISSIONS.SUPPORT.READ }] },
+      ],
+    },
+    {
+      key: 'documentation',
+      label: 'Documentation',
+      icon: BookOpen,
+      home: '/documentation',
+      prefixes: ['/documentation'],
+      sections: [{ links: [{ href: '/documentation', label: 'Guides et règles métier' }] }],
+    },
+    {
+      key: 'catalog',
+      label: 'Catalogue',
+      icon: PackageSearch,
+      home: '/catalog',
+      prefixes: ['/catalog'],
+      module: MODULE_KEYS.CATALOG,
+      anyPerms: [PERMISSIONS.CATALOG.READ],
+      sections: [
+        {
+          links: [
+            { href: '/catalog', label: 'Produits et prestations', perm: PERMISSIONS.CATALOG.READ },
+            { href: '/catalog/partners', label: 'Partenaires', perm: PERMISSIONS.CATALOG.READ },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'purchasing',
+      label: 'Achats fournisseurs',
+      icon: ShoppingCart,
+      home: '/purchasing',
+      prefixes: ['/purchasing'],
+      module: MODULE_KEYS.PURCHASING,
+      anyPerms: [PERMISSIONS.PURCHASING.READ],
+      sections: [
+        {
+          links: [
+            {
+              href: '/purchasing',
+              label: 'Commandes fournisseurs',
+              perm: PERMISSIONS.PURCHASING.READ,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'services',
+      label: 'Services',
+      icon: BriefcaseBusiness,
+      home: '/services',
+      prefixes: ['/services'],
+      module: MODULE_KEYS.SERVICES,
+      anyPerms: [PERMISSIONS.SERVICES.READ],
+      sections: [
+        {
+          links: [
+            { href: '/services', label: 'Projets', perm: PERMISSIONS.SERVICES.READ },
+            { href: '/services/planning', label: 'Planning', perm: PERMISSIONS.SERVICES.READ },
+            { href: '/services/quotes', label: 'Devis', perm: PERMISSIONS.SERVICES.READ },
+            {
+              href: '/services/interventions',
+              label: 'Interventions',
+              perm: PERMISSIONS.SERVICES.READ,
+            },
+            { href: '/services/time', label: 'Feuilles de temps', perm: PERMISSIONS.SERVICES.READ },
+          ],
+        },
+      ],
+    },
     // ── Plateforme (desk / home) ────────────────────────────────────────────
     {
       key: 'dashboard',
@@ -248,6 +377,12 @@ export function navCatalogue(): NavDomain[] {
           label: 'Données',
           links: [
             { href: '/manufacturing/work-centers', label: 'Postes de charge' },
+            {
+              href: '/manufacturing/qualifications',
+              label: 'Qualifications des opérateurs',
+              perm: PERMISSIONS.HR.QUALIFICATIONS_READ,
+              module: MODULE_KEYS.HR,
+            },
             { href: '/manufacturing/calendars', label: 'Calendriers' },
             { href: '/manufacturing/routings', label: 'Gammes' },
             { href: '/manufacturing/boms', label: 'Nomenclatures' },
@@ -725,7 +860,6 @@ export function navCatalogue(): NavDomain[] {
             },
           ],
         },
-        { label: 'Préférences', links: [{ href: '/settings/appearance', label: 'Apparence' }] },
       ],
     },
   ];

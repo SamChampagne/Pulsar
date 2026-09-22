@@ -7,6 +7,8 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsDateString,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -15,11 +17,21 @@ import { Type } from 'class-transformer';
 export class CreateLoadDto {
   @IsOptional()
   @IsString()
+  @MaxLength(5000)
   notes?: string;
 
   @IsOptional()
   @IsObject()
   customData?: Record<string, unknown>;
+}
+
+export class UpdateLoadNotesDto {
+  @IsString()
+  @MaxLength(5000)
+  notes!: string;
+
+  @IsDateString()
+  expectedUpdatedAt!: string;
 }
 
 export class AssignLoadResourcesDto {

@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test';
-import { login } from './helpers';
+import { expect, test } from './fixtures';
+import { login, EXPERIENCED_PREFERENCES } from './helpers';
 
 for (const width of [1280, 390]) {
   test(`workspace stays fixed and protects edits at ${width}px`, async ({ page }) => {
@@ -147,13 +147,16 @@ test('reduced motion keeps dialogs usable and finance errors do not look like a 
 test('dark theme preserves desktop labels and folder keyboard behavior without saving preferences', async ({
   page,
 }) => {
+  await login(page);
   await page.route('**/api/v1/me/preferences', async (route) => {
     if (route.request().method() !== 'GET') return route.continue();
     const response = await route.fetch();
     const body = await response.json();
-    await route.fulfill({ response, json: { ...body, appearance: { theme: 'dark' } } });
+    await route.fulfill({
+      response,
+      json: { ...body, ...EXPERIENCED_PREFERENCES, appearance: { theme: 'dark' } },
+    });
   });
-  await login(page);
   await page.goto('/apps');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.getByRole('heading', { name: 'Votre bureau' })).toBeVisible();

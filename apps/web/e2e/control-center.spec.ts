@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { login } from './helpers';
 
 test('navigation palette supports repeated module labels and keyboard dismissal', async ({
@@ -71,6 +71,9 @@ test('platform cockpit, tenant diagnostic and available module catalog', async (
   ).toBeVisible();
   await page.keyboard.press('Escape');
   await page.getByRole('link', { name: 'Catalogue', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Catalogue des modules', exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole('cell', { name: 'wms', exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect

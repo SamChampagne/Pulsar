@@ -11,6 +11,8 @@ import { TaskAssignmentResolver } from './event-policies';
 import { OperationalTasksService } from './operational-tasks.service';
 import { OperationalTasksController } from './operational-tasks.controller';
 import { SlaEscalationService } from './sla-escalation.service';
+import { BusinessAttentionService } from './business-attention.service';
+import { BusinessAttentionController } from './business-attention.controller';
 
 @Module({
   imports: [
@@ -22,8 +24,9 @@ import { SlaEscalationService } from './sla-escalation.service';
     IntegrationsModule,
     forwardRef(() => AgentsModule),
   ],
-  controllers: [OperationalTasksController],
+  controllers: [OperationalTasksController, BusinessAttentionController],
   providers: [
+    BusinessAttentionService,
     DomainEventsService,
     TaskAssignmentResolver,
     OperationalTasksService,
@@ -31,6 +34,12 @@ import { SlaEscalationService } from './sla-escalation.service';
     AgentWorkerService,
     SlaEscalationService,
   ],
-  exports: [DomainEventsService, OperationalTasksService, AgentWorkerService, AgentRunsService],
+  exports: [
+    DomainEventsService,
+    OperationalTasksService,
+    AgentWorkerService,
+    AgentRunsService,
+    BusinessAttentionService,
+  ],
 })
 export class OperatingModule {}

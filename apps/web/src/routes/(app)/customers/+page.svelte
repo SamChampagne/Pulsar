@@ -1,6 +1,9 @@
 <script lang="ts">
+  import MasterDataEdit from '$lib/components/transportation/MasterDataEdit.svelte';
+  import { enterNext } from '$lib/forms/enter-next';
+  import { getAccessToken } from '$lib/stores/auth';
   import type { Paginated } from '@pulsar/shared';
-  import { MODULE_KEYS } from '@pulsar/shared';
+  import { MODULE_KEYS, isValidPhone } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { auth } from '$lib/stores/auth';
   import { toast } from '$lib/stores/toast';
@@ -37,7 +40,7 @@
   let showForm = $state(false);
   let loading = $state(true);
   let saving = $state(false);
-  let form = $state({ code: '', name: '', contactName: '', email: '' });
+  let form = $state({ code: '', name: '', contactName: '', email: '', phone: '' });
 
   const hasPortal = $derived(
     $auth?.tenant.enabledModules.includes(MODULE_KEYS.CUSTOMER_PORTAL) ?? false,
@@ -50,6 +53,43 @@
   let brandLogoUrl = $state('');
   let brandAccentColor = $state('#000000');
   let brandSaving = $state(false);
+  let brandLoading = $state(false);
+  let brandLoaded = $state(false);
+  let brandError = $state('');
+  async function uploadLogo(event: Event) {
+    if (!brandLoaded || brandSaving) return;
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (
+      !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) ||
+      file.size > 2 * 1024 * 1024
+    ) {
+      toast.error('Logo : PNG, JPEG ou WebP, 2 Mo maximum.');
+      input.value = '';
+      return;
+    }
+    brandSaving = true;
+    brandError = '';
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const response = await fetch('/api/v1/customer-portal/branding/logo', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getAccessToken()}` },
+        body,
+      });
+      if (!response.ok) throw new Error((await response.json()).message ?? 'Import impossible');
+      const branding = await response.json();
+      brandLogoUrl = branding.logoUrl;
+      toast.success('Logo importé et enregistré');
+    } catch (e) {
+      brandError = e instanceof Error ? e.message : 'Import impossible';
+    } finally {
+      brandSaving = false;
+      input.value = '';
+    }
+  }
 
   async function portalLink(customer: CustomerRow) {
     try {
@@ -80,14 +120,19 @@
   }
 
   function openNew() {
-    form = { code: '', name: '', contactName: '', email: '' };
+    form = { code: '', name: '', contactName: '', email: '', phone: '' };
     error = '';
     showForm = true;
   }
 
   async function create(event: SubmitEvent) {
     event.preventDefault();
+    if (saving) return;
     error = '';
+    if (!isValidPhone(form.phone.trim())) {
+      error = 'Téléphone invalide : utilisez 7 à 15 chiffres et une extension facultative.';
+      return;
+    }
     saving = true;
     try {
       await api('/transportation/customers', {
@@ -97,10 +142,11 @@
           name: form.name,
           contactName: form.contactName || undefined,
           email: form.email || undefined,
+          phone: form.phone || undefined,
         },
       });
       showForm = false;
-      form = { code: '', name: '', contactName: '', email: '' };
+      form = { code: '', name: '', contactName: '', email: '', phone: '' };
       toast.success('Client créé');
       await load();
     } catch (e) {
@@ -113,21 +159,28 @@
   }
 
   async function loadBranding() {
+    brandLoading = true;
+    brandLoaded = false;
+    brandError = '';
     try {
       const b = await api<{ logoUrl?: string; accentColor?: string }>('/customer-portal/branding');
       brandLogoUrl = b.logoUrl ?? '';
       brandAccentColor = b.accentColor ?? '#000000';
+      brandLoaded = true;
     } catch {
-      // 404 or not available — keep defaults
+      brandError = 'Impossible de charger le branding existant. Rechargez avant de le modifier.';
+    } finally {
+      brandLoading = false;
     }
   }
 
   async function saveBranding() {
+    if (!brandLoaded || brandSaving) return;
     brandSaving = true;
     try {
       await api('/customer-portal/branding', {
         method: 'PUT',
-        body: { logoUrl: brandLogoUrl || undefined, accentColor: brandAccentColor || undefined },
+        body: { logoUrl: brandLogoUrl, accentColor: brandAccentColor || undefined },
       });
       toast.success('Branding mis à jour');
     } catch (e) {
@@ -145,13 +198,17 @@
 
   $effect(() => {
     void load();
+  });
+  $effect(() => {
     if (hasPortal && canManageLinks) void loadBranding();
   });
 </script>
 
 <PageHeader title="Clients" count={total}>
   {#snippet actions()}
-    <Button onclick={openNew}>Nouveau client</Button>
+    {#if $auth?.user.permissions.includes('transportation.master-data.manage')}<Button
+        onclick={openNew}>Nouveau client</Button
+      >{/if}
   {/snippet}
 </PageHeader>
 
@@ -176,7 +233,9 @@
   <Card>
     <EmptyState message="Aucun client pour le moment.">
       {#snippet children()}
-        <Button onclick={openNew}>Nouveau client</Button>
+        {#if $auth?.user.permissions.includes('transportation.master-data.manage')}<Button
+            onclick={openNew}>Nouveau client</Button
+          >{/if}
       {/snippet}
     </EmptyState>
   </Card>
@@ -184,7 +243,7 @@
   <Table>
     {#snippet head()}
       <th>Code</th><th>Nom</th><th>Contact</th><th>Courriel</th><th>Actif</th>
-      {#if hasPortal}<th></th>{/if}
+      <th>Actions</th>
     {/snippet}
     {#snippet body()}
       {#each customers as customer (customer.id)}
@@ -202,11 +261,16 @@
               {customer.isActive ? 'Actif' : 'Inactif'}
             </Badge>
           </td>
-          {#if hasPortal}
-            <td class="text-right">
-              <Button variant="secondary" onclick={() => portalLink(customer)}>Lien portail</Button>
-            </td>
-          {/if}
+          <td
+            ><div class="flex justify-end gap-2">
+              <MasterDataEdit kind="customers" id={customer.id} onsaved={load} />
+              {#if hasPortal && canManageLinks}
+                <Button variant="secondary" onclick={() => portalLink(customer)}
+                  >Lien portail</Button
+                >
+              {/if}
+            </div></td
+          >
         </tr>
       {/each}
     {/snippet}
@@ -244,19 +308,47 @@
   <div class="mt-6">
     <Card>
       <h2 class="mb-4 text-base font-semibold text-ink">Branding du portail</h2>
+      {#if brandError}<p role="alert" class="mb-3 text-sm text-danger">{brandError}</p>{/if}
+      {#if !brandLoaded && !brandLoading}<Button variant="secondary" onclick={loadBranding}
+          >Réessayer le chargement</Button
+        >{/if}
       <div class="flex flex-col gap-4">
+        {#if brandLogoUrl}<img
+            src={brandLogoUrl}
+            alt="Logo du portail client"
+            class="h-16 max-w-52 object-contain object-left"
+          />{/if}
+        <Field label="Importer depuis l’ordinateur"
+          ><input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            disabled={brandSaving || !brandLoaded}
+            onchange={uploadLogo}
+            class="text-sm"
+          /></Field
+        >
+        <p class="text-xs text-ink-muted">
+          PNG, JPEG ou WebP · 2 Mo maximum. Le logo est visible publiquement sur le portail.
+        </p>
         <Field label="URL du logo">
-          <Input type="url" bind:value={brandLogoUrl} placeholder="https://...logo.png" />
+          <Input
+            bind:value={brandLogoUrl}
+            disabled={!brandLoaded || brandSaving}
+            placeholder="https://...logo.png"
+          />
         </Field>
         <Field label="Couleur d'accent">
           <input
             type="color"
             bind:value={brandAccentColor}
+            disabled={!brandLoaded || brandSaving}
             class="h-9 w-16 cursor-pointer rounded border border-edge"
           />
         </Field>
         <div class="flex justify-end">
-          <Button onclick={saveBranding} loading={brandSaving}>Enregistrer</Button>
+          <Button onclick={saveBranding} disabled={!brandLoaded} loading={brandSaving}
+            >Enregistrer</Button
+          >
         </div>
       </div>
     </Card>
@@ -265,20 +357,28 @@
 
 <Modal bind:open={showForm} title="Nouveau client" size="md">
   {#snippet children()}
-    <form onsubmit={create} class="space-y-3">
+    <form onsubmit={create} use:enterNext class="space-y-3">
       {#if error}<p class="text-sm text-danger">{error}</p>{/if}
       <Field label="Code">
-        <Input bind:value={form.code} required placeholder="CUST-002" />
+        <Input bind:value={form.code} required maxlength={50} placeholder="CUST-002" />
       </Field>
       <Field label="Nom">
-        <Input bind:value={form.name} required />
+        <Input bind:value={form.name} required maxlength={200} />
       </Field>
       <Field label="Contact">
-        <Input bind:value={form.contactName} />
+        <Input bind:value={form.contactName} maxlength={150} />
       </Field>
       <Field label="Courriel">
-        <Input type="email" bind:value={form.email} />
+        <Input type="email" bind:value={form.email} maxlength={254} />
       </Field>
+      <Field label="Téléphone"
+        ><Input
+          type="tel"
+          bind:value={form.phone}
+          maxlength={40}
+          placeholder="+1 514 555-0123"
+        /></Field
+      >
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
         <Button
           variant="secondary"

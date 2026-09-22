@@ -13,6 +13,7 @@ import {
 } from './dto/inventory.dto';
 import { MovementHistoryService } from './movement-history.service';
 import { InventoryService } from './inventory.service';
+import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
 
 @ApiTags('wms/inventory')
 @ApiBearerAuth()
@@ -22,12 +23,16 @@ export class InventoryController {
   constructor(
     private readonly inventory: InventoryService,
     private readonly history: MovementHistoryService,
+    private readonly modules: TenantModulesCacheService,
   ) {}
 
   @Get('movements')
   @RequirePermissions(PERMISSIONS.WMS.READ)
-  movements(@CurrentUser() user: AuthUser, @Query() query: MovementListQueryDto) {
-    return this.history.list(user.tenantId, query);
+  async movements(@CurrentUser() user: AuthUser, @Query() query: MovementListQueryDto) {
+    const services =
+      user.permissions.includes(PERMISSIONS.SERVICES.READ) &&
+      (await this.modules.getEnabledKeys(user.tenantId)).has(MODULE_KEYS.SERVICES);
+    return this.history.list(user.tenantId, query, services);
   }
 
   @Get()

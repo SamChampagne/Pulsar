@@ -1,4 +1,10 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { isValidPostalCode, regionsFor, COUNTRIES } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { paginated, paginationArgs } from '../../common/pagination';
 import { OwnershipService } from '../../prisma/ownership.service';
@@ -58,6 +64,7 @@ export class LocationsService {
   }
 
   async create(tenantId: string, dto: CreateLocationDto) {
+    this.validateAddress(dto);
     const existing = await this.prisma.location.findUnique({
       where: { tenantId_code: { tenantId, code: dto.code } },
     });
@@ -81,6 +88,8 @@ export class LocationsService {
     await this.ownership.assertOwnedIfSet('customer', dto.customerId, tenantId);
     const { code: _code, ...data } = dto;
     const merged = { ...current, ...data };
+    if (dto.country !== undefined || dto.postalCode !== undefined || dto.state !== undefined)
+      this.validateAddress(merged);
     // Geocode only the field(s) that would otherwise stay empty — existing
     // (possibly manual) coordinates are never overwritten.
     if (merged.latitude == null || merged.longitude == null) {
@@ -93,5 +102,29 @@ export class LocationsService {
     const res = await this.prisma.location.updateMany({ where: { id, tenantId }, data });
     if (res.count === 0) throw new NotFoundException('Location not found');
     return this.prisma.location.findFirstOrThrow({ where: { id, tenantId } });
+  }
+
+  private validateAddress(address: {
+    country?: string | null;
+    state?: string | null;
+    postalCode?: string | null;
+  }) {
+    if (address.country && !COUNTRIES.some((country) => country.code === address.country))
+      throw new BadRequestException('Choisissez un pays du référentiel.');
+    if (!isValidPostalCode(address.postalCode ?? '', address.country))
+      throw new BadRequestException(
+        'Code postal invalide pour ce pays (Canada : H1A 1A1 ; États-Unis : 12345 ou 12345-6789).',
+      );
+    const regions = regionsFor(address.country ?? '');
+    if (
+      address.state &&
+      regions.length &&
+      !regions.some(
+        (region) =>
+          region.code === address.state ||
+          region.name.toLowerCase() === address.state?.toLowerCase(),
+      )
+    )
+      throw new BadRequestException('Choisissez une province ou un État du pays sélectionné.');
   }
 }

@@ -7,6 +7,7 @@ import {
   IsString,
   Min,
   ValidateNested,
+  IsDateString,
 } from 'class-validator';
 
 export class CreateCycleCountDto {
@@ -16,10 +17,11 @@ export class CreateCycleCountDto {
 
 export class CountLineDto {
   @IsString() lineId!: string;
-  @IsNumber() @Min(0) countedQty!: number;
+  @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) countedQty!: number;
 }
 
 export class RecordCountsDto {
+  @IsOptional() @IsDateString() expectedUpdatedAt?: string;
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

@@ -53,7 +53,14 @@
       lastFocused = document.activeElement as HTMLElement | null;
       lockScroll();
       queueMicrotask(() => {
-        if (dialogEl) (focusableElements(dialogEl)[0] ?? dialogEl).focus();
+        if (dialogEl) {
+          const nodes = focusableElements(dialogEl);
+          (
+            nodes.find((node) => node.hasAttribute('data-initial-focus')) ??
+            nodes[0] ??
+            dialogEl
+          ).focus();
+        }
       });
       return () => {
         popOverlay(t);

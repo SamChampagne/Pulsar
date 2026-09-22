@@ -18,7 +18,11 @@ export interface WmsMovementRow {
   toBin: WmsMovementBin | null;
   note: string | null;
   actor: string | null;
-  source: { kind: 'receipt' | 'pick-order' | 'cycle-count'; id: string; number: string } | null;
+  source: {
+    kind: 'receipt' | 'pick-order' | 'cycle-count' | 'service-job';
+    id: string;
+    number: string;
+  } | null;
 }
 export interface WmsMovementBin {
   id: string;

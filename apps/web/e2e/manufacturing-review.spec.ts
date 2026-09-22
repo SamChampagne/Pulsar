@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
+import { EXPERIENCED_PREFERENCES } from './helpers';
 
 // Deterministic UI contract tests. The API/tenant authorization is covered by the HTTP suite.
 async function setup(page: Page, readonly = false) {
@@ -76,6 +77,7 @@ async function setup(page: Page, readonly = false) {
   };
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace('/api/v1/', '');
+    if (path === 'me/preferences') return route.fulfill({ json: EXPERIENCED_PREFERENCES });
     if (route.request().method() !== 'GET') {
       state.writes.push({ path, body: route.request().postDataJSON() });
       if (path.endsWith('/publish')) {

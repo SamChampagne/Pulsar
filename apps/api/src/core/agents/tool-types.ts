@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { RiskTier } from '@pulsar/shared';
-import type { ModuleKey, PermissionKey } from '@pulsar/shared';
+import type { AuthUser, ModuleKey, PermissionKey } from '@pulsar/shared';
 import type { AgentPrincipal } from './agent-principal';
 
 /** DI token for the concrete tool-services adapter (provided by AgentsModule, Task 10). */
@@ -19,11 +19,47 @@ export const AGENT_TOOL_SERVICES = Symbol('AGENT_TOOL_SERVICES');
  *  - analytics.carrierScorecards(tenantId)  — plural
  */
 export interface ToolServices {
+  connectedBusiness: {
+    attention(actor: AuthUser, query: object): Promise<unknown>;
+    planning(actor: AuthUser, query: object): Promise<unknown>;
+    job(actor: AuthUser, id: string): Promise<unknown>;
+    check(actor: AuthUser, id: string, dto: object): Promise<unknown>;
+    schedule(actor: AuthUser, id: string, dto: object): Promise<unknown>;
+    billable(actor: AuthUser, projectId: string): Promise<unknown>;
+    support(actor: AuthUser, id: string): Promise<unknown>;
+    supportFollowup(
+      actor: AuthUser,
+      id: string,
+      dto: { assigneeUserId: string | null; dueDate: string | null; expectedUpdatedAt: string },
+    ): Promise<unknown>;
+  };
   mrp: {
-    workspace(tenantId: string, locationId: string, permissions: readonly string[]): Promise<unknown>;
-    brief(tenantId: string, runId: string, permissions: readonly string[], itemId?: string, page?: number): Promise<unknown>;
-    submit(tenantId: string, userId: string, agentId: string, permissions: readonly string[], input: { runId: string; taskId: string; summary: string; itemIds: string[] }, triggeredByRef?: string): Promise<unknown>;
-    recalculate(tenantId: string, userId: string, runId: string, permissions: readonly string[]): Promise<unknown>;
+    workspace(
+      tenantId: string,
+      locationId: string,
+      permissions: readonly string[],
+    ): Promise<unknown>;
+    brief(
+      tenantId: string,
+      runId: string,
+      permissions: readonly string[],
+      itemId?: string,
+      page?: number,
+    ): Promise<unknown>;
+    submit(
+      tenantId: string,
+      userId: string,
+      agentId: string,
+      permissions: readonly string[],
+      input: { runId: string; taskId: string; summary: string; itemIds: string[] },
+      triggeredByRef?: string,
+    ): Promise<unknown>;
+    recalculate(
+      tenantId: string,
+      userId: string,
+      runId: string,
+      permissions: readonly string[],
+    ): Promise<unknown>;
   };
   transportOrders: {
     list(tenantId: string, query: object): Promise<unknown>;

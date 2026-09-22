@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 /**
  * Mobile-viewport check (runs under the `mobile-chromium` project — Pixel 5).

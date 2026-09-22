@@ -1,4 +1,19 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, Res } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
@@ -60,10 +75,24 @@ export class PortalLinksController {
 export class PortalAdminController {
   constructor(private readonly portal: PortalService) {}
 
+  @Get('branding')
+  @RequirePermissions(PERMISSIONS.CUSTOMER_PORTAL.LINKS_MANAGE)
+  getBranding(@CurrentUser() user: AuthUser) {
+    return this.portal.getBranding(user.tenantId);
+  }
+
+  @Post('branding/logo')
+  @RequirePermissions(PERMISSIONS.CUSTOMER_PORTAL.LINKS_MANAGE)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024, files: 1 } }))
+  uploadLogo(@CurrentUser() user: AuthUser, @UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException('Sélectionnez une image PNG, JPEG ou WebP.');
+    return this.portal.uploadLogo(user.tenantId, user.id, file);
+  }
+
   @Put('branding')
   @RequirePermissions(PERMISSIONS.CUSTOMER_PORTAL.LINKS_MANAGE)
   setBranding(@CurrentUser() user: AuthUser, @Body() dto: SetBrandingDto) {
-    return this.portal.setBranding(user.tenantId, dto);
+    return this.portal.setBranding(user.tenantId, dto, user.id);
   }
 }
 
@@ -76,6 +105,14 @@ export class PortalPublicController {
     private readonly portal: PortalService,
     private readonly changeRequests: PortalChangeRequestsService,
   ) {}
+
+  @Get('branding/logo/:token')
+  async logo(@Param('token') token: string, @Res({ passthrough: true }) res: Response) {
+    const { stream, mimeType } = await this.portal.getLogo(token);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-store');
+    return new StreamableFile(stream, { type: mimeType, disposition: 'inline' });
+  }
 
   @Get(':token')
   view(@Param('token') token: string) {

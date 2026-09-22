@@ -19,6 +19,7 @@ import { IsInt, IsString, Min } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { DocumentsService } from './documents.service';
+import { assertGenericDocumentType } from './protected-documents';
 
 class UploadDocumentDto {
   @IsString()
@@ -58,7 +59,7 @@ export class DocumentsController {
     @Query('entityType') entityType: string,
     @Query('entityId') entityId: string,
   ) {
-    return this.documents.listForEntity(user.tenantId, entityType, entityId);
+    return this.documents.listGeneric(user.tenantId, entityType, entityId);
   }
 
   @Post('upload')
@@ -71,6 +72,7 @@ export class DocumentsController {
     @UploadedFile() file?: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException('Missing "file" field (multipart/form-data)');
+    assertGenericDocumentType(dto.entityType);
     return this.documents.upload(user.tenantId, {
       entityType: dto.entityType,
       entityId: dto.entityId,
@@ -84,6 +86,7 @@ export class DocumentsController {
   @Get(':id/download')
   @RequirePermissions(PERMISSIONS.CORE.DOCUMENTS_READ)
   async download(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.documents.assertGenericAccess(user.tenantId, id);
     const { stream, fileName, mimeType } = await this.documents.download(user.tenantId, id);
     return new StreamableFile(stream, {
       type: mimeType,
@@ -93,7 +96,8 @@ export class DocumentsController {
 
   @Get(':id/download-url')
   @RequirePermissions(PERMISSIONS.CORE.DOCUMENTS_READ)
-  downloadUrl(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+  async downloadUrl(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.documents.assertGenericAccess(user.tenantId, id);
     return this.documents.downloadUrl(user.tenantId, id);
   }
 
@@ -101,6 +105,7 @@ export class DocumentsController {
   @Post('presign-upload')
   @RequirePermissions(PERMISSIONS.CORE.DOCUMENTS_MANAGE)
   presignUpload(@CurrentUser() user: AuthUser, @Body() dto: PresignUploadDto) {
+    assertGenericDocumentType(dto.entityType);
     return this.documents.presignUpload(user.tenantId, dto);
   }
 
@@ -108,12 +113,14 @@ export class DocumentsController {
   @Post('confirm-upload')
   @RequirePermissions(PERMISSIONS.CORE.DOCUMENTS_MANAGE)
   confirmUpload(@CurrentUser() user: AuthUser, @Body() dto: ConfirmUploadDto) {
+    assertGenericDocumentType(dto.entityType);
     return this.documents.confirmUpload(user.tenantId, { ...dto, uploadedById: user.id });
   }
 
   @Delete(':id')
   @RequirePermissions(PERMISSIONS.CORE.DOCUMENTS_MANAGE)
-  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+  async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.documents.assertGenericAccess(user.tenantId, id);
     return this.documents.remove(user.tenantId, id);
   }
 }

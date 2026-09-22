@@ -95,9 +95,22 @@ export class ItemsService {
     await this.get(tenantId, id);
     try {
       await this.prisma.$transaction(async (tx) => {
+        // Same stock lock as Services issues/mapping and InventoryService.postMovement.
         await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
-        const current = await tx.wmsItem.findFirst({ where: { id, tenantId } });
-        if (!current) throw new NotFoundException('Item not found');
+        const old = await tx.wmsItem.findFirstOrThrow({ where: { tenantId, id } });
+        if (
+          dto.unit !== undefined &&
+          dto.unit !== old.unit &&
+          ((await tx.catalogStockLink.count({ where: { tenantId, wmsItemId: id } })) ||
+            (await tx.servicePartUsage.count({ where: { tenantId, wmsItemId: id } })) ||
+            (await tx.supplierReceiptLine.count({
+              where: { tenantId, receiptLine: { tenantId, itemId: id } },
+            })))
+        )
+          throw new ConflictException(
+            'L’unité est figée par une correspondance Catalogue, une consommation Services ou une réception fournisseur.',
+          );
+        const current = old;
         if (
           (dto.unit !== undefined && dto.unit !== current.unit) ||
           (dto.sku !== undefined && dto.sku !== current.sku)

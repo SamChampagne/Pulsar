@@ -259,7 +259,9 @@
     <!-- Map below route table -->
     {#if mapStops.length > 0}
       <div class="mt-3">
-        <LoadMap stops={mapStops} {loadId} geometry={route?.geometry ?? null} />
+        {#key JSON.stringify([mapStops, route?.geometry])}
+          <LoadMap stops={mapStops} {loadId} geometry={route?.geometry ?? null} />
+        {/key}
       </div>
     {/if}
   {:else if editable && detail.shipments.length > 0}

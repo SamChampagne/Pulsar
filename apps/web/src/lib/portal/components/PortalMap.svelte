@@ -11,6 +11,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { watchMapSize, mapLabel } from '$lib/maps/lifecycle';
   import 'leaflet/dist/leaflet.css';
 
   /**
@@ -31,9 +32,11 @@
 
   onMount(() => {
     let destroyed = false;
+    let stopResize = () => {};
     void import('leaflet').then((L) => {
       if (destroyed) return;
       map = L.map(el, { attributionControl: true });
+      stopResize = watchMapSize(el, map);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap',
       }).addTo(map);
@@ -43,6 +46,7 @@
     });
     return () => {
       destroyed = true;
+      stopResize();
       map?.remove();
       map = null;
     };
@@ -59,7 +63,7 @@
       // Leaflet draws outside the CSS cascade — literal colors accepted here.
       L.circleMarker(at, { radius: 8, color: '#1d4ed8', fillColor: '#1d4ed8', fillOpacity: 0.85 })
         .addTo(markers)
-        .bindTooltip(point.detail ? `${point.label} — ${point.detail}` : point.label);
+        .bindTooltip(mapLabel(point.detail ? `${point.label} — ${point.detail}` : point.label));
     }
     const key = anchors.map((a) => a.join(',')).join('|');
     if (key && key !== fittedKey) {

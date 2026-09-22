@@ -1,4 +1,10 @@
 import { forwardRef, Module } from '@nestjs/common';
+import { BusinessModule } from '../../modules/business/business.module';
+import { BusinessService } from '../../modules/business/business.service';
+import { SupportService } from '../../modules/business/support.service';
+import { ServicesPlanningService } from '../../modules/business/services-planning.service';
+import { ServicesCommerceService } from '../../modules/business/services-commerce.service';
+import { BusinessAttentionService } from '../operating/business-attention.service';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { CryptoModule } from '../crypto/crypto.module';
 import { AiDraftService } from '../email/ai-draft.service';
@@ -70,6 +76,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
  */
 @Module({
   imports: [
+    BusinessModule,
     TransportationModule,
     AuditLogsModule,
     CryptoModule,
@@ -99,6 +106,11 @@ import { RuntimeConfigController } from './runtime-config.controller';
     {
       provide: AGENT_TOOL_SERVICES,
       inject: [
+        BusinessService,
+        SupportService,
+        ServicesPlanningService,
+        ServicesCommerceService,
+        BusinessAttentionService,
         TransportOrdersService,
         LoadsService,
         RatingService,
@@ -134,6 +146,11 @@ import { RuntimeConfigController } from './runtime-config.controller';
         MrpAssistanceService,
       ],
       useFactory: (
+        business: BusinessService,
+        support: SupportService,
+        servicePlanning: ServicesPlanningService,
+        commerce: ServicesCommerceService,
+        attention: BusinessAttentionService,
         transportOrders: TransportOrdersService,
         loads: LoadsService,
         rating: RatingService,
@@ -168,6 +185,24 @@ import { RuntimeConfigController } from './runtime-config.controller';
         crmSequences: CrmSequencesService,
         mrp: MrpAssistanceService,
       ): ToolServices => ({
+        connectedBusiness: {
+          attention: (u, q) => attention.list(u, q),
+          planning: (u, q) => servicePlanning.board(u, q as never),
+          job: (u, id) => business.job(u.tenantId, id),
+          check: (u, id, dto) => servicePlanning.check(u, id, dto as never),
+          schedule: (u, id, dto) => servicePlanning.schedule(u, id, dto as never),
+          billable: (u, id) => commerce.billable(u, id),
+          support: (u, id) => support.get(u.tenantId, id),
+          supportFollowup: async (u, id, dto) => {
+            const row = await support.get(u.tenantId, id);
+            return support.update(u, id, {
+              title: row.title,
+              description: row.description,
+              priority: row.priority,
+              ...dto,
+            });
+          },
+        },
         mrp: {
           workspace: (...args) => mrp.workspace(...args),
           brief: (...args) => mrp.brief(...args),

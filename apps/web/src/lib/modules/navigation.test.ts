@@ -20,10 +20,59 @@ vi.mock('lucide-svelte', () =>
       'Mail',
       'Globe',
       'Factory',
+      'BookOpen',
+      'PackageSearch',
+      'ShoppingCart',
+      'BriefcaseBusiness',
     ].map((name) => [name, () => null]),
   ),
 );
-import { visibleDomains, domainHome, type NavDomain } from './navigation';
+import { visibleDomains, domainHome, navCatalogue, type NavDomain } from './navigation';
+import { TOUR_MODULE_KEYS } from '@pulsar/shared';
+import { knowledgeArticles, KNOWLEDGE_DETAILS, matchesKnowledge } from '$lib/help/knowledge';
+import { MODULE_GUIDES } from '$lib/help/catalog';
+import { TOUR_ROUTES } from '$lib/help/tours';
+
+describe('Documented business applications', () => {
+  it('every app has a guide, business rules and a first-entry tutorial', () => {
+    for (const domain of navCatalogue()) {
+      expect(MODULE_GUIDES[domain.key], domain.key).toBeDefined();
+      expect(KNOWLEDGE_DETAILS[domain.key]?.rules.length, domain.key).toBeGreaterThan(1);
+      expect(TOUR_ROUTES[domain.key]?.length, domain.key).toBeGreaterThan(0);
+      expect(TOUR_MODULE_KEYS, domain.key).toContain(domain.key);
+    }
+  });
+  it('documentation only contains accessible apps and links', () => {
+    const articles = knowledgeArticles(
+      visibleDomains({ enabledModules: ['services'], can: (p) => p === 'services.read' }),
+    );
+    expect(articles.map((a) => a.key)).toContain('services');
+    expect(articles.map((a) => a.key)).toContain('documentation');
+    expect(articles.map((a) => a.key)).not.toContain('catalog');
+    expect(articles.map((a) => a.key)).not.toContain('purchasing');
+  });
+  it('search ignores accents and requires all terms', () => {
+    const article = knowledgeArticles(navCatalogue()).find((a) => a.key === 'services')!;
+    expect(matchesKnowledge(article, 'echeance projet')).toBe(true);
+    expect(matchesKnowledge(article, 'compte rendu')).toBe(true);
+    expect(matchesKnowledge(article, 'inexistant')).toBe(false);
+  });
+  it('new apps require both activation and read permission', () => {
+    for (const key of ['catalog', 'purchasing', 'services']) {
+      expect(
+        visibleDomains({ enabledModules: [], can: () => true }).map((d) => d.key),
+      ).not.toContain(key);
+      expect(
+        visibleDomains({ enabledModules: [key], can: () => false }).map((d) => d.key),
+      ).not.toContain(key);
+      expect(
+        visibleDomains({ enabledModules: [key], can: (p) => p === key + '.read' }).map(
+          (d) => d.key,
+        ),
+      ).toContain(key);
+    }
+  });
+});
 
 describe('Platform: Quoi de neuf link', () => {
   const platformLinks = (modules: string[] = [], permissions: string[] = []) =>
@@ -187,5 +236,47 @@ describe('Transport: Lieux link requires core.locations.read', () => {
 
   it('shows /locations from Transport > Partenaires with core.locations.read', () => {
     expect(transportLinks(['core.locations.read'])).toContain('/locations');
+  });
+});
+
+describe('HR personal and management navigation', () => {
+  it('gates manufacturing qualifications by both the minimal permission and HR activation', () => {
+    const links = (enabledModules: string[], permissions: string[]) =>
+      visibleDomains({ enabledModules, can: (p) => permissions.includes(p) }).flatMap((d) =>
+        d.sections.flatMap((s) => s.links.map((l) => l.href)),
+      );
+    expect(
+      links(['manufacturing'], ['manufacturing.read', 'hr.qualifications.read']),
+    ).not.toContain('/manufacturing/qualifications');
+    expect(links(['manufacturing', 'hr'], ['manufacturing.read'])).not.toContain(
+      '/manufacturing/qualifications',
+    );
+    expect(
+      links(['manufacturing', 'hr'], ['manufacturing.read', 'hr.qualifications.read']),
+    ).toContain('/manufacturing/qualifications');
+  });
+  const hr = (enabledModules: string[], permissions: string[]) =>
+    visibleDomains({ enabledModules, can: (p) => permissions.includes(p) }).find(
+      (d) => d.key === 'hr',
+    );
+  it('shows the personal workspace without exposing management routes', () => {
+    const domain = hr(['hr'], ['hr.self']);
+    expect(domainHome(domain!)).toBe('/hr');
+    expect(domain?.sections.flatMap((s) => s.links.map((l) => l.href))).toEqual([
+      '/hr',
+      '/hr/self',
+    ]);
+  });
+  it('requires activation and an effective read scope', () => {
+    expect(hr([], ['hr.read'])).toBeUndefined();
+    expect(hr(['hr'], ['hr.approve'])).toBeUndefined();
+    expect(hr(['hr'], ['hr.read'])?.sections.flatMap((s) => s.links.map((l) => l.href))).toEqual([
+      '/hr',
+      '/hr/employees',
+      '/hr/teams',
+      '/hr/skills',
+      '/hr/qualifications',
+      '/hr/leaves',
+    ]);
   });
 });

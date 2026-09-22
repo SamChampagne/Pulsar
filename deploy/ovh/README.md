@@ -38,8 +38,8 @@ dans [le plan de relance](../../docs/plans/control-center-workflows.md).
   ne pas publier l'API ou PostgreSQL pour contourner le problème.
 - Vérifier A/AAAA du domaine et l'émission/renouvellement TLS par la procédure déjà
   utilisée sur le serveur. Ne pas activer le gabarit TLS sans certificat existant.
-- Réserver un dossier dédié, par exemple `/opt/pulsar-dev`, avec le dépôt et la
-  branche `codex/control-center-workflows`. Ne jamais stocker une clé SSH dans Git.
+- Réserver un dossier dédié, par exemple `/opt/pulsar-dev`, avec le dépôt à la
+  révision de `main` approuvée après fusion de la PR. Ne jamais stocker une clé SSH dans Git.
 
 ## 2. Configuration et lancement (depuis la racine du dépôt)
 
@@ -80,6 +80,9 @@ pas les invitations : l'opérateur peut copier le lien d'invitation affiché par
 l'admin, le transmettre de façon sûre, puis l'utilisateur choisit son mot de passe.
 
 ## 3. Recette d'acceptation
+
+Pour le lot Services/RH/SAV et exploitation connectée du 22 septembre, suivre aussi
+la [recette métier détaillée](../../docs/plans/connected-business-server-acceptance.md).
 
 - HTTPS et renouvellement TLS vérifiés ; seuls les ports voulus sont accessibles.
 - Readiness HTTP 200 ; console `/platform/operations` lisible. « Non configuré »

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
+  import { watchMapSize, mapLabel } from '$lib/maps/lifecycle';
   import 'leaflet/dist/leaflet.css';
 
   interface MapStop {
@@ -32,9 +33,11 @@
 
   onMount(() => {
     let destroyed = false;
+    let stopResize = () => {};
     void import('leaflet').then((L) => {
       if (destroyed) return;
       map = L.map(el, { attributionControl: true });
+      stopResize = watchMapSize(el, map);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap',
       }).addTo(map);
@@ -44,6 +47,7 @@
     });
     return () => {
       destroyed = true;
+      stopResize();
       map?.remove();
     };
   });
@@ -71,7 +75,9 @@
       L.circleMarker(at, { radius: 9, color, fillColor: color, fillOpacity: 0.85 })
         .addTo(markers)
         .bindTooltip(
-          `${load.loadNumber} — ${load.carrier ?? 'aucun transporteur'} · ${load.status}${load.isLate ? ' · RETARD' : ''}`,
+          mapLabel(
+            `${load.loadNumber} — ${load.carrier ?? 'aucun transporteur'} · ${load.status}${load.isLate ? ' · RETARD' : ''}`,
+          ),
         )
         .on('click', () => void goto(`/loads/${load.id}`));
     }

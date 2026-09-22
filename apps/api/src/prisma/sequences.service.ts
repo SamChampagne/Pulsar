@@ -5,6 +5,14 @@ import { PrismaService } from './prisma.service';
 import { TenantModulesCacheService } from './tenant-modules-cache.service';
 
 export type SequenceKey =
+  | 'service-quote'
+  | 'hr-leave'
+  | 'quality-inspection'
+  | 'quality-nonconformity'
+  | 'support-case'
+  | 'service-project'
+  | 'service-job'
+  | 'supplier-order'
   | 'transport-order'
   | 'shipment'
   | 'load'
@@ -28,6 +36,14 @@ export type SequenceKey =
   | 'material-purchase';
 
 const PREFIXES: Record<SequenceKey, string> = {
+  'service-quote': 'DEV',
+  'hr-leave': 'ABS',
+  'quality-inspection': 'QC',
+  'quality-nonconformity': 'NC',
+  'support-case': 'SAV',
+  'service-project': 'PRJ',
+  'service-job': 'INT',
+  'supplier-order': 'PO',
   'transport-order': 'TO',
   shipment: 'SH',
   load: 'LD',

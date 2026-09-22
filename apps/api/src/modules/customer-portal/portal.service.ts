@@ -889,7 +889,86 @@ export class PortalService {
     return projectShipmentComment(comment);
   }
 
-  async setBranding(tenantId: string, dto: { logoUrl?: string; accentColor?: string }) {
+  async getBranding(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { settings: true },
+    });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const branding = ((tenant.settings as Record<string, unknown> | null)?.branding ??
+      {}) as Record<string, unknown>;
+    return {
+      logoUrl: typeof branding.logoUrl === 'string' ? branding.logoUrl : '',
+      accentColor: typeof branding.accentColor === 'string' ? branding.accentColor : undefined,
+    };
+  }
+
+  async uploadLogo(
+    tenantId: string,
+    userId: string,
+    file: { buffer: Buffer; originalname: string; mimetype: string },
+  ) {
+    const b = file.buffer;
+    const mimeType =
+      b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+        ? 'image/png'
+        : b.length >= 3 && b[0] === 255 && b[1] === 216 && b[2] === 255
+          ? 'image/jpeg'
+          : b.length >= 12 &&
+              b.toString('ascii', 0, 4) === 'RIFF' &&
+              b.toString('ascii', 8, 12) === 'WEBP'
+            ? 'image/webp'
+            : null;
+    if (!mimeType || b.length > 2 * 1024 * 1024)
+      throw new BadRequestException('Logo : PNG, JPEG ou WebP uniquement, 2 Mo maximum.');
+    const token = randomBytes(24).toString('base64url');
+    const doc = await this.documents.upload(tenantId, {
+      entityType: 'portal-logo',
+      entityId: token,
+      fileName: file.originalname,
+      mimeType,
+      body: b,
+      uploadedById: userId,
+    });
+    try {
+      return await this.setBranding(
+        tenantId,
+        { logoUrl: `/api/v1/public/portal/branding/logo/${token}` },
+        userId,
+      );
+    } catch (error) {
+      await this.documents.remove(tenantId, doc.id).catch(() => {});
+      throw error;
+    }
+  }
+
+  async getLogo(token: string) {
+    if (!/^[A-Za-z0-9_-]{32}$/.test(token)) throw new NotFoundException('Logo introuvable');
+    const doc = await this.prisma.document.findFirst({
+      where: { entityType: 'portal-logo', entityId: token },
+      select: { id: true, tenantId: true, mimeType: true },
+    });
+    if (!doc || !['image/png', 'image/jpeg', 'image/webp'].includes(doc.mimeType))
+      throw new NotFoundException('Logo introuvable');
+    if (!(await this.modulesCache.getEnabledKeys(doc.tenantId)).has(MODULE_KEYS.CUSTOMER_PORTAL))
+      throw new NotFoundException('Logo introuvable');
+    const branding = await this.getBranding(doc.tenantId);
+    if (branding.logoUrl !== `/api/v1/public/portal/branding/logo/${token}`)
+      throw new NotFoundException('Logo remplacé');
+    return this.documents.download(doc.tenantId, doc.id);
+  }
+
+  async setBranding(
+    tenantId: string,
+    dto: { logoUrl?: string; accentColor?: string },
+    userId?: string,
+  ) {
+    if (
+      dto.logoUrl &&
+      !/^https?:\/\//i.test(dto.logoUrl) &&
+      !/^\/api\/v1\/public\/portal\/branding\/logo\/[A-Za-z0-9_-]{32}$/.test(dto.logoUrl)
+    )
+      throw new BadRequestException('Utilisez une URL HTTP(S) ou importez un logo.');
     if (dto.accentColor) {
       if (!/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(dto.accentColor)) {
         throw new BadRequestException('accentColor must be a valid hex color (e.g. #RRGGBB)');
@@ -912,6 +991,7 @@ export class PortalService {
       tenantId,
       action: AuditAction.UPDATE,
       entityType: 'tenant-branding',
+      userId,
       entityId: tenantId,
       before: currentBranding,
       after: newBranding,

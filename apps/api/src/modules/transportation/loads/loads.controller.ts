@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@pulsar/shared';
 import { LoadStatus, MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
@@ -10,7 +10,12 @@ import { RequirePermissions } from '../../../common/decorators/require-permissio
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import { IsInt, IsOptional as IsOpt, IsString, Max, Min } from 'class-validator';
 import { TendersService } from '../tenders/tenders.service';
-import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
+import {
+  AssignLoadResourcesDto,
+  CreateLoadDto,
+  SetLoadAccessorialsDto,
+  UpdateLoadNotesDto,
+} from './dto/load.dto';
 import { LoadsService } from './loads.service';
 import { RatingService } from '../rating/rating.service';
 import { BolService } from '../bol/bol.service';
@@ -91,6 +96,13 @@ export class LoadsController {
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateLoadDto) {
     return this.loads.create(user.tenantId, user.id, dto);
+  }
+
+  /** Atomically create a load from a set of unassigned shipments (dispatch workbench). */
+  @Patch(':id')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
+  update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateLoadNotesDto) {
+    return this.loads.updateNotes(user.tenantId, user.id, id, dto);
   }
 
   /** Atomically create a load from a set of unassigned shipments (dispatch workbench). */

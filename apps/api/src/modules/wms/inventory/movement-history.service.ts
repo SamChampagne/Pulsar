@@ -18,7 +18,7 @@ export class MovementHistoryService {
     private readonly prisma: PrismaService,
     private readonly ownership: OwnershipService,
   ) {}
-  async list(tenantId: string, q: MovementListQueryDto) {
+  async list(tenantId: string, q: MovementListQueryDto, serviceContext = false) {
     await this.ownership.assertOwnedIfSet('wmsItem', q.itemId, tenantId);
     await this.ownership.assertOwnedIfSet('bin', q.binId, tenantId);
     await this.ownership.assertOwnedIfSet('location', q.locationId, tenantId);
@@ -78,7 +78,7 @@ export class MovementHistoryService {
         ]);
         const ids = (type: string) =>
           rows.filter((r) => r.refType === type && r.refId).map((r) => r.refId!);
-        const [users, receipts, picks, counts] = await Promise.all([
+        const [users, receipts, picks, counts, serviceJobs] = await Promise.all([
           tx.user.findMany({
             where: {
               tenantId,
@@ -98,6 +98,12 @@ export class MovementHistoryService {
             where: { tenantId, id: { in: ids('cycle-count') } },
             select: { id: true, number: true },
           }),
+          serviceContext
+            ? tx.serviceJob.findMany({
+                where: { tenantId, id: { in: ids('service-job') } },
+                select: { id: true, number: true },
+              })
+            : Promise.resolve([]),
         ]);
         const actor = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
         const sources = new Map<string, WmsMovementRow['source']>();
@@ -105,6 +111,7 @@ export class MovementHistoryService {
           ['receipt', receipts],
           ['pick-order', picks],
           ['cycle-count', counts],
+          ['service-job', serviceJobs],
         ] as const)
           for (const d of docs) sources.set(`${kind}:${d.id}`, { ...d, kind });
         const bin = (b: (typeof rows)[number]['fromBin']) =>

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 
 /**
  * Customer-portal accounts (Task 11). Fully mocked: the portal plane is its own

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LoadEdit from '$lib/components/loads/LoadEdit.svelte';
   import YardRelatedDossiers from '$lib/components/yard/YardRelatedDossiers.svelte';
   import DossierButton from '$lib/components/workflows/DossierButton.svelte';
   import { untrack } from 'svelte';
@@ -347,6 +348,7 @@
           tone="danger">Retard signalé</Badge
         >{/if}<span>{detail!.shipments.length} expédition(s)</span>{/snippet}
     {#snippet actions()}
+      <LoadEdit detail={detail!} onreload={load} />
       <DossierButton entityType="LOAD" entityId={detail!.id} />
       {#if detail!.status === 'PLANNED'}
         <Button disabled={busy} variant="secondary" onclick={autoTender}>Offre automatique</Button>

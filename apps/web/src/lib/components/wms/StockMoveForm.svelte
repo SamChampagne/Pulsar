@@ -1,4 +1,7 @@
 <script lang="ts">
+  import BinCreateModal from './BinCreateModal.svelte';
+  import { auth } from '$lib/stores/auth';
+  let createDestination = $state(false);
   import { api, ApiError } from '$lib/api/client';
   import { Button, EntityPicker, ErrorNotice, Field, Input, Textarea } from '$lib/components/ui';
   import { confirmAction } from '$lib/stores/confirmation';
@@ -117,6 +120,9 @@
       ><EntityPicker
         endpoint={`/wms/sites/${encodeURIComponent(source.locationId)}/bins`}
         label="Destination"
+        allowCreate={$auth?.user.permissions.includes('wms.manage')
+          ? { label: '+ Créer un emplacement', onCreate: () => (createDestination = true) }
+          : undefined}
         pageSize={50}
         bind:value={destination}
         disabled={busy || !!$pendingMove}
@@ -151,3 +157,8 @@
     >
   </div>
 </section>
+<BinCreateModal
+  bind:open={createDestination}
+  locationId={source.locationId}
+  oncreated={(bin) => (destination = bin.id)}
+/>

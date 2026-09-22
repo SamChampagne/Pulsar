@@ -1,4 +1,7 @@
 <script lang="ts">
+  import MasterDataEdit from '$lib/components/transportation/MasterDataEdit.svelte';
+  import { enterNext } from '$lib/forms/enter-next';
+  import { isValidPhone } from '@pulsar/shared';
   import type { Paginated } from '@pulsar/shared';
   import { MODULE_KEYS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
@@ -40,7 +43,7 @@
   let showForm = $state(false);
   let loading = $state(true);
   let saving = $state(false);
-  let form = $state({ code: '', name: '', scacCode: '', contactName: '', phone: '' });
+  let form = $state({ code: '', name: '', scacCode: '', contactName: '', phone: '', email: '' });
 
   // Carrier portal link modal
   const hasCarrierPortal = $derived(
@@ -71,13 +74,17 @@
   }
 
   function openNew() {
-    form = { code: '', name: '', scacCode: '', contactName: '', phone: '' };
+    form = { code: '', name: '', scacCode: '', contactName: '', phone: '', email: '' };
     error = '';
     showForm = true;
   }
 
   async function create(event: SubmitEvent) {
     event.preventDefault();
+    if (!isValidPhone(form.phone.trim())) {
+      error = 'Téléphone invalide : 7 à 15 chiffres, extension facultative.';
+      return;
+    }
     error = '';
     saving = true;
     try {
@@ -89,10 +96,11 @@
           scacCode: form.scacCode || undefined,
           contactName: form.contactName || undefined,
           phone: form.phone || undefined,
+          email: form.email || undefined,
         },
       });
       showForm = false;
-      form = { code: '', name: '', scacCode: '', contactName: '', phone: '' };
+      form = { code: '', name: '', scacCode: '', contactName: '', phone: '', email: '' };
       toast.success('Transporteur créé');
       await load();
     } catch (e) {
@@ -161,7 +169,9 @@
 
 <PageHeader title="Transporteurs" count={total}>
   {#snippet actions()}
-    <Button onclick={openNew}>Nouveau transporteur</Button>
+    {#if $auth?.user.permissions.includes('transportation.master-data.manage')}<Button
+        onclick={openNew}>Nouveau transporteur</Button
+      >{/if}
   {/snippet}
 </PageHeader>
 
@@ -186,7 +196,9 @@
   <Card>
     <EmptyState message="Aucun transporteur pour le moment.">
       {#snippet children()}
-        <Button onclick={openNew}>Nouveau transporteur</Button>
+        {#if $auth?.user.permissions.includes('transportation.master-data.manage')}<Button
+            onclick={openNew}>Nouveau transporteur</Button
+          >{/if}
       {/snippet}
     </EmptyState>
   </Card>
@@ -194,7 +206,7 @@
   <Table>
     {#snippet head()}
       <th>Code</th><th>Nom</th><th>SCAC</th><th>Contact</th><th>Téléphone</th><th>Statut</th>
-      {#if hasCarrierPortal && canManageCarrierLinks}<th></th>{/if}
+      <th>Actions</th>
     {/snippet}
     {#snippet body()}
       {#each carriers as carrier (carrier.id)}
@@ -209,11 +221,14 @@
           <td>{carrier.contactName ?? '—'}</td>
           <td class="font-mono text-ink-muted">{carrier.phone ?? '—'}</td>
           <td><Badge tone={toneFor(carrier.status)}>{labelFor(carrier.status)}</Badge></td>
-          {#if hasCarrierPortal && canManageCarrierLinks}
-            <td class="text-right">
-              <Button variant="secondary" onclick={() => openPortalLink(carrier)}>Portail</Button>
-            </td>
-          {/if}
+          <td
+            ><div class="flex justify-end gap-2">
+              <MasterDataEdit kind="carriers" id={carrier.id} onsaved={load} />
+              {#if hasCarrierPortal && canManageCarrierLinks}
+                <Button variant="secondary" onclick={() => openPortalLink(carrier)}>Portail</Button>
+              {/if}
+            </div></td
+          >
         </tr>
       {/each}
     {/snippet}
@@ -249,26 +264,39 @@
 
 <Modal bind:open={showForm} title="Nouveau transporteur" size="md">
   {#snippet children()}
-    <form onsubmit={create} class="space-y-3">
+    <form onsubmit={create} use:enterNext class="space-y-3">
       {#if error}<p class="text-sm text-danger">{error}</p>{/if}
       <Field label="Code">
-        <Input bind:value={form.code} required placeholder="CARR-002" />
+        <Input bind:value={form.code} required maxlength={50} placeholder="CARR-002" />
       </Field>
       <Field label="Nom">
-        <Input bind:value={form.name} required />
+        <Input bind:value={form.name} required maxlength={200} />
       </Field>
       <Field label="SCAC">
-        <Input bind:value={form.scacCode} pattern={'[A-Z]{2,4}'} placeholder="ex. ABCD" />
+        <Input
+          bind:value={form.scacCode}
+          maxlength={4}
+          pattern={'[A-Z]{2,4}'}
+          placeholder="ex. ABCD"
+        />
       </Field>
       <p class="-mt-2 text-xs text-ink-faint">
         2 à 4 lettres majuscules (Standard Carrier Alpha Code).
       </p>
       <Field label="Contact">
-        <Input bind:value={form.contactName} />
+        <Input bind:value={form.contactName} maxlength={150} />
       </Field>
       <Field label="Téléphone">
-        <Input bind:value={form.phone} />
+        <Input bind:value={form.phone} type="tel" maxlength={40} placeholder="+1 514 555-0123" />
       </Field>
+      <Field label="Courriel des propositions"
+        ><Input
+          type="email"
+          bind:value={form.email}
+          maxlength={254}
+          placeholder="dispatch@transporteur.ca"
+        /></Field
+      >
       <div class="flex justify-end gap-2 border-t border-edge pt-3">
         <Button
           variant="secondary"

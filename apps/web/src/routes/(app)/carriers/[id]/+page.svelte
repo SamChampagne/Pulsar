@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MasterDataEdit from '$lib/components/transportation/MasterDataEdit.svelte';
   import { page } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
@@ -90,6 +91,7 @@
 {:else if carrier}
   <PageHeader title={carrier.name}>
     {#snippet actions()}
+      <MasterDataEdit kind="carriers" id={carrierId!} onsaved={load} />
       <Badge tone={toneFor(carrier!.status)}>{labelFor(carrier!.status)}</Badge>
     {/snippet}
   </PageHeader>

@@ -1,4 +1,11 @@
 <script lang="ts">
+  import ItemCreateModal from '$lib/components/wms/ItemCreateModal.svelte';
+  import { auth } from '$lib/stores/auth';
+  let createItem = $state(false);
+  let itemTarget = $state<'product' | 'material'>('product');
+  const canCreateItem = $derived(
+    $auth?.tenant.enabledModules.includes('wms') && $auth?.user.permissions.includes('wms.manage'),
+  );
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import {
@@ -16,7 +23,6 @@
     Table,
   } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
-  import { auth } from '$lib/stores/auth';
 
   interface BomLine {
     id: string;
@@ -469,6 +475,15 @@
             <EntityPicker
               endpoint="/wms/choices/items"
               label="Produit"
+              allowCreate={canCreateItem
+                ? {
+                    label: '+ Créer un article',
+                    onCreate: () => {
+                      itemTarget = 'product';
+                      createItem = true;
+                    },
+                  }
+                : undefined}
               placeholder="Optionnel"
               labelKey="name"
               valueKey="sku"
@@ -523,6 +538,15 @@
                   <EntityPicker
                     endpoint="/wms/choices/items"
                     label="Référence matière"
+                    allowCreate={canCreateItem
+                      ? {
+                          label: '+ Créer un article',
+                          onCreate: () => {
+                            itemTarget = 'material';
+                            createItem = true;
+                          },
+                        }
+                      : undefined}
                     placeholder="MAT-001"
                     labelKey="name"
                     valueKey="sku"
@@ -597,3 +621,15 @@
     </div>
   {/snippet}
 </Drawer>
+
+<ItemCreateModal
+  bind:open={createItem}
+  oncreated={(item) => {
+    items = [...items, item];
+    if (itemTarget === 'product') formProductRef = item.sku;
+    else {
+      lineRef = item.sku;
+      lineName = item.name;
+    }
+  }}
+/>

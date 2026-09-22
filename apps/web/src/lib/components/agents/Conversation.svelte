@@ -28,10 +28,12 @@
     agentId,
     initialConversationId = null,
     initialMessages = [],
+    initialPrompt = '',
   }: {
     agentId: string;
     initialConversationId?: string | null;
     initialMessages?: ExistingMessage[];
+    initialPrompt?: string;
   } = $props();
 
   // Intentional one-time reads: the parent uses {#key} to remount when these change.
@@ -45,7 +47,7 @@
       })),
     ),
   );
-  let input = $state('');
+  let input = $state(untrack(() => initialPrompt));
   let sending = $state(false);
   let error = $state('');
   let listEl = $state<HTMLDivElement | null>(null);
@@ -129,11 +131,7 @@
 </script>
 
 <!-- Message list -->
-<div
-  bind:this={listEl}
-  class="flex-1 space-y-3 overflow-y-auto p-4"
-  style="min-height: 0;"
->
+<div bind:this={listEl} class="flex-1 space-y-3 overflow-y-auto p-4" style="min-height: 0;">
   {#if messages.length === 0}
     <p class="text-center text-xs text-ink-faint">Envoyez un message pour commencer.</p>
   {/if}

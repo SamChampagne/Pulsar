@@ -6,6 +6,25 @@ import { MODULE_KEYS, type ModuleKey } from './modules';
  * and seeded into the database (see packages/database/prisma/seed.ts).
  */
 export const PERMISSIONS = {
+  QUALITY: { READ: 'quality.read', MANAGE: 'quality.manage' },
+  HR: {
+    READ: 'hr.read',
+    MANAGE: 'hr.manage',
+    APPROVE: 'hr.approve',
+    SELF: 'hr.self',
+    AVAILABILITY_READ: 'hr.availability.read',
+    QUALIFICATIONS_MANAGE: 'hr.qualifications.manage',
+    QUALIFICATIONS_READ: 'hr.qualifications.read',
+  },
+  SUPPORT: { READ: 'support.read', MANAGE: 'support.manage' },
+  CATALOG: { READ: 'catalog.read', MANAGE: 'catalog.manage' },
+  PURCHASING: { READ: 'purchasing.read', MANAGE: 'purchasing.manage' },
+  SERVICES: {
+    READ: 'services.read',
+    MANAGE: 'services.manage',
+    TIME_WRITE: 'services.time.write',
+    TIME_APPROVE: 'services.time.approve',
+  },
   CORE: {
     TENANT_READ: 'core.tenant.read',
     TENANT_MANAGE: 'core.tenant.manage',
@@ -128,6 +147,12 @@ export const PERMISSIONS = {
 } as const;
 
 export type PermissionKey =
+  | (typeof PERMISSIONS.QUALITY)[keyof typeof PERMISSIONS.QUALITY]
+  | (typeof PERMISSIONS.HR)[keyof typeof PERMISSIONS.HR]
+  | (typeof PERMISSIONS.CATALOG)[keyof typeof PERMISSIONS.CATALOG]
+  | (typeof PERMISSIONS.PURCHASING)[keyof typeof PERMISSIONS.PURCHASING]
+  | (typeof PERMISSIONS.SUPPORT)[keyof typeof PERMISSIONS.SUPPORT]
+  | (typeof PERMISSIONS.SERVICES)[keyof typeof PERMISSIONS.SERVICES]
   | (typeof PERMISSIONS.CORE)[keyof typeof PERMISSIONS.CORE]
   | (typeof PERMISSIONS.TRANSPORTATION)[keyof typeof PERMISSIONS.TRANSPORTATION]
   | (typeof PERMISSIONS.CUSTOMER_PORTAL)[keyof typeof PERMISSIONS.CUSTOMER_PORTAL]
@@ -216,6 +241,103 @@ const manufacturing = (key: PermissionKey, description: string): PermissionDescr
 });
 
 export const PERMISSION_CATALOG: PermissionDescriptor[] = [
+  {
+    key: PERMISSIONS.HR.QUALIFICATIONS_MANAGE,
+    module: MODULE_KEYS.HR,
+    description: 'Attester et révoquer les qualifications professionnelles des autres employés.',
+  },
+  {
+    key: PERMISSIONS.HR.QUALIFICATIONS_READ,
+    module: MODULE_KEYS.HR,
+    description: 'Lire la couverture minimale des exigences Fabrication, sans notes RH.',
+  },
+  {
+    key: PERMISSIONS.QUALITY.READ,
+    module: MODULE_KEYS.QUALITY,
+    description: 'Consulter plans de contrôle, inspections et non-conformités.',
+  },
+  {
+    key: PERMISSIONS.HR.READ,
+    module: MODULE_KEYS.HR,
+    description: 'Consulter tous les dossiers employés, équipes et absences.',
+  },
+  {
+    key: PERMISSIONS.HR.MANAGE,
+    module: MODULE_KEYS.HR,
+    description: 'Gérer les dossiers professionnels et préparer des absences pour les employés.',
+  },
+  {
+    key: PERMISSIONS.HR.APPROVE,
+    module: MODULE_KEYS.HR,
+    description:
+      'Approuver ou refuser les absences des autres employés, hors demandes créées soi-même.',
+  },
+  {
+    key: PERMISSIONS.HR.SELF,
+    module: MODULE_KEYS.HR,
+    description: 'Consulter son propre dossier et gérer ses demandes d’absence.',
+  },
+  {
+    key: PERMISSIONS.HR.AVAILABILITY_READ,
+    module: MODULE_KEYS.HR,
+    description:
+      'Vérifier les absences approuvées par jour pour Services, sans motifs ni dossiers RH.',
+  },
+  {
+    key: PERMISSIONS.QUALITY.MANAGE,
+    module: MODULE_KEYS.QUALITY,
+    description: 'Gérer les contrôles et les décisions qualité.',
+  },
+  {
+    key: PERMISSIONS.CATALOG.READ,
+    module: MODULE_KEYS.CATALOG,
+    description: 'Consulter les produits, prestations et partenaires communs',
+  },
+  {
+    key: PERMISSIONS.CATALOG.MANAGE,
+    module: MODULE_KEYS.CATALOG,
+    description: 'Gérer le catalogue commun',
+  },
+  {
+    key: PERMISSIONS.SUPPORT.READ,
+    module: MODULE_KEYS.SUPPORT,
+    description: 'Consulter les demandes SAV et leur historique.',
+  },
+  {
+    key: PERMISSIONS.SUPPORT.MANAGE,
+    module: MODULE_KEYS.SUPPORT,
+    description: 'Qualifier et résoudre les demandes SAV.',
+  },
+  {
+    key: PERMISSIONS.PURCHASING.READ,
+    module: MODULE_KEYS.PURCHASING,
+    description: 'Consulter les commandes fournisseurs',
+  },
+  {
+    key: PERMISSIONS.PURCHASING.MANAGE,
+    module: MODULE_KEYS.PURCHASING,
+    description: 'Créer et valider les commandes fournisseurs',
+  },
+  {
+    key: PERMISSIONS.SERVICES.READ,
+    module: MODULE_KEYS.SERVICES,
+    description: 'Consulter projets et interventions',
+  },
+  {
+    key: PERMISSIONS.SERVICES.TIME_WRITE,
+    module: MODULE_KEYS.SERVICES,
+    description: 'Saisir et corriger son propre temps sur ses interventions affectées',
+  },
+  {
+    key: PERMISSIONS.SERVICES.TIME_APPROVE,
+    module: MODULE_KEYS.SERVICES,
+    description: 'Approuver, refuser et rouvrir les temps saisis par une autre personne',
+  },
+  {
+    key: PERMISSIONS.SERVICES.MANAGE,
+    module: MODULE_KEYS.SERVICES,
+    description: 'Gérer projets et interventions',
+  },
   core(PERMISSIONS.CORE.TENANT_READ, 'View tenant profile and settings'),
   core(PERMISSIONS.CORE.TENANT_MANAGE, 'Update tenant settings'),
   core(PERMISSIONS.CORE.USERS_READ, 'View users'),
@@ -248,9 +370,15 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.EMAIL_SEND, 'Compose and send emails'),
   core(PERMISSIONS.CORE.EMAIL_MANAGE, 'Manage email templates and tenant email configuration'),
   core(PERMISSIONS.CORE.APS_READ, 'View the APS scheduling engine status and run schedules'),
-  core(PERMISSIONS.CORE.APS_ADMIN, 'Administer the APS scheduling engine (diagnostics, smoke runs)'),
+  core(
+    PERMISSIONS.CORE.APS_ADMIN,
+    'Administer the APS scheduling engine (diagnostics, smoke runs)',
+  ),
   tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ, 'View customers, locations, carriers, fleet'),
-  tms(PERMISSIONS.TRANSPORTATION.MASTER_DATA_MANAGE, 'Manage customers, locations, carriers, fleet'),
+  tms(
+    PERMISSIONS.TRANSPORTATION.MASTER_DATA_MANAGE,
+    'Manage customers, locations, carriers, fleet',
+  ),
   tms(PERMISSIONS.TRANSPORTATION.ORDERS_READ, 'View transport orders'),
   tms(PERMISSIONS.TRANSPORTATION.ORDERS_MANAGE, 'Create, confirm and cancel transport orders'),
   tms(PERMISSIONS.TRANSPORTATION.PLANNING_READ, 'View shipments, loads and routes'),
@@ -271,14 +399,26 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   billing(PERMISSIONS.BILLING.INVOICES_READ, 'View carrier invoices'),
   billing(PERMISSIONS.BILLING.INVOICES_MANAGE, 'Draft and approve carrier invoices'),
   billing(PERMISSIONS.BILLING.INVOICES_PAY, 'Mark carrier invoices as paid'),
-  billing(PERMISSIONS.BILLING.FREIGHT_AUDIT_READ, 'View incoming carrier invoices and audit results'),
-  billing(PERMISSIONS.BILLING.FREIGHT_AUDIT_MANAGE, 'Audit, dispute and resolve incoming carrier invoices'),
+  billing(
+    PERMISSIONS.BILLING.FREIGHT_AUDIT_READ,
+    'View incoming carrier invoices and audit results',
+  ),
+  billing(
+    PERMISSIONS.BILLING.FREIGHT_AUDIT_MANAGE,
+    'Audit, dispute and resolve incoming carrier invoices',
+  ),
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_READ, 'View customer billing statements'),
-  billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_MANAGE, 'Draft, approve and delete customer billing statements'),
+  billing(
+    PERMISSIONS.BILLING.CUSTOMER_INVOICES_MANAGE,
+    'Draft, approve and delete customer billing statements',
+  ),
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_SEND, 'Send customer billing statements'),
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_PAY, 'Mark customer billing statements as paid'),
   billing(PERMISSIONS.BILLING.LEDGER_READ, 'View the general ledger'),
-  billing(PERMISSIONS.BILLING.LEDGER_MANAGE, 'Manage the general ledger (manual journal entries, chart of accounts)'),
+  billing(
+    PERMISSIONS.BILLING.LEDGER_MANAGE,
+    'Manage the general ledger (manual journal entries, chart of accounts)',
+  ),
   billing(PERMISSIONS.BILLING.PAYMENTS_READ, 'View payments'),
   billing(PERMISSIONS.BILLING.PAYMENTS_MANAGE, 'Record and submit payments'),
   billing(PERMISSIONS.BILLING.SUBSCRIPTIONS_READ, 'View subscriptions'),
@@ -295,9 +435,18 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   yard(PERMISSIONS.YARD.MANAGE, 'Manage yard spots, gate check-in/out, moves and appointments'),
   analytics(PERMISSIONS.ANALYTICS.READ, 'View the operational Control Tower and analytics'),
   procurement(PERMISSIONS.PROCUREMENT.READ, 'View RFPs, bids, invites and routing guide'),
-  procurement(PERMISSIONS.PROCUREMENT.MANAGE, 'Manage RFPs, invite carriers, evaluate bids and award lanes'),
-  carrierPortal(PERMISSIONS.CARRIER_PORTAL.LINKS_MANAGE, 'Generate and revoke carrier portal links'),
-  carrierPortal(PERMISSIONS.CARRIER_PORTAL.READ, 'View carrier portal configuration and access links'),
+  procurement(
+    PERMISSIONS.PROCUREMENT.MANAGE,
+    'Manage RFPs, invite carriers, evaluate bids and award lanes',
+  ),
+  carrierPortal(
+    PERMISSIONS.CARRIER_PORTAL.LINKS_MANAGE,
+    'Generate and revoke carrier portal links',
+  ),
+  carrierPortal(
+    PERMISSIONS.CARRIER_PORTAL.READ,
+    'View carrier portal configuration and access links',
+  ),
   // CRM
   crm(PERMISSIONS.CRM.READ, 'View CRM companies, contacts, deals and activities'),
   crm(PERMISSIONS.CRM.MANAGE, 'Create and manage CRM records, advance and convert deals'),
