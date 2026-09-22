@@ -67,7 +67,7 @@ export const connectedBusinessTools: ToolDef[] = [
   {
     name: 'services_schedule_job',
     description:
-      'Governed scheduling proposal. Execution rechecks tenant ownership, source version, overlaps, approved absences and required qualifications under a lock. Never set acknowledgeUnknown unless the user has explicitly confirmed the missing checks.',
+      'Governed scheduling proposal. Execution rechecks tenant ownership, source version, overlaps, approved absences and required qualifications under a lock. Unknown checks cannot be acknowledged by an agent: ask the user to review and confirm manually in the planning screen.',
     tier: RiskTier.MUTATING,
     permission: PERMISSIONS.SERVICES.MANAGE,
     additionalPermissions: [PERMISSIONS.SERVICES.READ, PERMISSIONS.HR.AVAILABILITY_READ],

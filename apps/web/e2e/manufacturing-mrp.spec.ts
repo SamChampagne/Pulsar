@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { EXPERIENCED_PREFERENCES } from './helpers';
 
 async function setup(
   page: Page,
@@ -203,6 +204,7 @@ async function setup(
   };
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace('/api/v1/', '');
+    if (path === 'me/preferences') return route.fulfill({ json: EXPERIENCED_PREFERENCES });
     if (route.request().method() === 'GET') state.reads.push(route.request().url());
     if (route.request().method() !== 'GET') {
       state.writes.push({ path, body: route.request().postDataJSON() });

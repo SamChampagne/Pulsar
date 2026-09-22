@@ -237,7 +237,7 @@ test('first HR visit starts the interactive tour, explores real screens and pers
   await expect(page.getByRole('article')).toContainText(
     'Une équipe inactive ne peut pas être sélectionnée',
   );
-  await expect(page.getByRole('article')).toContainText('Services affiche maintenant une alerte');
+  await expect(page.getByRole('article')).toContainText('Le planning Services ajoute une durée');
 });
 test('a self-only user sees no team records or decision controls', async ({ page, request }) => {
   await login(page, selfCredentials);

@@ -319,7 +319,7 @@ export const MODULE_GUIDES: Record<string, PageGuide> = {
     connections:
       'Catalogue fournit le client. Services conserve l’intervention liée, son temps et ses pièces. La demande SAV reste un dossier distinct, sans effet automatique sur le stock ou la facture.',
     caution:
-      'Clôturer est définitif. La priorité ne constitue pas un délai contractuel. Aucun courriel client, SLA automatique ou outil AI de traitement n’est ajouté.',
+      'Clôturer est définitif. La priorité ne constitue pas un délai contractuel. Le Coordinateur Services et SAV peut préparer une réponse et proposer un responsable ou une échéance; aucun courriel client ni SLA automatique.',
   },
   documentation: {
     purpose:

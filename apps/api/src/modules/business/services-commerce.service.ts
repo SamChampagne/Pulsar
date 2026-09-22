@@ -115,6 +115,7 @@ export class ServicesCommerceService {
     return paginated(items, total, page, pageSize);
   }
   private async quoteData(tx: Prisma.TransactionClient, tenantId: string, dto: QuoteFieldsDto) {
+    if (!dto.title.trim()) throw new BadRequestException('Titre du devis requis.');
     await this.ownership.assertOwned('businessPartner', dto.partnerId, tenantId, tx);
     const partner = await tx.businessPartner.findFirst({
       where: { tenantId, id: dto.partnerId, active: true, isCustomer: true },

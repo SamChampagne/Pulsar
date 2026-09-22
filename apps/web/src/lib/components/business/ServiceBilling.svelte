@@ -203,7 +203,10 @@
                 min="0.0001"
                 max="10000000"
                 step="0.0001"
-                bind:value={prices[source.id]}
+                value={prices[source.id] ?? ''}
+                oninput={(event) => {
+                  prices[source.id] = Number(event.currentTarget.value);
+                }}
               /></Field
             >
           </div>{/each}

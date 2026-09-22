@@ -241,12 +241,12 @@ for (const [key, path, label] of [
     await page.goto(path);
     const tour = page.getByTestId('module-tour');
     await expect(tour).toContainText('Bienvenue dans ' + (key === 'support' ? 'le SAV' : label));
-    for (let step = 0; step < (key === 'purchasing' ? 5 : 4); step++) {
+    for (let step = 0; step < (['purchasing', 'services'].includes(key) ? 5 : 4); step++) {
       await tour.getByRole('button', { name: 'Suivant', exact: true }).click();
       if (key === 'services' && step === 2) {
         await tour.getByRole('button', { name: 'Explorer : Feuilles de temps' }).click();
         await expect(page).toHaveURL(/\/services\/time$/);
-        await expect(tour).toContainText('Prouver le temps et les pièces');
+        await expect(tour).toContainText('Faire approuver le travail');
       }
     }
     await tour.getByRole('button', { name: 'Terminer', exact: true }).click();

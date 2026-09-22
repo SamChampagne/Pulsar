@@ -293,7 +293,7 @@ test('page help and the replayable interactive Services tutorial explain the RH 
   const tour = page.getByRole('dialog');
   await tour.getByRole('button', { name: 'Suivant', exact: true }).click();
   await tour.getByRole('button', { name: 'Suivant', exact: true }).click();
-  await expect(tour).toContainText('contrôle RH du jour de début');
-  await tour.getByRole('button', { name: 'Explorer : Interventions', exact: true }).click();
-  await expect(page).toHaveURL(/\/services\/interventions$/);
+  await expect(tour).toContainText('les contraintes inconnues ne signifient pas disponible');
+  await tour.getByRole('button', { name: 'Explorer : Planning', exact: true }).click();
+  await expect(page).toHaveURL(/\/services\/planning$/);
 });

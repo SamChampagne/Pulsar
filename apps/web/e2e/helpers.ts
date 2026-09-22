@@ -12,6 +12,18 @@ export const DEMO_USER = {
   tenant: 'acme',
 };
 
+/** Explicit experienced-user preferences for isolated UI fixtures, no server write. */
+export const EXPERIENCED_PREFERENCES = {
+  moduleTours: Object.fromEntries(
+    TOUR_MODULE_KEYS.map((k) => [
+      k,
+      { version: moduleTourVersion(k), step: 0, status: 'COMPLETED' },
+    ]),
+  ),
+  appearance: {},
+  deskLayout: {},
+};
+
 /** Dedicated account: tutorial completion never changes the demo user's preferences. */
 export async function tutorialAccount(request: APIRequestContext) {
   const auth = await request.post('/api/v1/auth/login', { data: DEMO_USER });

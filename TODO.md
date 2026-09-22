@@ -2,6 +2,20 @@
 
 Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link PRs when relevant.
 
+## Exploitation connectée — 2026-09-22
+
+Contrats, limites et recette : [livraison](docs/plans/connected-business-delivery.md) ·
+[essai serveur](docs/plans/connected-business-server-acceptance.md).
+
+- [x] Mon travail : cinq sources dérivées, droits/modules, réglages et liens actionnables.
+- [x] Planning Services jour/semaine, personnes/équipes, durée et fuseau entreprise, conflits/absences/qualifications, déplacement confirmé.
+- [x] Partenaire Catalogue ↔ client Facturation/société CRM explicites; devis figé → projet.
+- [x] Heures approuvées/pièces consommées → brouillon Facturation, sources uniques et reprise idempotente.
+- [x] Coordinateur Services/SAV : huit outils, propositions gouvernées, aucune décision RH ou approbation financière.
+- [x] Documentation, connexions et tutoriel Services actualisés; bureau et composants Pulsar conservés.
+- [ ] Recette VPS, vrais périphériques Zebra/USB et fournisseur LLM réel, avec accès limités.
+- [ ] Capacité APS main-d'œuvre, compensations Services après facturation, notifications et nouveaux déclencheurs always-on.
+
 ## Fondations multi-métiers — 2026-09-21
 
 Contrats et périmètre : [business-foundations.md](docs/plans/business-foundations.md).
@@ -15,13 +29,13 @@ Contrats et périmètre : [business-foundations.md](docs/plans/business-foundati
 - [x] Activation simultanée d’une nouvelle app résistante à la concurrence.
 - [x] Correspondance Catalogue ↔ WMS un-à-un, unités contrôlées; pièces Services et retours intégraux idempotents ([contrats](docs/plans/services-parts-and-connected-documentation.md)).
 - [x] Documentation approfondie : fiches de connexions, responsabilités, déclencheurs/effets/limites, parcours intermodules, glossaire et dépannage intégrés.
-- [ ] Correspondances explicites du Catalogue avec les référentiels CRM/TMS historiques.
+- [x] Correspondances explicites partenaires Catalogue ↔ société CRM/client Facturation (référentiel client historique partagé TMS).
 - [x] Services : approbation indépendante des temps, refus/réouverture motivés, gel, journal transactionnel et garde de clôture ([contrats](docs/plans/services-time-approval.md)).
 - [ ] Services : revue hebdomadaire/en masse, délégations, relances et procédure des temps historiques sur projets déjà fermés.
-- [ ] Services : planning de capacité, équipes, retours partiels/stock mobile, devis/facturation et signatures.
+- [ ] Services : capacité avancée, retours partiels/stock mobile et signatures (planning humain, devis/facture brouillon livrés ci-dessus).
 - [x] Achats ↔ WMS : arrivages partiels, reliquats, champs personnalisés, preuve paginée, reprise sans doublon et clôture motivée ([contrats](docs/plans/supplier-receipts-and-support.md)).
 - [ ] Achats : liens projet/MRP, envoi, retours fournisseur, rapprochement facture et navigation WMS → commande fournisseur.
-- [ ] Événements et outils AI gouvernés des nouvelles apps.
+- [ ] Événements/worker always-on des nouvelles apps; outils interactifs Services/SAV livrés ci-dessus.
 - [ ] Procédures privées par tenant dans Documentation et exercices tutoriels métier approfondis.
 - [x] Tutoriels RH/Qualité/SAV/Achats versionnés et distincts, pratique/reprise, première présentation automatique par utilisateur et relance dans l’aide, comptes de recette isolés ([contrat](docs/plans/skills-followup-and-module-tutorials.md)).
 - [x] SAV v1 : demandes client, qualification, priorité, lien Services cohérent, résolution/réouverture/clôture, historique, tutoriel automatique et documentation.
@@ -34,8 +48,8 @@ Contrats et périmètre : [business-foundations.md](docs/plans/business-foundati
 - [x] RH v1 : employés, équipes, compte optionnel distinct et fixe, demandes d’absence, espace personnel, décision indépendante, chevauchements gardés, journal, documentation et tutoriel première visite ([contrats](docs/plans/hr-foundations.md)).
 - [x] RH → Services : contrôle minimal des absences approuvées par jour, permission dédiée, liste et prévisualisation, états inconnus, fuseau explicite, aide/tutoriel et confidentialité ([contrats](docs/plans/hr-services-availability.md)).
 - [x] RH : compétences/habilitations datées, révocation motivée, contrôle minimal des exigences d’un poste Fabrication; permissions et documentation dédiées ([contrat](docs/plans/skills-followup-and-module-tutorials.md)).
-- [ ] RH : alertes d’expiration, matrice par équipe, exigences des opérations/gammes puis disponibilité Fabrication, réaffectation auditée compte/employé, rétention et accès hiérarchiques. Aucune paie ni donnée médicale dans le premier lot.
-- [ ] Services : fuseau métier stable et durée prévue avant calcul de capacité ou blocage d’affectation; le contrôle RH actuel vérifie uniquement le jour du début dans le fuseau du navigateur.
+- [ ] RH : matrice par équipe, exigences des opérations/gammes puis disponibilité Fabrication, réaffectation auditée compte/employé, rétention et accès hiérarchiques. Alertes d'expiration livrées dans Mon travail; aucune paie ni donnée médicale.
+- [x] Services : fuseau métier stable et durée prévue; planning revérifie tous les jours civils couverts par le créneau.
 - [ ] Location, Commerce/POS, Restauration et e-commerce : implémentation et tutoriels exécutables, non livrés par leur documentation de cadrage.
 
 ## Utilisabilité client — 2026-09-21
@@ -55,6 +69,7 @@ Contrats, couverture et tests : [end-user-workflows.md](docs/plans/end-user-work
 - [ ] Bureau à deux panneaux conservant contexte et brouillons indépendants.
 - [ ] Cohérence des partenaires inactifs dans tous les nouveaux dossiers, filtre Actifs/Inactifs et versions d’édition.
 - [ ] Nettoyage des anciens logos et écriture atomique des réglages de branding concurrents.
+
 ## Fabrication / MRP — discret et procédés (2026-09-15)
 
 - [x] M1 : poste Pulsar, politiques par entrepôt, demandes/arrivages, explosion multi-niveaux Decimal, snapshots immuables, garde unités et réception WMS non doublée ([contrats et trajectoire](docs/plans/manufacturing-mrp.md)).

@@ -344,7 +344,7 @@ export const KNOWLEDGE_DETAILS: Record<string, Detail> = {
       'Un runtime indisponible ne doit pas arrêter le cœur de Pulsar. Consultez le run et sa raison d’échec ou de saut.',
     ],
     limits: [
-      'Un module nouvellement ajouté n’a pas automatiquement des outils AI. Services, Catalogue et Achats fournisseurs n’en ont pas encore dans ce lot.',
+      'Un module nouvellement ajouté n’a pas automatiquement des outils AI. Services et SAV proposent maintenant des lectures et mutations gouvernées ciblées; Catalogue et Achats fournisseurs restent sans outil de mutation dédié.',
     ],
     example:
       'Donnez un rôle limité à un agent, observez sa proposition, vérifiez le dossier et approuvez seulement l’action attendue.',

@@ -1,5 +1,17 @@
 # État du projet — point de reprise
 
+> **Exploitation connectée — 2026-09-22, `codex/end-user-workflows`.** Les quatre
+> chantiers sont implémentés : Mon travail multi-métiers, planning Services/RH,
+> devis/projet/travaux vers facture brouillon et coordinateur AI gouverné. Les lots
+> locaux précédents sont conservés; main et ses protections MRP sont intégrés.
+> Documentation, connexions et tutoriel Services actualisés sans changer le bureau
+> d'apps ni le design Pulsar. Une seule PR est préparée; aucune fusion ou action OVH.
+> [Contrats et vérifications](./plans/connected-business-delivery.md) ·
+> [recette serveur](./plans/connected-business-server-acceptance.md).
+
+Les comptes rendus ci-dessous sont historiques : leurs mentions « aucun commit/PR »
+et limites fonctionnelles décrivent leur lot d'origine, pas cette livraison consolidée.
+
 > **Compétences/habilitations, suivi SAV/Achats et tutoriels métier v2 (2026-09-22), branche `codex/end-user-workflows`.**
 > RH : référentiel de compétences/autorisations, attestations datées immuables, renouvellement
 > par nouvelle ligne, révocation motivée et reprise idempotente. Pas d’auto-attestation.

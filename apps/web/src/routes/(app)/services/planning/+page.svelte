@@ -236,18 +236,22 @@
     ></Field
   >
   <div class="min-w-56">
-    <EntityPicker
-      label="Personne à afficher"
-      endpoint="/services/references/people"
-      bind:value={userId}
-    />
+    <Field label="Personne">
+      <EntityPicker
+        label="Personne à afficher"
+        endpoint="/services/references/people"
+        bind:value={userId}
+      />
+    </Field>
   </div>
   {#if hr && $auth?.user.permissions.includes('hr.availability.read')}<div class="min-w-48">
-      <EntityPicker
-        label="Équipe à afficher"
-        endpoint="/services/planning/references/teams"
-        bind:value={teamId}
-      />
+      <Field label="Équipe">
+        <EntityPicker
+          label="Équipe à afficher"
+          endpoint="/services/planning/references/teams"
+          bind:value={teamId}
+        />
+      </Field>
     </div>{/if}
   {#if board}<span class="pb-2 text-sm text-ink-muted"
       >{board.timeZone} · {board.unplanned} intervention(s) à compléter</span
