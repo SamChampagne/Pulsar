@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 import { TOUR_MODULE_KEYS } from '@pulsar/shared';
 
 async function setup(page: Page, unseen: string[] = [], manage = true) {

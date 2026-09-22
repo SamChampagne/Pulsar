@@ -83,4 +83,12 @@ corrigées : prix initial de facturation non défini, attentes de texte/nombre d
 tutoriels et préférences manquantes des fixtures MRP. La dernière passe n'a pas de retry.
 La CI GitHub complète de la PR est une preuve séparée; consulter les checks du dernier SHA
 avant fusion. Aucun check n'a été supprimé ou assoupli.
+Une passe supplémentaire sur 219 scénarios historiques a validé 216 cas et révélé
+deux attentes de test à actualiser (navigation Catalogue et pays par défaut), plus
+un cas interrompu par une requête de préférences encore en vol. Les 28 cas ciblés
+rejoués après correction sont tous réussis : **338 scénarios navigateur uniques ont
+ainsi été validés localement, en plusieurs passes**. Une fixture commune attend
+désormais la fin des routes avant fermeture de page, sans ignorer leurs erreurs.
+La CI du commit précédent avait validé les cinq jobs hors navigateur; son job
+navigateur a confirmé ces problèmes de test. Le dernier commit relance la CI entière.
 Jest HTTP utilise encore `--forceExit`; aucune amélioration de cet arrêt historique n'est revendiquée.

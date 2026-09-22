@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 import { login } from './helpers';
 
 /**
@@ -131,11 +131,14 @@ test('/locations: choosing Canada as country offers QC and ON as province choice
   await page.getByRole('button', { name: 'Nouveau lieu' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Nouveau lieu' });
 
-  // Before a country is picked, Province/État has no closed vocabulary to offer
-  // and falls back to free text (no combobox yet).
+  // Canada is now the explicit creation default. Countries without a region
+  // catalog still fall back to free text rather than inventing province choices.
+  const country = dialog.getByRole('combobox', { name: 'Pays' });
+  await expect(country).toHaveValue('CA');
+  await country.selectOption('FR');
   await expect(dialog.getByRole('combobox', { name: 'Province' })).toHaveCount(0);
 
-  await dialog.getByRole('combobox', { name: 'Pays' }).selectOption('CA');
+  await country.selectOption('CA');
 
   const province = dialog.getByRole('combobox', { name: 'Province' });
   await expect(province.locator('option', { hasText: 'Québec' })).toHaveCount(1);

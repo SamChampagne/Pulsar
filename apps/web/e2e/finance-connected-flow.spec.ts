@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 import { login } from './helpers';
 
 // Real login, all finance reads and writes in this suite use isolated browser fixtures.

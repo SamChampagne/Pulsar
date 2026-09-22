@@ -1,4 +1,4 @@
-import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+import { test, expect, type Page, type APIRequestContext } from './fixtures';
 import { login, DEMO_USER, tutorialAccount } from './helpers';
 import { TOUR_MODULE_KEYS } from '@pulsar/shared';
 import { randomUUID } from 'node:crypto';

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { login } from './helpers';
 
 test('configure a pipeline and its stage actions, move a deal, inspect follow-up and mobile layout', async ({

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 import { login, DEMO_USER, tutorialAccount } from './helpers';
 import { randomUUID } from 'node:crypto';
 let token: string, plan: any, support: any;

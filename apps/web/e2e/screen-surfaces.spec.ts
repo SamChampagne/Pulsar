@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { login } from './helpers';
 
 // Read-only surface checks. These do not claim to exercise each business workflow.

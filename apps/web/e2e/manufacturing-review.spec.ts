@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 import { EXPERIENCED_PREFERENCES } from './helpers';
 
 // Deterministic UI contract tests. The API/tenant authorization is covered by the HTTP suite.

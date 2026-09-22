@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { login, EXPERIENCED_PREFERENCES } from './helpers';
 
 for (const width of [1280, 390]) {

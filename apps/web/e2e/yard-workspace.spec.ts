@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Locator } from '@playwright/test';
+import { test, expect, type Page, type Locator } from './fixtures';
 import { login } from './helpers';
 
 // The YardArrival drawer's trailer/driver fields are entity pickers backed by

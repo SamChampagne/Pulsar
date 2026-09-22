@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 import { inspectBankCsv } from '@pulsar/shared';
 import { login } from './helpers';
 
