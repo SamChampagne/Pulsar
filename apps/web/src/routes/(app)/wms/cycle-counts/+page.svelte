@@ -1,4 +1,8 @@
 <script lang="ts">
+  import ScanInput from '$lib/components/scanning/ScanInput.svelte';
+  import { beforeNavigate } from '$app/navigation';
+  import { auth } from '$lib/stores/auth';
+  import type { ScanResult } from '@pulsar/shared';
   import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
   import {
@@ -30,6 +34,7 @@
     item: { sku: string; name: string };
   }
   interface CycleCount {
+    updatedAt: string;
     id: string;
     number: string;
     status: 'OPEN' | 'COUNTED' | 'RECONCILED' | 'CANCELLED';
@@ -50,6 +55,58 @@
   let view = $state<ViewId>('table');
   // line id -> entered count (string)
   let entered = $state<Record<string, string>>({});
+  let scanMode = $state<'select' | 'increment'>('select');
+  let scannedLine = $state('');
+  let uncertain = $state(false);
+  let reading = $state(false);
+  let openRequest = 0;
+  const dirty = $derived(
+    selected?.status === 'OPEN' &&
+      (selected.lines ?? []).some(
+        (l) => String(entered[l.id] ?? '') !== String(l.countedQty ?? ''),
+      ),
+  );
+  beforeNavigate(({ cancel }) => {
+    if (dirty && !window.confirm('Quitter ce comptage et perdre les quantités non enregistrées ?'))
+      cancel();
+  });
+  const canManage = $derived(!!$auth?.user.permissions.includes('wms.manage'));
+  async function scanItem(code: string) {
+    if (!selected || selected.status !== 'OPEN' || busy || reading || uncertain || !canManage)
+      return;
+    const id = selected.id;
+    const mode = scanMode;
+    reading = true;
+    try {
+      const item = await api<ScanResult>('/scan/wms', {
+        method: 'POST',
+        body: { kind: 'item', code },
+      });
+      if (!selected || selected.id !== id || selected.status !== 'OPEN') return;
+      const line = selected.lines?.find((l) => l.itemId === item.id);
+      if (!line)
+        throw new Error('Article absent de ce comptage. Aucun ajout ni ajustement effectué.');
+      scannedLine = line.id;
+      if (mode === 'increment') {
+        if (item.unit !== 'EA')
+          throw new Error(
+            'Le mode +1 est réservé aux unités EA. Sélectionnez la ligne puis saisissez la quantité mesurée.',
+          );
+        const current = entered[line.id] === '' ? 0 : Number(entered[line.id] ?? 0);
+        if (!Number.isFinite(current) || current < 0 || current >= 1e9)
+          throw new Error('Quantité invalide; corrigez la saisie.');
+        entered[line.id] = String(current + 1);
+      }
+      return (
+        item.code +
+        (mode === 'increment'
+          ? ' : ' + entered[line.id] + ' EA comptés (non enregistrés)'
+          : ' sélectionné — saisir la quantité comptée')
+      );
+    } finally {
+      reading = false;
+    }
+  }
 
   const KANBAN_COLS: { status: CycleCount['status']; label: string }[] = [
     { status: 'OPEN', label: 'Ouvert' },
@@ -99,10 +156,22 @@
     }
   }
 
-  async function openCount(id: string) {
+  async function openCount(id: string, force = false) {
+    if (!force && (busy || reading)) return;
+    if (
+      !force &&
+      dirty &&
+      !uncertain &&
+      !(await confirmAction('Abandonner les quantités non enregistrées et ouvrir ce comptage ?'))
+    )
+      return;
+    const request = ++openRequest;
     try {
       const c = await api<CycleCount>(`/wms/cycle-counts/${id}`);
+      if (request !== openRequest) return;
       selected = c;
+      scannedLine = '';
+      uncertain = false;
       entered = {};
       for (const l of c.lines ?? []) entered[l.id] = l.countedQty ?? '';
     } catch (e) {
@@ -111,6 +180,12 @@
   }
 
   async function create() {
+    if (!canManage || busy || reading) return;
+    if (
+      dirty &&
+      !(await confirmAction('Abandonner le brouillon du comptage avant d’en créer un autre ?'))
+    )
+      return;
     if (!createBinId) {
       toast.error('Choisis un emplacement');
       return;
@@ -123,7 +198,7 @@
       });
       createNote = '';
       await load();
-      await openCount(c.id);
+      await openCount(c.id, true);
       toast.success(`${c.number} créé — saisis les quantités comptées`);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Échec de la création');
@@ -133,7 +208,7 @@
   }
 
   async function recordCounts() {
-    if (!selected) return;
+    if (!selected || busy || reading || uncertain || !canManage) return;
     const payload = (selected.lines ?? [])
       .filter((l) => entered[l.id] !== '' && entered[l.id] != null)
       .map((l) => ({ lineId: l.id, countedQty: Number(entered[l.id]) }));
@@ -141,16 +216,36 @@
       toast.error('Saisis au moins une quantité');
       return;
     }
+    if (
+      payload.some(
+        (l) =>
+          !Number.isFinite(l.countedQty) ||
+          l.countedQty < 0 ||
+          Math.abs(l.countedQty * 1000 - Math.round(l.countedQty * 1000)) > 1e-7,
+      )
+    ) {
+      toast.error('Quantités positives ou nulles, trois décimales maximum.');
+      return;
+    }
+    if (
+      !(await confirmAction(
+        'Enregistrer les quantités comptées ? Cette étape clôture la saisie, sans ajuster le stock.',
+      ))
+    )
+      return;
     busy = true;
     try {
       await api(`/wms/cycle-counts/${selected.id}/counts`, {
         method: 'POST',
-        body: { counts: payload },
+        body: { counts: payload, expectedUpdatedAt: selected.updatedAt },
       });
       toast.success('Comptage enregistré');
+      uncertain = true; // Remain read-only until the saved document has been reloaded.
       await load();
-      await openCount(selected.id);
+      await openCount(selected.id, true);
     } catch (e) {
+      if (!(e instanceof ApiError && [400, 403, 404, 409, 422].includes(e.statusCode)))
+        uncertain = true;
       toast.error(e instanceof ApiError ? e.message : 'Échec');
     } finally {
       busy = false;
@@ -158,13 +253,19 @@
   }
 
   async function reconcile() {
-    if (!selected) return;
+    if (!selected || busy || !canManage) return;
+    if (
+      !(await confirmAction(
+        'Réconcilier ce comptage ? Les écarts seront appliqués au stock réel via des ajustements.',
+      ))
+    )
+      return;
     busy = true;
     try {
       await api(`/wms/cycle-counts/${selected.id}/reconcile`, { method: 'POST' });
       toast.success('Réconcilié — ajustements postés');
       await load();
-      await openCount(selected.id);
+      await openCount(selected.id, true);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Échec de la réconciliation');
     } finally {
@@ -173,13 +274,17 @@
   }
 
   async function cancel(id: string) {
+    if (!canManage || busy || reading) return;
     if (!(await confirmAction('Annuler ce comptage ?'))) return;
+    busy = true;
     try {
       await api(`/wms/cycle-counts/${id}/cancel`, { method: 'POST' });
       await load();
-      if (selected?.id === id) await openCount(id);
+      if (selected?.id === id) await openCount(id, true);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Échec');
+    } finally {
+      busy = false;
     }
   }
 
@@ -208,29 +313,29 @@
 <div class="grid gap-3 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
   <!-- Left: create + list -->
   <div class="space-y-3">
-    <Card>
-      <h2 class="mb-3 text-sm font-bold text-ink">Nouveau comptage</h2>
-      <div class="space-y-3">
-        <Field label="Emplacement">
-          <EntityPicker
-            endpoint="/wms/bins"
-            label="Emplacement"
-            labelKey="code"
-            detailKey="kind"
-            listShape="array"
-            bind:value={createBinId}
-          />
-        </Field>
-        <Field label="Note">
-          <input
-            bind:value={createNote}
-            placeholder="Optionnel"
-            class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-          />
-        </Field>
-        <Button variant="primary" loading={busy} onclick={create}>Démarrer le comptage</Button>
-      </div>
-    </Card>
+    {#if canManage}<Card>
+        <h2 class="mb-3 text-sm font-bold text-ink">Nouveau comptage</h2>
+        <div class="space-y-3">
+          <Field label="Emplacement">
+            <EntityPicker
+              endpoint="/wms/bins"
+              label="Emplacement"
+              labelKey="code"
+              detailKey="kind"
+              listShape="array"
+              bind:value={createBinId}
+            />
+          </Field>
+          <Field label="Note">
+            <input
+              bind:value={createNote}
+              placeholder="Optionnel"
+              class="w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+            />
+          </Field>
+          <Button variant="primary" loading={busy} onclick={create}>Démarrer le comptage</Button>
+        </div>
+      </Card>{/if}
 
     {#if loading}
       <Card padded={false}><Skeleton rows={5} /></Card>
@@ -330,20 +435,48 @@
           <Badge tone={statusTone(selected.status)}>{statusLabel(selected.status)}</Badge>
         </div>
         <div class="flex gap-2">
-          {#if selected.status === 'OPEN'}
-            <Button variant="primary" loading={busy} onclick={recordCounts}
+          {#if selected.status === 'OPEN' && canManage}
+            <Button variant="primary" loading={busy} disabled={uncertain} onclick={recordCounts}
               >Enregistrer le comptage</Button
             >
           {/if}
-          {#if selected.status === 'COUNTED'}
+          {#if selected.status === 'COUNTED' && canManage}
             <Button variant="primary" loading={busy} onclick={reconcile}>Réconcilier</Button>
           {/if}
-          {#if selected.status === 'OPEN' || selected.status === 'COUNTED'}
+          {#if canManage && (selected.status === 'OPEN' || selected.status === 'COUNTED')}
             <Button variant="secondary" onclick={() => cancel(selected!.id)}>Annuler</Button>
           {/if}
         </div>
       </div>
 
+      {#if uncertain}<p role="alert" class="p-4 text-sm text-danger">
+          Réponse incertaine. Ne renvoyez pas le comptage; rouvrez le dossier dans la liste pour
+          vérifier son statut.
+        </p>{/if}
+      {#if selected.status === 'OPEN' && canManage}
+        <div class="space-y-3 p-4">
+          <label class="block text-sm"
+            >Mode de comptage
+            <select
+              bind:value={scanMode}
+              disabled={busy || uncertain}
+              class="mt-1 min-h-11 w-full rounded-md border border-edge bg-surface px-3"
+            >
+              <option value="select">Scanner pour sélectionner, puis saisir la quantité</option>
+              <option value="increment">Chaque scan ajoute 1 unité EA au brouillon</option>
+            </select>
+          </label>
+          {#key selected.id}<ScanInput
+              onscan={scanItem}
+              disabled={busy || uncertain}
+              label="Scanner l’article à compter"
+            />{/key}
+          <p class="text-xs text-ink-muted">
+            Aucun stock ne change au scan. Les cases vides restent non comptées, pas zéro.
+            Enregistrez puis réconciliez après vérification.
+          </p>
+        </div>
+      {/if}
       {#if (selected.lines ?? []).length === 0}
         <div class="p-4">
           <EmptyState
@@ -360,14 +493,19 @@
           {#snippet body()}
             {#each selected!.lines ?? [] as l (l.id)}
               {@const v = variance(l)}
-              <tr>
+              <tr
+                class={scannedLine === l.id ? 'bg-accent/10' : ''}
+                data-scan-selected={scannedLine === l.id ? 'true' : undefined}
+              >
                 <td class="font-mono font-semibold text-ink">{l.item.sku}</td>
                 <td class="text-ink-muted">{l.item.name}</td>
                 <td class="text-right text-ink">{Number(l.systemQty)}</td>
                 <td class="text-right">
-                  {#if selected!.status === 'OPEN'}
+                  {#if selected!.status === 'OPEN' && canManage}
                     <input
                       type="number"
+                      aria-label={`Quantité comptée : ${l.item.sku}`}
+                      disabled={busy || uncertain}
                       step="any"
                       min="0"
                       bind:value={entered[l.id]}

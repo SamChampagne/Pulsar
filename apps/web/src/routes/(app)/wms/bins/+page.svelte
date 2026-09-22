@@ -24,6 +24,8 @@
   import type { LocationRecord } from '$lib/components/locations/types';
 
   interface Bin {
+    zone: string | null;
+    updatedAt: string;
     id: string;
     code: string;
     kind: string;
@@ -71,6 +73,9 @@
   let formCode = $state('');
   let formKind = $state('STORAGE');
   let formActive = $state(true);
+  let formZone = $state('');
+  let formVersion = $state('');
+  const canManage = $derived(!!$auth?.user.permissions.includes('wms.manage'));
   let saving = $state(false);
 
   function kindTone(kind: string): Tone {
@@ -124,6 +129,8 @@
     formCode = '';
     formKind = 'STORAGE';
     formActive = true;
+    formZone = '';
+    formVersion = '';
     formOpen = true;
   }
 
@@ -133,6 +140,8 @@
     formCode = b.code;
     formKind = b.kind;
     formActive = b.isActive;
+    formZone = b.zone ?? '';
+    formVersion = b.updatedAt;
     formOpen = true;
   }
 
@@ -148,6 +157,8 @@
         code: formCode.trim(),
         kind: formKind,
         isActive: formActive,
+        zone: formZone.trim() || null,
+        ...(editId ? { expectedUpdatedAt: formVersion } : {}),
       };
       if (editId) {
         await api(`/wms/bins/${editId}`, { method: 'PATCH', body });
@@ -168,7 +179,7 @@
 
 <PageHeader title="Emplacements" count={bins.length}>
   {#snippet actions()}
-    <Button onclick={openCreate}>Nouvel emplacement</Button>
+    {#if canManage}<Button onclick={openCreate}>Nouvel emplacement</Button>{/if}
   {/snippet}
 </PageHeader>
 
@@ -200,19 +211,20 @@
   <Card>
     <EmptyState message="Aucun emplacement pour le moment.">
       {#snippet children()}
-        <Button onclick={openCreate}>Nouvel emplacement</Button>
+        {#if canManage}<Button onclick={openCreate}>Nouvel emplacement</Button>{/if}
       {/snippet}
     </EmptyState>
   </Card>
 {:else}
   <Table>
     {#snippet head()}
-      <th>Code</th><th>Type</th><th>Entrepôt</th><th>Statut</th>
+      <th>Code</th><th>Zone</th><th>Type</th><th>Entrepôt</th><th>Statut</th><th>Actions</th>
     {/snippet}
     {#snippet body()}
       {#each bins as b (b.id)}
-        <tr class="cursor-pointer" onclick={() => openEdit(b)}>
+        <tr>
           <td class="font-mono font-semibold text-ink">{b.code}</td>
+          <td>{b.zone ?? 'Sans zone'}</td>
           <td><Badge tone={kindTone(b.kind)}>{kindLabel(b.kind)}</Badge></td>
           <td class="text-ink-muted"
             ><span class="font-mono">{b.location.code}</span> — {b.location.name}</td
@@ -220,6 +232,10 @@
           <td
             ><Badge tone={b.isActive ? 'ok' : 'neutral'}>{b.isActive ? 'Actif' : 'Inactif'}</Badge
             ></td
+          >
+          <td
+            >{#if canManage}<Button variant="secondary" onclick={() => openEdit(b)}>Modifier</Button
+              >{/if}</td
           >
         </tr>
       {/each}
@@ -235,7 +251,12 @@
   {#snippet children()}
     <div class="space-y-3">
       <Field label="Entrepôt">
-        <EntityPicker endpoint="/wms/sites" label="Entrepôt" bind:value={formLocationId} />
+        <EntityPicker
+          endpoint="/wms/sites"
+          label="Entrepôt"
+          bind:value={formLocationId}
+          disabled={!!editId}
+        />
       </Field>
       <Field label="Code">
         <Input bind:value={formCode} placeholder="A-01-01" />
@@ -245,6 +266,17 @@
           {#each KINDS as k (k)}<option value={k}>{KIND_LABELS[k] ?? k}</option>{/each}
         </Select>
       </Field>
+      <Field label="Zone"
+        ><Input
+          bind:value={formZone}
+          maxlength={80}
+          placeholder="Matières premières, produits finis…"
+        /></Field
+      >
+      <p class="text-xs text-ink-muted">
+        La zone regroupe les emplacements sur le poste Entrepôt. La modifier ne déplace pas le
+        stock.
+      </p>
       <Field label="Actif">
         <label class="flex items-center gap-2 text-sm text-ink">
           <input type="checkbox" bind:checked={formActive} />

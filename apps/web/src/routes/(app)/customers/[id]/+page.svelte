@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MasterDataEdit from '$lib/components/transportation/MasterDataEdit.svelte';
   import { page } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { MODULE_KEYS, PERMISSIONS, PortalUserRole } from '@pulsar/shared';
@@ -244,6 +245,7 @@
 {:else if customer}
   <PageHeader title={customer.name}>
     {#snippet actions()}
+      <MasterDataEdit kind="customers" id={customerId!} onsaved={load} />
       <Badge tone={customer!.isActive ? 'ok' : 'danger'}>
         {customer!.isActive ? 'Actif' : 'Inactif'}
       </Badge>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHelp from './PageHelp.svelte';
   let {
     title,
     eyebrow = undefined as string | undefined,
@@ -16,6 +17,7 @@
       </div>{/if}
     <div class="flex items-baseline gap-2.5">
       <h1 class="text-xl font-semibold tracking-tight text-ink">{title}</h1>
+      <PageHelp {title} />
       {#if count !== undefined}<span
           class="rounded-full bg-surface-muted px-2 py-0.5 font-mono text-xs text-ink-muted"
           >{count}</span
@@ -23,7 +25,7 @@
     </div>
     {#if subtitle}<p class="mt-1 max-w-3xl text-sm leading-5 text-ink-muted">{subtitle}</p>{/if}
   </div>
-  {#if actions}<div class="flex max-w-full flex-wrap items-center gap-2">
+  {#if actions}<div data-tour="page-actions" class="flex max-w-full flex-wrap items-center gap-2">
       {@render actions()}
     </div>{/if}
 </div>

@@ -110,13 +110,23 @@ export class CycleCountsService {
   async recordCounts(tenantId: string, userId: string, id: string, dto: RecordCountsDto) {
     const count = await this.prisma.cycleCount.findFirst({
       where: { id, tenantId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, updatedAt: true },
     });
     if (!count) throw new NotFoundException('Cycle count not found');
-    if (count.status !== CycleCountStatus.OPEN) {
+    if (!canTransitionCycleCount(count.status as CycleCountStatus, CycleCountStatus.COUNTED)) {
       throw new BadRequestException('Only an OPEN cycle count can record counts');
     }
     await this.prisma.$transaction(async (tx) => {
+      const ids = dto.counts.map((c) => c.lineId);
+      if (new Set(ids).size !== ids.length)
+        throw new BadRequestException(
+          'Un article ne peut être compté deux fois dans la même demande.',
+        );
+      const owned = await tx.cycleCountLine.count({
+        where: { tenantId, cycleCountId: id, id: { in: ids } },
+      });
+      if (owned !== ids.length)
+        throw new BadRequestException('Une ligne ne fait pas partie de ce comptage.');
       for (const c of dto.counts) {
         await tx.cycleCountLine.updateMany({
           where: { id: c.lineId, tenantId, cycleCountId: id },
@@ -124,10 +134,24 @@ export class CycleCountsService {
         });
       }
       const claim = await tx.cycleCount.updateMany({
-        where: { id, tenantId, status: CycleCountStatus.OPEN },
+        where: {
+          id,
+          tenantId,
+          status: CycleCountStatus.OPEN,
+          ...(dto.expectedUpdatedAt ? { updatedAt: new Date(dto.expectedUpdatedAt) } : {}),
+        },
         data: { status: CycleCountStatus.COUNTED, countedAt: new Date() },
       });
       if (claim.count === 0) throw new ConflictException('Cycle count already processed');
+    });
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.STATUS_CHANGE,
+      entityType: 'wms-cycle-count',
+      entityId: id,
+      before: { status: count.status },
+      after: { status: CycleCountStatus.COUNTED, lines: dto.counts.length },
     });
     return this.get(tenantId, id);
   }

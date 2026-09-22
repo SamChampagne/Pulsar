@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   AuditAction,
   CustomerInvoiceStatus,
@@ -67,6 +73,63 @@ export function groupByCurrency(rated: RatedOrder[]): Map<string, RatedOrder[]> 
  */
 @Injectable()
 export class CustomerInvoicesService {
+  /** Called by Services inside its tenant-locked source reservation transaction. */
+  async createDraftFromServiceWork(
+    tx: Prisma.TransactionClient,
+    input: {
+      tenantId: string;
+      customerId: string;
+      invoiceNumber: string;
+      currency: string;
+      projectId: string;
+      projectNumber: string;
+      lines: {
+        description: string;
+        quantity: Prisma.Decimal;
+        unitPrice: Prisma.Decimal;
+        serviceTimeEntryId: string | null;
+        servicePartUsageId: string | null;
+        sourceVersion: string;
+        unit: string;
+      }[];
+    },
+  ) {
+    await this.ownership.assertOwned('customer', input.customerId, input.tenantId, tx);
+    if (
+      !(await tx.customer.findFirst({
+        where: { tenantId: input.tenantId, id: input.customerId, isActive: true },
+      }))
+    )
+      throw new ConflictException('Client de facturation inactif.');
+    const lines = input.lines.map((l) => ({
+      source: 'services',
+      description: l.description,
+      quantity: l.quantity,
+      unitPrice: l.unitPrice,
+      amount: l.quantity.mul(l.unitPrice).toDecimalPlaces(2),
+      serviceTimeEntryId: l.serviceTimeEntryId,
+      servicePartUsageId: l.servicePartUsageId,
+      priceDetail: {
+        projectId: input.projectId,
+        projectNumber: input.projectNumber,
+        sourceVersion: l.sourceVersion,
+        unit: l.unit,
+      },
+    }));
+    const totalAmount = lines.reduce((sum, l) => sum.add(l.amount), new Prisma.Decimal(0));
+    if (totalAmount.lte(0) || totalAmount.gt('9999999999.99'))
+      throw new BadRequestException('Montant de facture hors limites.');
+    return tx.customerInvoice.create({
+      data: {
+        tenantId: input.tenantId,
+        customerId: input.customerId,
+        invoiceNumber: input.invoiceNumber,
+        currency: input.currency,
+        totalAmount,
+        lines: { create: lines },
+      },
+    });
+  }
   private readonly logger = new Logger(CustomerInvoicesService.name);
 
   constructor(
@@ -140,7 +203,11 @@ export class CustomerInvoicesService {
           snapshot: evaluation.snapshot,
         });
       } else {
-        unratable.push({ orderId: order.id, orderNumber: order.orderNumber, reason: 'NO_APPLICABLE_RATE' });
+        unratable.push({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          reason: 'NO_APPLICABLE_RATE',
+        });
       }
     }
     return { rated, unratable };
@@ -175,7 +242,10 @@ export class CustomerInvoicesService {
     const currencyGroups = [...groupByCurrency(rated).entries()];
     const numbersPerCurrency = new Map<string, string>();
     for (const [currency] of currencyGroups) {
-      numbersPerCurrency.set(currency, await this.sequences.nextNumber(tenantId, 'customer-invoice'));
+      numbersPerCurrency.set(
+        currency,
+        await this.sequences.nextNumber(tenantId, 'customer-invoice'),
+      );
     }
 
     let invoices: Awaited<ReturnType<typeof this.get>>[];
@@ -207,10 +277,7 @@ export class CustomerInvoicesService {
         return created;
       });
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException(
           'A concurrent generation already billed one of these orders — retry',
         );
@@ -325,7 +392,11 @@ export class CustomerInvoicesService {
       action: AuditAction.UPDATE,
       entityType: 'customer-invoice',
       entityId: id,
-      before: { taxTemplateId: invoice.taxTemplateId, taxAmount: Number(invoice.taxAmount), totalAmount: Number(invoice.totalAmount) },
+      before: {
+        taxTemplateId: invoice.taxTemplateId,
+        taxAmount: Number(invoice.taxAmount),
+        totalAmount: Number(invoice.totalAmount),
+      },
       after: { taxTemplateId: newTemplateId, taxAmount: newTaxAmount, totalAmount: newTotal },
     });
 
@@ -364,9 +435,16 @@ export class CustomerInvoicesService {
   }
 
   async approve(tenantId: string, userId: string, id: string) {
-    const result = await this.transition(tenantId, userId, id, CustomerInvoiceStatus.DRAFT, CustomerInvoiceStatus.APPROVED, {
-      approvedAt: new Date(),
-    });
+    const result = await this.transition(
+      tenantId,
+      userId,
+      id,
+      CustomerInvoiceStatus.DRAFT,
+      CustomerInvoiceStatus.APPROVED,
+      {
+        approvedAt: new Date(),
+      },
+    );
     const s = await this.moduleSettings.resolve(tenantId, 'billing');
     // Auto-post ledger entry: DR AR = gross / CR Revenue = net / CR <taxAccount> per tax line.
     // When taxAmount is 0 / no taxDetail, reduces to DR AR / CR Revenue (unchanged behaviour).
@@ -378,7 +456,9 @@ export class CustomerInvoicesService {
       const revCode = (s.revenueAccountCode as string | undefined) ?? '4000';
       try {
         // Build the credit lines: revenue net + one line per tax breakdown line.
-        const taxDetail = result.taxDetail as { lines?: Array<{ accountCode: string; amount: number }> } | null;
+        const taxDetail = result.taxDetail as {
+          lines?: Array<{ accountCode: string; amount: number }>;
+        } | null;
         const taxCreditLines: Array<{ accountCode: string; credit: number }> =
           taxDetail && Array.isArray(taxDetail.lines) && taxDetail.lines.length > 0
             ? taxDetail.lines.map((l) => ({ accountCode: l.accountCode, credit: l.amount }))
@@ -400,11 +480,17 @@ export class CustomerInvoicesService {
           userId,
         );
       } catch (err) {
-        this.logger.warn(`Ledger auto-post failed for customer-invoice ${id} (approved): ${(err as Error).message}`);
+        this.logger.warn(
+          `Ledger auto-post failed for customer-invoice ${id} (approved): ${(err as Error).message}`,
+        );
       }
     }
     if (s.autoSendOnApproval === true) {
-      try { await this.send(tenantId, userId, id); } catch { /* no email / send failed: stays APPROVED, best-effort */ }
+      try {
+        await this.send(tenantId, userId, id);
+      } catch {
+        /* no email / send failed: stays APPROVED, best-effort */
+      }
     }
     // autoEmailInvoicePdf: queue an email with the invoice summary (and any existing
     // PDF Document attached to this invoice) to the customer — best-effort, non-blocking.
@@ -432,7 +518,12 @@ export class CustomerInvoicesService {
 
     // Look for any PDF Document already uploaded for this invoice.
     const pdfDocs = await this.prisma.document.findMany({
-      where: { tenantId, entityType: 'customer-invoice', entityId: id, mimeType: 'application/pdf' },
+      where: {
+        tenantId,
+        entityType: 'customer-invoice',
+        entityId: id,
+        mimeType: 'application/pdf',
+      },
       orderBy: { createdAt: 'desc' },
       take: 1,
       select: { id: true, fileName: true },
@@ -485,15 +576,29 @@ export class CustomerInvoicesService {
       relatedId: id,
       createdByUserId: userId,
     });
-    return this.transition(tenantId, userId, id, CustomerInvoiceStatus.APPROVED, CustomerInvoiceStatus.SENT, {
-      sentAt: new Date(),
-    });
+    return this.transition(
+      tenantId,
+      userId,
+      id,
+      CustomerInvoiceStatus.APPROVED,
+      CustomerInvoiceStatus.SENT,
+      {
+        sentAt: new Date(),
+      },
+    );
   }
 
   async markPaid(tenantId: string, userId: string, id: string, paidAt?: string) {
     const inv = await this.prisma.customerInvoice.findFirst({
       where: { id, tenantId },
-      select: { id: true, status: true, totalAmount: true, amountPaid: true, customerId: true, currency: true },
+      select: {
+        id: true,
+        status: true,
+        totalAmount: true,
+        amountPaid: true,
+        customerId: true,
+        currency: true,
+      },
     });
     if (!inv) throw new NotFoundException('Statement not found');
     if (inv.status !== 'SENT')
@@ -508,7 +613,9 @@ export class CustomerInvoicesService {
       date: paidAt ?? new Date().toISOString(),
       currency: inv.currency,
       totalAmount: outstanding,
-      allocations: [{ targetType: PaymentTargetType.CUSTOMER_INVOICE, targetId: inv.id, amount: outstanding }],
+      allocations: [
+        { targetType: PaymentTargetType.CUSTOMER_INVOICE, targetId: inv.id, amount: outstanding },
+      ],
     });
     await this.payments.submit(tenantId, userId, payment.id);
     return this.get(tenantId, id);

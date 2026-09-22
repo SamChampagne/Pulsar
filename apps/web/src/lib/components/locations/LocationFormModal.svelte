@@ -1,4 +1,7 @@
 <script lang="ts">
+  import CityInput from './CityInput.svelte';
+  import { enterNext } from '$lib/forms/enter-next';
+  import { isValidPostalCode } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import { Field, Input, Select, ReferenceSelect, Button, Modal } from '$lib/components/ui';
@@ -56,7 +59,7 @@
       city: '',
       state: '',
       postalCode: '',
-      country: '',
+      country: 'CA',
       latitude: '',
       longitude: '',
       timezone: '',
@@ -100,18 +103,23 @@
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
+    if (saving) return;
     error = '';
+    if (!isValidPostalCode(form.postalCode.trim(), form.country)) {
+      error = 'Code postal invalide pour ce pays (ex. H1A 1A1 au Canada).';
+      return;
+    }
     saving = true;
     const body = {
       code: form.code,
       name: form.name,
       type: lockedType ?? form.type,
       addressLine1: form.addressLine1,
-      addressLine2: form.addressLine2 || undefined,
+      addressLine2: form.addressLine2 || null,
       city: form.city,
-      state: form.state || undefined,
-      postalCode: form.postalCode || undefined,
-      country: form.country || undefined,
+      state: form.state || null,
+      postalCode: form.postalCode.trim().toUpperCase() || null,
+      country: form.country || 'CA',
       latitude: String(form.latitude ?? '').trim() !== '' ? Number(form.latitude) : undefined,
       longitude: String(form.longitude ?? '').trim() !== '' ? Number(form.longitude) : undefined,
       timezone: form.timezone || undefined,
@@ -144,36 +152,61 @@
 
 <Modal bind:open title={location ? `Éditer ${location.code}` : 'Nouveau lieu'} size="md">
   {#snippet children()}
-    <form onsubmit={save} class="space-y-3">
+    <form onsubmit={save} use:enterNext class="space-y-3">
       {#if error}<p class="text-sm text-danger">{error}</p>{/if}
       <div class="grid grid-cols-2 gap-3">
-        <Field label="Code"><Input bind:value={form.code} required placeholder="WH-MTL" /></Field>
+        <Field label="Code"
+          ><Input
+            bind:value={form.code}
+            disabled={!!location}
+            required
+            maxlength={50}
+            placeholder="WH-MTL"
+          /></Field
+        >
         <Field label="Type">
           <Select bind:value={form.type} disabled={!!lockedType}>
             {#each LOCATION_TYPES as t (t)}<option value={t}>{typeLabel(t)}</option>{/each}
           </Select>
         </Field>
       </div>
-      <Field label="Nom"><Input bind:value={form.name} required /></Field>
+      <Field label="Nom"><Input bind:value={form.name} required maxlength={200} /></Field>
       <Field label="Adresse"
-        ><Input bind:value={form.addressLine1} required placeholder="1234 rue Principale" /></Field
+        ><Input
+          bind:value={form.addressLine1}
+          required
+          maxlength={250}
+          placeholder="1234 rue Principale"
+        /></Field
       >
       <Field label="Complément d’adresse"
-        ><Input bind:value={form.addressLine2} placeholder="Suite, dock…" /></Field
+        ><Input bind:value={form.addressLine2} maxlength={250} placeholder="Suite, dock…" /></Field
       >
       <div class="grid grid-cols-2 gap-3">
-        <Field label="Ville"><Input bind:value={form.city} required /></Field>
+        <Field label="Ville"
+          ><CityInput
+            bind:value={form.city}
+            country={form.country}
+            onselect={(city) => {
+              form.state = city.state ?? '';
+            }}
+          /></Field
+        >
         <Field label="Province / État">
           {#if regions.length}
             <ReferenceSelect options={regions} bind:value={form.state} clearable />
           {:else}
-            <Input bind:value={form.state} placeholder="QC" />
+            <Input bind:value={form.state} maxlength={100} placeholder="QC" />
           {/if}
         </Field>
       </div>
       <div class="grid grid-cols-2 gap-3">
         <Field label="Code postal"
-          ><Input bind:value={form.postalCode} placeholder="H1A 1A1" /></Field
+          ><Input
+            bind:value={form.postalCode}
+            maxlength={form.country === 'CA' ? 7 : form.country === 'US' ? 10 : 12}
+            placeholder={form.country === 'US' ? '12345-6789' : 'H1A 1A1'}
+          /></Field
         >
         <Field label="Pays">
           <ReferenceSelect
@@ -189,6 +222,8 @@
           ><Input
             bind:value={form.latitude}
             type="number"
+            min={-90}
+            max={90}
             step="any"
             placeholder="45.5017"
           /></Field
@@ -197,6 +232,8 @@
           ><Input
             bind:value={form.longitude}
             type="number"
+            min={-180}
+            max={180}
             step="any"
             placeholder="-73.5673"
           /></Field

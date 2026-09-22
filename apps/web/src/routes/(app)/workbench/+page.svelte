@@ -22,6 +22,7 @@
     type Tone,
   } from '$lib/components/ui';
   import TaskDetailPanel from '$lib/components/workbench/TaskDetailPanel.svelte';
+  import BusinessAttention from '$lib/components/workbench/BusinessAttention.svelte';
 
   // ──────────────────────────────────────────────────────────
   // Types
@@ -282,6 +283,8 @@
   subtitle="Triez les exceptions, approbations, révisions et notifications générées par les politiques et agents Pulsar."
   count={total}
 />
+
+<BusinessAttention />
 
 <!-- Summary cards -->
 <div class="mb-4 grid gap-3 sm:grid-cols-4">

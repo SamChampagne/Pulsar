@@ -296,7 +296,7 @@
   });
 </script>
 
-<PageHeader title="Corridors" count={total}>
+<PageHeader title="Liaisons · corridors" count={total}>
   {#snippet actions()}
     <Button
       onclick={() => {
@@ -306,12 +306,6 @@
     >
   {/snippet}
 </PageHeader>
-
-<p class="mb-4 max-w-3xl text-sm text-ink-muted">
-  L'auto-tendering retient le corridor le plus spécifique qui a une liste de préférences (site
-  l'emporte sur ville, qui l'emporte sur province, qui l'emporte sur pays). Les transporteurs de la
-  liste reçoivent le chargement par ordre de rang ; le rang 1 est tenté en premier.
-</p>
 
 {#if error}<p class="mb-3 text-sm text-danger">{error}</p>{/if}
 

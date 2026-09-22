@@ -30,11 +30,36 @@ export interface DeskGradient {
 }
 
 export const DESK_GRADIENTS: DeskGradient[] = [
-  { id: 'aurora', label: 'Aurore', css: 'linear-gradient(135deg,#1e3a8a 0%,#7e22ce 100%)', dark: true },
-  { id: 'sunset', label: 'Coucher', css: 'linear-gradient(135deg,#f1700f 0%,#be123c 100%)', dark: true },
-  { id: 'mint', label: 'Menthe', css: 'linear-gradient(135deg,#0f766e 0%,#22c55e 100%)', dark: true },
-  { id: 'slate', label: 'Ardoise', css: 'linear-gradient(135deg,#0f172a 0%,#334155 100%)', dark: true },
-  { id: 'sand', label: 'Sable', css: 'linear-gradient(135deg,#fdf2e9 0%,#e7d3b3 100%)', dark: false },
+  {
+    id: 'aurora',
+    label: 'Aurore',
+    css: 'linear-gradient(135deg,#1e3a8a 0%,#7e22ce 100%)',
+    dark: true,
+  },
+  {
+    id: 'sunset',
+    label: 'Coucher',
+    css: 'linear-gradient(135deg,#f1700f 0%,#be123c 100%)',
+    dark: true,
+  },
+  {
+    id: 'mint',
+    label: 'Menthe',
+    css: 'linear-gradient(135deg,#0f766e 0%,#22c55e 100%)',
+    dark: true,
+  },
+  {
+    id: 'slate',
+    label: 'Ardoise',
+    css: 'linear-gradient(135deg,#0f172a 0%,#334155 100%)',
+    dark: true,
+  },
+  {
+    id: 'sand',
+    label: 'Sable',
+    css: 'linear-gradient(135deg,#fdf2e9 0%,#e7d3b3 100%)',
+    dark: false,
+  },
 ];
 
 /**
@@ -45,7 +70,11 @@ export const DESK_GRADIENTS: DeskGradient[] = [
 export function hexLuminance(hex: string): number | null {
   if (typeof hex !== 'string') return null;
   let h = hex.trim().replace(/^#/, '');
-  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length === 3)
+    h = h
+      .split('')
+      .map((c) => c + c)
+      .join('');
   if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return null;
   const r = parseInt(h.slice(0, 2), 16) / 255;
   const g = parseInt(h.slice(2, 4), 16) / 255;
@@ -110,7 +139,7 @@ export const DASHBOARD_LINK: Extract<DeskItem, { type: 'link' }> = {
 };
 
 export const FRAMEWORK_LINKS: DeskFolderChild[] = [
-  { type: 'link', href: '/settings/appearance', label: 'Réglages' },
+  { type: 'link', href: '/personalize', label: 'Personnalisation' },
   { type: 'link', href: '/settings/modules', label: 'Modules' },
   { type: 'link', href: '/settings/users', label: 'Utilisateurs' },
   { type: 'link', href: '/settings/agent-runtime', label: 'Automation' },
@@ -207,22 +236,19 @@ export function reconcileDeskLayout(saved: unknown, domains: { key: string }[]):
   }
 
   const positioned = items.map((it, i) => (it.pos ? it : { ...it, pos: defaultPosition(i) }));
-  const savedMode = (s && typeof s === 'object') ? (s as { mode?: unknown }).mode : undefined;
-  const mode: DeskMode = DESK_MODES.includes(savedMode as DeskMode) ? (savedMode as DeskMode) : 'auto';
+  const savedMode = s && typeof s === 'object' ? (s as { mode?: unknown }).mode : undefined;
+  const mode: DeskMode = DESK_MODES.includes(savedMode as DeskMode)
+    ? (savedMode as DeskMode)
+    : 'auto';
 
   // Re-inject the Dashboard tile and the Framework folder if the saved layout lost
   // them (symmetric to re-adding newly-visible modules). Appended at the end so we
   // never overlap a user-positioned tile in 'free' mode.
   let finalItems: DeskItem[] = positioned;
 
-  const hasDashboard = finalItems.some(
-    (it) => it.type === 'link' && it.href === DASHBOARD_HREF,
-  );
+  const hasDashboard = finalItems.some((it) => it.type === 'link' && it.href === DASHBOARD_HREF);
   if (!hasDashboard) {
-    finalItems = [
-      ...finalItems,
-      { ...DASHBOARD_LINK, pos: defaultPosition(finalItems.length) },
-    ];
+    finalItems = [...finalItems, { ...DASHBOARD_LINK, pos: defaultPosition(finalItems.length) }];
   }
 
   const hasFramework = finalItems.some(

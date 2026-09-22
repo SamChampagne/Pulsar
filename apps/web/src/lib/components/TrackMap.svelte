@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
+  import { watchMapSize, mapLabel } from '$lib/maps/lifecycle';
   import { formatDateTime } from '$lib/format';
   import 'leaflet/dist/leaflet.css';
 
@@ -23,6 +24,7 @@
   onMount(() => {
     let map: import('leaflet').Map | null = null;
     let destroyed = false;
+    let stopResize = () => {};
 
     void (async () => {
       const L = await import('leaflet');
@@ -36,8 +38,11 @@
         return; // nothing to draw: map stays hidden (graceful degradation)
       }
       hasPoints = true;
+      await tick();
+      if (destroyed) return;
 
       map = L.map(el, { attributionControl: true });
+      stopResize = watchMapSize(el, map);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap',
       }).addTo(map);
@@ -50,7 +55,7 @@
         // Leaflet draws outside the CSS cascade — literal brand colors accepted here.
         L.circleMarker(at, { radius: 8, color, fillColor: color, fillOpacity: 0.85 })
           .addTo(map!)
-          .bindTooltip(label);
+          .bindTooltip(mapLabel(label));
       };
 
       add(origin, '#1d4ed8', 'Origine');
@@ -69,6 +74,7 @@
 
     return () => {
       destroyed = true;
+      stopResize();
       map?.remove();
     };
   });

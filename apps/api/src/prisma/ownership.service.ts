@@ -1,8 +1,23 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
+import type { Prisma } from '@pulsar/database';
 
 /** Tenant-scoped entities that can be referenced by id in write payloads. */
 export type OwnedEntity =
+  | 'crmCompany'
+  | 'serviceTimeEntry'
+  | 'servicePartUsage'
+  | 'hrSkill'
+  | 'hrTeam'
+  | 'hrEmployee'
+  | 'qualityPlan'
+  | 'qualityInspection'
+  | 'supportCase'
+  | 'businessPartner'
+  | 'catalogItem'
+  | 'serviceProject'
+  | 'serviceJob'
+  | 'supplierOrder'
   | 'customer'
   | 'customerInvoice'
   | 'invoice'
@@ -44,9 +59,14 @@ export type OwnedEntity =
 export class OwnershipService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async assertOwned(entity: OwnedEntity, id: string, tenantId: string): Promise<void> {
+  async assertOwned(
+    entity: OwnedEntity,
+    id: string,
+    tenantId: string,
+    client: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
     // All owned entities share the { id, tenantId } shape; the delegate lookup is dynamic.
-    const delegate = this.prisma[entity] as unknown as {
+    const delegate = client[entity] as unknown as {
       findFirst(args: {
         where: { id: string; tenantId: string };
         select: { id: true };

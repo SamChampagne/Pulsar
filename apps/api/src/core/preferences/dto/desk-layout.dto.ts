@@ -8,7 +8,17 @@ import {
   IsOptional,
   IsString,
   ValidateNested,
+  Min,
+  Max,
 } from 'class-validator';
+import { TOUR_MODULE_KEYS, type TourModuleKey } from '@pulsar/shared';
+
+export class ModuleTourDto {
+  @IsIn(TOUR_MODULE_KEYS) moduleKey!: TourModuleKey;
+  @IsIn([1, 2]) version!: number;
+  @IsInt() @Min(0) @Max(11) step!: number;
+  @IsIn(['IN_PROGRESS', 'COMPLETED', 'SKIPPED']) status!: 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED';
+}
 
 export class DeskBackgroundDto {
   @IsIn(['color', 'gradient', 'image'])
@@ -50,6 +60,11 @@ export class AppearanceDto {
 }
 
 export class UpdatePreferencesDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ModuleTourDto)
+  moduleTour?: ModuleTourDto;
+
   @IsOptional()
   @ValidateNested()
   @Type(() => DeskLayoutDto)

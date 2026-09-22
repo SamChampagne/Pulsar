@@ -22,9 +22,11 @@ import { crmTools } from './tools/crm.tools';
 import { crmSequenceTools } from './tools/crm-sequences.tools';
 import { emailTools } from './tools/email.tools';
 import { manufacturingTools } from './tools/manufacturing.tools';
+import { connectedBusinessTools } from './tools/connected-business.tools';
 
 /** All agent tools, in their canonical order (preserved from the original monolithic registry). */
 export const TOOL_REGISTRY: ToolDef[] = [
+  ...connectedBusinessTools,
   ...tmsTools,
   ...dispatchTools,
   ...coreTools,

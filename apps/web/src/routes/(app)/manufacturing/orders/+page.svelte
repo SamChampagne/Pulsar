@@ -1,4 +1,10 @@
 <script lang="ts">
+  import ItemCreateModal from '$lib/components/wms/ItemCreateModal.svelte';
+  import { auth } from '$lib/stores/auth';
+  let createItem = $state(false);
+  const canCreateItem = $derived(
+    $auth?.tenant.enabledModules.includes('wms') && $auth?.user.permissions.includes('wms.manage'),
+  );
   import type { Paginated } from '@pulsar/shared';
   import { goto } from '$app/navigation';
   import { api, ApiError } from '$lib/api/client';
@@ -242,9 +248,18 @@
         <EntityPicker
           endpoint="/wms/choices/items"
           label="Produit"
+          allowCreate={canCreateItem
+            ? {
+                label: '+ Créer un article',
+                onCreate: () => {
+                  createItem = true;
+                },
+              }
+            : undefined}
           placeholder="Réf. produit"
           labelKey="name"
           valueKey="sku"
+          selectedLabel={formProductRef}
           bind:value={formProductRef}
         />
       </Field>
@@ -287,3 +302,10 @@
     </div>
   {/snippet}
 </Modal>
+
+<ItemCreateModal
+  bind:open={createItem}
+  oncreated={(item) => {
+    formProductRef = item.sku;
+  }}
+/>

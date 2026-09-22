@@ -5,6 +5,7 @@ import type { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
 import { paginated } from '../../common/pagination';
 import { DocumentCenterQueryDto } from './dto/document-center-query.dto';
+import { PROTECTED_DOCUMENT_TYPES } from './protected-documents';
 
 const WALLPAPER_ENTITY_TYPE = 'desk-wallpaper';
 const COMPLIANCE_CAP = 100;
@@ -65,7 +66,10 @@ export class DocumentCenterService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
 
-    const where: Prisma.DocumentWhereInput = { tenantId };
+    const where: Prisma.DocumentWhereInput = {
+      tenantId,
+      AND: { entityType: { notIn: PROTECTED_DOCUMENT_TYPES } },
+    };
     if (query.category) {
       where.entityType = query.category;
     } else if (excludeWallpaper) {
@@ -83,7 +87,10 @@ export class DocumentCenterService {
 
     // Facet counts are scoped to the tenant and (optionally) exclude wallpaper,
     // independent of the documents-list filters.
-    const facetWhere: Prisma.DocumentWhereInput = { tenantId };
+    const facetWhere: Prisma.DocumentWhereInput = {
+      tenantId,
+      AND: { entityType: { notIn: PROTECTED_DOCUMENT_TYPES } },
+    };
     if (excludeWallpaper) {
       facetWhere.entityType = { not: WALLPAPER_ENTITY_TYPE };
     }

@@ -20,6 +20,717 @@ datasource db {
 // CORE — tenants, identity, RBAC
 // ============================================================================
 
+enum CatalogItemKind {
+  GOODS
+  SERVICE
+}
+
+enum HrLeaveStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+enum HrLeaveKind {
+  TIME_OFF
+  UNAVAILABLE
+  OTHER
+}
+model HrTeam {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  code String
+  name String
+  active Boolean @default(true)
+  updatedAt DateTime @updatedAt
+  employees HrEmployee[]
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, active])
+  @@map("hr_teams")
+}
+model HrEmployee {
+  qualifications HrQualification[]
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  code String
+  firstName String
+  lastName String
+  jobTitle String @default("")
+  teamId String?
+  team HrTeam? @relation(fields: [tenantId, teamId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  userId String?
+  user User? @relation("HrEmployeeUser", fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  leaves HrLeaveRequest[]
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@unique([tenantId, userId])
+  @@index([tenantId, teamId, active])
+  @@map("hr_employees")
+}
+model HrLeaveRequest {
+  id String @id @default(cuid())
+  tenantId String
+  employeeId String
+  employee HrEmployee @relation(fields: [tenantId, employeeId], references: [tenantId, id])
+  number String
+  kind HrLeaveKind
+  startDate DateTime @db.Date
+  endDate DateTime @db.Date
+  note String @default("")
+  status HrLeaveStatus @default(DRAFT)
+  createdById String
+  createdBy User @relation("HrLeaveCreator", fields: [tenantId, createdById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  operationKey String
+  fingerprint String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  events HrLeaveEvent[]
+  @@unique([tenantId, id])
+  @@unique([tenantId, number])
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, employeeId, startDate, endDate])
+  @@index([tenantId, status])
+  @@map("hr_leave_requests")
+}
+
+enum HrSkillKind {
+  COMPETENCE
+  AUTHORIZATION
+}
+enum HrQualificationStatus {
+  ACTIVE
+  REVOKED
+}
+model HrSkill {
+  serviceRequirements ServiceJobSkillRequirement[]
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  code String
+  name String
+  kind HrSkillKind
+  active Boolean @default(true)
+  updatedAt DateTime @updatedAt
+  qualifications HrQualification[]
+  requirements WorkCenterSkillRequirement[]
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@map("hr_skills")
+}
+model HrQualification {
+  id String @id @default(cuid())
+  tenantId String
+  employeeId String
+  employee HrEmployee @relation(fields: [tenantId, employeeId], references: [tenantId, id])
+  skillId String
+  skill HrSkill @relation(fields: [tenantId, skillId], references: [tenantId, id])
+  validFrom DateTime @db.Date
+  expiresOn DateTime? @db.Date
+  reference String
+  status HrQualificationStatus @default(ACTIVE)
+  createdById String
+  createdBy User @relation("QualificationIssuer", fields: [tenantId, createdById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  revokedById String?
+  revokedBy User? @relation("QualificationRevoker", fields: [tenantId, revokedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  revokedAt DateTime?
+  revokeReason String?
+  operationKey String
+  fingerprint String
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, employeeId, skillId, status])
+  @@map("hr_qualifications")
+}
+model WorkCenterSkillRequirement {
+  id String @id @default(cuid())
+  tenantId String
+  workCenterId String
+  workCenter WorkCenter @relation(fields: [tenantId, workCenterId], references: [tenantId, id])
+  skillId String
+  skill HrSkill @relation(fields: [tenantId, skillId], references: [tenantId, id])
+  @@unique([tenantId, workCenterId, skillId])
+  @@map("work_center_skill_requirements")
+}
+model HrLeaveEvent {
+  id String @id @default(cuid())
+  tenantId String
+  leaveId String
+  leave HrLeaveRequest @relation(fields: [tenantId, leaveId], references: [tenantId, id])
+  actorId String
+  actor User @relation("HrLeaveActor", fields: [tenantId, actorId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  action String
+  note String
+  snapshot Json
+  createdAt DateTime @default(now())
+  @@index([tenantId, leaveId, createdAt])
+  @@map("hr_leave_events")
+}
+
+enum QualityInspectionStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+enum QualityNonconformityStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+enum QualityOutcome {
+  PASS
+  FAIL
+}
+model QualityPlan {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  code String
+  name String
+  instructions String @default("")
+  criteria Json
+  revision Int @default(1)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  inspections QualityInspection[]
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, active])
+  @@map("quality_plans")
+}
+model QualityInspection {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  number String
+  title String
+  planId String
+  plan QualityPlan @relation(fields: [tenantId, planId], references: [tenantId, id])
+  planName String
+  planRevision Int
+  instructions String
+  criteria Json
+  results Json @default("[]")
+  status QualityInspectionStatus @default(DRAFT)
+  outcome QualityOutcome?
+  receiptId String?
+  receipt Receipt? @relation(fields: [tenantId, receiptId], references: [tenantId, id])
+  manufacturingOrderId String?
+  manufacturingOrder ManufacturingOrder? @relation(fields: [tenantId, manufacturingOrderId], references: [tenantId, id])
+  supportCaseId String?
+  supportCase SupportCase? @relation(fields: [tenantId, supportCaseId], references: [tenantId, id])
+  operationKey String
+  requestFingerprint String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  completedAt DateTime?
+  nonconformity QualityNonconformity?
+  events QualityEvent[]
+  @@unique([tenantId, id])
+  @@unique([tenantId, number])
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, status])
+  @@index([tenantId, receiptId])
+  @@index([tenantId, manufacturingOrderId])
+  @@index([tenantId, supportCaseId])
+  @@map("quality_inspections")
+}
+model QualityNonconformity {
+  id String @id @default(cuid())
+  tenantId String
+  inspectionId String
+  inspection QualityInspection @relation(fields: [tenantId, inspectionId], references: [tenantId, id])
+  number String
+  title String
+  status QualityNonconformityStatus @default(OPEN)
+  rootCause String @default("")
+  correctiveAction String @default("")
+  assigneeUserId String?
+  assignee User? @relation("QualityAssignee", fields: [tenantId, assigneeUserId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  dueDate DateTime? @db.Date
+  evidence QualityEvidence[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, id])
+  @@unique([tenantId, inspectionId])
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@index([tenantId, assigneeUserId, dueDate])
+  @@map("quality_nonconformities")
+}
+model QualityEvidence {
+  id String @id @default(cuid())
+  tenantId String
+  nonconformityId String
+  nonconformity QualityNonconformity @relation(fields: [tenantId, nonconformityId], references: [tenantId, id])
+  documentId String
+  document Document @relation(fields: [tenantId, documentId], references: [tenantId, id])
+  caption String
+  operationKey String
+  fingerprint String
+  createdAt DateTime @default(now())
+  @@unique([tenantId, operationKey])
+  @@unique([tenantId, documentId])
+  @@index([tenantId, nonconformityId])
+  @@map("quality_evidence")
+}
+model QualityEvent {
+  id String @id @default(cuid())
+  tenantId String
+  inspectionId String
+  inspection QualityInspection @relation(fields: [tenantId, inspectionId], references: [tenantId, id])
+  actorId String
+  actor User @relation(fields: [tenantId, actorId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  action String
+  note String
+  snapshot Json
+  createdAt DateTime @default(now())
+  @@index([tenantId, inspectionId, createdAt])
+  @@map("quality_events")
+}
+enum ServiceProjectStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+enum ServiceJobStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+enum SupplierOrderStatus {
+  DRAFT
+  CONFIRMED
+  CLOSED
+  CANCELLED
+}
+enum SupportCaseStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+model SupportCase {
+  assigneeUserId String?
+  assignee User? @relation("SupportAssignee", fields: [tenantId, assigneeUserId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  dueDate DateTime? @db.Date
+  qualityInspections QualityInspection[]
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  number String
+  partnerId String
+  partner BusinessPartner @relation(fields: [tenantId, partnerId], references: [tenantId, id])
+  title String
+  description String
+  priority String @default("NORMAL")
+  status SupportCaseStatus @default(OPEN)
+  jobId String?
+  job ServiceJob? @relation(fields: [tenantId, jobId], references: [tenantId, id])
+  resolution String @default("")
+  operationKey String
+  requestFingerprint String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  events SupportCaseEvent[]
+  @@unique([tenantId, id])
+  @@unique([tenantId, number])
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, status, priority])
+  @@map("support_cases")
+}
+model SupportCaseEvent {
+  id String @id @default(cuid())
+  tenantId String
+  caseId String
+  case SupportCase @relation(fields: [tenantId, caseId], references: [tenantId, id])
+  actorId String
+  actor User @relation(fields: [tenantId, actorId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  action String
+  note String
+  snapshot Json
+  createdAt DateTime @default(now())
+  @@index([tenantId, caseId, createdAt])
+  @@map("support_case_events")
+}
+
+model BusinessPartner {
+  billingCustomerId String?
+  billingCustomer Customer? @relation(fields: [tenantId, billingCustomerId], references: [tenantId, id])
+  crmCompanyId String?
+  crmCompany CrmCompany? @relation(fields: [tenantId, crmCompanyId], references: [tenantId, id])
+  quotes ServiceQuote[]
+  supportCases SupportCase[]
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  code String
+  name String
+  email String?
+  phone String?
+  isCustomer Boolean @default(true)
+  isSupplier Boolean @default(false)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  projects ServiceProject[]
+  orders SupplierOrder[]
+  @@unique([tenantId, code])
+  @@unique([tenantId, id])
+  @@unique([tenantId, billingCustomerId])
+  @@unique([tenantId, crmCompanyId])
+  @@map("business_partners")
+}
+
+model CatalogItem {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  code String
+  name String
+  kind CatalogItemKind
+  unit String
+  description String @default("")
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  jobs ServiceJob[]
+  orderLines SupplierOrderLine[]
+  stockLink CatalogStockLink?
+  partUsages ServicePartUsage[]
+  @@unique([tenantId, code])
+  @@unique([tenantId, id])
+  @@map("catalog_items")
+}
+
+model ServiceProject {
+  quote ServiceQuote?
+  invoiceBatches ServiceInvoiceBatch[]
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  number String
+  title String
+  description String @default("")
+  partnerId String
+  partner BusinessPartner @relation(fields: [tenantId, partnerId], references: [tenantId, id])
+  status ServiceProjectStatus @default(DRAFT)
+  dueDate DateTime? @db.Date
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  jobs ServiceJob[]
+  @@unique([tenantId, number])
+  @@unique([tenantId, id])
+  @@index([tenantId, status])
+  @@map("service_projects")
+}
+
+model ServiceJob {
+  plannedMinutes Int?
+  workCenterId String?
+  workCenter WorkCenter? @relation(fields: [tenantId, workCenterId], references: [tenantId, id])
+  skillRequirements ServiceJobSkillRequirement[]
+  supportCases SupportCase[]
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  number String
+  projectId String
+  project ServiceProject @relation(fields: [tenantId, projectId], references: [tenantId, id])
+  catalogItemId String?
+  catalogItem CatalogItem? @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
+  title String
+  instructions String @default("")
+  assigneeLabel String @default("")
+  assigneeUserId String?
+  assignee User? @relation("ServiceAssignee", fields: [tenantId, assigneeUserId], references: [tenantId, id])
+  scheduledAt DateTime?
+  status ServiceJobStatus @default(PLANNED)
+  report String @default("")
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  timeEntries ServiceTimeEntry[]
+  partUsages ServicePartUsage[]
+  @@unique([tenantId, number])
+  @@unique([tenantId, id])
+  @@index([tenantId, assigneeUserId, status])
+  @@index([tenantId, scheduledAt])
+  @@index([tenantId, projectId, status])
+  @@map("service_jobs")
+}
+
+enum ServiceTimeStatus {
+  RECORDED
+  SUBMITTED
+  APPROVED
+  REJECTED
+  VOIDED
+}
+
+enum ServiceTimeReviewAction {
+  SUBMIT
+  WITHDRAW
+  APPROVE
+  REJECT
+  REOPEN
+  VOID
+  CORRECT
+}
+
+model CatalogStockLink {
+  id String @id @default(cuid())
+  tenantId String
+  catalogItemId String
+  wmsItemId String
+  catalogItem CatalogItem @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
+  wmsItem WmsItem @relation(fields: [tenantId, wmsItemId], references: [tenantId, id])
+  createdAt DateTime @default(now())
+  @@unique([tenantId, catalogItemId])
+  @@unique([tenantId, wmsItemId])
+  @@map("catalog_stock_links")
+}
+
+// A physical issue and its optional full compensating return. Neither movement is deleted.
+model ServicePartUsage {
+  billingLine CustomerInvoiceLine?
+  id String @id @default(cuid())
+  tenantId String
+  jobId String
+  catalogItemId String
+  wmsItemId String
+  binId String
+  quantity Decimal @db.Decimal(14, 3)
+  nameSnapshot String
+  codeSnapshot String
+  unitSnapshot String
+  binSnapshot String
+  note String
+  createdById String
+  createdAt DateTime @default(now())
+  operationKey String
+  requestFingerprint String
+  movementId String
+  returnMovementId String?
+  returnOperationKey String?
+  returnFingerprint String?
+  returnedAt DateTime?
+  returnReason String?
+  returnedById String?
+  createdBy User @relation("ServicePartAuthor", fields: [tenantId, createdById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction, map: "service_part_author_fkey")
+  returnedBy User? @relation("ServicePartReturnAuthor", fields: [tenantId, returnedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction, map: "service_part_return_author_fkey")
+  job ServiceJob @relation(fields: [tenantId, jobId], references: [tenantId, id])
+  catalogItem CatalogItem @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
+  wmsItem WmsItem @relation(fields: [tenantId, wmsItemId], references: [tenantId, id])
+  bin Bin @relation(fields: [tenantId, binId], references: [tenantId, id])
+  movement StockMovement @relation("ServicePartIssue", fields: [tenantId, movementId], references: [tenantId, id])
+  returnMovement StockMovement? @relation("ServicePartReturn", fields: [tenantId, returnMovementId], references: [tenantId, id])
+  @@unique([tenantId, operationKey])
+  @@unique([tenantId, returnOperationKey])
+  @@unique([tenantId, movementId])
+  @@unique([tenantId, returnMovementId])
+  @@index([tenantId, jobId, createdAt])
+  @@index([tenantId, wmsItemId])
+  @@map("service_part_usages")
+}
+
+model ServiceTimeEntry {
+  billingLine CustomerInvoiceLine?
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  jobId String
+  job ServiceJob @relation(fields: [tenantId, jobId], references: [tenantId, id])
+  userId String
+  user User @relation("ServiceTimePerson", fields: [tenantId, userId], references: [tenantId, id])
+  createdById String
+  createdBy User @relation("ServiceTimeAuthor", fields: [tenantId, createdById], references: [tenantId, id])
+  workDate DateTime @db.Date
+  minutes Int
+  billable Boolean @default(false)
+  note String
+  status ServiceTimeStatus @default(RECORDED)
+  voidReason String?
+  operationKey String
+  requestFingerprint String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  reviews ServiceTimeReview[]
+  @@unique([tenantId, id])
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, status, workDate])
+  @@index([tenantId, jobId, workDate])
+  @@index([tenantId, userId, workDate, status])
+  @@map("service_time_entries")
+}
+
+model ServiceTimeReview {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  timeEntryId String
+  timeEntry ServiceTimeEntry @relation(fields: [tenantId, timeEntryId], references: [tenantId, id])
+  actorId String
+  actor User @relation("ServiceTimeReviewer", fields: [tenantId, actorId], references: [tenantId, id])
+  action ServiceTimeReviewAction
+  fromStatus ServiceTimeStatus
+  toStatus ServiceTimeStatus
+  reason String?
+  snapshot Json
+  entryVersion DateTime
+  createdAt DateTime @default(now())
+  @@unique([tenantId, timeEntryId, entryVersion])
+  @@index([tenantId, timeEntryId, createdAt])
+  @@map("service_time_reviews")
+}
+
+model SupplierOrder {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  number String
+  supplierId String
+  supplier BusinessPartner @relation(fields: [tenantId, supplierId], references: [tenantId, id])
+  status SupplierOrderStatus @default(DRAFT)
+  currency String @default("CAD")
+  expectedDate DateTime? @db.Date
+  notes String @default("")
+  closeReason String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lines SupplierOrderLine[]
+  receipts SupplierReceipt[]
+  @@unique([tenantId, number])
+  @@unique([tenantId, id])
+  @@index([tenantId, status])
+  @@map("supplier_orders")
+}
+
+model SupplierOrderLine {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  orderId String
+  order SupplierOrder @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
+  catalogItemId String
+  catalogItem CatalogItem @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
+  position Int
+  nameSnapshot String
+  unitSnapshot String
+  quantity Decimal @db.Decimal(16, 4)
+  unitPrice Decimal @db.Decimal(16, 4)
+  receipts SupplierReceiptLine[]
+  @@unique([tenantId, id])
+  @@unique([tenantId, orderId, position])
+  @@map("supplier_order_lines")
+}
+
+model SupplierReceipt {
+  id String @id @default(cuid())
+  tenantId String
+  orderId String
+  order SupplierOrder @relation(fields: [tenantId, orderId], references: [tenantId, id])
+  receiptId String
+  receipt Receipt @relation(fields: [tenantId, receiptId], references: [tenantId, id])
+  operationKey String
+  requestFingerprint String
+  createdAt DateTime @default(now())
+  lines SupplierReceiptLine[]
+  @@unique([tenantId, id])
+  @@unique([tenantId, operationKey])
+  @@unique([tenantId, receiptId])
+  @@index([tenantId, orderId])
+  @@map("supplier_receipts")
+}
+
+model SupplierReceiptLine {
+  id String @id @default(cuid())
+  tenantId String
+  supplierReceiptId String
+  supplierReceipt SupplierReceipt @relation(fields: [tenantId, supplierReceiptId], references: [tenantId, id])
+  orderLineId String
+  orderLine SupplierOrderLine @relation(fields: [tenantId, orderLineId], references: [tenantId, id])
+  receiptLineId String
+  receiptLine ReceiptLine @relation(fields: [tenantId, receiptLineId], references: [tenantId, id])
+  unitSnapshot String
+  @@unique([tenantId, receiptLineId])
+  @@index([tenantId, orderLineId])
+  @@map("supplier_receipt_lines")
+}
+
+enum ServiceQuoteStatus {
+  DRAFT
+  ACCEPTED
+  CANCELLED
+}
+
+model ServiceJobSkillRequirement {
+  id String @id @default(cuid())
+  tenantId String
+  jobId String
+  job ServiceJob @relation(fields: [tenantId, jobId], references: [tenantId, id], onDelete: Cascade)
+  skillId String
+  skill HrSkill @relation(fields: [tenantId, skillId], references: [tenantId, id])
+  @@unique([tenantId, jobId, skillId])
+  @@map("service_job_skill_requirements")
+}
+
+model ServiceQuote {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  number String
+  partnerId String
+  partner BusinessPartner @relation(fields: [tenantId, partnerId], references: [tenantId, id])
+  title String
+  currency String
+  lines Json
+  totalAmount Decimal @db.Decimal(12, 2)
+  status ServiceQuoteStatus @default(DRAFT)
+  validUntil DateTime? @db.Date
+  projectId String?
+  project ServiceProject? @relation(fields: [tenantId, projectId], references: [tenantId, id])
+  operationKey String
+  fingerprint String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  acceptedAt DateTime?
+  @@unique([tenantId, id])
+  @@unique([tenantId, number])
+  @@unique([tenantId, operationKey])
+  @@unique([tenantId, projectId])
+  @@index([tenantId, status])
+  @@map("service_quotes")
+}
+
+// Keeps a retry tombstone even when the user explicitly deletes a draft invoice.
+model ServiceInvoiceBatch {
+  id String @id @default(cuid())
+  tenantId String
+  projectId String
+  project ServiceProject @relation(fields: [tenantId, projectId], references: [tenantId, id])
+  invoiceId String? @unique
+  invoice CustomerInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  operationKey String
+  fingerprint String
+  createdAt DateTime @default(now())
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, projectId])
+  @@map("service_invoice_batches")
+}
+
 enum TenantStatus {
   TRIAL
   ACTIVE
@@ -27,6 +738,13 @@ enum TenantStatus {
 }
 
 model Tenant {
+  serviceQuotes ServiceQuote[]
+  qualityPlans QualityPlan[]
+  hrTeams HrTeam[]
+  hrSkills HrSkill[]
+  hrEmployees HrEmployee[]
+  qualityInspections QualityInspection[]
+  supportCases SupportCase[]
   id         String       @id @default(cuid())
   slug       String       @unique
   name       String
@@ -38,6 +756,14 @@ model Tenant {
   updatedAt  DateTime     @updatedAt
 
   users                   User[]
+  businessPartners        BusinessPartner[]
+  catalogItems            CatalogItem[]
+  serviceProjects         ServiceProject[]
+  serviceJobs             ServiceJob[]
+  serviceTimeEntries      ServiceTimeEntry[]
+  serviceTimeReviews      ServiceTimeReview[]
+  supplierOrders          SupplierOrder[]
+  supplierOrderLines      SupplierOrderLine[]
   roles                   Role[]
   auditLogs               AuditLog[]
   documents               Document[]
@@ -159,6 +885,15 @@ enum UserStatus {
 }
 
 model User {
+  qualityAssignments QualityNonconformity[] @relation("QualityAssignee")
+  hrEmployee HrEmployee? @relation("HrEmployeeUser")
+  issuedQualifications HrQualification[] @relation("QualificationIssuer")
+  revokedQualifications HrQualification[] @relation("QualificationRevoker")
+  assignedSupportCases SupportCase[] @relation("SupportAssignee")
+  hrLeavesCreated HrLeaveRequest[] @relation("HrLeaveCreator")
+  hrLeaveEvents HrLeaveEvent[] @relation("HrLeaveActor")
+  qualityEvents QualityEvent[]
+  supportCaseEvents SupportCaseEvent[]
   id           String     @id @default(cuid())
   tenantId     String
   email        String
@@ -184,7 +919,14 @@ model User {
   receivedPods           ProofOfDelivery[]
   agentServiceFor        Agent[]           @relation("AgentServiceUser")
   preferences            UserPreferences?
+  assignedServiceJobs    ServiceJob[] @relation("ServiceAssignee")
+  serviceTimeEntries     ServiceTimeEntry[] @relation("ServiceTimePerson")
+  authoredServiceTime    ServiceTimeEntry[] @relation("ServiceTimeAuthor")
+  serviceTimeReviews     ServiceTimeReview[] @relation("ServiceTimeReviewer")
+  servicePartUsages      ServicePartUsage[] @relation("ServicePartAuthor")
+  servicePartReturns     ServicePartUsage[] @relation("ServicePartReturnAuthor")
 
+  @@unique([tenantId, id])
   @@unique([tenantId, email])
   @@unique([tenantId, oidcSubject])
   @@index([tenantId])
@@ -197,6 +939,7 @@ model UserPreferences {
   deskLayout         Json      @default("{}")
   appearance         Json?
   releaseNotesSeenAt DateTime?
+  moduleTours        Json      @default("{}")
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -368,6 +1111,7 @@ model AuditLog {
 
 // Document metadata only — binary storage (S3/local) is referenced by storageKey.
 model Document {
+  qualityEvidence QualityEvidence[]
   id           String   @id @default(cuid())
   tenantId     String
   entityType   String
@@ -383,6 +1127,7 @@ model Document {
   uploadedBy User?  @relation(fields: [uploadedById], references: [id])
 
   @@index([tenantId, entityType, entityId])
+  @@unique([tenantId, id])
   @@map("documents")
 }
 
@@ -502,6 +1247,7 @@ model TenantModule {
 // ============================================================================
 
 model Customer {
+  businessPartner BusinessPartner?
   id          String   @id @default(cuid())
   tenantId    String
   code        String
@@ -527,6 +1273,7 @@ model Customer {
   changeRequests   PortalChangeRequest[]
 
   @@unique([tenantId, code])
+  @@unique([tenantId, id])
   @@index([tenantId])
   @@map("customers")
 }
@@ -1622,6 +2369,7 @@ enum CustomerInvoiceStatus {
 // CUSTOMER's rates (rating engine 7.1), one statement per currency encountered.
 // Wording: emails/UI say "billing statement" until taxes exist (spec 7.3).
 model CustomerInvoice {
+  serviceBatch ServiceInvoiceBatch?
   id            String                @id @default(cuid())
   tenantId      String
   invoiceNumber String
@@ -1651,6 +2399,10 @@ model CustomerInvoice {
 }
 
 model CustomerInvoiceLine {
+  serviceTimeEntryId String? @unique
+  serviceTimeEntry ServiceTimeEntry? @relation(fields: [serviceTimeEntryId], references: [id], onDelete: Restrict)
+  servicePartUsageId String? @unique
+  servicePartUsage ServicePartUsage? @relation(fields: [servicePartUsageId], references: [id], onDelete: Restrict)
   id                String   @id @default(cuid())
   customerInvoiceId String
   // One line per order; the unique prevents double-billing an order. Freed by
@@ -2388,8 +3140,11 @@ model WmsItem {
   receiptLines    ReceiptLine[]
   pickLines       PickLine[]
   cycleCountLines CycleCountLine[]
+  stockLink CatalogStockLink?
+  servicePartUsages ServicePartUsage[]
 
   @@unique([tenantId, sku])
+  @@unique([tenantId, id])
   @@index([tenantId])
   @@map("wms_items")
 }
@@ -2463,8 +3218,10 @@ model Bin {
   receiptLines  ReceiptLine[]
   pickLines     PickLine[]
   cycleCounts   CycleCount[]
+  servicePartUsages ServicePartUsage[]
 
   @@unique([tenantId, locationId, code])
+  @@unique([tenantId, id])
   @@index([tenantId, locationId])
   @@map("wms_bins")
 }
@@ -2509,7 +3266,10 @@ model StockMovement {
   item    WmsItem @relation(fields: [itemId], references: [id])
   fromBin Bin?    @relation("MovementFromBin", fields: [fromBinId], references: [id])
   toBin   Bin?    @relation("MovementToBin", fields: [toBinId], references: [id])
+  servicePartIssue ServicePartUsage? @relation("ServicePartIssue")
+  servicePartReturn ServicePartUsage? @relation("ServicePartReturn")
 
+  @@unique([tenantId, id])
   @@index([tenantId, itemId])
   @@index([tenantId, createdAt])
   @@index([tenantId, refType, refId])
@@ -2520,6 +3280,7 @@ model StockMovement {
 }
 
 model Receipt {
+  qualityInspections QualityInspection[]
   id          String        @id @default(cuid())
   tenantId    String
   number      String
@@ -2537,7 +3298,9 @@ model Receipt {
   location Location      @relation(fields: [locationId], references: [id])
   lines    ReceiptLine[]
   yardDossierLinks YardDossierLink[]
+  supplierReceipt SupplierReceipt?
 
+  @@unique([tenantId, id])
   @@unique([tenantId, number])
   @@index([tenantId, status])
   @@map("wms_receipts")
@@ -2554,7 +3317,9 @@ model ReceiptLine {
   receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
   item    WmsItem @relation(fields: [itemId], references: [id])
   toBin   Bin     @relation(fields: [toBinId], references: [id])
+  supplierReceiptLine SupplierReceiptLine?
 
+  @@unique([tenantId, id])
   @@index([tenantId, receiptId])
   @@map("wms_receipt_lines")
 }
@@ -3020,6 +3785,7 @@ enum CrmActivityType {
 }
 
 model CrmCompany {
+  businessPartner BusinessPartner?
   id           String           @id @default(cuid())
   tenantId     String
   name         String
@@ -3040,6 +3806,7 @@ model CrmCompany {
 
   @@index([tenantId])
   @@index([tenantId, status])
+  @@unique([tenantId, id])
   @@map("crm_companies")
 }
 
@@ -3693,6 +4460,8 @@ model WorkCenterShift {
 }
 
 model WorkCenter {
+  serviceJobs ServiceJob[]
+  skillRequirements WorkCenterSkillRequirement[]
   id           String   @id @default(cuid())
   tenantId     String
   code         String
@@ -3707,6 +4476,7 @@ model WorkCenter {
   tenant   Tenant          @relation(fields: [tenantId], references: [id])
   calendar WorkingCalendar @relation(fields: [calendarId], references: [id])
 
+  @@unique([tenantId, id])
   @@unique([tenantId, code])
   @@index([tenantId])
   @@map("work_centers")
@@ -3781,6 +4551,7 @@ model BomLine {
 }
 
 model ManufacturingOrder {
+  qualityInspections QualityInspection[]
   id          String                   @id @default(cuid())
   tenantId    String
   number      String
@@ -3800,6 +4571,7 @@ model ManufacturingOrder {
   tenant     Tenant                   @relation(fields: [tenantId], references: [id])
   operations ManufacturingOperation[]
 
+  @@unique([tenantId, id])
   @@unique([tenantId, number])
   @@index([tenantId])
   @@index([tenantId, status])

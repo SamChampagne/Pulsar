@@ -29,7 +29,12 @@ import { CustomFieldsService } from '../../../core/custom-fields/custom-fields.s
 import { TransportOrdersService } from '../transport-orders/transport-orders.service';
 import { LoadCostService } from './load-cost.service';
 import { LoadNotificationsService } from './load-notifications.service';
-import { AssignLoadResourcesDto, CreateLoadDto, SetLoadAccessorialsDto } from './dto/load.dto';
+import {
+  AssignLoadResourcesDto,
+  CreateLoadDto,
+  SetLoadAccessorialsDto,
+  UpdateLoadNotesDto,
+} from './dto/load.dto';
 import { shipmentWindowWarnings } from '../planning/window-warnings';
 import { isLate } from '../exceptions/delay-detection.service';
 
@@ -363,6 +368,29 @@ export class LoadsService {
     return this.get(tenantId, load.id);
   }
 
+  /** Versioned operational notes; never change the workflow status or historical costs. */
+  async updateNotes(tenantId: string, userId: string, id: string, dto: UpdateLoadNotesDto) {
+    const load = await this.get(tenantId, id);
+    if (load.status !== LoadStatus.OPEN && load.status !== LoadStatus.PLANNED)
+      throw new ConflictException('Seuls les chargements ouverts ou planifiés sont modifiables.');
+    const result = await this.prisma.load.updateMany({
+      where: { id, tenantId, status: load.status, updatedAt: new Date(dto.expectedUpdatedAt) },
+      data: { notes: dto.notes.trim() || null },
+    });
+    if (!result.count)
+      throw new ConflictException('Le chargement a changé. Rechargez avant de modifier.');
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'load',
+      entityId: id,
+      before: { notes: load.notes },
+      after: { notes: dto.notes.trim() || null },
+    });
+    return this.get(tenantId, id);
+  }
+
   /** Carrier selection: assigning resources moves an OPEN load to PLANNED. */
   async assignResources(tenantId: string, userId: string, id: string, dto: AssignLoadResourcesDto) {
     const load = await this.get(tenantId, id);
@@ -421,13 +449,19 @@ export class LoadsService {
         capacityOverride = { capacityOverride: true, excesses };
       }
     }
-    await this.prisma.load.update({
-      where: { id },
+    if (load.status === LoadStatus.OPEN && !canTransitionLoad(LoadStatus.OPEN, LoadStatus.PLANNED))
+      throw new ConflictException('Transition du chargement impossible.');
+    const assigned = await this.prisma.load.updateMany({
+      where: { id, tenantId, status: load.status, updatedAt: load.updatedAt },
       data: {
         ...resources,
         status: load.status === LoadStatus.OPEN ? LoadStatus.PLANNED : undefined,
       },
     });
+    if (!assigned.count)
+      throw new ConflictException(
+        'Le chargement a changé. Rechargez avant de modifier les ressources.',
+      );
     await this.cost.recompute(tenantId, id);
     // Single audit entry: the resource change and (when forced) the override reason together.
     await this.audit.log({

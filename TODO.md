@@ -2,6 +2,60 @@
 
 Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link PRs when relevant.
 
+## Fondations multi-métiers — 2026-09-21
+
+Contrats et périmètre : [business-foundations.md](docs/plans/business-foundations.md).
+
+- [x] Application Documentation intégrée, guides/règles/limites des 22 espaces, recherche et relance des tutoriels.
+- [x] Catalogue partagé des nouvelles apps : partenaires client/fournisseur, produits/prestations, versions et désactivation.
+- [x] Achats fournisseurs : brouillon multiligne, confirmation figée, total Decimal et clôture administrative.
+- [x] Services : projets, interventions, responsable textuel, horaire, compte rendu et clôtures gardées.
+- [x] Services : personnes affectées, Mes interventions, feuilles de temps manuelles et totaux projet; versions, annulation motivée et reprise idempotente ([contrats](docs/plans/services-assignment-time.md)).
+- [x] Tables métier distinctes, FK tenant composites, permissions, numérotation et audit; tutoriels première entrée.
+- [x] Activation simultanée d’une nouvelle app résistante à la concurrence.
+- [x] Correspondance Catalogue ↔ WMS un-à-un, unités contrôlées; pièces Services et retours intégraux idempotents ([contrats](docs/plans/services-parts-and-connected-documentation.md)).
+- [x] Documentation approfondie : fiches de connexions, responsabilités, déclencheurs/effets/limites, parcours intermodules, glossaire et dépannage intégrés.
+- [ ] Correspondances explicites du Catalogue avec les référentiels CRM/TMS historiques.
+- [x] Services : approbation indépendante des temps, refus/réouverture motivés, gel, journal transactionnel et garde de clôture ([contrats](docs/plans/services-time-approval.md)).
+- [ ] Services : revue hebdomadaire/en masse, délégations, relances et procédure des temps historiques sur projets déjà fermés.
+- [ ] Services : planning de capacité, équipes, retours partiels/stock mobile, devis/facturation et signatures.
+- [x] Achats ↔ WMS : arrivages partiels, reliquats, champs personnalisés, preuve paginée, reprise sans doublon et clôture motivée ([contrats](docs/plans/supplier-receipts-and-support.md)).
+- [ ] Achats : liens projet/MRP, envoi, retours fournisseur, rapprochement facture et navigation WMS → commande fournisseur.
+- [ ] Événements et outils AI gouvernés des nouvelles apps.
+- [ ] Procédures privées par tenant dans Documentation et exercices tutoriels métier approfondis.
+- [x] Tutoriels RH/Qualité/SAV/Achats versionnés et distincts, pratique/reprise, première présentation automatique par utilisateur et relance dans l’aide, comptes de recette isolés ([contrat](docs/plans/skills-followup-and-module-tutorials.md)).
+- [x] SAV v1 : demandes client, qualification, priorité, lien Services cohérent, résolution/réouverture/clôture, historique, tutoriel automatique et documentation.
+- [x] SAV : responsable interne, échéance civile et files Mes demandes à traiter/Sans responsable/Échéances dépassées. Achats : files serveur de préparation, arrivages et retards ([contrat](docs/plans/skills-followup-and-module-tutorials.md)).
+- [ ] SAV : attribution d’équipe, délais/SLA, garanties, pièces jointes et portail client; pas d’envoi ni d’agent autonome livré.
+- [x] Programme intégré des six modules restants : responsabilités des données, connexions, premier workflow et tutoriel requis; statuts « à développer ».
+- [x] Qualité v1 : plans versionnés, critères figés, contrôles mesurés, NC atomiques, analyse/correction/vérification et journal; liens WMS/Fabrication/SAV, documentation et tutoriel ([contrats](docs/plans/quality-workflows.md)).
+- [x] Qualité v2 : responsables/échéances, filtres de suivi, preuves PDF/PNG/JPEG via Documents avec accès métier, reprise idempotente et protection contre les accès génériques ([contrats](docs/plans/quality-workflows.md)).
+- [ ] Qualité : liens retour, contre-contrôles reliés, quarantaine WMS; aucun stock libéré par une simple clôture.
+- [x] RH v1 : employés, équipes, compte optionnel distinct et fixe, demandes d’absence, espace personnel, décision indépendante, chevauchements gardés, journal, documentation et tutoriel première visite ([contrats](docs/plans/hr-foundations.md)).
+- [x] RH → Services : contrôle minimal des absences approuvées par jour, permission dédiée, liste et prévisualisation, états inconnus, fuseau explicite, aide/tutoriel et confidentialité ([contrats](docs/plans/hr-services-availability.md)).
+- [x] RH : compétences/habilitations datées, révocation motivée, contrôle minimal des exigences d’un poste Fabrication; permissions et documentation dédiées ([contrat](docs/plans/skills-followup-and-module-tutorials.md)).
+- [ ] RH : alertes d’expiration, matrice par équipe, exigences des opérations/gammes puis disponibilité Fabrication, réaffectation auditée compte/employé, rétention et accès hiérarchiques. Aucune paie ni donnée médicale dans le premier lot.
+- [ ] Services : fuseau métier stable et durée prévue avant calcul de capacité ou blocage d’affectation; le contrôle RH actuel vérifie uniquement le jour du début dans le fuseau du navigateur.
+- [ ] Location, Commerce/POS, Restauration et e-commerce : implémentation et tutoriels exécutables, non livrés par leur documentation de cadrage.
+
+## Utilisabilité client — 2026-09-21
+
+Contrats, couverture et tests : [end-user-workflows.md](docs/plans/end-user-workflows.md).
+
+- [x] Éditer/désactiver clients et transporteurs depuis listes et fiches; validations serveur.
+- [x] Notes load versionnées avant exécution; corrections de taille des cartes et labels sûrs.
+- [x] Aide contextuelle + guides textuels relançables, clavier opt-in, créations rapides article/bin.
+- [x] Zone visible/éditable dans les emplacements, Apparence centralisée, import logo portail.
+- [ ] Zones autonomes par site (y compris vides), affectation multiple et migration du classement existant.
+- [ ] Dates avec raccourcis/fuseaux, autocomplete externe d’adresses après choix d’un fournisseur.
+- [x] Visites guidées d’entrée des 18 espaces : surlignage, navigation, reprise serveur par utilisateur et relance depuis « ? » ([contrats](docs/plans/scanners-and-module-tours.md)).
+- [ ] Exercices tutoriels métier approfondis par page/rôle et portail externe.
+- [x] Scan clavier USB/Bluetooth et Zebra DataWedge : recherche dans 5 modules, sélection article/bin et comptage brouillon +1 EA avec confirmations.
+- [ ] Comptage scanner testé sur matériel; préserver confirmations, idempotence et contrôle du stock.
+- [ ] Bureau à deux panneaux conservant contexte et brouillons indépendants.
+- [ ] Cohérence des partenaires inactifs dans tous les nouveaux dossiers, filtre Actifs/Inactifs et versions d’édition.
+- [ ] Nettoyage des anciens logos et écriture atomique des réglages de branding concurrents.
+
 ## Modules visuels — priorité de relance (2026-09-14)
 
 - [x] Cour & quais : poste de travail par site, plan configurable, occupation, planning et panneaux d’action ([contrats et limites](docs/plans/yard-visual-workspace.md)).

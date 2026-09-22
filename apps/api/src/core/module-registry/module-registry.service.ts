@@ -33,16 +33,18 @@ export class ModuleRegistryService {
       throw new BadRequestException(`Module "${moduleKey}" is not available yet`);
     }
 
-    const result = await this.prisma.tenantModule.upsert({
-      where: { tenantId_moduleId: { tenantId, moduleId: definition.id } },
-      update: { enabled, enabledAt: enabled ? new Date() : undefined },
-      create: {
-        tenantId,
-        moduleId: definition.id,
-        enabled,
-        enabledAt: enabled ? new Date() : null,
-      },
-      include: { module: true },
+    // Nested upsert + include may be emulated by Prisma and race on first activation.
+    // INSERT ... ON CONFLICT DO NOTHING, then update under the same transaction.
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.tenantModule.createMany({
+        data: [{ tenantId, moduleId: definition.id, enabled: false }],
+        skipDuplicates: true,
+      });
+      return tx.tenantModule.update({
+        where: { tenantId_moduleId: { tenantId, moduleId: definition.id } },
+        data: { enabled, enabledAt: enabled ? new Date() : undefined },
+        include: { module: true },
+      });
     });
     this.modulesCache.invalidate(tenantId);
     return result;

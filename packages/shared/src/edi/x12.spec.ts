@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import multistop204 from './__fixtures__/204-multistop.edi?raw';
-import minimal204 from './__fixtures__/204-minimal.edi?raw';
+import multistop204Raw from './__fixtures__/204-multistop.edi?raw';
+import minimal204Raw from './__fixtures__/204-minimal.edi?raw';
 import invoice210 from './__fixtures__/210-invoice.edi?raw';
+// These cases explicitly exercise LF, CRLF and no-EOL variants. Git on Windows
+// may check the source fixtures out as CRLF; build each variant deterministically.
+const multistop204 = multistop204Raw.replace(/\r\n/g, '\n');
+const minimal204 = minimal204Raw.replace(/\r\n/g, '\n');
 import {
   buildX12Interchange,
   fromImpliedDecimal,

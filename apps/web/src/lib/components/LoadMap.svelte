@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
+  import { watchMapSize, mapLabel } from '$lib/maps/lifecycle';
   import { api } from '$lib/api/client';
   import { formatDateTime } from '$lib/format';
   import 'leaflet/dist/leaflet.css';
@@ -13,6 +14,8 @@
 
   let el: HTMLDivElement;
   let hasPoints = $state(false);
+  let loading = $state(true);
+  let tileError = $state(false);
 
   interface Loc {
     id: string;
@@ -30,6 +33,7 @@
   onMount(() => {
     let map: import('leaflet').Map | null = null;
     let destroyed = false;
+    let stopResize = () => {};
 
     void (async () => {
       const L = await import('leaflet');
@@ -49,13 +53,19 @@
         .map((s) => ({ s, loc: byId.get(s.locationId) }))
         .filter((p) => p.loc?.latitude != null && p.loc?.longitude != null);
 
-      if (points.length === 0) return; // graceful degradation: map stays hidden
+      loading = false;
+      if (points.length === 0) return;
       hasPoints = true;
+      await tick();
+      if (destroyed) return;
 
       map = L.map(el, { attributionControl: true });
+      stopResize = watchMapSize(el, map);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap',
-      }).addTo(map);
+      })
+        .on('tileerror', () => (tileError = true))
+        .addTo(map);
 
       const latlngs = points.map((p) => [p.loc!.latitude!, p.loc!.longitude!] as [number, number]);
       // Leaflet draws outside the CSS cascade — literal brand colors accepted here.
@@ -68,7 +78,7 @@
           fillOpacity: 0.8,
         })
           .addTo(map!)
-          .bindTooltip(`${i + 1}. ${p.loc!.name} (${p.s.type})`);
+          .bindTooltip(mapLabel(`${i + 1}. ${p.loc!.name} (${p.s.type})`));
       });
       if (geometry) {
         // OSRM GeoJSON is [lng, lat]; L.geoJSON handles the order natively.
@@ -96,7 +106,7 @@
             fillOpacity: 0.9,
           })
             .addTo(map!)
-            .bindTooltip(`Dernière position — ${formatDateTime(pos.occurredAt)}`);
+            .bindTooltip(mapLabel(`Dernière position — ${formatDateTime(pos.occurredAt)}`));
         }
       } catch {
         /* tracking optional */
@@ -107,15 +117,35 @@
       } else {
         map.fitBounds(L.latLngBounds(latlngs).pad(0.2));
       }
-    })();
+    })().catch(() => {
+      if (!destroyed) {
+        loading = false;
+        tileError = true;
+      }
+    });
 
     return () => {
       destroyed = true;
+      stopResize();
       map?.remove();
     };
   });
 </script>
 
+{#if loading}<p class="text-sm text-ink-muted">Chargement de la carte…</p>{/if}
+{#if !loading && !hasPoints}<p
+    role="status"
+    class="rounded-md border border-edge p-3 text-sm text-ink-muted"
+  >
+    Carte indisponible : les lieux de cette tournée n’ont pas de coordonnées accessibles. Vérifiez
+    leurs adresses et le géocodage dans les Lieux.
+  </p>{/if}
+{#if tileError}<p role="status" class="text-sm text-warning">
+    Fond de carte indisponible. Vérifiez la connexion au service cartographique.
+  </p>{/if}
+{#if hasPoints && !geometry}<p class="mb-2 text-xs text-ink-muted">
+    Liaisons indicatives entre les arrêts, pas un itinéraire routier calculé.
+  </p>{/if}
 <div
   bind:this={el}
   class={`h-64 w-full rounded-card border border-edge ${hasPoints ? '' : 'hidden'}`}

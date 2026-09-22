@@ -18,6 +18,9 @@
      Listbox semantics with `aria-activedescendant` on the search box.
 -->
 <script lang="ts">
+  import ScanInput from '$lib/components/scanning/ScanInput.svelte';
+  import { pickerScanContext } from '$lib/scanning/context';
+  import type { ScanResult } from '@pulsar/shared';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
   import { ChevronDown, X, Check, Search, Plus } from 'lucide-svelte';
@@ -42,6 +45,7 @@
     allowCreate = undefined,
     allowFreeText = false,
     onfreetext = undefined,
+    onselect = undefined,
   }: {
     endpoint: string;
     label: string;
@@ -64,6 +68,7 @@
     /** Offer the raw query as a choice when nothing in the catalog fits. */
     allowFreeText?: boolean;
     onfreetext?: (text: string) => void;
+    onselect?: (item: PickerRecord) => void;
   } = $props();
 
   type Option = {
@@ -79,6 +84,28 @@
   const listId = `${uid}-list`;
 
   let open = $state(false);
+  let scanning = $state(false);
+  const scanContext = $derived(pickerScanContext(endpoint, filters));
+  async function scan(code: string) {
+    if (!scanContext || disabled) return;
+    const path = endpoint,
+      context = JSON.stringify(scanContext);
+    const result = await api<ScanResult>('/scan/wms', {
+      method: 'POST',
+      body: { ...scanContext, code },
+    });
+    if (!open || disabled || endpoint !== path || JSON.stringify(scanContext) !== context) return;
+    selected = {
+      id: result.id,
+      sku: result.code,
+      code: result.code,
+      name: result.name,
+      unit: result.unit,
+    };
+    value = valueKey === 'sku' || valueKey === 'code' ? result.code : result.id;
+    open = false;
+    onselect?.(selected);
+  }
   let search = $state('');
   let selected = $state<PickerRecord | null>(null);
   /** Paginated shape: the current page. Array shape: the whole list, filtered below. */
@@ -219,6 +246,7 @@
     selected = option.item ?? null;
     value = option.value;
     open = false;
+    if (selected) onselect?.(selected);
   }
 
   function onSearchKeydown(event: KeyboardEvent) {
@@ -250,6 +278,7 @@
     aria-haspopup="dialog"
     aria-label={`${label} : ${display}`}
     onclick={() => {
+      scanning = false;
       search = '';
       highlight = 0;
       open = true;
@@ -284,60 +313,78 @@
 {/snippet}
 
 <Modal bind:open title={label} size="sm" footer={allowCreate ? createFooter : undefined}>
-  <div class="flex items-center gap-2">
-    <Search size={16} class="shrink-0 text-ink-faint" />
-    <input
-      bind:value={search}
-      onkeydown={onSearchKeydown}
-      type="text"
-      autocomplete="off"
-      aria-label={`Rechercher : ${label.toLowerCase()}`}
-      aria-controls={listId}
-      aria-activedescendant={options[highlight] ? `${uid}-opt-${highlight}` : undefined}
-      placeholder="Rechercher par nom…"
-      class="min-h-9 w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink transition-colors placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none disabled:bg-surface-muted"
-    />
-  </div>
-  <div class="mt-3 min-h-32" aria-busy={loading}>
-    <ErrorNotice message={error} onretry={retry} />
-    {#if loading}<p class="py-4 text-sm text-ink-muted" role="status">Recherche…</p>
-    {:else if !error && !options.length}<p class="py-4 text-sm text-ink-muted">
-        Aucun résultat. Essayez un autre nom.
-      </p>
-    {:else}
-      <div
-        id={listId}
-        role="listbox"
-        aria-label={`Résultats : ${label.toLowerCase()}`}
-        class="max-h-72 space-y-1 overflow-y-auto"
+  {#if scanContext}
+    <div class="mb-3">
+      <Button
+        variant="secondary"
+        onclick={() => {
+          scanning = !scanning;
+        }}>{scanning ? 'Rechercher manuellement' : 'Scanner un code-barres'}</Button
       >
-        {#each options as option, index (option.key)}
-          <button
-            type="button"
-            role="option"
-            id={`${uid}-opt-${index}`}
-            aria-selected={option.kind === 'item' && value === option.value}
-            onmouseenter={() => (highlight = index)}
-            onclick={() => choose(option)}
-            class="flex min-h-10 w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-accent {index ===
-            highlight
-              ? 'bg-surface-muted'
-              : 'hover:bg-surface-muted'}"
-          >
-            <span class="min-w-0 break-words"
-              >{option.label}{#if option.detail}<span class="ml-2 text-xs text-ink-muted"
-                  >{option.detail}</span
-                >{/if}</span
-            >{#if option.kind === 'item' && value === option.value}<Check
-                size={16}
-                class="shrink-0 text-accent"
-              />{/if}
-          </button>
-        {/each}
-      </div>
-      {#if shown > visible.length}<p class="mt-3 text-xs text-ink-muted">
-          {visible.length} résultats sur {shown}. Affinez votre recherche.
-        </p>{/if}
-    {/if}
-  </div>
+    </div>
+  {/if}
+  {#if scanning && scanContext}
+    <ScanInput
+      onscan={scan}
+      {disabled}
+      label={scanContext.kind === 'item' ? 'Scanner un article' : 'Scanner un emplacement'}
+    />
+  {:else}
+    <div class="flex items-center gap-2">
+      <Search size={16} class="shrink-0 text-ink-faint" />
+      <input
+        bind:value={search}
+        onkeydown={onSearchKeydown}
+        type="text"
+        autocomplete="off"
+        aria-label={`Rechercher : ${label.toLowerCase()}`}
+        aria-controls={listId}
+        aria-activedescendant={options[highlight] ? `${uid}-opt-${highlight}` : undefined}
+        placeholder="Rechercher par nom…"
+        class="min-h-9 w-full rounded-md border border-edge bg-surface px-3 py-1.5 text-sm text-ink transition-colors placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none disabled:bg-surface-muted"
+      />
+    </div>
+    <div class="mt-3 min-h-32" aria-busy={loading}>
+      <ErrorNotice message={error} onretry={retry} />
+      {#if loading}<p class="py-4 text-sm text-ink-muted" role="status">Recherche…</p>
+      {:else if !error && !options.length}<p class="py-4 text-sm text-ink-muted">
+          Aucun résultat. Essayez un autre nom.
+        </p>
+      {:else}
+        <div
+          id={listId}
+          role="listbox"
+          aria-label={`Résultats : ${label.toLowerCase()}`}
+          class="max-h-72 space-y-1 overflow-y-auto"
+        >
+          {#each options as option, index (option.key)}
+            <button
+              type="button"
+              role="option"
+              id={`${uid}-opt-${index}`}
+              aria-selected={option.kind === 'item' && value === option.value}
+              onmouseenter={() => (highlight = index)}
+              onclick={() => choose(option)}
+              class="flex min-h-10 w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-accent {index ===
+              highlight
+                ? 'bg-surface-muted'
+                : 'hover:bg-surface-muted'}"
+            >
+              <span class="min-w-0 break-words"
+                >{option.label}{#if option.detail}<span class="ml-2 text-xs text-ink-muted"
+                    >{option.detail}</span
+                  >{/if}</span
+              >{#if option.kind === 'item' && value === option.value}<Check
+                  size={16}
+                  class="shrink-0 text-accent"
+                />{/if}
+            </button>
+          {/each}
+        </div>
+        {#if shown > visible.length}<p class="mt-3 text-xs text-ink-muted">
+            {visible.length} résultats sur {shown}. Affinez votre recherche.
+          </p>{/if}
+      {/if}
+    </div>
+  {/if}
 </Modal>

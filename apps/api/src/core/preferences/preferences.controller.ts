@@ -18,10 +18,11 @@ export class PreferencesController {
 
   @Put()
   update(@CurrentUser() user: AuthUser, @Body() dto: UpdatePreferencesDto) {
-    const { deskLayout, appearance, releaseNotesSeenAt } = dto;
+    const { deskLayout, appearance, releaseNotesSeenAt, moduleTour } = dto;
     return this.preferences.update(user.id, {
       deskLayout,
       appearance,
+      moduleTour,
       releaseNotesSeenAt: releaseNotesSeenAt ? new Date(releaseNotesSeenAt) : undefined,
     });
   }

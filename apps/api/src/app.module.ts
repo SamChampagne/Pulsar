@@ -45,6 +45,10 @@ import { AutomationModule } from './core/automation/automation.module';
 import { PreferencesModule } from './core/preferences/preferences.module';
 import { ReleaseNotesModule } from './core/release-notes/release-notes.module';
 import { ConnectModule } from './core/connect/connect.module';
+import { ScanningModule } from './core/scanning/scanning.module';
+import { BusinessModule } from './modules/business/business.module';
+import { QualityModule } from './modules/quality/quality.module';
+import { HrModule } from './modules/hr/hr.module';
 
 @Module({
   imports: [
@@ -84,6 +88,7 @@ import { ConnectModule } from './core/connect/connect.module';
     PreferencesModule,
     ReleaseNotesModule,
     ConnectModule,
+    ScanningModule,
     // Business modules (activable per tenant — see ModulesGuard)
     TransportationModule,
     FleetModule,
@@ -97,6 +102,9 @@ import { ConnectModule } from './core/connect/connect.module';
     CrmModule,
     SitesModule,
     ManufacturingModule,
+    BusinessModule,
+    QualityModule,
+    HrModule,
   ],
   providers: [
     // Guard order matters: authenticate, then check module activation, then permissions.

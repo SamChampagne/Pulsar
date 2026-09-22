@@ -94,7 +94,24 @@ export class ItemsService {
   async update(tenantId: string, id: string, dto: UpdateItemDto) {
     await this.get(tenantId, id);
     try {
-      await this.prisma.wmsItem.updateMany({ where: { id, tenantId }, data: dto });
+      await this.prisma.$transaction(async (tx) => {
+        // Same stock lock as Services issues/mapping and InventoryService.postMovement.
+        await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+        const old = await tx.wmsItem.findFirstOrThrow({ where: { tenantId, id } });
+        if (
+          dto.unit !== undefined &&
+          dto.unit !== old.unit &&
+          ((await tx.catalogStockLink.count({ where: { tenantId, wmsItemId: id } })) ||
+            (await tx.servicePartUsage.count({ where: { tenantId, wmsItemId: id } })) ||
+            (await tx.supplierReceiptLine.count({
+              where: { tenantId, receiptLine: { tenantId, itemId: id } },
+            })))
+        )
+          throw new ConflictException(
+            'L’unité est figée par une correspondance Catalogue, une consommation Services ou une réception fournisseur.',
+          );
+        await tx.wmsItem.updateMany({ where: { id, tenantId }, data: dto });
+      });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException('SKU already exists');

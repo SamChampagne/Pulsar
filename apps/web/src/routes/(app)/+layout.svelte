@@ -1,4 +1,7 @@
 <script lang="ts">
+  import ModuleScanner from '$lib/components/scanning/ModuleScanner.svelte';
+  import ModuleTour from '$lib/components/help/ModuleTour.svelte';
+  import { requestModuleTour } from '$lib/help/tours';
   import { onMount } from 'svelte';
   import { beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
@@ -12,6 +15,7 @@
   import { unseenReleaseNotes } from '$lib/stores/release-notes';
   import {
     Bell,
+    CircleHelp,
     LogOut,
     Menu,
     Search,
@@ -283,6 +287,7 @@
           <div class="grid gap-0.5">
             {#each section.links as l (l.href)}
               <a
+                data-tour-href={l.href}
                 href={l.href}
                 aria-current={linkActive(l.href) ? 'page' : undefined}
                 class={`flex min-h-9 items-center justify-between gap-2 rounded-md px-3 py-2 text-sm transition-colors ${linkActive(l.href) ? 'bg-surface-muted font-medium text-ink' : 'text-ink-muted hover:bg-surface-muted/70 hover:text-ink'}`}
@@ -320,6 +325,7 @@
           class="shell-icon lg:hidden"
           onclick={() => (drawerOpen = true)}
           aria-label="Ouvrir le menu"
+          data-tour="module-menu"
           aria-expanded={drawerOpen}><Menu class="size-5" /></button
         >
       {/if}
@@ -339,6 +345,7 @@
         class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium hover:bg-surface-muted"
         onclick={openSwitcher}
         aria-label="Changer d’application"
+        data-tour="module-switcher"
         aria-haspopup="dialog"
       >
         {#if deskMode}<Grid2X2 class="size-4 shrink-0 text-ink-muted" />{:else if activeDomain}
@@ -357,7 +364,16 @@
           >/ &nbsp; {currentPage}</span
         >
       {/if}
-      <div class="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
+      <div class="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+        <ModuleScanner domain={activeDomain?.key ?? ''} />
+        <button
+          type="button"
+          class="shell-icon"
+          data-tour="module-help"
+          aria-label="Tutoriel du module"
+          title="Rejouer le tutoriel du module"
+          onclick={requestModuleTour}><CircleHelp size={18} /></button
+        >
         {#if page.url.pathname === '/apps'}
           <label
             class="hidden h-9 w-52 items-center gap-2 rounded-md border border-edge bg-surface px-2.5 md:flex lg:w-64"
@@ -450,6 +466,7 @@
           <nav
             class="workspace-scroll min-h-0 flex-1 overflow-y-auto px-3 py-4"
             aria-label="Menu du module sélectionné"
+            data-tour="module-nav"
           >
             {@render moduleLinks()}
           </nav>
@@ -464,6 +481,7 @@
       {/if}
       <main
         id="workspace-content"
+        data-tour="workspace"
         data-workspace-scroll
         bind:this={workspaceEl}
         tabindex="-1"
@@ -478,6 +496,7 @@
     </div>
   </div>
 
+  <ModuleTour domain={activeDomain} />
   <Drawer bind:open={drawerOpen} title={contextTitle} width="sm" side="left">
     <nav aria-label="Menu du module sélectionné">{@render moduleLinks()}</nav>
     {#snippet footer()}<a href="/apps" class="mr-auto text-sm font-medium">Bureau des apps</a

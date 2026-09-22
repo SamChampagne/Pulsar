@@ -18,6 +18,12 @@ export const MODULE_KEYS = {
   CRM: 'crm',
   SITES: 'sites',
   MANUFACTURING: 'manufacturing',
+  CATALOG: 'catalog',
+  PURCHASING: 'purchasing',
+  SERVICES: 'services',
+  SUPPORT: 'support',
+  QUALITY: 'quality',
+  HR: 'hr',
 } as const;
 
 export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS];
@@ -32,6 +38,48 @@ export interface ModuleDescriptor {
 }
 
 export const MODULE_CATALOG: ModuleDescriptor[] = [
+  {
+    key: MODULE_KEYS.HR,
+    name: 'Ressources humaines',
+    description: 'Dossiers employés, équipes et demandes d’absence avec approbation humaine.',
+    isCore: false,
+    available: true,
+  },
+  {
+    key: MODULE_KEYS.QUALITY,
+    name: 'Qualité',
+    description: 'Plans de contrôle, inspections mesurées et traitement des non-conformités.',
+    isCore: false,
+    available: true,
+  },
+  {
+    key: MODULE_KEYS.SUPPORT,
+    name: 'SAV',
+    description: 'Demandes client, qualification, suivi et résolution reliés aux interventions.',
+    isCore: false,
+    available: true,
+  },
+  {
+    key: MODULE_KEYS.CATALOG,
+    name: 'Catalogue commun',
+    description: 'Produits, prestations et partenaires partagés des nouvelles applications métier.',
+    isCore: false,
+    available: true,
+  },
+  {
+    key: MODULE_KEYS.PURCHASING,
+    name: 'Achats fournisseurs',
+    description: 'Commandes fournisseurs et engagements, distincts des appels d’offres transport.',
+    isCore: false,
+    available: true,
+  },
+  {
+    key: MODULE_KEYS.SERVICES,
+    name: 'Services',
+    description: 'Projets clients et interventions planifiées, exécution et compte rendu.',
+    isCore: false,
+    available: true,
+  },
   {
     key: MODULE_KEYS.CORE,
     name: 'Platform Core',
@@ -105,7 +153,8 @@ export const MODULE_CATALOG: ModuleDescriptor[] = [
   {
     key: MODULE_KEYS.CRM,
     name: 'CRM',
-    description: 'Commercial relationships: companies, contacts, deals pipeline and activity timeline, worked by an AI commercial agent.',
+    description:
+      'Commercial relationships: companies, contacts, deals pipeline and activity timeline, worked by an AI commercial agent.',
     isCore: false,
     available: true,
   },

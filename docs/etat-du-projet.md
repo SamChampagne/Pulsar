@@ -1,5 +1,167 @@
 # État du projet — point de reprise
 
+> **Compétences/habilitations, suivi SAV/Achats et tutoriels métier v2 (2026-09-22), branche `codex/end-user-workflows`.**
+> RH : référentiel de compétences/autorisations, attestations datées immuables, renouvellement
+> par nouvelle ligne, révocation motivée et reprise idempotente. Pas d’auto-attestation.
+> Fabrication : exigences par poste (30 maximum), vérification minimale à une date, droits
+> dédiés; aucune référence/motif RH exposé, aucune affectation ni disponibilité calculée.
+> SAV : responsable interne, échéance et files personnelles/non attribuées/en retard.
+> Achats : files serveur des brouillons, arrivages confirmés, retards, clôtures et annulations.
+> Tutoriels RH/Qualité/SAV/Achats propres au métier, longueur variable, pratique/reprise,
+> première présentation automatique par utilisateur/module, sans bouton « Tutoriel métier ».
+> La version 2 ne relance pas les parcours déjà vus; la relance volontaire reste dans l’aide.
+> Les tests ne terminent plus les guides du compte de démonstration.
+> Documentation intégrée, aides et connexion RH/Fabrication actualisées, UI Pulsar conservée.
+> **1 522 tests unitaires** (875 shared, 529 API, 118 web), **69 tests HTTP ciblés** (5 suites),
+> **61 scénarios navigateur réussis** (7 suites, dont nouveaux parcours et mobile).
+> Compilation shared/database/API/web et typechecks réussis (12 avertissements web préexistants).
+> Schéma/migrations sans divergence; migration additive 96 uniquement sur la base isolée
+> `pulsar_enduser_20260921`. `.env` et base client inchangés; API :3100, web :5173.
+> Aucun commit, push ou déploiement. [Contrat, permissions et limites](./plans/skills-followup-and-module-tutorials.md).
+> Suite : alertes d’expiration/matrice par équipe, puis exigences des opérations et capacité;
+> notifications/SLA SAV et retours/rapprochement facture fournisseurs dans des lots séparés.
+
+Les résultats ci-dessous sont historiques; les qualifications ne constituent pas une certification
+réglementaire ni une preuve de disponibilité. Après actualisation des permissions, renouveler le JWT.
+
+> **RH → Services — disponibilité minimale (2026-09-22), branche `codex/end-user-workflows`.**
+> Contrôle en lecture des absences approuvées au jour du début prévu, fuseau du navigateur
+> explicite, permission dédiée `hr.availability.read` + `services.read`, deux modules actifs.
+> Liste des interventions et détail projet : résumé de la page et signaux par intervention;
+> panneau : prévisualisation de la personne/date courante, actualisation et rejet des réponses
+> tardives. Données manquantes, accès absent et erreurs = non vérifié, jamais disponible.
+> Aucun motif, type, numéro, intervalle ni identifiant RH retourné; aucune copie persistée,
+> mutation RH, réservation de capacité ou blocage du planning. Les dossiers clos sont exclus.
+> Correction connexe : sélecteurs personne/prestation dans Services n’affichent plus le libellé
+> du dossier initial après un changement de sélection. UI Pulsar conservée; aide, articles,
+> connexion RH/Services, tutoriel existant et [contrat détaillé](./plans/hr-services-availability.md) à jour.
+> **1 509 tests unitaires** (865 shared, 529 API, 115 web), **54 tests HTTP ciblés** (3 suites)
+> et **56 scénarios navigateur** réussis (49 régressions + 7 nouveaux). Recette visuelle
+> desktop/mobile, format vérifié, typecheck sans erreur (12 avertissements préexistants),
+> compilation complète shared/database/API/web réussie.
+> Aucune migration dans ce lot (95 migrations existantes); `.env` et base client inchangés.
+> Tests sur `pulsar_enduser_20260921`, API :3100, web :5173. Aucun commit, push ou déploiement.
+> Suite : compétences/habilitations RH vers Fabrication; côté Services, fuseau métier stable
+> et durée prévue avant planning de capacité. Pas de paie, conformité légale ni décision AI RH.
+
+La connexion est une indication au moment de la lecture : seuls les jours demandés sont vérifiés,
+pas toutes les occupations de la personne. Une approbation/annulation ultérieure exige une
+actualisation. Les horaires ambigus d’automne gardent le comportement Date du navigateur.
+Les tests HTTP utilisent toujours `--forceExit` (handles existants); API unitaire en séquentiel.
+Le catalogue de permissions est synchronisé au démarrage, mais le JWT doit être renouvelé.
+Les compteurs ci-dessous restent les résultats historiques des lots précédents.
+
+> **Qualité v2 + RH v1 (2026-09-22), branche `codex/end-user-workflows`.**
+> Qualité : responsable interne, échéance civile, filtres Mes dossiers/Sans responsable/Retard,
+> justificatifs PDF/PNG/JPEG protégés par les droits métier, reprise idempotente d’upload et
+> exclusion du centre Documents générique (y compris alias de clé de stockage).
+> RH : tables distinctes employés/équipes/absences/journal; lien utilisateur facultatif unique
+> et fixe; espace personnel limité à son propre dossier; décisions humaines indépendantes,
+> chevauchements sérialisés, dates réelles, versions optimistes et historique transactionnel.
+> Interface Pulsar conservée, documentation métier et connexions approfondies, aide par écran
+> et tutoriel automatique de première visite enregistré par utilisateur/tenant.
+> **1 500 tests unitaires** (856 shared, 529 API, 115 web), **185 tests HTTP** (16 suites)
+> et **49 scénarios navigateur uniques** réussis. Recette visuelle desktop/mobile;
+> typecheck sans erreur (12 avertissements existants), build complet réussi, schéma aligné.
+> 95 migrations uniquement sur `pulsar_enduser_20260921`; `.env` et base client inchangés.
+> API locale :3100, web :5173. Aucun commit, push, PR ou déploiement externe.
+> Contrats : [RH](./plans/hr-foundations.md), [Qualité v2](./plans/quality-workflows.md).
+> Suite : disponibilité RH minimale vers Services, puis compétences/habilitations et
+> capacité Fabrication. Pas encore de paie, données médicales, calcul de droits légaux,
+> notification, blocage automatique de planning ou décision AI RH.
+
+La commande unitaire API doit être exécutée avec `--runInBand` sur ce poste :
+l’essai parallèle a épuisé la mémoire, puis les 529 tests ont réussi en séquentiel.
+Les tests HTTP utilisent encore `--forceExit` (handles existants); aucun arrêt propre
+de tous les runtimes n’est revendiqué. La recette navigateur attend désormais la fin
+des interceptions de préférences RH/Qualité avant fermeture des pages, évitant une
+erreur tardive de tutoriel attribuée au test suivant. APS et services tiers non testés.
+
+> **Qualité v1 (2026-09-22), même branche `codex/end-user-workflows`.**
+> Plans versionnés, contrôles à critères figés, mesures et vérifications, non-conformité
+> atomique en cas d’échec, analyse/action/vérification et journal commun. Liens de contexte
+> vers réceptions WMS validées, ordres de fabrication et SAV, droits revérifiés.
+> Écrans Pulsar, écarts visuels explicites, mobile, aide, documentation métier approfondie
+> et tutoriel première visite avec progression serveur. Pas de quarantaine/libération de
+> stock, signature, notification ou nouvel outil AI; les cinq autres secteurs restent planifiés.
+> Vérifications : **1 492 tests unitaires** (853 shared, 526 API, 113 web), **136 tests HTTP**
+> (10 suites) et **43 scénarios navigateur uniques** (37 régressions + 6 Qualité) réussis.
+> Typecheck sans erreur, 12 avertissements préexistants; compilation complète réussie,
+> recette visuelle desktop/mobile. 93 migrations appliquées uniquement à la base isolée,
+> Prisma sans différence, `.env` inchangé. Aucun commit, push, PR ou déploiement externe.
+> Contrats, limites et prochaines étapes : [quality-workflows.md](./plans/quality-workflows.md).
+
+> **Achats ↔ WMS, SAV et programme sectoriel (2026-09-22), même branche locale.**
+> Réceptions fournisseurs partielles atomiques, reliquats calculés, champs personnalisés WMS,
+> historique paginé, reprise réseau sans doublon et clôture motivée. Nouvelle app SAV :
+> demandes client, qualification/priorité, lien intervention du même client, résolution,
+> réouverture, clôture et historique transactionnel. Client du projet protégé tant que lié au SAV.
+> Guide détaillé, connexion Services et tutoriel première visite; correction d’une course lors
+> de l’enregistrement initial simultané des progressions. Programme de six autres modules
+> dans Documentation (Qualité, Location, RH, Caisse, Restauration, e-commerce) : **cadrés,
+> pas encore implémentés**, tutoriels correspondants à livrer avec chaque module.
+> Vérifications : **1 484 tests unitaires**, **128 tests HTTP/PostgreSQL** (9 suites) et
+> **37 scénarios navigateur** réussis après corrections; typecheck sans erreur (12 avertissements
+> préexistants), compilation complète et recette visuelle SAV/Documentation réussies.
+> 92 migrations sur base isolée, schéma aligné; `.env` inchangé, aucun push/PR.
+> Contrats, procédure et limites : [supplier-receipts-and-support.md](./plans/supplier-receipts-and-support.md).
+
+> **Services ↔ WMS et documentation approfondie (2026-09-21), même branche locale.**
+> Correspondance produits Catalogue ↔ articles WMS, consommation et retour intégral de pièces
+> depuis les interventions, stock atomique et reprise réseau idempotente. Navigation vers le
+> journal de stock et retour au dossier sous contrôle d’accès. Documentation : fiches détaillées
+> des connexions, trois parcours intermodules, glossaire, dépannage et recherche enrichie;
+> tutoriels actualisés. 90 migrations sur base isolée, `.env` inchangé; aucun push/PR.
+> Vérifications : **1 480 tests unitaires**, **122 tests HTTP/PostgreSQL** (9 suites) et
+> **34 scénarios navigateur** réussis. Typecheck sans erreur (12 avertissements préexistants),
+> compilation complète réussie; schéma Prisma aligné sur la base isolée. Recette visuelle du manuel réalisée.
+> Contrats et suite : [services-parts-and-connected-documentation.md](./plans/services-parts-and-connected-documentation.md).
+
+> **Services — approbation des heures (2026-09-21), même branche locale.**
+> Soumission/retrait, approbation indépendante, refus et réouverture motivés. Heures figées
+> pendant/après revue, journal transactionnel des décisions et corrections, totaux approuvés
+> et filtre À approuver dans les projets/interventions/feuilles de temps. Clôture interdite
+> avec des heures non traitées. Permission dédiée `services.time.approve`; aucune auto-approbation.
+> Aide, Documentation et tutoriel mis à jour. Migration sur base isolée seulement; pas de push/PR.
+> Vérifications : **1 474 tests unitaires**, **37 tests HTTP/PostgreSQL** et **32 scénarios
+> navigateur** réussis; typecheck sans erreur (12 avertissements préexistants), compilation complète réussie.
+> Contrats et limites : [services-time-approval.md](./plans/services-time-approval.md).
+
+> **Services — affectations et feuilles de temps (2026-09-21), même branche locale.**
+> Affectation à un utilisateur interne actif, filtres Mes interventions/Sans intervenant,
+> registre `/services/time` et temps dans les projets/interventions. Saisie manuelle,
+> corrections versionnées, annulation motivée, totaux complets et reprise réseau sans doublon.
+> Permissions gestionnaire/collaborateur, verrou tenant, plafond quotidien et audit.
+> Aide, Documentation et tutoriel enrichis. Migration uniquement sur la base isolée de test.
+> Pas de paie, facturation ou mouvement WMS; pas de push/PR.
+> Contrats et prochaine tranche : [services-assignment-time.md](./plans/services-assignment-time.md).
+
+> **Documentation + fondations Services/Achats (2026-09-21), même branche locale.**
+> Nouvelle app `/documentation` avec guides/règles des 22 espaces internes et tutoriels;
+> Catalogue commun aux nouvelles apps, Achats fournisseurs multiligne et Services
+> (projets, interventions, rapports). Six tables propres, références communes, workflows
+> versionnés et audités. Migration additive appliquée uniquement à la base isolée de test.
+> Pas encore de synchronisation CRM/TMS/WMS, réception fournisseur, facturation Services
+> ou nouvel outil AI. Contrats et suite : [business-foundations.md](./plans/business-foundations.md).
+> Pas de push/PR.
+
+> **Scanners + tutoriels interactifs (2026-09-21), même branche locale.** Entrée clavier
+> USB/Bluetooth et Zebra DataWedge dans 5 modules, pickers WMS/fabrication et comptages
+> avec confirmations; visites guidées automatiques dans les 18 espaces internes, surlignage,
+> navigation réelle et progression serveur par utilisateur. Migration `20260921170000_module_tours`
+> appliquée seulement sur la base isolée de test. Matériel réel non testé, pas de push/PR.
+> Contrats, configuration, couverture et limites : [scanners-and-module-tours.md](./plans/scanners-and-module-tours.md).
+
+> **Utilisabilité opérationnelle — lot 1 (2026-09-21), branche locale
+> `codex/end-user-workflows` depuis `access-module-core-locations`.** Édition/activation
+> clients et transporteurs, validations coordonnées/adresses, notes de chargement versionnées,
+> cartes recalées, aide contextuelle et guides textuels, créations rapides article/bin,
+> zones visibles dans Emplacements, Apparence centralisée et import de logo portail.
+> Pas de migration, push ou PR. Couverture exacte, tests et suite priorisée :
+> [end-user-workflows.md](./plans/end-user-workflows.md). Restent notamment les zones autonomes,
+> calendrier partagé, recherche mondiale d’adresses et bureau côte à côte. Le lot suivant
+> ci-dessus remplace les guides textuels par des visites interactives et ajoute le scan clavier.
+
 > 🇫🇷 Document de synthèse pour reprendre le travail (humain ou session Claude Code).
 > Mis à jour à la fin de la **phase 16** (début de l'Acte II). Détail des tâches : [TODO.md](../TODO.md) ·
 > vision : [ROADMAP.md](../ROADMAP.md) · règles de dev : [CLAUDE.md](../CLAUDE.md) ·

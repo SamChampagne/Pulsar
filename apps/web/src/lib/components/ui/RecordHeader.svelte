@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHelp from './PageHelp.svelte';
   import type { Snippet } from 'svelte';
   import { ArrowLeft } from 'lucide-svelte';
   let {
@@ -28,7 +29,10 @@
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div class="min-w-0 flex-1 basis-64">
       <p class="mb-1 text-xs text-ink-muted">{kind}</p>
-      <h1 class="break-words text-xl font-semibold tracking-tight text-ink">{title}</h1>
+      <div class="flex items-center gap-2">
+        <h1 class="break-words text-xl font-semibold tracking-tight text-ink">{title}</h1>
+        <PageHelp {title} />
+      </div>
       {#if meta}<div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
           {@render meta()}
         </div>{/if}

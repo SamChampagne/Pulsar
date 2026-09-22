@@ -93,6 +93,8 @@
     };
   });
   function sourceHref(source: NonNullable<WmsMovementRow['source']>) {
+    if (source.kind === 'service-job')
+      return `/services/interventions?jobId=${encodeURIComponent(source.id)}&section=parts`;
     const path =
       source.kind === 'receipt'
         ? 'receiving'
