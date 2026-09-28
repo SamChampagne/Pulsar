@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page as route } from '$app/state';
   import DossierButton from '$lib/components/workflows/DossierButton.svelte';
+  import CommunicationButton from '$lib/components/communications/CommunicationButton.svelte';
   import type { Paginated } from '@pulsar/shared';
   import { PERMISSIONS } from '@pulsar/shared';
   import { auth } from '$lib/stores/auth';
@@ -598,6 +599,7 @@
   >
     <div class="mb-3">
       <DossierButton entityType="SHIPMENT" entityId={sel.id} />
+      <CommunicationButton access="transportation/shipments" entityId={sel.id} />
       <div class="text-[10px] font-semibold tracking-wide text-ink-muted uppercase">Statut</div>
       <div class="text-sm text-ink">
         <Badge tone={toneFor(sel.status)}>{labelFor(sel.status)}</Badge>

@@ -16,6 +16,7 @@ export class UpdateReceiptDto extends WmsVersionDto {
 }
 
 export class AddReceiptLineDto extends WmsVersionDto {
+  @IsOptional() @IsString() @MinLength(1) lotId?: string;
   @IsString() @MinLength(1) itemId!: string;
   @IsString() @MinLength(1) toBinId!: string;
   @Type(() => Number) @IsNumber({ maxDecimalPlaces: 3 }) @IsPositive() qty!: number;

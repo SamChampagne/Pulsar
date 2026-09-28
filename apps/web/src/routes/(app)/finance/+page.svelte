@@ -1,5 +1,15 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
+  const canCarrier = $derived(!!$auth?.user.permissions.includes('billing.invoices.read'));
+  const canCustomer = $derived(
+    !!$auth?.user.permissions.includes('billing.customer-invoices.read'),
+  );
+  const canAudit = $derived(!!$auth?.user.permissions.includes('billing.freight-audit.read'));
+  const canSupplier = $derived(
+    !!$auth?.user.permissions.includes('billing.supplier-invoices.read'),
+  );
+  const canLegacy = $derived(canCarrier || canCustomer || canAudit);
   import {
     Badge,
     Button,
@@ -117,9 +127,9 @@
     error = '';
     try {
       const [carrier, customer, incoming] = await Promise.all([
-        api<CarrierInvoice[]>('/billing/invoices'),
-        api<CustomerInvoice[]>('/billing/customer-invoices'),
-        api<IncomingInvoice[]>('/freight-audit/incoming-invoices'),
+        canCarrier ? api<CarrierInvoice[]>('/billing/invoices') : Promise.resolve([]),
+        canCustomer ? api<CustomerInvoice[]>('/billing/customer-invoices') : Promise.resolve([]),
+        canAudit ? api<IncomingInvoice[]>('/freight-audit/incoming-invoices') : Promise.resolve([]),
       ]);
       carrierInvoices = carrier;
       customerInvoices = customer;
@@ -142,16 +152,47 @@
   subtitle="Facturation clients, paiements fournisseurs et écarts à traiter."
 >
   {#snippet actions()}
-    <Button variant="secondary" href="/billing/freight-audit">Audit transporteur</Button>
-    <Button href="/invoices">Ouvrir les factures</Button>
+    {#if canAudit}<Button variant="secondary" href="/billing/freight-audit"
+        >Audit transporteur</Button
+      >{/if}
+    {#if canCarrier || canCustomer}<Button href="/invoices">Clients et transporteurs</Button>{/if}
   {/snippet}
 </PageHeader>
+{#if $auth?.user.permissions.includes('billing.ledger.read')}
+  <div class="mb-5 flex flex-wrap gap-2">
+    <Button variant="secondary" href="/billing/accounting-profile">Profil comptable</Button><Button
+      variant="secondary"
+      href="/billing/budgets">Budgets par devise</Button
+    >
+  </div>
+{/if}
+{#if canSupplier}
+  <section
+    class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-edge bg-surface p-4"
+    aria-label="Registre fournisseur"
+  >
+    <div class="min-w-0">
+      <h2 class="font-semibold">Factures fournisseur reçues</h2>
+      <p class="mt-1 max-w-2xl text-sm text-ink-muted">
+        Saisie, justificatifs et qualification documentaire. Fonctionne avec Finance seul. Ce
+        registre n’est pas encore comptabilisé dans les dettes ou les paiements.
+      </p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <Button href="/billing/supplier-invoices">Ouvrir le registre fournisseur</Button><Button
+        href="/billing/suppliers"
+        variant="secondary">Dossiers fournisseur</Button
+      >
+      <Button href="/billing/supplier-schedules" variant="secondary">Échéancier fournisseur</Button>
+    </div>
+  </section>
+{/if}
 <ErrorNotice message={error} onretry={load} />
 {#if loading}
   <Skeleton rows={6} />
-{:else if !error}
+{:else if !error && canLegacy}
   <div class="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Situation de la facturation">
-    {#each [{ label: 'Brouillons clients', value: draftReceivables, href: '/invoices' }, { label: 'Litiges et alertes', value: disputedCount, href: '/billing/freight-audit' }, { label: 'Factures transporteurs', value: carrierInvoices.length, href: '/invoices' }, { label: 'Factures clients payées', value: paidReceivables, href: '/invoices' }] as metric}
+    {#each [{ visible: canCustomer, label: 'Brouillons clients', value: draftReceivables, href: '/invoices' }, { visible: canCarrier || canAudit, label: 'Litiges et alertes', value: disputedCount, href: canAudit ? '/billing/freight-audit' : '/invoices' }, { visible: canCarrier, label: 'Factures transporteurs', value: carrierInvoices.length, href: '/invoices' }, { visible: canCustomer, label: 'Factures clients payées', value: paidReceivables, href: '/invoices' }].filter((m) => m.visible) as metric}
       <a
         href={metric.href}
         class="rounded-lg border border-edge bg-surface p-4 transition-colors hover:bg-surface-muted"
@@ -173,9 +214,10 @@
           title="Votre facturation commence ici"
           message="Générez un relevé depuis un ordre livré ou importez une facture transporteur pour lancer son audit."
         >
-          {#snippet children()}<Button href="/billing/freight-audit" variant="secondary"
-              >Importer une facture</Button
-            >{/snippet}
+          {#snippet children()}{#if canAudit}<Button
+                href="/billing/freight-audit"
+                variant="secondary">Importer une facture</Button
+              >{/if}{/snippet}
         </EmptyState>
       {:else if worklist.length === 0}
         <p class="px-4 py-8 text-sm text-ink-muted">
@@ -207,7 +249,7 @@
       aria-label="Accès aux dossiers financiers"
     >
       <h2 class="border-b border-edge px-4 py-3 text-sm font-semibold">Dossiers financiers</h2>
-      {#each [{ label: 'Factures clients', detail: customerInvoices.length + ' factures', href: '/invoices' }, { label: 'Factures transporteurs', detail: carrierInvoices.length + ' factures', href: '/invoices' }, { label: 'Audit transporteur', detail: incomingInvoices.length + ' factures importées', href: '/billing/freight-audit' }] as section}
+      {#each [{ visible: canCustomer, label: 'Factures clients', detail: customerInvoices.length + ' factures', href: '/invoices' }, { visible: canCarrier, label: 'Factures transporteurs', detail: carrierInvoices.length + ' factures', href: '/invoices' }, { visible: canAudit, label: 'Audit transporteur', detail: incomingInvoices.length + ' factures importées', href: '/billing/freight-audit' }].filter((s) => s.visible) as section}
         <a
           href={section.href}
           class="flex items-center justify-between gap-2 border-b border-edge-soft px-4 py-3 text-sm last:border-0 hover:bg-surface-muted"

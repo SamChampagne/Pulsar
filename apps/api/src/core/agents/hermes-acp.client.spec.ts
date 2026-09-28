@@ -2,6 +2,28 @@ import { HermesAcpClient, type AcpEvent } from './hermes-acp.client';
 import { FakeAcpServer } from '../../../test/support/fake-acp-server';
 
 describe('HermesAcpClient (ACP over injectable transport)', () => {
+  it.each([
+    [null, 'end_turn', 'failed'],
+    [
+      { version: 1, status: 'failed', code: 'RUNTIME_FAILURE', error: 'secret' },
+      'refusal',
+      'failed',
+    ],
+    [{ version: 1, status: 'succeeded' }, 'cancelled', 'cancelled'],
+    [{ version: 1, status: 'succeeded' }, 'max_tokens', 'failed'],
+  ])(
+    'projects a terminal outcome without guessing from prose',
+    async (outcome, stopReason, status) => {
+      const fake = new FakeAcpServer();
+      fake.script = { outcome, stopReason: String(stopReason) };
+      const client = new HermesAcpClient(fake.clientTransport);
+      const events: AcpEvent[] = [];
+      for await (const ev of client.prompt('s', 'go')) events.push(ev);
+      expect(events.find((e) => e.type === 'result')).toMatchObject({ result: { status } });
+      expect(JSON.stringify(events)).not.toContain('secret');
+      expect(events.at(-1)?.type).toBe('end');
+    },
+  );
   it('initializes, opens a model-less session with mcpServers, and returns a sessionId', async () => {
     const fake = new FakeAcpServer();
     const client = new HermesAcpClient(fake.clientTransport);
@@ -49,7 +71,7 @@ describe('HermesAcpClient (ACP over injectable transport)', () => {
     ]);
   });
 
-  it('resumes an existing session by id (session/resume)', async () => {
+  it('resumes existing history using strict session/load, preserving its id', async () => {
     const fake = new FakeAcpServer();
     const client = new HermesAcpClient(fake.clientTransport);
 
@@ -58,6 +80,46 @@ describe('HermesAcpClient (ACP over injectable transport)', () => {
 
     expect(fake.lastResume).toBe('prior-session-123');
     expect(sessionId).toBe('prior-session-123');
+  });
+
+  it('refuses a missing history instead of claiming a fresh conversation was resumed', async () => {
+    const fake = new FakeAcpServer();
+    fake.loadResult = null;
+    const client = new HermesAcpClient(fake.clientTransport);
+    await expect(client.resumeSession({ cwd: '.' }, 'missing')).rejects.toThrow(
+      'history unavailable',
+    );
+  });
+
+  it('sends cancellation as a notification without waiting for a reply', async () => {
+    const fake = new FakeAcpServer();
+    const client = new HermesAcpClient(fake.clientTransport);
+    client.cancel('running-session');
+    expect(fake.lastCancel).toBe('running-session');
+  });
+
+  it('rejects subsequent calls after normal EOF rather than leaving them pending', async () => {
+    const fake = new FakeAcpServer();
+    const client = new HermesAcpClient(fake.clientTransport);
+    await client.initialize();
+    fake.close();
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(client.newSession({ cwd: '.' })).rejects.toThrow('transport closed');
+    expect(() => client.cancel('closed')).toThrow('transport closed');
+  });
+
+  it('rejects a synchronous write failure without retaining a pending call', async () => {
+    const client = new HermesAcpClient({
+      send: () => {
+        throw new Error('pipe closed');
+      },
+      messages: {
+        async *[Symbol.asyncIterator]() {
+          /* EOF */
+        },
+      },
+    });
+    await expect(client.initialize()).rejects.toThrow('pipe closed');
   });
 
   it('sets the model after the session is created', async () => {
@@ -88,7 +150,7 @@ describe('HermesAcpClient (ACP over injectable transport)', () => {
       events.push(ev);
     }
 
-    expect(events.map((e) => e.type)).toEqual(['text', 'tool_call', 'end']);
+    expect(events.map((e) => e.type)).toEqual(['text', 'tool_call', 'result', 'end']);
 
     const text = events.find((e) => e.type === 'text') as Extract<AcpEvent, { type: 'text' }>;
     expect(text.text).toBe('Bonjour');
@@ -101,7 +163,7 @@ describe('HermesAcpClient (ACP over injectable transport)', () => {
     expect(tool.args).toEqual({ loadId: 'L1' });
   });
 
-  it('auto-allows a reverse request_permission during a prompt turn', async () => {
+  it('rejects host privileges independently of Pulsar business approvals', async () => {
     const fake = new FakeAcpServer();
     fake.script = { assistantText: 'ok', requestPermission: true };
     const client = new HermesAcpClient(fake.clientTransport);
@@ -116,7 +178,29 @@ describe('HermesAcpClient (ACP over injectable transport)', () => {
 
     // The turn still completes...
     expect(events[events.length - 1].type).toBe('end');
-    // ...and the client replied with an "allow_once" selection.
-    expect(fake.permissionOutcome).toEqual({ outcome: 'selected', optionId: 'allow_once' });
+    expect(fake.permissionOutcome).toEqual({ outcome: 'selected', optionId: 'deny' });
+  });
+
+  it('cancels when the host offers only allow options (never picks the first)', async () => {
+    const fake = new FakeAcpServer();
+    fake.script = {
+      requestPermission: true,
+      permissionOptions: [{ optionId: 'allow', kind: 'allow_always' }],
+    };
+    const client = new HermesAcpClient(fake.clientTransport);
+    await client.initialize();
+    const { sessionId } = await client.newSession({ cwd: '.' });
+    for await (const _ of client.prompt(sessionId, 'go')) {
+      /* consume */
+    }
+    expect(fake.permissionOutcome).toEqual({ outcome: 'cancelled' });
+  });
+
+  it('fails closed on an incompatible ACP protocol', async () => {
+    const fake = new FakeAcpServer();
+    fake.protocolVersion = 999;
+    await expect(new HermesAcpClient(fake.clientTransport).initialize()).rejects.toThrow(
+      'incompatible',
+    );
   });
 });

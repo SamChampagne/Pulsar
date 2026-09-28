@@ -5,6 +5,10 @@ import { PrismaService } from './prisma.service';
 import { TenantModulesCacheService } from './tenant-modules-cache.service';
 
 export type SequenceKey =
+  | 'supplier-credit'
+  | 'supplier-invoice'
+  | 'stock-exit'
+  | 'customer-credit'
   | 'service-quote'
   | 'hr-leave'
   | 'quality-inspection'
@@ -36,6 +40,10 @@ export type SequenceKey =
   | 'material-purchase';
 
 const PREFIXES: Record<SequenceKey, string> = {
+  'supplier-credit': 'AVF',
+  'supplier-invoice': 'FF',
+  'stock-exit': 'SX',
+  'customer-credit': 'AVC',
   'service-quote': 'DEV',
   'hr-leave': 'ABS',
   'quality-inspection': 'QC',

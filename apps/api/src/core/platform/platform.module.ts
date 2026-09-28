@@ -15,6 +15,7 @@ import { PlatformTenantsService } from './platform-tenants.service';
 import { ApsModule } from '../aps/aps.module';
 import { PlatformOperationsController } from './platform-operations.controller';
 import { PlatformOperationsService } from './platform-operations.service';
+import { DeploymentObservationService } from './deployment-observation.service';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { PlatformOperationsService } from './platform-operations.service';
     PlatformOperationsController,
   ],
   providers: [
+    DeploymentObservationService,
     PlatformOperationsService,
     PlatformAuthService,
     PlatformJwtStrategy,

@@ -147,7 +147,15 @@ function ensureUv() {
       `[setup-agents] Bootstrapping uv via ${anyPy.cmd} ${anyPy.prefixArgs.join(' ')} ` +
         `(Python ${anyPy.version}) -m pip install --user uv ...`,
     );
-    const r = run(anyPy.cmd, [...anyPy.prefixArgs, '-m', 'pip', 'install', '--user', '--upgrade', 'uv']);
+    const r = run(anyPy.cmd, [
+      ...anyPy.prefixArgs,
+      '-m',
+      'pip',
+      'install',
+      '--user',
+      '--upgrade',
+      'uv',
+    ]);
     if (r.status === 0) {
       v = uvVersion();
       if (v) {
@@ -219,12 +227,12 @@ function installViaUv() {
   // the `mcp` extra, `tools.mcp_tool._MCP_AVAILABLE` is False and Pulsar tools
   // never reach the agent (register_mcp_servers returns [] instantly).
   const editableSpec = `${'.' + path.sep}${path.relative(repoRoot, hermesDir)}[acp,mcp]`;
-  console.log(`[setup-agents] Installing ${editableSpec} into the venv (this can take several minutes) ...`);
-  const pipInstall = run(
-    'uv',
-    ['pip', 'install', '--python', venvPython, '-e', editableSpec],
-    { cwd: repoRoot },
+  console.log(
+    `[setup-agents] Installing ${editableSpec} into the venv (this can take several minutes) ...`,
   );
+  const pipInstall = run('uv', ['pip', 'install', '--python', venvPython, '-e', editableSpec], {
+    cwd: repoRoot,
+  });
   if (pipInstall.status !== 0) {
     fail(
       `\`uv pip install\` failed (exit ${pipInstall.status}). See the output above for the ` +
@@ -269,7 +277,9 @@ function installViaSystemPython(py) {
   // never reach the agent (register_mcp_servers returns [] instantly).
   const editableSpec = `${'.' + path.sep}${path.relative(repoRoot, hermesDir)}[acp,mcp]`;
   console.log(`[setup-agents] Installing ${editableSpec} (this can take several minutes) ...`);
-  const pipInstall = run(venvPython, ['-m', 'pip', 'install', '-e', editableSpec], { cwd: repoRoot });
+  const pipInstall = run(venvPython, ['-m', 'pip', 'install', '-e', editableSpec], {
+    cwd: repoRoot,
+  });
   if (pipInstall.status !== 0) {
     fail(
       `pip install failed (exit ${pipInstall.status}). See the pip output above for the ` +
@@ -314,14 +324,18 @@ function main() {
     );
   }
 
-  console.log('[setup-agents] Turnkey Hermes runtime setup (uv-driven; Hermes needs >=3.11,<3.14).');
+  console.log(
+    '[setup-agents] Turnkey Hermes runtime setup (uv-driven; Hermes needs >=3.11,<3.14).',
+  );
 
   // PRIMARY PATH: uv provisions CPython 3.12 and installs into the venv.
   if (ensureUv()) {
     installViaUv();
   } else {
     // FALLBACK: uv could not be obtained. Try a compatible system interpreter.
-    console.warn('[setup-agents] Could not obtain uv. Falling back to a system 3.11/3.12 interpreter.');
+    console.warn(
+      '[setup-agents] Could not obtain uv. Falling back to a system 3.11/3.12 interpreter.',
+    );
     const py = detectCompatiblePython();
     if (!py) {
       fail(
@@ -338,9 +352,14 @@ function main() {
   console.log('\n[setup-agents] SUCCESS.');
   console.log(`[setup-agents] venv python: ${venvPython}`);
   console.log('[setup-agents] Next steps:');
-  console.log(`  - Verify ACP imports:  "${venvPython}" -c "import acp_adapter, acp; print('ACP_OK')"`);
-  console.log(`  - Launch ACP adapter:  "${venvPython}" -m acp_adapter`);
-  console.log('  - Configure a provider in HERMES_HOME/cli-config.yaml (see docs/agents-runtime-notes.md).');
+  console.log(
+    `  - Verify ACP imports:  "${venvPython}" -c "import acp_adapter, acp; print('ACP_OK')"`,
+  );
+  console.log('  - Configure the tenant provider in Pulsar: Settings > Agent runtime.');
+  console.log(
+    '  - Pulsar launches scripts/pulsar-hermes-acp.py (governed MCP only), not the general ACP CLI.',
+  );
+  console.log('  - Review docs/plans/ai-runtime-renewal.md before changing the pinned runtime.');
 }
 
 main();

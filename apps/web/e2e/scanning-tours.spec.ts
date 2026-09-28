@@ -59,6 +59,9 @@ async function setup(page: Page, unseen: string[] = [], manage = true) {
   await page.route('**/api/v1/manufacturing/calendars**', (route) =>
     route.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 25 } }),
   );
+  await page.route('**/api/v1/wms/items**', (route) =>
+    route.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 25 } }),
+  );
   page.on('pageerror', (error) => {
     throw error;
   });
@@ -71,7 +74,7 @@ test('first presentation is saved immediately; reload stays quiet and replay is 
   const { writes } = await setup(page, ['wms']);
   await page.goto('/wms/cycle-counts');
   const tour = page.getByTestId('module-tour');
-  await expect(tour).toContainText('Étape 1 sur 5');
+  await expect(tour).toContainText('Étape 1 sur 8');
   await expect(tour.locator('[aria-hidden="true"]')).toBeVisible();
   await expect
     .poll(() => writes.at(-1))
@@ -84,14 +87,14 @@ test('first presentation is saved immediately; reload stays quiet and replay is 
   await expect(page.getByRole('heading', { name: 'Comptages cycliques' })).toBeVisible();
   await expect(tour).toHaveCount(0);
   await page.getByRole('button', { name: 'Tutoriel du module', exact: true }).click();
-  await expect(tour).toContainText('Étape 1 sur 5');
-  for (let step = 1; step < 5; step++) {
+  await expect(tour).toContainText('Étape 1 sur 8');
+  for (let step = 1; step < 8; step++) {
     await tour.getByRole('button', { name: 'Suivant', exact: true }).click();
-    await expect(tour).toContainText(`Étape ${step + 1} sur 5`);
+    await expect(tour).toContainText(`Étape ${step + 1} sur 8`);
   }
   await tour.getByRole('button', { name: 'Terminer', exact: true }).click();
   await expect(tour).toBeHidden();
-  expect(writes.at(-1)).toMatchObject({ moduleKey: 'wms', status: 'COMPLETED', step: 4 });
+  expect(writes.at(-1)).toMatchObject({ moduleKey: 'wms', status: 'COMPLETED', step: 7 });
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Comptages cycliques' })).toBeVisible();
   await expect(tour).toHaveCount(0);
@@ -105,12 +108,12 @@ test('tutorial navigation explores actual screens and is independently saved per
   const tour = page.getByTestId('module-tour');
   await tour.getByRole('button', { name: 'Suivant', exact: true }).click();
   await tour.getByRole('button', { name: /Explorer/ }).click();
-  await expect(page).toHaveURL(/\/wms\/bins$/);
-  await expect(tour).toContainText('Étape 2 sur 5');
+  await expect(page).toHaveURL(/\/wms\/items$/);
+  await expect(tour).toContainText('Étape 2 sur 8');
   await tour.getByRole('button', { name: 'Passer le tutoriel' }).click();
   await expect(tour).toBeHidden();
   await page.goto('/manufacturing/calendars');
-  await expect(tour).toContainText('Étape 1 sur 5');
+  await expect(tour).toContainText('Étape 1 sur 6');
   expect(writes.filter((write) => write.moduleKey === 'wms').at(-1)).toMatchObject({
     status: 'SKIPPED',
   });
@@ -134,13 +137,13 @@ test('failed tutorial persistence does not mark it seen; replay works from page 
   await expect(tour.getByRole('alert')).toContainText('non enregistrée');
   await tour.getByRole('button', { name: 'Suivant', exact: true }).click();
   await expect(tour.getByRole('alert')).toContainText('non enregistrée');
-  await expect(tour).toContainText('Étape 1 sur 5');
+  await expect(tour).toContainText('Étape 1 sur 8');
   expect(writes).toHaveLength(0);
   control.failSave = false;
   await tour.getByRole('button', { name: 'Passer le tutoriel' }).click();
   await page.getByRole('button', { name: 'Aide sur cette page' }).click();
   await page.getByRole('button', { name: 'Relancer le guide du module' }).click();
-  await expect(tour).toContainText('Étape 1 sur 5');
+  await expect(tour).toContainText('Étape 1 sur 8');
   const box = await tour.getByRole('dialog').boundingBox();
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
@@ -224,12 +227,13 @@ test('manufacturing article picker accepts a barcode without leaving the BOM for
   await expect(page).toHaveURL(/\/manufacturing\/boms$/);
 });
 
-test('counting +1 scans change only the draft; explicit record preserves version and blanks', async ({
+test('counting +1 scans change only the draft; blanks must become explicit counts', async ({
   page,
 }) => {
   await setup(page);
   const count: any = {
     id: 'cc1',
+    freshness: { valid: true, reason: null },
     number: 'CC-1',
     status: 'OPEN',
     updatedAt: '2026-09-21T12:00:00.000Z',
@@ -281,10 +285,16 @@ test('counting +1 scans change only the draft; explicit record preserves version
   await expect(page.getByRole('spinbutton', { name: 'Quantité comptée : PART-2' })).toHaveValue('');
   await page.getByRole('button', { name: 'Enregistrer le comptage' }).click();
   expect(record).toBeUndefined();
+  await expect(page.getByRole('button', { name: 'Confirmer', exact: true })).toHaveCount(0);
+  await page.getByRole('spinbutton', { name: 'Quantité comptée : PART-2' }).fill('0');
+  await page.getByRole('button', { name: 'Enregistrer le comptage' }).click();
   await page.getByRole('button', { name: 'Confirmer', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Réconcilier', exact: true })).toBeVisible();
   expect(record).toEqual({
-    counts: [{ lineId: 'l1', countedQty: 2 }],
+    counts: [
+      { lineId: 'l1', countedQty: 2 },
+      { lineId: 'l2', countedQty: 0 },
+    ],
     expectedUpdatedAt: count.updatedAt,
   });
 });

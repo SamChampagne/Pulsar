@@ -21,6 +21,23 @@ describe('Durable part operations', () => {
     localStorage.clear();
     vi.restoreAllMocks();
   });
+  it('preserves the selected lot on issue and refuses a lot override on a return', () => {
+    const withLot = { ...request, body: { ...request.body, lotId: 'lot-A' } };
+    rememberPartIntent('lot', withLot);
+    expect(readPartIntent('lot')).toEqual(withLot);
+    for (const lotId of [null, '', 4, 'x'.repeat(101)]) {
+      localStorage.setItem(
+        'pulsar.services.parts.v1:bad',
+        JSON.stringify({ ...request, body: { ...request.body, lotId } }),
+      );
+      expect(() => readPartIntent('bad')).toThrow('illisible');
+    }
+    localStorage.setItem(
+      'pulsar.services.parts.v1:bad',
+      JSON.stringify({ ...withLot, partId: 'part' }),
+    );
+    expect(() => readPartIntent('bad')).toThrow('illisible');
+  });
   it('replays exactly and isolates tenant, person and job', () => {
     rememberPartIntent('tenant:user:job', request);
     expect(readPartIntent('tenant:user:job')).toEqual(request);
@@ -56,5 +73,29 @@ describe('Durable part operations', () => {
       throw new Error('Quota');
     });
     expect(() => rememberPartIntent('other', request)).toThrow('Aucun mouvement envoyé');
+  });
+  it('keeps the exact partial quantity across a retry, without replacing legacy full returns', () => {
+    const r = {
+      jobId: 'job',
+      partId: 'part',
+      body: {
+        operationKey: request.body.operationKey,
+        expectedUpdatedAt: request.body.expectedUpdatedAt,
+        quantity: 0.375,
+        reason: 'Reliquat revenu',
+      },
+    };
+    rememberPartIntent('partial', r);
+    expect(readPartIntent('partial')).toEqual(r);
+    expect(() =>
+      rememberPartIntent('partial', { ...r, body: { ...r.body, quantity: 1 } }),
+    ).toThrow();
+    for (const quantity of [null, 0, -1, '1', 1000000001]) {
+      localStorage.setItem(
+        'pulsar.services.parts.v1:bad',
+        JSON.stringify({ ...r, body: { ...r.body, quantity } }),
+      );
+      expect(() => readPartIntent('bad')).toThrow('illisible');
+    }
   });
 });

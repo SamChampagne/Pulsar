@@ -71,6 +71,7 @@ const ncSelect = {
   createdAt: true,
 } as const;
 const sourceRules: Record<string, { module: string; permission: PermissionKey }> = {
+  LOT: { module: 'wms', permission: 'wms.read' },
   RECEIPT: { module: 'wms', permission: 'wms.read' },
   MANUFACTURING: { module: 'manufacturing', permission: 'manufacturing.read' },
   SUPPORT: { module: 'support', permission: 'support.read' },
@@ -84,13 +85,15 @@ const checked = <T>(fn: () => T): T => {
   }
 };
 const sourceKind = (r: QualityInspection) =>
-  r.receiptId
-    ? 'RECEIPT'
-    : r.manufacturingOrderId
-      ? 'MANUFACTURING'
-      : r.supportCaseId
-        ? 'SUPPORT'
-        : 'MANUAL';
+  r.lotId
+    ? 'LOT'
+    : r.receiptId
+      ? 'RECEIPT'
+      : r.manufacturingOrderId
+        ? 'MANUFACTURING'
+        : r.supportCaseId
+          ? 'SUPPORT'
+          : 'MANUAL';
 // Projection used by history: never copy internal tokens or cross-module references into events.
 const snapshot = (r: QualityInspection) => ({
   status: r.status,
@@ -439,6 +442,44 @@ export class QualityService {
     const { page, pageSize, skip, take } = paginationArgs(q),
       tenantId = u.tenantId,
       search = q.search;
+    if (q.kind === 'LOT') {
+      const where: Prisma.WmsLotWhereInput = {
+        tenantId,
+        ...(search
+          ? {
+              OR: [
+                { code: { contains: search, mode: 'insensitive' } },
+                { item: { tenantId, sku: { contains: search, mode: 'insensitive' } } },
+              ],
+            }
+          : {}),
+      };
+      const [rows, total] = await this.db.$transaction([
+        this.db.wmsLot.findMany({
+          where,
+          skip,
+          take,
+          orderBy: [{ code: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true,
+            code: true,
+            disposition: true,
+            item: { select: { sku: true, name: true } },
+          },
+        }),
+        this.db.wmsLot.count({ where }),
+      ]);
+      return paginated(
+        rows.map((r) => ({
+          id: r.id,
+          name: `${r.item.sku} · ${r.code}`,
+          disposition: r.disposition,
+        })),
+        total,
+        page,
+        pageSize,
+      );
+    }
     if (q.kind === 'RECEIPT') {
       const where: Prisma.ReceiptWhereInput = {
         tenantId,
@@ -579,6 +620,19 @@ export class QualityService {
       available: await this.sourceAccess(u, kind, false),
     };
     if (source.available) {
+      if (r.lotId) {
+        const s = await this.db.wmsLot.findFirst({
+          where: { tenantId: u.tenantId, itemId: r.lotItemId!, id: r.lotId },
+          select: { id: true, code: true, itemId: true },
+        });
+        if (s)
+          source = {
+            ...source,
+            id: s.id,
+            label: s.code,
+            href: `/wms/items/${s.itemId}/lots?lotId=${s.id}`,
+          };
+      }
       if (r.receiptId) {
         const s = await this.db.receipt.findFirst({
           where: { tenantId: u.tenantId, id: r.receiptId },
@@ -631,6 +685,14 @@ export class QualityService {
       updatedAt: r.updatedAt,
       completedAt: r.completedAt,
       source,
+      ...(r.lotId && source.available
+        ? {
+            lotContext: {
+              snapshot: r.lotSnapshot,
+              ...(await this.lotFreshness(this.db, u.tenantId, r)),
+            },
+          }
+        : {}),
       nonconformity,
       evaluation: evaluateQualityResults(r.criteria as unknown as QualityCriterion[], r.results),
     };
@@ -645,6 +707,8 @@ export class QualityService {
       .update(JSON.stringify([u.id, dto.planId, dto.title, dto.sourceKind, dto.sourceId ?? null]))
       .digest('hex');
     const result = await this.locked(u.tenantId, async (tx) => {
+      if (dto.sourceKind === 'LOT')
+        await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${u.tenantId} FOR UPDATE`;
       const previous = await tx.qualityInspection.findFirst({
         where: { tenantId: u.tenantId, operationKey: dto.operationKey },
       });
@@ -660,6 +724,43 @@ export class QualityService {
       if (!plan) throw new ConflictException('Choisissez un plan actif.');
       const links: { receiptId?: string; manufacturingOrderId?: string; supportCaseId?: string } =
         {};
+      let lotContext:
+        | {
+            lotId: string;
+            lotItemId: string;
+            lotSnapshot: Prisma.InputJsonValue;
+            lotDispositionRevision: number;
+            lotMovementCount: number;
+          }
+        | undefined;
+      if (dto.sourceKind === 'LOT') {
+        await this.ownership.assertOwned('wmsLot', dto.sourceId!, u.tenantId, tx);
+        const lot = await tx.wmsLot.findFirst({
+          where: { tenantId: u.tenantId, id: dto.sourceId },
+          include: { item: true },
+        });
+        if (!lot) throw new NotFoundException('Lot introuvable dans cette entreprise.');
+        lotContext = {
+          lotId: lot.id,
+          lotItemId: lot.itemId,
+          lotDispositionRevision: lot.dispositionRevision,
+          lotMovementCount: await tx.stockMovement.count({
+            where: { tenantId: u.tenantId, itemId: lot.itemId, lotId: lot.id },
+          }),
+          lotSnapshot: json({
+            code: lot.code,
+            supplierLot: lot.supplierLot,
+            itemId: lot.itemId,
+            sku: lot.item.sku,
+            name: lot.item.name,
+            unit: lot.item.unit,
+            manufacturedOn: lot.manufacturedOn,
+            expiresOn: lot.expiresOn,
+            disposition: lot.disposition,
+            dispositionRevision: lot.dispositionRevision,
+          }),
+        };
+      }
       if (dto.sourceKind === 'RECEIPT') {
         await this.ownership.assertOwned('receipt', dto.sourceId!, u.tenantId, tx);
         if (
@@ -688,6 +789,7 @@ export class QualityService {
           instructions: plan.instructions,
           criteria: plan.criteria!,
           ...links,
+          ...lotContext,
           operationKey: dto.operationKey,
           requestFingerprint: fingerprint,
           number: await this.sequences.nextNumber(u.tenantId, 'quality-inspection'),
@@ -724,9 +826,21 @@ export class QualityService {
     return this.inspection(u, id);
   }
   async transition(u: AuthUser, id: string, dto: InspectionTransitionDto) {
+    const inspection = await this.row(this.db, u.tenantId, id);
+    if (inspection.lotId && dto.status === 'COMPLETED') await this.sourceAccess(u, 'LOT');
     const change = await this.locked(u.tenantId, async (tx) => {
+      if (inspection.lotId)
+        await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${u.tenantId} FOR UPDATE`;
       const old = await this.row(tx, u.tenantId, id),
         updatedAt = nextBusinessVersion(old, dto.expectedUpdatedAt);
+      if (
+        old.lotId &&
+        dto.status === 'COMPLETED' &&
+        !(await this.lotFreshness(tx, u.tenantId, old)).fresh
+      )
+        throw new ConflictException(
+          'Le lot ou ses mouvements ont changé depuis la préparation du contrôle. Annulez ce contrôle et préparez-en un nouveau.',
+        );
       if (!canTransitionQualityInspection(old.status as QualityInspectionStatus, dto.status))
         throw new ConflictException('Transition de contrôle interdite.');
       const outcome =
@@ -891,5 +1005,26 @@ export class QualityService {
       this.db.qualityEvent.count({ where }),
     ]);
     return paginated(items, total, page, pageSize);
+  }
+  private async lotFreshness(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    row: QualityInspection,
+  ) {
+    const lot = await tx.wmsLot.findFirst({
+      where: { tenantId, itemId: row.lotItemId!, id: row.lotId! },
+    });
+    const movementCount = await tx.stockMovement.count({
+      where: { tenantId, itemId: row.lotItemId!, lotId: row.lotId! },
+    });
+    return {
+      fresh:
+        !!lot &&
+        row.lotDispositionRevision === lot.dispositionRevision &&
+        row.lotMovementCount === movementCount,
+      disposition: lot?.disposition ?? null,
+      dispositionRevision: lot?.dispositionRevision ?? null,
+      movementCount,
+    };
   }
 }

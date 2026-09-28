@@ -62,6 +62,8 @@ async function setup(page: Page, kind: 'receipt' | 'pick-order' = 'receipt') {
     if (r.request().method() !== 'GET')
       return r.fulfill({ status: 500, json: { message: 'Écriture non prévue.' } });
     if (path === `${endpoint}/guided`) return r.fulfill({ json: document });
+    if (path.startsWith('items/'))
+      return r.fulfill({ json: { ...items.find((i) => path.endsWith(i.id)), lotTracked: false } });
     if (path === 'choices/items')
       return r.fulfill({
         json: {

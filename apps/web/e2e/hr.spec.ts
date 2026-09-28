@@ -195,17 +195,9 @@ test('first HR visit starts the interactive tour, explores real screens and pers
 }) => {
   const account = await tutorialAccount(request);
   await login(page, account.credentials);
-  let started = false;
-  await page.route('**/api/v1/me/preferences', async (route) => {
-    if (route.request().method() !== 'GET') {
-      if (route.request().postDataJSON()?.moduleTour?.moduleKey === 'hr') started = true;
-      return route.continue();
-    }
-    const response = await route.fetch(),
-      preferences = await response.json();
-    if (!started) delete preferences.moduleTours?.hr;
-    await route.fulfill({ response, json: preferences });
-  });
+  // This isolated account is genuinely new: read/write real preferences, without
+  // the experienced-user snapshot or a fetch interceptor racing page reloads.
+  await page.unroute('**/api/v1/me/preferences');
   await page.goto('/hr');
   const tour = page.getByTestId('module-tour');
   await expect(tour).toContainText('Bienvenue dans Ressources humaines');

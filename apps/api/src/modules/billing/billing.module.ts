@@ -1,4 +1,20 @@
 import { forwardRef, Module } from '@nestjs/common';
+import { LedgerQualificationController } from './ledger-qualification/ledger-qualification.controller';
+import { LedgerQualificationService } from './ledger-qualification/ledger-qualification.service';
+import { LedgerCurrencyEvidenceService } from './ledger-qualification/ledger-currency-evidence.service';
+import { AccountingProfileController } from './accounting/accounting-profile.controller';
+import { AccountingProfileService } from './accounting/accounting-profile.service';
+import { SupplierInvoicesController } from './supplier-invoices/supplier-invoices.controller';
+import { SupplierSchedulesController } from './supplier-schedules/supplier-schedules.controller';
+import { SupplierSchedulesService } from './supplier-schedules/supplier-schedules.service';
+import { SupplierDossiersController } from './supplier-invoices/supplier-dossiers.controller';
+import { SupplierDossiersService } from './supplier-invoices/supplier-dossiers.service';
+import { SupplierCreditsController } from './supplier-credits/supplier-credits.controller';
+import { SupplierCreditsService } from './supplier-credits/supplier-credits.service';
+import { SupplierCreditEvidenceService } from './supplier-credits/supplier-credit-evidence.service';
+import { SupplierInvoicesService } from './supplier-invoices/supplier-invoices.service';
+import { SupplierInvoiceEvidenceService } from './supplier-invoices/supplier-invoice-evidence.service';
+import { DocumentCoordinatesModule } from '../../core/reference-data/document-coordinates.module';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { CustomFieldsModule } from '../../core/custom-fields/custom-fields.module';
 import { EmailModule } from '../../core/email/email.module';
@@ -19,6 +35,13 @@ import { SubscriptionsController } from './subscriptions/subscriptions.controlle
 import { SubscriptionsService } from './subscriptions/subscriptions.service';
 import { CustomerInvoicesController } from './customer-invoices.controller';
 import { CustomerInvoicesService } from './customer-invoices.service';
+import { CustomerInvoiceDocumentsController } from './customer-invoice-documents.controller';
+import { CustomerInvoiceDocumentsService } from './customer-invoice-documents.service';
+import { CustomerCreditsService } from './customer-credits.service';
+import { CustomerCreditsController } from './customer-credits.controller';
+import { CustomerCreditDocumentsController } from './customer-credit-documents.controller';
+import { CustomerCreditDocumentsService } from './customer-credit-documents.service';
+import { DocumentsModule } from '../../core/documents/documents.module';
 import { FreightAuditController } from './freight-audit/freight-audit.controller';
 import { FreightAuditService } from './freight-audit/freight-audit.service';
 import { FreightAccountingService } from './freight-audit/freight-accounting.service';
@@ -43,6 +66,8 @@ import { TaxTemplatesService } from './tax-templates.service';
  */
 @Module({
   imports: [
+    DocumentCoordinatesModule,
+    DocumentsModule,
     AuditLogsModule,
     CustomFieldsModule,
     EmailModule,
@@ -51,6 +76,15 @@ import { TaxTemplatesService } from './tax-templates.service';
     forwardRef(() => OperatingModule),
   ],
   controllers: [
+    LedgerQualificationController,
+    AccountingProfileController,
+    SupplierSchedulesController,
+    SupplierDossiersController,
+    SupplierInvoicesController,
+    SupplierCreditsController,
+    CustomerInvoiceDocumentsController,
+    CustomerCreditDocumentsController,
+    CustomerCreditsController,
     InvoicesController,
     CustomerInvoicesController,
     FreightAuditController,
@@ -67,6 +101,18 @@ import { TaxTemplatesService } from './tax-templates.service';
     SubscriptionsController,
   ],
   providers: [
+    LedgerQualificationService,
+    LedgerCurrencyEvidenceService,
+    AccountingProfileService,
+    SupplierSchedulesService,
+    SupplierDossiersService,
+    SupplierInvoicesService,
+    SupplierCreditsService,
+    SupplierCreditEvidenceService,
+    SupplierInvoiceEvidenceService,
+    CustomerInvoiceDocumentsService,
+    CustomerCreditDocumentsService,
+    CustomerCreditsService,
     InvoicesService,
     CustomerInvoicesService,
     FreightAuditService,

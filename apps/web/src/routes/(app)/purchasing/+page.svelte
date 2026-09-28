@@ -1,4 +1,10 @@
 <script lang="ts">
+  import DocumentCoordinates from '$lib/components/reference-data/DocumentCoordinates.svelte';
+  import SupplierTermsPicker from '$lib/components/business/SupplierTermsPicker.svelte';
+  import PackageChoice from '$lib/components/business/PackageChoice.svelte';
+  import type { CatalogPackageSnapshot } from '@pulsar/shared';
+  import type { SupplierTermsSnapshot } from '@pulsar/shared';
+  import PartyDirectory from '$lib/components/reference-data/PartyDirectory.svelte';
   import { beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import { tick } from 'svelte';
@@ -38,6 +44,11 @@
     confirm = $state(false),
     nextStatus = $state(''),
     closeReason = $state('');
+  let coordinatesBusy = $state(false),
+    coordinatesBlocked = $state(false),
+    coordinateRevision = $state(0);
+  let showDirectory = $state(false);
+  let coordinateSelectionOpen = $state(false);
   let supplierId = $state(''),
     currency = $state('CAD'),
     expectedDate = $state(''),
@@ -48,6 +59,8 @@
     name: string;
     quantity: number;
     unitPrice: number;
+    supplierTermsSnapshot?: SupplierTermsSnapshot | null;
+    packageSnapshot?: CatalogPackageSnapshot | null;
   };
   let lines = $state<Line[]>([]),
     baseline = $state('');
@@ -61,6 +74,19 @@
       catalogItemId: l.catalogItemId,
       quantity: Number(l.quantity),
       unitPrice: Number(l.unitPrice),
+      ...(l.packageSnapshot
+        ? {
+            packageId: l.packageSnapshot.packageId,
+            packageVersion: l.packageSnapshot.version,
+            packageCount: l.packageSnapshot.orderedCount,
+          }
+        : {}),
+      ...(l.supplierTermsSnapshot
+        ? {
+            supplierOfferId: l.supplierTermsSnapshot.offerId,
+            supplierOfferVersion: l.supplierTermsSnapshot.version,
+          }
+        : {}),
     })),
   });
   const dirty = $derived(JSON.stringify(payload) !== baseline);
@@ -117,6 +143,7 @@
     return { key: crypto.randomUUID(), catalogItemId: '', name: '', quantity: 1, unitPrice: 0 };
   }
   function show(row: SupplierOrder | null) {
+    coordinatesBlocked = !!row;
     editing = row;
     supplierId = row?.supplierId ?? '';
     currency = row?.currency ?? 'CAD';
@@ -129,6 +156,8 @@
           name: l.nameSnapshot,
           quantity: Number(l.quantity),
           unitPrice: Number(l.unitPrice),
+          supplierTermsSnapshot: l.supplierTermsSnapshot,
+          packageSnapshot: l.packageSnapshot,
         }))
       : [blank()];
     formError = '';
@@ -142,16 +171,50 @@
         catalogItemId: l.catalogItemId,
         quantity: l.quantity,
         unitPrice: l.unitPrice,
+        ...(l.packageSnapshot
+          ? {
+              packageId: l.packageSnapshot.packageId,
+              packageVersion: l.packageSnapshot.version,
+              packageCount: l.packageSnapshot.orderedCount,
+            }
+          : {}),
+        ...(l.supplierTermsSnapshot
+          ? {
+              supplierOfferId: l.supplierTermsSnapshot.offerId,
+              supplierOfferVersion: l.supplierTermsSnapshot.version,
+            }
+          : {}),
       })),
     });
     open = true;
   }
   function failed(e: unknown) {
     formError = e instanceof Error ? e.message : 'Action impossible.';
-    uncertain = !(e instanceof ApiError) || e.statusCode >= 500;
+    uncertain = !(e instanceof ApiError) || e.statusCode >= 500 || e.statusCode === 409;
+  }
+  async function refreshOrder() {
+    if (!editing) return;
+    const id = editing.id;
+    const fresh = await api<SupplierOrder>(`/purchasing/orders/${id}`);
+    if (editing?.id !== id || !open) return;
+    confirm = false;
+    show(fresh);
+    coordinateRevision++;
+    await load();
+  }
+  async function verifyOrder() {
+    if (saving || coordinatesBusy) return;
+    saving = true;
+    try {
+      await refreshOrder();
+    } catch (e) {
+      failed(e);
+    } finally {
+      saving = false;
+    }
   }
   async function save() {
-    if (saving || uncertain) return;
+    if (saving || uncertain || coordinatesBusy || coordinatesBlocked) return;
     saving = true;
     formError = '';
     try {
@@ -171,13 +234,29 @@
     }
   }
   function ask(status: string) {
+    if (
+      saving ||
+      uncertain ||
+      dirty ||
+      coordinatesBusy ||
+      (status === 'CONFIRMED' && coordinatesBlocked)
+    )
+      return;
     closeReason = '';
     nextStatus = status;
     formError = '';
     confirm = true;
   }
   async function transition() {
-    if (!editing || saving || uncertain) return;
+    if (
+      !editing ||
+      saving ||
+      uncertain ||
+      dirty ||
+      coordinatesBusy ||
+      (nextStatus === 'CONFIRMED' && coordinatesBlocked)
+    )
+      return;
     saving = true;
     try {
       const result = await api<SupplierOrder>(`/purchasing/orders/${editing.id}/transition`, {
@@ -247,7 +326,7 @@
         title={search || queue
           ? 'Aucune commande dans cette vue'
           : 'Votre première commande fournisseur'}
-        message="Préparez le fournisseur et les articles dans Catalogue. Ce parcours conserve un engagement d’achat; il ne réceptionne ni ne paie automatiquement."
+        message="Ajoutez fournisseurs et articles depuis votre commande ou dans Données. Ce parcours conserve un engagement d’achat; il ne réceptionne ni ne paie automatiquement."
       />{:else}<table class="w-full text-left text-sm">
         <thead class="border-b border-edge bg-surface-muted text-xs text-ink-muted"
           ><tr
@@ -298,8 +377,9 @@
   bind:open
   title={editing ? editing.number : 'Nouvelle commande fournisseur'}
   width="xl"
-  dismissible={!saving}
+  dismissible={!saving && !coordinatesBusy && !coordinateSelectionOpen}
   onbeforeclose={() => {
+    if (coordinatesBusy) return false;
     if (dirty && editable) {
       formError = 'Utilisez Fermer pour abandonner les changements non enregistrés.';
       return false;
@@ -317,8 +397,14 @@
     {#if formError}<p role="alert" class="text-sm text-danger">{formError}</p>{/if}{#if uncertain}<p
         class="text-sm text-warn"
       >
-        Réponse incertaine. Fermez puis vérifiez la liste avant de réessayer.
+        Résultat à vérifier. Relisez la commande enregistrée avant une nouvelle action. Pour une
+        création sans numéro reçu, fermez puis vérifiez la liste avant de recommencer.
       </p>{/if}
+    {#if uncertain && editing}<Button
+        variant="secondary"
+        disabled={saving || coordinatesBusy}
+        onclick={verifyOrder}>Vérifier la commande enregistrée</Button
+      >{/if}
     {#if editing}<div class="flex items-center justify-between">
         <Badge tone={editing.status === 'CONFIRMED' ? 'info' : 'neutral'}
           >{BUSINESS_STATUS_LABELS[editing.status]}</Badge
@@ -327,7 +413,7 @@
       </div>{/if}
     {#if editing && editing.status !== 'DRAFT'}<Button
         variant="secondary"
-        disabled={saving}
+        disabled={saving || coordinatesBusy || uncertain}
         onclick={async () => {
           const id = editing!.id;
           open = false;
@@ -335,96 +421,150 @@
           await goto(`/purchasing/orders/${id}/receiving`);
         }}>Réceptions et reliquats</Button
       >{/if}
-    <div>
-      <p class="mb-1.5 text-xs font-medium text-ink-muted">Fournisseur</p>
-      <EntityPicker
-        endpoint="/purchasing/references/suppliers"
-        label="Fournisseur"
-        bind:value={supplierId}
-        selectedLabel={editing?.supplier.name ?? ''}
-        disabled={!manage || !editable}
-      />
-    </div>
-    <p class="text-xs text-ink-muted">
-      Fournisseurs actifs du Catalogue commun. Aucun courriel n’est envoyé par ce formulaire.
-    </p>
-    <div class="grid gap-3 sm:grid-cols-2">
-      <Field label="Devise"
-        ><Select bind:value={currency} disabled={!manage || !editable}
-          >{#each ['CAD', 'USD', 'EUR', 'GBP'] as c}<option value={c}>{c}</option>{/each}</Select
-        ></Field
-      ><Field label="Date attendue"
-        ><Input type="date" bind:value={expectedDate} disabled={!manage || !editable} /></Field
-      >
-    </div>
-    <section>
-      <div class="mb-3 flex justify-between items-center">
-        <h2 class="text-sm font-semibold">Lignes de commande</h2>
-        {#if manage && editable}<Button
-            variant="secondary"
-            disabled={lines.length >= 100}
-            onclick={() => {
-              lines = [...lines, blank()];
-            }}>Ajouter une ligne</Button
-          >{/if}
+    <fieldset
+      disabled={saving || uncertain || coordinatesBusy || coordinatesBlocked}
+      class="space-y-5 min-w-0"
+    >
+      <div>
+        <p class="mb-1.5 text-xs font-medium text-ink-muted">Fournisseur</p>
+        <EntityPicker
+          endpoint="/purchasing/references/suppliers"
+          label="Fournisseur"
+          bind:value={supplierId}
+          selectedLabel={editing?.supplier.name ?? ''}
+          disabled={!manage || !editable}
+        />
       </div>
-      <div class="space-y-3">
-        {#each lines as line, i (line.key)}<div
-            class="rounded-md border border-edge bg-surface-muted/30 p-3"
-          >
-            <div class="mb-3 flex justify-between items-center">
-              <span class="text-xs text-ink-muted">Ligne {i + 1}</span
-              >{#if manage && editable}<Button
-                  variant="ghost"
-                  disabled={lines.length === 1}
-                  aria-label={`Retirer la ligne ${i + 1}`}
-                  onclick={() => {
-                    lines = lines.filter((l) => l.key !== line.key);
-                  }}>Retirer</Button
-                >{/if}
-            </div>
-            <p class="mb-1.5 text-xs font-medium text-ink-muted">Article ou prestation</p>
-            <EntityPicker
-              endpoint="/purchasing/references/items"
-              label={`Article de la ligne ${i + 1}`}
-              bind:value={line.catalogItemId}
-              selectedLabel={line.name}
-              disabled={!manage || !editable}
-            />
-            <div class="mt-3 grid grid-cols-2 gap-3">
-              <Field label={`Quantité ${i + 1}`}
-                ><Input
-                  type="number"
-                  bind:value={line.quantity}
-                  min={0.0001}
-                  max={1000000000}
-                  step={0.0001}
-                  required
-                  disabled={!manage || !editable}
-                /></Field
-              ><Field label={`Prix unitaire ${i + 1}`}
-                ><Input
-                  type="number"
-                  bind:value={line.unitPrice}
-                  min={0}
-                  max={1000000000}
-                  step={0.0001}
-                  required
-                  disabled={!manage || !editable}
-                /></Field
-              >
-            </div>
-            {#if editing?.lines[i]?.unitSnapshot}<p class="mt-2 text-xs text-ink-muted">
-                Unité enregistrée : {editing.lines[i].unitSnapshot}
-              </p>{/if}
-          </div>{/each}
+      <p class="text-xs text-ink-muted">
+        Fournisseurs actifs de votre entreprise. Ajoutez une fiche manquante dans le sélecteur.
+        Aucun courriel n’est envoyé par ce formulaire.
+      </p>
+      {#if editing?.status === 'DRAFT' && editing.documentCoordinates}<p
+          class="text-xs text-ink-muted"
+        >
+          Pour changer de fournisseur, retirez d’abord les choix enregistrés dans « Coordonnées du
+          document ».
+        </p>{/if}
+      <div class="grid gap-3 sm:grid-cols-2">
+        <Field label="Devise"
+          ><Select bind:value={currency} disabled={!manage || !editable}
+            >{#each ['CAD', 'USD', 'EUR', 'GBP'] as c}<option value={c}>{c}</option>{/each}</Select
+          ></Field
+        ><Field label="Date attendue"
+          ><Input type="date" bind:value={expectedDate} disabled={!manage || !editable} /></Field
+        >
       </div>
-    </section>
-    <Field label="Notes"><Textarea bind:value={notes} disabled={!manage || !editable} /></Field>
+      <section>
+        <div class="mb-3 flex justify-between items-center">
+          <h2 class="text-sm font-semibold">Lignes de commande</h2>
+          {#if manage && editable}<Button
+              variant="secondary"
+              disabled={lines.length >= 100}
+              onclick={() => {
+                lines = [...lines, blank()];
+              }}>Ajouter une ligne</Button
+            >{/if}
+        </div>
+        <div class="space-y-3">
+          {#each lines as line, i (line.key)}<div
+              class="rounded-md border border-edge bg-surface-muted/30 p-3"
+            >
+              <div class="mb-3 flex justify-between items-center">
+                <span class="text-xs text-ink-muted">Ligne {i + 1}</span
+                >{#if manage && editable}<Button
+                    variant="ghost"
+                    disabled={lines.length === 1}
+                    aria-label={`Retirer la ligne ${i + 1}`}
+                    onclick={() => {
+                      lines = lines.filter((l) => l.key !== line.key);
+                    }}>Retirer</Button
+                  >{/if}
+              </div>
+              <p class="mb-1.5 text-xs font-medium text-ink-muted">Article ou prestation</p>
+              <EntityPicker
+                endpoint="/purchasing/references/items"
+                label={`Article de la ligne ${i + 1}`}
+                bind:value={line.catalogItemId}
+                selectedLabel={line.name}
+                disabled={!manage || !editable}
+              />
+              <div class="mt-3 grid grid-cols-2 gap-3">
+                <Field label={`Quantité ${i + 1}`}
+                  ><Input
+                    type="number"
+                    bind:value={line.quantity}
+                    min={0.0001}
+                    max={1000000000}
+                    step={0.0001}
+                    required
+                    disabled={!manage || !editable || !!line.packageSnapshot}
+                  /></Field
+                ><Field label={`Prix unitaire ${i + 1}`}
+                  ><Input
+                    type="number"
+                    bind:value={line.unitPrice}
+                    min={0}
+                    max={1000000000}
+                    step={0.0001}
+                    required
+                    disabled={!manage || !editable || !!line.supplierTermsSnapshot}
+                  /></Field
+                >
+              </div>
+              {#if editing?.lines[i]?.unitSnapshot}<p class="mt-2 text-xs text-ink-muted">
+                  Unité enregistrée : {editing.lines[i].unitSnapshot}
+                </p>{/if}
+              <PackageChoice
+                itemId={line.catalogItemId}
+                selected={line.packageSnapshot}
+                editable={manage && editable}
+                onchoose={(pack) => {
+                  line.packageSnapshot = pack;
+                  if (pack) line.quantity = Number(pack.baseQuantity);
+                }}
+              />
+              <SupplierTermsPicker
+                itemId={line.catalogItemId}
+                {supplierId}
+                {currency}
+                selected={line.supplierTermsSnapshot}
+                editable={manage && editable}
+                onchoose={(offer) => {
+                  if (!offer) {
+                    line.supplierTermsSnapshot = null;
+                    return;
+                  }
+                  line.unitPrice = Number(offer.unitPrice);
+                  line.supplierTermsSnapshot = {
+                    schemaVersion: 1,
+                    offerId: offer.id,
+                    version: offer.version,
+                    supplierId: offer.supplierId,
+                    catalogItemId: offer.catalogItem.id,
+                    supplierReference: offer.supplierReference,
+                    unit: offer.catalogItem.unit,
+                    currency: offer.currency,
+                    unitPrice: offer.unitPrice,
+                    minimumQuantity: offer.minimumQuantity,
+                    orderMultiple: offer.orderMultiple,
+                    leadTimeDays: offer.leadTimeDays,
+                    validFrom: offer.validFrom?.slice(0, 10) ?? null,
+                    validUntil: offer.validUntil?.slice(0, 10) ?? null,
+                    packaging: offer.packaging,
+                    terms: offer.terms,
+                    capturedAt: '',
+                  };
+                }}
+              />
+            </div>{/each}
+        </div>
+      </section>
+      <Field label="Notes"><Textarea bind:value={notes} disabled={!manage || !editable} /></Field>
+    </fieldset>
     <div class="flex flex-wrap justify-end gap-2 border-t border-edge pt-4">
       <Button
         variant="secondary"
-        disabled={saving}
+        disabled={saving || coordinatesBusy || coordinateSelectionOpen}
         onclick={() => {
           open = false;
           void load();
@@ -432,33 +572,68 @@
       >{#if manage && editable}<Button
           type="submit"
           loading={saving}
-          disabled={uncertain || !supplierId || lines.some((l) => !l.catalogItemId || !l.quantity)}
-          >Enregistrer le brouillon</Button
+          disabled={uncertain ||
+            coordinatesBusy ||
+            coordinatesBlocked ||
+            !supplierId ||
+            lines.some((l) => !l.catalogItemId || !l.quantity)}>Enregistrer le brouillon</Button
         >{/if}
     </div>
-    {#if manage && editing && ['DRAFT', 'CONFIRMED'].includes(editing.status)}<section
-        class="border-t border-edge pt-4"
-      >
-        <h2 class="mb-2 text-sm font-semibold">Validation</h2>
-        <p class="mb-3 text-xs leading-5 text-ink-muted">
-          Enregistrez vos modifications avant de valider. Confirmer fige les lignes. Clôturer
-          termine le suivi administratif, sans stock ni écriture comptable.
+  </form>
+  {#if editing}
+    <section class="mt-5 space-y-3" aria-label="Coordonnées fournisseur de la commande">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <p class="text-xs text-ink-muted">
+          Choisissez l’adresse et le contact de cet accord après avoir enregistré le brouillon.
         </p>
-        <div class="flex flex-wrap gap-2">
-          {#if editing.status === 'DRAFT'}<Button
-              disabled={saving || dirty || uncertain}
-              onclick={() => ask('CONFIRMED')}>Confirmer la commande</Button
-            >{:else}<Button disabled={saving || uncertain} onclick={() => ask('CLOSED')}
-              >Clôturer le suivi</Button
-            >{/if}<Button
-            variant="danger"
-            disabled={saving || dirty || uncertain}
-            onclick={() => ask('CANCELLED')}>Annuler la commande</Button
-          >
-        </div>
-      </section>{/if}
-  </form></Drawer
->
+        <Button
+          variant="secondary"
+          disabled={saving || coordinatesBusy || coordinateSelectionOpen || dirty || uncertain}
+          onclick={() => {
+            showDirectory = true;
+          }}>Carnet du fournisseur</Button
+        >
+      </div>
+      {#if dirty}<p class="text-sm text-warn">
+          Enregistrez ou abandonnez les modifications du brouillon avant de choisir les coordonnées.
+        </p>{/if}
+      {#key editing.id}
+        <DocumentCoordinates
+          endpoint={`/purchasing/orders/${editing.id}/coordinates`}
+          directoryBase="/purchasing/data/suppliers"
+          canManage={manage && !saving && !dirty && !uncertain}
+          documentVersion={`${editing.updatedAt}:${coordinateRevision}`}
+          bind:busy={coordinatesBusy}
+          bind:blocked={coordinatesBlocked}
+          bind:selectionOpen={coordinateSelectionOpen}
+          onchanged={refreshOrder}
+        />
+      {/key}
+    </section>
+  {/if}
+  {#if manage && editing && ['DRAFT', 'CONFIRMED'].includes(editing.status)}<section
+      class="border-t border-edge pt-4"
+    >
+      <h2 class="mb-2 text-sm font-semibold">Validation</h2>
+      <p class="mb-3 text-xs leading-5 text-ink-muted">
+        Enregistrez vos modifications avant de valider. Confirmer fige les lignes et les coordonnées
+        choisies. Clôturer termine le suivi administratif, sans stock ni écriture comptable.
+      </p>
+      <div class="flex flex-wrap gap-2">
+        {#if editing.status === 'DRAFT'}<Button
+            disabled={saving || dirty || uncertain || coordinatesBusy || coordinatesBlocked}
+            onclick={() => ask('CONFIRMED')}>Confirmer la commande</Button
+          >{:else}<Button
+            disabled={saving || uncertain || coordinatesBusy}
+            onclick={() => ask('CLOSED')}>Clôturer le suivi</Button
+          >{/if}<Button
+          variant="danger"
+          disabled={saving || dirty || uncertain || coordinatesBusy}
+          onclick={() => ask('CANCELLED')}>Annuler la commande</Button
+        >
+      </div>
+    </section>{/if}
+</Drawer>
 <Modal bind:open={confirm} dismissible={!saving} title="Confirmer l’action fournisseur"
   ><div class="space-y-4">
     <p class="text-sm">{editing?.number} → {BUSINESS_STATUS_LABELS[nextStatus]}</p>
@@ -469,6 +644,9 @@
     {#if formError}<p role="alert" class="text-sm text-danger">{formError}</p>{/if}
     {#if nextStatus === 'CLOSED'}<Field label="Motif de clôture du reliquat (si produits manquants)"
         ><Textarea bind:value={closeReason} maxlength={1000} /></Field
+      >{/if}
+    {#if uncertain}<Button variant="secondary" disabled={saving} onclick={verifyOrder}
+        >Vérifier la commande enregistrée</Button
       >{/if}
     <div class="flex justify-end gap-2">
       <Button
@@ -481,3 +659,15 @@
     </div>
   </div></Modal
 >
+
+{#if showDirectory && editing}
+  <PartyDirectory
+    endpoint={`/purchasing/data/suppliers/${editing.supplierId}/directory`}
+    name={editing.supplier.name}
+    canManage={manage}
+    onclose={() => {
+      showDirectory = false;
+      coordinateRevision++;
+    }}
+  />
+{/if}

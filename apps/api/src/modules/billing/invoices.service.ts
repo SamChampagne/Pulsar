@@ -294,6 +294,7 @@ export class InvoicesService {
           tenantId,
           {
             memo: `Facture transporteur ${result.invoiceNumber} approuvée`,
+            currency: result.currency,
             sourceType: 'invoice',
             sourceId: id,
             sourceKind: 'approved',

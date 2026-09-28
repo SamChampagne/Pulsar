@@ -1,4 +1,8 @@
 <script lang="ts">
+  import EmailPreview from '$lib/components/email/EmailPreview.svelte';
+  import EmailBodyEditor from '$lib/components/email/EmailBodyEditor.svelte';
+  import { auth } from '$lib/stores/auth';
+  import { confirmAction } from '$lib/stores/confirmation';
   import { page as routePage } from '$app/state';
   import type { Paginated } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
@@ -19,7 +23,6 @@
     Modal,
     Select,
     FilterBar,
-    Textarea,
   } from '$lib/components/ui';
 
   interface EmailMessage {
@@ -114,7 +117,7 @@
     };
     draftPrompt = '';
     selectedTemplateId = '';
-    if (!templatesLoaded) {
+    if (!templatesLoaded && $auth?.user.permissions.includes('core.email.manage')) {
       try {
         const result = await api<EmailTemplate[]>('/emails/templates');
         templates = result;
@@ -163,10 +166,26 @@
   }
 
   async function submitComposer() {
+    if (composerSaving || !$auth?.user.permissions.includes('core.email.send')) return;
     if (!composerForm.to.trim()) {
       toast.error('Veuillez saisir au moins une adresse destinataire');
       return;
     }
+    if (!composerForm.subject.trim() || !composerForm.html.trim()) {
+      toast.error('Ajoutez un sujet et un message avant l’envoi');
+      return;
+    }
+    if (
+      !(await confirmAction(
+        `Envoyer ce courriel à ${composerForm.to}${composerForm.cc ? ` (copie : ${composerForm.cc})` : ''} ? Un transport configuré peut envoyer réellement.`,
+        {
+          title: 'Vérifier les destinataires',
+          confirmLabel: 'Confirmer l’envoi',
+          dangerous: false,
+        },
+      ))
+    )
+      return;
     composerSaving = true;
     try {
       const toArr = composerForm.to
@@ -197,7 +216,7 @@
           attachments,
         },
       });
-      toast.success('Courriel envoyé');
+      toast.success('Courriel mis en file — consultez son résultat dans le journal');
       closeComposer();
       void load();
     } catch (e) {
@@ -260,7 +279,9 @@
 
 <PageHeader title="Courriels" eyebrow="Communication" count={total}>
   {#snippet actions()}
-    <Button onclick={openComposer}>Composer</Button>
+    {#if $auth?.user.permissions.includes('core.email.send')}<Button onclick={openComposer}
+        >Composer</Button
+      >{/if}
   {/snippet}
 </PageHeader>
 
@@ -428,12 +449,11 @@
 
       <div>
         <p class="mb-1 text-xs font-medium text-ink-muted">Corps</p>
-        <iframe
-          srcdoc={detailEmail.html}
-          title="Corps du courriel"
-          class="h-80 w-full rounded-inner border border-edge bg-white"
-          sandbox="allow-same-origin"
-        ></iframe>
+        <EmailPreview
+          html={detailEmail.html}
+          subject={detailEmail.subject}
+          to={detailEmail.toAddresses.join(', ')}
+        />
       </div>
 
       {#if detailEmail.attachments && detailEmail.attachments.length > 0}
@@ -481,9 +501,8 @@
       <Input bind:value={composerForm.subject} placeholder="Objet du courriel" />
     </Field>
 
-    <Field label="Corps HTML">
-      <Textarea bind:value={composerForm.html} rows={8} placeholder="<p>Bonjour,</p>" />
-    </Field>
+    <EmailBodyEditor bind:html={composerForm.html} />
+    <EmailPreview html={composerForm.html} subject={composerForm.subject} to={composerForm.to} />
 
     <!-- AI draft -->
     <div class="rounded-inner border border-edge bg-surface-muted p-3">

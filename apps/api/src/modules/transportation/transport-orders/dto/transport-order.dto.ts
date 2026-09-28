@@ -73,7 +73,17 @@ export class CreateTransportOrderDto {
   customData?: Record<string, unknown>;
 }
 
-export class UpdateTransportOrderDto extends PartialType(CreateTransportOrderDto) {}
+export class UpdateTransportOrderDto extends PartialType(CreateTransportOrderDto) {
+  @IsOptional()
+  @IsDateString()
+  expectedUpdatedAt?: string;
+}
+
+export class ConfirmTransportOrderDto {
+  @IsOptional()
+  @IsDateString()
+  expectedUpdatedAt?: string;
+}
 
 /**
  * Bridge payload: create a transport order from a CONFIRMED CRM sales order.

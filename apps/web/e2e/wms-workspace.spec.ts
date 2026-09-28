@@ -97,6 +97,8 @@ async function setup(page: Page) {
       return r.fulfill({ status: 500, json: { message: 'Mutation non prévue dans ce test.' } });
     if (path === 'sites')
       return r.fulfill({ json: { items: [site, otherSite], total: 2, page: 1, pageSize: 100 } });
+    if (path.startsWith('items/'))
+      return r.fulfill({ json: { id: path.split('/')[1], lotTracked: false } });
     if (path === `sites/${site.id}/bins`)
       return r.fulfill({
         json: {

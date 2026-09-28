@@ -1,4 +1,6 @@
 export const WMS_MOVEMENT_LABELS: Record<string, string> = {
+  DISPOSAL: 'Destruction / rebut',
+  SUPPLIER_RETURN: 'Retour fournisseur',
   CONSUMPTION: 'Consommation atelier',
   PRODUCTION: 'Production atelier',
   RECEIPT: 'Réception',
@@ -7,6 +9,7 @@ export const WMS_MOVEMENT_LABELS: Record<string, string> = {
   ADJUSTMENT: 'Ajustement',
 };
 export interface WmsMovementRow {
+  lot?: { id: string; code: string; expiresOn: string | null } | null;
   id: string;
   type: string;
   createdAt: string;
@@ -19,7 +22,13 @@ export interface WmsMovementRow {
   note: string | null;
   actor: string | null;
   source: {
-    kind: 'receipt' | 'pick-order' | 'cycle-count' | 'service-job';
+    kind:
+      | 'receipt'
+      | 'pick-order'
+      | 'cycle-count'
+      | 'service-job'
+      | 'manufacturing-order'
+      | 'stock-exit';
     id: string;
     number: string;
   } | null;
@@ -36,6 +45,7 @@ export interface WmsMoveResult {
   replayed: boolean;
 }
 export interface WmsMoveRequest {
+  lotId?: string;
   operationKey: string;
   itemId: string;
   fromBinId: string;

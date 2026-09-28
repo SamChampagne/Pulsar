@@ -1,3 +1,4 @@
+import { withLotAvailability } from '../wms/lots/lot-availability';
 import {
   BadRequestException,
   ConflictException,
@@ -13,6 +14,7 @@ import { OwnershipService } from '../../prisma/ownership.service';
 import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { InventoryService } from '../wms/inventory/inventory.service';
+import { assertLot } from '../wms/lots/lots.service';
 import { paginated, paginationArgs } from '../../common/pagination';
 import { lockBusinessTenant, nextBusinessVersion } from './business-lock';
 import {
@@ -23,12 +25,51 @@ import {
   ServicePartQueryDto,
 } from './business.dto';
 
-const itemSelect = { id: true, sku: true, name: true, unit: true, isActive: true } as const;
+const itemSelect = {
+  id: true,
+  sku: true,
+  name: true,
+  unit: true,
+  isActive: true,
+  lotTracked: true,
+} as const;
 const usageSelect = {
+  lotId: true,
+  lotSnapshot: true,
   id: true,
   jobId: true,
   catalogItemId: true,
   quantity: true,
+  returnedQuantity: true,
+  updatedAt: true,
+  billingLine: {
+    select: {
+      id: true,
+      credits: {
+        where: { creditNote: { status: 'ISSUED' } },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          quantity: true,
+          creditNote: { select: { number: true } },
+          stockReturns: { select: { quantity: true } },
+        },
+      },
+    },
+  },
+  _count: { select: { returns: true } },
+  returns: {
+    take: 5,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    select: {
+      id: true,
+      quantity: true,
+      reason: true,
+      createdAt: true,
+      createdById: true,
+      movementId: true,
+    },
+  },
   nameSnapshot: true,
   codeSnapshot: true,
   unitSnapshot: true,
@@ -41,7 +82,25 @@ const usageSelect = {
   returnedAt: true,
   returnReason: true,
   returnedById: true,
-} as const;
+} satisfies Prisma.ServicePartUsageSelect;
+function presentUsage(row: Prisma.ServicePartUsageGetPayload<{ select: typeof usageSelect }>) {
+  const { billingLine, _count, ...usage } = row;
+  return {
+    ...usage,
+    creditReturnOptions: (billingLine?.credits ?? [])
+      .map((c) => ({
+        id: c.id,
+        number: c.creditNote.number,
+        available: c.quantity
+          .minus(c.stockReturns.reduce((sum, r) => sum.plus(r.quantity), new Prisma.Decimal(0)))
+          .toString(),
+      }))
+      .filter((c) => Number(c.available) > 0),
+    remainingQuantity: row.quantity.minus(row.returnedQuantity).toString(),
+    billingLocked: !!billingLine,
+    returnCount: _count.returns,
+  };
+}
 const fingerprint = (body: unknown) =>
   createHash('sha256').update(JSON.stringify(body)).digest('hex');
 
@@ -183,11 +242,14 @@ export class ServicesPartsService {
       }),
       this.db.inventoryLevel.count({ where }),
     ]);
+    const available = await withLotAvailability(this.db, tenantId, rows);
     return paginated(
-      rows.map((r) => ({
+      available.map((r) => ({
         id: r.binId,
         name: `${r.bin.location.name} / ${r.bin.code}`,
-        available: r.qtyOnHand.toString(),
+        available: r.availableQty,
+        physical: r.qtyOnHand.toString(),
+        quarantined: r.quarantinedQty,
       })),
       total,
       page,
@@ -215,7 +277,7 @@ export class ServicesPartsService {
       }),
       this.db.servicePartUsage.count({ where }),
     ]);
-    return paginated(items, total, page, pageSize);
+    return paginated(items.map(presentUsage), total, page, pageSize);
   }
   private async job(tx: Prisma.TransactionClient, tenantId: string, id: string, expected: string) {
     const job = await tx.serviceJob.findFirst({
@@ -240,6 +302,8 @@ export class ServicesPartsService {
       new Prisma.Decimal(dto.quantity).toString(),
       dto.note,
       dto.expectedUpdatedAt,
+      // Preserve the exact fingerprint of existing no-lot requests.
+      ...(dto.lotId ? [{ lotId: dto.lotId }] : []),
     ]);
     const result = await this.locked(tenantId, async (tx) => {
       const previous = await tx.servicePartUsage.findFirst({
@@ -275,11 +339,13 @@ export class ServicesPartsService {
       });
       if (!bin.isActive || bin.location.type !== 'WAREHOUSE' || bin.location.tenantId !== tenantId)
         throw new ConflictException('Choisissez un emplacement actif dans un entrepôt.');
+      const lot = await assertLot(tx, tenantId, link.wmsItemId, dto.lotId);
       const movement = await this.inventory.postMovement(tx, {
         tenantId,
         userId: actor.id,
         type: StockMovementType.PICK,
         itemId: link.wmsItemId,
+        lotId: lot?.id,
         fromBinId: bin.id,
         locationId: bin.locationId,
         qty: dto.quantity,
@@ -293,6 +359,17 @@ export class ServicesPartsService {
           jobId,
           catalogItemId: dto.catalogItemId,
           wmsItemId: link.wmsItemId,
+          lotId: lot?.id,
+          ...(lot
+            ? {
+                lotSnapshot: {
+                  code: lot.code,
+                  supplierLot: lot.supplierLot,
+                  manufacturedOn: lot.manufacturedOn?.toISOString().slice(0, 10) ?? null,
+                  expiresOn: lot.expiresOn?.toISOString().slice(0, 10) ?? null,
+                },
+              }
+            : {}),
           binId: bin.id,
           quantity: dto.quantity,
           nameSnapshot: link.catalogItem.name,
@@ -322,73 +399,156 @@ export class ServicesPartsService {
         after: { jobId, ...dto },
       });
     return {
-      ...(await this.db.servicePartUsage.findFirstOrThrow({
-        where: { tenantId, id: result.id },
-        select: usageSelect,
-      })),
+      ...presentUsage(
+        await this.db.servicePartUsage.findFirstOrThrow({
+          where: { tenantId, id: result.id },
+          select: usageSelect,
+        }),
+      ),
       replayed: result.replayed,
     };
   }
   async returnPart(actor: AuthUser, jobId: string, id: string, dto: ReturnServicePartDto) {
     await this.requireWms(actor.tenantId);
     const tenantId = actor.tenantId;
-    const hash = fingerprint(['return-v1', actor.id, jobId, id, dto.reason, dto.expectedUpdatedAt]);
+    const hash = fingerprint(
+      dto.creditLineId
+        ? [
+            'return-credit-v1',
+            actor.id,
+            jobId,
+            id,
+            dto.creditLineId,
+            dto.quantity,
+            dto.reason,
+            dto.expectedUpdatedAt,
+          ]
+        : dto.quantity === undefined
+          ? ['return-v1', actor.id, jobId, id, dto.reason, dto.expectedUpdatedAt]
+          : [
+              'return-v2',
+              actor.id,
+              jobId,
+              id,
+              new Prisma.Decimal(dto.quantity).toString(),
+              dto.reason,
+              dto.expectedUpdatedAt,
+            ],
+    );
     const result = await this.locked(tenantId, async (tx) => {
+      // Replay before mutable job, billing and stock checks, including migrated v1 returns.
+      const previous = await tx.servicePartReturn.findFirst({
+        where: { tenantId, operationKey: dto.operationKey },
+      });
+      if (previous) {
+        if (previous.usageId !== id || previous.requestFingerprint !== hash)
+          throw new ConflictException('Cette clé désigne un autre retour.');
+        return { replayed: true, returnId: previous.id };
+      }
       const row = await tx.servicePartUsage.findFirst({ where: { tenantId, jobId, id } });
       if (!row) throw new NotFoundException('Consommation introuvable.');
-      if (row.returnMovementId) {
-        if (row.returnOperationKey !== dto.operationKey || row.returnFingerprint !== hash)
-          throw new ConflictException('Ces pièces ont déjà été retournées.');
-        return { replayed: true };
-      }
+      const quantity = new Prisma.Decimal(dto.quantity ?? row.quantity);
+      const remaining = row.quantity.minus(row.returnedQuantity);
       if (
-        await tx.customerInvoiceLine.count({
-          where: { servicePartUsageId: id, customerInvoice: { tenantId } },
-        })
+        !quantity.isFinite() ||
+        quantity.lte(0) ||
+        quantity.decimalPlaces() > 3 ||
+        quantity.gt(remaining)
       )
         throw new ConflictException(
-          'Cette pièce est liée à une facture. Supprimez le brouillon ou faites traiter la correction financière avant son retour.',
+          `Quantité de retour invalide. Restant : ${remaining.toString()} ${row.unitSnapshot}.`,
         );
-      if (
-        await tx.servicePartUsage.findFirst({
-          where: { tenantId, returnOperationKey: dto.operationKey },
-        })
-      )
-        throw new ConflictException('Cette clé désigne un autre retour.');
+      const billingLine = await tx.customerInvoiceLine.findFirst({
+        where: { servicePartUsageId: id, customerInvoice: { tenantId } },
+      });
+      if (billingLine) {
+        if (!dto.creditLineId || dto.quantity === undefined)
+          throw new ConflictException(
+            'Pièce facturée : validez un avoir sur cette ligne avant le retour, ou supprimez la facture si elle est encore brouillon.',
+          );
+        await this.ownership.assertOwned('customerCreditLine', dto.creditLineId, tenantId, tx);
+        const credit = await tx.customerCreditLine.findFirst({
+          where: {
+            tenantId,
+            id: dto.creditLineId,
+            invoiceLineId: billingLine.id,
+            creditNote: { tenantId, status: 'ISSUED' },
+          },
+          include: { stockReturns: { where: { tenantId }, select: { quantity: true } } },
+        });
+        if (!credit)
+          throw new ConflictException('Avoir validé correspondant à cette pièce requis.');
+        const used = credit.stockReturns.reduce(
+          (s, r) => s.plus(r.quantity),
+          new Prisma.Decimal(0),
+        );
+        if (quantity.gt(credit.quantity.minus(used)))
+          throw new ConflictException('Le retour dépasse la quantité autorisée par cet avoir.');
+      } else if (dto.creditLineId)
+        throw new ConflictException('Cette consommation ne correspond pas à un avoir.');
       const { job, updatedAt } = await this.job(tx, tenantId, jobId, dto.expectedUpdatedAt);
       const item = await tx.wmsItem.findFirstOrThrow({ where: { tenantId, id: row.wmsItemId } });
       if (item.unit !== row.unitSnapshot)
         throw new ConflictException(
           'L’unité de stock a changé. Faites vérifier le référentiel avant retour.',
         );
-      // Full return to original bin; current mapping/catalog activation cannot rewrite history.
+      if (row.lotId) {
+        // A physical return follows the original issue, never a current catalog mapping.
+        const source = await tx.stockMovement.findFirst({
+          where: { tenantId, id: row.movementId },
+        });
+        if (
+          !row.lotSnapshot ||
+          !source ||
+          source.type !== StockMovementType.PICK ||
+          source.itemId !== row.wmsItemId ||
+          source.lotId !== row.lotId ||
+          source.fromBinId !== row.binId ||
+          !source.qty.eq(row.quantity) ||
+          source.unitSnapshot !== row.unitSnapshot
+        )
+          throw new ConflictException(
+            'La preuve de sortie du lot est incohérente. Faites vérifier le dossier avant retour.',
+          );
+      }
+      // Return to the original bin; current mapping/catalog activation cannot rewrite history.
       const movement = await this.inventory.postMovement(tx, {
         tenantId,
         userId: actor.id,
         type: StockMovementType.RECEIPT,
         itemId: row.wmsItemId,
+        lotId: row.lotId,
         toBinId: row.binId,
-        qty: Number(row.quantity),
+        qty: quantity.toNumber(),
         refType: 'service-job',
         refId: jobId,
         note: `${job.number} · Retour ${id} · ${dto.reason}`,
       });
-      await tx.servicePartUsage.updateMany({
-        where: { tenantId, id, returnMovementId: null },
+      const entry = await tx.servicePartReturn.create({
         data: {
-          returnMovementId: movement.id,
-          returnOperationKey: dto.operationKey,
-          returnFingerprint: hash,
-          returnReason: dto.reason,
-          returnedById: actor.id,
-          returnedAt: new Date(),
+          tenantId,
+          usageId: id,
+          quantity,
+          movementId: movement.id,
+          operationKey: dto.operationKey,
+          requestFingerprint: hash,
+          reason: dto.reason,
+          createdById: actor.id,
+          creditLineId: dto.creditLineId,
+        },
+      });
+      await tx.servicePartUsage.updateMany({
+        where: { tenantId, id, updatedAt: row.updatedAt },
+        data: {
+          returnedQuantity: row.returnedQuantity.plus(quantity),
+          updatedAt: new Date(Math.max(Date.now(), row.updatedAt.getTime() + 1)),
         },
       });
       await tx.serviceJob.updateMany({
         where: { tenantId, id: jobId, updatedAt: job.updatedAt },
         data: { updatedAt },
       });
-      return { replayed: false };
+      return { replayed: false, returnId: entry.id };
     });
     if (!result.replayed)
       await this.audit.log({
@@ -397,14 +557,17 @@ export class ServicesPartsService {
         action: AuditAction.UPDATE,
         entityType: 'service-part',
         entityId: id,
-        after: { returned: true, ...dto },
+        after: { returnId: result.returnId, ...dto },
       });
     return {
-      ...(await this.db.servicePartUsage.findFirstOrThrow({
-        where: { tenantId, jobId, id },
-        select: usageSelect,
-      })),
+      ...presentUsage(
+        await this.db.servicePartUsage.findFirstOrThrow({
+          where: { tenantId, jobId, id },
+          select: usageSelect,
+        }),
+      ),
       replayed: result.replayed,
+      returnId: result.returnId,
     };
   }
 }

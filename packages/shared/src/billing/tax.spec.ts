@@ -2,6 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { computeTax, TaxTemplateType } from './tax';
 
 describe('computeTax', () => {
+  it('supports more than three explicit flat tax lines without dropping any', () => {
+    const result = computeTax(
+      100,
+      [1, 2, 3, 4].map((rate) => ({ description: `Tax ${rate}`, rate, accountCode: '2100' })),
+    );
+    expect(result.lines).toHaveLength(4);
+    expect(result.taxAmount).toBe(10);
+  });
   it('single rate on net', () => {
     const r = computeTax(100, [{ description: 'GST', rate: 5, accountCode: '2100' }]);
     expect(r.taxAmount).toBe(5);

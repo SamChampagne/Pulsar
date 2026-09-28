@@ -68,7 +68,15 @@ export class OperationalTasksService {
       where: { tenantId, triggeredByRef: `task:${id}` },
       orderBy: { proposedAt: 'desc' },
       take: 50,
-      select: { id: true, tool: true, riskTier: true, status: true, triggeredByRef: true, proposedAt: true, decidedAt: true },
+      select: {
+        id: true,
+        tool: true,
+        riskTier: true,
+        status: true,
+        triggeredByRef: true,
+        proposedAt: true,
+        decidedAt: true,
+      },
     });
     const slaBreached = isSlaBreached(
       task.slaDueAt ? task.slaDueAt.toISOString() : null,
@@ -166,6 +174,28 @@ export class OperationalTasksService {
     return this.transition(tenantId, id, OperationalTaskStatus.IN_PROGRESS, {}, actorId);
   }
 
+  /** Release only the worker's still-active claim; never reopen a resolved task. */
+  async releaseWorkerClaim(tenantId: string, id: string, actorId: string): Promise<void> {
+    if (
+      !canTransitionOperationalTask(OperationalTaskStatus.IN_PROGRESS, OperationalTaskStatus.OPEN)
+    )
+      return;
+    const result = await this.prisma.operationalTask.updateMany({
+      where: { id, tenantId, status: OperationalTaskStatus.IN_PROGRESS },
+      data: { status: OperationalTaskStatus.OPEN },
+    });
+    if (result.count)
+      await this.audit.log({
+        tenantId,
+        userId: actorId,
+        action: AuditAction.STATUS_CHANGE,
+        entityType: 'OperationalTask',
+        entityId: id,
+        before: { status: OperationalTaskStatus.IN_PROGRESS },
+        after: { status: OperationalTaskStatus.OPEN, reason: 'worker_run_not_completed' },
+      });
+  }
+
   /**
    * Append a note to an OperationalTask's notes JSON array.
    * Rejects empty text (400). Audited as UPDATE.
@@ -220,7 +250,14 @@ export class OperationalTasksService {
         where: { tenantId, entityType: 'OperationalTask', entityId: id },
         orderBy: { createdAt: 'desc' },
         take: 200,
-        select: { id: true, createdAt: true, action: true, before: true, after: true, userId: true },
+        select: {
+          id: true,
+          createdAt: true,
+          action: true,
+          before: true,
+          after: true,
+          userId: true,
+        },
       }),
       this.prisma.proposedAction.findMany({
         where: { tenantId, triggeredByRef: `task:${id}` },
@@ -279,8 +316,10 @@ export class OperationalTasksService {
       where: { id, tenantId },
       data: {
         assigneeType: body.assigneeType,
-        assigneeUserId: body.assigneeType === TaskAssigneeType.HUMAN ? body.assigneeUserId ?? null : null,
-        assigneeAgentId: body.assigneeType === TaskAssigneeType.AGENT ? body.assigneeAgentId ?? null : null,
+        assigneeUserId:
+          body.assigneeType === TaskAssigneeType.HUMAN ? (body.assigneeUserId ?? null) : null,
+        assigneeAgentId:
+          body.assigneeType === TaskAssigneeType.AGENT ? (body.assigneeAgentId ?? null) : null,
       },
     });
 

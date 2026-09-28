@@ -10,8 +10,10 @@ import {
 } from 'class-validator';
 import { IsContactPhone } from '../../../../common/validators/contact';
 import { Transform } from 'class-transformer';
+import { IsDateString } from 'class-validator';
+import { ContactAddressesDto } from '../../../../common/dto/postal-address.dto';
 
-export class CreateCustomerDto {
+export class CreateCustomerDto extends ContactAddressesDto {
   @IsString()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @Length(1, 50)
@@ -47,6 +49,7 @@ export class CreateCustomerDto {
 export class UpdateCustomerDto extends PartialType(CreateCustomerDto, {
   skipNullProperties: false,
 }) {
+  @IsOptional() @IsDateString() expectedUpdatedAt?: string;
   @ValidateIf((_object, value) => value !== undefined)
   @IsBoolean()
   isActive?: boolean;

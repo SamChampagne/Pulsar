@@ -13,16 +13,19 @@ import {
   AuthUser,
   ServiceQuoteStatus,
   canTransitionServiceQuote,
+  serviceAcceptanceBlock,
   calendarDate,
   connectedOperationsSettings,
   hrAvailabilityDate,
   PERMISSIONS,
+  PARTY_ACCESS,
 } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
+import { DocumentCoordinatesService } from '../../core/reference-data/document-coordinates.service';
 import { paginationArgs, paginated } from '../../common/pagination';
 import { lockBusinessTenant, nextBusinessVersion } from './business-lock';
 import { BusinessQueryDto, VersionDto } from './business.dto';
@@ -40,6 +43,7 @@ const hash = (actor: AuthUser, data: unknown) =>
     .update(JSON.stringify({ actor: actor.id, data }))
     .digest('hex');
 const partnerSummary = { id: true, code: true, name: true } as const;
+export type PartnerLinkConsumer = 'catalog' | 'services' | 'clients' | 'support' | 'purchasing';
 const quoteInclude = {
   partner: { select: partnerSummary },
   project: { select: { id: true, number: true, status: true } },
@@ -54,6 +58,7 @@ export class ServicesCommerceService {
     private readonly modules: TenantModulesCacheService,
     private readonly audit: AuditLogsService,
     private readonly ref: ModuleRef,
+    private readonly coordinates: DocumentCoordinatesService,
   ) {}
   private async access(actor: AuthUser, manage = false, billing = false) {
     const enabled = await this.modules.getEnabledKeys(actor.tenantId);
@@ -80,12 +85,18 @@ export class ServicesCommerceService {
       { timeout: 15000 },
     );
   }
-  async billingCustomers(actor: AuthUser, query: BusinessQueryDto) {
+  async billingCustomers(
+    actor: AuthUser,
+    query: BusinessQueryDto,
+    consumer: 'catalog' | 'services' = 'catalog',
+  ) {
     const enabled = await this.modules.getEnabledKeys(actor.tenantId);
     if (
-      !enabled.has('catalog') ||
+      !enabled.has(consumer) ||
       !enabled.has('billing') ||
-      !actor.permissions.includes(PERMISSIONS.CATALOG.READ) ||
+      !actor.permissions.includes(
+        consumer === 'services' ? PERMISSIONS.SERVICES.READ : PERMISSIONS.CATALOG.READ,
+      ) ||
       !actor.permissions.includes(PERMISSIONS.BILLING.CUSTOMER_INVOICES_READ)
     )
       throw new ForbiddenException();
@@ -231,6 +242,10 @@ export class ServicesCommerceService {
       if (!row) throw new NotFoundException();
       if (row.status !== 'DRAFT')
         throw new ConflictException('Le devis accepté ou annulé est figé.');
+      if (row.partnerId !== dto.partnerId && row.documentCoordinates)
+        throw new ConflictException(
+          'Retirez d’abord les coordonnées enregistrées avant de changer de client.',
+        );
       await tx.serviceQuote.updateMany({
         where: { tenantId: actor.tenantId, id, updatedAt: row.updatedAt },
         data: {
@@ -263,7 +278,14 @@ export class ServicesCommerceService {
         throw new ConflictException('Transition de devis interdite.');
       const updatedAt = nextBusinessVersion(row, dto.expectedUpdatedAt);
       let projectId: string | null = null;
+      let documentCoordinates: Prisma.InputJsonObject | undefined;
       if (dto.status === 'ACCEPTED') {
+        documentCoordinates = await this.coordinates.freeze(
+          tx,
+          actor.tenantId,
+          row.documentCoordinates,
+          { kind: 'partner', id: row.partnerId },
+        );
         const tenant = await tx.tenant.findUniqueOrThrow({
           where: { id: actor.tenantId },
           select: { settings: true },
@@ -303,6 +325,7 @@ export class ServicesCommerceService {
           updatedAt,
           projectId,
           acceptedAt: dto.status === 'ACCEPTED' ? new Date() : null,
+          ...(documentCoordinates ? { documentCoordinates } : {}),
         },
       });
       return true;
@@ -329,6 +352,7 @@ export class ServicesCommerceService {
           select: {
             id: true,
             number: true,
+            acceptanceRequired: true,
             partner: { select: { ...partnerSummary, billingCustomerId: true } },
             quote: {
               select: { id: true, number: true, currency: true, lines: true, totalAmount: true },
@@ -346,7 +370,7 @@ export class ServicesCommerceService {
         const partWhere = {
           tenantId,
           job: { tenantId, projectId },
-          returnedAt: null,
+          returnedQuantity: { lt: tx.servicePartUsage.fields.quantity },
           billingLine: null,
         };
         const [times, parts, timeCount, partCount, invoices] = await Promise.all([
@@ -359,7 +383,15 @@ export class ServicesCommerceService {
               minutes: true,
               workDate: true,
               updatedAt: true,
-              job: { select: { number: true, title: true } },
+              job: {
+                select: {
+                  id: true,
+                  number: true,
+                  title: true,
+                  status: true,
+                  acceptanceStatus: true,
+                },
+              },
             },
           }),
           tx.servicePartUsage.findMany({
@@ -369,10 +401,12 @@ export class ServicesCommerceService {
             select: {
               id: true,
               quantity: true,
+              returnedQuantity: true,
+              updatedAt: true,
               nameSnapshot: true,
               unitSnapshot: true,
               createdAt: true,
-              job: { select: { number: true } },
+              job: { select: { id: true, number: true, status: true, acceptanceStatus: true } },
             },
           }),
           tx.serviceTimeEntry.count({ where: timeWhere }),
@@ -402,6 +436,8 @@ export class ServicesCommerceService {
             ...times.map((t) => ({
               kind: 'time' as const,
               id: t.id,
+              jobId: t.job.id,
+              blockedReason: serviceAcceptanceBlock(project.acceptanceRequired, t.job),
               label: `${t.job.number} · ${t.minutes} min · ${t.workDate.toISOString().slice(0, 10)}`,
               quantity: new Prisma.Decimal(t.minutes).div(60).toString(),
               unit: 'H',
@@ -410,10 +446,14 @@ export class ServicesCommerceService {
             ...parts.map((p) => ({
               kind: 'part' as const,
               id: p.id,
+              jobId: p.job.id,
+              blockedReason: serviceAcceptanceBlock(project.acceptanceRequired, p.job),
               label: `${p.job.number} · ${p.nameSnapshot}`,
-              quantity: p.quantity.toString(),
+              quantity: p.quantity.minus(p.returnedQuantity).toString(),
+              issuedQuantity: p.quantity.toString(),
+              returnedQuantity: p.returnedQuantity.toString(),
               unit: p.unitSnapshot,
-              expectedVersion: p.createdAt.toISOString(),
+              expectedVersion: p.updatedAt.toISOString(),
             })),
           ],
           remainingSources: timeCount + partCount,
@@ -474,12 +514,14 @@ export class ServicesCommerceService {
               billable: true,
               billingLine: null,
             },
-            include: { job: { select: { number: true } } },
+            include: { job: { select: { number: true, status: true, acceptanceStatus: true } } },
           });
           if (!time || time.updatedAt.toISOString() !== source.expectedVersion)
             throw new ConflictException(
               'Une heure a changé, a déjà été facturée ou n’est plus approuvée.',
             );
+          const block = serviceAcceptanceBlock(project.acceptanceRequired, time.job);
+          if (block) throw new ConflictException(`${time.job.number} : ${block}`);
           lines.push({
             description: `${time.job.number} · ${time.minutes} minutes approuvées du ${time.workDate.toISOString().slice(0, 10)}`,
             quantity: new Prisma.Decimal(time.minutes).div(60),
@@ -496,16 +538,18 @@ export class ServicesCommerceService {
               tenantId,
               id: source.id,
               job: { tenantId, projectId },
-              returnedAt: null,
+              returnedQuantity: { lt: tx.servicePartUsage.fields.quantity },
               billingLine: null,
             },
-            include: { job: { select: { number: true } } },
+            include: { job: { select: { number: true, status: true, acceptanceStatus: true } } },
           });
-          if (!part || part.createdAt.toISOString() !== source.expectedVersion)
+          if (!part || part.updatedAt.toISOString() !== source.expectedVersion)
             throw new ConflictException('Une pièce a été retournée, facturée ou modifiée.');
+          const block = serviceAcceptanceBlock(project.acceptanceRequired, part.job);
+          if (block) throw new ConflictException(`${part.job.number} : ${block}`);
           lines.push({
             description: `${part.job.number} · ${part.nameSnapshot}`,
-            quantity: part.quantity,
+            quantity: part.quantity.minus(part.returnedQuantity),
             unitPrice: new Prisma.Decimal(source.unitPrice),
             serviceTimeEntryId: null,
             servicePartUsageId: part.id,
@@ -546,21 +590,41 @@ export class ServicesCommerceService {
     return { invoiceId: result.id, created: result.created };
   }
 
-  async partnerLinks(actor: AuthUser, id: string, dto?: PartnerLinksDto) {
+  async partnerLinks(
+    actor: AuthUser,
+    id: string,
+    dto?: PartnerLinksDto,
+    consumer: PartnerLinkConsumer = 'catalog',
+    review?: { reason: string; confirm: boolean; token?: string },
+  ) {
     const tenantId = actor.tenantId,
       enabled = await this.modules.getEnabledKeys(tenantId);
+    const grant = PARTY_ACCESS.find(
+      (a) => a.module === consumer && ['client', 'supplier', 'partner'].includes(a.kind),
+    );
     if (
-      !enabled.has('catalog') ||
-      !actor.permissions.includes(PERMISSIONS.CATALOG.READ) ||
-      (dto && !actor.permissions.includes(PERMISSIONS.CATALOG.MANAGE))
+      !grant ||
+      !enabled.has(consumer) ||
+      !actor.permissions.includes(grant.read) ||
+      (dto && !actor.permissions.includes(grant.manage))
     )
       throw new ForbiddenException();
-    const billing =
-      enabled.has('billing') &&
-      actor.permissions.includes(PERMISSIONS.BILLING.CUSTOMER_INVOICES_READ);
+    const billing = PARTY_ACCESS.some(
+      (a) => a.kind === 'customer' && enabled.has(a.module) && actor.permissions.includes(a.read),
+    );
     const crm = enabled.has('crm') && actor.permissions.includes(PERMISSIONS.CRM.READ);
     const row = await this.locked(tenantId, async (tx) => {
-      const old = await tx.businessPartner.findFirst({ where: { tenantId, id } });
+      const old = await tx.businessPartner.findFirst({
+        where: {
+          tenantId,
+          id,
+          ...(consumer === 'catalog'
+            ? {}
+            : consumer === 'purchasing'
+              ? { isSupplier: true }
+              : { isCustomer: true }),
+        },
+      });
       if (!old) throw new NotFoundException();
       if (dto) {
         if (
@@ -568,6 +632,9 @@ export class ServicesCommerceService {
           (dto.crmCompanyId !== undefined && !crm)
         )
           throw new ForbiddenException('Droit de lecture de la cible requis.');
+        // Customer's historical writers use row locks, not the business advisory lock.
+        if (dto.billingCustomerId)
+          await tx.$queryRaw`SELECT id FROM customers WHERE "tenantId" = ${tenantId} AND id = ${dto.billingCustomerId} FOR SHARE`;
         if (dto.billingCustomerId)
           await this.ownership.assertOwned('customer', dto.billingCustomerId, tenantId, tx);
         if (dto.crmCompanyId)
@@ -595,13 +662,47 @@ export class ServicesCommerceService {
         const company = companyId
           ? await tx.crmCompany.findFirst({
               where: { tenantId, id: companyId },
-              select: { customerId: true },
+              select: { customerId: true, updatedAt: true, id: true, name: true },
             })
           : null;
         if (company?.customerId && company.customerId !== customerId)
           throw new ConflictException(
             'La société CRM possède déjà un autre lien client. Choisissez le même client de facturation.',
           );
+        if (review) {
+          // Review is read-only. Confirm re-reads the same facts under the same tenant lock.
+          nextBusinessVersion(old, dto.expectedUpdatedAt);
+          if (customerId && dto.billingCustomerId === undefined)
+            await tx.$queryRaw`SELECT id FROM customers WHERE "tenantId" = ${tenantId} AND id = ${customerId} FOR SHARE`;
+          const customer = customerId
+            ? await tx.customer.findFirst({
+                where: { tenantId, id: customerId },
+                select: { id: true, name: true, updatedAt: true },
+              })
+            : null;
+          const reviewToken = hash(actor, {
+            owner: { id, updatedAt: old.updatedAt },
+            dto,
+            customer,
+            company,
+            reason: review.reason,
+          });
+          if (review.confirm && review.token !== reviewToken)
+            throw new ConflictException(
+              'Le rapprochement a changé depuis la revue. Vérifiez à nouveau.',
+            );
+          if (!review.confirm)
+            return {
+              reviewToken,
+              customer: billing ? customer : undefined,
+              company:
+                crm && company
+                  ? { id: company.id, name: company.name, updatedAt: company.updatedAt }
+                  : undefined,
+              updatedAt: old.updatedAt,
+              preview: true as const,
+            };
+        }
         const { expectedUpdatedAt, ...data } = dto;
         try {
           await tx.businessPartner.updateMany({
@@ -616,19 +717,37 @@ export class ServicesCommerceService {
       }
       return tx.businessPartner.findFirstOrThrow({ where: { tenantId, id } });
     });
+    if ('preview' in row) return row;
+    if (review?.confirm)
+      await this.audit.log({
+        tenantId,
+        userId: actor.id,
+        action: AuditAction.UPDATE,
+        entityType: 'party-identity-review',
+        entityId: id,
+        after: { reason: review.reason, changes: dto, updatedAt: row.updatedAt },
+      });
     return {
+      id,
       updatedAt: row.updatedAt,
       ...(billing ? { billingCustomerId: row.billingCustomerId } : {}),
       ...(crm ? { crmCompanyId: row.crmCompanyId } : {}),
     };
   }
-  async createBillingCustomer(actor: AuthUser, id: string, dto: VersionDto) {
+  async createBillingCustomer(
+    actor: AuthUser,
+    id: string,
+    dto: VersionDto,
+    consumer: 'catalog' | 'services' = 'catalog',
+  ) {
     const tenantId = actor.tenantId,
       enabled = await this.modules.getEnabledKeys(tenantId);
     if (
-      !enabled.has('catalog') ||
+      !enabled.has(consumer) ||
       !enabled.has('billing') ||
-      !actor.permissions.includes(PERMISSIONS.CATALOG.MANAGE) ||
+      !actor.permissions.includes(
+        consumer === 'services' ? PERMISSIONS.SERVICES.MANAGE : PERMISSIONS.CATALOG.MANAGE,
+      ) ||
       !actor.permissions.includes(PERMISSIONS.BILLING.CUSTOMER_INVOICES_MANAGE)
     )
       throw new ForbiddenException();

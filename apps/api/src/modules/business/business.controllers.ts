@@ -119,6 +119,21 @@ export class ServicesController {
     private readonly time: ServicesTimeService,
     private readonly parts: ServicesPartsService,
   ) {}
+  @Get('items/:id/stock-link')
+  @RequirePermissions(PERMISSIONS.SERVICES.READ, PERMISSIONS.WMS.READ)
+  stockLink(@CurrentUser() u: AuthUser, @Param('id') id: string) {
+    return this.parts.link(u.tenantId, id);
+  }
+  @Patch('items/:id/stock-link')
+  @RequirePermissions(PERMISSIONS.SERVICES.READ, PERMISSIONS.SERVICES.MANAGE, PERMISSIONS.WMS.READ)
+  @Audit('catalog-stock-link', AuditAction.UPDATE)
+  setStockLink(
+    @CurrentUser() u: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: CatalogStockLinkDto,
+  ) {
+    return this.parts.setLink(u.tenantId, id, dto);
+  }
   @Post('availability/check')
   @HttpCode(200)
   @RequirePermissions(PERMISSIONS.SERVICES.READ, PERMISSIONS.HR.AVAILABILITY_READ)
@@ -300,7 +315,27 @@ export class PurchasingController {
   constructor(
     private readonly business: BusinessService,
     private readonly receiving: SupplierReceiptsService,
+    private readonly parts: ServicesPartsService,
   ) {}
+  @Get('items/:id/stock-link')
+  @RequirePermissions(PERMISSIONS.PURCHASING.READ, PERMISSIONS.WMS.READ)
+  stockLink(@CurrentUser() u: AuthUser, @Param('id') id: string) {
+    return this.parts.link(u.tenantId, id);
+  }
+  @Patch('items/:id/stock-link')
+  @RequirePermissions(
+    PERMISSIONS.PURCHASING.READ,
+    PERMISSIONS.PURCHASING.MANAGE,
+    PERMISSIONS.WMS.READ,
+  )
+  @Audit('catalog-stock-link', AuditAction.UPDATE)
+  setStockLink(
+    @CurrentUser() u: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: CatalogStockLinkDto,
+  ) {
+    return this.parts.setLink(u.tenantId, id, dto);
+  }
   @Get('orders/:id/receipts')
   @RequirePermissions(PERMISSIONS.PURCHASING.READ)
   receipts(@CurrentUser() u: AuthUser, @Param('id') id: string, @Query() q: BusinessQueryDto) {

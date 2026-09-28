@@ -19,6 +19,43 @@ export interface RuntimeEnv {
   homeDir: string;
 }
 
+/** A child receives OS plumbing, never the API's DB/JWT/SMTP/provider credentials. */
+export function isolatedRuntimeEnv(
+  tenantEnv: Record<string, string>,
+  parent: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const allowed = new Set([
+    'PATH',
+    'SYSTEMROOT',
+    'WINDIR',
+    'COMSPEC',
+    'PATHEXT',
+    'TEMP',
+    'TMP',
+    'LANG',
+    'LC_ALL',
+    'TZ',
+    'SSL_CERT_FILE',
+    'SSL_CERT_DIR',
+  ]);
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parent)) {
+    if (value !== undefined && allowed.has(key.toUpperCase())) result[key] = value;
+  }
+  return {
+    ...result,
+    PYTHONUTF8: '1',
+    PYTHONUNBUFFERED: '1',
+    PYTHONDONTWRITEBYTECODE: '1',
+    // Prevent provider CLIs from finding the operator's personal credentials.
+    HOME: tenantEnv.HERMES_HOME,
+    USERPROFILE: tenantEnv.HERMES_HOME,
+    APPDATA: path.join(tenantEnv.HERMES_HOME, '.config'),
+    LOCALAPPDATA: path.join(tenantEnv.HERMES_HOME, '.local'),
+    ...tenantEnv,
+  };
+}
+
 /**
  * Builds the spawn environment for a tenant's Hermes runtime.
  *
@@ -59,7 +96,10 @@ export function buildRuntimeEnv(
  */
 export function renderCliConfig(config: RuntimeConfigInput): string {
   const yamlStr = (v: string) =>
-    `"${v.replace(/[\r\n]+/g, ' ').replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+    `"${v
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')}"`;
   const provider = getRuntimeProvider(config.provider);
   const providerKey = provider?.providerKey ?? config.provider;
   const lines = ['model:', `  provider: ${yamlStr(providerKey)}`];

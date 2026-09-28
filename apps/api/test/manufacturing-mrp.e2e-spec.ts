@@ -57,6 +57,10 @@ describe('MRP planning (HTTP + PostgreSQL, no stock side effects)', () => {
         itemIds: [itemId],
       });
       workerCalls++;
+      yield {
+        type: 'result' as const,
+        result: { version: 1 as const, status: 'succeeded' as const },
+      };
       yield { type: 'end' as const };
     },
     closeSession: jest.fn(async () => undefined),

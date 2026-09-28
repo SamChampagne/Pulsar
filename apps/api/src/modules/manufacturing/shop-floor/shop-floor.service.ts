@@ -15,6 +15,19 @@ import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { nextWmsVersion } from '../../wms/document-operations';
 import { artifactHash } from '../scheduling/aps-artifact';
 import { ProductionDeclarationDto } from './shop-floor.dto';
+import { assertLot } from '../../wms/lots/lots.service';
+
+function captureLot(lot: Awaited<ReturnType<typeof assertLot>>) {
+  return lot
+    ? {
+        id: lot.id,
+        code: lot.code,
+        supplierLot: lot.supplierLot,
+        manufacturedOn: lot.manufacturedOn?.toISOString().slice(0, 10) ?? null,
+        expiresOn: lot.expiresOn?.toISOString().slice(0, 10) ?? null,
+      }
+    : null;
+}
 
 @Injectable()
 export class ShopFloorService {
@@ -35,13 +48,20 @@ export class ShopFloorService {
     const order = await this.prisma.manufacturingOrder.findFirst({
       where: { tenantId, id: orderId },
       include: {
-        declarations: { where: { tenantId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
+        declarations: {
+          where: { tenantId },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          include: {
+            reversal: { select: { id: true, reason: true, createdAt: true, evidence: true } },
+          },
+        },
         location: { select: { name: true } },
       },
     });
     if (!order) throw new NotFoundException('OF introuvable.');
-    const good = order.declarations.reduce((n, d) => n + d.goodQuantity, 0);
-    const scrap = order.declarations.reduce((n, d) => n + d.scrapQuantity, 0);
+    const active = order.declarations.filter((d) => !d.reversal);
+    const good = active.reduce((n, d) => n + d.goodQuantity, 0);
+    const scrap = active.reduce((n, d) => n + d.scrapQuantity, 0);
     return {
       id: order.id,
       number: order.number,
@@ -55,13 +75,14 @@ export class ShopFloorService {
       scrap,
       remaining: order.quantity - good - scrap,
       declarations: order.declarations.map(
-        ({ id, goodQuantity, scrapQuantity, note, evidence, createdAt }) => ({
+        ({ id, goodQuantity, scrapQuantity, note, evidence, createdAt, reversal }) => ({
           id,
           goodQuantity,
           scrapQuantity,
           note,
           evidence,
           createdAt,
+          reversal,
         }),
       ),
     };
@@ -88,7 +109,7 @@ export class ShopFloorService {
         }
         const order = await tx.manufacturingOrder.findFirstOrThrow({
           where: { tenantId, id: orderId },
-          include: { declarations: { where: { tenantId } }, location: true },
+          include: { declarations: { where: { tenantId, reversal: null } }, location: true },
         });
         if (order.updatedAt.getTime() !== new Date(dto.expectedUpdatedAt).getTime())
           throw new ConflictException('OF modifié. Rechargez avant de déclarer.');
@@ -143,6 +164,26 @@ export class ShopFloorService {
           throw new ConflictException(
             'Tous les emplacements doivent être actifs et appartenir au site de l’OF.',
           );
+        if (!dto.goodQuantity && dto.outputLotId)
+          throw new BadRequestException(
+            'Aucun lot produit sans quantité bonne. Le rebut ne crée pas de stock.',
+          );
+        const outputLot =
+          dto.goodQuantity > 0
+            ? captureLot(await assertLot(tx, tenantId, snapshot.product.itemId, dto.outputLotId))
+            : null;
+        const inputLots: ReturnType<typeof captureLot>[] = [];
+        for (const line of dto.consumptions) {
+          if (new Prisma.Decimal(line.quantity).isZero()) {
+            if (line.lotId)
+              throw new BadRequestException('Une consommation nulle ne porte pas de lot.');
+            inputLots.push(null);
+          } else inputLots.push(captureLot(await assertLot(tx, tenantId, line.itemId, line.lotId)));
+        }
+        const bins = await tx.bin.findMany({
+          where: { tenantId, id: { in: binIds } },
+          select: { id: true, code: true },
+        });
         const declaration = await tx.manufacturingDeclaration.create({
           data: {
             tenantId,
@@ -163,9 +204,13 @@ export class ShopFloorService {
           type: string;
           binId: string;
           unit: string;
+          sku: string;
+          name: string;
+          binCode: string;
+          lot: ReturnType<typeof captureLot>;
         }[] = [];
         // Actual consumption is explicit, never inferred/backflushed from theoretical BOM quantities.
-        for (const line of dto.consumptions) {
+        for (const [index, line] of dto.consumptions.entries()) {
           const qty = new Prisma.Decimal(line.quantity);
           if (qty.isZero()) continue;
           const movement = await this.inventory.postMovement(tx, {
@@ -173,6 +218,7 @@ export class ShopFloorService {
             userId,
             type: StockMovementType.CONSUMPTION,
             itemId: line.itemId,
+            lotId: line.lotId,
             fromBinId: line.fromBinId,
             qty: qty.toNumber(),
             locationId: order.locationId!,
@@ -187,6 +233,10 @@ export class ShopFloorService {
             quantity: qty.toFixed(),
             binId: line.fromBinId,
             unit: items.find((i) => i.id === line.itemId)!.unit,
+            sku: items.find((i) => i.id === line.itemId)!.sku,
+            name: items.find((i) => i.id === line.itemId)!.name,
+            binCode: bins.find((b) => b.id === line.fromBinId)!.code,
+            lot: inputLots[index],
           });
         }
         if (dto.goodQuantity > 0) {
@@ -195,6 +245,7 @@ export class ShopFloorService {
             userId,
             type: StockMovementType.PRODUCTION,
             itemId: snapshot.product.itemId,
+            lotId: dto.outputLotId,
             toBinId: dto.toBinId,
             qty: dto.goodQuantity,
             locationId: order.locationId!,
@@ -209,19 +260,24 @@ export class ShopFloorService {
             quantity: String(dto.goodQuantity),
             binId: dto.toBinId,
             unit: snapshot.product.unit,
+            sku: snapshot.product.sku,
+            name: snapshot.product.name,
+            binCode: bins.find((b) => b.id === dto.toBinId)!.code,
+            lot: outputLot,
           });
         }
         await tx.manufacturingDeclaration.update({
           where: { tenantId, id: declaration.id },
           data: {
             evidence: {
-              version: 1,
+              version: 2,
               revisionId: snapshot.revisionId,
               locationId: snapshot.locationId,
               product: snapshot.product,
-              consumptions: dto.consumptions.map((c) => ({
+              consumptions: dto.consumptions.map((c, i) => ({
                 ...c,
                 unit: items.find((i) => i.id === c.itemId)!.unit,
+                lot: inputLots[i],
               })),
               movements,
             },

@@ -85,6 +85,8 @@ async function setup(page: Page, start = '/wms/putaway?site=site-a') {
     const url = new URL(r.request().url()),
       path = url.pathname.replace('/api/v1/wms/', '');
     requests.push(url);
+    if (r.request().method() === 'GET' && /^items\/(ea|kg)$/.test(path))
+      return r.fulfill({ json: { id: path.split('/')[1], lotTracked: false } });
     if (r.request().method() !== 'GET') {
       writes.push(r.request().postDataJSON());
       return r.fulfill({ status: 500, json: { message: 'Écriture inattendue' } });

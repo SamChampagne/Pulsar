@@ -32,7 +32,10 @@ export class InventoryController {
     const services =
       user.permissions.includes(PERMISSIONS.SERVICES.READ) &&
       (await this.modules.getEnabledKeys(user.tenantId)).has(MODULE_KEYS.SERVICES);
-    return this.history.list(user.tenantId, query, services);
+    const manufacturing =
+      user.permissions.includes(PERMISSIONS.MANUFACTURING.READ) &&
+      (await this.modules.getEnabledKeys(user.tenantId)).has(MODULE_KEYS.MANUFACTURING);
+    return this.history.list(user.tenantId, query, services, manufacturing);
   }
 
   @Get()

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -7,7 +8,7 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { createHash } from 'node:crypto';
 import { Prisma } from '@pulsar/database';
-import { AuditAction } from '@pulsar/shared';
+import { AuditAction, packageQuantity, type CatalogPackageSnapshot } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { SequencesService } from '../../prisma/sequences.service';
@@ -15,6 +16,7 @@ import { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.ser
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { ReceivingService } from '../wms/receiving/receiving.service';
 import { assertWmsLine } from '../wms/document-operations';
+import { assertLot } from '../wms/lots/lots.service';
 import { lockBusinessTenant, nextBusinessVersion } from './business-lock';
 import { BusinessQueryDto, CreateSupplierReceiptDto } from './business.dto';
 import { paginationArgs, paginated } from '../../common/pagination';
@@ -74,7 +76,11 @@ export class SupplierReceiptsService {
             select: {
               orderLineId: true,
               unitSnapshot: true,
-              receiptLine: { select: { qty: true } },
+              packageCount: true,
+              receiptLine: {
+                select: { qty: true, lot: { select: { code: true, expiresOn: true } } },
+              },
+              // Lot identity belongs to the posted line; it is never inferred from packaging.
             },
           },
         },
@@ -93,7 +99,15 @@ export class SupplierReceiptsService {
           dto.expectedUpdatedAt,
           dto.locationId,
           dto.reference,
-          dto.lines.map((l) => [l.orderLineId, l.binId, new Prisma.Decimal(l.quantity).toString()]),
+          dto.lines.map((l) => [
+            l.orderLineId,
+            l.binId,
+            new Prisma.Decimal(l.quantity).toString(),
+            ...(l.lotId ? [{ lotId: l.lotId }] : []),
+            ...(l.packageCount !== undefined
+              ? [{ packageCount: new Prisma.Decimal(l.packageCount).toString() }]
+              : []),
+          ]),
           ...(dto.customData
             ? [
                 Object.keys(dto.customData)
@@ -136,10 +150,34 @@ export class SupplierReceiptsService {
           toBinId: string;
           qty: number;
           unit: string;
+          packageCount?: string;
+          lotId?: string;
         }[] = [];
         for (const input of dto.lines) {
           const line = order.lines.find((l) => l.id === input.orderLineId);
           if (!line) throw new NotFoundException('Ligne absente de cette commande.');
+          if (input.packageCount !== undefined) {
+            const pack = line.packageSnapshot as unknown as CatalogPackageSnapshot | null;
+            if (!pack || pack.baseUnit !== line.unitSnapshot)
+              throw new BadRequestException(
+                'Aucun conditionnement compatible capturé sur cette ligne.',
+              );
+            let baseQuantity: string;
+            try {
+              baseQuantity = packageQuantity(
+                input.packageCount,
+                pack.unitsPerPackage,
+                pack.wholeOnly,
+                3,
+              );
+            } catch (e) {
+              throw new BadRequestException((e as Error).message);
+            }
+            if (!new Prisma.Decimal(baseQuantity).eq(input.quantity))
+              throw new BadRequestException(
+                'La quantité de stock ne correspond pas aux conditionnements reçus.',
+              );
+          }
           const link = await tx.catalogStockLink.findFirst({
             where: { tenantId, catalogItemId: line.catalogItemId },
             include: { wmsItem: true, catalogItem: true },
@@ -172,12 +210,15 @@ export class SupplierReceiptsService {
             input.binId,
             input.quantity,
           );
+          await assertLot(tx, tenantId, link.wmsItemId, input.lotId);
           resolved.push({
             orderLineId: line.id,
             itemId: link.wmsItemId,
             toBinId: input.binId,
             qty: input.quantity,
             unit: line.unitSnapshot,
+            lotId: input.lotId,
+            ...(input.packageCount !== undefined ? { packageCount: input.packageCount } : {}),
           });
         }
         // Numbering may leave a gap after rollback; stock, documents and allocations stay atomic.
@@ -213,6 +254,7 @@ export class SupplierReceiptsService {
               itemId: line.itemId,
               toBinId: line.toBinId,
               qty: line.qty,
+              lotId: line.lotId,
             },
           });
           await tx.supplierReceiptLine.create({
@@ -222,6 +264,7 @@ export class SupplierReceiptsService {
               orderLineId: line.orderLineId,
               receiptLineId: rl.id,
               unitSnapshot: line.unit,
+              ...(line.packageCount !== undefined ? { packageCount: line.packageCount } : {}),
             },
           });
         }

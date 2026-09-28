@@ -1,14 +1,19 @@
 <script lang="ts">
+  import { formatDateTime as fmtUserInstant } from '$lib/format';
+  import { browserTimeZone } from '@pulsar/shared';
   import { beforeNavigate, goto } from '$app/navigation';
   import { tick } from 'svelte';
   import { page } from '$app/state';
   import TimeWorkspace from './TimeWorkspace.svelte';
+  import ServiceAcceptance from './ServiceAcceptance.svelte';
+  import CommunicationButton from '$lib/components/communications/CommunicationButton.svelte';
   import PartsWorkspace from './PartsWorkspace.svelte';
   import AvailabilityCheck from './AvailabilityCheck.svelte';
   import { api, ApiError } from '$lib/api/client';
   import { auth } from '$lib/stores/auth';
   import {
     BUSINESS_STATUS_LABELS,
+    SERVICE_ACCEPTANCE_LABELS,
     HR_AVAILABILITY_LABELS,
     type HrAvailabilityResult,
     type Paginated,
@@ -55,7 +60,7 @@
     report = $state('');
   let confirm = $state(false),
     nextStatus = $state('');
-  let tab = $state<'details' | 'time' | 'parts'>('details'),
+  let tab = $state<'details' | 'time' | 'parts' | 'acceptance'>('details'),
     timeFormOpen = $state(false),
     timeBusy = $state(false);
   const editable = $derived(!editing || ['PLANNED', 'IN_PROGRESS'].includes(editing.status));
@@ -124,7 +129,12 @@
       void api<ServiceJob>(`/services/jobs/${encodeURIComponent(id)}`)
         .then((job) => {
           edit(job);
-          tab = page.url.searchParams.get('section') === 'parts' ? 'parts' : 'time';
+          tab =
+            page.url.searchParams.get('section') === 'acceptance'
+              ? 'acceptance'
+              : page.url.searchParams.get('section') === 'parts'
+                ? 'parts'
+                : 'time';
         })
         .catch((e) => {
           error = e instanceof Error ? e.message : 'Intervention introuvable.';
@@ -292,6 +302,12 @@
           {#if !project}<p class="mt-1 text-xs text-ink-muted">
               {job.project.number} · {job.project.title}
             </p>{/if}
+          {#if job.status === 'COMPLETED' && job.project.acceptanceRequired}<p
+              class="mt-2 text-xs"
+              class:text-warn={job.acceptanceStatus !== 'ACCEPTED'}
+            >
+              {SERVICE_ACCEPTANCE_LABELS[job.acceptanceStatus]}
+            </p>{/if}
         </div>
         <div class="text-sm">
           <p>
@@ -302,12 +318,7 @@
               Compte inactif · réaffectation à prévoir
             </p>{/if}
           <p class="mt-1 text-xs text-ink-muted">
-            {job.scheduledAt
-              ? new Date(job.scheduledAt).toLocaleString('fr-CA', {
-                  dateStyle: 'medium',
-                  timeStyle: 'short',
-                })
-              : 'Horaire à définir'}
+            {job.scheduledAt ? fmtUserInstant(job.scheduledAt) : 'Horaire à définir'}
           </p>
         </div>
         <div class="sm:text-right">
@@ -381,8 +392,40 @@
           tab = 'parts';
         }}>Pièces et stock</Button
       >
+      <Button
+        variant={tab === 'acceptance' ? 'secondary' : 'ghost'}
+        disabled={dirty || saving || timeBusy || timeFormOpen}
+        onclick={() => {
+          tab = 'acceptance';
+        }}>Acceptation</Button
+      >
+      <CommunicationButton
+        access="services/jobs"
+        entityId={editing.id}
+        disabled={dirty || saving || timeBusy || timeFormOpen}
+      />
     </div>{/if}
-  {#if tab === 'parts' && editing}
+  {#if tab === 'acceptance' && editing}
+    {#key editing.id}<ServiceAcceptance
+        jobId={editing.id}
+        bind:busy={timeBusy}
+        bind:formOpen={timeFormOpen}
+        onchanged={async () => {
+          if (editing) editing = await api<ServiceJob>(`/services/jobs/${editing.id}`);
+          await load();
+          onchanged();
+        }}
+      />{/key}
+    <div class="mt-5 flex justify-end">
+      <Button
+        variant="secondary"
+        disabled={timeBusy || timeFormOpen}
+        onclick={() => {
+          open = false;
+        }}>Fermer</Button
+      >
+    </div>
+  {:else if tab === 'parts' && editing}
     {#key editing.id}<PartsWorkspace
         job={editing}
         onjournal={async () => {
@@ -488,7 +531,7 @@
         Le libellé complète l’affectation nominative. Celle-ci n’accorde aucun droit et ne réserve
         pas la disponibilité de la personne.
       </p>
-      <Field label="Date et heure prévues"
+      <Field label={`Date et heure prévues · saisie ${browserTimeZone()}`}
         ><Input
           type="datetime-local"
           bind:value={scheduledAt}
@@ -503,9 +546,7 @@
           <h3 class="mb-2 text-sm font-semibold">Compte rendu</h3>
           <p class="whitespace-pre-wrap text-sm leading-6">{editing.report}</p>
           <p class="mt-2 text-xs text-ink-muted">
-            Terminé le {editing.completedAt
-              ? new Date(editing.completedAt).toLocaleString('fr-CA')
-              : ''}
+            Terminé le {editing.completedAt ? fmtUserInstant(editing.completedAt) : ''}
           </p>
         </section>{/if}
       <div class="flex flex-wrap justify-end gap-2 border-t border-edge pt-4">

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DocumentCoordinatesModule } from '../../core/reference-data/document-coordinates.module';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { CustomFieldsModule } from '../../core/custom-fields/custom-fields.module';
 import { DocumentsModule } from '../../core/documents/documents.module';
@@ -52,6 +53,7 @@ import {
  */
 @Module({
   imports: [
+    DocumentCoordinatesModule,
     AuditLogsModule,
     CustomFieldsModule,
     DocumentsModule,

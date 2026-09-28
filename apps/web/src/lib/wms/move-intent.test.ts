@@ -29,6 +29,13 @@ beforeEach(() => {
   syncMoveIntent();
 });
 describe('durable browser movement intent', () => {
+  it('retains the selected lot unchanged on reload', () => {
+    const saved = rememberMove({ ...request, lotId: 'lot-039' }, 'Lot 039');
+    pendingMove.set(null);
+    syncMoveIntent();
+    expect(get(pendingMove)).toEqual(saved);
+    expect(get(pendingMove)?.request.lotId).toBe('lot-039');
+  });
   it('persists an exact snapshot before exposing the pending operation', () => {
     const input = { ...request };
     const intent = rememberMove(input, '2.125 KG : A → B');

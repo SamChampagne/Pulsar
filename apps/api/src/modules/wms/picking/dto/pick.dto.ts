@@ -11,6 +11,7 @@ export class CreatePickOrderDto {
 }
 
 export class AddPickLineDto extends WmsVersionDto {
+  @IsOptional() @IsString() @MinLength(1) lotId?: string;
   @IsString() @MinLength(1) itemId!: string;
   @IsString() @MinLength(1) fromBinId!: string;
   @Type(() => Number) @IsNumber({ maxDecimalPlaces: 3 }) @IsPositive() qty!: number;

@@ -2,6 +2,50 @@
 
 Phases are scoped to ship a usable increment each time. Detailed tasks live in [TODO.md](./TODO.md).
 
+## Ordre actif — pilote utilisable, 27 septembre 2026
+
+**Priorité IA demandée les 27–28 septembre :** [diagnostic et durcissement A1](docs/plans/ai-runtime-renewal.md).
+Fork Hermes 0.16.0 actif; [0.21.5 testée isolément en A2a](docs/plans/ai-runtime-qualification.md),
+non promue. [A2b / A3a](docs/plans/ai-turn-outcomes.md) ferme l’écart des erreurs fournisseur :
+résultats/annulations explicites jusqu’au chat/worker, timeout et absence de retry
+automatique après un run terminal. Compteurs de processus, pas encore budgets/coûts. Diagnostic
+dans Pulsar, frontière MCP seulement, refus ACP système, secrets/processus mieux
+isolés et changements de fournisseur sûrs. La qualité IA n’est pas déduite des
+tests locaux. Suite IA : version stable qualifiée → adaptateur interchangeable →
+missions comparées avec budget → coûts/worker durable. Les réponses de dossier C3b
+restent à rattacher; aucun envoi ou nouvel outil métier automatique ajouté.
+[A2c.1](docs/plans/ai-linux-qualification.md) qualifie le contrat sous Linux dans
+un conteneur hors ligne et durcit le profil OVH (non-root, lecture seule, restauration).
+Le runner de production et l'isolation par tenant restent A2c.2; le banc ne fournit
+pas d'agents utilisables sur le VPS et ne promeut pas le candidat.
+
+**Priorité utilisateur intercalée — communications :** [Telnyx + courriel guidé](docs/plans/communications-telnyx-email.md).
+Connexion SMS core, simulation/réel gardé, envoi humain confirmé et journal sans retry
+incertain; courriel SMTP/IMAP visuel, texte simple/HTML et aperçus sécurisés. Prochaine
+extension communications livrée : activation SMS/IMAP dans Pulsar sans variable serveur,
+webhooks Telnyx signés, livraison et STOP. [C3a : communications de dossier](docs/plans/dossier-communications.md)
+ajoute les envois client/intervention/opportunité/expédition, les décisions de contact
+avec preuve auditée, modèles opérationnels et historique soumis aux droits de source.
+Restent le rattachement explicite des réponses, la réactivation contrôlée et
+l’harmonisation des anciens parcours avant automatisations. Aucun fournisseur
+réel ni déploiement validé par les tests locaux.
+
+[Cinq priorités approuvées](docs/plans/pilot-next-stage.md) : **P1 version pilote fiable →
+P2 dossiers/UX connectés → P3 parcours Services complet → P4 Finance externe/natif →
+P5 IA qualifiée**. P1a ajoute le précontrôle au cockpit; P1b (CI/version candidate et
+recette VPS) reste ouvert. Le [dossier client 360° P2a](docs/plans/customer-workspace.md)
+est livré localement en lecture seule. [P3a.1, acceptation des travaux](docs/plans/services-work-acceptance.md),
+ajoute une exigence par projet et le contrôle des sources à facturer. La suite P3a
+est la recette complète multi-interventions, retours et correction après facture.
+P2 reste ouvert pour blocages/prochaines actions
+sourcés et création contextuelle.
+Les anciennes phases ci-dessous décrivent l'historique et la vision; elles ne
+certifient pas l'état de déploiement ni une recette client globale.
+Location/POS/restauration/e-commerce restent ultérieurs. La reprise prospective des
+anciens actifs demeure au backlog Finance, sans bloquer un pilote qui n'en dépend pas.
+
+Dernier incrément enterprise local : [I2m.2d.2e.1 — dotations historiques groupées](docs/plans/billing-asset-history-qualification.md). Rapprochement exact des périodes déjà enregistrées par actif, devise explicitement attestée sur preuve, qualification/retrait atomiques; originaux inchangés et aucun plan futur activé. UI Pulsar, registre relié, droits source, documentation et tutoriel intégrés. Les parcours [manuel](docs/plans/billing-historical-qualification.md), [paiements](docs/plans/billing-payment-qualification.md), [paiements partiels](docs/plans/billing-partial-payment-qualification.md), [factures/avoirs](docs/plans/billing-invoice-qualification.md) et [payables ajustés](docs/plans/billing-accepted-carrier-qualification.md) restent disponibles. Suite : reprise prospective des anciens actifs sur preuves, devise fonctionnelle/taux et périodes avant sous-livre fournisseur et lettrage. Aucun backfill, change, connecteur ou clôture implicite; la cible Pulsar/externe reste configurable par entreprise.
+
 ## Phase 0 — Foundation ✅
 
 - Monorepo (pnpm workspaces): `apps/api`, `apps/web`, `packages/shared`, `packages/database`.
@@ -156,7 +200,7 @@ The audit's MVP line is now closed. The three blockers identified in §18 are al
   `modeWarning` when load and order mode differ; `suggestMode` hint (≤30 kg PARCEL / ≤4000 kg
   LTL / above FTL) — thresholds are constants, not parameterized (assumed gap vs audit §4).
 - ✅ **8.3 — Delay detection engine**: `isLate` pure function (deadline = `plannedArrivalLate ??
-  plannedArrivalEarly`); `DelayDetectionService` cron every 5 minutes + clock-injectable `tick()`
+plannedArrivalEarly`); `DelayDetectionService` cron every 5 minutes + clock-injectable `tick()`
   for testing; dedup on `(stopId, deadline)` — a replanned deadline re-alerts; `DELAYED`
   `TrackingEvent` + tenant-wide `Notification` (userId nullable, read-by-one = read-for-all v1)
   per late stop; bell UI.
@@ -179,9 +223,10 @@ Adopted 2026-06-14. Full strategic breakdown:
 
 **North star:** modular logistics OS where governed Hermes agents run 24/7 as digital employees.
 Arc = agents first (deepen on the 3 current modules), then modules woven in — each new module
-ships *with* its agent.
+ships _with_ its agent.
 
 **Act I — 24/7 operating substrate**
+
 - ✅ **12 — Operating Workbench** (shipped): `DomainEvent` outbox + policies événement→tâche
   (`@pulsar/shared/operating`, pures) ; `OperationalTask` idempotente `(tenantId, dedupKey)` +
   inbox `/workbench` ; `WorkbenchAgentRunner` headless best-effort (Hermes absent ⇒ skip, jamais
@@ -197,7 +242,7 @@ ships *with* its agent.
   `@pulsar/shared` pur, **point de décision unique** dans `ProposedActionsService`) ; policy-as-data
   (`caps.policies` + preset dérivé du dial `autonomyLevel`, rétro-compatible avec `caps.autoApprove`) ;
   auto-exécution **persistée dans le registre des propositions** (`ProposedAction EXECUTED
-  autoApproved=true` — trou du cap débit fermé sur le chemin auto) ; circuit breaker réversible
+autoApproved=true` — trou du cap débit fermé sur le chemin auto) ; circuit breaker réversible
   (`Agent.breakerTrippedAt` rétrograde en PROPOSE, ne touche jamais `autonomyLevel`, jamais
   d'escalade) ; score de confiance + promotion d'autonomie **confirmée par un humain** ; 23ᵉ
   migration ; règle 29.
@@ -210,6 +255,7 @@ ships *with* its agent.
 - **15-C — Playbooks** (à venir, slice séparée).
 
 **Act II — Flagship agents (depth, ROI)**
+
 - ✅ **16 — Freight Audit autonome** (shipped): `IncomingCarrierInvoice` découplé + matching
   déterministe (`FreightAuditService`) de chaque ligne contre `Load.estimatedCost` **figé**
   (règle 16, jamais recalculé) via `evaluateReconciliation` + tolérances buy-side ; transitions
@@ -221,6 +267,7 @@ ships *with* its agent.
   diff, `PlanProposal`/`PlanCommit`.
 
 **Act III — Module expansion (woven, re-orderable)** — each module ships with its agent
+
 - **18 — Integrations/Connectivity** (canonical inbound message: email/PDF/EDI) + integration agents.
 - **19 — Yard / Dock scheduling** + Dock Scheduler agent (carries minimal configurability enabler).
 - **20 — Fleet** + maintenance/compliance agent.
@@ -233,7 +280,7 @@ A track parallel to the Agent OS phases above. **Product pivot (2026-06-15):** P
 no longer "more features" but **tool experience** — the app read like an admin SaaS
 (navbar → page → Card → Table → Form → Modal) instead of real operational workstations. This track
 delivers the dense, in-context, single-screen surfaces that make Pulsar feel like a deep
-operational tool, not a CRUD console. Agents are the *augmentation*, not the substance — they
+operational tool, not a CRUD console. Agents are the _augmentation_, not the substance — they
 arrive as a panel inside these surfaces (workbench v2). Design:
 [docs/superpowers/specs/2026-06-15-dispatch-workbench-design.md](./docs/superpowers/specs/2026-06-15-dispatch-workbench-design.md).
 

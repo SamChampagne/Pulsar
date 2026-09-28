@@ -136,6 +136,10 @@ async function setup(
     }
     if (path === '/manufacturing/orders/of') return route.fulfill({ json: order });
     if (path === '/manufacturing/shop-floor/orders/of') return route.fulfill({ json: floor });
+    if (path === '/wms/items/fg' || path === '/wms/items/raw')
+      return route.fulfill({
+        json: { lotTracked: false, unit: path.endsWith('/fg') ? 'EA' : 'KG' },
+      });
     if (path.endsWith('/bins'))
       return route.fulfill({ json: { items: [{ id: 'bin', code: 'ATELIER-A' }], total: 1 } });
     if (path === '/wms/sites')

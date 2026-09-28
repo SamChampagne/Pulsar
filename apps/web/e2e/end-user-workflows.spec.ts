@@ -177,9 +177,9 @@ test('fuel help explains the business chain and offers a replayable module guide
   await expect(help).toContainText('Tarif → table de carburant → coût estimé');
   await help.getByRole('button', { name: 'Relancer le guide du module' }).click();
   const tour = page.getByTestId('module-tour');
-  await expect(tour).toContainText('Étape 1 sur 5');
+  await expect(tour).toContainText('Étape 1 sur 6');
   await tour.getByRole('button', { name: 'Suivant', exact: true }).click();
-  await expect(tour).toContainText('Étape 2 sur 5');
+  await expect(tour).toContainText('Étape 2 sur 6');
 });
 
 test('appearance legacy link redirects to the single personalization screen', async ({ page }) => {

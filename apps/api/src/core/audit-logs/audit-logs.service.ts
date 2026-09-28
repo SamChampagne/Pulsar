@@ -19,10 +19,10 @@ export interface AuditEntry {
 export class AuditLogsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Fire-and-forget write — audit must never break the business operation. */
-  async log(entry: AuditEntry): Promise<void> {
+  /** Best-effort by default; an explicit transaction opts into atomic audit/rollback. */
+  async log(entry: AuditEntry, transaction?: Prisma.TransactionClient): Promise<void> {
     try {
-      await this.prisma.auditLog.create({
+      await (transaction ?? this.prisma).auditLog.create({
         data: {
           tenantId: entry.tenantId,
           userId: entry.userId,
@@ -34,6 +34,8 @@ export class AuditLogsService {
         },
       });
     } catch (err) {
+      // Financial writers opt into atomic audit: a failed audit must roll back their transaction.
+      if (transaction) throw err;
       console.error('Audit log write failed', err);
     }
   }

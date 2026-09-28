@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   AuditAction,
   DOMAIN_EVENT_TYPES,
@@ -33,6 +38,8 @@ import {
 } from './dto/transport-order.dto';
 import { toDate, assertWindowCoherence, resolveSplitWindows } from '../planning/window-validation';
 import { shipmentWindowWarnings } from '../planning/window-warnings';
+import { DocumentCoordinatesService } from '../../../core/reference-data/document-coordinates.service';
+import { lockBusinessTenant, nextBusinessVersion } from '../../business/business-lock';
 
 const orderInclude = {
   customer: { select: { id: true, code: true, name: true } },
@@ -64,6 +71,7 @@ export class TransportOrdersService {
     private readonly moduleSettings: ModuleSettingsService,
     private readonly customFields: CustomFieldsService,
     private readonly modules: TenantModulesCacheService,
+    private readonly coordinates: DocumentCoordinatesService,
   ) {}
 
   private async assertReferences(tenantId: string, dto: UpdateTransportOrderDto) {
@@ -361,56 +369,90 @@ export class TransportOrdersService {
     };
   }
 
-  async update(tenantId: string, id: string, dto: UpdateTransportOrderDto) {
-    const order = await this.get(tenantId, id);
-    if (order.status !== TransportOrderStatus.DRAFT) {
-      throw new BadRequestException('Only DRAFT orders can be edited');
-    }
-    await this.assertReferences(tenantId, dto);
-    const pickupEarly =
-      dto.requestedPickupEarly !== undefined
-        ? toDate(dto.requestedPickupEarly)
-        : order.requestedPickupEarly;
-    const pickupLate =
-      dto.requestedPickupLate !== undefined
-        ? toDate(dto.requestedPickupLate)
-        : order.requestedPickupLate;
-    const deliveryEarly =
-      dto.requestedDeliveryEarly !== undefined
-        ? toDate(dto.requestedDeliveryEarly)
-        : order.requestedDeliveryEarly;
-    const deliveryLate =
-      dto.requestedDeliveryLate !== undefined
-        ? toDate(dto.requestedDeliveryLate)
-        : order.requestedDeliveryLate;
-    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
-    if (tms['windowCoherence'] !== 'LENIENT') {
-      assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
-    }
-    const customData = await this.customFields.validateValues(
-      'transportation',
-      tenantId,
-      CustomFieldEntity.TRANSPORT_ORDER,
-      dto.customData,
-      { partial: true },
-    );
-    const { customData: _cd, ...dtoWithout } = dto;
-    return this.prisma.transportOrder.update({
-      where: { id },
-      data: {
-        ...dtoWithout,
-        requestedPickupEarly: pickupEarly,
-        requestedPickupLate: pickupLate,
-        requestedDeliveryEarly: deliveryEarly,
-        requestedDeliveryLate: deliveryLate,
-        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
-      },
-      include: orderInclude,
+  async update(tenantId: string, id: string, dto: UpdateTransportOrderDto, userId?: string) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      await lockBusinessTenant(tx, tenantId);
+      const order = await tx.transportOrder.findFirst({ where: { tenantId, id } });
+      if (!order) throw new NotFoundException('Transport order not found');
+      if (order.status !== TransportOrderStatus.DRAFT) {
+        throw new BadRequestException('Only DRAFT orders can be edited');
+      }
+      if (order.documentCoordinates && !dto.expectedUpdatedAt)
+        throw new ConflictException(
+          'Rechargez la commande et transmettez sa version avant de la modifier.',
+        );
+      if (dto.customerId && dto.customerId !== order.customerId && order.documentCoordinates)
+        throw new ConflictException(
+          'Retirez les coordonnées du brouillon avant de changer de client.',
+        );
+      const updatedAt = nextBusinessVersion(
+        order,
+        dto.expectedUpdatedAt ?? order.updatedAt.toISOString(),
+      );
+      await this.assertReferences(tenantId, dto);
+      const pickupEarly =
+        dto.requestedPickupEarly !== undefined
+          ? toDate(dto.requestedPickupEarly)
+          : order.requestedPickupEarly;
+      const pickupLate =
+        dto.requestedPickupLate !== undefined
+          ? toDate(dto.requestedPickupLate)
+          : order.requestedPickupLate;
+      const deliveryEarly =
+        dto.requestedDeliveryEarly !== undefined
+          ? toDate(dto.requestedDeliveryEarly)
+          : order.requestedDeliveryEarly;
+      const deliveryLate =
+        dto.requestedDeliveryLate !== undefined
+          ? toDate(dto.requestedDeliveryLate)
+          : order.requestedDeliveryLate;
+      const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+      if (tms['windowCoherence'] !== 'LENIENT') {
+        assertWindowCoherence({ pickupEarly, pickupLate, deliveryEarly, deliveryLate });
+      }
+      const customData = await this.customFields.validateValues(
+        'transportation',
+        tenantId,
+        CustomFieldEntity.TRANSPORT_ORDER,
+        dto.customData,
+        { partial: true },
+      );
+      const { customData: _cd, expectedUpdatedAt: _version, ...dtoWithout } = dto;
+      const written = await tx.transportOrder.updateMany({
+        where: { tenantId, id, status: TransportOrderStatus.DRAFT, updatedAt: order.updatedAt },
+        data: {
+          ...dtoWithout,
+          updatedAt,
+          requestedPickupEarly: pickupEarly,
+          requestedPickupLate: pickupLate,
+          requestedDeliveryEarly: deliveryEarly,
+          requestedDeliveryLate: deliveryLate,
+          ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
+        },
+      });
+      if (written.count !== 1) throw new ConflictException('La commande a changé. Rechargez-la.');
+      return {
+        before: order,
+        after: await tx.transportOrder.findFirstOrThrow({
+          where: { tenantId, id },
+          include: orderInclude,
+        }),
+      };
     });
+    await this.audit.log({
+      tenantId,
+      userId,
+      entityType: 'transport-order',
+      entityId: id,
+      action: AuditAction.UPDATE,
+      before: result.before,
+      after: result.after,
+    });
+    return result.after;
   }
 
-  confirm(tenantId: string, userId: string, id: string) {
-    return this.transition(tenantId, userId, id, TransportOrderStatus.CONFIRMED);
+  confirm(tenantId: string, userId: string, id: string, expectedUpdatedAt?: string) {
+    return this.transition(tenantId, userId, id, TransportOrderStatus.CONFIRMED, expectedUpdatedAt);
   }
 
   cancel(tenantId: string, userId: string, id: string) {
@@ -504,23 +546,104 @@ export class TransportOrdersService {
    * shipment is created per entry (order splitting).
    */
   async plan(tenantId: string, userId: string, id: string, dto?: PlanTransportOrderDto) {
-    const order = await this.get(tenantId, id);
-    if (order.status !== TransportOrderStatus.CONFIRMED) {
-      throw new BadRequestException('Only CONFIRMED orders can be planned');
-    }
+    const { planned, shipmentCount } = await this.prisma.$transaction(async (tx) => {
+      await lockBusinessTenant(tx, tenantId);
+      const order = await tx.transportOrder.findFirst({ where: { tenantId, id } });
+      if (!order) throw new NotFoundException('Transport order not found');
+      if (
+        order.status !== TransportOrderStatus.CONFIRMED ||
+        !canTransitionTransportOrder(
+          order.status as TransportOrderStatus,
+          TransportOrderStatus.PLANNED,
+        )
+      ) {
+        throw new BadRequestException('Only CONFIRMED orders can be planned');
+      }
 
-    const splits = dto?.shipments ?? [
-      {
-        weightKg: order.totalWeightKg ?? undefined,
-        volumeM3: order.totalVolumeM3 ?? undefined,
-        palletCount: order.palletCount ?? undefined,
-      },
-    ];
+      const splits = dto?.shipments ?? [
+        {
+          weightKg: order.totalWeightKg ?? undefined,
+          volumeM3: order.totalVolumeM3 ?? undefined,
+          palletCount: order.palletCount ?? undefined,
+        },
+      ];
 
-    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
-    const strict = tms['windowCoherence'] !== 'LENIENT';
-    for (const split of splits) {
-      const windows = resolveSplitWindows(order, split, strict);
+      const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+      const strict = tms['windowCoherence'] !== 'LENIENT';
+      for (const split of splits) {
+        const windows = resolveSplitWindows(order, split, strict);
+        const shipmentCustomData = await this.customFields.validateValues(
+          'transportation',
+          tenantId,
+          CustomFieldEntity.SHIPMENT,
+          split.customData,
+          { partial: false },
+        );
+        await tx.shipment.create({
+          data: {
+            tenantId,
+            shipmentNumber: await this.sequences.nextNumber(tenantId, 'shipment', tx),
+            transportOrderId: order.id,
+            status: ShipmentStatus.PENDING,
+            originLocationId: order.originLocationId,
+            destinationLocationId: order.destinationLocationId,
+            weightKg: split.weightKg,
+            volumeM3: split.volumeM3,
+            palletCount: split.palletCount,
+            ...windows,
+            ...(shipmentCustomData !== undefined
+              ? { customData: shipmentCustomData as Prisma.InputJsonValue }
+              : {}),
+          },
+        });
+      }
+      const written = await tx.transportOrder.updateMany({
+        where: { tenantId, id, status: TransportOrderStatus.CONFIRMED, updatedAt: order.updatedAt },
+        data: {
+          status: TransportOrderStatus.PLANNED,
+          updatedAt: nextBusinessVersion(order, order.updatedAt.toISOString()),
+        },
+      });
+      if (written.count !== 1)
+        throw new ConflictException('La commande a changé. Aucune expédition créée.');
+      return {
+        planned: await tx.transportOrder.findFirstOrThrow({
+          where: { tenantId, id },
+          include: orderInclude,
+        }),
+        shipmentCount: splits.length,
+      };
+    });
+    await this.audit.log({
+      tenantId,
+      userId,
+      action: AuditAction.STATUS_CHANGE,
+      entityType: 'transport-order',
+      entityId: id,
+      before: { status: TransportOrderStatus.CONFIRMED },
+      after: { status: TransportOrderStatus.PLANNED, shipmentCount },
+    });
+    // Best-effort: emit after state change succeeds (never blocking — rule 27).
+    await this.domainEvents.emit(
+      tenantId,
+      DOMAIN_EVENT_TYPES.TRANSPORT_ORDER_PLANNED,
+      { type: 'transport-order', id: planned.id },
+      { orderId: planned.id, orderNumber: planned.orderNumber, shipmentCount },
+    );
+    return planned;
+  }
+
+  /** Post-planning re-split: appends one more PENDING shipment to a PLANNED order. */
+  async addShipment(tenantId: string, userId: string, id: string, split: ShipmentSplitDto) {
+    const shipment = await this.prisma.$transaction(async (tx) => {
+      await lockBusinessTenant(tx, tenantId);
+      const order = await tx.transportOrder.findFirst({ where: { tenantId, id } });
+      if (!order) throw new NotFoundException('Transport order not found');
+      if (order.status !== TransportOrderStatus.PLANNED) {
+        throw new BadRequestException('Shipments can only be added to PLANNED orders');
+      }
+      const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
+      const windows = resolveSplitWindows(order, split, tms['windowCoherence'] !== 'LENIENT');
       const shipmentCustomData = await this.customFields.validateValues(
         'transportation',
         tenantId,
@@ -528,10 +651,16 @@ export class TransportOrdersService {
         split.customData,
         { partial: false },
       );
-      await this.prisma.shipment.create({
+      const written = await tx.transportOrder.updateMany({
+        where: { tenantId, id, status: TransportOrderStatus.PLANNED, updatedAt: order.updatedAt },
+        data: { updatedAt: nextBusinessVersion(order, order.updatedAt.toISOString()) },
+      });
+      if (written.count !== 1)
+        throw new ConflictException('La commande a changé. Aucune expédition créée.');
+      return tx.shipment.create({
         data: {
           tenantId,
-          shipmentNumber: await this.sequences.nextNumber(tenantId, 'shipment'),
+          shipmentNumber: await this.sequences.nextNumber(tenantId, 'shipment', tx),
           transportOrderId: order.id,
           status: ShipmentStatus.PENDING,
           originLocationId: order.originLocationId,
@@ -545,49 +674,6 @@ export class TransportOrdersService {
             : {}),
         },
       });
-    }
-    const planned = await this.transition(tenantId, userId, id, TransportOrderStatus.PLANNED);
-    // Best-effort: emit after state change succeeds (never blocking — rule 27).
-    await this.domainEvents.emit(
-      tenantId,
-      DOMAIN_EVENT_TYPES.TRANSPORT_ORDER_PLANNED,
-      { type: 'transport-order', id: order.id },
-      { orderId: order.id, orderNumber: order.orderNumber, shipmentCount: splits.length },
-    );
-    return planned;
-  }
-
-  /** Post-planning re-split: appends one more PENDING shipment to a PLANNED order. */
-  async addShipment(tenantId: string, userId: string, id: string, split: ShipmentSplitDto) {
-    const order = await this.get(tenantId, id);
-    if (order.status !== TransportOrderStatus.PLANNED) {
-      throw new BadRequestException('Shipments can only be added to PLANNED orders');
-    }
-    const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
-    const windows = resolveSplitWindows(order, split, tms['windowCoherence'] !== 'LENIENT');
-    const shipmentCustomData = await this.customFields.validateValues(
-      'transportation',
-      tenantId,
-      CustomFieldEntity.SHIPMENT,
-      split.customData,
-      { partial: false },
-    );
-    const shipment = await this.prisma.shipment.create({
-      data: {
-        tenantId,
-        shipmentNumber: await this.sequences.nextNumber(tenantId, 'shipment'),
-        transportOrderId: order.id,
-        status: ShipmentStatus.PENDING,
-        originLocationId: order.originLocationId,
-        destinationLocationId: order.destinationLocationId,
-        weightKg: split.weightKg,
-        volumeM3: split.volumeM3,
-        palletCount: split.palletCount,
-        ...windows,
-        ...(shipmentCustomData !== undefined
-          ? { customData: shipmentCustomData as Prisma.InputJsonValue }
-          : {}),
-      },
     });
     await this.audit.log({
       tenantId,
@@ -595,21 +681,51 @@ export class TransportOrdersService {
       action: AuditAction.CREATE,
       entityType: 'shipment',
       entityId: shipment.id,
-      after: { shipmentNumber: shipment.shipmentNumber, transportOrderId: order.id },
+      after: { shipmentNumber: shipment.shipmentNumber, transportOrderId: id },
     });
     return shipment;
   }
 
-  async transition(tenantId: string, userId: string, id: string, to: TransportOrderStatus) {
-    const order = await this.get(tenantId, id);
-    const from = order.status as TransportOrderStatus;
-    if (!canTransitionTransportOrder(from, to)) {
-      throw new BadRequestException(`Invalid transition ${from} → ${to}`);
-    }
-    const updated = await this.prisma.transportOrder.update({
-      where: { id },
-      data: { status: to },
-      include: orderInclude,
+  async transition(
+    tenantId: string,
+    userId: string,
+    id: string,
+    to: TransportOrderStatus,
+    expectedUpdatedAt?: string,
+  ) {
+    const { from, updated } = await this.prisma.$transaction(async (tx) => {
+      await lockBusinessTenant(tx, tenantId);
+      const order = await tx.transportOrder.findFirst({ where: { tenantId, id } });
+      if (!order) throw new NotFoundException('Transport order not found');
+      const from = order.status as TransportOrderStatus;
+      if (!canTransitionTransportOrder(from, to)) {
+        throw new BadRequestException(`Invalid transition ${from} → ${to}`);
+      }
+      if (to === TransportOrderStatus.CONFIRMED && order.documentCoordinates && !expectedUpdatedAt)
+        throw new ConflictException('La confirmation exige la version de la commande revue.');
+      const updatedAt = nextBusinessVersion(
+        order,
+        expectedUpdatedAt ?? order.updatedAt.toISOString(),
+      );
+      const documentCoordinates =
+        to === TransportOrderStatus.CONFIRMED
+          ? await this.coordinates.freeze(tx, tenantId, order.documentCoordinates, {
+              kind: 'customer',
+              id: order.customerId,
+            })
+          : undefined;
+      const written = await tx.transportOrder.updateMany({
+        where: { tenantId, id, status: order.status, updatedAt: order.updatedAt },
+        data: { status: to, updatedAt, ...(documentCoordinates ? { documentCoordinates } : {}) },
+      });
+      if (written.count !== 1) throw new ConflictException('La commande a changé. Rechargez-la.');
+      return {
+        from,
+        updated: await tx.transportOrder.findFirstOrThrow({
+          where: { tenantId, id },
+          include: orderInclude,
+        }),
+      };
     });
     await this.audit.log({
       tenantId,

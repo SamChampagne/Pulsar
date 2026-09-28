@@ -10,6 +10,7 @@ import {
 import { createHmac } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../crypto/crypto.service';
+import { WebhookTransportService } from './webhook-transport.service';
 
 interface WebhookConfig {
   /** Outbox spelling. The studio UI writes `endpointUrl`/`webhookSecret` instead —
@@ -34,7 +35,6 @@ export interface WebhookPingResult {
 
 const MAX_ATTEMPTS = 5;
 const BACKOFF_MINUTES = [1, 5, 30, 120, 360];
-const TIMEOUT_MS = 5000;
 
 /**
  * Durable outbound webhooks: emit() persists one delivery row per matching
@@ -53,6 +53,7 @@ export class WebhooksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
+    private readonly transport: WebhookTransportService,
   ) {}
 
   async emit(tenantId: string, event: string, data: Record<string, unknown>): Promise<void> {
@@ -131,7 +132,11 @@ export class WebhooksService {
   @Cron(CronExpression.EVERY_MINUTE)
   async retryDueDeliveries(): Promise<void> {
     const due = await this.prisma.webhookDelivery.findMany({
-      where: { status: 'PENDING', nextAttemptAt: { lte: new Date() } },
+      where: {
+        status: 'PENDING',
+        nextAttemptAt: { lte: new Date() },
+        integration: { status: 'ENABLED' },
+      },
       orderBy: { nextAttemptAt: 'asc' },
       take: 20,
       select: { id: true },
@@ -167,6 +172,8 @@ export class WebhooksService {
       include: { integration: true },
     });
     if (!delivery || delivery.status !== 'PENDING') return;
+    // An operator disabling a connection also pauses its queued retries.
+    if (delivery.integration.status !== 'ENABLED') return;
 
     const config = this.crypto.decryptJson<WebhookConfig>(delivery.integration.config);
     const target = resolveWebhookTarget(config);
@@ -200,12 +207,7 @@ export class WebhooksService {
     );
 
     try {
-      const response = await fetch(target.url, {
-        method: 'POST',
-        headers,
-        body,
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
+      const response = await this.transport.post(target.url, headers, body);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       await this.prisma.webhookDelivery.update({
         where: { id: delivery.id },
@@ -250,12 +252,7 @@ export class WebhooksService {
     );
     const headers = this.signedHeaders(target.secret, contentType, body, 'test', 'ping');
     try {
-      const response = await fetch(target.url, {
-        method: 'POST',
-        headers,
-        body,
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
+      const response = await this.transport.post(target.url, headers, body);
       return {
         ok: response.ok,
         statusCode: response.status,

@@ -7,6 +7,7 @@ import { RequireModule } from '../../../common/decorators/require-module.decorat
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import {
   CreateCycleCountDto,
+  CountActionDto,
   CycleCountListQueryDto,
   RecordCountsDto,
 } from './dto/cycle-count.dto';
@@ -49,13 +50,13 @@ export class CycleCountsController {
 
   @Post(':id/reconcile')
   @RequirePermissions(PERMISSIONS.WMS.MANAGE)
-  reconcile(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.cycleCounts.reconcile(user.tenantId, user.id, id);
+  reconcile(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: CountActionDto) {
+    return this.cycleCounts.reconcile(user.tenantId, user.id, id, dto);
   }
 
   @Post(':id/cancel')
   @RequirePermissions(PERMISSIONS.WMS.MANAGE)
-  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.cycleCounts.cancel(user.tenantId, user.id, id);
+  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: CountActionDto) {
+    return this.cycleCounts.cancel(user.tenantId, user.id, id, dto);
   }
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime as fmtUserInstant } from '$lib/format';
   import { onMount, untrack } from 'svelte';
   import { page as route } from '$app/state';
   import { api } from '$lib/api/client';
@@ -25,6 +26,7 @@
     generation = 0;
   const itemId = $derived(route.url.searchParams.get('itemId') ?? '');
   const binId = $derived(route.url.searchParams.get('binId') ?? '');
+  const lotId = $derived(route.url.searchParams.get('lotId') ?? '');
   const refId = $derived(route.url.searchParams.get('refId') ?? '');
   const refType = $derived(route.url.searchParams.get('refType') ?? '');
   $effect(() => {
@@ -35,6 +37,7 @@
     query;
     type;
     itemId;
+    lotId;
     binId;
     refId;
     refType;
@@ -51,6 +54,7 @@
           search: query,
           type,
           itemId,
+          lotId,
           binId,
           refId,
           refType,
@@ -73,6 +77,7 @@
     query;
     type;
     itemId;
+    lotId;
     binId;
     refId;
     refType;
@@ -93,6 +98,9 @@
     };
   });
   function sourceHref(source: NonNullable<WmsMovementRow['source']>) {
+    if (source.kind === 'stock-exit') return `/wms/stock-exits?id=${source.id}`;
+    if (source.kind === 'manufacturing-order')
+      return `/manufacturing/orders/${encodeURIComponent(source.id)}`;
     if (source.kind === 'service-job')
       return `/services/interventions?jobId=${encodeURIComponent(source.id)}&section=parts`;
     const path =
@@ -124,14 +132,14 @@
     href={`/wms/putaway${siteId ? `?site=${encodeURIComponent(siteId)}` : ''}`}
     class="hover:underline">Rangement</a
   >
-  {#if itemId || binId || refId}<a href="/wms/movements" class="hover:underline"
+  {#if itemId || binId || refId || lotId}<a href="/wms/movements" class="hover:underline"
       >Retirer le filtre du dossier</a
     >{/if}
 </nav>
-{#if itemId || binId || refId}<p
+{#if itemId || binId || refId || lotId}<p
     class="mb-4 rounded-md bg-surface-muted p-3 text-xs text-ink-muted"
   >
-    Journal ciblé{itemId ? ' sur un article' : ''}{binId
+    Journal ciblé{lotId ? ' sur un lot' : ''}{itemId ? ' sur un article' : ''}{binId
       ? ' et un emplacement (entrée ou sortie)'
       : ''}{refId ? ' sur le document ouvert' : ''}. Les filtres suivants s’ajoutent à ce contexte.
   </p>{/if}
@@ -176,12 +184,17 @@
             <div class="flex flex-wrap items-center gap-2">
               <Badge>{WMS_MOVEMENT_LABELS[movement.type] ?? movement.type}</Badge><time
                 class="text-xs text-ink-muted"
-                datetime={movement.createdAt}
-                >{new Date(movement.createdAt).toLocaleString('fr-CA')}</time
+                datetime={movement.createdAt}>{fmtUserInstant(movement.createdAt)}</time
               >
             </div>
             <p class="mt-3 font-mono text-sm font-semibold">{movement.item.sku}</p>
             <p class="mt-1 break-words text-sm text-ink-muted">{movement.item.name}</p>
+            {#if movement.lot}<p class="mt-2 text-xs text-ink-muted">
+                <a class="text-accent underline" href={`/wms/items/${movement.item.id}/lots`}
+                  >Lot {movement.lot.code}</a
+                >
+                · Péremption déclarée : {movement.lot.expiresOn ?? 'non renseignée'}
+              </p>{/if}
           </div>
           <div class="text-right">
             <p class="font-mono text-lg font-semibold">

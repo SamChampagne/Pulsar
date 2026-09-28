@@ -8,10 +8,16 @@ import { OperationalTasksService } from './operational-tasks.service';
 function fakePrisma(task: any) {
   return {
     operationalTask: {
-      findFirst: async ({ where }: any) => (where.tenantId === task.tenantId && where.id === task.id ? task : null),
+      findFirst: async ({ where }: any) =>
+        where.tenantId === task.tenantId && where.id === task.id ? task : null,
       updateMany: async ({ where, data }: any) => {
-        if (where.id === task.id && where.tenantId === task.tenantId && (where.status === undefined || where.status === task.status)) {
-          Object.assign(task, data); return { count: 1 };
+        if (
+          where.id === task.id &&
+          where.tenantId === task.tenantId &&
+          (where.status === undefined || where.status === task.status)
+        ) {
+          Object.assign(task, data);
+          return { count: 1 };
         }
         return { count: 0 };
       },
@@ -55,6 +61,34 @@ describe('OperationalTasksService.resolve', () => {
   });
 });
 
+describe('OperationalTasksService.releaseWorkerClaim', () => {
+  it.each([
+    [OperationalTaskStatus.IN_PROGRESS, 'ten1', OperationalTaskStatus.OPEN, 1],
+    [OperationalTaskStatus.RESOLVED, 'ten1', OperationalTaskStatus.RESOLVED, 0],
+    [OperationalTaskStatus.IN_PROGRESS, 'foreign', OperationalTaskStatus.IN_PROGRESS, 0],
+  ])(
+    'guards status and tenant and audits only a real release (%s, %s)',
+    async (status, tenant, expected, count) => {
+      const task = { id: 't1', tenantId: 'ten1', status };
+      const log = jest.spyOn(audit, 'log');
+      log.mockClear();
+      const svc = await build(task);
+      await svc.releaseWorkerClaim(tenant, 't1', 'service-user');
+      expect(task.status).toBe(expected);
+      expect(log).toHaveBeenCalledTimes(count);
+      if (count)
+        expect(log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            tenantId: 'ten1',
+            userId: 'service-user',
+            after: { status: 'OPEN', reason: 'worker_run_not_completed' },
+          }),
+        );
+      log.mockRestore();
+    },
+  );
+});
+
 describe('OperationalTasksService.assign mutual-exclusion', () => {
   it('HUMAN assignee nulls agentId even when both are provided', async () => {
     let writtenData: any = null;
@@ -62,7 +96,10 @@ describe('OperationalTasksService.assign mutual-exclusion', () => {
     const localPrisma = {
       operationalTask: {
         findFirst: async () => task,
-        updateMany: async ({ data }: any) => { writtenData = data; return { count: 1 }; },
+        updateMany: async ({ data }: any) => {
+          writtenData = data;
+          return { count: 1 };
+        },
       },
     } as unknown as PrismaService;
     const m = await Test.createTestingModule({
@@ -89,7 +126,10 @@ describe('OperationalTasksService.assign mutual-exclusion', () => {
     const localPrisma = {
       operationalTask: {
         findFirst: async () => task,
-        updateMany: async ({ data }: any) => { writtenData = data; return { count: 1 }; },
+        updateMany: async ({ data }: any) => {
+          writtenData = data;
+          return { count: 1 };
+        },
       },
     } as unknown as PrismaService;
     const m = await Test.createTestingModule({

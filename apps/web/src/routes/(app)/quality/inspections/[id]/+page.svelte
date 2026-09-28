@@ -143,7 +143,13 @@
           onclick={save}>Enregistrer les résultats</Button
         ><Button
           variant="secondary"
-          disabled={busy || uncertain || dirty || !evaluation || evaluation.missing > 0}
+          disabled={busy ||
+            uncertain ||
+            dirty ||
+            !evaluation ||
+            evaluation.missing > 0 ||
+            row!.lotContext?.fresh === false ||
+            (row!.source.kind === 'LOT' && !row!.source.available)}
           onclick={() => propose(QualityInspectionStatus.COMPLETED)}>Terminer le contrôle</Button
         >{/if}{/snippet}
   </PageHeader>
@@ -159,7 +165,7 @@
   >{/if}
 {#if loading}<p class="p-6 text-ink-muted">Lecture du contrôle…</p>{:else if row}
   <div class="mb-5 grid gap-4 lg:grid-cols-[1fr_18rem]">
-    <section class="rounded-lg border border-edge bg-surface p-4">
+    <section class="min-w-0 rounded-lg border border-edge bg-surface p-4">
       <h2 class="font-semibold">Consignes et contexte</h2>
       <p class="mt-2 whitespace-pre-wrap text-sm text-ink-muted">
         {row.instructions || 'Aucune consigne complémentaire.'}
@@ -173,6 +179,23 @@
       <p class="mt-3 text-xs text-ink-muted">
         Ce contrôle ne bloque ni ne libère du stock, et ne change pas le statut du dossier source.
       </p>
+      {#if row.lotContext}<div class="mt-3 space-y-2 rounded-lg border border-edge p-3 text-sm">
+          <p class="font-medium break-words">
+            Lot capturé · {row.lotContext.snapshot.sku} / {row.lotContext.snapshot.code}
+          </p>
+          <p class="text-xs text-ink-muted">
+            {row.lotContext.snapshot.name} · {row.lotContext.snapshot.unit} · révision de disposition
+            {row.lotContext.snapshot.dispositionRevision}. Identité et contexte figés à la création.
+          </p>
+          {#if !row.lotContext.fresh}<p class="text-warn">
+              Le lot a changé depuis la préparation de ce contrôle (mouvement ou décision). Ce
+              résultat ne peut plus justifier une nouvelle libération. Si le contrôle est ouvert,
+              annulez-le puis préparez-en un nouveau.
+            </p>{:else}<p class="text-xs text-ink-muted">
+              Contexte inchangé. Un résultat conforme permet de préparer une libération explicite
+              dans WMS, jamais une libération automatique.
+            </p>{/if}
+        </div>{/if}
     </section>
     <section class="rounded-lg border border-edge bg-surface-muted p-4">
       <h2 class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Avancement</h2>

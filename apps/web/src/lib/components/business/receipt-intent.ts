@@ -6,7 +6,13 @@ export interface ReceiptIntent {
     locationId: string;
     reference: string;
     customData?: Record<string, unknown>;
-    lines: { orderLineId: string; binId: string; quantity: number }[];
+    lines: {
+      orderLineId: string;
+      binId: string;
+      quantity: number;
+      packageCount?: string;
+      lotId?: string;
+    }[];
   };
 }
 const key = (scope: string) => `pulsar.purchasing.receipts.v1:${scope}`;
@@ -28,7 +34,14 @@ export function readReceiptIntent(scope: string): ReceiptIntent | null {
     !b.lines.length ||
     b.lines.some(
       (l: ReceiptIntent['body']['lines'][number]) =>
-        !l.orderLineId || !l.binId || !Number.isFinite(l.quantity) || l.quantity <= 0,
+        !l.orderLineId ||
+        !l.binId ||
+        !Number.isFinite(l.quantity) ||
+        l.quantity <= 0 ||
+        (l.lotId !== undefined && (typeof l.lotId !== 'string' || !l.lotId.trim())) ||
+        (l.packageCount !== undefined &&
+          (typeof l.packageCount !== 'string' ||
+            !/^(?:0|[1-9]\d{0,9})(?:\.\d{1,4})?$/.test(l.packageCount))),
     )
   )
     throw new Error(

@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { OmitType, PartialType } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsOptional, IsString } from 'class-validator';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 
 export class CreateSalesOrderDto {
@@ -14,7 +14,13 @@ export class CreateSalesOrderDto {
 
 export class UpdateSalesOrderDto extends PartialType(
   OmitType(CreateSalesOrderDto, ['companyId', 'customerId', 'dealId'] as const),
-) {}
+) {
+  @IsOptional() @IsDateString() expectedUpdatedAt?: string;
+}
+
+export class SalesOrderTransitionDto {
+  @IsOptional() @IsDateString() expectedUpdatedAt?: string;
+}
 
 export class SalesOrderListQueryDto extends ListQueryDto {
   @ApiPropertyOptional() @IsOptional() @IsString() status?: string;

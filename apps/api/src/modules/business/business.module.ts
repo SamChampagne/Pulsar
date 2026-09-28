@@ -1,4 +1,14 @@
 import { Module } from '@nestjs/common';
+import { ServicesAcceptanceController } from './services-acceptance.controller';
+import { ServicesAcceptanceService } from './services-acceptance.service';
+import { CatalogPackagingService } from './catalog-packaging.service';
+import {
+  CatalogPackagingControllers,
+  PurchasePackageScanController,
+} from './catalog-packaging.controllers';
+import { CatalogDetailsService } from './catalog-details.service';
+import { CatalogDetailsControllers, CatalogOfferControllers } from './catalog-details.controllers';
+import { DocumentCoordinatesModule } from '../../core/reference-data/document-coordinates.module';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { BusinessService } from './business.service';
 import { ServicesCommerceService } from './services-commerce.service';
@@ -18,8 +28,11 @@ import {
   PurchasingController,
 } from './business.controllers';
 @Module({
-  imports: [AuditLogsModule],
+  imports: [AuditLogsModule, DocumentCoordinatesModule],
   providers: [
+    ServicesAcceptanceService,
+    CatalogPackagingService,
+    CatalogDetailsService,
     ServicesCommerceService,
     ServicesPlanningService,
     BusinessService,
@@ -31,6 +44,11 @@ import {
     SupportService,
   ],
   controllers: [
+    ServicesAcceptanceController,
+    ...CatalogPackagingControllers,
+    PurchasePackageScanController,
+    ...CatalogDetailsControllers,
+    ...CatalogOfferControllers,
     ServicesCommerceController,
     PartnerLinksController,
     CatalogController,

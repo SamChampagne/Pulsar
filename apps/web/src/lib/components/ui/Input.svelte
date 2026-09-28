@@ -2,8 +2,19 @@
   let {
     value = $bindable('' as string | number | null),
     type = 'text',
+    inputmode = undefined as
+      | 'none'
+      | 'text'
+      | 'decimal'
+      | 'numeric'
+      | 'tel'
+      | 'search'
+      | 'email'
+      | 'url'
+      | undefined,
     placeholder = '',
     disabled = false,
+    readonly = false,
     name = '',
     'aria-label': ariaLabel = undefined as string | undefined,
     required = false,
@@ -20,8 +31,10 @@
 <input
   aria-label={ariaLabel}
   {type}
+  {inputmode}
   {placeholder}
   {disabled}
+  {readonly}
   name={name || undefined}
   {required}
   {pattern}

@@ -12,6 +12,7 @@ export class PreferencesService {
     appearance: unknown;
     releaseNotesSeenAt: Date | null;
     moduleTours: unknown;
+    timeZone: string | null;
   }> {
     const row = await this.prisma.userPreferences.findUnique({ where: { userId } });
     return {
@@ -19,6 +20,7 @@ export class PreferencesService {
       appearance: row?.appearance ?? {},
       releaseNotesSeenAt: row?.releaseNotesSeenAt ?? null,
       moduleTours: row?.moduleTours ?? {},
+      timeZone: row?.timeZone ?? null,
     };
   }
 
@@ -29,14 +31,17 @@ export class PreferencesService {
       appearance?: unknown;
       releaseNotesSeenAt?: Date;
       moduleTour?: ModuleTourDto;
+      timeZone?: string | null;
     },
   ): Promise<{
     deskLayout: unknown;
     appearance: unknown;
     releaseNotesSeenAt: Date | null;
     moduleTours: unknown;
+    timeZone: string | null;
   }> {
     const data: Prisma.UserPreferencesUpdateInput = {};
+    if (patch.timeZone !== undefined) data.timeZone = patch.timeZone;
     if (patch.deskLayout !== undefined) data.deskLayout = patch.deskLayout as Prisma.InputJsonValue;
     if (patch.appearance !== undefined) data.appearance = patch.appearance as Prisma.InputJsonValue;
     if (patch.releaseNotesSeenAt !== undefined) data.releaseNotesSeenAt = patch.releaseNotesSeenAt;
@@ -49,6 +54,7 @@ export class PreferencesService {
         where: { userId },
         create: {
           userId,
+          timeZone: patch.timeZone,
           deskLayout: (patch.deskLayout ?? {}) as Prisma.InputJsonValue,
           appearance: (patch.appearance ?? {}) as Prisma.InputJsonValue,
           releaseNotesSeenAt: patch.releaseNotesSeenAt,
@@ -71,6 +77,7 @@ export class PreferencesService {
         appearance: row.appearance ?? {},
         releaseNotesSeenAt: row.releaseNotesSeenAt ?? null,
         moduleTours: row.moduleTours ?? {},
+        timeZone: row.timeZone ?? null,
       };
     });
   }

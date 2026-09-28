@@ -17,6 +17,10 @@
       lastPollOk: boolean | null;
     } | null;
   } | null>(null);
+  let sms = $state<{
+    liveEnabled: boolean;
+    config: { active: boolean; live: boolean; hasApiKey: boolean } | null;
+  } | null>(null);
   let runtime = $state<{
     configured: boolean;
     provider?: string;
@@ -35,6 +39,15 @@
     ),
   );
   function connectionState(key: string): { text: string; tone: Tone } {
+    if (key === 'telnyx') {
+      if (!sms) return { text: 'État indisponible', tone: 'neutral' };
+      if (!sms.config) return { text: 'À configurer', tone: 'neutral' };
+      if (!sms.config.active) return { text: 'Connexion inactive', tone: 'neutral' };
+      if (!sms.config.live) return { text: 'Simulation — aucun envoi', tone: 'info' };
+      if (!sms.liveEnabled || !sms.config.hasApiKey)
+        return { text: 'Envoi réel bloqué', tone: 'warn' };
+      return { text: 'Réel autorisé · livraison à vérifier', tone: 'warn' };
+    }
     if (key === 'email') {
       if (!email) return { text: 'État indisponible', tone: 'neutral' };
       if (email.outbound === 'log') return { text: 'Simulation — aucun envoi', tone: 'info' };
@@ -61,6 +74,15 @@
     loading = true;
     errors = [];
     const jobs: Promise<unknown>[] = [];
+    if (can(PERMISSIONS.SMS.READ))
+      jobs.push(
+        api<typeof sms>('/sms/connection')
+          .then((r) => (sms = r))
+          .catch((e) => {
+            sms = null;
+            errors.push('SMS : ' + e.message);
+          }),
+      );
     if (can(PERMISSIONS.EMAIL.MANAGE))
       jobs.push(
         api<typeof email>('/email-config/connection')
@@ -159,7 +181,8 @@
                   Utilisation<br /><span class="mt-1 inline-block text-ink">{connector.usage}</span>
                 </p>
                 {#if ready && connector.href}<Button href={connector.href} variant="secondary"
-                    >Configurer {connector.key === 'email'
+                    >{connector.key === 'telnyx' ? 'Ouvrir' : 'Configurer'}
+                    {connector.key === 'email'
                       ? 'le courriel'
                       : connector.key === 'agents'
                         ? 'l’IA'

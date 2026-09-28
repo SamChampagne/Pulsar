@@ -2,7 +2,13 @@ import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type { AuthUser } from '@pulsar/shared';
-import { PERMISSIONS } from '@pulsar/shared';
+import {
+  PERMISSIONS,
+  type AgentTurnResult,
+  failedAgentTurn,
+  parseAgentTurnResult,
+  agentTurnMessage,
+} from '@pulsar/shared';
 import { IsString } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
@@ -73,6 +79,10 @@ export class AgentConversationsController {
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
     let assistantText = '';
+    let assistantSaved = false;
+    let outcome: AgentTurnResult | undefined;
+    let hadError = false;
+    let resultCount = 0;
     try {
       // Ensure a live Hermes session. The in-memory session dies on runtime
       // restart (or was never opened) — transparently resume the persisted
@@ -91,8 +101,7 @@ export class AgentConversationsController {
         }
       }
       if (!sessionId) {
-        send('error', { message: 'Conversation has no live session' });
-        return;
+        throw new Error('Conversation has no live session');
       }
       for await (const ev of this.runtime.sendTurn(sessionId, dto.text)) {
         if (ev.type === 'text') {
@@ -101,15 +110,37 @@ export class AgentConversationsController {
         } else if (ev.type === 'tool_call') {
           send('tool_call', { name: ev.name, args: ev.args });
         } else if (ev.type === 'error') {
-          send('error', { message: ev.message });
-        } else if (ev.type === 'end') {
-          send('end', {});
+          hadError = true;
+        } else if (ev.type === 'result') {
+          outcome = parseAgentTurnResult(ev.result);
+          resultCount++;
         }
       }
-      if (assistantText) await this.conversations.addMessage(conv.id, 'assistant', assistantText);
+      if (!outcome || resultCount !== 1 || (hadError && outcome.status === 'succeeded'))
+        outcome = failedAgentTurn();
+      const content =
+        outcome.status === 'succeeded'
+          ? assistantText
+          : `[Réponse non validée] ${agentTurnMessage(outcome)}${assistantText ? `\n\nRéponse partielle :\n${assistantText}` : ''}`;
+      if (content) await this.conversations.addMessage(conv.id, 'assistant', content);
+      assistantSaved = true;
+      if (outcome.status === 'failed') send('error', { message: agentTurnMessage(outcome) });
+      send('result', { result: outcome });
+      send('end', {});
     } catch (e) {
       console.error('[agent-conversations] turn failed:', e instanceof Error ? e.message : e);
-      send('error', { message: 'Agent runtime error' });
+      const result = failedAgentTurn('RUNTIME_FAILURE');
+      if (!assistantSaved) {
+        const content = `[Réponse non validée] ${agentTurnMessage(result)}${assistantText ? `\n\nRéponse partielle :\n${assistantText}` : ''}`;
+        try {
+          await this.conversations.addMessage(conv.id, 'assistant', content);
+        } catch {
+          /* DB may itself be unavailable */
+        }
+      }
+      send('error', { message: agentTurnMessage(result) });
+      send('result', { result });
+      send('end', {});
     } finally {
       res.end();
     }

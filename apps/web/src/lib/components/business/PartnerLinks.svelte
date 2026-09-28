@@ -3,7 +3,11 @@
   import { auth } from '$lib/stores/auth';
   import { Button, Modal, EntityPicker, ErrorNotice, Skeleton } from '$lib/components/ui';
   import type { Partner } from './types';
-  let { partner, onchanged = () => {} }: { partner: Partner; onchanged?: () => void } = $props();
+  let {
+    partner,
+    onchanged = () => {},
+    context = 'catalog',
+  }: { partner: Partner; onchanged?: () => void; context?: 'catalog' | 'services' } = $props();
   const can = $derived(($auth?.user.permissions ?? []) as string[]);
   const billing = $derived(
     $auth?.tenant.enabledModules.includes('billing') &&
@@ -29,7 +33,7 @@
         updatedAt: string;
         billingCustomerId?: string | null;
         crmCompanyId?: string | null;
-      }>(`/catalog/partners/${partner.id}/links`);
+      }>(`/${context}/partners/${partner.id}/links`);
       version = r.updatedAt;
       customerId = r.billingCustomerId ?? '';
       companyId = r.crmCompanyId ?? '';
@@ -44,7 +48,7 @@
     busy = true;
     error = '';
     try {
-      await api(`/catalog/partners/${partner.id}/${create ? 'billing-customer' : 'links'}`, {
+      await api(`/${context}/partners/${partner.id}/${create ? 'billing-customer' : 'links'}`, {
         method: create ? 'POST' : 'PATCH',
         body: {
           expectedUpdatedAt: version,
@@ -81,27 +85,27 @@
     <div class="space-y-4">
       {#if billing}<EntityPicker
           label="Client Facturation / Transport"
-          endpoint="/catalog/references/billing-customers"
+          endpoint={`/${context}/references/billing-customers`}
           bind:value={customerId}
           selectedLabel={customerId}
-          disabled={busy || uncertain || !can.includes('catalog.manage')}
+          disabled={busy || uncertain || !can.includes(`${context}.manage`)}
         />{/if}
       {#if crm}<EntityPicker
           label="Société CRM"
           endpoint="/crm/companies"
           bind:value={companyId}
           selectedLabel={companyId}
-          disabled={busy || uncertain || !can.includes('catalog.manage')}
+          disabled={busy || uncertain || !can.includes(`${context}.manage`)}
         />{/if}
       <p class="text-xs text-ink-muted">
         Le lien de facturation est figé dès qu’une facture Services utilise ce partenaire. Les
         fiches restent distinctes; aucun contact n’est écrasé.
       </p>
-      {#if can.includes('catalog.manage')}<Button
+      {#if can.includes(`${context}.manage`)}<Button
           disabled={busy || uncertain}
           onclick={() => save()}>Enregistrer les connexions</Button
         >{/if}
-      {#if billing && !customerId && partner.isCustomer && can.includes('catalog.manage') && can.includes('billing.customer-invoices.manage')}<Button
+      {#if billing && !customerId && partner.isCustomer && can.includes(`${context}.manage`) && can.includes('billing.customer-invoices.manage')}<Button
           variant="secondary"
           disabled={busy || uncertain}
           onclick={() => save(true)}>Créer le client de facturation depuis cette fiche</Button

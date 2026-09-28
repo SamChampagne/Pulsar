@@ -6,6 +6,12 @@ import { ROLE_TEMPLATES, VIEWER_EXCLUDED_KEYS, resolveRoleTemplates } from './ro
 const catalogKeys = new Set(PERMISSION_CATALOG.map((p) => p.key));
 
 describe('ROLE_TEMPLATES', () => {
+  it('does not grant Transport permissions as a prerequisite for Fleet or Yard', () => {
+    for (const key of ['fleet-manager', 'yard-operator']) {
+      const template = ROLE_TEMPLATES.find((t) => t.key === key)!;
+      expect(template.permissionKeys.some((p) => p.startsWith('transportation.'))).toBe(false);
+    }
+  });
   it('has unique kebab-case keys', () => {
     const keys = ROLE_TEMPLATES.map((t) => t.key);
     expect(new Set(keys).size).toBe(keys.length);

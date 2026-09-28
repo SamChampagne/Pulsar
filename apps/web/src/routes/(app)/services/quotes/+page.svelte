@@ -1,6 +1,8 @@
 <script lang="ts">
   import { api, ApiError } from '$lib/api/client';
   import { auth } from '$lib/stores/auth';
+  import { page } from '$app/state';
+  import DocumentCoordinates from '$lib/components/reference-data/DocumentCoordinates.svelte';
   import {
     PageHeader,
     Button,
@@ -44,6 +46,7 @@
     error = $state('');
   let open = $state(false),
     busy = $state(false),
+    coordinatesBusy = $state(false),
     selected = $state<Quote | null>(null),
     formError = $state(''),
     uncertain = $state(false);
@@ -115,6 +118,21 @@
       }
     }
   }
+  $effect(() => {
+    const id = page.url.searchParams.get('quoteId');
+    if (!id) return;
+    let stale = false;
+    void api<Quote>(`/services/quotes/${encodeURIComponent(id)}`)
+      .then((q) => {
+        if (!stale) show(q);
+      })
+      .catch((e) => {
+        if (!stale) error = e.message;
+      });
+    return () => {
+      stale = true;
+    };
+  });
   function add() {
     if (!itemId || quantity <= 0 || unitPrice <= 0) return;
     lines = [
@@ -130,7 +148,7 @@
     itemId = '';
   }
   async function save() {
-    if (busy || (uncertain && !intent)) return;
+    if (busy || coordinatesBusy || (uncertain && !intent)) return;
     busy = true;
     formError = '';
     try {
@@ -169,7 +187,7 @@
     }
   }
   async function transition() {
-    if (!selected || busy || uncertain) return;
+    if (!selected || busy || coordinatesBusy || uncertain) return;
     busy = true;
     try {
       const result = await api<Quote>(`/services/quotes/${selected.id}/transition`, {
@@ -208,7 +226,7 @@
 <ErrorNotice message={error} onretry={load} />
 {#if loading}<Skeleton rows={5} />{:else if !rows.length}<EmptyState
     title="Aucun devis"
-    message="Créez d’abord un client et une prestation dans Catalogue, puis chiffrez votre offre ici."
+    message="Choisissez ou ajoutez votre client et une prestation directement dans le devis, puis chiffrez votre offre. Aucun autre module à activer."
   />{:else}<div class="divide-y divide-edge rounded-xl border border-edge bg-surface">
     {#each rows as q}<div class="flex flex-wrap items-center justify-between gap-3 p-4">
         <div>
@@ -236,7 +254,12 @@
     }}>Suivant</Button
   >
 </div>
-<Modal bind:open title={selected?.number ?? 'Nouveau devis'} size="lg" dismissible={!busy}>
+<Modal
+  bind:open
+  title={selected?.number ?? 'Nouveau devis'}
+  size="lg"
+  dismissible={!busy && !coordinatesBusy}
+>
   <ErrorNotice message={formError} />
   {#if uncertain}<p class="my-3 rounded-md bg-warn-soft p-3 text-sm">
       Réponse incertaine. {intent
@@ -253,7 +276,7 @@
         void save();
       }}
     >
-      <fieldset disabled={!manage || busy || uncertain} class="space-y-4">
+      <fieldset disabled={!manage || busy || coordinatesBusy || uncertain} class="space-y-4">
         <Field label="Titre"><Input bind:value={title} required maxlength={200} /></Field>
         <EntityPicker
           label="Client"
@@ -309,13 +332,13 @@
         </p>
         <div class="flex gap-2">
           <Button
-            disabled={busy || uncertain}
+            disabled={busy || coordinatesBusy || uncertain}
             onclick={() => {
               confirm = 'ACCEPTED';
             }}>Accepter le devis enregistré</Button
           ><Button
             variant="ghost"
-            disabled={busy || uncertain}
+            disabled={busy || coordinatesBusy || uncertain}
             onclick={() => {
               confirm = 'CANCELLED';
             }}>Annuler le devis</Button
@@ -341,11 +364,28 @@
           ? 'l’accord et la création du projet'
           : 'l’annulation définitive'} ?
       </p>
-      <Button loading={busy} disabled={uncertain} onclick={transition}>Confirmer</Button><Button
+      <Button loading={busy} disabled={uncertain || coordinatesBusy} onclick={transition}
+        >Confirmer</Button
+      ><Button
         variant="ghost"
         onclick={() => {
           confirm = '';
         }}>Retour</Button
       >
     </div>{/if}
+  {#if selected}
+    {#key selected.id + selected.status}
+      <DocumentCoordinates
+        directoryBase="/services/data/customers"
+        endpoint={`/services/quotes/${selected.id}/coordinates`}
+        documentVersion={selected.updatedAt}
+        bind:busy={coordinatesBusy}
+        canManage={!!manage && !busy && !uncertain}
+        onchanged={async () => {
+          if (selected) selected = await api<Quote>(`/services/quotes/${selected.id}`);
+          await load();
+        }}
+      />
+    {/key}
+  {/if}
 </Modal>

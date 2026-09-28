@@ -6,11 +6,17 @@ import { IntegrationsController } from './integrations.controller';
 import { IntegrationsService } from './integrations.service';
 import { WebhookEventsBackfillService } from './webhook-events-backfill.service';
 import { WebhooksService } from './webhooks.service';
+import { WebhookTransportService } from './webhook-transport.service';
 
 @Module({
   imports: [CryptoModule, AuditLogsModule],
   controllers: [IntegrationsController, InboundHooksAdminController],
-  providers: [IntegrationsService, WebhooksService, WebhookEventsBackfillService],
+  providers: [
+    IntegrationsService,
+    WebhooksService,
+    WebhookEventsBackfillService,
+    WebhookTransportService,
+  ],
   exports: [WebhooksService],
 })
 export class IntegrationsModule {}

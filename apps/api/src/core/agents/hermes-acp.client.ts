@@ -18,6 +18,13 @@
  * and keeps the normalized surface below stable regardless of upstream churn.
  */
 
+import {
+  agentTurnMessage,
+  failedAgentTurn,
+  parseAgentTurnResult,
+  type AgentTurnEvent,
+} from '@pulsar/shared';
+
 const PROTOCOL_VERSION = 1;
 
 const METHODS = {
@@ -54,11 +61,7 @@ export interface AcpModelOption {
   label: string;
 }
 
-export type AcpEvent =
-  | { type: 'text'; text: string }
-  | { type: 'tool_call'; name: string; args: unknown }
-  | { type: 'error'; message: string }
-  | { type: 'end' };
+export type AcpEvent = AgentTurnEvent;
 
 /**
  * Minimal injectable duplex transport. Tests inject a fake; `stdioTransport`
@@ -184,7 +187,7 @@ export class HermesAcpClient {
       this.pumpError = err instanceof Error ? err : new Error(String(err));
     } finally {
       // Transport closed: fail anything still in flight.
-      const closeErr = this.pumpError ?? new Error('ACP transport closed');
+      const closeErr = (this.pumpError ??= new Error('ACP transport closed'));
       for (const { reject } of this.pending.values()) reject(closeErr);
       this.pending.clear();
       for (const q of this.updateQueues.values()) q.close();
@@ -206,7 +209,7 @@ export class HermesAcpClient {
 
     if (isRequest(msg)) {
       // Reverse call from the agent (e.g. session/request_permission).
-      void this.handleReverseRequest(msg);
+      this.handleReverseRequest(msg);
       return;
     }
 
@@ -222,16 +225,22 @@ export class HermesAcpClient {
     }
   }
 
-  private async handleReverseRequest(req: JsonRpcRequest): Promise<void> {
+  private handleReverseRequest(req: JsonRpcRequest): void {
     if (req.method === METHODS.sessionRequestPermission) {
       const params = (req.params ?? {}) as {
         options?: { optionId?: string; kind?: string; name?: string }[];
       };
-      const optionId = pickAllowOption(params.options);
+      // ACP permissions are host/file/terminal privileges, NOT a Pulsar business
+      // approval. The latter is exclusively handled by ProposedActionsService.
+      const optionId = params.options?.find(
+        (o) => o.kind === 'reject_once' && o.optionId,
+      )?.optionId;
       const response: JsonRpcResponse = {
         jsonrpc: '2.0',
         id: req.id,
-        result: { outcome: { outcome: 'selected', optionId } },
+        result: {
+          outcome: optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' },
+        },
       };
       this.transport.send(response);
       return;
@@ -255,25 +264,29 @@ export class HermesAcpClient {
     const promise = new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
     });
-    this.transport.send(req);
+    try {
+      this.transport.send(req);
+    } catch (err) {
+      this.pending.get(id)?.reject(err instanceof Error ? err : new Error(String(err)));
+      this.pending.delete(id);
+    }
     return promise;
   }
 
   // -- protocol methods -----------------------------------------------------
 
   async initialize(): Promise<void> {
-    await this.call(METHODS.initialize, {
+    const result = await this.call<{ protocolVersion?: number }>(METHODS.initialize, {
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
       clientInfo: { name: 'pulsar', version: '1.0.0' },
     });
-    // We ignore agentCapabilities/authMethods: stdio is local-trust, governance
-    // lives in the MCP layer (spike §6/§7).
+    if (result?.protocolVersion !== PROTOCOL_VERSION) {
+      throw new Error('ACP protocol version incompatible with Pulsar');
+    }
   }
 
-  async newSession(
-    cfg: AcpNewSession,
-  ): Promise<{ sessionId: string; models: AcpModelOption[] }> {
+  async newSession(cfg: AcpNewSession): Promise<{ sessionId: string; models: AcpModelOption[] }> {
     const result = (await this.call(METHODS.sessionNew, {
       cwd: cfg.cwd,
       mcpServers: cfg.mcpServers ?? [],
@@ -288,24 +301,29 @@ export class HermesAcpClient {
   }
 
   /**
-   * Re-attach to a previously-created session by id (`session/resume`). Hermes
-   * loads it from its persistent store (replaying history into the agent's
-   * context) or creates a fresh one if the id is unknown — either way returning
-   * the effective sessionId. Used to keep a conversation alive across runtime
-   * restarts (the in-memory live session is gone, but the transcript persists).
+   * Re-attach using strict `session/load`, never Hermes' permissive resume:
+   * resume creates a new session for an unknown id but its ACP response carries
+   * no effective id. Treating that as success loses both identity and persona.
+   * Load instead returns an object for the requested history, or null/error.
    */
-  async resumeSession(
-    cfg: AcpNewSession,
-    sessionId: string,
-  ): Promise<{ sessionId: string }> {
-    const result = (await this.call('session/resume', {
+  async resumeSession(cfg: AcpNewSession, sessionId: string): Promise<{ sessionId: string }> {
+    const result = await this.call('session/load', {
       cwd: cfg.cwd,
       sessionId,
       mcpServers: cfg.mcpServers ?? [],
-    })) as { sessionId?: string };
-    // Per the ACP contract resume echoes the (possibly new) sessionId; fall back
-    // to the requested one if the agent omits it.
-    return { sessionId: typeof result?.sessionId === 'string' ? result.sessionId : sessionId };
+    });
+    if (!result || typeof result !== 'object' || Array.isArray(result)) {
+      throw new Error('ACP session history unavailable; cannot resume this conversation');
+    }
+    return { sessionId };
+  }
+
+  /** ACP cancellation is a notification, not a request awaiting a response.
+   * Best effort only: the owner must still kill the process on a turn timeout.
+   */
+  cancel(sessionId: string): void {
+    if (this.pumpError) throw this.pumpError;
+    this.transport.send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } });
   }
 
   async setModel(sessionId: string, modelId: string): Promise<void> {
@@ -314,13 +332,15 @@ export class HermesAcpClient {
 
   /**
    * Send a user turn and stream the agent's reply. Maps `session/update`
-   * notifications to AcpEvents, auto-allows any `session/request_permission`
-   * reverse call (handled in dispatch), and emits a final `{type:'end'}` when
-   * the `session/prompt` RPC returns. A thrown RPC error / refusal stop reason
-   * is surfaced as `{type:'error'}` followed by `end`.
+   * notifications to AcpEvents, rejects every host `session/request_permission`
+   * reverse call (handled in dispatch), and requires a typed Pulsar outcome
+   * from the wrapper. A normal RPC return alone is NOT success. Every completed
+   * stream emits exactly one result, then end; failures also emit a safe error.
    */
   async *prompt(sessionId: string, text: string): AsyncGenerator<AcpEvent> {
     this.ensurePump();
+    if (this.updateQueues.has(sessionId))
+      throw new Error('A turn is already running in this conversation');
     const queue = new AsyncQueue<object>();
     this.updateQueues.set(sessionId, queue);
 
@@ -329,7 +349,7 @@ export class HermesAcpClient {
       sessionId,
       prompt: [{ type: 'text', text }],
     })
-      .then((res) => res as { stopReason?: string })
+      .then((res) => res as { stopReason?: string; _meta?: { pulsarTurn?: unknown } })
       .catch((err: unknown) => {
         box.error = err instanceof Error ? err : new Error(String(err));
         return undefined;
@@ -347,11 +367,15 @@ export class HermesAcpClient {
 
       const result = await promptPromise;
 
-      if (box.error) {
-        yield { type: 'error', message: box.error.message };
-      } else if (result && result.stopReason === 'refusal') {
-        yield { type: 'error', message: 'Agent refused the turn (refusal)' };
-      }
+      let outcome = box.error
+        ? failedAgentTurn('TRANSPORT_CLOSED')
+        : parseAgentTurnResult(result?._meta?.pulsarTurn);
+      if (!box.error && result?.stopReason === 'cancelled')
+        outcome = { ...outcome, status: 'cancelled', code: 'CANCELLED' };
+      else if (!box.error && result?.stopReason !== 'end_turn' && outcome.status === 'succeeded')
+        outcome = failedAgentTurn('INCOMPLETE');
+      if (outcome.status === 'failed') yield { type: 'error', message: agentTurnMessage(outcome) };
+      yield { type: 'result', result: outcome };
       yield { type: 'end' };
     } finally {
       this.updateQueues.delete(sessionId);
@@ -389,36 +413,14 @@ export class AcpRpcError extends Error {
 }
 
 /**
- * Pick the option id to auto-allow from a request_permission `options` array.
- * Prefer an explicit "allow_once", then any id/kind containing "allow", else
- * fall back to the literal "allow_once" (spike §6: governance is in MCP).
- */
-function pickAllowOption(
-  options?: { optionId?: string; kind?: string; name?: string }[],
-): string {
-  if (options && options.length) {
-    const exact = options.find((o) => o.optionId === 'allow_once');
-    if (exact?.optionId) return exact.optionId;
-    const allowish = options.find(
-      (o) =>
-        /allow/i.test(o.optionId ?? '') ||
-        /allow/i.test(o.kind ?? '') ||
-        /allow/i.test(o.name ?? ''),
-    );
-    if (allowish?.optionId) return allowish.optionId;
-    // No allow-shaped option offered; take the first option id as a last resort.
-    if (options[0]?.optionId) return options[0].optionId!;
-  }
-  return 'allow_once';
-}
-
-/**
  * Normalize `session/new`'s `models.availableModels` into clean {value,label}
  * options. Drops the synthetic "current" entry Hermes re-qualifies with a doubled
  * provider prefix (its `name` itself contains a ":"), and dedupes by value so the
  * UI never offers a model id that would 404.
  */
-function normalizeModels(raw: { modelId?: unknown; name?: unknown }[] | undefined): AcpModelOption[] {
+function normalizeModels(
+  raw: { modelId?: unknown; name?: unknown }[] | undefined,
+): AcpModelOption[] {
   if (!Array.isArray(raw)) return [];
   const out: AcpModelOption[] = [];
   const seen = new Set<string>();

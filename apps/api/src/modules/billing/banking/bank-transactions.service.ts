@@ -138,15 +138,24 @@ export class BankTransactionsService {
       const journal = await tx.journalEntry.findMany({
         where: { tenantId, sourceType: 'payment', sourceId: paymentId, sourceKind: null },
         include: {
+          currencyQualification: { select: { state: true, currency: true, sourceEntryId: true } },
           lines: { where: { tenantId, account: { tenantId, code: account.glAccountCode } } },
         },
       });
       const posted = journal
         .flatMap((j) => j.lines)
         .reduce((sum, line) => sum.plus(line.debit).minus(line.credit), new Prisma.Decimal(0));
-      if (journal.length !== 1 || !posted.equals(txn.amount))
+      if (
+        journal.length !== 1 ||
+        (journal[0].currency ??
+          (journal[0].currencyQualification?.state === 'QUALIFIED' &&
+          journal[0].currencyQualification.sourceEntryId === journal[0].id
+            ? journal[0].currencyQualification.currency
+            : null)) !== account.currency ||
+        !posted.equals(txn.amount)
+      )
         throw new BadRequestException(
-          'L’écriture bancaire du paiement est absente ou ne correspond pas au mouvement.',
+          'L’écriture bancaire du paiement est absente ou son montant/devise ne correspond pas au mouvement. Une devise historique inconnue exige une revue.',
         );
       const txnClaim = await tx.bankTransaction.updateMany({
         where: { id: txnId, tenantId, status: BankTxnStatus.UNRECONCILED, matchedPaymentId: null },

@@ -1,6 +1,7 @@
 import { test, expect, type Page, type APIRequestContext } from './fixtures';
 import { login, DEMO_USER, tutorialAccount } from './helpers';
 import { TOUR_MODULE_KEYS } from '@pulsar/shared';
+import { MODULE_LESSONS } from '../src/lib/help/module-lessons';
 import { randomUUID } from 'node:crypto';
 let token: string, partner: any, item: any, currentUser: any;
 let pageErrors: string[] = [];
@@ -240,14 +241,23 @@ for (const [key, path, label] of [
     });
     await page.goto(path);
     const tour = page.getByTestId('module-tour');
-    await expect(tour).toContainText('Bienvenue dans ' + (key === 'support' ? 'le SAV' : label));
-    for (let step = 0; step < (['purchasing', 'services'].includes(key) ? 5 : 4); step++) {
-      await tour.getByRole('button', { name: 'Suivant', exact: true }).click();
-      if (key === 'services' && step === 2) {
+    const lessons = MODULE_LESSONS[key];
+    const count = lessons?.length ?? 5;
+    await expect(tour).toContainText(
+      key === 'catalog'
+        ? 'Distinguer produit et prestation'
+        : 'Bienvenue dans ' + (key === 'support' ? 'le SAV' : label),
+    );
+    for (let step = 0; step < count; step++) {
+      await expect(tour).toContainText(`Étape ${step + 1} sur ${count}`);
+      if (lessons) await expect(tour.getByRole('heading')).toHaveText(lessons[step].title);
+      if (key === 'services' && lessons[step].title === 'Faire approuver le travail') {
         await tour.getByRole('button', { name: 'Explorer : Feuilles de temps' }).click();
         await expect(page).toHaveURL(/\/services\/time$/);
         await expect(tour).toContainText('Faire approuver le travail');
       }
+      if (step < count - 1)
+        await tour.getByRole('button', { name: 'Suivant', exact: true }).click();
     }
     await tour.getByRole('button', { name: 'Terminer', exact: true }).click();
     await expect(tour).toHaveCount(0);
@@ -518,7 +528,7 @@ test('documentation explains connections, future boundaries, search and mobile r
   );
 });
 
-test('catalogue stock mapping, real issue lost response recovery and full return', async ({
+test('catalogue stock mapping, lost response recovery and successive partial returns', async ({
   page,
   request,
 }) => {
@@ -598,8 +608,40 @@ test('catalogue stock mapping, real issue lost response recovery and full return
   };
   expect(await getStock()).toBe(3);
   await expect(page.getByRole('article', { name: `Pièce ${code}` })).toHaveCount(1);
-  await page.getByRole('button', { name: 'Retourner les pièces' }).click();
+  await page.getByRole('button', { name: 'Retourner une quantité' }).click();
+  await page.getByLabel('Quantité retournée (EA)').fill('0.375');
   await page.getByLabel('Motif du retour').fill('Pièces revenues physiquement au rangement');
+  await page
+    .getByRole('checkbox', { name: 'Je confirme le mouvement physique et la quantité.' })
+    .check();
+  let lostReturn = false;
+  await page.route(`**/api/v1/services/jobs/${j.id}/parts/*/return`, async (route) => {
+    if (!lostReturn) {
+      lostReturn = true;
+      const response = await route.fetch();
+      expect(response.ok()).toBeTruthy();
+      await route.abort('failed');
+    } else await route.continue();
+  });
+  await page.getByRole('button', { name: 'Confirmer le retour de stock' }).click();
+  await expect(
+    page.getByRole('button', { name: 'Vérifier / reprendre l’opération' }),
+  ).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Vérifier / reprendre l’opération' }).click();
+  await expect(page.getByRole('button', { name: 'Vérifier / reprendre l’opération' })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole('article', { name: `Pièce ${code}` })).toContainText(
+    'Retour partiel',
+  );
+  await page
+    .getByRole('article', { name: `Pièce ${code}` })
+    .screenshot({ path: test.info().outputPath('partial-return-desktop.png') });
+  expect(await getStock()).toBe(3.375);
+  await page.getByRole('button', { name: 'Retourner une quantité' }).click();
+  await expect(page.getByLabel('Quantité retournée (EA)')).toHaveValue('1.625');
+  await page.getByLabel('Motif du retour').fill('Solde revenu après contrôle');
   await page
     .getByRole('checkbox', { name: 'Je confirme le mouvement physique et la quantité.' })
     .check();
@@ -611,10 +653,25 @@ test('catalogue stock mapping, real issue lost response recovery and full return
   const entries = await request.get(`/api/v1/services/jobs/${j.id}/parts`, { headers });
   const parts = (await entries.json()).items;
   expect(parts).toHaveLength(1);
-  expect(parts[0].movementId).not.toBe(parts[0].returnMovementId);
+  expect(parts[0].remainingQuantity).toBe('0');
+  expect(parts[0].returns).toHaveLength(2);
+  expect(parts[0].returnCount).toBe(2);
+  expect(parts[0].returns.every((entry: any) => entry.movementId !== parts[0].movementId)).toBe(
+    true,
+  );
+  await page.getByText('Historique des retours (2)', { exact: true }).click();
+  await expect(page.getByText('Solde revenu après contrôle', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByRole('article', { name: `Pièce ${code}` })
+    .screenshot({ path: test.info().outputPath('partial-return-mobile.png') });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.setViewportSize({ width: 1280, height: 800 });
   await page.getByRole('button', { name: 'Ouvrir le journal WMS de cette intervention' }).click();
   await expect(page).toHaveURL(new RegExp(`/wms/movements\\?refType=service-job&refId=${j.id}`));
-  await expect(page.getByRole('link', { name: `${j.number} ↗` })).toHaveCount(2);
+  await expect(page.getByRole('link', { name: `${j.number} ↗` })).toHaveCount(3);
   await page
     .getByRole('link', { name: `${j.number} ↗` })
     .first()
@@ -622,6 +679,203 @@ test('catalogue stock mapping, real issue lost response recovery and full return
   await expect(page.getByRole('article', { name: `Pièce ${code}` })).toContainText(
     'Retourné intégralement',
   );
+});
+
+test('customer credit recovers a lost response, updates the balance and authorizes a separate physical return', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(90000);
+  const { p, j, headers } = await newTimeJob(request);
+  const create = async (path: string, data: object) => {
+    const r = await request.post('/api/v1/' + path, { headers, data });
+    const text = await r.text();
+    expect(r.ok(), text).toBeTruthy();
+    return text ? JSON.parse(text) : {};
+  };
+  const code = prefix + '-CREDIT';
+  const product = await create('catalog/items', {
+    code,
+    name: code + ' Pièce',
+    kind: 'GOODS',
+    unit: 'EA',
+  });
+  const stock = await create('wms/items', { sku: code, name: code + ' Stock', unit: 'EA' });
+  const location = await create('locations', {
+    code,
+    name: code + ' Atelier',
+    type: 'WAREHOUSE',
+    addressLine1: '10 rue des Essais',
+    city: 'Québec',
+    state: 'QC',
+    country: 'CA',
+  });
+  const bin = await create('wms/bins', { locationId: location.id, code: 'AV-01', kind: 'STORAGE' });
+  await create('wms/inventory/adjust', {
+    itemId: stock.id,
+    binId: bin.id,
+    qtyDelta: 5,
+    note: 'Recette avoir',
+  });
+  expect(
+    (
+      await request.patch(`/api/v1/catalog/items/${product.id}/stock-link`, {
+        headers,
+        data: { wmsItemId: stock.id, expectedUpdatedAt: product.updatedAt },
+      })
+    ).ok(),
+  ).toBeTruthy();
+  await create(`services/jobs/${j.id}/parts`, {
+    catalogItemId: product.id,
+    binId: bin.id,
+    quantity: 2,
+    note: 'Pièces installées',
+    expectedUpdatedAt: j.updatedAt,
+    operationKey: randomUUID(),
+  });
+  const partnerRead = await request.get(`/api/v1/catalog/partners/${partner.id}/links`, {
+    headers,
+  });
+  expect(partnerRead.ok()).toBeTruthy();
+  const partnerState = await partnerRead.json();
+  if (!partnerState.billingCustomerId)
+    await create(`catalog/partners/${partner.id}/billing-customer`, {
+      expectedUpdatedAt: partnerState.updatedAt,
+    });
+  const billable = await (
+    await request.get(`/api/v1/services/projects/${p.id}/billable`, { headers })
+  ).json();
+  const invoice = await create(`services/projects/${p.id}/invoice`, {
+    operationKey: randomUUID(),
+    currency: 'CAD',
+    sources: billable.sources.map((s: any) => ({
+      kind: s.kind,
+      id: s.id,
+      unitPrice: 10,
+      expectedVersion: s.expectedVersion,
+    })),
+  });
+  await create(`billing/customer-invoices/${invoice.invoiceId}/approve`, {});
+  await login(page);
+  await page.goto(`/invoices?statement=${invoice.invoiceId}`);
+  const panel = page.getByRole('region', { name: 'Avoirs et solde client' });
+  await expect(panel).toBeVisible();
+  await panel.getByText('Préparer un avoir', { exact: true }).click();
+  await panel.getByRole('spinbutton').fill('1');
+  await panel.getByLabel('Motif de l’avoir').fill('Une pièce retournée par le client');
+  let lost = false;
+  await page.route(
+    `**/api/v1/billing/customer-invoices/${invoice.invoiceId}/credits`,
+    async (route) => {
+      if (route.request().method() === 'POST' && !lost) {
+        lost = true;
+        const r = await route.fetch();
+        expect(r.ok(), await r.text()).toBeTruthy();
+        await route.abort('failed');
+      } else await route.continue();
+    },
+  );
+  await panel.getByRole('button', { name: 'Calculer le brouillon d’avoir' }).click();
+  await expect(
+    panel.getByRole('button', { name: 'Vérifier / reprendre le brouillon d’avoir' }),
+  ).toBeVisible();
+  await page.reload();
+  await panel.getByRole('button', { name: 'Vérifier / reprendre le brouillon d’avoir' }).click();
+  await expect(panel.getByRole('article')).toHaveCount(1);
+  await panel.getByRole('button', { name: 'Valider l’avoir', exact: true }).click();
+  await expect(panel).toContainText('Aucune sortie d’argent ni entrée de stock automatique');
+  await panel.getByRole('button', { name: 'Confirmer la validation de l’avoir' }).click();
+  await expect(panel.getByRole('article')).toContainText('Validé');
+  const context = await (
+    await request.get(`/api/v1/billing/customer-invoices/${invoice.invoiceId}/credits`, { headers })
+  ).json();
+  expect(context).toMatchObject({
+    totalAmount: '20',
+    amountPaid: '0',
+    creditedAmount: '10',
+    outstanding: 10,
+  });
+  expect(context.notes).toHaveLength(1);
+  await panel.getByText('Document et envoi client', { exact: true }).click();
+  await panel
+    .getByLabel('Nom légal de l’émetteur', { exact: true })
+    .fill('Atelier Démonstration inc.');
+  await panel
+    .getByLabel('Adresse de l’émetteur', { exact: true })
+    .fill('123, rue de l’Érable\nQuébec (Québec) G1A 1A1');
+  await panel
+    .getByLabel('Inscriptions fiscales (libellés et numéros)', { exact: true })
+    .fill('Démonstration sans valeur comptable');
+  await panel.getByLabel('Nom légal du client', { exact: true }).fill('Client de recette');
+  await panel
+    .getByRole('checkbox', {
+      name: 'Je confirme les coordonnées et les mentions fiscales; elles seront définitives.',
+    })
+    .check();
+  let publicationLost = false;
+  await page.route(
+    `**/api/v1/billing/customer-invoices/${invoice.invoiceId}/credits/${context.notes[0].id}/document`,
+    async (route) => {
+      if (route.request().method() === 'POST' && !publicationLost) {
+        publicationLost = true;
+        const response = await route.fetch();
+        expect(response.ok(), await response.text()).toBeTruthy();
+        await route.abort('failed');
+      } else await route.continue();
+    },
+  );
+  await panel.getByRole('button', { name: 'Figer et générer le PDF' }).click();
+  await expect(panel).toContainText('Actualisez pour vérifier si les coordonnées');
+  await panel.getByRole('button', { name: 'Actualiser le document et l’envoi' }).click();
+  await expect(panel).toContainText('PDF figé');
+  const downloadPromise = page.waitForEvent('download');
+  await panel.getByRole('button', { name: 'Télécharger le PDF d’avoir' }).click();
+  const download = await downloadPromise;
+  await download.saveAs(test.info().outputPath('credit-note.pdf'));
+  // Fail before any send if the environment is configured for real SMTP.
+  await expect(panel).toContainText('Mode simulation');
+  await panel.getByLabel('Courriel du destinataire', { exact: true }).fill('client@example.test');
+  await panel
+    .getByRole('checkbox', { name: 'Je confirme la simulation, sans envoi externe.' })
+    .check();
+  await panel.getByRole('button', { name: 'Simuler l’envoi de l’avoir' }).click();
+  await expect(async () => {
+    await panel.getByRole('button', { name: 'Actualiser le document et l’envoi' }).click();
+    await expect(panel).toContainText('Simulation locale terminée · aucun courriel envoyé');
+  }).toPass();
+  await expect(panel.getByRole('button', { name: 'Simuler l’envoi de l’avoir' })).toHaveCount(0);
+  await panel.screenshot({ path: test.info().outputPath('credit-desktop.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await panel.screenshot({ path: test.info().outputPath('credit-mobile.png') });
+  await panel.getByRole('button', { name: 'Télécharger le PDF d’avoir' }).scrollIntoViewIfNeeded();
+  await expect(panel.getByText('Simulation locale terminée · aucun courriel envoyé')).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('credit-mobile-document.png') });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  const getStock = async () =>
+    Number(
+      (
+        await (
+          await request.get(`/api/v1/wms/inventory?itemId=${stock.id}&binId=${bin.id}`, { headers })
+        ).json()
+      )[0].qtyOnHand,
+    );
+  expect(await getStock()).toBe(3);
+  await page.goto(`/services/interventions?jobId=${j.id}&section=parts`);
+  await page.getByRole('button', { name: 'Retourner une quantité' }).click();
+  await expect(page.getByLabel('Quantité retournée (EA)')).toHaveValue('1');
+  await expect(page.getByLabel('Avoir validé autorisant ce retour')).toBeVisible();
+  await page.getByLabel('Motif du retour').fill('Pièce physiquement reçue');
+  await page
+    .getByRole('checkbox', { name: 'Je confirme le mouvement physique et la quantité.' })
+    .check();
+  await page.getByRole('button', { name: 'Confirmer le retour de stock' }).click();
+  await expect(page.getByRole('article', { name: `Pièce ${code}` })).toContainText(
+    'Retour partiel',
+  );
+  expect(await getStock()).toBe(4);
+  await expect(page.getByRole('button', { name: 'Retourner une quantité' })).toHaveCount(0);
 });
 
 test('supplier arrival records partial stock, recovers lost response, and preserves the remainder', async ({

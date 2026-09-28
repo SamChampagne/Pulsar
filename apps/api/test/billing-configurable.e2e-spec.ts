@@ -2,7 +2,7 @@
  * E2E: Billing configurable — process rules + custom fields (arc C, Task 7)
  *
  * Covers:
- *   1. autoSendOnApproval=true  — customer WITH email: approve → status SENT
+ *   1. autoSendOnApproval=true — customer invoices stay APPROVED; no implicit delivery.
  *                                 customer WITHOUT email: approve → stays APPROVED (no error)
  *   2. toleranceMode=MIN        — variance between min and max thresholds → FLAGGED under MIN
  *                                 (would be MATCHED under MAX = default)
@@ -219,20 +219,19 @@ describe('Billing configurable (e2e)', () => {
         .catch(() => undefined);
     });
 
-    it('customer WITH email: approve → status SENT (email driver=log in CI)', async () => {
+    it('customer WITH email: approval remains APPROVED and never auto-sends', async () => {
       await request(http)
         .post(`/api/v1/billing/customer-invoices/${invoiceIdWithEmail}/approve`)
         .set(auth())
         .expect((r) => expect([200, 201]).toContain(r.status));
 
-      // approve() returns the APPROVED snapshot (before the best-effort send), so we
-      // re-fetch to see the final status after autoSendOnApproval's send() transition.
-      // EMAIL_DRIVER=log always returns true → transition APPROVED → SENT succeeds.
+      // Legacy settings cannot bypass canonical PDF publication and recipient confirmation.
       const getRes = await request(http)
         .get(`/api/v1/billing/customer-invoices/${invoiceIdWithEmail}`)
         .set(auth())
         .expect(200);
-      expect((getRes.body as { status: string }).status).toBe('SENT');
+      expect((getRes.body as { status: string }).status).toBe('APPROVED');
+      expect(await prisma.emailMessage.count({ where: { tenantId, relatedType: 'customer-invoice', relatedId: invoiceIdWithEmail } })).toBe(0);
     });
 
     it('customer WITHOUT email: approve → stays APPROVED (no error thrown)', async () => {
@@ -241,8 +240,7 @@ describe('Billing configurable (e2e)', () => {
         .set(auth())
         .expect((r) => expect([200, 201]).toContain(r.status));
 
-      // autoSendOnApproval is true but customer has no email → send() throws
-      // BadRequestException which is caught by approve() (best-effort) → stays APPROVED.
+      // Approval and delivery are independent, even with an old automatic setting enabled.
       expect((res.body as { status: string }).status).toBe('APPROVED');
     });
   });

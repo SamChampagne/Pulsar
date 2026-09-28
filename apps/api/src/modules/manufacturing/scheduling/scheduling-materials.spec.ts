@@ -12,6 +12,7 @@ describe('APS material snapshots', () => {
   beforeEach(() => {
     db = {
       materialPurchaseOrder: { findMany: jest.fn(async () => []) },
+      wmsLotBalance: { groupBy: jest.fn(async () => []) },
       wmsItem: {
         findMany: jest.fn(async () => [{ id: 'raw', sku: 'RAW', unit: 'KG', isActive: true }]),
       },
@@ -30,6 +31,24 @@ describe('APS material snapshots', () => {
     bomId: 'bom',
     locationId: 'site-a',
     materialSnapshot: snapshot,
+  });
+  it('excludes quarantined physical stock and invalidates material review on hold', async () => {
+    const before = await service.loadMaterials('tenant', [order()]);
+    db.wmsLotBalance.groupBy.mockResolvedValue([
+      { itemId: 'raw', _sum: { qtyOnHand: new Prisma.Decimal('1.5') } },
+    ]);
+    const after = await service.loadMaterials('tenant', [order()]);
+    expect(after.materials.inventory).toEqual([{ materialRef: 'RAW', onHand: 0.5 }]);
+    expect(artifactHash(before.materials)).not.toBe(artifactHash(after.materials));
+    expect(db.wmsLotBalance.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 'tenant',
+          lot: { tenantId: 'tenant', disposition: 'QUARANTINED' },
+          bin: { tenantId: 'tenant', locationId: 'site-a', isActive: true },
+        }),
+      }),
+    );
   });
   it('uses captured requirements and scopes stock to the captured warehouse', async () => {
     const result = await service.loadMaterials('tenant', [order()]);

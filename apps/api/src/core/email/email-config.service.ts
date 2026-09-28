@@ -1,4 +1,10 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { TenantEmailConfig } from '@pulsar/database';
 import { AuditAction } from '@pulsar/shared';
@@ -10,6 +16,7 @@ import type { UpsertEmailConfigDto } from './dto/email-config.dto';
 import { INBOUND_EMAIL_DRIVER, type InboundEmailDriver } from './inbound/inbound-driver';
 
 export interface ImapConfig {
+  live?: boolean;
   host: string;
   port: number;
   secure: boolean;
@@ -40,6 +47,7 @@ export interface EmailConfigProjection {
   imapUsername: string | null;
   hasImapPassword: boolean;
   inboundActive: boolean;
+  inboundLive: boolean;
   lastPollAt: Date | null;
   lastPollOk: boolean | null;
 }
@@ -82,6 +90,7 @@ export class EmailConfigService {
       imapUsername: config.imapUsername,
       hasImapPassword: !!config.imapPasswordEnc,
       inboundActive: config.inboundActive,
+      inboundLive: config.inboundLive,
       lastPollAt: config.lastPollAt,
       lastPollOk: config.lastPollOk,
     };
@@ -104,19 +113,14 @@ export class EmailConfigService {
           : this.environment.get('EMAIL_DRIVER', 'log') === 'smtp'
             ? 'smtp-platform'
             : 'log',
-      inbound:
-        this.environment.get('EMAIL_DRIVER', 'log') === 'smtp' &&
-        config?.inboundActive &&
-        config.imapHost
-          ? 'imap'
-          : 'log',
+      inbound: config?.inboundLive && config?.inboundActive && config.imapHost ? 'imap' : 'log',
       config,
     };
   }
 
   /**
    * Creates or updates the tenant SMTP config. Encrypts `password` when provided;
-   * preserves the existing `passwordEnc` when omitted (mirrors runtime-config pattern).
+   * preserves an omitted secret only for an unchanged host/account.
    * Audited.
    */
   async upsert(
@@ -124,73 +128,136 @@ export class EmailConfigService {
     dto: UpsertEmailConfigDto,
     userId?: string,
   ): Promise<EmailConfigProjection> {
-    const hasPassword = typeof dto.password === 'string' && dto.password.length > 0;
-    const passwordEnc = hasPassword ? this.crypto.encryptString(dto.password as string) : undefined;
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`email-config:${tenantId}`}, 0))`;
+      const old = await tx.tenantEmailConfig.findUnique({ where: { tenantId } });
+      if (
+        dto.expectedUpdatedAt !== undefined &&
+        (old?.updatedAt.toISOString() ?? null) !== dto.expectedUpdatedAt
+      )
+        throw new ConflictException(
+          'La connexion courriel a changé. Rechargez avant de sauvegarder.',
+        );
+      const smtpChanged =
+        !!old &&
+        ((dto.host !== undefined && dto.host !== old.host) ||
+          (dto.username !== undefined && dto.username !== old.username));
+      const imapChanged =
+        !!old &&
+        ((dto.imapHost !== undefined && dto.imapHost !== old.imapHost) ||
+          (dto.imapUsername !== undefined && dto.imapUsername !== old.imapUsername));
+      const hasPassword = typeof dto.password === 'string' && dto.password.length > 0;
+      const passwordEnc = hasPassword
+        ? this.crypto.encryptString(dto.password as string)
+        : smtpChanged
+          ? null
+          : undefined;
 
-    const hasImapPassword = typeof dto.imapPassword === 'string' && dto.imapPassword.length > 0;
-    const imapPasswordEnc = hasImapPassword
-      ? this.crypto.encryptString(dto.imapPassword as string)
-      : undefined;
+      const hasImapPassword = typeof dto.imapPassword === 'string' && dto.imapPassword.length > 0;
+      const imapPasswordEnc = hasImapPassword
+        ? this.crypto.encryptString(dto.imapPassword as string)
+        : imapChanged
+          ? null
+          : undefined;
 
-    const config = await this.prisma.tenantEmailConfig.upsert({
-      where: { tenantId },
-      create: {
-        tenantId,
-        ...(dto.host !== undefined ? { host: dto.host } : {}),
-        ...(dto.port !== undefined ? { port: dto.port } : {}),
-        ...(dto.secure !== undefined ? { secure: dto.secure } : {}),
-        ...(dto.username !== undefined ? { username: dto.username } : {}),
-        ...(dto.fromName !== undefined ? { fromName: dto.fromName } : {}),
-        ...(dto.fromEmail !== undefined ? { fromEmail: dto.fromEmail } : {}),
-        ...(dto.replyTo !== undefined ? { replyTo: dto.replyTo } : {}),
-        // Only set passwordEnc when a new password was supplied.
-        ...(passwordEnc !== undefined ? { passwordEnc } : {}),
-        ...(dto.imapHost !== undefined ? { imapHost: dto.imapHost } : {}),
-        ...(dto.imapPort !== undefined ? { imapPort: dto.imapPort } : {}),
-        ...(dto.imapSecure !== undefined ? { imapSecure: dto.imapSecure } : {}),
-        ...(dto.imapUsername !== undefined ? { imapUsername: dto.imapUsername } : {}),
-        ...(dto.inboundActive !== undefined ? { inboundActive: dto.inboundActive } : {}),
-        ...(imapPasswordEnc !== undefined ? { imapPasswordEnc } : {}),
-      },
-      update: {
-        lastTestAt: null,
-        lastTestOk: null,
-        lastPollAt: null,
-        lastPollOk: null,
-        ...(dto.host !== undefined ? { host: dto.host } : {}),
-        ...(dto.port !== undefined ? { port: dto.port } : {}),
-        ...(dto.secure !== undefined ? { secure: dto.secure } : {}),
-        ...(dto.username !== undefined ? { username: dto.username } : {}),
-        ...(dto.fromName !== undefined ? { fromName: dto.fromName } : {}),
-        ...(dto.fromEmail !== undefined ? { fromEmail: dto.fromEmail } : {}),
-        ...(dto.replyTo !== undefined ? { replyTo: dto.replyTo } : {}),
-        // Preserve existing passwordEnc when no new password is supplied.
-        ...(passwordEnc !== undefined ? { passwordEnc } : {}),
-        ...(dto.imapHost !== undefined ? { imapHost: dto.imapHost } : {}),
-        ...(dto.imapPort !== undefined ? { imapPort: dto.imapPort } : {}),
-        ...(dto.imapSecure !== undefined ? { imapSecure: dto.imapSecure } : {}),
-        ...(dto.imapUsername !== undefined ? { imapUsername: dto.imapUsername } : {}),
-        ...(dto.inboundActive !== undefined ? { inboundActive: dto.inboundActive } : {}),
-        ...(imapPasswordEnc !== undefined ? { imapPasswordEnc } : {}),
-      },
+      const inboundLive = dto.inboundLive ?? old?.inboundLive ?? false;
+      if (inboundLive && (!old?.inboundLive || imapChanged)) {
+        if (dto.confirmInboundLive !== true || dto.expectedUpdatedAt === undefined)
+          throw new BadRequestException(
+            'Confirmez la lecture réelle de la boîte IMAP dans Pulsar avec la version enregistrée.',
+          );
+        if (
+          !userId ||
+          !(await tx.user.findFirst({
+            where: {
+              tenantId,
+              id: userId,
+              status: 'ACTIVE',
+              NOT: { email: 'service-account@pulsar.local' },
+              agentServiceFor: { none: {} },
+            },
+            select: { id: true },
+          }))
+        )
+          throw new ForbiddenException('Un utilisateur interne actif doit autoriser IMAP.');
+      }
+      if (inboundLive && !(dto.imapHost === undefined ? old?.imapHost : dto.imapHost))
+        throw new BadRequestException('Ajoutez un hôte IMAP avant le mode réel.');
+
+      const config = await tx.tenantEmailConfig.upsert({
+        where: { tenantId },
+        create: {
+          tenantId,
+          inboundLive,
+          ...(dto.active !== undefined ? { active: dto.active } : {}),
+          ...(dto.host !== undefined ? { host: dto.host } : {}),
+          ...(dto.port !== undefined ? { port: dto.port } : {}),
+          ...(dto.secure !== undefined ? { secure: dto.secure } : {}),
+          ...(dto.username !== undefined ? { username: dto.username } : {}),
+          ...(dto.fromName !== undefined ? { fromName: dto.fromName } : {}),
+          ...(dto.fromEmail !== undefined ? { fromEmail: dto.fromEmail } : {}),
+          ...(dto.replyTo !== undefined ? { replyTo: dto.replyTo } : {}),
+          // Only set passwordEnc when a new password was supplied.
+          ...(passwordEnc !== undefined ? { passwordEnc } : {}),
+          ...(dto.imapHost !== undefined ? { imapHost: dto.imapHost } : {}),
+          ...(dto.imapPort !== undefined ? { imapPort: dto.imapPort } : {}),
+          ...(dto.imapSecure !== undefined ? { imapSecure: dto.imapSecure } : {}),
+          ...(dto.imapUsername !== undefined ? { imapUsername: dto.imapUsername } : {}),
+          ...(dto.inboundActive !== undefined ? { inboundActive: dto.inboundActive } : {}),
+          ...(imapPasswordEnc !== undefined ? { imapPasswordEnc } : {}),
+        },
+        update: {
+          inboundLive,
+          updatedAt: new Date(Math.max(Date.now(), (old?.updatedAt.getTime() ?? 0) + 1)),
+          ...(dto.active !== undefined ? { active: dto.active } : {}),
+          lastTestAt: null,
+          lastTestOk: null,
+          lastPollAt: null,
+          lastPollOk: null,
+          ...(dto.host !== undefined ? { host: dto.host } : {}),
+          ...(dto.port !== undefined ? { port: dto.port } : {}),
+          ...(dto.secure !== undefined ? { secure: dto.secure } : {}),
+          ...(dto.username !== undefined ? { username: dto.username } : {}),
+          ...(dto.fromName !== undefined ? { fromName: dto.fromName } : {}),
+          ...(dto.fromEmail !== undefined ? { fromEmail: dto.fromEmail } : {}),
+          ...(dto.replyTo !== undefined ? { replyTo: dto.replyTo } : {}),
+          // A changed host/account clears the old secret unless explicitly replaced.
+          ...(passwordEnc !== undefined ? { passwordEnc } : {}),
+          ...(dto.imapHost !== undefined ? { imapHost: dto.imapHost } : {}),
+          ...(dto.imapPort !== undefined ? { imapPort: dto.imapPort } : {}),
+          ...(dto.imapSecure !== undefined ? { imapSecure: dto.imapSecure } : {}),
+          ...(dto.imapUsername !== undefined ? { imapUsername: dto.imapUsername } : {}),
+          ...(dto.inboundActive !== undefined ? { inboundActive: dto.inboundActive } : {}),
+          ...(imapPasswordEnc !== undefined ? { imapPasswordEnc } : {}),
+        },
+      });
+
+      await this.audit.log(
+        {
+          tenantId,
+          userId,
+          action: AuditAction.UPDATE,
+          entityType: 'tenant-email-config',
+          after: {
+            host: dto.host,
+            port: dto.port,
+            secure: dto.secure,
+            username: dto.username,
+            fromEmail: dto.fromEmail,
+            active: config.active,
+            inboundLive: config.inboundLive,
+            inboundActive: config.inboundActive,
+            hasPassword: !!config.passwordEnc,
+            hasImapPassword: !!config.imapPasswordEnc,
+            smtpSecretChanged: passwordEnc !== undefined,
+            imapSecretChanged: imapPasswordEnc !== undefined,
+          },
+        },
+        tx,
+      );
+
+      return this.project(config);
     });
-
-    await this.audit.log({
-      tenantId,
-      userId,
-      action: AuditAction.UPDATE,
-      entityType: 'tenant-email-config',
-      after: {
-        host: dto.host,
-        port: dto.port,
-        secure: dto.secure,
-        username: dto.username,
-        fromEmail: dto.fromEmail,
-        hasPassword: hasPassword || undefined,
-      },
-    });
-
-    return this.project(config);
   }
 
   /**
@@ -200,6 +267,11 @@ export class EmailConfigService {
    */
   async resolve(tenantId: string): Promise<SmtpTransportOptions | null> {
     const config = await this.prisma.tenantEmailConfig.findUnique({ where: { tenantId } });
+    return this.resolveSnapshot(config);
+  }
+
+  /** Internal snapshot captured before a single-attempt dossier send. Never returned to HTTP. */
+  resolveSnapshot(config: TenantEmailConfig | null): SmtpTransportOptions | null {
     if (!config || !config.active || !config.host) return null;
 
     const pass = config.passwordEnc ? this.crypto.decryptString(config.passwordEnc) : undefined;
@@ -214,6 +286,7 @@ export class EmailConfigService {
       user: config.username ?? undefined,
       pass,
       from: fromParts || undefined,
+      replyTo: config.replyTo ?? undefined,
     };
   }
 
@@ -223,6 +296,7 @@ export class EmailConfigService {
     if (!config || !config.inboundActive || !config.imapHost) return null;
     return {
       host: config.imapHost,
+      live: config.inboundLive,
       port: config.imapPort ?? 993,
       secure: config.imapSecure,
       user: config.imapUsername ?? undefined,
@@ -231,14 +305,16 @@ export class EmailConfigService {
   }
 
   /** Calls the active inbound driver's testConnection. Updates lastPollAt/lastPollOk. */
-  async testInbound(tenantId: string): Promise<{ ok: boolean; error?: string }> {
+  async testInbound(
+    tenantId: string,
+  ): Promise<{ ok: boolean; error?: string; simulated?: boolean }> {
     const config = await this.resolveInbound(tenantId);
     if (!config) return { ok: false, error: 'no active inbound config' };
     const result = await this.inboundDriver.testConnection(config);
     await this.prisma.tenantEmailConfig
       .update({ where: { tenantId }, data: { lastPollAt: new Date(), lastPollOk: result.ok } })
       .catch(() => undefined);
-    return result;
+    return { ...result, simulated: !config.live };
   }
 
   /**

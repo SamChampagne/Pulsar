@@ -18,12 +18,14 @@ export const PERMISSIONS = {
   },
   SUPPORT: { READ: 'support.read', MANAGE: 'support.manage' },
   CATALOG: { READ: 'catalog.read', MANAGE: 'catalog.manage' },
+  CLIENTS: { READ: 'clients.read', MANAGE: 'clients.manage' },
   PURCHASING: { READ: 'purchasing.read', MANAGE: 'purchasing.manage' },
   SERVICES: {
     READ: 'services.read',
     MANAGE: 'services.manage',
     TIME_WRITE: 'services.time.write',
     TIME_APPROVE: 'services.time.approve',
+    WORK_ACCEPT: 'services.work.accept',
   },
   CORE: {
     TENANT_READ: 'core.tenant.read',
@@ -57,6 +59,8 @@ export const PERMISSIONS = {
     EMAIL_READ: 'core.email.read',
     EMAIL_SEND: 'core.email.send',
     EMAIL_MANAGE: 'core.email.manage',
+    COMMUNICATIONS_READ: 'core.communications.read',
+    COMMUNICATIONS_MANAGE: 'core.communications.manage',
     APS_READ: 'core.aps.read',
     APS_ADMIN: 'core.aps.admin',
   },
@@ -88,6 +92,14 @@ export const PERMISSIONS = {
     READ: 'carrier-portal.read',
   },
   BILLING: {
+    SUPPLIER_SCHEDULES_MANAGE: 'billing.supplier-schedules.manage',
+    SUPPLIER_CREDITS_MANAGE: 'billing.supplier-credits.manage',
+    SUPPLIER_CREDITS_QUALIFY: 'billing.supplier-credits.qualify',
+    SUPPLIER_INVOICES_READ: 'billing.supplier-invoices.read',
+    SUPPLIER_INVOICES_MANAGE: 'billing.supplier-invoices.manage',
+    SUPPLIER_INVOICES_QUALIFY: 'billing.supplier-invoices.qualify',
+    CREDIT_NOTES_APPROVE: 'billing.credit-notes.approve',
+    CREDIT_NOTES_SEND: 'billing.credit-notes.send',
     INVOICES_READ: 'billing.invoices.read',
     INVOICES_MANAGE: 'billing.invoices.manage',
     INVOICES_PAY: 'billing.invoices.pay',
@@ -99,6 +111,7 @@ export const PERMISSIONS = {
     CUSTOMER_INVOICES_PAY: 'billing.customer-invoices.pay',
     LEDGER_READ: 'billing.ledger.read',
     LEDGER_MANAGE: 'billing.ledger.manage',
+    ACCOUNTING_CONFIGURE: 'billing.accounting.configure',
     PAYMENTS_READ: 'billing.payments.read',
     PAYMENTS_MANAGE: 'billing.payments.manage',
     SUBSCRIPTIONS_READ: 'billing.subscriptions.read',
@@ -107,6 +120,8 @@ export const PERMISSIONS = {
     TAXES_MANAGE: 'billing.taxes.manage',
     ASSETS_READ: 'billing.assets.read',
     ASSETS_MANAGE: 'billing.assets.manage',
+    ASSETS_POST: 'billing.assets.post',
+    LEDGER_QUALIFY: 'billing.ledger.qualify',
   },
   FLEET: {
     READ: 'fleet.read',
@@ -115,6 +130,9 @@ export const PERMISSIONS = {
   WMS: {
     READ: 'wms.read',
     MANAGE: 'wms.manage',
+    LOT_RELEASE: 'wms.lots.release',
+    STOCK_DISPOSE: 'wms.stock.dispose',
+    STOCK_RETURN: 'wms.stock.return',
   },
   YARD: {
     READ: 'yard.read',
@@ -144,12 +162,19 @@ export const PERMISSIONS = {
     SEND: 'core.email.send',
     MANAGE: 'core.email.manage',
   },
+  SMS: {
+    READ: 'core.sms.read',
+    SEND: 'core.sms.send',
+    MANAGE: 'core.sms.manage',
+  },
 } as const;
 
 export type PermissionKey =
+  | (typeof PERMISSIONS.SMS)[keyof typeof PERMISSIONS.SMS]
   | (typeof PERMISSIONS.QUALITY)[keyof typeof PERMISSIONS.QUALITY]
   | (typeof PERMISSIONS.HR)[keyof typeof PERMISSIONS.HR]
   | (typeof PERMISSIONS.CATALOG)[keyof typeof PERMISSIONS.CATALOG]
+  | (typeof PERMISSIONS.CLIENTS)[keyof typeof PERMISSIONS.CLIENTS]
   | (typeof PERMISSIONS.PURCHASING)[keyof typeof PERMISSIONS.PURCHASING]
   | (typeof PERMISSIONS.SUPPORT)[keyof typeof PERMISSIONS.SUPPORT]
   | (typeof PERMISSIONS.SERVICES)[keyof typeof PERMISSIONS.SERVICES]
@@ -241,6 +266,16 @@ const manufacturing = (key: PermissionKey, description: string): PermissionDescr
 });
 
 export const PERMISSION_CATALOG: PermissionDescriptor[] = [
+  {
+    key: PERMISSIONS.CLIENTS.READ,
+    module: MODULE_KEYS.CLIENTS,
+    description: 'Consulter les fiches clients partagées',
+  },
+  {
+    key: PERMISSIONS.CLIENTS.MANAGE,
+    module: MODULE_KEYS.CLIENTS,
+    description: 'Créer et modifier les fiches clients partagées',
+  },
   {
     key: PERMISSIONS.HR.QUALIFICATIONS_MANAGE,
     module: MODULE_KEYS.HR,
@@ -334,6 +369,11 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
     description: 'Approuver, refuser et rouvrir les temps saisis par une autre personne',
   },
   {
+    key: PERMISSIONS.SERVICES.WORK_ACCEPT,
+    module: MODULE_KEYS.SERVICES,
+    description: 'Consigner les réserves et l’acceptation des travaux par le client',
+  },
+  {
     key: PERMISSIONS.SERVICES.MANAGE,
     module: MODULE_KEYS.SERVICES,
     description: 'Gérer projets et interventions',
@@ -369,6 +409,14 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   core(PERMISSIONS.CORE.EMAIL_READ, 'View sent emails and templates'),
   core(PERMISSIONS.CORE.EMAIL_SEND, 'Compose and send emails'),
   core(PERMISSIONS.CORE.EMAIL_MANAGE, 'Manage email templates and tenant email configuration'),
+  core(PERMISSIONS.SMS.READ, 'View the tenant SMS journal'),
+  core(PERMISSIONS.SMS.SEND, 'Send a confirmed transactional SMS'),
+  core(PERMISSIONS.SMS.MANAGE, 'Configure the tenant Telnyx SMS connection'),
+  core(PERMISSIONS.CORE.COMMUNICATIONS_READ, 'Read communications in authorized business dossiers'),
+  core(
+    PERMISSIONS.CORE.COMMUNICATIONS_MANAGE,
+    'Record operational contact permissions and message templates',
+  ),
   core(PERMISSIONS.CORE.APS_READ, 'View the APS scheduling engine status and run schedules'),
   core(
     PERMISSIONS.CORE.APS_ADMIN,
@@ -397,6 +445,30 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   portal(PERMISSIONS.CUSTOMER_PORTAL.USERS_READ, 'View customer portal accounts'),
   portal(PERMISSIONS.CUSTOMER_PORTAL.USERS_MANAGE, 'Invite, disable and manage portal accounts'),
   billing(PERMISSIONS.BILLING.INVOICES_READ, 'View carrier invoices'),
+  billing(
+    PERMISSIONS.BILLING.SUPPLIER_SCHEDULES_MANAGE,
+    'Confirmer et réviser les échéanciers fournisseur sans paiement ni comptabilisation',
+  ),
+  billing(
+    PERMISSIONS.BILLING.SUPPLIER_CREDITS_MANAGE,
+    'Saisir les avoirs fournisseur reçus et leurs justificatifs',
+  ),
+  billing(
+    PERMISSIONS.BILLING.SUPPLIER_CREDITS_QUALIFY,
+    'Qualifier les avoirs fournisseur sans paiement ni comptabilisation',
+  ),
+  billing(
+    PERMISSIONS.BILLING.SUPPLIER_INVOICES_READ,
+    'Consulter les factures fournisseur générales',
+  ),
+  billing(
+    PERMISSIONS.BILLING.SUPPLIER_INVOICES_MANAGE,
+    'Saisir les factures fournisseur et leurs justificatifs',
+  ),
+  billing(
+    PERMISSIONS.BILLING.SUPPLIER_INVOICES_QUALIFY,
+    'Qualifier et figer une facture fournisseur reçue (sans paiement)',
+  ),
   billing(PERMISSIONS.BILLING.INVOICES_MANAGE, 'Draft and approve carrier invoices'),
   billing(PERMISSIONS.BILLING.INVOICES_PAY, 'Mark carrier invoices as paid'),
   billing(
@@ -408,6 +480,11 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
     'Audit, dispute and resolve incoming carrier invoices',
   ),
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_READ, 'View customer billing statements'),
+  billing(PERMISSIONS.BILLING.CREDIT_NOTES_SEND, 'Explicitly send a published customer credit PDF'),
+  billing(
+    PERMISSIONS.BILLING.CREDIT_NOTES_APPROVE,
+    'Issue immutable customer credit notes and their accounting entries',
+  ),
   billing(
     PERMISSIONS.BILLING.CUSTOMER_INVOICES_MANAGE,
     'Draft, approve and delete customer billing statements',
@@ -415,6 +492,7 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_SEND, 'Send customer billing statements'),
   billing(PERMISSIONS.BILLING.CUSTOMER_INVOICES_PAY, 'Mark customer billing statements as paid'),
   billing(PERMISSIONS.BILLING.LEDGER_READ, 'View the general ledger'),
+  billing(PERMISSIONS.BILLING.ACCOUNTING_CONFIGURE, 'Configure the accounting target profile'),
   billing(
     PERMISSIONS.BILLING.LEDGER_MANAGE,
     'Manage the general ledger (manual journal entries, chart of accounts)',
@@ -427,10 +505,24 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   billing(PERMISSIONS.BILLING.TAXES_MANAGE, 'Manage tax templates'),
   billing(PERMISSIONS.BILLING.ASSETS_READ, 'View fixed assets'),
   billing(PERMISSIONS.BILLING.ASSETS_MANAGE, 'Manage fixed assets and depreciation'),
+  billing(PERMISSIONS.BILLING.ASSETS_POST, 'Confirm fixed-asset depreciation postings'),
+  billing(
+    PERMISSIONS.BILLING.LEDGER_QUALIFY,
+    'Qualify or withdraw historical manual journal currencies with evidence',
+  ),
   fleet(PERMISSIONS.FLEET.READ, 'View fleet assets, maintenance and compliance'),
   fleet(PERMISSIONS.FLEET.MANAGE, 'Manage maintenance orders and compliance documents'),
   wms(PERMISSIONS.WMS.READ, 'View warehouse inventory, receipts and pick orders'),
   wms(PERMISSIONS.WMS.MANAGE, 'Manage warehouse items, bins, receipts and pick orders'),
+  wms(PERMISSIONS.WMS.LOT_RELEASE, 'Release quarantined lots after documented control'),
+  wms(
+    PERMISSIONS.WMS.STOCK_DISPOSE,
+    'Confirm documented physical disposal of stock, including held lots',
+  ),
+  wms(
+    PERMISSIONS.WMS.STOCK_RETURN,
+    'Confirm documented physical supplier returns, including held lots',
+  ),
   yard(PERMISSIONS.YARD.READ, 'View yard spots, visits and dock appointments'),
   yard(PERMISSIONS.YARD.MANAGE, 'Manage yard spots, gate check-in/out, moves and appointments'),
   analytics(PERMISSIONS.ANALYTICS.READ, 'View the operational Control Tower and analytics'),

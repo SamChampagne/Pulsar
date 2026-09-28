@@ -82,6 +82,9 @@ export interface Invoice {
   // Numbers, never serialized Decimal strings (spec B2.2).
   totalAmount: number;
   amountPaid: number;
+  creditedAmount: number;
+  outstanding: number;
+  customerCredit: number;
   taxAmount: number;
   netAmount: number;
   approvedAt: string | null;

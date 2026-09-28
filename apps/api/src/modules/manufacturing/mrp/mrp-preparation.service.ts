@@ -127,11 +127,11 @@ export class MrpPreparationService {
     const reconciledOrders = (
       (
         run.sourceMetadata as {
-          productionDeclarations?: { orderId: string; orderStatus: string }[];
+          productionDeclarations?: { orderId: string; orderStatus: string; reversal?: unknown }[];
         } | null
       )?.productionDeclarations ?? []
     )
-      .filter((d) => d.orderStatus === 'COMPLETED')
+      .filter((d) => d.orderStatus === 'COMPLETED' && !d.reversal)
       .map((d) => d.orderId);
     const pending = await tx.mrpPreparation.count({
       where: {

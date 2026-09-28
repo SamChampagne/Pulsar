@@ -71,6 +71,9 @@ describe('RolesService.createFromTemplate', () => {
 
   it('delegates to create() with the resolved template permission keys', async () => {
     const permissionKeys = [
+      'billing.supplier-invoices.read',
+      'billing.supplier-invoices.manage',
+      'billing.supplier-credits.manage',
       'billing.invoices.read',
       'billing.invoices.manage',
       'billing.invoices.pay',

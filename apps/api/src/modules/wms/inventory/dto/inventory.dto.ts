@@ -19,6 +19,7 @@ export class InventoryListQueryDto {
 }
 
 export class MoveStockDto {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(100) lotId?: string;
   @IsOptional() @IsUUID('4') operationKey?: string;
   @IsOptional() @IsString() @MinLength(1) locationId?: string;
   @IsString() @MinLength(1) itemId!: string;
@@ -29,6 +30,7 @@ export class MoveStockDto {
 }
 
 export class MovementListQueryDto extends ListQueryDto {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(100) lotId?: string;
   @IsOptional() @IsString() @MaxLength(100) itemId?: string;
   @IsOptional() @IsString() @MaxLength(100) binId?: string;
   @IsOptional() @IsString() @MaxLength(100) locationId?: string;
@@ -38,6 +40,8 @@ export class MovementListQueryDto extends ListQueryDto {
 }
 
 export class AdjustStockDto {
+  @IsOptional() @IsUUID('4') operationKey?: string;
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(100) lotId?: string;
   @IsString() @MinLength(1) itemId!: string;
   @IsString() @MinLength(1) binId!: string;
   @Type(() => Number) @IsNumber({ maxDecimalPlaces: 3 }) qtyDelta!: number; // signed, non-zero

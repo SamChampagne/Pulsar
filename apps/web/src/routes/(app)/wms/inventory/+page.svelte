@@ -28,12 +28,23 @@
     Textarea,
   } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import LotChoice from '$lib/components/wms/LotChoice.svelte';
+  import {
+    pendingAdjust,
+    adjustStorageError,
+    rememberAdjust,
+    resolveAdjust,
+    adjustScope,
+    type AdjustIntent,
+  } from '$lib/wms/adjust-intent';
 
   interface Level {
     id: string;
     itemId: string;
     binId: string;
     qtyOnHand: string;
+    quarantinedQty?: string;
+    availableQty?: string;
     item: { id: string; sku: string; name: string; unit: string };
     bin: { id: string; code: string; kind: string; locationId: string };
   }
@@ -69,6 +80,8 @@
   let moveNote = $state('');
   let moveSaving = $state(false);
   let moveError = $state('');
+  let moveLotId = $state(''),
+    moveLotReady = $state(false);
   const canManage = $derived(!!$auth?.user.permissions.includes(PERMISSIONS.WMS.MANAGE));
 
   // Adjust modal
@@ -78,6 +91,9 @@
   let adjustDelta = $state<number>(0);
   let adjustNote = $state('');
   let adjustSaving = $state(false);
+  let adjustLotId = $state(''),
+    adjustLotReady = $state(false);
+  let adjustError = $state('');
 
   // Client-side filter on sku/name, then sort by item sku then bin code.
   const filtered = $derived(
@@ -120,6 +136,7 @@
       return;
     }
     moveItemId = '';
+    moveLotId = '';
     moveFromBinId = '';
     moveToBinId = '';
     moveQty = 0;
@@ -129,15 +146,21 @@
   }
 
   function openAdjust() {
+    if ($pendingAdjust || $adjustStorageError) {
+      toast.error('Reprenez d’abord l’ajustement conservé, ou vérifiez le journal.');
+      return;
+    }
     adjustItemId = '';
+    adjustLotId = '';
     adjustBinId = '';
     adjustDelta = 0;
     adjustNote = '';
+    adjustError = '';
     adjustOpen = true;
   }
 
   async function submitMove() {
-    if (moveSaving || $pendingMove || !canManage) return;
+    if (moveSaving || $pendingMove || !canManage || !moveLotReady) return;
     if (!moveItemId || !moveFromBinId || !moveToBinId || !moveQty) {
       toast.error('Article, bins source/destination et quantité sont requis');
       return;
@@ -159,6 +182,7 @@
         {
           operationKey: crypto.randomUUID(),
           itemId: moveItemId,
+          ...(moveLotId ? { lotId: moveLotId } : {}),
           fromBinId: moveFromBinId,
           toBinId: moveToBinId,
           qty: Number(moveQty),
@@ -173,6 +197,7 @@
       resolveMove(intent);
       toast.success('Stock déplacé');
       moveOpen = false;
+      adjustOpen = false;
       await load();
     } catch (e) {
       if (intent && e instanceof ApiError && [400, 403, 404, 409, 422].includes(e.statusCode))
@@ -195,30 +220,64 @@
     return () => window.removeEventListener('wms:stock-changed', refresh);
   });
   beforeNavigate(({ cancel }) => {
-    if (moveSaving) cancel();
+    if (moveSaving || adjustSaving) cancel();
   });
 
   async function submitAdjust() {
+    if (adjustSaving || $pendingAdjust || $adjustStorageError || !canManage || !adjustLotReady)
+      return;
     if (!adjustItemId || !adjustBinId || !adjustDelta) {
       toast.error('Article, bin et delta (non nul) sont requis');
       return;
     }
     adjustSaving = true;
+    adjustError = '';
+    let intent: AdjustIntent | null = null;
+    const scope = adjustScope();
     try {
-      await api('/wms/inventory/adjust', {
-        method: 'POST',
-        body: {
+      const [item, bin, lot] = await Promise.all([
+        api<Item>(`/wms/items/${adjustItemId}`),
+        api<Bin>(`/wms/bins/${adjustBinId}`),
+        adjustLotId
+          ? api<{ code: string }>(`/wms/items/${adjustItemId}/lots/${adjustLotId}`)
+          : Promise.resolve(null),
+      ]);
+      const label = `${adjustDelta > 0 ? '+' : ''}${adjustDelta} ${item.unit} · ${item.sku} · ${bin.code}${lot ? ' · lot ' + lot.code : ''}`;
+      if (
+        !(await confirmAction(
+          `Appliquer « ${label} » ? Cette correction sera inscrite au journal.`,
+          { title: 'Confirmer l’ajustement', confirmLabel: 'Ajuster le stock' },
+        ))
+      )
+        return;
+      if (scope !== adjustScope()) throw new Error('La session a changé.');
+      intent = rememberAdjust(
+        {
+          operationKey: crypto.randomUUID(),
           itemId: adjustItemId,
           binId: adjustBinId,
+          ...(adjustLotId ? { lotId: adjustLotId } : {}),
           qtyDelta: Number(adjustDelta),
-          note: adjustNote || undefined,
+          ...(adjustNote ? { note: adjustNote } : {}),
         },
+        label,
+      );
+      await api('/wms/inventory/adjust', {
+        method: 'POST',
+        body: intent.request,
       });
+      resolveAdjust(intent);
       toast.success('Stock ajusté');
       adjustOpen = false;
       await load();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Échec de l'ajustement");
+      if (intent && e instanceof ApiError && [400, 403, 404, 409, 422].includes(e.statusCode))
+        resolveAdjust(intent);
+      adjustError = $pendingAdjust
+        ? 'Résultat non confirmé. Fermez puis reprenez la demande conservée en haut de la page, sans recréer l’ajustement.'
+        : e instanceof Error
+          ? e.message
+          : 'Échec de l’ajustement';
     } finally {
       adjustSaving = false;
     }
@@ -264,6 +323,9 @@
               class={`ml-auto font-semibold ${Number(lvl.qtyOnHand) < 0 ? 'text-danger' : 'text-ink'}`}
             >
               {lvl.qtyOnHand}
+              {#if Number(lvl.quarantinedQty) > 0}<span class="block text-xs text-warn"
+                  >{lvl.quarantinedQty} en quarantaine · {lvl.availableQty} utilisables</span
+                >{/if}
               {lvl.item.unit}
             </span>
           </div>
@@ -305,6 +367,13 @@
         bind:value={moveToBinId}
       />
     </Field>
+    <LotChoice
+      itemId={moveItemId}
+      binId={moveFromBinId}
+      bind:value={moveLotId}
+      bind:ready={moveLotReady}
+      disabled={moveSaving}
+    />
     <Field label="Quantité">
       <Input type="number" bind:value={moveQty} min={0} step="any" />
     </Field>
@@ -321,13 +390,16 @@
         moveOpen = false;
       }}>Fermer</Button
     >
-    <Button loading={moveSaving} disabled={!!$pendingMove} onclick={submitMove}>Déplacer</Button>
+    <Button loading={moveSaving} disabled={!!$pendingMove || !moveLotReady} onclick={submitMove}
+      >Déplacer</Button
+    >
   {/snippet}
 </Modal>
 
 <!-- Adjust modal -->
-<Modal bind:open={adjustOpen} title="Ajuster le stock">
-  <div class="space-y-3">
+<Modal bind:open={adjustOpen} title="Ajuster le stock" dismissible={!adjustSaving}>
+  <ErrorNotice message={adjustError} />
+  <fieldset class="min-w-0 space-y-3" disabled={adjustSaving || !!$pendingAdjust}>
     <Field label="Article">
       <EntityPicker
         endpoint="/wms/choices/items"
@@ -350,17 +422,31 @@
     <Field label="Delta (peut être négatif)">
       <Input type="number" bind:value={adjustDelta} step="any" />
     </Field>
+    <LotChoice
+      itemId={adjustItemId}
+      outgoing={adjustDelta < 0}
+      binId={adjustDelta < 0 ? adjustBinId : ''}
+      allowCreate
+      bind:value={adjustLotId}
+      bind:ready={adjustLotReady}
+      disabled={adjustSaving}
+    />
     <Field label="Note">
       <Textarea bind:value={adjustNote} />
     </Field>
-  </div>
+  </fieldset>
   {#snippet footer()}
     <Button
       variant="secondary"
+      disabled={adjustSaving}
       onclick={() => {
         adjustOpen = false;
       }}>Annuler</Button
     >
-    <Button loading={adjustSaving} onclick={submitAdjust}>Ajuster</Button>
+    <Button
+      loading={adjustSaving}
+      disabled={!adjustLotReady || !!$pendingAdjust || !!$adjustStorageError}
+      onclick={submitAdjust}>Ajuster</Button
+    >
   {/snippet}
 </Modal>

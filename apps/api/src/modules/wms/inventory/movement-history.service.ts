@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@pulsar/database';
 import type { WmsMovementRow } from '@pulsar/shared';
 import { paginated, paginationArgs } from '../../../common/pagination';
@@ -18,10 +18,17 @@ export class MovementHistoryService {
     private readonly prisma: PrismaService,
     private readonly ownership: OwnershipService,
   ) {}
-  async list(tenantId: string, q: MovementListQueryDto, serviceContext = false) {
+  async list(
+    tenantId: string,
+    q: MovementListQueryDto,
+    serviceContext = false,
+    manufacturingContext = false,
+  ) {
     await this.ownership.assertOwnedIfSet('wmsItem', q.itemId, tenantId);
     await this.ownership.assertOwnedIfSet('bin', q.binId, tenantId);
     await this.ownership.assertOwnedIfSet('location', q.locationId, tenantId);
+    if (q.lotId && !(await this.prisma.wmsLot.findFirst({ where: { tenantId, id: q.lotId } })))
+      throw new BadRequestException('Lot introuvable.');
     const { page, pageSize, skip, take } = paginationArgs(q);
     const and: Prisma.StockMovementWhereInput[] = [];
     if (q.binId) and.push({ OR: [{ fromBinId: q.binId }, { toBinId: q.binId }] });
@@ -41,12 +48,14 @@ export class MovementHistoryService {
           { fromBin: { tenantId, code: { contains: search, mode: 'insensitive' } } },
           { toBin: { tenantId, code: { contains: search, mode: 'insensitive' } } },
           { note: { contains: search, mode: 'insensitive' } },
+          { lot: { tenantId, code: { contains: search, mode: 'insensitive' } } },
         ],
       });
     const where: Prisma.StockMovementWhereInput = {
       tenantId,
       AND: and,
       ...(q.itemId ? { itemId: q.itemId } : {}),
+      ...(q.lotId ? { lotId: q.lotId } : {}),
       ...(q.type ? { type: q.type } : {}),
       ...(q.refId ? { refId: q.refId } : {}),
       ...(q.refType ? { refType: q.refType } : {}),
@@ -61,6 +70,7 @@ export class MovementHistoryService {
             orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
             select: {
               id: true,
+              lot: { select: { id: true, code: true, expiresOn: true } },
               type: true,
               qty: true,
               unitSnapshot: true,
@@ -78,35 +88,76 @@ export class MovementHistoryService {
         ]);
         const ids = (type: string) =>
           rows.filter((r) => r.refType === type && r.refId).map((r) => r.refId!);
-        const [users, receipts, picks, counts, serviceJobs] = await Promise.all([
-          tx.user.findMany({
-            where: {
-              tenantId,
-              id: { in: rows.map((r) => r.createdById).filter((id): id is string => !!id) },
-            },
-            select: { id: true, firstName: true, lastName: true },
-          }),
-          tx.receipt.findMany({
-            where: { tenantId, id: { in: ids('receipt') } },
-            select: { id: true, number: true },
-          }),
-          tx.pickOrder.findMany({
-            where: { tenantId, id: { in: ids('pick-order') } },
-            select: { id: true, number: true },
-          }),
-          tx.cycleCount.findMany({
-            where: { tenantId, id: { in: ids('cycle-count') } },
-            select: { id: true, number: true },
-          }),
-          serviceContext
-            ? tx.serviceJob.findMany({
-                where: { tenantId, id: { in: ids('service-job') } },
-                select: { id: true, number: true },
-              })
-            : Promise.resolve([]),
-        ]);
+        const [users, receipts, picks, counts, serviceJobs, declarations, reversals, exits] =
+          await Promise.all([
+            tx.user.findMany({
+              where: {
+                tenantId,
+                id: { in: rows.map((r) => r.createdById).filter((id): id is string => !!id) },
+              },
+              select: { id: true, firstName: true, lastName: true },
+            }),
+            tx.receipt.findMany({
+              where: { tenantId, id: { in: ids('receipt') } },
+              select: { id: true, number: true },
+            }),
+            tx.pickOrder.findMany({
+              where: { tenantId, id: { in: ids('pick-order') } },
+              select: { id: true, number: true },
+            }),
+            tx.cycleCount.findMany({
+              where: { tenantId, id: { in: ids('cycle-count') } },
+              select: { id: true, number: true },
+            }),
+            serviceContext
+              ? tx.serviceJob.findMany({
+                  where: { tenantId, id: { in: ids('service-job') } },
+                  select: { id: true, number: true },
+                })
+              : Promise.resolve([]),
+            manufacturingContext
+              ? tx.manufacturingDeclaration.findMany({
+                  where: {
+                    tenantId,
+                    id: { in: ids('manufacturing-declaration') },
+                    order: { tenantId },
+                  },
+                  select: { id: true, order: { select: { id: true, number: true } } },
+                })
+              : Promise.resolve([]),
+            manufacturingContext
+              ? tx.manufacturingDeclarationReversal.findMany({
+                  where: {
+                    tenantId,
+                    id: { in: ids('manufacturing-reversal') },
+                    declaration: { tenantId, order: { tenantId } },
+                  },
+                  select: {
+                    id: true,
+                    declaration: { select: { order: { select: { id: true, number: true } } } },
+                  },
+                })
+              : Promise.resolve([]),
+            ids('stock-exit').length
+              ? tx.wmsStockExit.findMany({
+                  where: { tenantId, id: { in: ids('stock-exit') } },
+                  select: { id: true, number: true },
+                })
+              : [],
+          ]);
         const actor = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
         const sources = new Map<string, WmsMovementRow['source']>();
+        for (const d of exits) sources.set(`stock-exit:${d.id}`, { ...d, kind: 'stock-exit' });
+        for (const r of reversals)
+          sources.set(`manufacturing-reversal:${r.id}`, {
+            ...r.declaration.order,
+            kind: 'manufacturing-order',
+          });
+        for (const d of declarations)
+          sources.set(`manufacturing-declaration:${d.id}`, {
+            ...d.order,
+            kind: 'manufacturing-order',
+          });
         for (const [kind, docs] of [
           ['receipt', receipts],
           ['pick-order', picks],
@@ -125,6 +176,9 @@ export class MovementHistoryService {
             : null;
         const items: WmsMovementRow[] = rows.map((r) => ({
           id: r.id,
+          lot: r.lot
+            ? { ...r.lot, expiresOn: r.lot.expiresOn?.toISOString().slice(0, 10) ?? null }
+            : null,
           type: r.type,
           createdAt: r.createdAt.toISOString(),
           qty: r.qty.toString(),

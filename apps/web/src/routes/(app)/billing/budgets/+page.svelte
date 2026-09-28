@@ -1,9 +1,23 @@
 <script lang="ts">
-  import { Modal } from '$lib/components/ui';
-  import { confirmAction } from '$lib/stores/confirmation';
-  import { api, ApiError } from '$lib/api/client';
-  import { toast } from '$lib/stores/toast';
+  import { onMount } from 'svelte';
   import {
+    CURRENCIES,
+    formatLedgerAmount,
+    validateBudgetLines,
+    validateBudgetPeriod,
+  } from '@pulsar/shared';
+  import { api, ApiError } from '$lib/api/client';
+  import { auth } from '$lib/stores/auth';
+  import { toast } from '$lib/stores/toast';
+  import { confirmAction } from '$lib/stores/confirmation';
+  import {
+    readPlanningIntent,
+    rememberPlanningIntent,
+    type PlanningIntent,
+  } from '$lib/billing/planning-intent';
+  import LedgerCoverage from '$lib/components/billing/LedgerCoverage.svelte';
+  import {
+    Modal,
     PageHeader,
     Card,
     Table,
@@ -13,481 +27,478 @@
     Skeleton,
     ErrorNotice,
     EntityPicker,
-    type Tone,
+    Input,
+    Select,
   } from '$lib/components/ui';
-
-  // ── Local types aligned to API responses ────────────────────────────────────
-
-  /** A single budget line (returned inside Budget) */
-  interface BudgetLine {
-    id?: string;
+  interface Line {
     accountCode: string;
-    /** Decimal serialised as string by Prisma */
     amount: string;
   }
-
-  /** Returned by GET /billing/budgets and GET /billing/budgets/:id */
   interface Budget {
     id: string;
     name: string;
     fiscalYear: number;
     isActive: boolean;
-    lines: BudgetLine[];
+    currency: string | null;
+    periodFrom: string | null;
+    periodTo: string | null;
+    version: number;
+    lines: Line[];
   }
-
-  /** One row returned by GET /billing/budgets/:id/variance */
-  interface VarianceRow {
-    accountCode: string;
-    name: string;
-    /** number (already Number-coerced by the API service via computeBudgetVariance) */
-    budget: number;
-    actual: number;
-    variance: number;
-    variancePct: number;
+  interface Variance {
+    rows: { accountCode: string; name: string; budget: string; actual: string; variance: string }[];
+    currency: string;
+    periodFrom: string;
+    periodTo: string;
+    budgetVersion: number;
+    coverage: {
+      unknownEntries: number;
+      selectedEntries: number;
+      otherCurrencies: { currency: string; count: number }[];
+    };
   }
-
-  /** Full shape returned by GET /billing/budgets/:id/variance */
-  interface VarianceResult {
-    rows: VarianceRow[];
-    totalBudget: number;
-    totalActual: number;
-    totalVariance: number;
-  }
-
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
-  function money(val: string | number | null | undefined): string {
-    if (val === null || val === undefined) return '—';
-    const n = Number(val);
-    if (isNaN(n)) return '—';
-    return n.toLocaleString('fr-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-
-  function signedMoney(val: number | string | null | undefined): string {
-    if (val === null || val === undefined) return '—';
-    const n = Number(val);
-    if (isNaN(n)) return '—';
-    const formatted = Math.abs(n).toLocaleString('fr-CA', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-    return n < 0 ? `−${formatted}` : formatted;
-  }
-
-  function varianceTone(variance: number): Tone {
-    return variance < 0 ? 'danger' : 'ok';
-  }
-
-  /** Sum of line amounts for display in the list (coerce Decimal strings) */
-  function totalBudgeted(lines: BudgetLine[]): number {
-    return lines.reduce((sum, l) => sum + Number(l.amount), 0);
-  }
-
-  // ── List state ───────────────────────────────────────────────────────────────
-
-  let budgets = $state<Budget[]>([]);
-  let loading = $state(true);
-  let error = $state('');
-
-  async function loadBudgets() {
+  const canManage = $derived(!!$auth?.user.permissions.includes('billing.ledger.manage'));
+  const key = $derived(`pulsar.budgets:${$auth?.tenant.id}:${$auth?.user.id}`);
+  let budgets = $state<Budget[]>([]),
+    loading = $state(true),
+    error = $state(''),
+    blocked = $state(false);
+  let showModal = $state(false),
+    editing = $state<string | null>(null),
+    version = $state(0),
+    saving = $state(false),
+    formError = $state('');
+  let name = $state(''),
+    year = $state(new Date().getFullYear()),
+    currency = $state(''),
+    from = $state(''),
+    to = $state(''),
+    active = $state(true),
+    lines = $state<Line[]>([{ accountCode: '', amount: '' }]);
+  let pending = $state<PlanningIntent | null>(null);
+  let selected = $state<Budget | null>(null),
+    result = $state<Variance | null>(null),
+    varianceLoading = $state(false),
+    varianceError = $state('');
+  let history = $state<{ version: number; createdAt: string; snapshot: Budget }[]>([]);
+  let generation = 0;
+  async function load() {
+    generation++;
+    selected = null;
+    result = null;
+    history = [];
     loading = true;
     error = '';
+    budgets = [];
     try {
       budgets = await api<Budget[]>('/billing/budgets');
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Échec du chargement des budgets';
+      error = (e as Error).message;
     } finally {
       loading = false;
     }
   }
-
-  $effect(() => {
-    void loadBudgets();
-  });
-
-  // ── Create / Edit modal ──────────────────────────────────────────────────────
-
-  interface LineForm {
-    accountCode: string;
-    amount: string;
-  }
-
-  let showModal = $state(false);
-  let editingBudget = $state<Budget | null>(null);
-  let form = $state({ name: '', fiscalYear: new Date().getFullYear(), isActive: true });
-  let lines = $state<LineForm[]>([{ accountCode: '', amount: '' }]);
-  let saving = $state(false);
-  let formError = $state('');
-
-  function openCreate() {
-    editingBudget = null;
-    form = { name: '', fiscalYear: new Date().getFullYear(), isActive: true };
-    lines = [{ accountCode: '', amount: '' }];
-    formError = '';
-    showModal = true;
-  }
-
-  function openEdit(b: Budget) {
-    editingBudget = b;
-    form = { name: b.name, fiscalYear: b.fiscalYear, isActive: b.isActive };
-    lines =
-      b.lines.length > 0
-        ? b.lines.map((l) => ({ accountCode: l.accountCode, amount: String(Number(l.amount)) }))
-        : [{ accountCode: '', amount: '' }];
-    formError = '';
-    showModal = true;
-  }
-
-  function addLine() {
-    lines = [...lines, { accountCode: '', amount: '' }];
-  }
-
-  function removeLine(idx: number) {
-    lines = lines.filter((_, i) => i !== idx);
-  }
-
-  async function saveBudget() {
-    formError = '';
-    if (!form.name.trim()) {
-      formError = 'Le nom est requis.';
-      return;
-    }
-    if (!form.fiscalYear || isNaN(form.fiscalYear)) {
-      formError = "L'exercice fiscal est requis.";
-      return;
-    }
-    const validLines = lines.filter(
-      (l) => l.accountCode.trim() && String(l.amount ?? '').trim() !== '',
-    );
-    if (validLines.length === 0) {
-      formError = 'Au moins une ligne budgétaire est requise.';
-      return;
-    }
-    for (const l of validLines) {
-      const amt = Number(l.amount);
-      if (isNaN(amt)) {
-        formError = `Montant invalide pour le compte ${l.accountCode}.`;
-        return;
-      }
-    }
-
-    saving = true;
+  function restore() {
     try {
-      const body = {
-        name: form.name.trim(),
-        fiscalYear: Number(form.fiscalYear),
-        isActive: form.isActive,
-        lines: validLines.map((l) => ({
-          accountCode: l.accountCode.trim(),
-          amount: Number(l.amount),
-        })),
-      };
-      if (editingBudget) {
-        await api(`/billing/budgets/${editingBudget.id}`, { method: 'PATCH', body });
-        toast.success('Budget mis à jour');
-      } else {
-        await api('/billing/budgets', { method: 'POST', body });
-        toast.success('Budget créé');
+      pending = readPlanningIntent(key);
+      if (pending) {
+        const b = pending.body;
+        editing = pending.method === 'PATCH' ? pending.path.split('/').pop()! : null;
+        name = String(b.name);
+        year = Number(b.fiscalYear ?? new Date().getFullYear());
+        currency = String(b.currency ?? '');
+        from = String(b.periodFrom ?? '');
+        to = String(b.periodTo ?? '');
+        active = b.isActive === true;
+        version = Number(b.expectedVersion ?? 0);
+        lines = b.lines as Line[];
+        showModal = true;
       }
-      showModal = false;
-      await loadBudgets();
     } catch (e) {
-      formError = e instanceof ApiError ? e.message : "Échec de l'enregistrement";
+      blocked = true;
+      error = (e as Error).message;
+    }
+  }
+  onMount(() => {
+    restore();
+    if (!blocked) void load();
+  });
+  function open(b?: Budget) {
+    if (pending) {
+      showModal = true;
+      return;
+    }
+    editing = b?.id ?? null;
+    version = b?.version ?? 0;
+    name = b?.name ?? '';
+    year = b?.fiscalYear ?? new Date().getFullYear();
+    currency = b?.currency ?? '';
+    from = b?.periodFrom?.slice(0, 10) ?? '';
+    to = b?.periodTo?.slice(0, 10) ?? '';
+    active = b?.isActive ?? true;
+    lines = b?.lines.map((l) => ({ accountCode: l.accountCode, amount: l.amount })) ?? [
+      { accountCode: '', amount: '' },
+    ];
+    formError = '';
+    showModal = true;
+  }
+  async function save() {
+    formError = '';
+    const wasPending = !!pending;
+    try {
+      if (!pending) {
+        if (!name.trim()) throw Error('Le nom est requis.');
+        validateBudgetLines(lines);
+        if (!editing) {
+          validateBudgetPeriod(from, to, year);
+          if (!CURRENCIES.some((c) => c.code === currency)) throw Error('Choisissez une devise.');
+        }
+        if (
+          !(await confirmAction(
+            editing
+              ? 'Enregistrer cette révision du budget ?'
+              : `Créer ce budget en ${currency}, du ${from} au ${to} ? Sa devise et sa période seront figées.`,
+          ))
+        )
+          return;
+        const p: PlanningIntent = {
+          path: editing ? `/billing/budgets/${editing}` : '/billing/budgets',
+          method: editing ? 'PATCH' : 'POST',
+          body: {
+            operationKey: crypto.randomUUID(),
+            name,
+            isActive: active,
+            lines: lines.map((l) => ({ accountCode: l.accountCode, amount: l.amount })),
+            ...(editing
+              ? { expectedVersion: version }
+              : { fiscalYear: year, currency, periodFrom: from, periodTo: to }),
+          },
+        };
+        rememberPlanningIntent(key, p);
+        pending = p;
+      }
+      saving = true;
+      await api(pending.path, { method: pending.method, body: pending.body });
+      localStorage.removeItem(key);
+      pending = null;
+      showModal = false;
+      selected = null;
+      generation++;
+      result = null;
+      toast.success('Budget enregistré');
+      await load();
+    } catch (e) {
+      if (!wasPending && e instanceof ApiError && [400, 404, 409, 422].includes(e.statusCode)) {
+        localStorage.removeItem(key);
+        pending = null;
+      }
+      formError = (e as Error).message;
     } finally {
       saving = false;
     }
   }
-
-  // ── Delete ───────────────────────────────────────────────────────────────────
-
-  let deletingId = $state<string | null>(null);
-
-  async function deleteBudget(b: Budget) {
-    if (!(await confirmAction(`Supprimer le budget « ${b.name} (${b.fiscalYear}) » ?`))) return;
-    deletingId = b.id;
+  async function inspect(b: Budget) {
+    const seq = ++generation;
+    selected = b;
+    result = null;
+    history = [];
+    varianceError = '';
+    varianceLoading = true;
     try {
-      await api(`/billing/budgets/${b.id}`, { method: 'DELETE' });
-      toast.success('Budget supprimé');
-      await loadBudgets();
+      const h = await api<typeof history>(`/billing/budgets/${b.id}/history`);
+      if (seq !== generation) return;
+      history = h;
+      if (b.currency) {
+        const v = await api<Variance>(`/billing/budgets/${b.id}/variance`);
+        if (seq === generation) result = v;
+      }
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Échec de la suppression');
+      if (seq === generation) varianceError = (e as Error).message;
     } finally {
-      deletingId = null;
+      if (seq === generation) varianceLoading = false;
     }
-  }
-
-  // ── Variance view ────────────────────────────────────────────────────────────
-
-  let varianceBudget = $state<Budget | null>(null);
-  let varianceResult = $state<VarianceResult | null>(null);
-  let loadingVariance = $state(false);
-  let errorVariance = $state('');
-
-  async function openVariance(b: Budget) {
-    varianceBudget = b;
-    varianceResult = null;
-    loadingVariance = true;
-    errorVariance = '';
-    try {
-      varianceResult = await api<VarianceResult>(`/billing/budgets/${b.id}/variance`);
-    } catch (e) {
-      errorVariance = e instanceof ApiError ? e.message : 'Échec du chargement des écarts';
-    } finally {
-      loadingVariance = false;
-    }
-  }
-
-  function closeVariance() {
-    varianceBudget = null;
-    varianceResult = null;
-    errorVariance = '';
   }
 </script>
 
+<svelte:head><title>Budgets · Pulsar</title></svelte:head>
 <PageHeader
   title="Budgets"
-  subtitle="Budgets annuels par compte GL et rapport d'écarts budget-vs-réel."
+  subtitle="Comparer une prévision aux écritures d’une même devise et d’une période figée."
 />
-
-<!-- Toolbar -->
-<div class="mb-4 flex items-center justify-between">
-  <span class="text-sm text-ink-muted"
-    >{budgets.length} budget{budgets.length !== 1 ? 's' : ''}</span
-  >
-  <Button variant="primary" onclick={openCreate}>+ Nouveau budget</Button>
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+  <div class="flex flex-wrap gap-2">
+    <Button href="/finance" variant="ghost">Retour à Finance</Button><Button
+      href="/billing/accounting-profile"
+      variant="secondary">Profil comptable</Button
+    ><Button variant="ghost" disabled={loading || !!pending || blocked} onclick={load}
+      >Actualiser</Button
+    >
+  </div>
+  {#if canManage}<Button onclick={() => open()} disabled={blocked}
+      >{pending ? 'Reprendre la demande' : 'Nouveau budget'}</Button
+    >{/if}
 </div>
+<ErrorNotice message={error} onretry={blocked ? undefined : load} />
+<p class="mb-4 max-w-3xl text-sm text-ink-muted">
+  Les anciens budgets sans devise ni période capturées restent consultables. Créez un nouveau budget
+  pour les qualifier; aucun historique n’est converti. Les montants ne sont jamais additionnés entre
+  devises.
+</p>
+{#if loading}<Skeleton rows={4} />{:else if budgets.length === 0 && !error}<EmptyState
+    title="Aucun budget"
+    message="Commencez par une devise, une période et les comptes à suivre."
+  />{:else if !error}
+  <div class="space-y-3 sm:hidden" aria-label="Liste des budgets">
+    {#each budgets as b (b.id)}
+      <article class="rounded-lg border border-edge bg-surface p-4">
+        <h2 class="break-words font-medium">{b.name}</h2>
+        <p class="mt-1 text-xs text-ink-muted">{b.lines.length} compte(s) · révision {b.version}</p>
+        <p class="mt-3 text-sm tabular-nums">
+          {b.periodFrom?.slice(0, 10) ?? 'Période non qualifiée'}{b.periodTo
+            ? ' → ' + b.periodTo.slice(0, 10)
+            : ''}
+        </p>
+        <div class="mt-2 flex items-center justify-between gap-3 text-sm">
+          <span>{b.currency ?? 'Devise non qualifiée'}</span><Badge
+            tone={b.isActive ? 'ok' : 'neutral'}>{b.isActive ? 'Actif' : 'Archivé'}</Badge
+          >
+        </div>
+        <div class="mt-3 flex gap-2">
+          <Button variant="secondary" onclick={() => inspect(b)}>Consulter</Button
+          >{#if canManage && b.currency}<Button
+              variant="ghost"
+              disabled={!!pending}
+              onclick={() => open(b)}>Modifier</Button
+            >{/if}
+        </div>
+      </article>
+    {/each}
+  </div>
+  <div class="hidden sm:block">
+    <Table>
+      {#snippet head()}<th>Budget</th><th>Période figée</th><th>Devise</th><th>Statut</th><th
+          >Actions</th
+        >{/snippet}
+      {#snippet body()}{#each budgets as b (b.id)}<tr>
+            <td
+              ><span class="font-medium">{b.name}</span>
+              <p class="text-xs text-ink-muted">
+                {b.lines.length} compte(s) · révision {b.version}
+              </p></td
+            >
+            <td class="whitespace-nowrap text-sm tabular-nums"
+              >{b.periodFrom?.slice(0, 10) ?? 'Non qualifiée'}{b.periodTo
+                ? ' → ' + b.periodTo.slice(0, 10)
+                : ''}</td
+            >
+            <td>{b.currency ?? 'Non qualifiée'}</td><td
+              ><Badge tone={b.isActive ? 'ok' : 'neutral'}>{b.isActive ? 'Actif' : 'Archivé'}</Badge
+              ></td
+            >
+            <td
+              ><div class="flex flex-wrap gap-1">
+                <Button variant="ghost" onclick={() => inspect(b)}>Consulter</Button
+                >{#if canManage && b.currency}<Button
+                    variant="ghost"
+                    disabled={!!pending}
+                    onclick={() => open(b)}>Modifier</Button
+                  >{/if}
+              </div></td
+            >
+          </tr>{/each}{/snippet}
+    </Table>
+  </div>{/if}
 
-<ErrorNotice message={error} onretry={loadBudgets} />
-
-{#if loading}
-  <Card padded={false}><Skeleton rows={4} /></Card>
-{:else}
-  <Table>
-    {#snippet head()}
-      <th>Nom</th>
-      <th class="text-center">Exercice</th>
-      <th class="text-right">Total budgété</th>
-      <th class="text-center">Statut</th>
-      <th></th>
-    {/snippet}
-    {#snippet body()}
-      {#each budgets as b (b.id)}
-        <tr>
-          <td class="font-medium">{b.name}</td>
-          <td class="text-center tabular-nums">{b.fiscalYear}</td>
-          <td class="text-right tabular-nums">{money(totalBudgeted(b.lines))}</td>
-          <td class="text-center">
-            <Badge tone={b.isActive ? 'ok' : 'neutral'}>{b.isActive ? 'Actif' : 'Inactif'}</Badge>
-          </td>
-          <td class="text-right whitespace-nowrap">
-            <button class="mr-2 text-xs text-accent hover:underline" onclick={() => openVariance(b)}
-              >Écarts</button
-            >
-            <button class="mr-2 text-xs text-accent hover:underline" onclick={() => openEdit(b)}
-              >Modifier</button
-            >
-            <button
-              class="text-xs text-danger hover:underline disabled:opacity-40"
-              disabled={deletingId === b.id}
-              onclick={() => deleteBudget(b)}>{deletingId === b.id ? '…' : 'Supprimer'}</button
-            >
-          </td>
-        </tr>
-      {:else}
-        <tr>
-          <td colspan={5}>
-            <EmptyState title="Aucun budget" message="Créez votre premier budget annuel." />
-          </td>
-        </tr>
-      {/each}
-    {/snippet}
-  </Table>
+{#if selected}
+  <section aria-label="Détail du budget" class="mt-6 space-y-4">
+    <div class="flex items-center justify-between gap-3">
+      <h2 class="text-lg font-semibold">{selected.name}</h2>
+      <Button
+        variant="ghost"
+        onclick={() => {
+          generation++;
+          selected = null;
+          result = null;
+        }}>Fermer le détail</Button
+      >
+    </div>
+    <ErrorNotice message={varianceError} />
+    {#if varianceLoading}<Skeleton rows={4} />{:else if result}
+      <p class="text-sm">
+        Du {result.periodFrom} au {result.periodTo}, dates comptables inclusives · révision {result.budgetVersion}.
+        Couverture limitée aux comptes de ce budget.
+      </p>
+      <LedgerCoverage currency={result.currency} coverage={result.coverage} />
+      <Table
+        >{#snippet head()}<th>Compte</th><th class="text-right">Budget</th><th class="text-right"
+            >Réalisé</th
+          ><th class="text-right">Écart</th>{/snippet}
+        {#snippet body()}{#each result?.rows ?? [] as r}<tr
+              ><td>{r.accountCode} · {r.name}</td><td class="text-right tabular-nums"
+                >{formatLedgerAmount(r.budget)}</td
+              ><td class="text-right tabular-nums">{formatLedgerAmount(r.actual)}</td><td
+                class="text-right tabular-nums">{formatLedgerAmount(r.variance)}</td
+              ></tr
+            >{/each}{/snippet}
+      </Table>
+      <p class="text-xs text-ink-muted">
+        Écart = budget − réalisé, en {result.currency}. Le réalisé est le mouvement net de la période
+        selon le sens du compte, pas son solde de clôture. Un écart positif n’est pas toujours
+        favorable. Les soldes de bilan et les flux de résultat ne sont pas additionnés en un faux
+        bénéfice.
+      </p>
+    {:else if !selected.currency}
+      <p class="text-sm text-warn">
+        Historique non qualifié : la comparaison est indisponible. Créez un nouveau budget avec
+        devise et période explicites.
+      </p>
+      <Table
+        >{#snippet head()}<th>Compte historique</th><th>Montant sans devise</th
+          >{/snippet}{#snippet body()}{#each selected?.lines ?? [] as l}<tr
+              ><td>{l.accountCode}</td><td>{formatLedgerAmount(l.amount)}</td></tr
+            >{/each}{/snippet}</Table
+      >
+    {/if}
+    {#if history.length}
+      <details class="rounded-lg border border-edge p-3">
+        <summary class="cursor-pointer text-sm font-medium"
+          >Historique — 20 dernières révisions</summary
+        >
+        {#each history as h}<article class="mt-3 border-t border-edge pt-3 text-sm">
+            <h3 class="font-medium">
+              Révision {h.version} · {h.snapshot.name} · {h.snapshot.isActive ? 'Actif' : 'Archivé'}
+            </h3>
+            <p>
+              {h.snapshot.currency} · {h.snapshot.periodFrom?.slice(0, 10)} → {h.snapshot.periodTo?.slice(
+                0,
+                10,
+              )}
+            </p>
+            <ul class="mt-2">
+              {#each h.snapshot.lines as l}<li>
+                  {l.accountCode} : {formatLedgerAmount(l.amount)}
+                </li>{/each}
+            </ul>
+          </article>{/each}
+      </details>
+    {/if}
+  </section>
 {/if}
 
-<!-- ── Create / Edit modal ─────────────────────────────────────────────────── -->
 {#if showModal}
   <Modal
     open
-    title={editingBudget ? 'Modifier le budget' : 'Nouveau budget'}
+    title={editing ? 'Réviser le budget' : 'Nouveau budget'}
     size="lg"
-    onclose={() => {
-      showModal = false;
-    }}
     dismissible={!saving}
+    onclose={() => (showModal = false)}
   >
-    <div class="space-y-3">
-      <!-- Name -->
-      <div>
-        <label class="mb-1 block text-xs font-medium text-ink-muted" for="bgt-name">Nom</label>
-        <input
-          id="bgt-name"
-          bind:value={form.name}
-          placeholder="ex. Budget opérationnel 2026"
-          class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-        />
-      </div>
-
-      <!-- Fiscal year + active -->
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="mb-1 block text-xs font-medium text-ink-muted" for="bgt-fy"
-            >Exercice fiscal</label
-          >
-          <input
-            id="bgt-fy"
-            type="number"
-            bind:value={form.fiscalYear}
-            placeholder="2026"
-            class="w-full rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-          />
-        </div>
-        <div class="flex items-end pb-1">
-          <label class="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" bind:checked={form.isActive} class="rounded" />
-            Budget actif
-          </label>
-        </div>
-      </div>
-
-      <!-- Budget lines -->
-      <div>
-        <div class="mb-2 flex items-center justify-between">
-          <span class="text-xs font-medium text-ink-muted">Lignes budgétaires</span>
-          <button type="button" class="text-xs text-accent hover:underline" onclick={addLine}
-            >+ Ajouter une ligne</button
-          >
-        </div>
-        <div class="space-y-2 max-h-48 overflow-y-auto pr-1">
-          {#each lines as line, idx (idx)}
-            <div class="flex items-center gap-2">
-              <div class="min-w-0 flex-1">
-                <EntityPicker
+    <form
+      class="space-y-4"
+      onsubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <ErrorNotice message={formError} />
+      {#if pending}<p role="status" class="text-sm text-warn">
+          Demande conservée. Les champs sont verrouillés jusqu’à la confirmation de cette même
+          demande.
+        </p>{/if}
+      <fieldset disabled={saving || !!pending || !canManage} class="space-y-4">
+        <label class="block space-y-1 text-sm"
+          ><span>Nom du budget</span><Input
+            aria-label="Nom du budget"
+            bind:value={name}
+            maxlength={80}
+          /></label
+        >
+        {#if !editing}<div class="grid gap-3 sm:grid-cols-2">
+            <label class="block space-y-1 text-sm"
+              ><span>Exercice (année de début)</span><Input
+                aria-label="Exercice"
+                type="number"
+                bind:value={year}
+                min={2000}
+                max={2100}
+              /></label
+            >
+            <label class="block space-y-1 text-sm"
+              ><span>Devise du budget</span><Select
+                aria-label="Devise du budget"
+                bind:value={currency}
+                ><option value="">Choisir explicitement</option>{#each CURRENCIES as c}<option
+                    value={c.code}>{c.code}</option
+                  >{/each}</Select
+              ></label
+            >
+            <label class="block space-y-1 text-sm"
+              ><span>Début de période</span><Input
+                aria-label="Début de période"
+                type="date"
+                bind:value={from}
+              /></label
+            >
+            <label class="block space-y-1 text-sm"
+              ><span>Fin de période incluse</span><Input
+                aria-label="Fin de période incluse"
+                type="date"
+                bind:value={to}
+              /></label
+            >
+          </div>{:else}<p class="text-sm text-ink-muted">
+            Révision attendue : {version}. Devise et période immuables; pour les changer, créez un
+            nouveau budget.
+          </p>{/if}
+        <label class="flex items-center gap-2 text-sm"
+          ><input type="checkbox" bind:checked={active} />Budget actif (décocher pour archiver sans
+          effacer)</label
+        >
+        <div class="space-y-3">
+          {#each lines as line, i}<div
+              class="grid items-end gap-2 rounded-md border border-edge p-3 sm:grid-cols-[1fr_9rem_auto]"
+            >
+              <div>
+                <span class="mb-1 block text-xs text-ink-muted">Compte · ligne {i + 1}</span
+                ><EntityPicker
+                  label={'Compte · ligne ' + (i + 1)}
                   endpoint="/billing/ledger/accounts"
-                  label="Code compte"
-                  placeholder="Code compte (ex. 5000)"
-                  listShape="array"
-                  valueKey="code"
-                  labelKey="code"
-                  detailKey="name"
                   bind:value={line.accountCode}
+                  valueKey="code"
+                  labelKey="code name"
+                  listShape="array"
+                  selectedLabel={line.accountCode}
+                  disabled={saving || !!pending}
                 />
               </div>
-              <input
-                type="number"
-                step="0.01"
-                bind:value={line.amount}
-                placeholder="Montant"
-                class="w-32 rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-              />
-              {#if lines.length > 1}
-                <button
-                  type="button"
-                  class="shrink-0 text-xs text-danger hover:underline"
-                  onclick={() => removeLine(idx)}>✕</button
-                >
-              {/if}
-            </div>
-          {/each}
+              <label class="block space-y-1 text-sm"
+                ><span>Montant · ligne {i + 1}</span><Input
+                  aria-label={'Montant · ligne ' + (i + 1)}
+                  inputmode="decimal"
+                  bind:value={line.amount}
+                /></label
+              >
+              <Button
+                variant="ghost"
+                aria-label={'Retirer la ligne ' + (i + 1)}
+                onclick={() => {
+                  lines = lines.filter((_, n) => n !== i);
+                }}
+                disabled={lines.length === 1}>Retirer</Button
+              >
+            </div>{/each}
         </div>
-      </div>
-    </div>
-
-    {#if formError}
-      <p class="mt-3 text-sm text-danger">{formError}</p>
-    {/if}
-    {#snippet footer()}<div class="flex justify-end gap-2">
         <Button
-          disabled={saving}
           variant="secondary"
+          disabled={lines.length >= 200}
           onclick={() => {
-            showModal = false;
-          }}>Annuler</Button
+            lines = [...lines, { accountCode: '', amount: '' }];
+          }}>Ajouter un compte</Button
         >
-        <Button variant="primary" disabled={saving || !form.name.trim()} onclick={saveBudget}>
-          {saving ? 'Enregistrement…' : 'Enregistrer'}
-        </Button>
-      </div>{/snippet}
-  </Modal>
-{/if}
-
-<!-- ── Variance panel ──────────────────────────────────────────────────────── -->
-{#if varianceBudget}
-  <Modal open title={`Écarts — ${varianceBudget.name}`} size="xl" onclose={closeVariance}>
-    <p class="text-xs text-ink-muted">Exercice {varianceBudget.fiscalYear}</p>
-
-    <ErrorNotice
-      message={errorVariance}
-      onretry={() => {
-        if (varianceBudget) void openVariance(varianceBudget);
-      }}
-    />
-
-    {#if loadingVariance}
-      <Skeleton rows={5} />
-    {:else if varianceResult}
-      <div class="overflow-x-auto">
-        <table class="w-full">
-          <thead>
-            <tr
-              class="border-b border-edge text-xs font-semibold tracking-wide text-ink-faint uppercase"
-            >
-              <th class="px-3 py-3 text-left">Code</th>
-              <th class="px-3 py-3 text-left">Compte</th>
-              <th class="px-3 py-3 text-right">Budgété</th>
-              <th class="px-3 py-3 text-right">Réel</th>
-              <th class="px-3 py-3 text-right">Écart</th>
-              <th class="px-3 py-3 text-right">Écart %</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-edge-soft">
-            {#each varianceResult.rows as row (row.accountCode)}
-              <tr class="text-sm hover:bg-surface-muted/50">
-                <td class="px-3 py-2.5 font-mono text-ink-muted">{row.accountCode}</td>
-                <td class="px-3 py-2.5">{row.name || '—'}</td>
-                <td class="px-3 py-2.5 text-right tabular-nums">{money(row.budget)}</td>
-                <td class="px-3 py-2.5 text-right tabular-nums">{money(row.actual)}</td>
-                <td class="px-3 py-2.5 text-right tabular-nums">
-                  <span
-                    class={row.variance < 0 ? 'text-danger font-semibold' : 'text-ok font-semibold'}
-                  >
-                    {signedMoney(row.variance)}
-                  </span>
-                </td>
-                <td class="px-3 py-2.5 text-right">
-                  <Badge tone={varianceTone(row.variance)}>
-                    {row.variancePct.toFixed(1)} %
-                  </Badge>
-                </td>
-              </tr>
-            {:else}
-              <tr>
-                <td colspan={6} class="px-3 py-6 text-center text-sm text-ink-faint">
-                  Aucune ligne budgétaire.
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-          <!-- Totals row -->
-          <tfoot class="border-t-2 border-edge">
-            <tr class="text-sm font-bold bg-surface-muted/30">
-              <td class="px-3 py-3" colspan={2}>Total</td>
-              <td class="px-3 py-3 text-right tabular-nums">{money(varianceResult.totalBudget)}</td>
-              <td class="px-3 py-3 text-right tabular-nums">{money(varianceResult.totalActual)}</td>
-              <td class="px-3 py-3 text-right tabular-nums">
-                <span class={varianceResult.totalVariance < 0 ? 'text-danger' : 'text-ok'}>
-                  {signedMoney(varianceResult.totalVariance)}
-                </span>
-              </td>
-              <td class="px-3 py-3 text-right">—</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    {:else if !loadingVariance && !errorVariance}
-      <EmptyState title="Aucune donnée" message="Aucun écart disponible pour ce budget." />
-    {/if}
-    {#snippet footer()}<div class="flex justify-end">
-        <Button variant="ghost" onclick={closeVariance}>Fermer</Button>
-      </div>{/snippet}
+      </fieldset>
+      {#if canManage}<Button type="submit" loading={saving} disabled={blocked}
+          >{pending ? 'Reprendre la demande' : 'Enregistrer le budget'}</Button
+        >{/if}
+    </form>
   </Modal>
 {/if}

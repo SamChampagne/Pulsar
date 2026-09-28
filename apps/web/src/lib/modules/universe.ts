@@ -13,6 +13,20 @@ export interface ModuleUniverse {
 }
 
 export const MODULE_UNIVERSES: Record<string, ModuleUniverse> = {
+  clients: {
+    key: 'clients',
+    title: 'Clients',
+    short: 'Clients',
+    mission:
+      'Entretenir les coordonnées et distinguer facturation et livraison sans imposer un autre module.',
+    accent: '#0f766e',
+    soft: '#ccfbf1',
+    rgb: '15 118 110',
+    objects: ['Identités', 'Contacts', 'Adresses'],
+    workflows: ['Rechercher', 'Compléter', 'Réutiliser'],
+    agent: 'Non intégré',
+    signal: 'Fiches partagées',
+  },
   hr: {
     key: 'hr',
     title: 'Ressources humaines',

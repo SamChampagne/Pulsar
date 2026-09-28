@@ -340,10 +340,10 @@ describe('Lead-to-cash (e2e) — CRM Deal → SalesOrder → CustomerInvoice →
     ).body as { status: string };
     expect(approved.status).toBe('APPROVED');
 
-    await request(http)
+await request(http)
       .post(`/api/v1/billing/customer-invoices/${invoiceId}/send`)
       .set(auth())
-      .expect((r) => expect([200, 201]).toContain(r.status));
+      .expect(409); // Legacy shortcut cannot send; payment is independent of delivery.
 
     const paid = (
       await request(http)

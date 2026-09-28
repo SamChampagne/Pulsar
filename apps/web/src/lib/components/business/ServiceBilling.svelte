@@ -8,8 +8,12 @@
     id: string;
     label: string;
     quantity: string;
+    issuedQuantity?: string;
+    returnedQuantity?: string;
     unit: string;
     expectedVersion: string;
+    jobId: string;
+    blockedReason: string | null;
   };
   type Billable = {
     project: {
@@ -88,7 +92,7 @@
   const valid = $derived(
     selected.length > 0 &&
       selected.length <= 100 &&
-      selected.every((s) => Number(prices[s.id]) > 0),
+      selected.every((s) => !s.blockedReason && Number(prices[s.id]) > 0),
   );
   async function send() {
     if (busy || (!pending && !valid)) return;
@@ -137,7 +141,7 @@
       <div>
         <h2 class="font-semibold">Travaux à facturer</h2>
         <p class="mt-1 text-sm text-ink-muted">
-          Heures approuvées et pièces consommées, sans double facturation.
+          Heures approuvées et pièces conservées après retours, sans double facturation.
         </p>
       </div>
       <Button variant="secondary" onclick={load} disabled={busy || loading}
@@ -163,7 +167,7 @@
       {#if !data.project.partner.billingCustomerId}<p class="my-3 text-sm text-warn">
           Reliez ce partenaire à un client de facturation dans <a
             class="underline"
-            href="/catalog/partners">Catalogue → Partenaires → Connexions</a
+            href="/services/data">Services → Données → Clients → Connexions</a
           >.
         </p>{/if}
       {#if pending}<div class="my-3 rounded-lg bg-warn-soft p-3 text-sm">
@@ -191,15 +195,26 @@
             class="grid items-center gap-3 rounded-lg border border-edge p-3 sm:grid-cols-[minmax(0,1fr)_10rem]"
           >
             <label class="flex items-start gap-3 text-sm"
-              ><input type="checkbox" class="mt-1" bind:checked={chosen[source.id]} /><span
+              ><input
+                type="checkbox"
+                class="mt-1"
+                disabled={!!source.blockedReason}
+                bind:checked={chosen[source.id]}
+              /><span
                 >{source.label}<span class="mt-1 block text-xs text-ink-muted"
                   >{Number(source.quantity).toLocaleString(undefined, { maximumFractionDigits: 4 })}
-                  {source.unit}</span
-                ></span
+                  {source.unit} à facturer</span
+                >{#if source.kind === 'part' && Number(source.returnedQuantity) > 0}<span
+                    class="mt-1 block text-xs text-ink-muted"
+                    >{source.issuedQuantity} sorties − {source.returnedQuantity} retournées</span
+                  >{/if}{#if source.blockedReason}<span class="mt-1 block text-xs text-warn"
+                    >{source.blockedReason}</span
+                  >{/if}</span
               ></label
             ><Field label={`Prix / ${source.unit}`}
               ><Input
                 type="number"
+                disabled={!!source.blockedReason}
                 min="0.0001"
                 max="10000000"
                 step="0.0001"
@@ -209,6 +224,11 @@
                 }}
               /></Field
             >
+            {#if source.blockedReason}<a
+                class="text-sm text-accent underline sm:col-span-2"
+                href={`/services/interventions?jobId=${encodeURIComponent(source.jobId)}&section=acceptance`}
+                >Ouvrir l’acceptation de l’intervention</a
+              >{/if}
           </div>{/each}
         {#if !data.sources.length}<p class="py-3 text-sm text-ink-muted">
             Aucune source facturable actuellement. Soumettez puis faites approuver les heures, ou

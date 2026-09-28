@@ -6,6 +6,197 @@ export interface PageGuide {
 }
 
 export const PAGE_GUIDES: Record<string, PageGuide> = {
+  '/billing/ledger-qualification': {
+    purpose:
+      'Reprendre la devise d’un historique manuel, paiement, facture ou groupe de dotations rapprochées avec une preuve et une décision humaine, sans modifier les lignes originales.',
+    steps: [
+      'Sélectionner une écriture sans devise originale. Contrôler la synthèse source : paiement et contrepassation, facture et avoirs clients, ou toutes les dotations enregistrées d’une immobilisation.',
+      'Conserver un justificatif PDF, PNG ou JPEG de 10 Mo maximum, avec une description. Le fichier et son empreinte sont conservés; un dépôt ne valide pas la devise.',
+      'Avec billing.ledger.qualify, choisir la devise explicite, la preuve et un motif détaillé. Préparer la revue, vérifier les lignes et les effets puis confirmer.',
+      'Pour corriger une qualification, la retirer avec motif et preuve avant de confirmer une nouvelle devise. Toutes les décisions restent conservées.',
+      'Immobilisation historique : vérifier cumul et périodes puis attester explicitement la devise sur preuve. Toutes les dotations sont qualifiées ou retirées ensemble. Aucun mois absent ni journal manquant n’est créé; le plan futur reste bloqué. Les droits de lecture Immobilisations sont requis aussi pour les preuves et reprises.',
+      'Un paiement garde sa devise source; la décision couvre aussi sa contrepassation. Retirer le rapprochement bancaire avant de modifier sa qualification. Accès au paiement requis aussi pour ses preuves.',
+      'Pour un paiement partiellement affecté, comparer déclaré, affecté/comptabilisé et reste. Seule la portion déjà postée entre dans la qualification; aucun crédit, avance ou montant complémentaire n’est créé. Le rapprochement bancaire reste bloqué.',
+      'Une facture garde sa devise source. Vérifier net, taxes figées, total et avoirs; la qualification couvre ensemble les écritures historiques NULL. Un avoir à devise connue interdit le retrait isolé. La reprise ne crée jamais de journal manquant. Droits de lecture de la facture requis, y compris sur preuves et reprises.',
+      'Facture transporteur ajustée : comparer lignes attendues, reçues et payable accepté. L’historique doit contenir une acceptation ACCEPT_INVOICED unique, cohérente avec le rapprochement, et le journal doit déjà correspondre au payable. Les taxes figées ne sont pas recalculées et aucun journal manquant n’est créé. Sans décision ou avec des écarts incohérents, le dossier reste bloqué.',
+      'Après coupure, vérifier la confirmation ou reprendre exactement la même demande. La preuve en attente exige le même fichier; ne pas créer une nouvelle clé.',
+    ],
+    connections:
+      'Finance seul suffit. Grand livre, balance, résultats, bilan, flux et écarts budgétaires utilisent la qualification actuellement confirmée et signalent les écritures historiques incluses. Les périodes anciennes reflètent la connaissance actuelle, pas celle de l’époque.',
+    caution:
+      'Aucune conversion, réécriture, contrepassation ou clôture. Un retrait remet l’écriture dans les exclusions des rapports. Une pièce jointe et son hash ne certifient pas sa véracité ni une conformité fiscale.',
+  },
+  '/billing/fixed-assets': {
+    purpose:
+      'Suivre une immobilisation dans sa devise, valider son plan exact et enregistrer les dotations réellement comptabilisées.',
+    steps: [
+      'Nouvelle immobilisation : code, nom, référence, devise, coût, résiduel, date d’acquisition, premier mois, durée et comptes actifs. Le compte de charge est de type Charge; le cumul est de type Actif.',
+      'Ouvrir : examiner les mensualités complètes, sans prorata journalier. Les cumuls linéaires sont arrondis au centime; leur différence donne chaque dotation. Modifier reste possible sur le brouillon.',
+      'Figer et activer demande confirmation et conserve le plan exact. Ses montants, dates, devise et comptes ne sont ensuite plus modifiables.',
+      'Comptabiliser uniquement la prochaine période arrivée à fin de mois UTC, avec billing.assets.post. Une dotation nulle est tracée sans écriture GL. Après coupure, reprendre la même demande conservée.',
+      'Retirer du suivi demande un motif et conserve l’historique. Les anciens dossiers sans devise restent en lecture seule, sans plan ou devise inventés.',
+    ],
+    connections:
+      'Finance seul suffit. Chaque dotation positive est liée à une écriture équilibrée du grand livre, puis aux rapports et budgets de cette devise. Le lien journal exige le droit de lecture GL. Reprise du journal permet de qualifier ensemble les anciennes dotations sur preuve, sans réactiver le plan futur. Aucun besoin de Transport, Flotte ou WMS; le profil comptable ne modifie pas le plan.',
+    caution:
+      'Le retrait n’est pas une cession comptable. Aucun posting d’acquisition, prorata fiscal, conversion, réévaluation, clôture de période ni contrepassation dans ce parcours. Le registre ne prouve pas à lui seul une comptabilité complète.',
+  },
+  '/billing/accounting-profile': {
+    purpose:
+      'Choisir le rôle comptable cible de Pulsar pour votre entreprise, sans activer une comptabilité officielle ou un connecteur.',
+    steps: [
+      'Choisir Pulsar natif ou un logiciel externe de référence; nommer ce logiciel si nécessaire.',
+      'Choisir la devise fonctionnelle cible et expliquer la décision. Le droit billing.accounting.configure est distinct de la saisie comptable.',
+      'Confirmer puis consulter les révisions. Après coupure, reprendre la même demande conservée.',
+    ],
+    connections:
+      'Le grand livre reste en devises de transaction. Les budgets capturent leurs propres devise et période; un changement de profil ne les modifie pas.',
+    caution:
+      'Pas de conversion, migration historique, synchronisation externe ni clôture activée par ce choix.',
+  },
+  '/billing/budgets': {
+    purpose:
+      'Prévoir des montants par compte et les comparer aux écritures d’une devise sur une période figée.',
+    steps: [
+      'Nouveau budget : nom, année de début, devise, dates civiles inclusives et comptes actifs distincts. Chaque montant accepte au plus deux décimales.',
+      'Confirmer : devise et période deviennent immuables. Modifier révise le nom, les lignes ou le statut actif; décocher actif archive sans supprimer.',
+      'Consulter : lire les exclusions, les écarts budget moins réalisé et les révisions conservées. Les vingt dernières révisions sont affichées.',
+      'Un historique non qualifié reste en lecture seule : créer explicitement un nouveau budget. Une réponse incertaine se reprend avec la demande conservée.',
+    ],
+    connections:
+      'Finance autonome. Comparaison calculée depuis le grand livre, uniquement pour les comptes du budget. Le profil comptable et les réglages fiscaux futurs ne déplacent pas les dates capturées.',
+    caution:
+      'Aucun change ou bénéfice total inféré. Un écart positif n’est pas toujours favorable. La couverture partielle n’est pas une comptabilité officielle.',
+  },
+  '/billing/ledger': {
+    purpose:
+      'Consulter les comptes et écritures, contrôler une balance par devise et enregistrer une écriture manuelle définitive.',
+    steps: [
+      'Journal : filtrer par source, période ou devise; Sans devise retrouve les écritures historiques non qualifiées.',
+      'Balance : choisir explicitement une devise. Lire le nombre d’écritures incluses et exclues avant les totaux.',
+      'Nouvelle écriture : date civile, devise, comptes et montants positifs au débit ou au crédit. Les totaux doivent être identiques au cent près; confirmer explicitement.',
+      'Après réponse incertaine : Vérifier l’écriture ou Reprendre la même écriture. La clé et les montants conservés ne doivent pas être remplacés.',
+    ],
+    connections:
+      'Les nouvelles approbations de factures client/transporteur, avoirs clients et paiements portent la devise de leur source. Le registre des factures fournisseur générales reste documentaire et n’alimente pas ce journal.',
+    caution:
+      'Aucun change, consolidation ou verrou de période. Un équilibre arithmétique ne prouve pas que toutes les pièces sont comptabilisées; les auto-postings existants restent best-effort. Reprise du journal qualifie l’historique manuel, les paiements et les factures cohérentes sur preuve et rapprochement source, avec leurs écritures compensatoires. Pour un paiement partiel, seule la portion affectée et déjà comptabilisée est qualifiée; le reste demeure hors journal et la banque reste bloquée. Anciens actifs et sources incohérentes restent exclus, sans backfill.',
+  },
+  '/billing/reports': {
+    purpose:
+      'Lire des vues de contrôle exactes dans une seule devise de transaction, sans additionner CAD et USD.',
+    steps: [
+      'Choisir la devise avant le rapport et sa période; la borne finale inclut toute la date civile UTC.',
+      'Contrôler la portée affichée : autres devises et historique sans devise sont exclus. Consulter le journal pour examiner les écritures non qualifiées.',
+      'Les âgés clients et transporteurs montrent les soldes actuels classés par ancienneté d’approbation. Changer la date de classement ne reconstruit pas une balance historique.',
+    ],
+    connections:
+      'Bilan, résultats et flux lisent le grand livre. Les âgés lisent les factures et leurs règlements courants. L’échéancier fournisseur général est un autre registre opérationnel, sans dette comptabilisée.',
+    caution:
+      'Pas encore de devise fonctionnelle, taux ou écarts de change, clôture, états consolidés ni ancienneté par échéance contractuelle. Ne pas utiliser ces vues partielles comme états officiels.',
+  },
+  '/billing/supplier-schedules': {
+    purpose:
+      'Répartir le reste documentaire des factures fournisseur qualifiées sur des dates convenues, sans comptabiliser une dette ni enregistrer de règlement.',
+    steps: [
+      'Choisir une date de référence et les filtres, puis Appliquer. Les prévisions couvrent tous les résultats filtrés, séparés par devise.',
+      'Planifier ouvre la facture source. Ajouter jusqu’à 60 dates civiles distinctes en ordre croissant; répartir exactement son total moins les avoirs qualifiés. Reprendre la date de la facture reste un choix explicite.',
+      'Renseigner le motif, Examiner les effets, vérifier les dates et montants puis Confirmer la révision avec le droit de gestion des échéanciers.',
+      'À revoir signifie qu’un nouvel avoir a changé le reste : l’ancienne révision reste visible mais sort de la prévision. Corriger explicitement la répartition et confirmer à nouveau.',
+      'Retirer le planning conserve son historique. Après une coupure, Vérifier la demande ou Reprendre la même confirmation; ne pas créer de doublon.',
+    ],
+    connections:
+      'Finance seul suffit. Factures et avoirs qualifiés sont des sources figées; liens directs vers la facture originale et le dossier fournisseur. Lecture par billing.supplier-invoices.read, confirmation humaine par billing.supplier-schedules.manage.',
+    caution:
+      'Date dépassée ne signifie pas impayé. Aucun paiement, solde bancaire, conversion de devise, posting comptable ou relance automatique. La date de référence classe le planning courant; ce n’est pas une balance historique. Zéro couvert par avoirs ne signifie pas payé.',
+  },
+  '/billing/suppliers': {
+    purpose:
+      'Réunir les documents reçus d’un fournisseur, sans confondre qualification documentaire et dette comptable.',
+    steps: [
+      'Rechercher un fournisseur actif ou historique, puis ouvrir son dossier.',
+      'Lire la synthèse qualifiée par devise : elle couvre tout l’historique, même quand la liste est filtrée.',
+      'Choisir type, statut, devise ou dates civiles, puis Appliquer. Ouvrir un document retrouve sa facture et son avoir précis.',
+      'Dans Pièces justificatives, distinguer original sélectionné et pièces complémentaires; télécharger via l’accès Finance protégé.',
+    ],
+    connections:
+      'Fournisseur du référentiel partagé, factures et avoirs du registre Finance. Les noms historiques restent figés. Les contextes Achats/WMS se lisent seulement depuis leurs documents avec les droits correspondants.',
+    caution:
+      'Aucun montant payable, comptabilisation, paiement ou stock ici. Le reste documentaire exclut les règlements; pas de conversion entre devises. Les relevés transporteur sont un registre distinct.',
+  },
+  '/wms/stock-exits': {
+    purpose:
+      'Documenter la destruction/le rebut ou le retour physique au fournisseur d’une quantité précise, sans libérer artificiellement un lot bloqué.',
+    steps: [
+      'Préparer : choisir article suivi, lot et emplacement, quantité et motif. Pour un retour, choisir le fournisseur partagé et renseigner son autorisation et la destination confirmée.',
+      'Avec Achats et son droit de lecture, rattacher facultativement une réception enregistrée du même fournisseur/article/lot/site/unité. La quantité encore rattachable tient compte des brouillons non annulés; ce n’est pas une réservation physique.',
+      'Le brouillon ne réserve et ne retire rien. En cas d’erreur, annuler avec un motif et préparer un nouveau dossier.',
+      'Examiner les effets : stock courant, quantité retirée, solde restant et disposition. Tout nouveau mouvement du lot exige une nouvelle revue.',
+      'Après l’opération physique, saisir le compte rendu et confirmer explicitement. Consulter la preuve de stock depuis le dossier fermé.',
+      'Après réponse perdue, reprendre la même demande conservée. Ne pas créer un second dossier pour compenser une réponse incertaine.',
+      'Conserver des PDF, PNG ou JPEG (10 Mo maximum, 30 pièces). Après coupure, vérifier l’enregistrement ou resélectionner exactement le même fichier. Un ajout après sortie est identifié comme tel, sans réécriture de la preuve de stock.',
+      'Après un retour enregistré, ouvrir Suivi chez le fournisseur. Choisir un justificatif et saisir les cumuls reçus, acceptés et refusés, la date du constat, sa référence et son compte rendu. Une baisse exige un motif; les versions précédentes restent consultables. Après coupure, vérifier ou reprendre la même déclaration.',
+    ],
+    connections:
+      'WMS seul suffit. Fournisseur partagé avec Achats, mais aucune commande obligatoire. Un rattachement explicite capture la ligne et son prix d’achat; seuls les lecteurs Achats peuvent consulter cette copie. Le journal revient au dossier source; la quarantaine du reste du lot est inchangée.',
+    caution:
+      'Confirmation par utilisateur interne avec wms.manage et wms.stock.dispose ou wms.stock.return. Aucun avoir, remboursement, email, shipment ou réception fournisseur automatique. Compte rendu textuel, pas une signature ou un certificat réglementaire. Pas d’annulation après sortie enregistrée.',
+  },
+  '/wms/cycle-counts': {
+    purpose:
+      'Comparer le stock physique d’un emplacement avec une copie figée, article par article et lot par lot.',
+    steps: [
+      'Démarrer sur un emplacement calme. Les mouvements ne sont pas réservés ou bloqués par le comptage.',
+      'Compter toutes les lignes, avec zéro explicite. Si un scan identifie plusieurs lots, choisir celui en main.',
+      'Enregistrer la saisie sans toucher au stock, vérifier les écarts, puis réconcilier explicitement.',
+      'Stock bougé : annuler et recompter. Réponse de réconciliation perdue : actualiser le dossier, ne pas renvoyer à l’aveugle.',
+    ],
+    connections:
+      'La réconciliation écrit des ajustements par lot dans le journal, avec son dossier source. Les écarts alimentent le Workbench, sans action automatique de stock par un agent.',
+    caution:
+      'Les anciens comptages sans instantané sécurisé restent consultables/annulables, mais ne peuvent plus ajuster le stock. Un article ou lot inattendu se traite par identification et ajustement explicites avant un nouveau comptage.',
+  },
+  '/wms/items': {
+    purpose:
+      'Définir les articles de stock et, pour les nouveaux articles suivis, leur registre de lots.',
+    steps: [
+      'Choisir le suivi par lot à la création : ce choix ne change plus ensuite.',
+      'Ouvrir Lots pour relever numéro, lot fournisseur et dates déclarées; créer la fiche ne crée pas de stock.',
+      'Sélectionner le lot dans les réceptions, mouvements et préparations; consulter son journal depuis la fiche.',
+      'Ouvrir Traçabilité du lot, choisir amont/aval puis une carte pour les dossiers directs; consulter les limites et contrepassations signalées.',
+    ],
+    connections:
+      'Achats sélectionne le même lot lors de l’arrivée physique. Solde du lot, total Inventaire et mouvement restent atomiques.',
+    caution:
+      'Dates informatives sans FEFO. Quarantaine manuelle sur tout le lot, libération documentée avec droit distinct. Aucun stock libéré automatiquement par Qualité. Traçabilité bornée par liens atelier vérifiés : pas de séries, allocation par pièce ou rappel réglementaire complet. Une préparation ou un shipment lié ne prouve pas une livraison.',
+  },
+  ...Object.fromEntries(
+    [
+      'services',
+      'support',
+      'purchasing',
+      'fleet',
+      'yard',
+      'billing',
+      'procurement',
+      'customer-portal',
+    ].map((module) => [
+      `/${module}/data`,
+      {
+        purpose:
+          'Créer et entretenir les références utiles à cette application sans activer un autre module pour ses données de base.',
+        steps: [
+          'Choisir le type de fiche et rechercher avant de créer pour éviter les doublons.',
+          'Ajouter ou modifier la fiche. Elle devient utilisable immédiatement dans les formulaires de cette application.',
+          'Pour Services et Achats, utiliser les connexions explicites Facturation ou Stock WMS seulement si la cible est activée et autorisée.',
+        ],
+        connections:
+          'Les fiches appartiennent au socle partagé : modifier une fiche met à jour la même identité dans les modules qui la consomment. Catalogue est un éditeur central facultatif.',
+        caution:
+          'Aucune fusion par nom, mouvement de stock, transition de maintenance ou facture depuis cet écran. Après une réponse incertaine, rechercher et vérifier la fiche avant de réessayer.',
+      },
+    ]),
+  ),
   '/services/planning': {
     purpose:
       'Répartir les interventions par personne, jour et équipe dans le fuseau stable de l’entreprise.',
@@ -283,6 +474,21 @@ export const PAGE_GUIDES: Record<string, PageGuide> = {
 };
 
 export const MODULE_GUIDES: Record<string, PageGuide> = {
+  clients: {
+    purpose:
+      'Entretenir les fiches client partagées, les coordonnées et les adresses de facturation et de livraison dans une application facultative.',
+    steps: [
+      'Choisir le registre Transport et facturation ou Services et SAV, puis rechercher le client avant de créer.',
+      'Ouvrir Dossier 360° : choisir une section autorisée, rechercher un dossier puis suivre son lien exact. Les compteurs incluent tous les statuts; les règles et actions restent dans les modules sources.',
+      'Compléter les coordonnées et saisir séparément les deux adresses. Copier une adresse est une action explicite, pas un lien permanent.',
+      'Ouvrir Carnet pour ajouter plusieurs adresses et interlocuteurs. Définir leur fonction, leur période de validité et le motif; retrouver les versions dans Historique.',
+      'Adapter les colonnes et leur largeur; désactiver une fiche devenue inutile plutôt que perdre son historique.',
+    ],
+    connections:
+      'Mêmes identifiants et writers que les espaces Données. Chaque module continue à gérer ses clients sans activer Clients. Les correspondances Services vers Facturation restent explicites.',
+    caution:
+      'Pas de fusion automatique entre registres, de création de site, de recalcul fiscal ou de remplacement des coordonnées de documents historiques. Les deux adresses sont des références, pas un manifeste ni une preuve de livraison.',
+  },
   hr: {
     purpose:
       'Organiser les employés, leurs équipes et leurs absences avec des accès dédiés et une décision humaine traçable.',
@@ -301,13 +507,13 @@ export const MODULE_GUIDES: Record<string, PageGuide> = {
       'Documenter la qualité des produits et opérations, du plan de contrôle à la vérification des corrections.',
     steps: [
       'Préparer un plan actif avec des vérifications conforme/non conforme ou des mesures à bornes incluses. Les consignes et critères sont figés à la création du contrôle.',
-      'Créer un contrôle indépendant, ou choisir une réception WMS validée, un ordre de fabrication ou une demande SAV. Démarrer, saisir les résultats et les enregistrer avant de terminer.',
+      'Créer un contrôle indépendant, ou choisir une réception WMS validée, un lot, un ordre de fabrication ou une demande SAV. Démarrer, saisir les résultats et les enregistrer avant de terminer. Un lot est figé dès la création; mouvement ou nouvelle décision impose un nouveau contrôle.',
       'Un contrôle terminé avec un échec ouvre une non-conformité. Analyser sa cause, documenter la correction et vérifier son efficacité avant clôture. Le journal conserve chaque décision.',
     ],
     connections:
-      'WMS, Fabrication et SAV restent propriétaires des dossiers sources. Les liens se choisissent depuis Qualité et n’exécutent aucune action dans ces modules.',
+      'WMS, Fabrication et SAV restent propriétaires des sources. La fiche lot permet de préparer un contrôle et de citer son résultat conforme dans une libération humaine séparée, avec preuve figée et droits WMS/Qualité.',
     caution:
-      'Aucun blocage/libération de stock, lot/série, certification, signature ou outil AI Qualité. Une saisie vide ne vaut jamais conforme.',
+      'Aucun blocage/libération automatique, suivi unitaire par série, certification, signature ou outil AI Qualité. WMS seul conserve la libération manuelle. Une saisie vide ne vaut jamais conforme.',
   },
   support: {
     purpose: 'Recevoir, qualifier et résoudre les demandes de service après-vente des clients.',
@@ -349,12 +555,12 @@ export const MODULE_GUIDES: Record<string, PageGuide> = {
     purpose:
       'Préparer et suivre les engagements d’achat de produits ou prestations auprès de vos fournisseurs.',
     steps: [
-      'Préparer un fournisseur et des articles dans Catalogue.',
+      'Préparer fournisseur et articles dans Données; Catalogue est facultatif. Ajouter les conditionnements et références utiles à la fiche article.',
       'Créer un brouillon avec ses lignes, quantités, prix unitaires et devise.',
       'Confirmer, puis ouvrir Réceptions et reliquats : sélectionner les quantités réellement arrivées et leur emplacement WMS. Répéter pour les livraisons partielles, puis clôturer; un reliquat exige un motif.',
     ],
     connections:
-      'Catalogue fournit fournisseurs et produits reliés au WMS. Chaque arrivage confirmé crée une réception WMS validée et actualise le reliquat. Les appels d’offres transport restent distincts.',
+      'Données Achats et Catalogue partagent les mêmes fiches. Le conditionnement choisi est capturé sur la ligne; chaque arrivage physique confirmé utilise le lien WMS explicite et actualise le reliquat. Les appels d’offres transport restent distincts.',
     caution:
       'Confirmer ne transmet aucun courriel. Clôturer ne réceptionne pas de stock et ne crée ni facture ni paiement.',
   },
@@ -362,14 +568,14 @@ export const MODULE_GUIDES: Record<string, PageGuide> = {
     purpose:
       'Organiser le travail client en projets, affecter les interventions et suivre les heures déclarées avec leur compte rendu.',
     steps: [
-      'Choisir un client du Catalogue et créer un projet.',
+      'Choisir un client ou le créer dans Services → Données, puis créer le projet. Avant activation, choisir si l’acceptation des travaux est exigée. Le module Catalogue n’est pas obligatoire.',
       'Activer le projet, planifier une intervention et choisir son intervenant. Consulter le contrôle RH du jour de début, vérifier le fuseau et adapter manuellement si nécessaire. Le filtre « Mes interventions » retrouve vos affectations.',
-      'Démarrer l’intervention. Dans Pièces et stock, confirmer les pièces réellement utilisées si le produit est relié au WMS; un retour intégral conserve les deux mouvements. Déclarer puis soumettre les heures et faire approuver par un autre responsable habilité.',
+      'Démarrer l’intervention. Dans Pièces et stock, choisir le produit relié au WMS, l’emplacement et le lot si suivi, puis confirmer les pièces réellement utilisées. Retourner une quantité conserve le lot et l’emplacement d’origine : sorties, retournées et conservées restent visibles. Seules les quantités conservées deviennent facturables; un brouillon existant doit être supprimé avant correction. Déclarer puis soumettre les heures et faire approuver par un autre responsable habilité.',
     ],
     connections:
-      'Le Catalogue fournit clients, prestations et produits reliés. WMS tient les quantités des pièces consommées/retournées. Accès fournit les utilisateurs; les heures se consolident par intervention et projet. Une affectation n’accorde aucun droit.',
+      'Les référentiels clients, prestations et produits sont partagés et accessibles dans Services → Données, sans Catalogue ni Achats obligatoires. WMS tient les quantités totales et par lot des pièces consommées/retournées. Pour une pièce déjà facturée, préparer et valider un avoir dans Facturation, puis le sélectionner lors du retour physique dans Services; ni stock ni remboursement automatique. Accès fournit les utilisateurs; les heures se consolident par intervention et projet. Une affectation n’accorde aucun droit.',
     caution:
-      'La clôture exige des interventions fermées et des temps approuvés ou annulés. Les temps du projet fermé restent en lecture seule. Aucun temps, même approuvé, ne génère de paie, facture ou sortie de pièces.',
+      'La clôture exige des interventions fermées et des temps approuvés ou annulés. Si configurée, l’acceptation des interventions terminées est aussi requise avant clôture et facturation de leurs sources. Onglet Acceptation : réponse client consignée et historique, pas de signature électronique ni validation des prix. Les temps du projet fermé restent en lecture seule. Aucun temps, même approuvé, ne génère automatiquement de facture.',
   },
   dashboard: {
     purpose:
@@ -468,9 +674,11 @@ export const MODULE_GUIDES: Record<string, PageGuide> = {
       'Configurer postes et calendriers.',
       'Préparer les nomenclatures et les gammes.',
       'Créer les ordres puis examiner leur planification.',
+      'Dans l’atelier d’un ordre démarré, déclarer les quantités réelles par lot source et le lot produit. Relire ensuite la preuve matières → produit, distincte du planning.',
+      'Pour une erreur de saisie, examiner et confirmer une contrepassation complète avec motif, puis saisir la déclaration correcte. L’historique est conservé; le stock et les quantités actives sont compensés ensemble.',
     ],
     connections:
-      'Les articles peuvent être partagés avec l’inventaire. La planification dépend de la disponibilité du moteur APS configuré.',
+      'Les articles et lots appartiennent au WMS; la déclaration atelier conserve leurs preuves et écrit les mouvements dans une seule transaction. Le rebut ne crée aucun stock. La planification dépend du moteur APS, mais ne déclenche aucune production.',
   },
   yard: {
     purpose: 'Coordonner arrivées, stationnements et rendez-vous aux quais.',
@@ -495,12 +703,14 @@ export const MODULE_GUIDES: Record<string, PageGuide> = {
   billing: {
     purpose: 'Transformer les opérations réalisées en documents financiers contrôlés.',
     steps: [
+      'Factures fournisseur : saisir le document reçu, conserver son original puis qualifier explicitement le dossier. Fonctionne avec Finance seul; aucun paiement ni écriture automatique.',
       'Configurer devises, taxes et paramètres comptables.',
       'Préparer ou rapprocher une facture.',
       'Vérifier puis approuver avant de suivre le paiement.',
+      'Pour un avoir validé, ouvrir Document et envoi client : confirmer les identités, figer le PDF, le vérifier puis confirmer séparément la simulation ou l’envoi SMTP.',
     ],
     connections:
-      'Les coûts de transport terminés restent figés. Les liens entre factures, paiements et banque assurent la traçabilité.',
+      'Les coûts de transport terminés restent figés. Les liens entre factures, paiements et banque assurent la traçabilité. Dans une facture client validée, Avoirs et solde client permet une correction motivée : préparer un brouillon, vérifier ses taxes figées et confirmer avec le droit dédié. Un avoir réduit le dû; un retour de pièces Services et un remboursement sont des actions distinctes.',
   },
   crm: {
     purpose: 'Suivre les contacts, opportunités et prochaines actions commerciales.',

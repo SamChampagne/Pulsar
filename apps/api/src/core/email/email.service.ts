@@ -23,6 +23,7 @@ export interface SmtpTransportOptions {
   user?: string;
   pass?: string;
   from?: string;
+  replyTo?: string;
 }
 
 /**
@@ -60,6 +61,10 @@ export class EmailService {
   }
 
   /** Returns true when the email was handed to the driver successfully. */
+  get channel(): 'log' | 'smtp' {
+    return this.transporter ? 'smtp' : 'log';
+  }
+
   async send(email: OutgoingEmail, transport?: SmtpTransportOptions): Promise<boolean> {
     try {
       if (transport) {
@@ -69,9 +74,16 @@ export class EmailService {
           port: transport.port,
           secure: transport.secure,
           auth: transport.user ? { user: transport.user, pass: transport.pass } : undefined,
+          connectionTimeout: 10_000,
+          greetingTimeout: 10_000,
+          socketTimeout: 30_000,
         });
         const from = email.from ?? transport.from ?? this.from;
-        await oneOff.sendMail({ from, ...email });
+        try {
+          await oneOff.sendMail({ ...email, from, replyTo: email.replyTo ?? transport.replyTo });
+        } finally {
+          oneOff.close();
+        }
       } else if (this.transporter) {
         await this.transporter.sendMail({ from: email.from ?? this.from, ...email });
       } else {

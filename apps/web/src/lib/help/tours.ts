@@ -10,6 +10,7 @@ export function shouldStartTour(progress?: ModuleTourProgress): boolean {
 }
 /** Preferred preparation and execution screens; filtered against the user's visible navigation. */
 export const TOUR_ROUTES: Record<string, string[]> = {
+  clients: ['/clients'],
   hr: ['/hr/employees', '/hr/leaves', '/hr/self'],
   quality: ['/quality/plans', '/quality', '/quality/nonconformities'],
   support: ['/support'],
@@ -23,7 +24,7 @@ export const TOUR_ROUTES: Record<string, string[]> = {
   manufacturing: ['/manufacturing/calendars', '/manufacturing/orders'],
   yard: ['/yard/spots', '/yard/appointments'],
   fleet: ['/fleet/register', '/fleet'],
-  billing: ['/billing/config', '/invoices'],
+  billing: ['/billing/supplier-invoices', '/billing/config', '/invoices'],
   agents: ['/settings/agent-runtime', '/agents'],
   analytics: ['/analytics/scorecards', '/analytics/flow'],
   crm: ['/crm/contacts', '/crm/pipeline'],
@@ -31,8 +32,8 @@ export const TOUR_ROUTES: Record<string, string[]> = {
   'customer-portal': ['/customer-portal/requests'],
   procurement: ['/procurement/rfps'],
   documents: ['/documents'],
-  connect: ['/connect', '/integrations'],
+  connect: ['/connect', '/connect/sms', '/integrations'],
   personalize: ['/personalize'],
-  emails: ['/emails/templates', '/emails'],
+  emails: ['/emails/config', '/emails/templates', '/emails'],
   settings: ['/settings/users', '/settings/roles'],
 };

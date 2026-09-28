@@ -39,6 +39,7 @@ import {
 } from './aps-artifact';
 import { plantWindows } from './plant-time';
 import { materialArrivals } from './material-arrivals';
+import { quarantinedByItem, availableAfterQuarantine } from '../../wms/lots/lot-availability';
 
 export interface RunSchedulingInput {
   strategy?: string;
@@ -126,9 +127,15 @@ export class SchedulingService {
         (onHandByItem.get(l.itemId) ?? new Prisma.Decimal(0)).plus(l.qtyOnHand),
       );
     }
+    const held = sites[0]
+      ? await quarantinedByItem(tx, tenantId, sites[0])
+      : new Map<string, Prisma.Decimal>();
     const inventory = items.map((i) => ({
       materialRef: i.sku,
-      onHand: (onHandByItem.get(i.id) ?? new Prisma.Decimal(0)).toNumber(),
+      onHand: availableAfterQuarantine(
+        onHandByItem.get(i.id) ?? new Prisma.Decimal(0),
+        held.get(i.id),
+      ).toNumber(),
     }));
 
     const byOrder: SnapshotMaterials['byOrder'] = {};

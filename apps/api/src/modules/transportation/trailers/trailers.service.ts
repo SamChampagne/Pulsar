@@ -70,7 +70,7 @@ export class TrailersService {
     );
     const { unitNumber: _unit, customData: _cd, ...data } = dto;
     return this.prisma.trailer.update({
-      where: { id },
+      where: { id, tenantId },
       data: {
         ...data,
         ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),

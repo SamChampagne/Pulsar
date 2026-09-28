@@ -20,7 +20,37 @@ export interface CatalogItem {
   active: boolean;
   updatedAt: string;
 }
+export interface SupplierOffer {
+  id: string;
+  supplierId: string;
+  supplier: { id: string; name: string; active: boolean; isSupplier: boolean };
+  catalogItem: { id: string; name: string; unit: string; active: boolean };
+  version: number;
+  supplierReference: string;
+  currency: string;
+  unitPrice: string;
+  minimumQuantity: string | null;
+  orderMultiple: string | null;
+  leadTimeDays: number | null;
+  validFrom: string | null;
+  validUntil: string | null;
+  packaging: string;
+  terms: string;
+  active: boolean;
+}
+export interface CatalogPackage {
+  id: string;
+  catalogItemId: string;
+  code: string;
+  label: string;
+  barcode: string | null;
+  unitsPerPackage: string;
+  wholeOnly: boolean;
+  active: boolean;
+  version: number;
+}
 export interface Project {
+  acceptanceRequired: boolean;
   id: string;
   number: string;
   title: string;
@@ -33,11 +63,18 @@ export interface Project {
   _count: { jobs: number };
 }
 export interface ServiceJob {
+  acceptanceStatus: import('@pulsar/shared').ServiceAcceptanceStatus;
   id: string;
   number: string;
   title: string;
   projectId: string;
-  project: { id: string; number: string; title: string; status: Project['status'] };
+  project: {
+    id: string;
+    number: string;
+    title: string;
+    status: Project['status'];
+    acceptanceRequired: boolean;
+  };
   catalogItemId: string | null;
   catalogItem: { id: string; name: string } | null;
   instructions: string;
@@ -97,6 +134,7 @@ interface TimeSnapshot {
   note: string;
 }
 export interface SupplierOrder {
+  documentCoordinates?: import('@pulsar/shared').DocumentCoordinates | null;
   id: string;
   number: string;
   supplierId: string;
@@ -109,6 +147,8 @@ export interface SupplierOrder {
   total: string;
   updatedAt: string;
   lines: {
+    packageSnapshot?: import('@pulsar/shared').CatalogPackageSnapshot | null;
+    supplierTermsSnapshot?: import('@pulsar/shared').SupplierTermsSnapshot | null;
     id: string;
     stockItem: boolean;
     received: string;

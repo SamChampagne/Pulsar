@@ -81,7 +81,7 @@ async function mockFinance(page: Page) {
     }),
   );
   await page.route('**/api/v1/billing/custom-fields?**', (r) => r.fulfill({ json: [] }));
-  await page.route('**/api/v1/transportation/carriers**', (r) =>
+  await page.route('**/api/v1/billing/freight-audit/data/carriers**', (r) =>
     r.fulfill({
       json: new URL(r.request().url()).pathname.endsWith('/carriers')
         ? { items: [carrier], total: 1 }
@@ -284,6 +284,8 @@ test('manual journal entry uses a drawer and explicit posting confirmation', asy
   await page.goto('/billing/ledger?sourceType=payment&sourceId=fa-payment');
   await page.getByRole('button', { name: 'Nouvelle écriture manuelle', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'Nouvelle écriture manuelle', exact: true });
+  await panel.getByLabel('Devise de l’écriture').selectOption('CAD');
+  await panel.getByLabel('Date', { exact: true }).fill('2026-09-27');
   await panel.getByRole('button', { name: /^Compte · ligne 1 :/ }).click();
   await page
     .getByRole('dialog', { name: 'Compte · ligne 1', exact: true })

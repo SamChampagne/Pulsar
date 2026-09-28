@@ -1,22 +1,17 @@
 import { test, expect, type Page, type Locator } from './fixtures';
 import { login } from './helpers';
 
-// The YardArrival drawer's trailer/driver fields are entity pickers backed by
-// the transportation catalogs; keep them empty and deterministic here — these
-// tests only exercise the free-text path.
-async function mockEmptyTransportationCatalogs(page: Page) {
-  for (const entity of ['trailers', 'drivers', 'carriers'])
-    await page.route(`**/api/v1/transportation/${entity}?**`, (r) =>
-      r.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 20 } }),
-    );
-}
-
 /** Opens a picker field, types free text and picks the "use as typed" option. */
 async function pickFreeText(page: Page, scope: Page | Locator, label: string, text: string) {
   await scope.getByRole('button', { name: new RegExp(`^${label} :`) }).click();
   const dialog = page.getByRole('dialog', { name: label, exact: true });
   await dialog.getByRole('textbox', { name: `Rechercher : ${label.toLowerCase()}` }).fill(text);
   await dialog.getByRole('option', { name: `Utiliser “${text}”`, exact: true }).click();
+  // Wait for the nested modal's exit transition before interacting with the drawer.
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    scope.getByRole('button', { name: `${label} : ${text}`, exact: true }),
+  ).toBeVisible();
 }
 
 function fixture() {
@@ -104,7 +99,6 @@ function fixture() {
 }
 async function setup(page: Page) {
   await login(page);
-  await mockEmptyTransportationCatalogs(page);
   const data = fixture();
   await page.route('**/api/v1/yard/**', async (route) => {
     const url = new URL(route.request().url()),
@@ -139,6 +133,9 @@ async function setup(page: Page) {
             : data,
       });
     if (path === 'custom-fields') return route.fulfill({ json: [] });
+    // Yard owns its reference-data facade; these tests exercise free text, not TMS.
+    if (['data/trailers', 'data/drivers', 'data/carriers'].includes(path))
+      return route.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 20 } });
     if (path.startsWith('dossiers/'))
       return route.fulfill({
         json: {
@@ -327,11 +324,18 @@ test('a failed arrival can be corrected and retried without losing its fields', 
 
 test('an uncertain arrival is not replayed and keeps the operator’s input', async ({ page }) => {
   await setup(page);
-  await page.route('**/api/v1/yard/visits', (r) => r.abort('failed'));
+  let writes = 0;
+  await page.route('**/api/v1/yard/visits', (r) => {
+    expect(r.request().method()).toBe('POST');
+    expect(r.request().postDataJSON().trailerRef).toBe('RF-UNCERTAIN');
+    writes++;
+    return r.abort('failed');
+  });
   await page.getByRole('button', { name: 'Enregistrer une arrivée', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'Enregistrer une arrivée', exact: true });
   await pickFreeText(page, panel, 'Remorque ou référence du véhicule', 'RF-UNCERTAIN');
   await panel.getByRole('button', { name: 'Enregistrer l’arrivée', exact: true }).click();
+  await expect.poll(() => writes).toBe(1);
   await expect(panel.getByRole('alert')).toContainText('a peut-être été enregistrée');
   await expect(
     panel.getByRole('button', { name: 'Enregistrer l’arrivée', exact: true }),
@@ -342,6 +346,7 @@ test('an uncertain arrival is not replayed and keeps the operator’s input', as
       exact: true,
     }),
   ).toBeVisible();
+  expect(writes).toBe(1);
 });
 
 test('a valid drawing saves display geometry only and survives a reload', async ({ page }) => {

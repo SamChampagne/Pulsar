@@ -4,6 +4,12 @@ export type Tone = 'ok' | 'warn' | 'danger' | 'info' | 'neutral';
  *  values from @pulsar/shared (TransportOrderStatus, ShipmentStatus, LoadStatus,
  *  TenderStatus, InvoiceStatus, CustomerInvoiceStatus, StopStatus). */
 const STATUS_TONE: Record<string, Tone> = {
+  ACTIVE: 'ok',
+  INACTIVE: 'neutral',
+  AVAILABLE: 'ok',
+  IN_SERVICE: 'info',
+  MAINTENANCE: 'warn',
+  RETIRED: 'neutral',
   DRAFT: 'neutral',
   CONFIRMED: 'info',
   PLANNED: 'warn',
@@ -99,6 +105,10 @@ export const STATUS_LABELS_FR: Record<string, string> = {
   INVITED: 'Invité',
   ACTIVE: 'Actif',
   INACTIVE: 'Inactif',
+  AVAILABLE: 'Disponible',
+  IN_SERVICE: 'En service',
+  MAINTENANCE: 'En maintenance',
+  RETIRED: 'Retiré',
   DISABLED: 'Désactivé',
   ENABLED: 'Activé',
   TRIAL: 'Essai',

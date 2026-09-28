@@ -2,6 +2,133 @@
 
 Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link PRs when relevant.
 
+## Priorités actives — décision du 27 septembre
+
+- [x] IA A1 : inventaire runtime visible, métadonnées bornées sans LLM, fournisseur/clé/URL isolés, validation liée à la configuration, permissions ACP système refusées, outils Hermes génériques retirés du parcours Pulsar, modèle explicite et session morte récupérable. [Analyse et contrat](docs/plans/ai-runtime-renewal.md).
+- [x] IA A2a : candidat 0.21.5 installé séparément depuis son lock, huit contrôles ACP avec LLM/MCP synthétiques; reprise stricte, EOF et cancel. [Preuves et limites](docs/plans/ai-runtime-qualification.md). Runtime actif inchangé.
+- [x] IA A2b / A3a : résultat typé moteur → ACP → runtime → worker/chat, refus fournisseur explicite sans heuristique texte, annulation distincte, timeout de tour, reprise manuelle après FAILED/KILLED et compteurs cumulés honnêtes. Neuf contrôles sur l’actif 0.16.0 et le candidat 0.21.5 sans appel réel. [Contrat et limites](docs/plans/ai-turn-outcomes.md).
+- [x] IA A2c.1 : banc Linux hors ligne non-root, dépendances verrouillées et sources vérifiées; neuf contrôles ACP. API OVH non-root/read-only et exercice permissions/sauvegarde/restauration. [Preuves et limites](docs/plans/ai-linux-qualification.md).
+- [ ] IA A2c.2 : runner de production intégré, isolation OS par tenant, secrets/egress, reprise et rollback des homes. Le banc A2c.1 n'est pas un service IA; candidat toujours non promu, VPS non qualifié.
+- [ ] IA A3–A5 : interface de moteur, benchmark métier autorisé (dossier/MRP/intervention), mesures de coûts et qualité, contexte sourcé, file durable et isolation serveur. Aucun gagnant ni production validée par les tests locaux A1.
+
+- [x] Priorité communications demandée : Telnyx sortant tenant-scopé, clé chiffrée, droits, confirmation, simulation et reprise sans réémission; SMTP/IMAP guidé et aperçus texte/HTML bureau/mobile. [Contrat](docs/plans/communications-telnyx-email.md).
+- [x] Communications v2 : activation SMS et IMAP par entreprise dans l’UI, confirmation et migration sans activation; webhooks signés, livraison séparée, réponses et STOP tenant-scopé. Aucun nouvel envoi automatique.
+- [x] Communications C3a : panneau dans client/intervention/opportunité/expédition, décisions de contact versionnées avec preuve auditée, modèles opérationnels, aperçu et historique protégé par droits métier/canal; simulation, idempotence et reprise sans réémission. [Contrat](docs/plans/dossier-communications.md).
+- [ ] Communications suivant : rattacher explicitement les réponses aux dossiers; réactivation contrôlée après STOP et harmonisation des anciens envois/séquences. Recette réelle Telnyx/SMTP HTTPS autorisée avant automatisations gouvernées. La configuration du Webhook URL entrant reste à copier dans le profil Telnyx; aucune validation fournisseur réelle locale.
+
+[Programme des cinq axes](docs/plans/pilot-next-stage.md). La dernière tâche Finance
+ne dicte plus à elle seule la prochaine priorité produit.
+
+- [x] P1a : précontrôle dans Exploitation, profils Services/Transport/Fabrication, IA optionnelle, migrations comparées et export daté; observations distinctes de la recette réelle.
+- [ ] P1b : version candidate globale, CI/publication revue puis recette VPS/TLS/invitations/documents/restauration. Accès SSH non confirmé; aucun test local ne valide ces points.
+- [x] P2a : dossier client 360° en lecture seule, liens explicites directs, huit types de dossiers, sections/compteurs selon droits/modules, pagination/recherche et navigation vers les sources. [Contrat et limites](docs/plans/customer-workspace.md).
+- [ ] P3a : parcours Services complet avec exceptions, acceptation des travaux, correction après facture et reprise contrôlée.
+- [x] P3a.1 : acceptation des travaux configurable avant activation du projet; réserves/historique, droit dédié, reprise exacte, contrôle avant facture Services et clôture. [Contrat](docs/plans/services-work-acceptance.md). Pas de signature électronique; scénario global P3a encore ouvert.
+- [ ] P4a : contrat Finance externe/natif; maître par objet, export/accusés/rapprochement; périodes/corrections avant sous-livres natifs.
+- [ ] P5a : mission IA en PROPOSE sur vrai provider avec budget autorisé, qualité/coût/latence, refus/interruption, puis récupération workers.
+
+Location, POS, restauration et e-commerce restent ultérieurs. Les lots enterprise
+ci-dessous conservent leurs limites; ils ne sont pas tous terminés.
+
+## Audit enterprise — 2026-09-24
+
+[Programme et critères de preuve](docs/plans/enterprise-audit-program.md) · [271 exigences conservées](docs/audits/README.md).
+
+- [x] Importer et indexer les fiches V2–V4 avec provenance, statut initial et critères; distinguer exigences, constats et preuves.
+- [x] E1a : carnet partagé multi-adresses/contacts, versions et historique, dates descriptives, droits consommateurs, concurrence/reprise et UI ordinateur/mobile.
+- [x] Documentation intégrée et tutoriel Clients spécifique, sans accès portail ni mutation historique implicites.
+- [ ] E0 : qualifier les 271 fiches contre le code et les parcours; ne pas compter E1a comme clôture de CL01/03/07.
+- [x] E1b.1 : choisir et figer adresse/contact/version sur devis Services et factures clients; contrôle de fraîcheur et de version à l’engagement. [Contrats](docs/plans/document-coordinates.md).
+- [x] E1b.2 : commandes Transport, coordonnées figées à confirmation, version/concurrence et planification atomique; tutoriel spécifique. [Contrats](docs/plans/transport-order-coordinates.md).
+- [x] E1b.3 : copie facture explicitement reprise sur le PDF d’avoir, provenance, motif manuel et suggestion séparée de destinataire; aucun envoi implicite. [Contrats](docs/plans/credit-document-coordinates.md).
+- [x] E1b.4 : PDF canonique de facture client, publication/source revues, remise explicite dédoublonnée, accès portail vérifié et fermeture des anciens raccourcis automatiques. [Contrats et compatibilité](docs/plans/customer-invoice-documents.md).
+- [x] E1b.5 : carnet propre aux sociétés CRM et copie versionnée des coordonnées de commande, gel atomique à confirmation, concurrence et autonomie; documentation et tutoriel. [Contrats](docs/plans/crm-order-coordinates.md).
+- [x] E1b.6 : coordonnées fournisseur explicites et gel atomique des commandes, sans confondre fournisseur et destination WMS; autonomie, reprise UI, documentation et tutoriel. [Contrats](docs/plans/supplier-order-coordinates.md).
+- [x] E1b.7 : usages du carnet sur cinq types de documents, versions des brouillons et copies engagées distinctes, compteurs et liens gardés par droits/module, pagination en base et documentation/tutoriels. [Contrats](docs/plans/directory-document-impact.md).
+- [ ] E1b suite : résolution des anciens liens ambigus, adresse/identité de l’acheteur et autres sorties PDF/envois; étendre la vue d’impact seulement après qualification des nouveaux consommateurs.
+- [x] E1b.8 : revue/confirmation des liens partenaire–Customer–CRM, lecture inverse gardée, concurrence CRM et fiche entreprise descriptive (15 champs + 20 informations nommées), autonome dans les modules consommateurs. [Contrats et matrice](docs/plans/enterprise-information-depth.md).
+- [ ] Programme I : enrichissement natif de tous les modules — articles/fournisseurs, exécution physique, Services/SAV, Finance/Qualité/RH puis partage/pilotage. Chaque champ opérationnel exige workflow, validations, droits, tutoriel et tests; la fiche entreprise ne clôt pas ces lots.
+- [x] I1a : fiche article produit/prestation, références fournisseur versionnées, prix/devise/MOQ/multiple/validité et copie explicite sur commande; contrôle à confirmation, lecture seule et documentation/tutoriels. [Contrats](docs/plans/catalog-purchasing-depth.md).
+- [x] I1b : conditionnements et codes-barres structurés, copie explicite sur commande et réceptions exactes en colis ou unités de base, scan sans mutation, reprise idempotente et documentation/tutoriels. [Contrats](docs/plans/catalog-packaging.md).
+- [x] I2a : lots immuables et dates déclarées, opt-in nouveaux articles, soldes par lot et journal atomiques, réception/rangement/préparation/Achats et documentation/tutoriels. [Contrats et limites](docs/plans/wms-lots.md).
+- [x] I2b : comptages par lot/unité, contrôle d’instantané même après mouvement net zéro, réconciliation atomique, ajustements à reprise durable et tutoriel spécialisé. [Contrat](docs/plans/wms-lot-counts.md).
+- [x] I2c : consommation explicite par lot dans Services, preuve figée et retours partiels au lot d’origine, autonomie Services/WMS et contrôles de facturation conservés. [Contrat](docs/plans/services-part-lots.md).
+- [x] I2d : déclaration atelier multi-lots, sortie produit tracée, preuve directe matières → produit et remontée journal → OF gardée; documentation/tutoriel. [Contrat](docs/plans/manufacturing-lots.md).
+- [x] I2e : contrepassation complète de déclarations v2 sur OF en cours, revue/motif/reprise, mouvements compensatoires atomiques, quantités nettes OF/impacts et preuves MRP; documentation/tutoriel. [Contrat](docs/plans/manufacturing-reversals.md).
+- [x] I2f : quarantaine manuelle globale par lot, sorties gardées centralement, libération documentée avec droit distinct, disponible MRP/APS net et reprise/historique; [contrat et limites](docs/plans/wms-lot-quarantine.md).
+- [x] I2g : contrôle Qualité de lot à source immuable, fraîcheur révision/mouvements, libération humaine avec preuve conforme facultative et préparations WMS ouvertes liées; droits/reprise, documentation et tutoriels. [Contrat](docs/plans/quality-lot-controls.md).
+- [x] I2h : traçabilité amont/aval bornée sur preuves atelier vérifiées, chronologie et contrepassations, dossiers WMS/Services/Transport gardés par accès; lecture seule, documentation et tutoriels spécifiques. [Contrat](docs/plans/wms-lot-traceability.md).
+- [x] I2i : sorties documentées destruction/rebut et retour fournisseur, WMS autonome, revue humaine et droits distincts, stock/proof atomiques, quarantaine conservée, reprise exacte et documentation/tutoriel. [Contrat](docs/plans/wms-stock-exits.md).
+- [x] I2j : réception d’achat explicitement capturée, cumul borné sans réservation, preuves commerciales gardées, justificatifs append-only et reprise fichier exacte; guides WMS/Achats adaptés. [Contrat](docs/plans/wms-return-purchase-evidence.md).
+- [x] I2k : réception/acceptation/refus fournisseur déclaratifs et cumulatifs, pièce obligatoire, corrections append-only, versions/reprise exacte et WMS autonome; documentation et tutoriels adaptés. [Contrat](docs/plans/wms-supplier-return-followup.md).
+- [x] I2l.1 : registre de factures fournisseur dans Finance autonome, montants déclarés exacts, pièces protégées, liens Achats explicites, qualification documentaire figée et reprise exacte. [Contrat](docs/plans/billing-supplier-invoices.md).
+- [x] I2l.2 : avoir fournisseur reçu séparé, lié à une facture QUALIFIED, plafonds exacts par ligne/taxe, original protégé et confirmation humaine. Contexte facultatif de retour WMS versionné et gardé; aucun montant déduit du retour, aucun paiement/stock/comptabilisation. [Contrat](docs/plans/billing-supplier-credits.md).
+- [x] I2l.3 : dossier fournisseur documentaire, identité courante/historique, factures/avoirs/pièces, synthèse exacte par devise, filtres et pagination en base, téléchargements protégés, liens aux dossiers sources, aide et tutoriel spécifiques. Aucune dette/paiement inférée. [Contrat](docs/plans/billing-supplier-dossiers.md).
+- [x] I2m.1 : échéancier fournisseur opérationnel, dates/montants exacts, revue/confirmation humaine, révisions append-only, reprise/concurrence et fraîcheur après avoir; synthèse séparée par devise, liens Finance, aide/doc/tutoriel. Aucun paiement ou posting. [Contrat](docs/plans/billing-supplier-schedules.md).
+- [x] I2m.2a : devise capturée sur nouvelles écritures, NULL historique conservé, rapports exacts par devise et couverture, saisie manuelle idempotente/audit atomique, reprise UI, gardes banque/budget, aide/doc/tutoriel. [Contrat et limites](docs/plans/billing-ledger-currency.md).
+- [x] I2m.2b : cible comptable configurable par entreprise (Pulsar/externe), révisions et droit dédié; budgets à devise/période figées, écarts exacts, historique non qualifié préservé, archivage et reprise durable. Documentation et tutoriel sans reset. [Contrat](docs/plans/billing-accounting-profile-budgets.md).
+- [x] I2m.2c : nouvelles immobilisations par devise, plan exact figé après revue, dotations mensuelles atomiques et idempotentes, droit dédié, historique et reprise durable. Anciens actifs NULL en lecture seule, retrait distinct d’une cession comptable, documentation et tutoriel sans reset. [Contrat](docs/plans/billing-fixed-assets-currency.md).
+- [x] I2m.2d.1 : qualification documentée des écritures historiques manuelles, preuve protégée, revue humaine, annotation révocable sans réécriture, audit atomique et reprise durable. Journal/rapports/budgets cohérents, aide/doc/tutoriel et dossier mobile. [Contrat](docs/plans/billing-historical-qualification.md).
+- [ ] I2m.2d.2 : reprise des sources historiques liées (paiements/factures/actifs) avec preuves et rapprochement des dossiers métier; ne pas utiliser la qualification manuelle pour les contourner.
+- [x] I2m.2d.2a : paiements historiques entièrement affectés, rapprochement source exact, qualification groupée avec contrepassation et retrait cohérent. Annulation sur comptes originaux, contrôle bancaire, preuve/droits/reprise, aide et tutoriel. [Contrat](docs/plans/billing-payment-qualification.md).
+- [x] I2m.2d.2b : factures clients/transporteurs cohérentes et avoirs clients historiques, rapprochement exact et qualification groupée, garde des avoirs connus, droits source, UI/doc/tutoriel. [Contrat et limites](docs/plans/billing-invoice-qualification.md).
+- [x] I2m.2d.2c : paiements historiques partiellement affectés, journal rapproché de la seule portion affectée, reste déclaré explicitement hors comptabilité, qualification/annulation groupée et banque toujours bloquée. UI/doc/tutoriel adaptés. [Contrat et limites](docs/plans/billing-partial-payment-qualification.md).
+- [x] I2m.2d.2d : factures transporteur ajustées avec acceptation tracée, rapprochement exact du payable/écarts/taxes conservées, preuve et revue sans réécriture. UI/doc/tutoriel spécialisés. [Contrat et limites](docs/plans/billing-accepted-carrier-qualification.md).
+- [x] I2m.2d.2e.1 : dotations historiques rapprochées et qualifiées ensemble par actif sur preuve, retrait groupé, originaux inchangés; registre relié au dossier, aide/doc/tutoriel. Aucun plan futur activé. [Contrat](docs/plans/billing-asset-history-qualification.md).
+- [ ] I2m.2d.2e.2 : reprise prospective des anciens plans d’actifs sur preuves, valeur/date de départ et durée restante explicites, sans reconstruire l’historique ni doubler les dotations. Formes comptables non standard, acceptations manquantes et autres sources incohérentes à qualifier séparément; aucune reprise sans journal implicite.
+- [ ] I2m.2d / E4 : qualifier les actifs et écritures historiques avec preuves, contrepassations contrôlées, devise fonctionnelle/taux et périodes/clôtures, puis sous-livre fournisseur. Le profil I2m.2b est une cible, pas une activation officielle ou un connecteur. Aucun paiement à brancher sur le seul reste documentaire.
+- [ ] I2l suite : corrections d’avoirs qualifiés, multi-factures, rapprochement trois pièces; I2m suite : gabarits de conditions de paiement, allocations et balance âgée réconciliée. Le reste créditable et l’échéancier opérationnel ne sont pas une dette payable.
+- [ ] I1 suite : tarifs multiples/paliers, dérogations, notices et imports à qualifier. I2 suite : comptabilisation/corrections des avoirs fournisseur, réponse directe du fournisseur, retours multi-lignes/non suivis par lot/MRP, quarantaine partielle, corrections partielles/aval et OF terminés; allocation par pièce, rappel réglementaire complet, séries et FEFO. Les dates déclaratives ne remplacent pas ces workflows.
+- [ ] Facturation : qualification SMTP, résolution gardée des anciennes remises/incertitudes, renvoi explicite et documents compensatoires.
+- [ ] E1 suite : rôles donneur d’ordre/livré/facturé/payeur, affiliations et pouvoirs, conditions commerciales, révisions et crédit.
+- [ ] E2/E3 : conservation des quantités POD, corrections et preuves distinctes des effets financiers; engagements transport/APS et exécution partielle.
+- [ ] E4 : qualifier Finance existante, maître comptable natif/externe, périodes et sous-livres réconciliés avant nouvelles politiques fiscales.
+- [ ] E5–E8 : approfondir les profils Services/Industrie/Distribution/Transport, les échanges, l’observabilité et les agents suivant les preuves du programme.
+
+## Profondeur métier — 2026-09-23
+
+Programme et sources : [Clients, fuseaux, cargo et finance](docs/plans/business-depth-clients-time-zones.md).
+
+- [x] Clients facultatif sur référentiels existants, droits propres, adresses facturation/livraison séparées, tutoriel métier et documentation.
+- [x] Préférence de fuseau utilisateur conservée, bandeau permanent dans le shell métier, affichage des instants des helpers/journaux migrés et dates civiles préservées.
+- [x] Composant de tableau configurable, visibilité/largeur clavier-souris; espaces Données et Clients, préférences utilisateur/tenant/appareil.
+- [ ] Généraliser la saisie explicite de fuseau avec résolution des heures ambiguës/inexistantes; conserver les fuseaux métiers et snapshots historiques.
+- [x] Carnet multi-adresses et contacts versionné (E1a, 2026-09-24).
+- [ ] Préremplissage/capture du carnet dans les documents, dossier client 360° et rapprochement humain des identités.
+- [ ] Clarifier remanifeste opérationnel/douanier; import cargo prévisualisé et idempotent, révisions/transferts/split-merge avec conservation des quantités.
+- [ ] POD réserves/quantités/corrections, adaptateur ISAAC après contrat API et sandbox, affectations datées et observations dédoublonnées.
+- [ ] Fiscalité versionnée par juridiction/date/nature du service; N lignes et bases configurables, justificatifs, arrondis exacts et snapshots validés par l’expert métier.
+- [ ] Approfondissements spécialisés WMS, Fabrication, Cour, Flotte, Achats, Services, SAV, Qualité, RH et agents selon la matrice du programme.
+
+## Autonomie des modules — 2026-09-23
+
+- [x] Façades et espaces Données par consommateur, création intégrée, parc Flotte sans TMS, Services/SAV/Achats sans Catalogue. [Contrats](docs/plans/module-autonomy.md).
+- [x] Connexions explicites Facturation et stock accessibles depuis Services/Achats, sans activation Catalogue; droits cibles conservés.
+- [ ] Qualifier toutes les combinaisons d’activation, les champs personnalisés obligatoires et les parcours administratifs complets des portails.
+- [ ] Harmoniser les identités historiques avec rapprochement humain et généraliser le contrôle de version des fiches historiques, sans fusion par nom.
+
+## Pilote métier fiable — cinq axes, 2026-09-22
+
+- [x] Avoirs clients : publication PDF à identités figées, conservation protégée, remise explicite idempotente et distinction simulation/SMTP/incertain. [Contrats](docs/plans/customer-credit-documents.md).
+- [ ] Qualifier les inscriptions et SMTP sur VPS; procédure gardée de résolution des remises, documents compensatoires puis remboursements/affectations de crédits.
+
+Programme : [pilot-business-depth.md](docs/plans/pilot-business-depth.md), branche
+`codex/pilot-business-depth`. Socle pilote et retours partiels Services locaux, aucun déploiement ni nouvelle PR.
+
+- [x] Transport webhook/EDI : résolution DNS contrôlée à chaque tentative, connexion épinglée, redirections refusées et délai total borné.
+- [x] Réactivation de connecteur : droits de la cible entrante/EDI et URL revérifiés, y compris PATCH de statut seul; version serveur contre les changements concurrents.
+- [x] Désactivation : livraisons en attente suspendues et exclues du cron, historique conservé.
+- [x] Qualification Docker : dump/restauration base et document binaire dans un second projet jetable; isolation, identifiants, migrations, readiness et MFA vérifiés.
+- [x] Documentation opérateur et explications intégrées Connect/Réglages.
+- [ ] Pilote : recette VPS, SMTP, vrais scanners, charge et stabilisation des tests navigateur restants.
+- [x] Services : retours partiels historisés, quantités nettes facturables, versions contre sélection périmée et correction de brouillon guidée. [Contrat et limites](docs/plans/services-partial-returns.md).
+- [x] Avoirs clients internes : taxes figées, validation comptable atomique, solde net, droits dédiés et retour Services séparé. [Contrat et limites](docs/plans/customer-credit-notes.md).
+- [ ] Avoirs : notes de débit, remboursement et transfert de crédit rapprochés (PDF/envoi livrés localement, qualification métier externe restante).
+- [ ] Parcours métier : achats fournisseurs, quarantaine Qualité et replanification WIP Fabrication.
+- [ ] Dossiers : vue client Catalogue/CRM/Services/Facturation/SAV, liens réciproques et configuration guidée.
+- [ ] IA : récupération de workers, missions qualifiées sur vrai provider et mesures coût/qualité/latence.
+- [ ] Location : tables propres, réservations, contrats, départs/retours, connexions, tutoriel spécifique et documentation.
+
 ## Exploitation connectée — 2026-09-22
 
 Contrats, limites et recette : [livraison](docs/plans/connected-business-delivery.md) ·
@@ -920,21 +1047,13 @@ clés API partenaires, flux iCal). Règles 53-55. Spec :
 
 ### Webhooks sortants & récepteur entrant
 
-- [ ] Le garde d'egress (`packages/shared/src/integrations/webhook-target.ts`) est **au niveau de la
-      chaîne** : il refuse loopback/lien-local/plages privées, IPv4-mapped/translated, 6to4 et ISATAP,
-      mais **pas** les préfixes NAT64 « local-use » plus courts que /96 ni Teredo. Le correctif
-      durable est un `resolve-then-check` (résolution DNS puis vérification de l'IP) au moment de la
-      connexion, pas une liste de motifs.
-- [ ] `WebhooksService.attempt()` (`apps/api/src/core/integrations/webhooks.service.ts`) ne rejoue
-      **pas** le garde d'egress : l'URL est validée à l'écriture et au test, mais une livraison en
-      file (ou rejouée) part sans nouvelle vérification (compromis assumé).
+- [x] Compléter le garde URL partagé par un transport serveur : DNS A/AAAA revérifiés à chaque tentative, adresses privées/réservées refusées, IPv6 globale native seulement, adresse épinglée, aucune redirection. Livré dans le lot pilote du 22 septembre.
+- [x] `WebhooksService.attempt()` et `ping()` utilisent le même transport gardé, y compris pour les anciennes livraisons et EDI.
 - [ ] `transport-order.create` par récepteur entrant est **at-least-once** : une ligne
       `InboundMessage` restée `RECEIVED` est ré-exécutée après 2 minutes, ce qui peut créer une
       seconde commande. Clé métier à ajouter (`customerReference` ou n° de document) pour rendre la
       cible idempotente (`apps/api/src/core/connect/record-writer.service.ts`).
-- [ ] `PATCH /integrations/:id` avec le seul `{ status: 'ENABLED' }` rouvre un récepteur déjà
-      configuré **sans** exiger la permission de la cible (le gate ne se déclenche que si `config`
-      est fourni) — `apps/api/src/core/integrations/integrations.service.ts`.
+- [x] `PATCH /integrations/:id` avec seulement `{ status: 'ENABLED' }` revérifie la cible entrante/EDI, les droits et l'URL. Une version devenue périmée entre lecture et écriture produit 409.
 - [ ] Messages d'erreur partenaire génériques : un refus de mapping ou d'écriture renvoie
       `status: 'FAILED'` + un texte peu actionnable ; le détail n'est visible que dans l'inbox
       (`apps/api/src/core/connect/inbound-hooks.service.ts`).
@@ -946,11 +1065,8 @@ clés API partenaires, flux iCal). Règles 53-55. Spec :
 - [ ] Deux plafonds de corps se chevauchent : le body-parser JSON de Nest tranche à **100 Ko** avant
       que le service n'applique son plafond de **256 Ko** — le 413 vient donc toujours de Nest.
       Harmoniser (ou documenter le plafond réel comme 100 Ko).
-- [ ] Studio `/integrations` : le formulaire d'édition générique (`compactConfig()`,
-      `apps/web/src/routes/(app)/integrations/+page.svelte`) ne réécrit que les clés qu'il connaît —
-      enregistrer un récepteur entrant depuis cet écran **perd** `config.target` et
-      `config.inboundSecret`. Préserver les clés inconnues, ou rediriger les récepteurs vers
-      `/connect/inbound-hooks`.
+- [x] Studio `/integrations` : les PATCH partiels préservent les clés inconnues et les secrets masqués via `mergePreservingMasked` côté API; correction antérieure confirmée par les tests du lot pilote.
+- [ ] Outbox sortante : claim distribué/reprise d'exécution; le transport protégé ne transforme pas les livraisons en exactly-once. Garder la déduplication partenaire par `X-Pulsar-Delivery`.
 - [ ] La section « boîte de réception » de `/connect/inbound-hooks` appelle `GET /connect/inbox`
       (permission `core.connect.read`) sans conditionner son affichage à cette permission : un
       utilisateur qui n'a que `core.integrations.manage` voit un bloc en erreur.

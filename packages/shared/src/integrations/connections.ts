@@ -1,6 +1,18 @@
 /** Connection inventory, not a promise that a provider adapter exists. Browser-safe. */
 export const CONNECTION_CATALOG = [
   {
+    key: 'telnyx',
+    name: 'Telnyx — SMS',
+    category: 'Communications',
+    availability: 'AVAILABLE',
+    href: '/connect/sms',
+    permission: 'core.sms.read',
+    capabilities: ['SMS transactionnels', 'Simulation', 'Livraison', 'Réponses et STOP'],
+    usage: 'Connexion partagée · envoi humain confirmé',
+    description:
+      'Activation dans Pulsar, clé chiffrée par entreprise, retours signés et désabonnements STOP. Sans campagnes automatiques.',
+  },
+  {
     key: 'email',
     name: 'Courriel SMTP / IMAP',
     category: 'Communications',

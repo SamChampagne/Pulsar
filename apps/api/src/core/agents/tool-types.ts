@@ -116,7 +116,7 @@ export interface ToolServices {
     ): Promise<unknown>;
   };
   ledger: {
-    trialBalance(tenantId: string, asOf?: Date): Promise<unknown>;
+    trialBalance(tenantId: string, asOf?: Date, currency?:string): Promise<unknown>;
     listJournal(
       tenantId: string,
       query: { accountId?: string; page?: number; pageSize?: number },

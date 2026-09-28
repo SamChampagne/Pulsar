@@ -10,6 +10,10 @@ import {
   buildWakePrompt,
   mrpWorkerEligible,
   type WakeAutonomy,
+  type AgentTurnResult,
+  agentTurnMessage,
+  failedAgentTurn,
+  parseAgentTurnResult,
 } from '@pulsar/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AgentCaps } from '../agents/agent-principal';
@@ -24,7 +28,7 @@ const PER_AGENT_CONCURRENCY = 1; // an agent processes its tasks serially
 /**
  * Retry backoff is 0: the in-band retry is immediate (a single extra attempt per
  * MAX_ATTEMPTS). Holding the concurrency slot during a sleep would stall other
- * runs, and durable longer-term backoff is the 5-min cron safety-net's job.
+ * runs. Once FAILED/KILLED, only an explicit manual run can retry the task.
  */
 const RETRY_BACKOFF_MS = 0;
 
@@ -89,14 +93,28 @@ export class AgentWorkerService {
         select: { id: true, model: true },
       });
       if (!agent) return;
+      if (await this.needsManualRetry(tenantId, agentId, taskId)) return;
       const runId = await this.ledger.createQueued({
-        tenantId, agentId, taskId, trigger: AgentRunTrigger.EVENT, model: agent.model,
+        tenantId,
+        agentId,
+        taskId,
+        trigger: AgentRunTrigger.EVENT,
+        model: agent.model,
       });
       this.inFlightTasks.add(taskId);
-      this.queue.push({ runId, tenantId, agentId, taskId, trigger: AgentRunTrigger.EVENT, attempt: 1 });
+      this.queue.push({
+        runId,
+        tenantId,
+        agentId,
+        taskId,
+        trigger: AgentRunTrigger.EVENT,
+        attempt: 1,
+      });
       void this.dispatch();
     } catch (err) {
-      this.logger.warn(`enqueueTask(${taskId}): ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.warn(
+        `enqueueTask(${taskId}): ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -122,12 +140,26 @@ export class AgentWorkerService {
     if (this.inFlightTasks.has(task.id)) {
       return { enqueued: false, runId: null, taskId: task.id, reason: 'already-in-flight' };
     }
-    const agent = await this.prisma.agent.findFirst({ where: { id: agentId, tenantId }, select: { model: true } });
+    const agent = await this.prisma.agent.findFirst({
+      where: { id: agentId, tenantId },
+      select: { model: true },
+    });
     const runId = await this.ledger.createQueued({
-      tenantId, agentId, taskId: task.id, trigger: AgentRunTrigger.MANUAL, model: agent?.model ?? null,
+      tenantId,
+      agentId,
+      taskId: task.id,
+      trigger: AgentRunTrigger.MANUAL,
+      model: agent?.model ?? null,
     });
     this.inFlightTasks.add(task.id);
-    this.queue.push({ runId, tenantId, agentId, taskId: task.id, trigger: AgentRunTrigger.MANUAL, attempt: 1 });
+    this.queue.push({
+      runId,
+      tenantId,
+      agentId,
+      taskId: task.id,
+      trigger: AgentRunTrigger.MANUAL,
+      attempt: 1,
+    });
     void this.dispatch();
     return { enqueued: true, runId, taskId: task.id, reason: 'queued' };
   }
@@ -155,12 +187,17 @@ export class AgentWorkerService {
     const alwaysOn = agents.filter((a) => ((a.caps ?? {}) as AgentCaps).alwaysOn === true);
     for (const agent of alwaysOn) {
       const open = await this.prisma.operationalTask.findMany({
-        where: { tenantId: agent.tenantId, assigneeAgentId: agent.id, status: OperationalTaskStatus.OPEN },
+        where: {
+          tenantId: agent.tenantId,
+          assigneeAgentId: agent.id,
+          status: OperationalTaskStatus.OPEN,
+        },
         orderBy: { createdAt: 'asc' },
         take: max,
       });
       for (const task of open) {
         if (this.inFlightTasks.has(task.id)) continue;
+        if (await this.needsManualRetry(agent.tenantId, agent.id, task.id)) continue;
         const runId = await this.ledger.createQueued({
           tenantId: agent.tenantId,
           agentId: agent.id,
@@ -180,6 +217,20 @@ export class AgentWorkerService {
       }
     }
     return this.drain(RETRY_BACKOFF_MS);
+  }
+
+  /** An uncertain/failed turn must not be replayed by the cron or another event. */
+  private async needsManualRetry(
+    tenantId: string,
+    agentId: string,
+    taskId: string,
+  ): Promise<boolean> {
+    const last = await this.prisma.agentRun.findFirst({
+      where: { tenantId, agentId, taskId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { status: true },
+    });
+    return last?.status === AgentRunStatus.FAILED || last?.status === AgentRunStatus.KILLED;
   }
 
   /** Drains the queue respecting concurrency caps. Returns count of SUCCEEDED runs. */
@@ -240,6 +291,7 @@ export class AgentWorkerService {
     // Only a run that owns the task may revert it on failure — otherwise a redundant
     // trigger that loses the claim race would clobber the winning run's IN_PROGRESS.
     let claimed = false;
+    let claimedBy: string | undefined;
     try {
       const agent = (await this.prisma.agent.findFirst({
         where: { id: agentId, tenantId },
@@ -254,7 +306,14 @@ export class AgentWorkerService {
           permissions: true,
           caps: true,
         },
-      })) as (AgentRow & { status: AgentStatus; autonomyLevel: WakeAutonomy; permissions: string[]; caps: unknown }) | null;
+      })) as
+        | (AgentRow & {
+            status: AgentStatus;
+            autonomyLevel: WakeAutonomy;
+            permissions: string[];
+            caps: unknown;
+          })
+        | null;
 
       // Hot kill switch: refuse to start for a non-ACTIVE agent.
       if (!agent || agent.status !== AgentStatus.ACTIVE) {
@@ -263,18 +322,36 @@ export class AgentWorkerService {
         return false;
       }
 
-      const reviewTask = await this.prisma.operationalTask.findFirst({ where: { id: taskId, tenantId }, select: { category: true, details: true, assigneeAgentId: true } });
+      const reviewTask = await this.prisma.operationalTask.findFirst({
+        where: { id: taskId, tenantId },
+        select: { category: true, details: true, assigneeAgentId: true },
+      });
       if (reviewTask?.category === 'MRP_REVIEW') {
-        const modules = this.modules ? await this.modules.getEnabledKeys(tenantId) : new Set<string>();
-        if (reviewTask.assigneeAgentId !== agentId || !mrpWorkerEligible(agent, modules, (reviewTask.details as { requiresCrm?: boolean } | null)?.requiresCrm === true)) {
-          await this.ledger.finish(runId, AgentRunStatus.SKIPPED, { error: 'Accès ou configuration du worker MRP insuffisants.' });
-          this.inFlightTasks.delete(taskId); return false;
+        const modules = this.modules
+          ? await this.modules.getEnabledKeys(tenantId)
+          : new Set<string>();
+        if (
+          reviewTask.assigneeAgentId !== agentId ||
+          !mrpWorkerEligible(
+            agent,
+            modules,
+            (reviewTask.details as { requiresCrm?: boolean } | null)?.requiresCrm === true,
+          )
+        ) {
+          await this.ledger.finish(runId, AgentRunStatus.SKIPPED, {
+            error: 'Accès ou configuration du worker MRP insuffisants.',
+          });
+          this.inFlightTasks.delete(taskId);
+          return false;
         }
       }
       await this.ledger.markRunning(runId);
-      await this.prisma.agent.update({ where: { id: agentId }, data: { lastRunAt: new Date() } }).catch(() => undefined);
+      await this.prisma.agent
+        .update({ where: { id: agentId }, data: { lastRunAt: new Date() } })
+        .catch(() => undefined);
       await this.tasks.start(tenantId, taskId, agent.serviceUserId);
       claimed = true;
+      claimedBy = agent.serviceUserId;
 
       const sessionId = await this.runtime.openSession({
         tenantId,
@@ -283,10 +360,31 @@ export class AgentWorkerService {
         triggeredByRef: `task:${taskId}`,
       });
       // Runtime reachable => heartbeat.
-      await this.prisma.agent.update({ where: { id: agentId }, data: { lastSeenAt: new Date() } }).catch(() => undefined);
+      await this.prisma.agent
+        .update({ where: { id: agentId }, data: { lastSeenAt: new Date() } })
+        .catch(() => undefined);
       try {
         const prompt = await this.buildPrompt(tenantId, taskId, agent.autonomyLevel);
-        for await (const _ev of this.runtime.sendTurn(sessionId, prompt)) void _ev;
+        let outcome: AgentTurnResult | undefined;
+        let hadError = false;
+        let resultCount = 0;
+        for await (const ev of this.runtime.sendTurn(sessionId, prompt)) {
+          if (ev.type === 'error') hadError = true;
+          if (ev.type === 'result') {
+            outcome = parseAgentTurnResult(ev.result);
+            resultCount++;
+          }
+        }
+        if (!outcome || resultCount !== 1 || hadError || outcome.status !== 'succeeded') {
+          throw new AgentTurnFailure(
+            outcome?.status !== 'succeeded' && outcome ? outcome : failedAgentTurn(),
+          );
+        }
+      } catch (err) {
+        // A stream may have performed tools before disconnecting. Never replay it.
+        throw err instanceof AgentTurnFailure
+          ? err
+          : new AgentTurnFailure(failedAgentTurn('TRANSPORT_CLOSED'));
       } finally {
         await this.runtime.closeSession(sessionId).catch(() => undefined);
       }
@@ -298,7 +396,7 @@ export class AgentWorkerService {
       this.inFlightTasks.delete(taskId);
       return true;
     } catch (err) {
-      return this.handleFailure(item, err, backoffMs, claimed);
+      return this.handleFailure(item, err, backoffMs, claimed, claimedBy);
     }
   }
 
@@ -307,6 +405,7 @@ export class AgentWorkerService {
     err: unknown,
     backoffMs: number,
     claimed: boolean,
+    claimedBy?: string,
   ): Promise<boolean> {
     const { tenantId, agentId, taskId, runId } = item;
     const name = err instanceof Error ? err.constructor.name : 'Error';
@@ -324,17 +423,26 @@ export class AgentWorkerService {
     }
 
     // If the agent was paused/revoked mid-run, this is a kill, not a failure.
-    const fresh = await this.prisma.agent.findFirst({ where: { id: agentId, tenantId }, select: { status: true } });
+    const fresh = await this.prisma.agent.findFirst({
+      where: { id: agentId, tenantId },
+      select: { status: true },
+    });
     if (fresh && fresh.status !== AgentStatus.ACTIVE) {
-      await this.revertTask(taskId);
+      await this.revertTask(tenantId, taskId, claimedBy);
       await this.ledger.finish(runId, AgentRunStatus.KILLED, { error: message });
       this.inFlightTasks.delete(taskId);
       return false;
     }
 
+    if (err instanceof AgentTurnFailure && err.result.status === 'cancelled') {
+      await this.revertTask(tenantId, taskId, claimedBy);
+      await this.ledger.finish(runId, AgentRunStatus.KILLED, { error: message });
+      this.inFlightTasks.delete(taskId);
+      return false;
+    }
     const cls = classifyRunError(name);
     if (cls === 'skip') {
-      await this.revertTask(taskId);
+      await this.revertTask(tenantId, taskId, claimedBy);
       await this.ledger.finish(runId, AgentRunStatus.SKIPPED, { error: message });
       this.inFlightTasks.delete(taskId);
       return false;
@@ -342,26 +450,22 @@ export class AgentWorkerService {
     if (cls === 'retry' && item.attempt < MAX_ATTEMPTS) {
       const nextAttempt = item.attempt + 1;
       await this.ledger.bumpAttempt(runId, nextAttempt);
-      await this.revertTask(taskId);
+      await this.revertTask(tenantId, taskId, claimedBy);
       await this.sleep(backoffMs);
       this.queue.push({ ...item, attempt: nextAttempt });
       return false;
     }
     // terminal, or retries exhausted
-    await this.revertTask(taskId);
+    await this.revertTask(tenantId, taskId, claimedBy);
     await this.ledger.finish(runId, AgentRunStatus.FAILED, { error: message });
     this.inFlightTasks.delete(taskId);
     return false;
   }
 
   /** Revert IN_PROGRESS -> OPEN, guarded (never reopen a task the agent resolved mid-turn). */
-  private async revertTask(taskId: string): Promise<void> {
-    await this.prisma.operationalTask
-      .updateMany({
-        where: { id: taskId, status: OperationalTaskStatus.IN_PROGRESS },
-        data: { status: OperationalTaskStatus.OPEN },
-      })
-      .catch(() => undefined);
+  private async revertTask(tenantId: string, taskId: string, actorId?: string): Promise<void> {
+    if (actorId)
+      await this.tasks.releaseWorkerClaim(tenantId, taskId, actorId).catch(() => undefined);
   }
 
   private sleep(ms: number): Promise<void> {
@@ -375,7 +479,11 @@ export class AgentWorkerService {
    * AUTONOMOUS → act then resolve_task). Tenant-scoped read. Falls back to a
    * minimal prompt if the task vanished between dispatch and execution.
    */
-  private async buildPrompt(tenantId: string, taskId: string, autonomy: WakeAutonomy): Promise<string> {
+  private async buildPrompt(
+    tenantId: string,
+    taskId: string,
+    autonomy: WakeAutonomy,
+  ): Promise<string> {
     const task = await this.prisma.operationalTask.findFirst({
       where: { id: taskId, tenantId },
       select: {
@@ -404,5 +512,12 @@ export class AgentWorkerService {
       },
       autonomy,
     );
+  }
+}
+
+/** Terminal after a turn began: never replay possible business effects automatically. */
+class AgentTurnFailure extends Error {
+  constructor(readonly result: AgentTurnResult) {
+    super(agentTurnMessage(result));
   }
 }

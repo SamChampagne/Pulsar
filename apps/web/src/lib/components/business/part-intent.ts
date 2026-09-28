@@ -6,9 +6,11 @@ export interface PartIntent {
     expectedUpdatedAt: string;
     catalogItemId?: string;
     binId?: string;
+    lotId?: string;
     quantity?: number;
     note?: string;
     reason?: string;
+    creditLineId?: string;
   };
 }
 const key = (scope: string) => `pulsar.services.parts.v1:${scope}`;
@@ -27,9 +29,21 @@ export function readPartIntent(scope: string): PartIntent | null {
     ) ||
     typeof b.expectedUpdatedAt !== 'string' ||
     !Number.isFinite(Date.parse(b.expectedUpdatedAt)) ||
+    (b.lotId !== undefined &&
+      (typeof b.lotId !== 'string' ||
+        !b.lotId ||
+        b.lotId.length > 100 ||
+        v.partId !== undefined)) ||
+    (b.creditLineId !== undefined &&
+      (typeof b.creditLineId !== 'string' ||
+        !b.creditLineId ||
+        !v.partId ||
+        b.quantity === undefined)) ||
     (v.partId !== undefined
       ? typeof v.partId !== 'string' ||
         !v.partId ||
+        (b.quantity !== undefined &&
+          (!Number.isFinite(b.quantity) || b.quantity <= 0 || b.quantity > 1000000000)) ||
         typeof b.reason !== 'string' ||
         !b.reason.trim()
       : typeof b.catalogItemId !== 'string' ||

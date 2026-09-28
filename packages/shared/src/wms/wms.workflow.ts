@@ -1,10 +1,36 @@
 export enum StockMovementType {
+  DISPOSAL = 'DISPOSAL',
+  SUPPLIER_RETURN = 'SUPPLIER_RETURN',
   CONSUMPTION = 'CONSUMPTION',
   PRODUCTION = 'PRODUCTION',
   RECEIPT = 'RECEIPT',
   MOVE = 'MOVE',
   PICK = 'PICK',
   ADJUSTMENT = 'ADJUSTMENT',
+}
+
+/** Absence of a hold is not a quality certification. Holds cover the entire lot. */
+export enum LotDisposition {
+  UNRESTRICTED = 'UNRESTRICTED',
+  QUARANTINED = 'QUARANTINED',
+}
+
+export function canTransitionLotDisposition(from: LotDisposition, to: LotDisposition): boolean {
+  return (
+    (from === LotDisposition.UNRESTRICTED && to === LotDisposition.QUARANTINED) ||
+    (from === LotDisposition.QUARANTINED && to === LotDisposition.UNRESTRICTED)
+  );
+}
+
+export function lotAllowsMovement(
+  disposition: LotDisposition,
+  type: StockMovementType,
+  outbound: boolean,
+): boolean {
+  return (
+    disposition === LotDisposition.UNRESTRICTED ||
+    (disposition === LotDisposition.QUARANTINED && (!outbound || type === StockMovementType.MOVE))
+  );
 }
 
 export enum BinKind {

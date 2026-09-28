@@ -24,7 +24,7 @@ export class BudgetsController {
   @Post()
   @RequirePermissions(PERMISSIONS.BILLING.LEDGER_MANAGE)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateBudgetDto) {
-    return this.budgets.create(user.tenantId, dto);
+    return this.budgets.create(user, dto);
   }
 
   @Get(':id/variance')
@@ -39,10 +39,16 @@ export class BudgetsController {
     return this.budgets.get(user.tenantId, id);
   }
 
+  @Get(':id/history')
+  @RequirePermissions(PERMISSIONS.BILLING.LEDGER_READ)
+  history(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.budgets.history(user.tenantId, id);
+  }
+
   @Patch(':id')
   @RequirePermissions(PERMISSIONS.BILLING.LEDGER_MANAGE)
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateBudgetDto) {
-    return this.budgets.update(user.tenantId, id, dto);
+    return this.budgets.update(user, id, dto);
   }
 
   @Delete(':id')

@@ -115,10 +115,16 @@ export const MODULE_SETTINGS_CATALOG: ModuleSettingsCatalog[] = [
   {
     module: 'billing',
     settings: [
+      { key: 'customerInvoiceIssuerName', label: 'Factures clients — nom légal de l’émetteur', type: 'string', default: '', maxLength: 180 },
+      { key: 'customerInvoiceIssuerAddress', label: 'Factures clients — adresse de l’émetteur', type: 'string', default: '', maxLength: 600 },
+      { key: 'customerInvoiceIssuerTaxIds', label: 'Factures clients — inscriptions fiscales', type: 'string', default: '', maxLength: 600 },
+      { key: 'creditIssuerName', label: 'Avoirs — nom légal de l’émetteur', type: 'string', default: '', maxLength: 180 },
+      { key: 'creditIssuerAddress', label: 'Avoirs — adresse de l’émetteur', type: 'string', default: '', maxLength: 600 },
+      { key: 'creditIssuerTaxIds', label: 'Avoirs — inscriptions fiscales (libellé et numéro)', type: 'string', default: '', maxLength: 600 },
       { key: 'tolerancePct', label: 'Tolérance rapprochement (%)', type: 'number', default: 2, min: 0, max: 100 },
       { key: 'toleranceAbsolute', label: 'Tolérance rapprochement (absolue)', type: 'number', default: 25, min: 0, max: 1000000 },
-      { key: 'autoSendOnApproval', label: 'Envoi auto du relevé à l\'approbation', type: 'boolean', default: false },
-      { key: 'autoEmailInvoicePdf', label: 'Envoi auto du PDF du relevé par email à l\'approbation', type: 'boolean', default: false },
+      { key: 'autoSendOnApproval', label: 'Envoi auto des relevés transporteurs', help: 'Ne s’applique plus aux factures clients : publication PDF et destinataire doivent être confirmés.', type: 'boolean', default: false },
+      { key: 'autoEmailInvoicePdf', label: 'Ancienne option PDF client (inactive)', help: 'Conservée pour compatibilité; aucun envoi automatique de facture client. Utilisez Document et envoi de la facture.', type: 'boolean', default: false },
       {
         key: 'toleranceMode', label: 'Mode de tolérance', type: 'enum', default: 'MAX',
         help: 'MAX = seuil = max(absolu, %). MIN = seuil = min (plus strict).',

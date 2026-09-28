@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime as fmtUserInstant } from '$lib/format';
   import { onMount } from 'svelte';
   import { api, ApiError } from '$lib/api/client';
   import { auth } from '$lib/stores/auth';
@@ -13,6 +14,7 @@
   } from '$lib/components/ui';
   import type { Paginated } from '@pulsar/shared';
   import type { ServiceJob } from './types';
+  import LotChoice from '$lib/components/wms/LotChoice.svelte';
   import {
     readPartIntent,
     rememberPartIntent,
@@ -20,8 +22,27 @@
     type PartIntent,
   } from './part-intent';
   type Part = {
+    lotId: string | null;
+    lotSnapshot: {
+      code: string;
+      supplierLot: string | null;
+      manufacturedOn: string | null;
+      expiresOn: string | null;
+    } | null;
     id: string;
     quantity: string;
+    returnedQuantity: string;
+    remainingQuantity: string;
+    billingLocked: boolean;
+    creditReturnOptions: { id: string; number: string; available: string }[];
+    returnCount: number;
+    returns: {
+      id: string;
+      quantity: string;
+      reason: string;
+      createdAt: string;
+      movementId: string;
+    }[];
     nameSnapshot: string;
     codeSnapshot: string;
     unitSnapshot: string;
@@ -65,6 +86,22 @@
     quantity = $state<number | undefined>(1),
     note = $state(''),
     confirmed = $state(false);
+  let creditLineId = $state('');
+  let lotId = $state(''),
+    lotReady = $state(false),
+    stockUnit = $state('');
+  const returnLimit = $derived(
+    returning
+      ? Math.min(
+          Number(returning.remainingQuantity),
+          returning.billingLocked
+            ? Number(
+                returning.creditReturnOptions.find((c) => c.id === creditLineId)?.available ?? 0,
+              )
+            : Infinity,
+        )
+      : 0,
+  );
   let generation = 0;
   async function load() {
     const g = ++generation;
@@ -89,6 +126,20 @@
   $effect(() => {
     void productId;
     binId = '';
+    lotId = '';
+  });
+  $effect(() => {
+    void binId;
+    lotId = '';
+  });
+  $effect(() => {
+    void productId;
+    void binId;
+    void lotId;
+    void quantity;
+    void note;
+    void creditLineId;
+    confirmed = false;
   });
   onMount(() => {
     try {
@@ -98,16 +149,25 @@
     }
   });
   function start(part: Part | null) {
+    if (!canWrite || busy || pending || storageError) return;
     returning = part;
     note = '';
     productId = '';
     binId = '';
-    quantity = 1;
+    lotId = '';
+    creditLineId = part?.creditReturnOptions[0]?.id ?? '';
+    quantity = part
+      ? Math.min(
+          Number(part.remainingQuantity),
+          part.billingLocked ? Number(part.creditReturnOptions[0]?.available ?? 0) : Infinity,
+        )
+      : 1;
     confirmed = false;
     error = '';
     formOpen = true;
   }
-  async function send(request: PartIntent) {
+  async function send(request: PartIntent, recovery = false) {
+    if (busy || !canWrite || request.jobId !== job.id) return;
     const requestScope = scope;
     busy = true;
     error = '';
@@ -123,7 +183,7 @@
       await load();
     } catch (e) {
       error = e instanceof Error ? e.message : 'Réponse incertaine.';
-      if (e instanceof ApiError && e.statusCode < 500) {
+      if (!recovery && e instanceof ApiError && [400, 403, 404, 409, 422].includes(e.statusCode)) {
         clearPartIntent(requestScope, request.body.operationKey);
         pending = null;
         // Refresh the version, but do not silently submit the revised request.
@@ -138,7 +198,9 @@
     }
   }
   async function save() {
-    if (busy || pending || storageError || !confirmed || !note.trim()) return;
+    if (busy || pending || storageError || !confirmed || !note.trim() || !canWrite) return;
+    if (!returning && (!productId || !binId || !lotReady)) return;
+    if (!quantity || quantity <= 0 || (returning && quantity > returnLimit)) return;
     const request: PartIntent = {
       jobId: job.id,
       ...(returning ? { partId: returning.id } : {}),
@@ -146,8 +208,14 @@
         operationKey: crypto.randomUUID(),
         expectedUpdatedAt: job.updatedAt,
         ...(returning
-          ? { reason: note.trim() }
-          : { catalogItemId: productId, binId, quantity, note: note.trim() }),
+          ? { reason: note.trim(), quantity, ...(returning.billingLocked ? { creditLineId } : {}) }
+          : {
+              catalogItemId: productId,
+              binId,
+              ...(lotId ? { lotId } : {}),
+              quantity,
+              note: note.trim(),
+            }),
       },
     };
     try {
@@ -171,7 +239,8 @@
     <h3 class="font-semibold">Pièces consommées</h3>
     <p class="mt-2 text-sm leading-6 text-ink-muted">
       Une confirmation retire réellement la quantité du stock WMS. Le Catalogue identifie le
-      produit; cette intervention conserve son utilisation. Aucun effet sur la facture.
+      produit; cette intervention conserve son utilisation. Un retour réduit les pièces restant à
+      facturer, mais ne modifie jamais une facture existante.
     </p>
   </div>
   {#if !canWrite}<p class="text-sm text-ink-muted">
@@ -189,7 +258,7 @@
         variant="secondary"
         disabled={busy || !canWrite}
         onclick={() => {
-          if (pending) return send(pending);
+          if (pending) return send(pending, true);
         }}>Vérifier / reprendre l’opération</Button
       >
     </div>{/if}
@@ -200,13 +269,47 @@
         void save();
       }}
     >
-      <h4 class="font-medium">{returning ? 'Retour intégral au stock' : 'Consommer une pièce'}</h4>
+      <h4 class="font-medium">{returning ? 'Retour de pièces au stock' : 'Consommer une pièce'}</h4>
       {#if returning}<p class="text-sm">
-          {returning.quantity}
-          {returning.unitSnapshot} · {returning.nameSnapshot} → {returning.binSnapshot}. Confirmez
-          seulement si ces pièces sont physiquement revenues. Aucun retour partiel dans cette
-          version.
+          {returning.nameSnapshot} → {returning.binSnapshot}. Restant retournable :
+          {returning.remainingQuantity}
+          {returning.unitSnapshot} sur {returning.quantity} sorties. Confirmez uniquement les pièces physiquement
+          revenues, en une ou plusieurs fois.
         </p>
+        {#if returning.lotSnapshot}<div
+            class="rounded-md bg-surface-muted p-3 text-sm"
+            aria-label="Lot de retour"
+          >
+            <p class="font-medium">Retour au lot {returning.lotSnapshot.code}</p>
+            <p class="mt-1 text-xs text-ink-muted">
+              Lot et emplacement repris de la sortie d’origine, même si la correspondance du produit
+              a changé. Aucun choix d’un autre lot.
+            </p>
+          </div>{/if}
+        {#if returning.billingLocked}<Field label="Avoir validé autorisant ce retour"
+            ><select
+              class="w-full rounded-md border border-edge bg-surface p-2 text-sm"
+              bind:value={creditLineId}
+              >{#each returning.creditReturnOptions as credit}<option value={credit.id}
+                  >{credit.number} · {credit.available}
+                  {returning.unitSnapshot} disponible(s)</option
+                >{/each}</select
+            ></Field
+          >
+          <p class="text-xs text-ink-muted">
+            L’avoir ne remet pas automatiquement les pièces en stock. Ce retour sera lié à sa ligne,
+            sans nouveau crédit financier.
+          </p>{/if}
+        <Field label={`Quantité retournée (${returning.unitSnapshot})`}>
+          <Input
+            type="number"
+            min={0.001}
+            max={returnLimit}
+            step={0.001}
+            required
+            bind:value={quantity}
+          />
+        </Field>
       {:else}<EntityPicker
           endpoint="/services/references/parts"
           label="Produit du Catalogue"
@@ -221,6 +324,17 @@
             bind:value={binId}
             disabled={!productId}
           />{/key}
+        <LotChoice
+          outgoing
+          catalogItemId={productId}
+          stockLinkModule="services"
+          {binId}
+          bind:value={lotId}
+          bind:ready={lotReady}
+          bind:unit={stockUnit}
+          disabled={busy || !binId}
+        />
+        {#if stockUnit}<p class="text-xs text-ink-muted">Unité de stock : {stockUnit}</p>{/if}
         <Field label="Quantité consommée"
           ><Input
             type="number"
@@ -232,8 +346,10 @@
           /></Field
         >
         <p class="text-xs text-ink-muted">
-          Le disponible affiché n’est pas réservé. Il sera revérifié à la confirmation. Produit
-          absent ? Vérifiez sa correspondance Stock WMS dans Catalogue.
+          Le stock de l’emplacement est le total de l’article; pour un article suivi, choisissez le
+          lot physique et vérifiez son propre solde. Le disponible n’est pas réservé. Il sera
+          revérifié à la confirmation. Produit absent ? Vérifiez sa correspondance dans Services →
+          Données → Articles → Stock WMS.
         </p>
       {/if}
       <Field label={returning ? 'Motif du retour' : 'Utilisation des pièces'}
@@ -256,7 +372,10 @@
           loading={busy}
           disabled={!confirmed ||
             !note.trim() ||
-            (!returning && (!productId || !binId || !quantity))}
+            !quantity ||
+            quantity <= 0 ||
+            (!!returning && quantity > returnLimit) ||
+            (!returning && (!productId || !binId || !quantity || !lotReady))}
           >{returning ? 'Confirmer le retour de stock' : 'Confirmer la sortie de stock'}</Button
         >
       </div>
@@ -280,31 +399,91 @@
         >
           <div class="flex flex-wrap items-center justify-between gap-2">
             <h4 class="text-sm font-medium">{row.nameSnapshot}</h4>
-            <Badge tone={row.returnMovementId ? 'neutral' : 'info'}
-              >{row.returnMovementId ? 'Retourné intégralement' : 'Consommé'}</Badge
+            <Badge tone={Number(row.remainingQuantity) === 0 ? 'neutral' : 'info'}
+              >{Number(row.remainingQuantity) === 0
+                ? 'Retourné intégralement'
+                : Number(row.returnedQuantity) > 0
+                  ? 'Retour partiel'
+                  : 'Consommé'}</Badge
             >
           </div>
-          <p class="font-mono text-sm">{row.quantity} {row.unitSnapshot} · {row.codeSnapshot}</p>
+          <p class="text-xs text-ink-muted">{row.codeSnapshot} · quantités en {row.unitSnapshot}</p>
+          {#if row.lotSnapshot}<div
+              class="rounded-md border border-edge px-3 py-2 text-sm"
+              aria-label={`Lot consommé ${row.lotSnapshot.code}`}
+            >
+              <p class="break-words font-medium">Lot {row.lotSnapshot.code}</p>
+              <p class="mt-1 text-xs text-ink-muted">
+                Lot fournisseur : {row.lotSnapshot.supplierLot ?? 'non renseigné'} · Péremption déclarée
+                : {row.lotSnapshot.expiresOn ?? 'non renseignée'}
+              </p>
+              <p class="mt-1 text-xs text-ink-muted">
+                Fabrication déclarée : {row.lotSnapshot.manufacturedOn ?? 'non renseignée'}
+              </p>
+              <p class="mt-1 text-xs text-ink-muted">
+                Identité capturée à la sortie. Les retours de cette consommation restent dans ce
+                lot.
+              </p>
+            </div>{:else}<p class="text-xs text-ink-muted">
+              Consommation sans lot capturé — aucun lot historique déduit.
+            </p>{/if}
+          <dl class="grid grid-cols-3 gap-3 rounded-md bg-surface-muted p-3 text-sm">
+            <div>
+              <dt class="text-xs text-ink-muted">Sorties</dt>
+              <dd class="mt-1 font-mono">{row.quantity}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-ink-muted">Retournées</dt>
+              <dd class="mt-1 font-mono">{row.returnedQuantity}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-ink-muted">Conservées</dt>
+              <dd class="mt-1 font-mono">{row.remainingQuantity}</dd>
+            </div>
+          </dl>
           <p class="text-xs text-ink-muted">
-            {row.binSnapshot} · {new Date(row.createdAt).toLocaleString('fr-CA')}
+            {row.binSnapshot} · {fmtUserInstant(row.createdAt)}
           </p>
           <p class="whitespace-pre-wrap break-words text-sm">{row.note}</p>
-          {#if row.returnReason}<p class="text-sm text-ink-muted">
-              Retour : {row.returnReason}
-            </p>{/if}
+          {#if row.returns.length}<details class="text-sm">
+              <summary class="cursor-pointer">Historique des retours ({row.returnCount})</summary>
+              <ol class="mt-3 space-y-3">
+                {#each row.returns as entry (entry.id)}<li class="border-l-2 border-edge pl-3">
+                    <p class="font-medium">
+                      {entry.quantity}
+                      {row.unitSnapshot} · {fmtUserInstant(entry.createdAt)}
+                    </p>
+                    <p class="whitespace-pre-wrap break-words text-ink-muted">{entry.reason}</p>
+                    <p class="mt-1 break-all text-xs text-ink-muted">
+                      Mouvement : {entry.movementId}
+                    </p>
+                  </li>{/each}
+              </ol>
+              {#if row.returnCount > row.returns.length}<p class="mt-2 text-xs text-ink-muted">
+                  Les 5 derniers retours sont affichés. Le journal WMS conserve tous les mouvements.
+                </p>{/if}
+            </details>{/if}
           <details class="text-xs text-ink-muted">
             <summary class="cursor-pointer">Traçabilité WMS</summary>
             <p class="mt-2 break-all">Sortie : {row.movementId}</p>
             {#if row.returnMovementId}<p class="break-all">Retour : {row.returnMovementId}</p>{/if}
           </details>
-          {#if canWrite && job.project.status === 'ACTIVE' && !row.returnMovementId}<Button
+          {#if row.billingLocked && Number(row.remainingQuantity) > 0}<p
+              class="rounded-md bg-surface-muted p-3 text-sm text-ink-muted"
+            >
+              Pièces liées à une facture. Pour corriger un brouillon, ouvrez-le depuis les travaux à
+              facturer du projet, supprimez-le dans Facturation, puis effectuez le retour et
+              préparez un nouveau brouillon. Pour une facture validée, préparez et validez un avoir
+              dans Facturation, puis sélectionnez-le lors du retour physique.
+            </p>{/if}
+          {#if canWrite && job.project.status === 'ACTIVE' && Number(row.remainingQuantity) > 0 && (!row.billingLocked || row.creditReturnOptions.length > 0)}<Button
               variant="ghost"
               disabled={formOpen || busy || !!pending || !!storageError}
-              onclick={() => start(row)}>Retourner les pièces</Button
+              onclick={() => start(row)}>Retourner une quantité</Button
             >{/if}
         </article>{/each}
     </div>{/if}
-  <div class="flex items-center justify-end gap-2 text-sm">
+  <div class="flex flex-wrap items-center justify-end gap-2 text-sm">
     <span class="mr-auto text-ink-muted"
       >{total} consommation(s) · quantités par article, sans total mélangeant les unités</span
     ><Button

@@ -4,6 +4,7 @@
   import { api, ApiError } from '$lib/api/client';
   import { streamAgentTurn } from '$lib/api/agent-stream';
   import { Button, Badge } from '$lib/components/ui';
+  import { agentTurnMessage, type AgentTurnResult } from '@pulsar/shared';
 
   interface ToolCall {
     name: string;
@@ -15,6 +16,7 @@
     text: string;
     toolCalls: ToolCall[];
     streaming?: boolean;
+    result?: AgentTurnResult;
   }
 
   interface ExistingMessage {
@@ -99,6 +101,9 @@
           };
         } else if (ev.type === 'error') {
           error = ev.message || 'assistant indisponible';
+        } else if (ev.type === 'result') {
+          messages[idx] = { ...messages[idx], result: ev.result };
+          if (ev.result.status !== 'succeeded') error = agentTurnMessage(ev.result);
         } else if (ev.type === 'end') {
           break;
         }
@@ -146,6 +151,15 @@
       </div>
     {:else}
       <div class="flex flex-col gap-2">
+        {#if msg.result && msg.result.status !== 'succeeded'}
+          <div>
+            <Badge tone={msg.result.status === 'cancelled' ? 'warn' : 'danger'}
+              >{msg.result.status === 'cancelled'
+                ? 'Réponse interrompue'
+                : 'Réponse non validée'}</Badge
+            >
+          </div>
+        {/if}
         {#if msg.text || msg.streaming}
           <div
             class="max-w-[85%] rounded-card bg-surface-muted px-3 py-2 text-sm text-ink whitespace-pre-wrap"
@@ -178,6 +192,12 @@
             </a>
           </div>
         {/each}
+        {#if msg.result?.usage && msg.result.usage.totalTokens !== null}
+          <p class="text-[11px] text-ink-faint">
+            Compteur du processus IA : {msg.result.usage.totalTokens.toLocaleString('fr-CA')} tokens cumulés.
+            Ce n’est pas le coût de ce message.
+          </p>
+        {/if}
       </div>
     {/if}
   {/each}

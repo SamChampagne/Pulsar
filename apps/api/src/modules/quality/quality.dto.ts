@@ -38,12 +38,12 @@ export class QualityQueryDto extends ListQueryDto {
   @IsOptional() @IsIn(['true', 'false']) active?: string;
   @IsOptional() @IsEnum(QualityInspectionStatus) status?: QualityInspectionStatus;
   @IsOptional() @IsEnum(QualityNonconformityStatus) ncStatus?: QualityNonconformityStatus;
-  @IsOptional() @IsIn(['MANUAL', 'RECEIPT', 'MANUFACTURING', 'SUPPORT']) kind?: string;
+  @IsOptional() @IsIn(['MANUAL', 'RECEIPT', 'MANUFACTURING', 'SUPPORT', 'LOT']) kind?: string;
 }
 export class CreateInspectionDto {
   @IsString() @Length(1, 100) planId!: string;
   @IsString() @Trim() @Length(1, 200) title!: string;
-  @IsIn(['MANUAL', 'RECEIPT', 'MANUFACTURING', 'SUPPORT']) sourceKind!: string;
+  @IsIn(['MANUAL', 'RECEIPT', 'MANUFACTURING', 'SUPPORT', 'LOT']) sourceKind!: string;
   @IsOptional() @IsString() @Length(1, 100) sourceId?: string;
   @IsUUID('4') operationKey!: string;
 }

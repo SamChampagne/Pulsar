@@ -4,6 +4,7 @@
   import { platformApi } from '$lib/api/platform';
   import { Button, Drawer, ErrorNotice, Skeleton, Table } from '$lib/components/ui';
   import ServiceStateBadge from '$lib/components/operations/ServiceStateBadge.svelte';
+  import PilotReadiness from '$lib/components/operations/PilotReadiness.svelte';
   let data = $state<PlatformOperations | null>(null);
   let loading = $state(false);
   let error = $state('');
@@ -69,6 +70,7 @@
     >
     <span>Mesuré : <time datetime={data.checkedAt}>{date(data.checkedAt)}</time></span>
   </section>
+  <PilotReadiness {data} stale={!!error || loading} />
   {#if data.tenants}
     <section aria-label="Parc d’entreprises" class="mb-7 grid grid-cols-2 gap-4 md:grid-cols-4">
       {#each [{ label: 'Entreprises actives', value: data.tenants.active }, { label: 'Entreprises suspendues', value: data.tenants.suspended }, { label: 'Configurations IA enregistrées', value: data.tenants.runtimeConfigured }, { label: 'Agents enregistrés', value: data.tenants.agents }] as item}

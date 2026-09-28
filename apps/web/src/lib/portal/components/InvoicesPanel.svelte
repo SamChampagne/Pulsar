@@ -145,7 +145,18 @@
           <td><Badge tone={toneFor(invoice.status)}>{labelFor(invoice.status)}</Badge></td>
           <td class="text-ink-muted">{formatMoney(invoice.netAmount, invoice.currency)}</td>
           <td class="text-ink-muted">{formatMoney(invoice.taxAmount, invoice.currency)}</td>
-          <td class="text-ink">{formatMoney(invoice.totalAmount, invoice.currency)}</td>
+          <td class="text-ink"
+            >{formatMoney(
+              invoice.totalAmount,
+              invoice.currency,
+            )}{#if invoice.creditedAmount > 0}<span class="block text-xs text-ink-muted"
+                >Avoirs : {formatMoney(invoice.creditedAmount, invoice.currency)}</span
+              ><span class="block text-xs"
+                >Restant dû : {formatMoney(invoice.outstanding, invoice.currency)}</span
+              >{#if invoice.customerCredit > 0}<span class="block text-xs text-warn"
+                  >Crédit à traiter : {formatMoney(invoice.customerCredit, invoice.currency)} (non remboursé)</span
+                >{/if}{/if}</td
+          >
           <td class="text-ink-muted">{invoice.sentAt ? formatDate(invoice.sentAt) : '—'}</td>
           <td class="text-ink-muted">{invoice.paidAt ? formatDate(invoice.paidAt) : '—'}</td>
           <td class="text-right">

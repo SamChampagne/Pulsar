@@ -1,5 +1,6 @@
 <script lang="ts">
   import BinCreateModal from './BinCreateModal.svelte';
+  import LotChoice from './LotChoice.svelte';
   import { auth } from '$lib/stores/auth';
   let createDestination = $state(false);
   import { api, ApiError } from '$lib/api/client';
@@ -37,8 +38,10 @@
     note = $state('');
   let busy = $state(false),
     error = $state('');
+  let lotId = $state(''),
+    lotReady = $state(false);
   async function move() {
-    if (busy || $pendingMove) return;
+    if (busy || $pendingMove || !lotReady) return;
     if (
       !qty ||
       qty <= 0 ||
@@ -64,7 +67,10 @@
       );
       if (!target.isActive || target.locationId !== source.locationId)
         throw new Error('Choisissez un emplacement actif du même entrepôt.');
-      const label = `${qty} ${source.unit} de ${source.sku} : ${source.binCode} → ${target.code}`;
+      const lot = lotId
+        ? await api<{ code: string }>(`/wms/items/${source.itemId}/lots/${lotId}`)
+        : null;
+      const label = `${qty} ${source.unit} de ${source.sku}${lot ? ` · lot ${lot.code}` : ''} : ${source.binCode} → ${target.code}`;
       if (
         !(await confirmAction(
           `Déplacer ${label} ? Le serveur revérifie le stock. Aucun dossier de réception ou de transport ne sera terminé.`,
@@ -81,6 +87,7 @@
           toBinId: destination,
           locationId: source.locationId,
           qty,
+          ...(lotId ? { lotId } : {}),
           ...(note.trim() ? { note: note.trim() } : {}),
         },
         label,
@@ -116,6 +123,13 @@
     <span class="font-mono">{source.qtyOnHand} {source.unit}</span> sur place
   </p>
   <fieldset disabled={busy || !!$pendingMove} class="mt-4 min-w-0 space-y-4">
+    <LotChoice
+      itemId={source.itemId}
+      binId={source.binId}
+      bind:value={lotId}
+      bind:ready={lotReady}
+      disabled={busy || !!$pendingMove}
+    />
     <Field label="Emplacement de destination"
       ><EntityPicker
         endpoint={`/wms/sites/${encodeURIComponent(source.locationId)}/bins`}
@@ -149,7 +163,7 @@
   </fieldset>
   <div class="mt-4"><ErrorNotice message={error} /></div>
   <div class="mt-4 flex flex-wrap gap-2">
-    <Button disabled={busy || !!$pendingMove || !destination} onclick={move}
+    <Button disabled={busy || !!$pendingMove || !destination || !lotReady} onclick={move}
       >Vérifier le déplacement</Button
     >
     <Button variant="ghost" disabled={busy} onclick={oncancel}

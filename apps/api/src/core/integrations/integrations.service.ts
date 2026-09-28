@@ -503,14 +503,31 @@ export class IntegrationsService {
       merged = normalizeEdiConfig(integration.key, merged);
       await this.assertEdiConfigAllowed(tenantId, integration.key, merged, actor);
     }
-    const updated = await this.prisma.integration.update({
-      where: { id },
-      data: {
-        name: input.name,
-        status: input.status,
-        ...(merged ? { config: this.crypto.encryptJson(merged) as Prisma.InputJsonValue } : {}),
-      },
-    });
+    if (!merged && input.status === 'ENABLED') {
+      // A status-only PATCH reopens an anonymous writer/outbound connection.
+      // Its existing target must pass the same gates as a configuration write.
+      this.assertSafeWebhookConfig(integration.key, stored);
+      this.assertInboundConfigAllowed(stored, actor);
+      await this.assertEdiConfigAllowed(tenantId, integration.key, stored, actor);
+    }
+    const updated = await this.prisma.integration
+      .update({
+        // The authorization above must apply to the exact version we write.
+        // A concurrent target change must not be activated using stale rights.
+        where: { id, tenantId, updatedAt: integration.updatedAt },
+        data: {
+          name: input.name,
+          status: input.status,
+          updatedAt: new Date(Math.max(Date.now(), integration.updatedAt.getTime() + 1)),
+          ...(merged ? { config: this.crypto.encryptJson(merged) as Prisma.InputJsonValue } : {}),
+        },
+      })
+      .catch((err: unknown) => {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+          throw new ConflictException('La connexion a changé. Actualisez avant de réessayer.');
+        }
+        throw err;
+      });
     // Same trail as `create`: before/after of the configuration, secrets masked.
     await this.audit.log({
       tenantId,

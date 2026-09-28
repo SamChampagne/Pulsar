@@ -764,10 +764,10 @@ describe('Connected Fulfillment bridge (e2e) — CRM SalesOrder → TMS Transpor
         .post(`/api/v1/billing/customer-invoices/${draft!.id}/approve`)
         .set(auth())
         .expect((r) => expect([200, 201]).toContain(r.status));
-      await request(http)
+await request(http)
         .post(`/api/v1/billing/customer-invoices/${draft!.id}/send`)
         .set(auth())
-        .expect((r) => expect([200, 201]).toContain(r.status));
+        .expect(409); // Legacy shortcut cannot send; payment is independent of delivery.
       const paid = (
         await request(http)
           .post(`/api/v1/billing/customer-invoices/${draft!.id}/pay`)

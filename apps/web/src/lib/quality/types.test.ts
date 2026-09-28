@@ -11,6 +11,11 @@ describe('Durable quality creation intent', () => {
   it('preserves the operation identity and exact content', () => {
     expect(readInspectionIntent(JSON.stringify(body))).toEqual(body);
   });
+  it('preserves a lot source without ever changing it on recovery', () => {
+    const lot = { ...body, sourceKind: 'LOT', sourceId: 'lot-1' };
+    expect(readInspectionIntent(JSON.stringify(lot))).toEqual(lot);
+    expect(() => readInspectionIntent(JSON.stringify({ ...lot, sourceId: undefined }))).toThrow();
+  });
   it('rejects corrupted storage instead of silently replacing an uncertain request', () => {
     for (const v of [
       null,

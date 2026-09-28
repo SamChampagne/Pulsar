@@ -15,6 +15,8 @@ import {
   canTransitionCustomerInvoice,
   canTransitionInvoice,
   canTransitionPayment,
+  invoiceBalance,
+  reversePaymentLedger,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -150,6 +152,7 @@ export class PaymentsService {
           invoiceNumber: true,
           totalAmount: true,
           amountPaid: true,
+          creditedAmount: true,
           currency: true,
         },
         orderBy: { createdAt: 'asc' },
@@ -158,7 +161,11 @@ export class PaymentsService {
         .map((r) => ({
           ...r,
           targetType: PaymentTargetType.CUSTOMER_INVOICE,
-          outstanding: Number(r.totalAmount) - Number(r.amountPaid),
+          outstanding: invoiceBalance(
+            r.totalAmount.toString(),
+            r.amountPaid.toString(),
+            r.creditedAmount.toString(),
+          ).outstanding,
         }))
         .filter((r) => r.outstanding > 0);
     }
@@ -424,15 +431,18 @@ export class PaymentsService {
       );
       if (allocated > Number(payment.totalAmount) + 1e-9)
         throw new BadRequestException('Allocations exceed payment amount');
+      const exactAllocated = payment.allocations
+        .reduce((sum, a) => sum.plus(a.amount), new Prisma.Decimal(0))
+        .toString();
       const lines =
         payment.type === PaymentType.RECEIVE
           ? [
-              { accountCode: modeAccount, debit: allocated },
-              { accountCode: arAccount, credit: allocated },
+              { accountCode: modeAccount, debit: exactAllocated },
+              { accountCode: arAccount, credit: exactAllocated },
             ]
           : [
-              { accountCode: apAccount, debit: allocated },
-              { accountCode: modeAccount, credit: allocated },
+              { accountCode: apAccount, debit: exactAllocated },
+              { accountCode: modeAccount, credit: exactAllocated },
             ];
       // Claim DRAFT→SUBMITTED (TOCTOU guard).
       const claim = await tx.payment.updateMany({
@@ -448,6 +458,7 @@ export class PaymentsService {
             select: {
               totalAmount: true,
               amountPaid: true,
+              creditedAmount: true,
               status: true,
               currency: true,
               customerId: true,
@@ -467,10 +478,10 @@ export class PaymentsService {
           if (inv.currency !== payment.currency)
             throw new BadRequestException('Allocation currency does not match payment currency');
           const priorPaid = inv.amountPaid;
-          const newPaid = Number(priorPaid) + Number(a.amount);
-          if (newPaid > Number(inv.totalAmount) + 1e-9)
+          const newPaid = priorPaid.plus(a.amount);
+          if (newPaid.gt(inv.totalAmount.minus(inv.creditedAmount)))
             throw new BadRequestException('Allocation exceeds invoice outstanding');
-          const willBePaid = newPaid >= Number(inv.totalAmount) - 1e-9;
+          const willBePaid = newPaid.gte(inv.totalAmount);
           if (willBePaid) {
             if (
               !canTransitionCustomerInvoice(
@@ -489,6 +500,7 @@ export class PaymentsService {
               id: a.targetId,
               tenantId,
               amountPaid: priorPaid,
+              creditedAmount: inv.creditedAmount,
               status: inv.status,
               currency: inv.currency,
               customerId: payment.partyId,
@@ -529,10 +541,10 @@ export class PaymentsService {
           if (inv.currency !== payment.currency)
             throw new BadRequestException('Allocation currency does not match payment currency');
           const priorPaid = inv.amountPaid;
-          const newPaid = Number(priorPaid) + Number(a.amount);
-          if (newPaid > Number(inv.totalAmount) + 1e-9)
+          const newPaid = priorPaid.plus(a.amount);
+          if (newPaid.gt(inv.totalAmount))
             throw new BadRequestException('Allocation exceeds invoice outstanding');
-          const willBePaid = newPaid >= Number(inv.totalAmount) - 1e-9;
+          const willBePaid = newPaid.gte(inv.totalAmount);
           if (willBePaid) {
             if (!canTransitionInvoice(inv.status as InvoiceStatus, InvoiceStatus.PAID)) {
               throw new BadRequestException(
@@ -576,6 +588,7 @@ export class PaymentsService {
         tenantId,
         {
           date: payment.date,
+          currency: payment.currency,
           memo: `Payment ${payment.paymentNumber}`,
           sourceType: 'payment',
           sourceId: payment.id,
@@ -616,28 +629,6 @@ export class PaymentsService {
       throw new BadRequestException(`Cannot cancel a ${payment.status} payment`);
     }
     const wasSubmitted = payment.status === PaymentStatus.SUBMITTED;
-    const settings = await this.moduleSettings.resolve(tenantId, 'billing');
-    const modeAccount = await this.modes.resolveAccountCode(tenantId, payment.modeOfPaymentId);
-    const arAccount = settings.arAccountCode as string;
-    const apAccount = settings.apAccountCode as string;
-    const allocated = payment.allocations.reduce((s, a) => s + Number(a.amount), 0);
-
-    // Reversal = swap debit/credit.
-    const lines =
-      payment.type === PaymentType.RECEIVE
-        ? [
-            { accountCode: modeAccount, credit: allocated },
-            { accountCode: arAccount, debit: allocated },
-          ]
-        : [
-            { accountCode: apAccount, credit: allocated },
-            { accountCode: modeAccount, debit: allocated },
-          ];
-
-    if (wasSubmitted) {
-      await this.ledger.ensureChart(tenantId);
-    }
-
     const cancelInvoiceRevertChanges: Array<{
       entityType: string;
       entityId: string;
@@ -666,9 +657,9 @@ export class PaymentsService {
             });
             if (!inv) continue;
             const priorPaid = inv.amountPaid;
-            const newPaid = Math.max(0, Number(priorPaid) - Number(a.amount));
+            const newPaid = Prisma.Decimal.max(0, priorPaid.minus(a.amount));
             const willRevert =
-              inv.status === CustomerInvoiceStatus.PAID && newPaid < Number(inv.totalAmount);
+              inv.status === CustomerInvoiceStatus.PAID && newPaid.lt(inv.totalAmount);
             const revertTarget = willRevert
               ? inv.sentAt
                 ? CustomerInvoiceStatus.SENT
@@ -708,9 +699,8 @@ export class PaymentsService {
             });
             if (!inv) continue;
             const priorPaid = inv.amountPaid;
-            const newPaid = Math.max(0, Number(priorPaid) - Number(a.amount));
-            const willRevert =
-              inv.status === InvoiceStatus.PAID && newPaid < Number(inv.totalAmount);
+            const newPaid = Prisma.Decimal.max(0, priorPaid.minus(a.amount));
+            const willRevert = inv.status === InvoiceStatus.PAID && newPaid.lt(inv.totalAmount);
             const revertTarget = InvoiceStatus.APPROVED;
             if (willRevert) {
               if (!canTransitionInvoice(inv.status as InvoiceStatus, revertTarget)) {
@@ -739,13 +729,68 @@ export class PaymentsService {
             }
           }
         }
-        // Post reversal GL entry with sourceKind='reversal' (distinct idempotence key from submit).
-        await this.ledger.postTx(
+        const originals = await tx.journalEntry.findMany({
+          where: { tenantId, sourceType: 'payment', sourceId: payment.id, sourceKind: null },
+          select: {
+            id: true,
+            currency: true,
+            currencyQualification: true,
+            _count: { select: { lines: true } },
+            lines: {
+              where: { tenantId, account: { tenantId } },
+              select: { debit: true, credit: true, account: { select: { code: true } } },
+            },
+          },
+        });
+        const originalEntry = originals[0];
+        if (
+          originals.length !== 1 ||
+          !originalEntry ||
+          originalEntry._count.lines !== originalEntry.lines.length ||
+          (originalEntry.currency !== null && originalEntry.currency !== payment.currency)
+        )
+          throw new ConflictException(
+            'Devise de l’écriture de paiement incohérente : revue comptable requise.',
+          );
+        let lines: ReturnType<typeof reversePaymentLedger>;
+        try {
+          lines = reversePaymentLedger(
+            originalEntry.lines.map(
+              (l: {
+                debit: Prisma.Decimal;
+                credit: Prisma.Decimal;
+                account: { code: string };
+              }) => ({
+                accountCode: l.account.code,
+                debit: l.debit.toString(),
+                credit: l.credit.toString(),
+              }),
+            ),
+          );
+        } catch (e) {
+          throw new ConflictException(
+            'Écriture originale non réversible : ' + (e as Error).message,
+          );
+        }
+        if (
+          await tx.journalEntry.count({
+            where: {
+              tenantId,
+              sourceType: 'payment',
+              sourceId: payment.id,
+              sourceKind: { not: null },
+            },
+          })
+        )
+          throw new ConflictException('Une contrepassation existe déjà : revue comptable requise.');
+        // Preserve the original currency, including historical NULL.
+        const reversal = await this.ledger.postTx(
           tx,
           tenantId,
           {
             date: new Date(),
             memo: `Reversal of payment ${payment.paymentNumber}`,
+            currency: originalEntry.currency,
             sourceType: 'payment',
             sourceId: payment.id,
             sourceKind: 'reversal',
@@ -753,6 +798,45 @@ export class PaymentsService {
           },
           userId,
         );
+        const qualification = originalEntry.currencyQualification;
+        if (qualification?.state === 'QUALIFIED') {
+          if (
+            originalEntry.currency !== null ||
+            qualification.sourceEntryId !== originalEntry.id ||
+            qualification.currency !== current.currency ||
+            !reversal.posted ||
+            !reversal.journalEntryId
+          )
+            throw new ConflictException(
+              'Qualification source incohérente : annulation interrompue.',
+            );
+          await tx.ledgerCurrencyQualification.create({
+            data: {
+              tenantId,
+              entryId: reversal.journalEntryId,
+              sourceEntryId: originalEntry.id,
+              state: qualification.state,
+              currency: qualification.currency,
+              version: qualification.version,
+            },
+          });
+          await this.audit.log(
+            {
+              tenantId,
+              userId,
+              entityType: 'ledger-currency-qualification',
+              entityId: reversal.journalEntryId,
+              action: AuditAction.CREATE,
+              after: {
+                sourceEntryId: originalEntry.id,
+                version: qualification.version,
+                currency: qualification.currency,
+                reason: 'Contrepassation exacte du paiement qualifié',
+              },
+            },
+            tx,
+          );
+        }
       }
     });
 

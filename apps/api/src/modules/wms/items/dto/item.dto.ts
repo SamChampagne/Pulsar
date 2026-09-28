@@ -1,7 +1,16 @@
 import { PartialType } from '@nestjs/swagger';
-import { IsBoolean, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 
 export class CreateItemDto {
+  @ValidateIf((_o, value) => value !== undefined) @IsBoolean() lotTracked?: boolean;
   @IsString() @MinLength(1) sku!: string;
   @IsString() @MinLength(1) name!: string;
   @IsOptional() @IsString() unit?: string;

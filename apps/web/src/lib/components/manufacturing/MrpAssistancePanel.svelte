@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime as fmtUserInstant } from '$lib/format';
   import { untrack } from 'svelte';
   import { api } from '$lib/api/client';
   import { Button, Card } from '$lib/components/ui';
@@ -190,9 +191,7 @@
           <span
             >Synthèse IA enregistrée · {assistance.workers.find((w) => w.id === review.agentId)
               ?.name ?? 'Agent'}</span
-          ><time datetime={review.createdAt}
-            >{new Date(review.createdAt).toLocaleString('fr-CA')}</time
-          >
+          ><time datetime={review.createdAt}>{fmtUserInstant(review.createdAt)}</time>
         </div>
         {#if review.staleAtReview}<p class="mt-2 text-xs text-warn">
             Calcul déjà périmé lors de l’enregistrement.

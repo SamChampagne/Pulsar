@@ -19,6 +19,13 @@ import {
 import { labelFor, toneFor, STATUS_LABELS_FR } from './status';
 
 describe('labelFor', () => {
+  it('does not render inactive identities or unavailable assets as ready', () => {
+    expect(labelFor('INACTIVE')).toBe('Inactif');
+    expect(toneFor('INACTIVE')).toBe('neutral');
+    expect(toneFor('MAINTENANCE')).toBe('warn');
+    expect(toneFor('RETIRED')).toBe('neutral');
+    expect(toneFor('AVAILABLE')).toBe('ok');
+  });
   it('translates the transport lifecycle', () => {
     expect(labelFor(TransportOrderStatus.IN_EXECUTION)).toBe('En exécution');
     expect(labelFor(ShipmentStatus.IN_TRANSIT)).toBe('En transit');

@@ -10,6 +10,7 @@ import {
   ValidateNested,
   Min,
   Max,
+  IsTimeZone,
 } from 'class-validator';
 import { TOUR_MODULE_KEYS, type TourModuleKey } from '@pulsar/shared';
 
@@ -60,6 +61,10 @@ export class AppearanceDto {
 }
 
 export class UpdatePreferencesDto {
+  @IsOptional()
+  @IsTimeZone()
+  timeZone?: string | null;
+
   @IsOptional()
   @ValidateNested()
   @Type(() => ModuleTourDto)

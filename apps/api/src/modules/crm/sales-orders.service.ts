@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -18,6 +19,13 @@ import { SequencesService } from '../../prisma/sequences.service';
 import { DomainEventsService } from '../../core/operating/domain-events.service';
 import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { paginationArgs, paginated } from '../../common/pagination';
+import { DocumentCoordinatesService } from '../../core/reference-data/document-coordinates.service';
+import {
+  lockBusinessTenant,
+  nextBusinessVersion,
+  assertServicePerson,
+} from '../business/business-lock';
+import { OwnershipService } from '../../prisma/ownership.service';
 import {
   CreateSalesOrderDto,
   SalesOrderListQueryDto,
@@ -37,6 +45,8 @@ export class SalesOrdersService {
     private readonly sequences: SequencesService,
     private readonly domainEvents: DomainEventsService,
     private readonly moduleSettings: ModuleSettingsService,
+    private readonly coordinates: DocumentCoordinatesService,
+    private readonly ownership: OwnershipService,
   ) {}
 
   async list(tenantId: string, query: SalesOrderListQueryDto) {
@@ -73,6 +83,8 @@ export class SalesOrdersService {
   }
 
   async create(tenantId: string, userId: string, dto: CreateSalesOrderDto) {
+    if (dto.ownerUserId)
+      await assertServicePerson(this.prisma, this.ownership, tenantId, dto.ownerUserId);
     // R9: assert companyId is owned by this tenant
     const company = await this.prisma.crmCompany.findFirst({
       where: { id: dto.companyId, tenantId },
@@ -129,16 +141,37 @@ export class SalesOrdersService {
   }
 
   async update(tenantId: string, userId: string, id: string, dto: UpdateSalesOrderDto) {
-    // Only notes/ownerUserId/currency are writable — status/number/companyId are not
-    const { count } = await this.prisma.salesOrder.updateMany({
-      where: { id, tenantId },
-      data: {
-        ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
-        ...(dto.ownerUserId !== undefined ? { ownerUserId: dto.ownerUserId } : {}),
-        ...(dto.currency !== undefined ? { currency: dto.currency } : {}),
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await lockBusinessTenant(tx, tenantId);
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
+      const row = await tx.salesOrder.findFirst({ where: { id, tenantId } });
+      if (!row) throw new NotFoundException('Sales order not found');
+      if (row.documentCoordinates && !dto.expectedUpdatedAt)
+        throw new ConflictException('Rechargez la commande et transmettez sa version.');
+      const updatedAt = nextBusinessVersion(
+        row,
+        dto.expectedUpdatedAt ?? row.updatedAt.toISOString(),
+      );
+      if (dto.currency !== undefined && dto.currency !== row.currency) {
+        if (row.status !== SalesOrderStatus.DRAFT)
+          throw new ConflictException('La devise est figée après confirmation.');
+        if (await tx.salesOrderLineItem.count({ where: { tenantId, salesOrderId: id } }))
+          throw new ConflictException(
+            'Retirez les lignes avant de changer la devise; aucune conversion implicite.',
+          );
+      }
+      if (dto.ownerUserId) await assertServicePerson(tx, this.ownership, tenantId, dto.ownerUserId);
+      const { count } = await tx.salesOrder.updateMany({
+        where: { id, tenantId, status: row.status, updatedAt: row.updatedAt },
+        data: {
+          ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+          ...(dto.ownerUserId !== undefined ? { ownerUserId: dto.ownerUserId } : {}),
+          ...(dto.currency !== undefined ? { currency: dto.currency } : {}),
+          updatedAt,
+        },
+      });
+      if (!count) throw new ConflictException('La commande a changé. Rechargez-la.');
     });
-    if (count === 0) throw new NotFoundException('Sales order not found');
 
     const order = await this.get(tenantId, id);
 
@@ -239,13 +272,13 @@ export class SalesOrdersService {
    * Transition a sales order's status. Guards with canTransitionSalesOrder (rule 2).
    * Claim-safe: optimistic lock on current status (TOCTOU).
    */
-  async transition(tenantId: string, userId: string, id: string, to: SalesOrderStatus) {
-    const order = await this.prisma.salesOrder.findFirst({
-      where: { id, tenantId },
-      select: { id: true, status: true, companyId: true, customerId: true },
-    });
-    if (!order) throw new NotFoundException('Sales order not found');
-
+  async transition(
+    tenantId: string,
+    userId: string,
+    id: string,
+    to: SalesOrderStatus,
+    expectedUpdatedAt?: string,
+  ) {
     // Direct invoicing of a fulfilled sales order is gated by a tenant setting.
     if (to === SalesOrderStatus.INVOICED) {
       const settings = await this.moduleSettings.resolve(tenantId, 'crm');
@@ -256,19 +289,34 @@ export class SalesOrdersService {
       }
     }
 
-    if (!canTransitionSalesOrder(order.status as SalesOrderStatus, to)) {
-      throw new BadRequestException(`Cannot transition sales order from ${order.status} to ${to}`);
-    }
-
-    const res = await this.prisma.$transaction(async (tx) => {
+    const order = await this.prisma.$transaction(async (tx) => {
+      // Same order as coordinate selection: business lock, then MRP/line-edit tenant lock.
+      await lockBusinessTenant(tx, tenantId);
       // Shared with line edits and MRP source capture: confirmation freezes quantities.
       await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
-      return tx.salesOrder.updateMany({
-        where: { id, tenantId, status: order.status },
-        data: { status: to },
+      const row = await tx.salesOrder.findFirst({ where: { id, tenantId } });
+      if (!row) throw new NotFoundException('Sales order not found');
+      if (!canTransitionSalesOrder(row.status as SalesOrderStatus, to))
+        throw new BadRequestException(`Cannot transition sales order from ${row.status} to ${to}`);
+      if (to === SalesOrderStatus.CONFIRMED && row.documentCoordinates && !expectedUpdatedAt)
+        throw new ConflictException(
+          'Rechargez la commande et transmettez sa version avant confirmation.',
+        );
+      const updatedAt = nextBusinessVersion(row, expectedUpdatedAt ?? row.updatedAt.toISOString());
+      const documentCoordinates =
+        to === SalesOrderStatus.CONFIRMED
+          ? await this.coordinates.freeze(tx, tenantId, row.documentCoordinates, {
+              kind: 'crm-company',
+              id: row.companyId,
+            })
+          : undefined;
+      const res = await tx.salesOrder.updateMany({
+        where: { id, tenantId, status: row.status, updatedAt: row.updatedAt },
+        data: { status: to, updatedAt, ...(documentCoordinates ? { documentCoordinates } : {}) },
       });
+      if (res.count !== 1) throw new ConflictException('La commande a changé. Rechargez-la.');
+      return row;
     });
-    if (res.count === 0) throw new BadRequestException('Sales order changed concurrently; retry');
 
     await this.audit.log({
       tenantId,

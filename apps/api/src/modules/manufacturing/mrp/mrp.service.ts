@@ -1,3 +1,4 @@
+import { quarantinedByItem, availableAfterQuarantine } from '../../wms/lots/lot-availability';
 import {
   BadRequestException,
   ConflictException,
@@ -448,8 +449,20 @@ export class MrpService {
       },
       _sum: { qtyOnHand: true },
     });
+    const held = await quarantinedByItem(
+      tx,
+      tenantId,
+      locationId,
+      policies.map((p) => p.itemId),
+    );
     const balances = new Map(
-      levels.map((level) => [level.itemId, level._sum.qtyOnHand ?? new Prisma.Decimal(0)]),
+      levels.map((level) => [
+        level.itemId,
+        availableAfterQuarantine(
+          level._sum.qtyOnHand ?? new Prisma.Decimal(0),
+          held.get(level.itemId),
+        ),
+      ]),
     );
     const byId = new Map(policies.map((p) => [p.itemId, p]));
     const snapshot: MrpSnapshot = {
@@ -617,7 +630,10 @@ export class MrpService {
     });
     const actuals = await tx.manufacturingDeclaration.findMany({
       where: { tenantId, order: { tenantId, locationId } },
-      include: { order: { select: { id: true, number: true, status: true } } },
+      include: {
+        order: { select: { id: true, number: true, status: true } },
+        reversal: { select: { id: true, reason: true, createdAt: true, evidence: true } },
+      },
       orderBy: { id: 'asc' },
       take: 10001,
     });
@@ -632,8 +648,18 @@ export class MrpService {
       scrapQuantity: d.scrapQuantity,
       createdAt: d.createdAt.toISOString(),
       evidence: d.evidence,
+      ...(d.reversal
+        ? { reversal: { ...d.reversal, createdAt: d.reversal.createdAt.toISOString() } }
+        : {}),
     }));
     const sourceMetadata = {
+      ...(held.size
+        ? {
+            quarantineExclusions: [...held]
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([itemId, quantity]) => ({ itemId, quantity: quantity.toFixed() })),
+          }
+        : {}),
       productionDeclarations,
       materialPurchases,
       forecastCoverage: coverage.forecasts,

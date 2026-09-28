@@ -26,6 +26,9 @@ export interface FakeAcpScript {
   toolCall?: { name: string; args: object };
   /** If true, the fake issues a reverse session/request_permission during the turn. */
   requestPermission?: boolean;
+  permissionOptions?: { optionId: string; kind: string; name?: string }[];
+  outcome?: unknown;
+  stopReason?: string;
 }
 
 export interface RecordedNewSession {
@@ -53,7 +56,10 @@ export class FakeAcpServer {
   lastNewSession: RecordedNewSession | null = null;
   lastModel: string | null = null;
   lastResume: string | null = null;
+  loadResult: object | null = {};
+  lastCancel: string | null = null;
   script: FakeAcpScript = {};
+  protocolVersion = PROTOCOL_VERSION;
 
   /** Records the outcome of any reverse permission call the client answered. */
   permissionOutcome: { outcome: string; optionId?: string } | null = null;
@@ -125,12 +131,15 @@ export class FakeAcpServer {
       return;
     }
 
-    if (msg.id === undefined) return; // we don't expect client notifications
+    if (msg.id === undefined) {
+      if (msg.method === 'session/cancel') this.lastCancel = msg.params?.sessionId;
+      return;
+    }
 
     switch (msg.method) {
       case 'initialize':
         this.reply(msg.id!, {
-          protocolVersion: PROTOCOL_VERSION,
+          protocolVersion: this.protocolVersion,
           agentInfo: { name: 'hermes-agent', version: '0.0.0-fake' },
           agentCapabilities: {
             loadSession: true,
@@ -157,8 +166,16 @@ export class FakeAcpServer {
                 name: 'anthropic:claude-sonnet-4-6',
                 description: 'current',
               },
-              { modelId: 'anthropic:claude-sonnet-4-6', name: 'claude-sonnet-4-6', description: 'fake' },
-              { modelId: 'anthropic:claude-opus-4-8', name: 'claude-opus-4-8', description: 'fake' },
+              {
+                modelId: 'anthropic:claude-sonnet-4-6',
+                name: 'claude-sonnet-4-6',
+                description: 'fake',
+              },
+              {
+                modelId: 'anthropic:claude-opus-4-8',
+                name: 'claude-opus-4-8',
+                description: 'fake',
+              },
             ],
             currentModelId: 'anthropic:anthropic:claude-sonnet-4-6',
           },
@@ -166,10 +183,10 @@ export class FakeAcpServer {
         return;
       }
 
-      case 'session/resume':
-        // Echo back the requested sessionId (Hermes resumes the persisted session).
+      case 'session/load':
+        // ACP load has no sessionId field; null means history unavailable.
         this.lastResume = msg.params?.sessionId ?? null;
-        this.reply(msg.id!, { sessionId: msg.params?.sessionId });
+        this.reply(msg.id!, this.loadResult);
         return;
 
       case 'session/set_model':
@@ -211,7 +228,7 @@ export class FakeAcpServer {
             status: 'pending',
             rawInput: {},
           },
-          options: [
+          options: this.script.permissionOptions ?? [
             { optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' },
             { optionId: 'deny', kind: 'reject_once', name: 'Deny' },
           ],
@@ -247,6 +264,14 @@ export class FakeAcpServer {
     }
 
     // End of turn: the prompt RPC returns after all notifications were emitted.
-    this.reply(id, { stopReason: 'end_turn' });
+    this.reply(id, {
+      stopReason: this.script.stopReason ?? 'end_turn',
+      _meta: {
+        pulsarTurn:
+          this.script.outcome === undefined
+            ? { version: 1, status: 'succeeded' }
+            : this.script.outcome,
+      },
+    });
   }
 }

@@ -133,8 +133,8 @@
         api<MaintenanceOrder[]>('/fleet/maintenance-orders', {
           query: statusFilter ? { status: statusFilter } : {},
         }),
-        api<Paginated<Asset>>('/transportation/vehicles', { query: { pageSize: 100 } }),
-        api<Paginated<Asset>>('/transportation/trailers', { query: { pageSize: 100 } }),
+        api<Paginated<Asset>>('/fleet/data/vehicles', { query: { pageSize: 100 } }),
+        api<Paginated<Asset>>('/fleet/data/trailers', { query: { pageSize: 100 } }),
       ]);
       orders = wo;
       vehicles = veh.items;

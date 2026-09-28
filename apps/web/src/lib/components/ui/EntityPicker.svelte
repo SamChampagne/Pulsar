@@ -28,6 +28,9 @@
   import ErrorNotice from './ErrorNotice.svelte';
   import Button from './Button.svelte';
   import { formatItem, filterArray, type PickerRecord } from './entity-picker';
+  import { referenceAccess } from '@pulsar/shared';
+  import { auth } from '$lib/stores/auth';
+  import ReferenceEditor from '../reference-data/ReferenceEditor.svelte';
 
   let {
     endpoint,
@@ -84,6 +87,25 @@
   const listId = `${uid}-list`;
 
   let open = $state(false);
+  let creating = $state(false);
+  const dataAccess = $derived(referenceAccess(endpoint.replace('/references/', '/data/')));
+  const canCreateReference = $derived(
+    !!dataAccess &&
+      $auth?.tenant.enabledModules.includes(dataAccess.module) &&
+      $auth.user.permissions.includes(dataAccess.read) &&
+      $auth.user.permissions.includes(dataAccess.manage),
+  );
+  const createAction = $derived(
+    allowCreate ??
+      (canCreateReference
+        ? {
+            label: 'Ajouter sans quitter ce formulaire',
+            onCreate: () => {
+              creating = true;
+            },
+          }
+        : undefined),
+  );
   let scanning = $state(false);
   const scanContext = $derived(pickerScanContext(endpoint, filters));
   async function scan(code: string) {
@@ -301,18 +323,30 @@
 </div>
 
 {#snippet createFooter()}
-  {#if allowCreate}
+  {#if createAction}
     <Button
       variant="secondary"
       onclick={() => {
         open = false;
-        allowCreate.onCreate();
-      }}><Plus size={14} />{allowCreate.label}</Button
+        createAction.onCreate();
+      }}><Plus size={14} />{createAction.label}</Button
     >
   {/if}
 {/snippet}
 
-<Modal bind:open title={label} size="sm" footer={allowCreate ? createFooter : undefined}>
+{#if creating && dataAccess}<ReferenceEditor
+    access={dataAccess}
+    fixedKind={endpoint === '/services/references/items' ? 'SERVICE' : undefined}
+    onclose={() => (creating = false)}
+    onsaved={(row) => {
+      selected = row;
+      value = String(row[valueKey]);
+      onselect?.(row);
+      creating = false;
+    }}
+  />{/if}
+
+<Modal bind:open title={label} size="sm" footer={createAction ? createFooter : undefined}>
   {#if scanContext}
     <div class="mb-3">
       <Button

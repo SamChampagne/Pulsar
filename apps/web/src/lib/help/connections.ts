@@ -22,6 +22,144 @@ export interface ModuleConnection {
 }
 export const MODULE_CONNECTIONS: ModuleConnection[] = [
   {
+    id: 'supplier-return-credit',
+    from: 'wms',
+    to: 'billing',
+    title: 'Suivi de retour et avoir fournisseur reçu',
+    kind: 'context',
+    owner:
+      'WMS possède la sortie et ses suivis; Finance possède la facture et le document d’avoir reçu.',
+    requires:
+      'Finance et lecture factures + gestion/qualification avoirs; WMS actif et wms.read pour le lien facultatif.',
+    trigger:
+      'Choisir explicitement le dernier suivi versionné d’un retour POSTED du même fournisseur dans le brouillon d’avoir.',
+    data: 'Numéro, révision, date et cumuls reçus/acceptés/refusés capturés. Pas de prix Achats ni preuve d’allocation aux lignes.',
+    effect:
+      'Une nouvelle révision bloque la qualification du brouillon jusqu’à sa revue. La copie d’un avoir qualifié reste historique.',
+    noEffect:
+      'Aucun montant calculé depuis les quantités, aucun mouvement, remboursement, paiement ou écriture comptable.',
+    recovery:
+      'Sans accès WMS, copie masquée et mutation/reprise refusée. Après coupure, reprendre exactement la même demande; jamais une nouvelle clé.',
+  },
+  {
+    id: 'purchase-supplier-invoice',
+    from: 'purchasing',
+    to: 'billing',
+    title: 'Commande et facture fournisseur reçue',
+    kind: 'context',
+    owner:
+      'Achats possède la commande; Finance possède la facture reçue, ses montants déclarés et son original.',
+    requires:
+      'Finance et les droits de facture fournisseur; Achats activé et purchasing.read uniquement pour les lignes liées. Finance seul permet une saisie autonome.',
+    trigger:
+      'Dans Finance → Factures fournisseur, sélectionner explicitement une ligne de commande confirmée ou clôturée du même fournisseur, unité et devise.',
+    data: 'Identité de la ligne, numéro de commande, quantité, unité, devise et prix commercial capturés. Sans accès Achats, seule l’existence du lien est signalée.',
+    effect:
+      'Le dossier conserve une référence documentaire vérifiable. La qualification humaine fige les données enregistrées et l’original choisi.',
+    noEffect:
+      'Pas de prix ou taxe repris implicitement, de rapprochement trois pièces, de contrôle du cumul facturé, de stock, d’avoir, de dette comptable ou de paiement.',
+    recovery:
+      'Version attendue et clé de demande conservée. Après coupure, vérifier le résultat ou reprendre exactement la même demande; source commerciale inaccessible = modification du dossier lié bloquée.',
+  },
+  {
+    id: 'wms-supplier-exits',
+    from: 'wms',
+    to: 'purchasing',
+    title: 'Retour physique et fournisseur partagé',
+    kind: 'reference',
+    owner:
+      'WMS possède le dossier SX, sa preuve et le mouvement. Le socle possède l’identité fournisseur partagée.',
+    requires:
+      'WMS seul et wms.read/manage pour préparer; wms.stock.return pour confirmer. Achats n’est pas obligatoire, ses dossiers restent soumis à ses droits.',
+    trigger:
+      'Choisir Retour fournisseur dans Sorties documentées : lot, emplacement, quantité, fournisseur, autorisation et destination explicitement confirmée.',
+    data: 'Copie immuable du fournisseur, article, lot et emplacement; compte rendu et mouvement de sortie liés à la validation humaine.',
+    effect:
+      'Le stock physique diminue exactement dans le lot/emplacement choisi. Le reste du lot conserve sa disposition; le journal permet de retrouver le dossier.',
+    noEffect:
+      'Aucune commande rapprochée implicitement, aucun avoir, remboursement, remplacement, email ou shipment. Un brouillon ne réserve rien.',
+    recovery:
+      'Reprendre la même demande après coupure. Fournisseur changé ou revue périmée : revoir avant exécution, ou annuler le brouillon et recréer. Un dossier exécuté reste fermé.',
+  },
+  {
+    id: 'quality-lot-release',
+    from: 'quality',
+    to: 'wms',
+    title: 'Contrôle de lot et libération documentée',
+    kind: 'operation',
+    owner:
+      'Qualité conserve les critères et résultats immuables; WMS conserve le blocage et la décision humaine.',
+    requires:
+      'Qualité + WMS et leurs droits de lecture. quality.manage pour contrôler, wms.manage + wms.lots.release pour libérer. WMS seul conserve le parcours manuel.',
+    trigger:
+      'Articles → Lots → Préparer un contrôle, puis terminer dans Qualité et revenir au lot pour citer le contrôle dans une libération.',
+    data: 'Lot choisi à la création, identité figée, révision et nombre de mouvements capturés. Libération : version exacte, PASS terminé et contexte inchangé; résumé de la preuve figé dans la décision.',
+    effect:
+      'La libération humaine déverrouille les prochaines sorties du lot. La fiche lot liste les contrôles et les préparations WMS ouvertes liées exactement à ce lot.',
+    noEffect:
+      'Terminer un contrôle ne modifie jamais le stock. Aucun rattachement rétroactif, rappel transitif, réaffectation de préparation ni libération automatique.',
+    recovery:
+      'Lot déplacé, reçu ou remis en quarantaine : nouveau contrôle requis pour citer une preuve. Après coupure de libération, reprendre la même clé, référence et version. Sans droits Qualité, preuve structurée masquée.',
+  },
+  {
+    id: 'wms-quarantine-planning',
+    from: 'wms',
+    to: 'manufacturing',
+    title: 'Quarantaine et disponible de fabrication',
+    kind: 'operation',
+    owner: 'WMS détient la disposition globale du lot et les décisions de libération.',
+    requires:
+      'WMS seul pour décider; Fabrication et ses droits pour MRP/APS. wms.lots.release en plus des droits de gestion pour libérer.',
+    trigger: 'Mettre un lot en quarantaine depuis Articles → Lots, avec motif et confirmation.',
+    data: 'Disposition, révision et décision append-only. Le physique reste inchangé; les nouveaux snapshots MRP capturent les quantités exclues par article/site.',
+    effect:
+      'Prélèvement WMS, pièce Services, consommation atelier et diminutions compensatoires refusés. MRP, impacts et APS matières excluent les quantités bloquées; revue APS recontrôlée.',
+    noEffect:
+      'Aucune propagation automatique aux descendants déjà fabriqués ou livrés. Entrées/retours et MOVE conservent le blocage. Aucun stock libéré par la clôture d’une inspection Qualité.',
+    recovery:
+      'Relire la révision et l’historique. Après réponse perdue, reprendre la même décision conservée. Libération séparée après contrôle documenté; aucune correction des snapshots historiques.',
+  },
+  {
+    id: 'clients-shared-identities',
+    from: 'clients',
+    to: 'billing',
+    title: 'Clients et identités facturables',
+    kind: 'reference',
+    owner:
+      'Le socle conserve Customer et BusinessPartner. Clients est un éditeur facultatif, pas le propriétaire des factures ni des transports.',
+    requires:
+      'Clients activé et clients.read; clients.manage pour modifier. Consulter les factures demande séparément les droits et le module Facturation.',
+    trigger:
+      'Rechercher puis modifier une fiche dans le registre Transport et facturation, ou dans Services et SAV selon le besoin.',
+    data: 'Même identifiant, coordonnées, état actif, deux adresses par défaut et carnet multi-adresses/contacts versionné. Les anciens registres restent distincts et ne sont pas rapprochés par nom.',
+    effect:
+      'Les consommateurs de cette identité retrouvent la fiche mise à jour. Les autres applications continuent sans activation de Clients.',
+    noEffect:
+      'Aucune facture, taxe, écriture comptable, création de site ou modification de document historique. Pas de fusion des registres dans cette version.',
+    recovery:
+      'Après une édition concurrente ou une réponse incertaine, relire la fiche. La correspondance Services vers Facturation reste explicite dans Services → Données.',
+  },
+  {
+    id: 'billing-credit-email',
+    from: 'billing',
+    to: 'emails',
+    title: 'Avoir client, PDF conservé et remise courriel',
+    kind: 'operation',
+    owner:
+      'Facturation conserve l’avoir et sa publication immuable. Documents conserve le PDF protégé; Courriel conserve la demande et son résultat.',
+    requires:
+      'Facturation activée, facture lisible et avoir validé. Publication avec billing.credit-notes.approve; envoi avec billing.credit-notes.send. Coordonnées légales et inscriptions fiscales confirmées.',
+    trigger:
+      'Ouvrir Document et envoi client dans l’avoir. Figer les identités et le PDF, télécharger pour vérifier, puis confirmer le destinataire et le mode de remise.',
+    data: 'Identités, facture source, dates UTC, lignes et taxes figées. Identifiant du fichier et empreinte SHA-256; destinataire et mode log/SMTP capturés dans la demande.',
+    effect:
+      'Un PDF canonique conservé et une demande idempotente par avoir/mode. La pièce jointe exacte est obligatoire avant toute remise. La simulation peut précéder un envoi SMTP confirmé séparément.',
+    noEffect:
+      'Publier ne modifie ni facture, ni grand livre, ni stock. Simuler ne contacte pas le client; accepté par SMTP ne signifie pas reçu. Aucun remboursement ni action agent ajoutée.',
+    recovery:
+      'Actualiser après réponse perdue. Une publication incomplète reprend son instantané; un envoi existant ne repart pas. Échec ou résultat incertain : inspecter le journal et le fournisseur; aucune relance automatique.',
+  },
+  {
     id: 'hr-settings',
     from: 'hr',
     to: 'settings',
@@ -217,14 +355,15 @@ export const MODULE_CONNECTIONS: ModuleConnection[] = [
     to: 'services',
     title: 'Client et prestation d’une intervention',
     kind: 'reference',
-    owner: 'Catalogue garde les fiches; Services garde le projet et l’intervention.',
+    owner:
+      'Les référentiels communs gardent les fiches; Services garde le projet et l’intervention. Catalogue est un éditeur central facultatif.',
     requires:
       'Un client actif. La prestation est facultative et doit être de type SERVICE. Droits de gestion Services pour créer le dossier.',
     trigger:
       'Sélectionner le client du projet, puis éventuellement une prestation dans l’intervention.',
     data: 'Identifiants des fiches, noms, codes et unités. Les sélecteurs Services ne donnent pas accès aux coordonnées complètes du partenaire.',
     effect:
-      'Le projet reste lié à son client, et le travail à la prestation choisie. Les références existantes sont consultables via Services même sans accès à l’éditeur Catalogue.',
+      'Le projet reste lié à son client, et le travail à la prestation choisie. Services peut créer et corriger ces fiches dans Données ou ses sélecteurs sans activer Catalogue.',
     noEffect:
       'Aucune consommation de pièce, conversion CRM, facture ou affectation automatique de technicien.',
     recovery:
@@ -236,10 +375,12 @@ export const MODULE_CONNECTIONS: ModuleConnection[] = [
     to: 'purchasing',
     title: 'Fournisseurs et lignes d’achat',
     kind: 'reference',
-    owner: 'Catalogue décrit le fournisseur et l’article; Achats garde l’engagement et ses prix.',
+    owner:
+      'Les référentiels communs décrivent fournisseurs et articles; Achats possède ses commandes et prix, sans activation obligatoire de Catalogue.',
     requires:
       'Fournisseur actif, articles actifs, purchasing.manage. Le partenaire peut être à la fois client et fournisseur.',
-    trigger: 'Créer un brouillon fournisseur et sélectionner ses lignes.',
+    trigger:
+      'Créer un brouillon fournisseur et sélectionner ses lignes. Ajouter une référence manquante directement dans le sélecteur ou dans Achats fournisseurs → Données.',
     data: 'Références des articles et du fournisseur; copie du libellé et de l’unité sur chaque ligne.',
     effect:
       'Les quantités et prix produisent un total hors taxes dans une seule devise. La confirmation fige les lignes.',
@@ -278,14 +419,14 @@ export const MODULE_CONNECTIONS: ModuleConnection[] = [
     requires:
       'Intervention en cours dans un projet actif, produit relié et emplacement actif. Services et WMS activés; services.read/manage et wms.read/manage.',
     trigger:
-      'Ouvrir Pièces et stock, choisir le produit, l’emplacement, la quantité et l’utilisation; confirmer le mouvement physique.',
-    data: 'Article WMS, emplacement, quantité à trois décimales maximum, auteur, motif, numéro d’intervention. Libellé, code, unité et emplacement sont capturés pour l’historique.',
+      'Ouvrir Pièces et stock, choisir le produit, l’emplacement, le lot si suivi, la quantité et l’utilisation; confirmer le mouvement physique. Catalogue et Achats ne sont pas requis.',
+    data: 'Article WMS, emplacement, quantité à trois décimales maximum, auteur, motif, numéro d’intervention. Libellé, code, unité, emplacement et identité/dates du lot sont capturés pour l’historique, lisible avec services.read même sans WMS actif.',
     effect:
-      'La sortie et la consommation sont enregistrées ensemble. Le disponible est revérifié sous verrou; aucun stock négatif. Le retour intégral crée un second mouvement vers l’emplacement d’origine.',
+      'La sortie, la consommation et les soldes total/par lot sont enregistrés ensemble. Le disponible du lot choisi est revérifié sous verrou; aucun stock négatif ni emprunt à un autre lot. Chaque retour intégral ou partiel crée un mouvement vers le lot et l’emplacement d’origine, même après changement de correspondance. Le cumul ne dépasse jamais la quantité sortie.',
     noEffect:
       'Le disponible affiché n’est pas réservé. Ni la sélection de prestation, ni les heures, ni la clôture ne consomment du stock. Aucun prix ni montant facturé n’est calculé.',
     recovery:
-      'Après coupure, reprendre la demande conservée avec sa même clé. Pour une erreur physique, retourner toutes les pièces de la ligne avec motif, puis saisir la bonne consommation si l’intervention est encore en cours. Retour partiel non disponible. Projet fermé : aucune correction silencieuse.',
+      'Après coupure, reprendre la même demande conservée, quantité et clé comprises. Retourner seulement les pièces physiquement revenues, avec motif. Si elles sont liées à une facture brouillon, supprimer d’abord ce brouillon dans Facturation puis le recréer après le retour. Facture validée : sélectionner une ligne d’avoir validée; le cumul des retours ne dépasse pas sa quantité. Un projet fermé reste figé.',
   },
   {
     id: 'services-billing',
@@ -299,13 +440,13 @@ export const MODULE_CONNECTIONS: ModuleConnection[] = [
       'Services et Billing activés, lecture des deux modules et gestion Services/factures client. Partenaire actif relié explicitement à un client Facturation actif.',
     trigger:
       'Depuis un projet, choisir les sources dans Travaux à facturer, confirmer les tarifs et créer le brouillon.',
-    data: 'Quantité et version de chaque heure approuvée ou pièce consommée; devise, prix figé, lien unique à la source et clé de reprise.',
+    data: 'Quantité et version de chaque heure approuvée; quantité nette des pièces après retours, quantité sortie et retournée; devise, prix figé, lien unique à la source et clé de reprise.',
     effect:
-      'Création atomique d’un brouillon existant de Facturation. Les contraintes empêchent une source de figurer sur deux factures. Les taxes sont appliquées ensuite dans Facturation.',
+      'Création atomique d’un brouillon de Facturation aux quantités nettes. Tout retour invalide les anciennes versions de la source; une sélection périmée est refusée. Les contraintes empêchent une source de figurer sur deux factures. Les taxes sont appliquées ensuite dans Facturation.',
     noEffect:
       'Ni approuver le temps, ni terminer une intervention ou un projet ne crée une facture, une paie ou une écriture comptable.',
     recovery:
-      'Après coupure, reprendre la même demande conservée. Supprimer un brouillon libère les sources; sa clé ne peut pas recréer la facture supprimée. Une facture approuvée bloque les corrections silencieuses; les avoirs intégrés restent un prochain lot.',
+      'Après coupure, reprendre la même demande conservée. Supprimer un brouillon libère les sources; sa clé ne peut pas recréer la facture supprimée. Une facture approuvée reste figée : créer un avoir dans sa fiche, puis confirmer séparément le retour de pièces Services. Le crédit réduit le solde financier; il ne remet pas de stock et ne rembourse pas le client automatiquement.',
   },
   {
     id: 'purchasing-wms',
@@ -319,7 +460,7 @@ export const MODULE_CONNECTIONS: ModuleConnection[] = [
       'Commande confirmée ouverte, produit Catalogue relié au WMS dans la même unité, site et emplacements actifs. Droits purchasing.read/manage et wms.read/manage, WMS activé.',
     trigger:
       'Ouvrir Réceptions et reliquats depuis une commande, saisir les quantités réellement arrivées puis confirmer la réception physique.',
-    data: 'Chaque ligne reçue pointe vers sa ligne de commande et sa ligne WMS. Référence du bon, article, emplacement et unité conservés.',
+    data: 'Chaque ligne reçue pointe vers sa ligne de commande et sa ligne WMS. Référence du bon, article, emplacement et unité conservés; nombre de colis et lot réellement reçu sont distincts. Le lot est obligatoire pour un article WMS suivi.',
     effect:
       'Une réception WMS validée, ses mouvements et les liens fournisseur sont enregistrés atomiquement. Le reçu et le restant sont recalculés à la lecture; les livraisons partielles se cumulent.',
     noEffect:
@@ -396,6 +537,26 @@ export const MODULE_CONNECTIONS: ModuleConnection[] = [
       'Créer un article, une nomenclature ou calculer un planning APS n’est pas une réception ou une consommation physique. Ne pas assimiler Catalogue et WMS sans correspondance explicite.',
     recovery:
       'Vérifier références et unités avant de planifier. Si APS est indisponible, le dossier métier subsiste; cela n’autorise pas à inventer des mouvements de production.',
+  },
+  {
+    id: 'manufacturing-stock-lots',
+    from: 'manufacturing',
+    to: 'wms',
+    kind: 'operation',
+    title: 'Lots matières vers lot produit',
+    owner:
+      'Fabrication conserve la déclaration; WMS est l’autorité des mouvements et soldes par lot.',
+    requires:
+      'Fabrication et WMS activés, manufacturing.read/manage et wms.read/manage pour déclarer; lectures avec les deux droits read. OF en cours, site et version matières figés.',
+    trigger:
+      'Atelier et stock réel : choisir les sources lot/emplacement, les quantités réellement consommées, le lot des bons produits et confirmer avec une note.',
+    data: 'Quantités/unités/bin et identités/dates des lots capturés avec les mouvements dans la preuve version 2. Plusieurs lots sources, un lot produit par déclaration.',
+    effect:
+      'Consommation, production bonne, soldes total/par lot et preuve sont atomiques. Le journal WMS relie l’OF seulement avec les droits Fabrication. Traçabilité du lot suit ensuite les liens vérifiés en amont/aval par niveaux, exclut les contrepassations et signale les limites. Les dossiers WMS/Services et le shipment explicitement lié restent soumis à leurs accès. Un échec d’écriture annule toute la transaction.',
+    noEffect:
+      'Ni rebut, ni création d’une fiche lot, ni calcul MRP/APS ne créent de stock disponible. Le lien direct entre sources et sortie ne prouve pas une allocation par pièce; aucune consommation antérieure n’est reliée implicitement.',
+    recovery:
+      'Reprendre la demande exacte conservée après coupure, même clé et mêmes lots; un refus de reprise ne l’efface pas. Pour une erreur v2 sur OF en cours, examiner puis confirmer une contrepassation complète avec motif : retrait du produit et restitution des matières aux mêmes lots/bins, sans effacer l’original. Nouvelle déclaration corrigée séparée. Stock insuffisant ou OF terminé : refus. Pas d’inversion automatique, FEFO ou rappel réglementaire.',
   },
   {
     id: 'fleet-transport',
@@ -608,11 +769,11 @@ export const BUSINESS_JOURNEYS = [
   {
     id: 'after-sales-service',
     title: 'Traiter une demande SAV avec une intervention',
-    modules: ['catalog', 'support', 'services'],
+    modules: ['support', 'services'],
     steps: [
       [
-        'Catalogue',
-        'Identifier le client actif. Sa référence sera conservée sur la demande SAV et sur le projet Services.',
+        'SAV → Données',
+        'Créer ou identifier le client actif. La même fiche sera utilisée par SAV et Services, sans Catalogue.',
       ],
       [
         'SAV',
@@ -631,11 +792,11 @@ export const BUSINESS_JOURNEYS = [
   {
     id: 'field-service',
     title: 'Réaliser une intervention avec pièces',
-    modules: ['catalog', 'services', 'wms'],
+    modules: ['services', 'wms'],
     steps: [
       [
-        'Catalogue',
-        'Créer le client et la prestation. Créer le produit GOODS, puis établir sa correspondance Stock WMS dans la même unité.',
+        'Services → Données',
+        'Créer le client et la prestation. Créer le produit GOODS, puis établir sa correspondance Stock WMS dans la même unité, sans Catalogue.',
       ],
       [
         'Entrepôt',
@@ -683,11 +844,11 @@ export const BUSINESS_JOURNEYS = [
   {
     id: 'supplier-followup',
     title: 'Acheter et recevoir en plusieurs arrivages',
-    modules: ['catalog', 'purchasing', 'wms'],
+    modules: ['purchasing', 'wms'],
     steps: [
       [
-        'Catalogue',
-        'Préparer un fournisseur actif et relier les produits physiques aux articles WMS dans la même unité.',
+        'Achats fournisseurs → Données',
+        'Préparer un fournisseur actif et relier les produits physiques aux articles WMS dans la même unité, sans Catalogue.',
       ],
       [
         'Achats fournisseurs',

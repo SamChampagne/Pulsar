@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime as fmtUserInstant } from '$lib/format';
   import type { Paginated } from '@pulsar/shared';
   import { PERMISSIONS } from '@pulsar/shared';
   import { api, ApiError } from '$lib/api/client';
@@ -135,7 +136,7 @@
     return name || r.user.email;
   }
   function when(iso: string): string {
-    return new Date(iso).toLocaleString('fr-CA');
+    return fmtUserInstant(iso);
   }
 
   // --- before/after diffing for the detail panel ------------------------------
@@ -310,7 +311,12 @@
   {/if}
 {/if}
 
-<Modal open={selected !== null} size="lg" title="Détail de l’événement" onclose={() => (selected = null)}>
+<Modal
+  open={selected !== null}
+  size="lg"
+  title="Détail de l’événement"
+  onclose={() => (selected = null)}
+>
   {#snippet children()}
     {#if selected}
       <div class="space-y-4 text-sm">

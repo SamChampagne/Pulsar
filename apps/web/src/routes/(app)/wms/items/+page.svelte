@@ -17,12 +17,15 @@
     Table,
   } from '$lib/components/ui';
   import { toast } from '$lib/stores/toast';
+  import { auth } from '$lib/stores/auth';
+  const manage = $derived($auth?.user.permissions.includes('wms.manage'));
 
   interface Item {
     id: string;
     sku: string;
     name: string;
     unit: string;
+    lotTracked: boolean;
     barcode?: string | null;
     reorderPoint?: number | null;
     reorderQty?: number | null;
@@ -53,6 +56,7 @@
   let formReorderPoint = $state('');
   let formReorderQty = $state('');
   let formActive = $state(true);
+  let formLotTracked = $state(false);
   let saving = $state(false);
 
   async function load() {
@@ -85,10 +89,12 @@
     formReorderPoint = '';
     formReorderQty = '';
     formActive = true;
+    formLotTracked = false;
     formOpen = true;
   }
 
   function openEdit(it: Item) {
+    if (!manage) return;
     editId = it.id;
     formSku = it.sku;
     formName = it.name;
@@ -97,6 +103,7 @@
     formReorderPoint = it.reorderPoint != null ? String(it.reorderPoint) : '';
     formReorderQty = it.reorderQty != null ? String(it.reorderQty) : '';
     formActive = it.isActive;
+    formLotTracked = it.lotTracked;
     formOpen = true;
   }
 
@@ -115,6 +122,7 @@
         reorderPoint: formReorderPoint !== '' ? Number(formReorderPoint) : undefined,
         reorderQty: formReorderQty !== '' ? Number(formReorderQty) : undefined,
         isActive: formActive,
+        lotTracked: formLotTracked,
       };
       if (editId) {
         await api(`/wms/items/${editId}`, { method: 'PATCH', body });
@@ -135,7 +143,7 @@
 
 <PageHeader title="Articles" count={total}>
   {#snippet actions()}
-    <Button onclick={openCreate}>Nouvel article</Button>
+    {#if manage}<Button onclick={openCreate}>Nouvel article</Button>{/if}
   {/snippet}
 </PageHeader>
 
@@ -161,7 +169,7 @@
   <Card>
     <EmptyState message="Aucun article pour le moment.">
       {#snippet children()}
-        <Button onclick={openCreate}>Nouvel article</Button>
+        {#if manage}<Button onclick={openCreate}>Nouvel article</Button>{/if}
       {/snippet}
     </EmptyState>
   </Card>
@@ -206,8 +214,12 @@
               class="text-xs text-accent hover:underline"
               href={`/wms/movements?itemId=${encodeURIComponent(it.id)}`}
               onclick={(e) => e.stopPropagation()}>Journal ↗</a
-            ></td
-          >
+            >{#if it.lotTracked}<a
+                class="ml-3 text-xs text-accent underline"
+                href={`/wms/items/${it.id}/lots`}
+                onclick={(e) => e.stopPropagation()}>Lots ↗</a
+              >{/if}
+          </td>
         </tr>
       {/each}
     {/snippet}
@@ -229,6 +241,15 @@
       <Field label="Code-barres">
         <Input bind:value={formBarcode} placeholder="Optionnel" />
       </Field>
+      <label class="flex gap-2 text-sm"
+        ><input type="checkbox" bind:checked={formLotTracked} disabled={!!editId} />Suivi par lot
+        (choix définitif)</label
+      >
+      <p class="text-xs text-ink-muted">
+        Chaque mouvement exigera un lot. Disponible en réceptions WMS/Achats, préparations,
+        déplacements, comptages, ajustements, consommation Services et atelier. Une quarantaine
+        bloque les sorties du lot dans tous ces parcours; les écritures sans lot sont refusées.
+      </p>
       <div class="grid grid-cols-2 gap-3">
         <Field label="Point de réappro (min)">
           <Input bind:value={formReorderPoint} type="number" min="0" placeholder="ex. 10" />

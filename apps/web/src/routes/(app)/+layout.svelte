@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { formatDateTime as fmtUserInstant } from '$lib/format';
+  import UserTimeZone from '$lib/components/ui/UserTimeZone.svelte';
   import ModuleScanner from '$lib/components/scanning/ModuleScanner.svelte';
   import ModuleTour from '$lib/components/help/ModuleTour.svelte';
   import { requestModuleTour } from '$lib/help/tours';
@@ -456,6 +458,12 @@
         >
       </div>
     </header>
+    <div
+      class="flex h-7 shrink-0 items-center justify-end border-b border-edge bg-surface px-3"
+      aria-label="Contexte horaire"
+    >
+      <UserTimeZone />
+    </div>
 
     <div class="flex min-h-0 min-w-0 flex-1">
       {#if !deskMode}
@@ -598,7 +606,7 @@
         <h3 class="text-sm font-medium">{n.title}</h3>
         <p class="mt-1 text-sm text-ink-muted">{n.body}</p>
         <div class="mt-2 flex items-center justify-between gap-2 text-xs text-ink-muted">
-          <time datetime={n.createdAt}>{new Date(n.createdAt).toLocaleString('fr-CA')}</time>
+          <time datetime={n.createdAt}>{fmtUserInstant(n.createdAt)}</time>
           {#if !n.readAt}<button
               class="rounded-md px-2 py-1 text-ink hover:bg-surface-muted"
               onclick={() => markRead(n.id)}>Marquer lu</button

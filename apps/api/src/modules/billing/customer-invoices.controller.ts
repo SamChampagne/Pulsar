@@ -12,6 +12,9 @@ class DraftStatementsDto {
   @IsString()
   customerId!: string;
 }
+class ApproveStatementDto {
+  @IsOptional() @IsDateString() expectedUpdatedAt?: string;
+}
 
 class MarkStatementPaidDto {
   @IsOptional()
@@ -80,8 +83,12 @@ export class CustomerInvoicesController {
 
   @Post(':id/approve')
   @RequirePermissions(PERMISSIONS.BILLING.CUSTOMER_INVOICES_MANAGE)
-  approve(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.statements.approve(user.tenantId, user.id, id);
+  approve(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: ApproveStatementDto,
+  ) {
+    return this.statements.approve(user.tenantId, user.id, id, dto.expectedUpdatedAt);
   }
 
   @Post(':id/send')
@@ -92,7 +99,11 @@ export class CustomerInvoicesController {
 
   @Post(':id/pay')
   @RequirePermissions(PERMISSIONS.BILLING.CUSTOMER_INVOICES_PAY)
-  markPaid(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: MarkStatementPaidDto) {
+  markPaid(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: MarkStatementPaidDto,
+  ) {
     return this.statements.markPaid(user.tenantId, user.id, id, dto.paidAt);
   }
 }

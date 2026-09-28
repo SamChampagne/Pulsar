@@ -1,5 +1,7 @@
 <script lang="ts">
   import DossierButton from '$lib/components/workflows/DossierButton.svelte';
+  import DocumentCoordinates from '$lib/components/reference-data/DocumentCoordinates.svelte';
+  import { auth } from '$lib/stores/auth';
   import { untrack } from 'svelte';
   import { confirmAction } from '$lib/stores/confirmation';
   import { page } from '$app/state';
@@ -61,6 +63,7 @@
     palletCount: number | null;
     notes: string | null;
     createdAt: string;
+    updatedAt: string;
     customer: { id: string; code: string; name: string };
     originLocation: { id: string; code: string; name: string; city: string };
     destinationLocation: { id: string; code: string; name: string; city: string };
@@ -79,6 +82,13 @@
   let error = $state('');
   let eventsError = $state(false);
   let busy = $state(false);
+  let coordinatesBusy = $state(false);
+  const canManage = $derived(!!$auth?.user.permissions.includes('transportation.orders.manage'));
+  const canPlan = $derived(!!$auth?.user.permissions.includes('transportation.planning.manage'));
+  const canReadDirectory = $derived(
+    !!$auth?.user.permissions.includes('transportation.master-data.read'),
+  );
+  const working = $derived(busy || coordinatesBusy);
   let planError = $state('');
   let fieldsLoading = $state(false);
   let fieldsError = $state('');
@@ -197,7 +207,16 @@
   }
 
   async function action(name: 'confirm' | 'plan' | 'cancel' | 'close') {
-    if (busy) return;
+    if (working || !order || !canManage) return;
+    if (
+      name === 'confirm' &&
+      !(await confirmAction(
+        'Confirmer cette version de la commande ? Les coordonnées choisies seront figées. Aucun courriel ne part et les lieux opérationnels restent inchangés.',
+        { title: 'Confirmer la commande', confirmLabel: 'Confirmer la commande' },
+      ))
+    )
+      return;
+    if (working) return;
     if (
       name === 'cancel' &&
       !(await confirmAction('Annuler cet ordre de transport ?', {
@@ -208,11 +227,15 @@
       return;
     busy = true;
     try {
-      await api(`/transportation/transport-orders/${orderId}/${name}`, { method: 'POST' });
+      await api(`/transportation/transport-orders/${orderId}/${name}`, {
+        method: 'POST',
+        ...(name === 'confirm' ? { body: { expectedUpdatedAt: order.updatedAt } } : {}),
+      });
       toast.success('Ordre de transport mis à jour');
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Impossible de mettre à jour l’ordre');
+      await load(); // Inspect a possibly committed transition before offering another action.
     } finally {
       busy = false;
     }
@@ -377,16 +400,16 @@
       >{/snippet}
     {#snippet actions()}
       <DossierButton entityType="TRANSPORT_ORDER" entityId={order!.id} />
-      {#if order!.status === 'DRAFT'}
+      {#if order!.status === 'DRAFT' && canManage}
         <Button
-          disabled={busy}
+          disabled={working}
           variant="primary"
           onclick={() => {
             void action('confirm');
           }}>Confirmer</Button
         >
         <Button
-          disabled={busy}
+          disabled={working}
           variant="danger"
           onclick={() => {
             void action('cancel');
@@ -394,14 +417,14 @@
         >
       {:else if order!.status === 'CONFIRMED'}
         <Button
-          disabled={busy}
+          disabled={working || !canPlan}
           variant="primary"
           onclick={() => {
             void openPlanForm();
           }}>Planifier…</Button
         >
         <Button
-          disabled={busy}
+          disabled={working || !canManage}
           variant="danger"
           onclick={() => {
             void action('cancel');
@@ -409,7 +432,7 @@
         >
       {:else if order!.status === 'PLANNED'}
         <Button
-          disabled={busy}
+          disabled={working || !canPlan}
           variant="secondary"
           onclick={() => {
             void openPlanForm();
@@ -417,7 +440,7 @@
         >
       {:else if order!.status === 'COMPLETED'}
         <Button
-          disabled={busy}
+          disabled={working || !canManage}
           variant="primary"
           onclick={() => {
             void action('close');
@@ -428,6 +451,7 @@
   </RecordHeader>
   <RecordNav
     sections={[
+      { id: 'record-coordinates', label: 'Coordonnées' },
       { id: 'record-shipments', label: 'Expéditions' },
       { id: 'record-tracking', label: 'Suivi' },
       { id: 'record-info', label: 'Informations' },
@@ -445,15 +469,40 @@
     </div>
   {/if}
 
-  <div class="grid gap-4 lg:grid-cols-3">
+  <div class="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
     <!-- Left 2/3: Shipments + Plan form -->
-    <div class="flex flex-col gap-4 lg:col-span-2">
+    <div class="flex min-w-0 flex-col gap-4 lg:col-span-2">
+      <RecordSection id="record-coordinates" label="Coordonnées commerciales">
+        <p class="mb-3 max-w-prose text-sm text-ink-muted">
+          Ces coordonnées identifient l’accord commercial. L’origine et la destination dans
+          Informations restent les lieux utilisés pour les expéditions et le connaissement.
+        </p>
+        {#key order.id + order.status}
+          <DocumentCoordinates
+            endpoint={`/transportation/transport-orders/${order.id}/coordinates`}
+            directoryBase="/transportation/customers"
+            documentVersion={order.updatedAt}
+            canManage={canManage && canReadDirectory && !busy}
+            bind:busy={coordinatesBusy}
+            onchanged={load}
+          />
+        {/key}
+        {#if order.status === 'DRAFT' && canManage && !canReadDirectory}
+          <p class="mt-2 text-sm text-ink-muted">
+            La sélection exige aussi le droit de lecture des données Transport.
+          </p>
+        {/if}
+      </RecordSection>
       <RecordSection id="record-shipments" label="Expéditions"
         ><Card>
           <h2 class="mb-3 font-semibold text-ink">Expéditions</h2>
           {#if order.shipments.length === 0}
             <p class="text-sm text-ink-muted">
-              Aucune expédition. Confirmez puis planifiez l’ordre.
+              {order.status === 'DRAFT'
+                ? 'Aucune expédition. Confirmez puis planifiez l’ordre.'
+                : order.status === 'CONFIRMED'
+                  ? 'Commande confirmée. Planifiez les expéditions lorsque les données sont prêtes.'
+                  : 'Aucune expédition liée à cette commande.'}
             </p>
           {:else}
             <div class="overflow-x-auto">
@@ -503,7 +552,7 @@
     </div>
 
     <!-- Right 1/3: Summary + warnings -->
-    <div class="flex flex-col gap-4">
+    <div class="flex min-w-0 flex-col gap-4">
       <RecordSection id="record-info" label="Informations">
         <Card>
           <h2 class="mb-3 font-semibold text-ink">Informations</h2>

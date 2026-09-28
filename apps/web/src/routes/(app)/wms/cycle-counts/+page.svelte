@@ -31,9 +31,13 @@
     itemId: string;
     systemQty: string;
     countedQty: string | null;
+    unitSnapshot: string | null;
+    lotId: string | null;
+    lot: { id: string; code: string; expiresOn: string | null } | null;
     item: { sku: string; name: string };
   }
   interface CycleCount {
+    freshness: { valid: boolean; reason: string | null } | null;
     updatedAt: string;
     id: string;
     number: string;
@@ -57,8 +61,13 @@
   let entered = $state<Record<string, string>>({});
   let scanMode = $state<'select' | 'increment'>('select');
   let scannedLine = $state('');
+  let scanCandidates = $state<CountLine[]>([]);
+  let scanUnit = $state('');
+  let scanRevision = $state(0);
   let uncertain = $state(false);
+  let actionError = $state('');
   let reading = $state(false);
+  let opening = $state(false);
   let openRequest = 0;
   const dirty = $derived(
     selected?.status === 'OPEN' &&
@@ -67,12 +76,50 @@
       ),
   );
   beforeNavigate(({ cancel }) => {
+    if (busy || opening || reading) {
+      cancel();
+      return;
+    }
     if (dirty && !window.confirm('Quitter ce comptage et perdre les quantités non enregistrées ?'))
       cancel();
   });
   const canManage = $derived(!!$auth?.user.permissions.includes('wms.manage'));
+  const fresh = $derived(selected?.freshness?.valid === true);
+  const filled = $derived(
+    (selected?.lines ?? []).filter((l) => entered[l.id] !== '' && entered[l.id] != null).length,
+  );
+  function selectScannedLine(line: CountLine, unit: string) {
+    scannedLine = line.id;
+    if (scanMode === 'increment') {
+      if (unit !== 'EA')
+        throw new Error('Le mode +1 est réservé aux unités EA. Saisissez la quantité mesurée.');
+      const current = entered[line.id] === '' ? 0 : Number(entered[line.id] ?? 0);
+      if (!Number.isFinite(current) || current < 0 || current >= 1e9)
+        throw new Error('Quantité invalide; corrigez la saisie.');
+      entered[line.id] = String(current + 1);
+    }
+  }
+  function chooseScanLot(line: CountLine) {
+    if (busy || reading || opening || uncertain || !fresh || !canManage) return;
+    try {
+      selectScannedLine(line, scanUnit);
+      scanCandidates = [];
+      scanRevision++;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Sélection impossible');
+    }
+  }
   async function scanItem(code: string) {
-    if (!selected || selected.status !== 'OPEN' || busy || reading || uncertain || !canManage)
+    if (
+      !selected ||
+      selected.status !== 'OPEN' ||
+      busy ||
+      reading ||
+      opening ||
+      uncertain ||
+      !canManage ||
+      !fresh
+    )
       return;
     const id = selected.id;
     const mode = scanMode;
@@ -83,20 +130,17 @@
         body: { kind: 'item', code },
       });
       if (!selected || selected.id !== id || selected.status !== 'OPEN') return;
-      const line = selected.lines?.find((l) => l.itemId === item.id);
+      scanCandidates = [];
+      const matches = (selected.lines ?? []).filter((l) => l.itemId === item.id);
+      if (matches.length > 1) {
+        scanCandidates = matches;
+        scanUnit = item.unit ?? '';
+        return 'Plusieurs lots : choisissez le lot physique ci-dessous. Aucune quantité ajoutée.';
+      }
+      const line = matches[0];
       if (!line)
         throw new Error('Article absent de ce comptage. Aucun ajout ni ajustement effectué.');
-      scannedLine = line.id;
-      if (mode === 'increment') {
-        if (item.unit !== 'EA')
-          throw new Error(
-            'Le mode +1 est réservé aux unités EA. Sélectionnez la ligne puis saisissez la quantité mesurée.',
-          );
-        const current = entered[line.id] === '' ? 0 : Number(entered[line.id] ?? 0);
-        if (!Number.isFinite(current) || current < 0 || current >= 1e9)
-          throw new Error('Quantité invalide; corrigez la saisie.');
-        entered[line.id] = String(current + 1);
-      }
+      selectScannedLine(line, item.unit ?? '');
       return (
         item.code +
         (mode === 'increment'
@@ -157,7 +201,7 @@
   }
 
   async function openCount(id: string, force = false) {
-    if (!force && (busy || reading)) return;
+    if (!force && (busy || reading || opening)) return;
     if (
       !force &&
       dirty &&
@@ -166,21 +210,26 @@
     )
       return;
     const request = ++openRequest;
+    opening = true;
     try {
       const c = await api<CycleCount>(`/wms/cycle-counts/${id}`);
       if (request !== openRequest) return;
       selected = c;
+      actionError = '';
       scannedLine = '';
+      scanCandidates = [];
       uncertain = false;
       entered = {};
       for (const l of c.lines ?? []) entered[l.id] = l.countedQty ?? '';
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Échec');
+    } finally {
+      if (request === openRequest) opening = false;
     }
   }
 
   async function create() {
-    if (!canManage || busy || reading) return;
+    if (!canManage || busy || reading || opening) return;
     if (
       dirty &&
       !(await confirmAction('Abandonner le brouillon du comptage avant d’en créer un autre ?'))
@@ -208,12 +257,14 @@
   }
 
   async function recordCounts() {
-    if (!selected || busy || reading || uncertain || !canManage) return;
+    if (!selected || busy || reading || opening || uncertain || !canManage || !fresh) return;
     const payload = (selected.lines ?? [])
       .filter((l) => entered[l.id] !== '' && entered[l.id] != null)
       .map((l) => ({ lineId: l.id, countedQty: Number(entered[l.id]) }));
-    if (payload.length === 0) {
-      toast.error('Saisis au moins une quantité');
+    if (!payload.length || payload.length !== selected.lines?.length) {
+      toast.error(
+        'Comptez chaque ligne. Saisissez zéro si rien n’est trouvé; ne laissez aucune case vide.',
+      );
       return;
     }
     if (
@@ -234,6 +285,7 @@
     )
       return;
     busy = true;
+    actionError = '';
     try {
       await api(`/wms/cycle-counts/${selected.id}/counts`, {
         method: 'POST',
@@ -246,6 +298,8 @@
     } catch (e) {
       if (!(e instanceof ApiError && [400, 403, 404, 409, 422].includes(e.statusCode)))
         uncertain = true;
+      actionError =
+        e instanceof Error ? e.message : 'Échec de l’enregistrement. Actualisez le dossier.';
       toast.error(e instanceof ApiError ? e.message : 'Échec');
     } finally {
       busy = false;
@@ -253,7 +307,7 @@
   }
 
   async function reconcile() {
-    if (!selected || busy || !canManage) return;
+    if (!selected || busy || opening || uncertain || !canManage || !fresh) return;
     if (
       !(await confirmAction(
         'Réconcilier ce comptage ? Les écarts seront appliqués au stock réel via des ajustements.',
@@ -261,12 +315,21 @@
     )
       return;
     busy = true;
+    actionError = '';
     try {
-      await api(`/wms/cycle-counts/${selected.id}/reconcile`, { method: 'POST' });
+      await api(`/wms/cycle-counts/${selected.id}/reconcile`, {
+        method: 'POST',
+        body: { expectedUpdatedAt: selected.updatedAt },
+      });
       toast.success('Réconcilié — ajustements postés');
+      uncertain = true;
       await load();
       await openCount(selected.id, true);
     } catch (e) {
+      if (!(e instanceof ApiError && [400, 403, 404, 409, 422].includes(e.statusCode)))
+        uncertain = true;
+      actionError =
+        e instanceof Error ? e.message : 'Échec de la réconciliation. Actualisez le dossier.';
       toast.error(e instanceof ApiError ? e.message : 'Échec de la réconciliation');
     } finally {
       busy = false;
@@ -274,14 +337,20 @@
   }
 
   async function cancel(id: string) {
-    if (!canManage || busy || reading) return;
+    if (!canManage || busy || reading || opening || uncertain) return;
     if (!(await confirmAction('Annuler ce comptage ?'))) return;
     busy = true;
     try {
-      await api(`/wms/cycle-counts/${id}/cancel`, { method: 'POST' });
+      await api(`/wms/cycle-counts/${id}/cancel`, {
+        method: 'POST',
+        body: { expectedUpdatedAt: selected?.id === id ? selected.updatedAt : undefined },
+      });
+      uncertain = true;
       await load();
       if (selected?.id === id) await openCount(id, true);
     } catch (e) {
+      if (!(e instanceof ApiError && [400, 403, 404, 409, 422].includes(e.statusCode)))
+        uncertain = true;
       toast.error(e instanceof ApiError ? e.message : 'Échec');
     } finally {
       busy = false;
@@ -289,8 +358,9 @@
   }
 
   function variance(l: CountLine): number | null {
-    if (l.countedQty == null) return null;
-    return Number(l.countedQty) - Number(l.systemQty);
+    const v = selected?.status === 'OPEN' ? entered[l.id] : l.countedQty;
+    if (v == null || v === '' || !Number.isFinite(Number(v))) return null;
+    return Math.round((Number(v) - Number(l.systemQty)) * 1000) / 1000;
   }
 
   $effect(() => {
@@ -310,9 +380,11 @@
   {/snippet}
 </PageHeader>
 
-<div class="grid gap-3 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+<div
+  class="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]"
+>
   <!-- Left: create + list -->
-  <div class="space-y-3">
+  <div class={`min-w-0 space-y-3 ${selected ? 'order-2' : 'order-1'} xl:order-1`}>
     {#if canManage}<Card>
         <h2 class="mb-3 text-sm font-bold text-ink">Nouveau comptage</h2>
         <div class="space-y-3">
@@ -348,10 +420,10 @@
             {#each counts as c (c.id)}
               <button
                 type="button"
-                class={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-surface-muted ${selected?.id === c.id ? 'bg-surface-muted' : ''}`}
+                class={`flex w-full flex-wrap items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-surface-muted ${selected?.id === c.id ? 'bg-surface-muted' : ''}`}
                 onclick={() => openCount(c.id)}
               >
-                <span class="font-mono font-semibold text-ink">{c.number}</span>
+                <span class="min-w-0 break-all font-mono font-semibold text-ink">{c.number}</span>
                 <span class="text-ink-muted">{c.bin.code}</span>
                 <Badge tone={statusTone(c.status)}>{statusLabel(c.status)}</Badge>
                 <span class="ml-auto text-xs text-ink-faint">{c._count?.lines ?? 0} lignes</span>
@@ -422,109 +494,227 @@
   </div>
 
   <!-- Right: selected detail -->
-  <Card padded={false}>
-    {#if !selected}
-      <div class="p-4">
-        <EmptyState message="Sélectionne un comptage pour saisir les quantités." />
-      </div>
-    {:else}
-      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-edge px-4 py-3">
-        <div class="flex items-center gap-2">
-          <span class="font-mono font-semibold text-ink">{selected.number}</span>
-          <span class="text-ink-muted">{selected.bin.code}</span>
-          <Badge tone={statusTone(selected.status)}>{statusLabel(selected.status)}</Badge>
-        </div>
-        <div class="flex gap-2">
-          {#if selected.status === 'OPEN' && canManage}
-            <Button variant="primary" loading={busy} disabled={uncertain} onclick={recordCounts}
-              >Enregistrer le comptage</Button
-            >
-          {/if}
-          {#if selected.status === 'COUNTED' && canManage}
-            <Button variant="primary" loading={busy} onclick={reconcile}>Réconcilier</Button>
-          {/if}
-          {#if canManage && (selected.status === 'OPEN' || selected.status === 'COUNTED')}
-            <Button variant="secondary" onclick={() => cancel(selected!.id)}>Annuler</Button>
-          {/if}
-        </div>
-      </div>
-
-      {#if uncertain}<p role="alert" class="p-4 text-sm text-danger">
-          Réponse incertaine. Ne renvoyez pas le comptage; rouvrez le dossier dans la liste pour
-          vérifier son statut.
-        </p>{/if}
-      {#if selected.status === 'OPEN' && canManage}
-        <div class="space-y-3 p-4">
-          <label class="block text-sm"
-            >Mode de comptage
-            <select
-              bind:value={scanMode}
-              disabled={busy || uncertain}
-              class="mt-1 min-h-11 w-full rounded-md border border-edge bg-surface px-3"
-            >
-              <option value="select">Scanner pour sélectionner, puis saisir la quantité</option>
-              <option value="increment">Chaque scan ajoute 1 unité EA au brouillon</option>
-            </select>
-          </label>
-          {#key selected.id}<ScanInput
-              onscan={scanItem}
-              disabled={busy || uncertain}
-              label="Scanner l’article à compter"
-            />{/key}
-          <p class="text-xs text-ink-muted">
-            Aucun stock ne change au scan. Les cases vides restent non comptées, pas zéro.
-            Enregistrez puis réconciliez après vérification.
-          </p>
-        </div>
-      {/if}
-      {#if (selected.lines ?? []).length === 0}
+  <div class={`min-w-0 ${selected ? 'order-1' : 'order-2'} xl:order-2`}>
+    <Card padded={false}>
+      {#if !selected}
         <div class="p-4">
-          <EmptyState
-            message="Aucun stock système dans cet emplacement. Annule ou ajoute du stock d'abord."
-          />
+          <EmptyState message="Sélectionne un comptage pour saisir les quantités." />
         </div>
       {:else}
-        <Table>
-          {#snippet head()}
-            <th>SKU</th><th>Article</th><th class="text-right">Système</th><th class="text-right"
-              >Compté</th
-            ><th class="text-right">Écart</th>
-          {/snippet}
-          {#snippet body()}
-            {#each selected!.lines ?? [] as l (l.id)}
-              {@const v = variance(l)}
-              <tr
-                class={scannedLine === l.id ? 'bg-accent/10' : ''}
-                data-scan-selected={scannedLine === l.id ? 'true' : undefined}
+        <div
+          class="flex flex-wrap items-center justify-between gap-2 border-b border-edge px-4 py-3"
+        >
+          <div class="flex items-center gap-2">
+            <span class="font-mono font-semibold text-ink">{selected.number}</span>
+            <span class="text-ink-muted">{selected.bin.code}</span>
+            <Badge tone={statusTone(selected.status)}>{statusLabel(selected.status)}</Badge>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              disabled={busy || reading || opening}
+              onclick={() => openCount(selected!.id)}>Actualiser</Button
+            >
+            {#if selected.status === 'OPEN' && canManage}
+              <Button
+                variant="primary"
+                loading={busy}
+                disabled={uncertain || !fresh || reading || opening}
+                onclick={recordCounts}>Enregistrer le comptage</Button
               >
-                <td class="font-mono font-semibold text-ink">{l.item.sku}</td>
-                <td class="text-ink-muted">{l.item.name}</td>
-                <td class="text-right text-ink">{Number(l.systemQty)}</td>
-                <td class="text-right">
-                  {#if selected!.status === 'OPEN' && canManage}
-                    <input
-                      type="number"
-                      aria-label={`Quantité comptée : ${l.item.sku}`}
-                      disabled={busy || uncertain}
-                      step="any"
-                      min="0"
-                      bind:value={entered[l.id]}
-                      class="w-24 rounded-md border border-edge bg-surface px-2 py-1 text-right text-sm focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
-                    />
-                  {:else}
-                    {l.countedQty != null ? Number(l.countedQty) : '—'}
-                  {/if}
-                </td>
-                <td
-                  class={`text-right font-medium ${v == null ? 'text-ink-faint' : v === 0 ? 'text-ink-muted' : v > 0 ? 'text-ok' : 'text-danger'}`}
-                >
-                  {v == null ? '—' : v > 0 ? `+${v}` : v}
-                </td>
-              </tr>
+            {/if}
+            {#if selected.status === 'COUNTED' && canManage}
+              <Button
+                variant="primary"
+                loading={busy}
+                disabled={uncertain || !fresh || opening}
+                onclick={reconcile}>Réconcilier</Button
+              >
+            {/if}
+            {#if canManage && (selected.status === 'OPEN' || selected.status === 'COUNTED')}
+              <Button
+                variant="secondary"
+                disabled={busy || reading || opening || uncertain}
+                onclick={() => cancel(selected!.id)}>Annuler</Button
+              >
+            {/if}
+          </div>
+        </div>
+
+        {#if (selected.status === 'OPEN' || selected.status === 'COUNTED') && !fresh}
+          <p
+            role="alert"
+            class="m-4 rounded-lg border border-warn/40 bg-surface-muted p-3 text-sm text-ink"
+          >
+            {selected.freshness?.reason ??
+              'Contrôle de fraîcheur indisponible. Actualisez avant de continuer.'}
+          </p>
+        {/if}
+        {#if actionError}<p role="alert" class="px-4 py-3 text-sm text-danger">
+            {actionError}
+          </p>{/if}
+        {#if uncertain}<p role="alert" class="p-4 text-sm text-danger">
+            Réponse incertaine. Ne renvoyez pas le comptage; rouvrez le dossier dans la liste pour
+            vérifier son statut.
+          </p>{/if}
+        {#if selected.status === 'OPEN' && canManage}
+          <div class="space-y-3 p-4">
+            <label class="block text-sm"
+              >Mode de comptage
+              <select
+                bind:value={scanMode}
+                disabled={busy ||
+                  reading ||
+                  opening ||
+                  uncertain ||
+                  !fresh ||
+                  scanCandidates.length > 0}
+                class="mt-1 min-h-11 w-full rounded-md border border-edge bg-surface px-3"
+              >
+                <option value="select">Scanner pour sélectionner, puis saisir la quantité</option>
+                <option value="increment">Chaque scan ajoute 1 unité EA au brouillon</option>
+              </select>
+            </label>
+            {#key `${selected.id}:${scanRevision}`}<ScanInput
+                onscan={scanItem}
+                disabled={busy || opening || uncertain || !fresh}
+                label="Scanner l’article à compter"
+              />{/key}
+            <p class="text-xs text-ink-muted">
+              {filled} / {selected.lines?.length ?? 0} lignes renseignées. Les cases vides ne valent pas
+              zéro. Chaque lot est compté séparément. Un scan d’article ne devine jamais le lot. Aucun
+              stock ne change avant la réconciliation.
+            </p>
+            {#if scanCandidates.length}
+              <div class="rounded-lg border border-edge p-3" aria-label="Choisir le lot scanné">
+                <p class="mb-2 text-sm font-semibold">Quel lot avez-vous en main ?</p>
+                <div class="flex flex-wrap gap-2">
+                  {#each scanCandidates as line (line.id)}
+                    <Button
+                      variant="secondary"
+                      disabled={busy || reading || opening || uncertain}
+                      onclick={() => chooseScanLot(line)}>{line.lot?.code ?? 'Sans lot'}</Button
+                    >
+                  {/each}
+                  <Button
+                    variant="ghost"
+                    onclick={() => {
+                      scanCandidates = [];
+                      scanRevision++;
+                    }}>Ignorer ce scan</Button
+                  >
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
+        {#if (selected.lines ?? []).length === 0}
+          <div class="p-4">
+            <EmptyState
+              message="Aucun stock système dans cet emplacement. Annule ou ajoute du stock d'abord."
+            />
+          </div>
+        {:else}
+          <div class="divide-y divide-edge md:hidden">
+            {#each selected.lines ?? [] as l (l.id)}
+              {@const v = variance(l)}
+              <article
+                aria-label={`Comptage ${l.item.sku}${l.lot ? ' · ' + l.lot.code : ''}`}
+                class={`space-y-3 p-4 ${scannedLine === l.id ? 'bg-accent/10' : ''}`}
+              >
+                <div>
+                  <p class="break-all font-mono text-xs text-ink-muted">{l.item.sku}</p>
+                  <p class="mt-1 font-semibold">{l.item.name}</p>
+                  <p class="mt-1 text-sm">{l.lot ? `Lot ${l.lot.code}` : 'Sans suivi par lot'}</p>
+                </div>
+                <div class="flex flex-wrap items-end justify-between gap-3">
+                  <div class="text-sm">
+                    <p class="text-xs text-ink-muted">Système</p>
+                    {Number(l.systemQty)}
+                    {l.unitSnapshot ?? 'Unité non capturée'}
+                  </div>
+                  <div class="text-sm">
+                    <p class="mb-1 text-xs text-ink-muted">Compté</p>
+                    {#if selected.status === 'OPEN' && canManage}
+                      <input
+                        type="number"
+                        aria-label={`Quantité comptée : ${l.item.sku}${l.lot ? ' · ' + l.lot.code : ''}`}
+                        disabled={busy || reading || opening || uncertain || !fresh}
+                        step="0.001"
+                        min="0"
+                        bind:value={entered[l.id]}
+                        class="min-h-11 w-28 rounded-md border border-edge bg-surface px-3 text-right focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+                      />
+                    {:else}{l.countedQty != null ? Number(l.countedQty) : 'Non compté'}{/if}
+                  </div>
+                  <div class="text-right text-sm">
+                    <p class="text-xs text-ink-muted">Écart</p>
+                    <span
+                      class={v === null || v === 0
+                        ? 'text-ink-muted'
+                        : v > 0
+                          ? 'text-ok'
+                          : 'text-danger'}>{v == null ? '—' : v > 0 ? `+${v}` : v}</span
+                    >
+                  </div>
+                </div>
+              </article>
             {/each}
-          {/snippet}
-        </Table>
+          </div>
+          <div class="hidden md:block">
+            <Table>
+              {#snippet head()}
+                <th>SKU</th><th>Article</th><th class="text-right">Système</th><th
+                  class="text-right">Compté</th
+                ><th class="text-right">Écart</th>
+              {/snippet}
+              {#snippet body()}
+                {#each selected!.lines ?? [] as l (l.id)}
+                  {@const v = variance(l)}
+                  <tr
+                    class={scannedLine === l.id ? 'bg-accent/10' : ''}
+                    data-scan-selected={scannedLine === l.id ? 'true' : undefined}
+                  >
+                    <td class="font-mono font-semibold text-ink">{l.item.sku}</td>
+                    <td class="text-ink-muted"
+                      >{l.item.name}
+                      <div class="mt-1 text-xs font-medium text-ink">
+                        {l.lot ? `Lot ${l.lot.code}` : 'Sans suivi par lot'}
+                      </div></td
+                    >
+                    <td class="text-right text-ink"
+                      >{Number(l.systemQty)}
+                      <span class="text-xs text-ink-muted"
+                        >{l.unitSnapshot ?? 'Unité historique non capturée'}</span
+                      ></td
+                    >
+                    <td class="text-right">
+                      {#if selected!.status === 'OPEN' && canManage}
+                        <input
+                          type="number"
+                          aria-label={`Quantité comptée : ${l.item.sku}${l.lot ? ' · ' + l.lot.code : ''}`}
+                          disabled={busy || reading || opening || uncertain || !fresh}
+                          step="0.001"
+                          min="0"
+                          bind:value={entered[l.id]}
+                          class="w-24 rounded-md border border-edge bg-surface px-2 py-1 text-right text-sm focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+                        />
+                      {:else}
+                        {l.countedQty != null ? Number(l.countedQty) : '—'}
+                      {/if}
+                    </td>
+                    <td
+                      class={`text-right font-medium ${v == null ? 'text-ink-faint' : v === 0 ? 'text-ink-muted' : v > 0 ? 'text-ok' : 'text-danger'}`}
+                    >
+                      {v == null ? '—' : v > 0 ? `+${v}` : v}
+                    </td>
+                  </tr>
+                {/each}
+              {/snippet}
+            </Table>
+          </div>
+        {/if}
       {/if}
-    {/if}
-  </Card>
+    </Card>
+  </div>
 </div>

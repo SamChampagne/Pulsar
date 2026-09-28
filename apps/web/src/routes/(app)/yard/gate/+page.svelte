@@ -119,7 +119,7 @@
     }
     let cancelled = false;
     api<{ firstName: string; lastName: string }>(
-      `/transportation/drivers/${encodeURIComponent(id)}`,
+      `/yard/data/drivers/${encodeURIComponent(id)}`,
     )
       .then((d) => {
         if (!cancelled) formDriverName = [d.firstName, d.lastName].filter(Boolean).join(' ');
@@ -327,7 +327,7 @@
         </Field>
         <Field label="Remorque (flotte ou référence)">
           <EntityPicker
-            endpoint="/transportation/trailers"
+            endpoint="/yard/data/trailers"
             label="Remorque (flotte ou référence)"
             labelKey="unitNumber"
             detailKey="plate"
@@ -346,7 +346,7 @@
         </Field>
         <Field label="Transporteur">
           <EntityPicker
-            endpoint="/transportation/carriers"
+            endpoint="/yard/data/carriers"
             label="Transporteur"
             labelKey="name"
             detailKey="code"
@@ -355,7 +355,7 @@
         </Field>
         <Field label="Chauffeur">
           <EntityPicker
-            endpoint="/transportation/drivers"
+            endpoint="/yard/data/drivers"
             label="Chauffeur"
             labelKey="lastName"
             detailKey="firstName"

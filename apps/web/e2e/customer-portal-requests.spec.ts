@@ -91,14 +91,17 @@ test('the « Portail client » domain nav lists the requests queue', async ({ pa
   await login(page);
   await mockChangeRequests(page);
   // `/customer-portal/*` is the domain's own prefix — the domain sidebar
-  // shows the « Demandes » link (and its sibling « Clients & portail ») only
+  // shows the « Demandes » link (and its sibling « Clients & données ») only
   // once the current route falls under it.
   await page.goto('/customer-portal/requests');
 
   await expect(page.getByRole('heading', { name: 'Demandes du portail client' })).toBeVisible();
   const nav = page.getByRole('navigation', { name: 'Menu du module sélectionné' });
   await expect(nav.getByRole('link', { name: 'Demandes' })).toBeVisible();
-  await expect(nav.getByRole('link', { name: 'Clients & portail' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Clients & données' })).toHaveAttribute(
+    'href',
+    '/customer-portal/data',
+  );
 });
 
 test('the domain switcher reaches the requests queue via the domain home', async ({ page }) => {
@@ -121,5 +124,8 @@ test('the domain switcher reaches the requests queue via the domain home', async
   await expect(page).toHaveURL(/\/customer-portal\/requests$/);
   const nav = page.getByRole('navigation', { name: 'Menu du module sélectionné' });
   await expect(nav.getByRole('link', { name: 'Demandes' })).toBeVisible();
-  await expect(nav.getByRole('link', { name: 'Clients & portail' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Clients & données' })).toHaveAttribute(
+    'href',
+    '/customer-portal/data',
+  );
 });

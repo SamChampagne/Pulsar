@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DocumentsService } from '../documents/documents.service';
@@ -13,6 +13,8 @@ const MAX_ATTEMPTS = 5;
 const BACKOFF_MINUTES = [1, 5, 30, 120, 360];
 
 export interface QueueEmailInput {
+  /** Internal frozen delivery mode, only for the guarded credit-note workflow. */
+  deliveryChannel?: 'log' | 'smtp';
   /** Internal idempotency key, never accepted from the public email DTO. */
   dedupKey?: string;
   toAddresses: string[];
@@ -67,7 +69,16 @@ export class MailService {
    * Persist an EmailMessage + EmailAttachment rows in one transaction,
    * then fire-and-forget deliver(). Returns the persisted message.
    */
-  async queue(tenantId: string, input: QueueEmailInput) {
+  async queue(
+    tenantId: string,
+    input: QueueEmailInput,
+    context?: 'customer-credit' | 'customer-invoice',
+  ) {
+    if (
+      ['customer-credit', 'customer-invoice'].includes(input.relatedType ?? '') &&
+      (context !== input.relatedType || !input.deliveryChannel)
+    )
+      throw new ForbiddenException('Publiez et confirmez l’envoi du document depuis Facturation.');
     if (input.dedupKey) {
       const existing = await this.prisma.emailMessage.findUnique({
         where: { tenantId_dedupKey: { tenantId, dedupKey: input.dedupKey } },
@@ -85,6 +96,7 @@ export class MailService {
       if (!doc) {
         throw new Error(`Document ${att.documentId} not found or not owned by tenant`);
       }
+      if (!context) await this.documentsService.assertGenericAccess(tenantId, att.documentId);
     }
 
     const msg = await this.prisma
@@ -93,6 +105,7 @@ export class MailService {
           data: {
             tenantId,
             dedupKey: rest.dedupKey,
+            deliveryChannel: rest.deliveryChannel,
             toAddresses: rest.toAddresses,
             cc: rest.cc ?? [],
             subject: rest.subject,
@@ -155,6 +168,22 @@ export class MailService {
         include: { attachments: true },
       });
       if (!msg) return;
+      if (msg.relatedType === 'customer-invoice' && !msg.deliveryChannel) {
+        // Legacy automatic/summary messages have no reviewed PDF or delivery mode. Never retry them.
+        await this.prisma.emailMessage.updateMany({
+          where: { tenantId: msg.tenantId, id: msg.id, status: { in: ['QUEUED', 'FAILED'] } },
+          data: {
+            status: 'FAILED',
+            nextAttemptAt: null,
+            lastError: 'INVOICE_LEGACY_REVIEW_REQUIRED',
+          },
+        });
+        return;
+      }
+      if (msg.relatedType === 'customer-credit' || msg.relatedType === 'customer-invoice') {
+        await this.deliverCredit(msg);
+        return;
+      }
       if (msg.status !== 'QUEUED' && msg.status !== 'FAILED') return;
       if (msg.status === 'FAILED' && !msg.nextAttemptAt) return;
       const guard = msg.relatedType ? this.deliveryGuards.get(msg.relatedType) : undefined;
@@ -268,6 +297,101 @@ export class MailService {
             `MailService: failed to update message ${messageId}: ${String(updateErr)}`,
           ),
         );
+    }
+  }
+
+  /** Financial document delivery: required exact PDF, frozen mode, no automatic replay. */
+  private async deliverCredit(
+    msg: Prisma.EmailMessageGetPayload<{ include: { attachments: true } }>,
+  ): Promise<void> {
+    if (msg.status !== 'QUEUED') return;
+    const invoiceDelivery = msg.relatedType === 'customer-invoice';
+    const guard = this.deliveryGuards.get(msg.relatedType!);
+    if (!guard || !msg.relatedId) return;
+    let ownsClaim = false;
+    let handoff = false;
+    try {
+      const initial = await guard(msg.tenantId, msg.relatedId);
+      if (initial === 'HOLD') return;
+      const claim = await this.prisma.emailMessage.updateMany({
+        where: { tenantId: msg.tenantId, id: msg.id, status: 'QUEUED' },
+        data: { status: 'SENDING' },
+      });
+      if (!claim.count) return;
+      ownsClaim = true;
+      if (initial !== 'ALLOW') throw new Error('CREDIT_NOT_AVAILABLE');
+      const note = invoiceDelivery
+        ? await this.prisma.customerInvoice.findFirst({
+            where: { tenantId: msg.tenantId, id: msg.relatedId, status: { not: 'DRAFT' } },
+            select: { documentId: true, documentHash: true },
+          })
+        : await this.prisma.customerCreditNote.findFirst({
+            where: { tenantId: msg.tenantId, id: msg.relatedId, status: 'ISSUED' },
+            select: { documentId: true, documentHash: true },
+          });
+      if (
+        !note?.documentId ||
+        !note.documentHash ||
+        msg.attachments.length !== 1 ||
+        msg.attachments[0].documentId !== note.documentId
+      )
+        throw new Error('CREDIT_PDF_REQUIRED');
+      const transport = await this.emailConfigService.resolve(msg.tenantId);
+      const channel = transport ? 'smtp' : this.emailService.channel;
+      if (channel !== msg.deliveryChannel) throw new Error('CREDIT_DELIVERY_CHANNEL_CHANGED');
+      const file = await this.documentsService.download(
+        msg.tenantId,
+        note.documentId,
+        invoiceDelivery ? 'customer-invoice-pdf' : 'customer-credit-pdf',
+      );
+      const content = await streamToBuffer(file.stream);
+      if (createHash('sha256').update(content).digest('hex') !== note.documentHash)
+        throw new Error('CREDIT_PDF_INTEGRITY');
+      if ((await guard(msg.tenantId, msg.relatedId)) !== 'ALLOW')
+        throw new Error('CREDIT_DELIVERY_DISABLED');
+      // Persist uncertainty BEFORE handoff: a process crash can never justify a resend.
+      await this.prisma.emailMessage.update({
+        where: { id: msg.id, tenantId: msg.tenantId },
+        data: { deliveryUncertain: channel === 'smtp', nextAttemptAt: null },
+      });
+      handoff = true;
+      const ok = await this.emailService.send(
+        {
+          to: msg.toAddresses.join(', '),
+          subject: msg.subject,
+          html: msg.html,
+          text: msg.text ?? undefined,
+          from: transport?.from,
+          messageId: msg.messageId ?? undefined,
+          attachments: [{ filename: msg.attachments[0].filename, content }],
+        },
+        transport ?? undefined,
+      );
+      if (!ok) throw new Error('CREDIT_PROVIDER_RESULT_UNCERTAIN');
+      await this.prisma.emailMessage.update({
+        where: { id: msg.id, tenantId: msg.tenantId },
+        data: {
+          status: 'SENT',
+          sentAt: new Date(),
+          deliveryUncertain: false,
+          lastError: null,
+          nextAttemptAt: null,
+        },
+      });
+    } catch (error) {
+      if (!ownsClaim) return;
+      await this.prisma.emailMessage
+        .updateMany({
+          where: { tenantId: msg.tenantId, id: msg.id, status: 'SENDING' },
+          data: {
+            status: 'FAILED',
+            attempts: { increment: 1 },
+            nextAttemptAt: null,
+            deliveryUncertain: handoff && msg.deliveryChannel === 'smtp',
+            lastError: String(error).slice(0, 500),
+          },
+        })
+        .catch(() => undefined);
     }
   }
 
