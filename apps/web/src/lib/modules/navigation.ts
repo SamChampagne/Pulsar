@@ -8,7 +8,7 @@
  * Icon imports are kept here so the layout doesn't import lucide icons that
  * already live in this module.
  */
-import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
+import { MODULE_KEYS, PERMISSIONS, REFERENCE_ACCESS } from '@pulsar/shared';
 import {
   LayoutDashboard,
   Truck,
@@ -39,6 +39,7 @@ export interface NavLink {
   label: string;
   /** Single permission key required to show this link. Omit = always shown when domain is visible. */
   perm?: string;
+  anyPerms?: string[];
   /** Optional cross-module dependency of this individual screen. */
   module?: string;
   /** Runtime-injected badge count; not set by the catalogue itself. */
@@ -80,7 +81,19 @@ export interface NavCaps {
 // ---------------------------------------------------------------------------
 
 export function navCatalogue(): NavDomain[] {
-  return [
+  const domains: NavDomain[] = [
+    {
+      key: 'clients',
+      label: 'Clients',
+      icon: Handshake,
+      home: '/clients',
+      prefixes: ['/clients'],
+      module: MODULE_KEYS.CLIENTS,
+      anyPerms: [PERMISSIONS.CLIENTS.READ],
+      sections: [
+        { links: [{ href: '/clients', label: 'Fiches clients', perm: PERMISSIONS.CLIENTS.READ }] },
+      ],
+    },
     {
       key: 'hr',
       label: 'Ressources humaines',
@@ -327,6 +340,7 @@ export function navCatalogue(): NavDomain[] {
             { href: '/wms/fulfillment', label: 'Préparation' },
             { href: '/wms/picking', label: 'Prélèvement' },
             { href: '/wms/cycle-counts', label: 'Comptages' },
+            { href: '/wms/stock-exits', label: 'Sorties documentées' },
           ],
         },
         {
@@ -432,19 +446,17 @@ export function navCatalogue(): NavDomain[] {
       sections: [
         {
           links: [
-            { href: '/assets', label: 'Vue d’ensemble' },
-            { href: '/fleet', label: 'Poste flotte' },
+            { href: '/assets', label: 'Vue d’ensemble', perm: PERMISSIONS.FLEET.READ },
+            { href: '/fleet', label: 'Poste flotte', perm: PERMISSIONS.FLEET.READ },
             {
               href: '/fleet/register',
               label: 'Registre et plans',
-              perm: PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ,
-              module: MODULE_KEYS.TRANSPORTATION,
+              perm: PERMISSIONS.FLEET.READ,
             },
             {
               href: '/fleet/maintenance',
               label: 'Maintenance (registre)',
-              perm: PERMISSIONS.TRANSPORTATION.MASTER_DATA_READ,
-              module: MODULE_KEYS.TRANSPORTATION,
+              perm: PERMISSIONS.FLEET.READ,
             },
           ],
         },
@@ -473,8 +485,34 @@ export function navCatalogue(): NavDomain[] {
         {
           links: [
             { href: '/finance', label: 'Vue d’ensemble' },
-            { href: '/invoices', label: 'Factures clients et fournisseurs' },
-            { href: '/billing/freight-audit', label: 'Audit transporteur' },
+            {
+              href: '/invoices',
+              label: 'Clients et transporteurs',
+              anyPerms: [
+                PERMISSIONS.BILLING.INVOICES_READ,
+                PERMISSIONS.BILLING.CUSTOMER_INVOICES_READ,
+              ],
+            },
+            {
+              href: '/billing/supplier-invoices',
+              label: 'Factures fournisseur',
+              perm: PERMISSIONS.BILLING.SUPPLIER_INVOICES_READ,
+            },
+            {
+              href: '/billing/suppliers',
+              label: 'Dossiers fournisseur',
+              perm: PERMISSIONS.BILLING.SUPPLIER_INVOICES_READ,
+            },
+            {
+              href: '/billing/supplier-schedules',
+              label: 'Échéancier fournisseur',
+              perm: PERMISSIONS.BILLING.SUPPLIER_INVOICES_READ,
+            },
+            {
+              href: '/billing/freight-audit',
+              label: 'Audit transporteur',
+              perm: PERMISSIONS.BILLING.FREIGHT_AUDIT_READ,
+            },
             {
               href: '/billing/ledger',
               label: 'Grand livre',
@@ -487,6 +525,16 @@ export function navCatalogue(): NavDomain[] {
             },
             { href: '/billing/banking', label: 'Banque', perm: PERMISSIONS.BILLING.LEDGER_READ },
             { href: '/billing/budgets', label: 'Budgets', perm: PERMISSIONS.BILLING.LEDGER_READ },
+            {
+              href: '/billing/accounting-profile',
+              label: 'Profil comptable',
+              perm: PERMISSIONS.BILLING.LEDGER_READ,
+            },
+            {
+              href: '/billing/ledger-qualification',
+              label: 'Reprise du journal',
+              perm: PERMISSIONS.BILLING.LEDGER_READ,
+            },
             {
               href: '/billing/fixed-assets',
               label: 'Immobilisations',
@@ -680,9 +728,12 @@ export function navCatalogue(): NavDomain[] {
           label: 'Clients',
           links: [
             {
-              href: '/customers',
-              label: 'Clients & portail',
-              perm: PERMISSIONS.CUSTOMER_PORTAL.LINKS_MANAGE,
+              href: '/customer-portal/data',
+              label: 'Clients & données',
+              anyPerms: [
+                PERMISSIONS.CUSTOMER_PORTAL.USERS_READ,
+                PERMISSIONS.CUSTOMER_PORTAL.LINKS_MANAGE,
+              ],
             },
             {
               href: '/customer-portal/requests',
@@ -750,14 +801,23 @@ export function navCatalogue(): NavDomain[] {
       icon: Cable,
       home: '/connect',
       prefixes: ['/connect', '/integrations'],
-      anyPerms: [PERMISSIONS.CORE.INTEGRATIONS_READ],
+      anyPerms: [
+        PERMISSIONS.CORE.INTEGRATIONS_READ,
+        PERMISSIONS.EMAIL.MANAGE,
+        PERMISSIONS.SMS.READ,
+      ],
       sections: [
         {
           links: [
             { href: '/connect', label: 'Toutes les connexions' },
             { href: '/connect/inbox', label: 'Inbox', perm: PERMISSIONS.CORE.CONNECT_READ },
             { href: '/connect/imports', label: 'Imports', perm: PERMISSIONS.CORE.CONNECT_READ },
-            { href: '/integrations', label: 'Studio avancé' },
+            {
+              href: '/integrations',
+              label: 'Studio avancé',
+              perm: PERMISSIONS.CORE.INTEGRATIONS_READ,
+            },
+            { href: '/connect/sms', label: 'SMS · Telnyx', perm: PERMISSIONS.SMS.READ },
             {
               href: '/connect/inbound-hooks',
               label: 'Récepteurs entrants',
@@ -773,7 +833,7 @@ export function navCatalogue(): NavDomain[] {
               label: 'Courriel SMTP / IMAP',
               perm: PERMISSIONS.EMAIL.MANAGE,
             },
-            { href: '/settings/api-keys', label: 'Clés API' },
+            { href: '/settings/api-keys', label: 'Clés API', perm: PERMISSIONS.CORE.API_KEYS_READ },
             { href: '/agents', label: 'MCP / agents', perm: PERMISSIONS.CORE.AGENTS_READ },
           ],
         },
@@ -863,6 +923,33 @@ export function navCatalogue(): NavDomain[] {
       ],
     },
   ];
+  return domains.map((domain) => {
+    const entries = REFERENCE_ACCESS.filter((entry) => entry.module === domain.module);
+    if (
+      domain.key === 'clients' ||
+      !entries.length ||
+      domain.sections.some((section) =>
+        section.links.some((link) => link.href === `/${domain.module}/data`),
+      )
+    )
+      return domain;
+    return {
+      ...domain,
+      sections: [
+        ...domain.sections,
+        {
+          label: 'Référentiels',
+          links: [
+            {
+              href: `/${domain.module}/data`,
+              label: 'Données',
+              anyPerms: [...new Set(entries.map((entry) => entry.read))],
+            },
+          ],
+        },
+      ],
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -917,6 +1004,7 @@ export function visibleDomains(caps: NavCaps): NavDomain[] {
             .filter(
               (l) =>
                 (!l.perm || caps.can(l.perm)) &&
+                (!l.anyPerms || l.anyPerms.some(caps.can)) &&
                 (!l.module || caps.enabledModules.includes(l.module)),
             )
             .map((l) => ({ ...l })),

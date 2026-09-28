@@ -3,7 +3,15 @@
   import { auth } from '$lib/stores/auth';
   import { Button, Modal, EntityPicker, Skeleton } from '$lib/components/ui';
   import type { CatalogItem } from './types';
-  let { item, onchanged = () => {} }: { item: CatalogItem; onchanged?: () => void } = $props();
+  let {
+    item,
+    onchanged = () => {},
+    context = 'catalog',
+  }: {
+    item: CatalogItem;
+    onchanged?: () => void;
+    context?: 'catalog' | 'services' | 'purchasing';
+  } = $props();
   const can = $derived(($auth?.user.permissions ?? []) as string[]);
   const visible = $derived(
     $auth?.tenant.enabledModules.includes('wms') && can.includes('wms.read'),
@@ -26,7 +34,7 @@
       const data = await api<{
         updatedAt: string;
         stockLink: { wmsItem: { id: string; sku: string; name: string; unit: string } } | null;
-      }>(`/catalog/items/${item.id}/stock-link`);
+      }>(`/${context}/items/${item.id}/stock-link`);
       version = data.updatedAt;
       selected = data.stockLink?.wmsItem.id ?? '';
       label = data.stockLink
@@ -43,7 +51,7 @@
     saving = true;
     error = '';
     try {
-      await api(`/catalog/items/${item.id}/stock-link`, {
+      await api(`/${context}/items/${item.id}/stock-link`, {
         method: 'PATCH',
         body: { wmsItemId: selected || null, expectedUpdatedAt: version },
       });
@@ -73,7 +81,7 @@
       detailKey="sku"
       bind:value={selected}
       selectedLabel={label}
-      disabled={saving || uncertain || !can.includes('catalog.manage')}
+      disabled={saving || uncertain || !can.includes(`${context}.manage`)}
     />
     <p class="mt-3 text-sm leading-6 text-ink-muted">
       Cette correspondance ne crée ni ne déplace de stock. Un article WMS ne peut être lié qu’à un
@@ -93,7 +101,7 @@
         onchanged();
       }}>Fermer</Button
     >
-    {#if can.includes('catalog.manage')}<Button
+    {#if can.includes(`${context}.manage`)}<Button
         disabled={loading || !version || uncertain}
         loading={saving}
         onclick={save}>Enregistrer la correspondance</Button

@@ -34,7 +34,8 @@ export function syncMoveIntent() {
       ) ||
       ![r.itemId, r.fromBinId, r.toBinId].every((v) => typeof v === 'string' && v.length > 0) ||
       !Number.isFinite(r.qty) ||
-      r.qty <= 0
+      r.qty <= 0 ||
+      (r.lotId !== undefined && (typeof r.lotId !== 'string' || !r.lotId.length))
     )
       throw new Error('Invalid intent');
     pendingMove.set(value);

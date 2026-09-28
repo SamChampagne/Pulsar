@@ -261,11 +261,11 @@ describe('Billing General Ledger (e2e)', () => {
         .set(auth())
         .expect((r) => expect([200, 201]).toContain(r.status));
 
-      // Send (required before pay; customer has email so this works with EMAIL_DRIVER=log).
-      await request(http)
+      // Legacy summary-only sending is closed; payment does not depend on email.
+await request(http)
         .post(`/api/v1/billing/customer-invoices/${invoiceId}/send`)
         .set(auth())
-        .expect((r) => expect([200, 201]).toContain(r.status));
+        .expect(409); // Legacy shortcut cannot send; payment is independent of delivery.
     });
 
     it('pay → status PAID', async () => {
@@ -332,13 +332,13 @@ describe('Billing General Ledger (e2e)', () => {
   describe('Trial balance: Σdebit === Σcredit', () => {
     it('GET /billing/ledger/trial-balance returns balanced totals', async () => {
       const res = await request(http)
-        .get('/api/v1/billing/ledger/trial-balance')
+        .get('/api/v1/billing/ledger/trial-balance?currency=CAD')
         .set(auth())
         .expect(200);
 
-      const body = res.body as { totalDebit: number; totalCredit: number };
-      expect(typeof body.totalDebit).toBe('number');
-      expect(typeof body.totalCredit).toBe('number');
+      const body = res.body as { totalDebit: string; totalCredit: string };
+      expect(typeof body.totalDebit).toBe('string');
+      expect(typeof body.totalCredit).toBe('string');
       // The entire ledger must balance.
       expect(Number(body.totalDebit)).toBe(Number(body.totalCredit));
     });
@@ -353,7 +353,7 @@ describe('Billing General Ledger (e2e)', () => {
         .post('/api/v1/billing/ledger/entries')
         .set(auth())
         .send({
-          memo: 'unbalanced test',
+          operationKey: crypto.randomUUID(), currency: 'CAD', date: '2026-09-27', memo: 'unbalanced test',
           lines: [
             { accountCode: '1000', debit: 100 },
             { accountCode: '4000', credit: 200 }, // credit 200 ≠ debit 100
@@ -443,7 +443,7 @@ describe('Billing General Ledger (e2e)', () => {
     it('journal entries from another tenant are NOT visible in the trial balance of acme', async () => {
       // Snapshot acme's trial balance BEFORE posting the other-tenant entry.
       const before = await request(http)
-        .get('/api/v1/billing/ledger/trial-balance')
+        .get('/api/v1/billing/ledger/trial-balance?currency=CAD')
         .set(auth())
         .expect(200);
       const totalDebitBefore = Number(before.body.totalDebit);
@@ -455,6 +455,7 @@ describe('Billing General Ledger (e2e)', () => {
         otherTenantId,
         {
           memo: 'isolation-test',
+          currency: 'CAD',
           sourceType: 'test',
           sourceId: 'iso-only',
           sourceKind: 'test',
@@ -467,7 +468,7 @@ describe('Billing General Ledger (e2e)', () => {
 
       // acme's trial balance should NOT include the 9999 from the other tenant.
       const res = await request(http)
-        .get('/api/v1/billing/ledger/trial-balance')
+        .get('/api/v1/billing/ledger/trial-balance?currency=CAD')
         .set(auth())
         .expect(200);
 

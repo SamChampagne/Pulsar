@@ -4,6 +4,7 @@
   import { api, ApiError } from '$lib/api/client';
   import { streamAgentTurn } from '$lib/api/agent-stream';
   import { Button, Badge } from '$lib/components/ui';
+  import { agentTurnMessage } from '@pulsar/shared';
 
   let { open = $bindable(false) } = $props();
 
@@ -117,6 +118,8 @@
           messages[idx].toolCalls = [...messages[idx].toolCalls, { name: ev.name, args: ev.args }];
         } else if (ev.type === 'error') {
           error = ev.message;
+        } else if (ev.type === 'result' && ev.result.status !== 'succeeded') {
+          error = agentTurnMessage(ev.result);
         } else if (ev.type === 'end') {
           break;
         }
@@ -180,14 +183,20 @@
         {#if selectedAgent}
           <button class="text-xs text-accent hover:underline" onclick={resetAgent}>Switch</button>
         {/if}
-        <button class="text-ink-faint hover:text-ink" onclick={() => (open = false)} aria-label="Close">
+        <button
+          class="text-ink-faint hover:text-ink"
+          onclick={() => (open = false)}
+          aria-label="Close"
+        >
           <X class="size-4" />
         </button>
       </div>
     </div>
 
     {#if error}
-      <p class="border-b border-danger-soft bg-danger-soft px-4 py-2 text-xs text-danger">{error}</p>
+      <p class="border-b border-danger-soft bg-danger-soft px-4 py-2 text-xs text-danger">
+        {error}
+      </p>
     {/if}
 
     {#if !selectedAgent}
@@ -209,7 +218,9 @@
                   <span class="text-xl">{agent.avatar ?? '🤖'}</span>
                   <span class="min-w-0">
                     <span class="block truncate text-sm font-semibold text-ink">{agent.name}</span>
-                    {#if agent.role}<span class="block truncate text-xs text-ink-muted">{agent.role}</span>{/if}
+                    {#if agent.role}<span class="block truncate text-xs text-ink-muted"
+                        >{agent.role}</span
+                      >{/if}
                   </span>
                 </button>
               </li>
@@ -226,15 +237,21 @@
         {#each messages as msg, i (i)}
           {#if msg.role === 'user'}
             <div class="flex justify-end">
-              <div class="max-w-[85%] rounded-card bg-accent px-3 py-2 text-sm text-white whitespace-pre-wrap">
+              <div
+                class="max-w-[85%] rounded-card bg-accent px-3 py-2 text-sm text-white whitespace-pre-wrap"
+              >
                 {msg.text}
               </div>
             </div>
           {:else}
             <div class="flex flex-col gap-2">
               {#if msg.text || msg.streaming}
-                <div class="max-w-[85%] rounded-card bg-surface-muted px-3 py-2 text-sm text-ink whitespace-pre-wrap">
-                  {msg.text}{#if msg.streaming}<span class="ml-0.5 inline-block animate-pulse">▍</span>{/if}
+                <div
+                  class="max-w-[85%] rounded-card bg-surface-muted px-3 py-2 text-sm text-ink whitespace-pre-wrap"
+                >
+                  {msg.text}{#if msg.streaming}<span class="ml-0.5 inline-block animate-pulse"
+                      >▍</span
+                    >{/if}
                 </div>
               {/if}
               {#each msg.toolCalls as call, ci (ci)}
@@ -246,7 +263,10 @@
                     <Badge tone="info">{call.name}</Badge>
                   </div>
                   {#if formatArgs(call.args)}
-                    <pre class="overflow-x-auto rounded bg-surface-muted px-2 py-1.5 text-[11px] text-ink-muted">{formatArgs(call.args)}</pre>
+                    <pre
+                      class="overflow-x-auto rounded bg-surface-muted px-2 py-1.5 text-[11px] text-ink-muted">{formatArgs(
+                        call.args,
+                      )}</pre>
                   {/if}
                   <a
                     href="/agent-actions"

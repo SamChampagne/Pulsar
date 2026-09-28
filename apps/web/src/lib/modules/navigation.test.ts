@@ -34,6 +34,16 @@ import { MODULE_GUIDES } from '$lib/help/catalog';
 import { TOUR_ROUTES } from '$lib/help/tours';
 
 describe('Documented business applications', () => {
+  it('SMS read opens Connect without unrelated integration or API-key access', () => {
+    const domains = visibleDomains({ enabledModules: [], can: (p) => p === 'core.sms.read' });
+    const connect = domains.find((d) => d.key === 'connect');
+    expect(connect).toBeDefined();
+    const links = connect!.sections.flatMap((s) => s.links).map((l) => l.href);
+    expect(links).toContain('/connect/sms');
+    expect(links).not.toContain('/integrations');
+    expect(links).not.toContain('/settings/api-keys');
+    expect(links).not.toContain('/connect/email');
+  });
   it('every app has a guide, business rules and a first-entry tutorial', () => {
     for (const domain of navCatalogue()) {
       expect(MODULE_GUIDES[domain.key], domain.key).toBeDefined();
@@ -103,18 +113,17 @@ describe('Fleet cross-module navigation', () => {
   it('keeps the workspace accessible without TMS permissions', () => {
     const result = links(['fleet'], ['fleet.read']);
     expect(result).toContain('/fleet');
-    expect(result).not.toContain('/fleet/register');
-    expect(result).not.toContain('/fleet/maintenance');
+    expect(result).toContain('/fleet/register');
+    expect(result).toContain('/fleet/maintenance');
+    expect(result).toContain('/fleet/data');
   });
   it('shows the preserved registers to cross-module readers', () => {
     expect(
       links(['fleet', 'transportation'], ['fleet.read', 'transportation.master-data.read']),
     ).toContain('/fleet/register');
   });
-  it('hides TMS-dependent registers when that module is disabled', () => {
-    expect(links(['fleet'], ['fleet.read', 'transportation.master-data.read'])).not.toContain(
-      '/fleet/register',
-    );
+  it('keeps registers accessible when TMS is disabled', () => {
+    expect(links(['fleet'], ['fleet.read'])).toContain('/fleet/register');
   });
 });
 
@@ -181,7 +190,9 @@ describe('Customer portal navigation domain', () => {
   it('is visible with the module enabled and the permission granted', () => {
     const found = domain(['customer-portal'], ['customer-portal.links.manage']);
     expect(found).toBeDefined();
-    expect(found?.sections.flatMap((s) => s.links).map((l) => l.href)).toContain('/customers');
+    expect(found?.sections.flatMap((s) => s.links).map((l) => l.href)).toContain(
+      '/customer-portal/data',
+    );
   });
 });
 
@@ -196,7 +207,7 @@ describe('domainHome', () => {
   });
 
   it('falls back to the first visible link when home is gated behind a permission the user lacks', () => {
-    // customer-portal.links.manage sees /customers but not the home route
+    // customer-portal.links.manage sees its own data page, not the TMS customer page.
     // (/customer-portal/requests needs customer-portal.users.read) — this is
     // the exact case that used to 403 before domainHome existed.
     const domain = visibleDomains({
@@ -207,7 +218,7 @@ describe('domainHome', () => {
     const hrefs = domain!.sections.flatMap((s) => s.links).map((l) => l.href);
     expect(hrefs).not.toContain('/customer-portal/requests');
     expect(domainHome(domain!)).toBe(hrefs[0]);
-    expect(domainHome(domain!)).toBe('/customers');
+    expect(domainHome(domain!)).toBe('/customer-portal/data');
   });
 
   it('falls back to domain.home when the user sees no links at all', () => {

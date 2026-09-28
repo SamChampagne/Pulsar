@@ -5,14 +5,8 @@ import { MODULE_KEYS, PERMISSIONS } from '@pulsar/shared';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
+import { parseLedgerDate as parseDate } from '../ledger/ledger-read';
 import { FinancialReportsService } from './financial-reports.service';
-
-function parseDate(q: string | undefined): Date | undefined {
-  if (!q) return undefined;
-  const d = new Date(q);
-  if (isNaN(d.getTime())) throw new BadRequestException(`Invalid date: ${q}`);
-  return d;
-}
 
 @ApiTags('billing')
 @ApiBearerAuth()
@@ -27,8 +21,9 @@ export class ReportsController {
     @CurrentUser() user: AuthUser,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('currency') currency?: string,
   ) {
-    return this.reports.profitAndLoss(user.tenantId, parseDate(from), parseDate(to));
+    return this.reports.profitAndLoss(user.tenantId, parseDate(from), parseDate(to), currency);
   }
 
   @Get('balance-sheet')
@@ -36,8 +31,9 @@ export class ReportsController {
   balanceSheet(
     @CurrentUser() user: AuthUser,
     @Query('asOf') asOf?: string,
+    @Query('currency') currency?: string,
   ) {
-    return this.reports.balanceSheet(user.tenantId, parseDate(asOf));
+    return this.reports.balanceSheet(user.tenantId, parseDate(asOf), currency);
   }
 
   @Get('cash-flow')
@@ -46,8 +42,9 @@ export class ReportsController {
     @CurrentUser() user: AuthUser,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('currency') currency?: string,
   ) {
-    return this.reports.cashFlow(user.tenantId, parseDate(from), parseDate(to));
+    return this.reports.cashFlow(user.tenantId, parseDate(from), parseDate(to), currency);
   }
 
   @Get('ar-aging')
@@ -55,8 +52,9 @@ export class ReportsController {
   arAging(
     @CurrentUser() user: AuthUser,
     @Query('asOf') asOf?: string,
+    @Query('currency') currency?: string,
   ) {
-    return this.reports.arAging(user.tenantId, parseDate(asOf));
+    return this.reports.arAging(user.tenantId, parseDate(asOf), currency);
   }
 
   @Get('ap-aging')
@@ -64,7 +62,8 @@ export class ReportsController {
   apAging(
     @CurrentUser() user: AuthUser,
     @Query('asOf') asOf?: string,
+    @Query('currency') currency?: string,
   ) {
-    return this.reports.apAging(user.tenantId, parseDate(asOf));
+    return this.reports.apAging(user.tenantId, parseDate(asOf), currency);
   }
 }

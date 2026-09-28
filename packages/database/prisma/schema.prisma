@@ -32,66 +32,73 @@ enum HrLeaveStatus {
   REJECTED
   CANCELLED
 }
+
 enum HrLeaveKind {
   TIME_OFF
   UNAVAILABLE
   OTHER
 }
+
 model HrTeam {
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  code String
-  name String
-  active Boolean @default(true)
-  updatedAt DateTime @updatedAt
+  id        String       @id @default(cuid())
+  tenantId  String
+  tenant    Tenant       @relation(fields: [tenantId], references: [id])
+  code      String
+  name      String
+  active    Boolean      @default(true)
+  updatedAt DateTime     @updatedAt
   employees HrEmployee[]
+
   @@unique([tenantId, id])
   @@unique([tenantId, code])
   @@index([tenantId, active])
   @@map("hr_teams")
 }
+
 model HrEmployee {
   qualifications HrQualification[]
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  code String
-  firstName String
-  lastName String
-  jobTitle String @default("")
-  teamId String?
-  team HrTeam? @relation(fields: [tenantId, teamId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
-  userId String?
-  user User? @relation("HrEmployeeUser", fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
-  active Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  leaves HrLeaveRequest[]
+  id             String            @id @default(cuid())
+  tenantId       String
+  tenant         Tenant            @relation(fields: [tenantId], references: [id])
+  code           String
+  firstName      String
+  lastName       String
+  jobTitle       String            @default("")
+  teamId         String?
+  team           HrTeam?           @relation(fields: [tenantId, teamId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  userId         String?
+  user           User?             @relation("HrEmployeeUser", fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  active         Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  leaves         HrLeaveRequest[]
+
   @@unique([tenantId, id])
   @@unique([tenantId, code])
   @@unique([tenantId, userId])
   @@index([tenantId, teamId, active])
   @@map("hr_employees")
 }
+
 model HrLeaveRequest {
-  id String @id @default(cuid())
-  tenantId String
-  employeeId String
-  employee HrEmployee @relation(fields: [tenantId, employeeId], references: [tenantId, id])
-  number String
-  kind HrLeaveKind
-  startDate DateTime @db.Date
-  endDate DateTime @db.Date
-  note String @default("")
-  status HrLeaveStatus @default(DRAFT)
-  createdById String
-  createdBy User @relation("HrLeaveCreator", fields: [tenantId, createdById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  id           String         @id @default(cuid())
+  tenantId     String
+  employeeId   String
+  employee     HrEmployee     @relation(fields: [tenantId, employeeId], references: [tenantId, id])
+  number       String
+  kind         HrLeaveKind
+  startDate    DateTime       @db.Date
+  endDate      DateTime       @db.Date
+  note         String         @default("")
+  status       HrLeaveStatus  @default(DRAFT)
+  createdById  String
+  createdBy    User           @relation("HrLeaveCreator", fields: [tenantId, createdById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
   operationKey String
-  fingerprint String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  events HrLeaveEvent[]
+  fingerprint  String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  events       HrLeaveEvent[]
+
   @@unique([tenantId, id])
   @@unique([tenantId, number])
   @@unique([tenantId, operationKey])
@@ -104,72 +111,81 @@ enum HrSkillKind {
   COMPETENCE
   AUTHORIZATION
 }
+
 enum HrQualificationStatus {
   ACTIVE
   REVOKED
 }
+
 model HrSkill {
   serviceRequirements ServiceJobSkillRequirement[]
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  code String
-  name String
-  kind HrSkillKind
-  active Boolean @default(true)
-  updatedAt DateTime @updatedAt
-  qualifications HrQualification[]
-  requirements WorkCenterSkillRequirement[]
+  id                  String                       @id @default(cuid())
+  tenantId            String
+  tenant              Tenant                       @relation(fields: [tenantId], references: [id])
+  code                String
+  name                String
+  kind                HrSkillKind
+  active              Boolean                      @default(true)
+  updatedAt           DateTime                     @updatedAt
+  qualifications      HrQualification[]
+  requirements        WorkCenterSkillRequirement[]
+
   @@unique([tenantId, id])
   @@unique([tenantId, code])
   @@map("hr_skills")
 }
+
 model HrQualification {
-  id String @id @default(cuid())
-  tenantId String
-  employeeId String
-  employee HrEmployee @relation(fields: [tenantId, employeeId], references: [tenantId, id])
-  skillId String
-  skill HrSkill @relation(fields: [tenantId, skillId], references: [tenantId, id])
-  validFrom DateTime @db.Date
-  expiresOn DateTime? @db.Date
-  reference String
-  status HrQualificationStatus @default(ACTIVE)
-  createdById String
-  createdBy User @relation("QualificationIssuer", fields: [tenantId, createdById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  revokedById String?
-  revokedBy User? @relation("QualificationRevoker", fields: [tenantId, revokedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
-  revokedAt DateTime?
+  id           String                @id @default(cuid())
+  tenantId     String
+  employeeId   String
+  employee     HrEmployee            @relation(fields: [tenantId, employeeId], references: [tenantId, id])
+  skillId      String
+  skill        HrSkill               @relation(fields: [tenantId, skillId], references: [tenantId, id])
+  validFrom    DateTime              @db.Date
+  expiresOn    DateTime?             @db.Date
+  reference    String
+  status       HrQualificationStatus @default(ACTIVE)
+  createdById  String
+  createdBy    User                  @relation("QualificationIssuer", fields: [tenantId, createdById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  revokedById  String?
+  revokedBy    User?                 @relation("QualificationRevoker", fields: [tenantId, revokedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  revokedAt    DateTime?
   revokeReason String?
   operationKey String
-  fingerprint String
+  fingerprint  String
+
   @@unique([tenantId, operationKey])
   @@index([tenantId, employeeId, skillId, status])
   @@map("hr_qualifications")
 }
+
 model WorkCenterSkillRequirement {
-  id String @id @default(cuid())
-  tenantId String
+  id           String     @id @default(cuid())
+  tenantId     String
   workCenterId String
-  workCenter WorkCenter @relation(fields: [tenantId, workCenterId], references: [tenantId, id])
-  skillId String
-  skill HrSkill @relation(fields: [tenantId, skillId], references: [tenantId, id])
+  workCenter   WorkCenter @relation(fields: [tenantId, workCenterId], references: [tenantId, id])
+  skillId      String
+  skill        HrSkill    @relation(fields: [tenantId, skillId], references: [tenantId, id])
+
   @@unique([tenantId, workCenterId, skillId])
   @@map("work_center_skill_requirements")
 }
+
 model HrLeaveEvent {
-  id String @id @default(cuid())
-  tenantId String
-  leaveId String
-  leave HrLeaveRequest @relation(fields: [tenantId, leaveId], references: [tenantId, id])
-  actorId String
-  actor User @relation("HrLeaveActor", fields: [tenantId, actorId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
-  action String
-  note String
-  snapshot Json
-  createdAt DateTime @default(now())
+  id        String         @id @default(cuid())
+  tenantId  String
+  leaveId   String
+  leave     HrLeaveRequest @relation(fields: [tenantId, leaveId], references: [tenantId, id])
+  actorId   String
+  actor     User           @relation("HrLeaveActor", fields: [tenantId, actorId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  action    String
+  note      String
+  snapshot  Json
+  createdAt DateTime       @default(now())
+
   @@index([tenantId, leaveId, createdAt])
   @@map("hr_leave_events")
 }
@@ -180,62 +196,75 @@ enum QualityInspectionStatus {
   COMPLETED
   CANCELLED
 }
+
 enum QualityNonconformityStatus {
   OPEN
   IN_PROGRESS
   RESOLVED
   CLOSED
 }
+
 enum QualityOutcome {
   PASS
   FAIL
 }
+
 model QualityPlan {
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  code String
-  name String
-  instructions String @default("")
-  criteria Json
-  revision Int @default(1)
-  active Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  inspections QualityInspection[]
+  id           String              @id @default(cuid())
+  tenantId     String
+  tenant       Tenant              @relation(fields: [tenantId], references: [id])
+  code         String
+  name         String
+  instructions String              @default("")
+  criteria     Json
+  revision     Int                 @default(1)
+  active       Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  inspections  QualityInspection[]
+
   @@unique([tenantId, id])
   @@unique([tenantId, code])
   @@index([tenantId, active])
   @@map("quality_plans")
 }
+
 model QualityInspection {
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  number String
-  title String
-  planId String
-  plan QualityPlan @relation(fields: [tenantId, planId], references: [tenantId, id])
-  planName String
-  planRevision Int
-  instructions String
-  criteria Json
-  results Json @default("[]")
-  status QualityInspectionStatus @default(DRAFT)
-  outcome QualityOutcome?
-  receiptId String?
-  receipt Receipt? @relation(fields: [tenantId, receiptId], references: [tenantId, id])
+  lotItemId            String?
+  lotId                String?
+  lot                  WmsLot? @relation(fields: [tenantId, lotItemId, lotId], references: [tenantId, itemId, id], onDelete: Restrict, map: "quality_inspections_lot_fk")
+  lotSnapshot          Json?
+  lotDispositionRevision Int?
+  lotMovementCount     Int?
+  lotDecisions         WmsLotDecision[]
+  id                   String                  @id @default(cuid())
+  tenantId             String
+  tenant               Tenant                  @relation(fields: [tenantId], references: [id])
+  number               String
+  title                String
+  planId               String
+  plan                 QualityPlan             @relation(fields: [tenantId, planId], references: [tenantId, id])
+  planName             String
+  planRevision         Int
+  instructions         String
+  criteria             Json
+  results              Json                    @default("[]")
+  status               QualityInspectionStatus @default(DRAFT)
+  outcome              QualityOutcome?
+  receiptId            String?
+  receipt              Receipt?                @relation(fields: [tenantId, receiptId], references: [tenantId, id])
   manufacturingOrderId String?
-  manufacturingOrder ManufacturingOrder? @relation(fields: [tenantId, manufacturingOrderId], references: [tenantId, id])
-  supportCaseId String?
-  supportCase SupportCase? @relation(fields: [tenantId, supportCaseId], references: [tenantId, id])
-  operationKey String
-  requestFingerprint String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  completedAt DateTime?
-  nonconformity QualityNonconformity?
-  events QualityEvent[]
+  manufacturingOrder   ManufacturingOrder?     @relation(fields: [tenantId, manufacturingOrderId], references: [tenantId, id])
+  supportCaseId        String?
+  supportCase          SupportCase?            @relation(fields: [tenantId, supportCaseId], references: [tenantId, id])
+  operationKey         String
+  requestFingerprint   String
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  completedAt          DateTime?
+  nonconformity        QualityNonconformity?
+  events               QualityEvent[]
+
   @@unique([tenantId, id])
   @@unique([tenantId, number])
   @@unique([tenantId, operationKey])
@@ -243,24 +272,27 @@ model QualityInspection {
   @@index([tenantId, receiptId])
   @@index([tenantId, manufacturingOrderId])
   @@index([tenantId, supportCaseId])
+  @@index([tenantId, lotId, status])
   @@map("quality_inspections")
 }
+
 model QualityNonconformity {
-  id String @id @default(cuid())
-  tenantId String
-  inspectionId String
-  inspection QualityInspection @relation(fields: [tenantId, inspectionId], references: [tenantId, id])
-  number String
-  title String
-  status QualityNonconformityStatus @default(OPEN)
-  rootCause String @default("")
-  correctiveAction String @default("")
-  assigneeUserId String?
-  assignee User? @relation("QualityAssignee", fields: [tenantId, assigneeUserId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
-  dueDate DateTime? @db.Date
-  evidence QualityEvidence[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String                     @id @default(cuid())
+  tenantId         String
+  inspectionId     String
+  inspection       QualityInspection          @relation(fields: [tenantId, inspectionId], references: [tenantId, id])
+  number           String
+  title            String
+  status           QualityNonconformityStatus @default(OPEN)
+  rootCause        String                     @default("")
+  correctiveAction String                     @default("")
+  assigneeUserId   String?
+  assignee         User?                      @relation("QualityAssignee", fields: [tenantId, assigneeUserId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  dueDate          DateTime?                  @db.Date
+  evidence         QualityEvidence[]
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+
   @@unique([tenantId, id])
   @@unique([tenantId, inspectionId])
   @@unique([tenantId, number])
@@ -268,125 +300,146 @@ model QualityNonconformity {
   @@index([tenantId, assigneeUserId, dueDate])
   @@map("quality_nonconformities")
 }
+
 model QualityEvidence {
-  id String @id @default(cuid())
-  tenantId String
+  id              String               @id @default(cuid())
+  tenantId        String
   nonconformityId String
-  nonconformity QualityNonconformity @relation(fields: [tenantId, nonconformityId], references: [tenantId, id])
-  documentId String
-  document Document @relation(fields: [tenantId, documentId], references: [tenantId, id])
-  caption String
-  operationKey String
-  fingerprint String
-  createdAt DateTime @default(now())
+  nonconformity   QualityNonconformity @relation(fields: [tenantId, nonconformityId], references: [tenantId, id])
+  documentId      String
+  document        Document             @relation(fields: [tenantId, documentId], references: [tenantId, id])
+  caption         String
+  operationKey    String
+  fingerprint     String
+  createdAt       DateTime             @default(now())
+
   @@unique([tenantId, operationKey])
   @@unique([tenantId, documentId])
   @@index([tenantId, nonconformityId])
   @@map("quality_evidence")
 }
+
 model QualityEvent {
-  id String @id @default(cuid())
-  tenantId String
+  id           String            @id @default(cuid())
+  tenantId     String
   inspectionId String
-  inspection QualityInspection @relation(fields: [tenantId, inspectionId], references: [tenantId, id])
-  actorId String
-  actor User @relation(fields: [tenantId, actorId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
-  action String
-  note String
-  snapshot Json
-  createdAt DateTime @default(now())
+  inspection   QualityInspection @relation(fields: [tenantId, inspectionId], references: [tenantId, id])
+  actorId      String
+  actor        User              @relation(fields: [tenantId, actorId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  action       String
+  note         String
+  snapshot     Json
+  createdAt    DateTime          @default(now())
+
   @@index([tenantId, inspectionId, createdAt])
   @@map("quality_events")
 }
+
 enum ServiceProjectStatus {
   DRAFT
   ACTIVE
   COMPLETED
   CANCELLED
 }
+
 enum ServiceJobStatus {
   PLANNED
   IN_PROGRESS
   COMPLETED
   CANCELLED
 }
+
 enum SupplierOrderStatus {
   DRAFT
   CONFIRMED
   CLOSED
   CANCELLED
 }
+
 enum SupportCaseStatus {
   OPEN
   IN_PROGRESS
   RESOLVED
   CLOSED
 }
+
 model SupportCase {
-  assigneeUserId String?
-  assignee User? @relation("SupportAssignee", fields: [tenantId, assigneeUserId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
-  dueDate DateTime? @db.Date
+  assigneeUserId     String?
+  assignee           User?               @relation("SupportAssignee", fields: [tenantId, assigneeUserId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  dueDate            DateTime?           @db.Date
   qualityInspections QualityInspection[]
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  number String
-  partnerId String
-  partner BusinessPartner @relation(fields: [tenantId, partnerId], references: [tenantId, id])
-  title String
-  description String
-  priority String @default("NORMAL")
-  status SupportCaseStatus @default(OPEN)
-  jobId String?
-  job ServiceJob? @relation(fields: [tenantId, jobId], references: [tenantId, id])
-  resolution String @default("")
-  operationKey String
+  id                 String              @id @default(cuid())
+  tenantId           String
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  number             String
+  partnerId          String
+  partner            BusinessPartner     @relation(fields: [tenantId, partnerId], references: [tenantId, id])
+  title              String
+  description        String
+  priority           String              @default("NORMAL")
+  status             SupportCaseStatus   @default(OPEN)
+  jobId              String?
+  job                ServiceJob?         @relation(fields: [tenantId, jobId], references: [tenantId, id])
+  resolution         String              @default("")
+  operationKey       String
   requestFingerprint String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  events SupportCaseEvent[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  events             SupportCaseEvent[]
+
   @@unique([tenantId, id])
   @@unique([tenantId, number])
   @@unique([tenantId, operationKey])
   @@index([tenantId, status, priority])
   @@map("support_cases")
 }
+
 model SupportCaseEvent {
-  id String @id @default(cuid())
-  tenantId String
-  caseId String
-  case SupportCase @relation(fields: [tenantId, caseId], references: [tenantId, id])
-  actorId String
-  actor User @relation(fields: [tenantId, actorId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
-  action String
-  note String
-  snapshot Json
-  createdAt DateTime @default(now())
+  id        String      @id @default(cuid())
+  tenantId  String
+  caseId    String
+  case      SupportCase @relation(fields: [tenantId, caseId], references: [tenantId, id])
+  actorId   String
+  actor     User        @relation(fields: [tenantId, actorId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  action    String
+  note      String
+  snapshot  Json
+  createdAt DateTime    @default(now())
+
   @@index([tenantId, caseId, createdAt])
   @@map("support_case_events")
 }
 
 model BusinessPartner {
+  supplierInvoices SupplierInvoice[]
+  supplierCredits SupplierCredit[]
+  stockExits WmsStockExit[]
+  catalogOffers     CatalogSupplierOffer[]
+  businessProfile   PartyBusinessProfile?
+  directoryEntries  PartyDirectoryEntry[]
+  billingAddress    Json?
+  shippingAddress   Json?
   billingCustomerId String?
-  billingCustomer Customer? @relation(fields: [tenantId, billingCustomerId], references: [tenantId, id])
-  crmCompanyId String?
-  crmCompany CrmCompany? @relation(fields: [tenantId, crmCompanyId], references: [tenantId, id])
-  quotes ServiceQuote[]
-  supportCases SupportCase[]
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  code String
-  name String
-  email String?
-  phone String?
-  isCustomer Boolean @default(true)
-  isSupplier Boolean @default(false)
-  active Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  projects ServiceProject[]
-  orders SupplierOrder[]
+  billingCustomer   Customer?              @relation(fields: [tenantId, billingCustomerId], references: [tenantId, id])
+  crmCompanyId      String?
+  crmCompany        CrmCompany?            @relation(fields: [tenantId, crmCompanyId], references: [tenantId, id])
+  quotes            ServiceQuote[]
+  supportCases      SupportCase[]
+  id                String                 @id @default(cuid())
+  tenantId          String
+  tenant            Tenant                 @relation(fields: [tenantId], references: [id])
+  code              String
+  name              String
+  email             String?
+  phone             String?
+  isCustomer        Boolean                @default(true)
+  isSupplier        Boolean                @default(false)
+  active            Boolean                @default(true)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  projects          ServiceProject[]
+  orders            SupplierOrder[]
+
   @@unique([tenantId, code])
   @@unique([tenantId, id])
   @@unique([tenantId, billingCustomerId])
@@ -395,42 +448,109 @@ model BusinessPartner {
 }
 
 model CatalogItem {
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  code String
-  name String
-  kind CatalogItemKind
-  unit String
-  description String @default("")
-  active Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  jobs ServiceJob[]
-  orderLines SupplierOrderLine[]
-  stockLink CatalogStockLink?
-  partUsages ServicePartUsage[]
+  packages       CatalogPackage[]
+  details        CatalogItemDetails?
+  supplierOffers CatalogSupplierOffer[]
+  id             String                 @id @default(cuid())
+  tenantId       String
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id])
+  code           String
+  name           String
+  kind           CatalogItemKind
+  unit           String
+  description    String                 @default("")
+  active         Boolean                @default(true)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  jobs           ServiceJob[]
+  orderLines     SupplierOrderLine[]
+  stockLink      CatalogStockLink?
+  partUsages     ServicePartUsage[]
+
   @@unique([tenantId, code])
   @@unique([tenantId, id])
   @@map("catalog_items")
 }
 
+model CatalogItemDetails {
+  id            String      @id @default(cuid())
+  tenantId      String
+  catalogItemId String
+  catalogItem   CatalogItem @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
+  version       Int         @default(1)
+  data          Json
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([tenantId, catalogItemId])
+  @@map("catalog_item_details")
+}
+
+model CatalogPackage {
+  id              String      @id @default(cuid())
+  tenantId        String
+  catalogItemId   String
+  catalogItem     CatalogItem @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
+  code            String
+  label           String
+  barcode         String?
+  unitsPerPackage Decimal     @db.Decimal(16, 6)
+  wholeOnly       Boolean     @default(true)
+  active          Boolean     @default(true)
+  version         Int         @default(1)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, catalogItemId, code])
+  @@unique([tenantId, barcode])
+  @@map("catalog_packages")
+}
+
+model CatalogSupplierOffer {
+  id                String          @id @default(cuid())
+  tenantId          String
+  catalogItemId     String
+  catalogItem       CatalogItem     @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
+  supplierId        String
+  supplier          BusinessPartner @relation(fields: [tenantId, supplierId], references: [tenantId, id])
+  supplierReference String
+  currency          String
+  unitPrice         Decimal         @db.Decimal(16, 4)
+  minimumQuantity   Decimal?        @db.Decimal(16, 4)
+  orderMultiple     Decimal?        @db.Decimal(16, 4)
+  leadTimeDays      Int?
+  validFrom         DateTime?       @db.Date
+  validUntil        DateTime?       @db.Date
+  packaging         String          @default("")
+  terms             String          @default("")
+  active            Boolean         @default(true)
+  version           Int             @default(1)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, catalogItemId, supplierId])
+  @@map("catalog_supplier_offers")
+}
+
 model ServiceProject {
-  quote ServiceQuote?
+  acceptanceRequired Boolean               @default(false)
+  quote          ServiceQuote?
   invoiceBatches ServiceInvoiceBatch[]
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  number String
-  title String
-  description String @default("")
-  partnerId String
-  partner BusinessPartner @relation(fields: [tenantId, partnerId], references: [tenantId, id])
-  status ServiceProjectStatus @default(DRAFT)
-  dueDate DateTime? @db.Date
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  jobs ServiceJob[]
+  id             String                @id @default(cuid())
+  tenantId       String
+  tenant         Tenant                @relation(fields: [tenantId], references: [id])
+  number         String
+  title          String
+  description    String                @default("")
+  partnerId      String
+  partner        BusinessPartner       @relation(fields: [tenantId, partnerId], references: [tenantId, id])
+  status         ServiceProjectStatus  @default(DRAFT)
+  dueDate        DateTime?             @db.Date
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  jobs           ServiceJob[]
+
   @@unique([tenantId, number])
   @@unique([tenantId, id])
   @@index([tenantId, status])
@@ -438,38 +558,70 @@ model ServiceProject {
 }
 
 model ServiceJob {
-  plannedMinutes Int?
-  workCenterId String?
-  workCenter WorkCenter? @relation(fields: [tenantId, workCenterId], references: [tenantId, id])
+  acceptanceStatus  ServiceAcceptanceStatus @default(PENDING)
+  acceptanceRecords ServiceAcceptanceRecord[]
+  plannedMinutes    Int?
+  workCenterId      String?
+  workCenter        WorkCenter?                  @relation(fields: [tenantId, workCenterId], references: [tenantId, id])
   skillRequirements ServiceJobSkillRequirement[]
-  supportCases SupportCase[]
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  number String
-  projectId String
-  project ServiceProject @relation(fields: [tenantId, projectId], references: [tenantId, id])
-  catalogItemId String?
-  catalogItem CatalogItem? @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
-  title String
-  instructions String @default("")
-  assigneeLabel String @default("")
-  assigneeUserId String?
-  assignee User? @relation("ServiceAssignee", fields: [tenantId, assigneeUserId], references: [tenantId, id])
-  scheduledAt DateTime?
-  status ServiceJobStatus @default(PLANNED)
-  report String @default("")
-  completedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  timeEntries ServiceTimeEntry[]
-  partUsages ServicePartUsage[]
+  supportCases      SupportCase[]
+  id                String                       @id @default(cuid())
+  tenantId          String
+  tenant            Tenant                       @relation(fields: [tenantId], references: [id])
+  number            String
+  projectId         String
+  project           ServiceProject               @relation(fields: [tenantId, projectId], references: [tenantId, id])
+  catalogItemId     String?
+  catalogItem       CatalogItem?                 @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
+  title             String
+  instructions      String                       @default("")
+  assigneeLabel     String                       @default("")
+  assigneeUserId    String?
+  assignee          User?                        @relation("ServiceAssignee", fields: [tenantId, assigneeUserId], references: [tenantId, id])
+  scheduledAt       DateTime?
+  status            ServiceJobStatus             @default(PLANNED)
+  report            String                       @default("")
+  completedAt       DateTime?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  timeEntries       ServiceTimeEntry[]
+  partUsages        ServicePartUsage[]
+
   @@unique([tenantId, number])
   @@unique([tenantId, id])
   @@index([tenantId, assigneeUserId, status])
   @@index([tenantId, scheduledAt])
   @@index([tenantId, projectId, status])
   @@map("service_jobs")
+}
+
+enum ServiceAcceptanceStatus {
+  PENDING
+  RESERVATIONS
+  ACCEPTED
+}
+
+model ServiceAcceptanceRecord {
+  id             String                  @id @default(cuid())
+  tenantId       String
+  jobId          String
+  job            ServiceJob              @relation(fields: [tenantId, jobId], references: [tenantId, id])
+  actorId        String
+  actor          User                    @relation(fields: [tenantId, actorId], references: [tenantId, id])
+  fromStatus     ServiceAcceptanceStatus
+  toStatus       ServiceAcceptanceStatus
+  representative String
+  reference      String
+  note           String
+  snapshot       Json
+  jobVersion     String
+  operationKey   String
+  fingerprint    String
+  createdAt      DateTime                @default(now())
+
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, jobId, createdAt])
+  @@map("service_acceptance_records")
 }
 
 enum ServiceTimeStatus {
@@ -491,52 +643,61 @@ enum ServiceTimeReviewAction {
 }
 
 model CatalogStockLink {
-  id String @id @default(cuid())
-  tenantId String
+  id            String      @id @default(cuid())
+  tenantId      String
   catalogItemId String
-  wmsItemId String
-  catalogItem CatalogItem @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
-  wmsItem WmsItem @relation(fields: [tenantId, wmsItemId], references: [tenantId, id])
-  createdAt DateTime @default(now())
+  wmsItemId     String
+  catalogItem   CatalogItem @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
+  wmsItem       WmsItem     @relation(fields: [tenantId, wmsItemId], references: [tenantId, id])
+  createdAt     DateTime    @default(now())
+
   @@unique([tenantId, catalogItemId])
   @@unique([tenantId, wmsItemId])
   @@map("catalog_stock_links")
 }
 
-// A physical issue and its optional full compensating return. Neither movement is deleted.
+// Physical issue with append-only compensating returns. Legacy return columns are read-only.
 model ServicePartUsage {
-  billingLine CustomerInvoiceLine?
-  id String @id @default(cuid())
-  tenantId String
-  jobId String
-  catalogItemId String
-  wmsItemId String
-  binId String
-  quantity Decimal @db.Decimal(14, 3)
-  nameSnapshot String
-  codeSnapshot String
-  unitSnapshot String
-  binSnapshot String
-  note String
-  createdById String
-  createdAt DateTime @default(now())
-  operationKey String
+  lotId              String?
+  lotSnapshot        Json?
+  lot                WmsLot?              @relation(fields: [tenantId, wmsItemId, lotId], references: [tenantId, itemId, id], onDelete: Restrict, map: "service_part_lot_fk")
+  billingLine        CustomerInvoiceLine?
+  id                 String               @id @default(cuid())
+  tenantId           String
+  jobId              String
+  catalogItemId      String
+  wmsItemId          String
+  binId              String
+  quantity           Decimal              @db.Decimal(14, 3)
+  returnedQuantity   Decimal              @default(0) @db.Decimal(14, 3)
+  updatedAt          DateTime             @default(now())
+  returns            ServicePartReturn[]
+  nameSnapshot       String
+  codeSnapshot       String
+  unitSnapshot       String
+  binSnapshot        String
+  note               String
+  createdById        String
+  createdAt          DateTime             @default(now())
+  operationKey       String
   requestFingerprint String
-  movementId String
-  returnMovementId String?
+  movementId         String
+  returnMovementId   String?
   returnOperationKey String?
-  returnFingerprint String?
-  returnedAt DateTime?
-  returnReason String?
-  returnedById String?
-  createdBy User @relation("ServicePartAuthor", fields: [tenantId, createdById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction, map: "service_part_author_fkey")
-  returnedBy User? @relation("ServicePartReturnAuthor", fields: [tenantId, returnedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction, map: "service_part_return_author_fkey")
-  job ServiceJob @relation(fields: [tenantId, jobId], references: [tenantId, id])
-  catalogItem CatalogItem @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
-  wmsItem WmsItem @relation(fields: [tenantId, wmsItemId], references: [tenantId, id])
-  bin Bin @relation(fields: [tenantId, binId], references: [tenantId, id])
-  movement StockMovement @relation("ServicePartIssue", fields: [tenantId, movementId], references: [tenantId, id])
-  returnMovement StockMovement? @relation("ServicePartReturn", fields: [tenantId, returnMovementId], references: [tenantId, id])
+  returnFingerprint  String?
+  returnedAt         DateTime?
+  returnReason       String?
+  returnedById       String?
+  createdBy          User                 @relation("ServicePartAuthor", fields: [tenantId, createdById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction, map: "service_part_author_fkey")
+  returnedBy         User?                @relation("ServicePartReturnAuthor", fields: [tenantId, returnedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction, map: "service_part_return_author_fkey")
+  job                ServiceJob           @relation(fields: [tenantId, jobId], references: [tenantId, id])
+  catalogItem        CatalogItem          @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
+  wmsItem            WmsItem              @relation(fields: [tenantId, wmsItemId], references: [tenantId, id])
+  bin                Bin                  @relation(fields: [tenantId, binId], references: [tenantId, id])
+  movement           StockMovement        @relation("ServicePartIssue", fields: [tenantId, movementId], references: [tenantId, id])
+  returnMovement     StockMovement?       @relation("ServicePartReturn", fields: [tenantId, returnMovementId], references: [tenantId, id])
+
+  @@unique([tenantId, id])
   @@unique([tenantId, operationKey])
   @@unique([tenantId, returnOperationKey])
   @@unique([tenantId, movementId])
@@ -546,28 +707,53 @@ model ServicePartUsage {
   @@map("service_part_usages")
 }
 
-model ServiceTimeEntry {
-  billingLine CustomerInvoiceLine?
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  jobId String
-  job ServiceJob @relation(fields: [tenantId, jobId], references: [tenantId, id])
-  userId String
-  user User @relation("ServiceTimePerson", fields: [tenantId, userId], references: [tenantId, id])
-  createdById String
-  createdBy User @relation("ServiceTimeAuthor", fields: [tenantId, createdById], references: [tenantId, id])
-  workDate DateTime @db.Date
-  minutes Int
-  billable Boolean @default(false)
-  note String
-  status ServiceTimeStatus @default(RECORDED)
-  voidReason String?
-  operationKey String
+// No update/delete endpoint: one confirmed physical return, one stock movement.
+model ServicePartReturn {
+  creditLineId       String?
+  creditLine         CustomerCreditLine? @relation(fields: [tenantId, creditLineId], references: [tenantId, id], onDelete: Restrict)
+  id                 String              @id @default(cuid())
+  tenantId           String
+  usageId            String
+  quantity           Decimal             @db.Decimal(14, 3)
+  reason             String
+  createdAt          DateTime            @default(now())
+  createdById        String
+  operationKey       String
   requestFingerprint String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  reviews ServiceTimeReview[]
+  movementId         String
+  usage              ServicePartUsage    @relation(fields: [tenantId, usageId], references: [tenantId, id])
+  createdBy          User                @relation("ServicePartReturnEntryAuthor", fields: [tenantId, createdById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  movement           StockMovement       @relation("ServicePartReturnEntryMovement", fields: [tenantId, movementId], references: [tenantId, id])
+
+  @@unique([tenantId, operationKey])
+  @@unique([tenantId, movementId])
+  @@index([tenantId, usageId, createdAt])
+  @@map("service_part_returns")
+}
+
+model ServiceTimeEntry {
+  billingLine        CustomerInvoiceLine?
+  id                 String               @id @default(cuid())
+  tenantId           String
+  tenant             Tenant               @relation(fields: [tenantId], references: [id])
+  jobId              String
+  job                ServiceJob           @relation(fields: [tenantId, jobId], references: [tenantId, id])
+  userId             String
+  user               User                 @relation("ServiceTimePerson", fields: [tenantId, userId], references: [tenantId, id])
+  createdById        String
+  createdBy          User                 @relation("ServiceTimeAuthor", fields: [tenantId, createdById], references: [tenantId, id])
+  workDate           DateTime             @db.Date
+  minutes            Int
+  billable           Boolean              @default(false)
+  note               String
+  status             ServiceTimeStatus    @default(RECORDED)
+  voidReason         String?
+  operationKey       String
+  requestFingerprint String
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  reviews            ServiceTimeReview[]
+
   @@unique([tenantId, id])
   @@unique([tenantId, operationKey])
   @@index([tenantId, status, workDate])
@@ -577,41 +763,44 @@ model ServiceTimeEntry {
 }
 
 model ServiceTimeReview {
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  timeEntryId String
-  timeEntry ServiceTimeEntry @relation(fields: [tenantId, timeEntryId], references: [tenantId, id])
-  actorId String
-  actor User @relation("ServiceTimeReviewer", fields: [tenantId, actorId], references: [tenantId, id])
-  action ServiceTimeReviewAction
-  fromStatus ServiceTimeStatus
-  toStatus ServiceTimeStatus
-  reason String?
-  snapshot Json
+  id           String                  @id @default(cuid())
+  tenantId     String
+  tenant       Tenant                  @relation(fields: [tenantId], references: [id])
+  timeEntryId  String
+  timeEntry    ServiceTimeEntry        @relation(fields: [tenantId, timeEntryId], references: [tenantId, id])
+  actorId      String
+  actor        User                    @relation("ServiceTimeReviewer", fields: [tenantId, actorId], references: [tenantId, id])
+  action       ServiceTimeReviewAction
+  fromStatus   ServiceTimeStatus
+  toStatus     ServiceTimeStatus
+  reason       String?
+  snapshot     Json
   entryVersion DateTime
-  createdAt DateTime @default(now())
+  createdAt    DateTime                @default(now())
+
   @@unique([tenantId, timeEntryId, entryVersion])
   @@index([tenantId, timeEntryId, createdAt])
   @@map("service_time_reviews")
 }
 
 model SupplierOrder {
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  number String
-  supplierId String
-  supplier BusinessPartner @relation(fields: [tenantId, supplierId], references: [tenantId, id])
-  status SupplierOrderStatus @default(DRAFT)
-  currency String @default("CAD")
-  expectedDate DateTime? @db.Date
-  notes String @default("")
-  closeReason String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  lines SupplierOrderLine[]
-  receipts SupplierReceipt[]
+  documentCoordinates Json?
+  id                  String              @id @default(cuid())
+  tenantId            String
+  tenant              Tenant              @relation(fields: [tenantId], references: [id])
+  number              String
+  supplierId          String
+  supplier            BusinessPartner     @relation(fields: [tenantId, supplierId], references: [tenantId, id])
+  status              SupplierOrderStatus @default(DRAFT)
+  currency            String              @default("CAD")
+  expectedDate        DateTime?           @db.Date
+  notes               String              @default("")
+  closeReason         String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  lines               SupplierOrderLine[]
+  receipts            SupplierReceipt[]
+
   @@unique([tenantId, number])
   @@unique([tenantId, id])
   @@index([tenantId, status])
@@ -619,35 +808,40 @@ model SupplierOrder {
 }
 
 model SupplierOrderLine {
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  orderId String
-  order SupplierOrder @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
-  catalogItemId String
-  catalogItem CatalogItem @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
-  position Int
-  nameSnapshot String
-  unitSnapshot String
-  quantity Decimal @db.Decimal(16, 4)
-  unitPrice Decimal @db.Decimal(16, 4)
-  receipts SupplierReceiptLine[]
+  invoiceLines SupplierInvoiceLine[]
+  packageSnapshot       Json?
+  supplierTermsSnapshot Json?
+  id                    String                @id @default(cuid())
+  tenantId              String
+  tenant                Tenant                @relation(fields: [tenantId], references: [id])
+  orderId               String
+  order                 SupplierOrder         @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
+  catalogItemId         String
+  catalogItem           CatalogItem           @relation(fields: [tenantId, catalogItemId], references: [tenantId, id])
+  position              Int
+  nameSnapshot          String
+  unitSnapshot          String
+  quantity              Decimal               @db.Decimal(16, 4)
+  unitPrice             Decimal               @db.Decimal(16, 4)
+  receipts              SupplierReceiptLine[]
+
   @@unique([tenantId, id])
   @@unique([tenantId, orderId, position])
   @@map("supplier_order_lines")
 }
 
 model SupplierReceipt {
-  id String @id @default(cuid())
-  tenantId String
-  orderId String
-  order SupplierOrder @relation(fields: [tenantId, orderId], references: [tenantId, id])
-  receiptId String
-  receipt Receipt @relation(fields: [tenantId, receiptId], references: [tenantId, id])
-  operationKey String
+  id                 String                @id @default(cuid())
+  tenantId           String
+  orderId            String
+  order              SupplierOrder         @relation(fields: [tenantId, orderId], references: [tenantId, id])
+  receiptId          String
+  receipt            Receipt               @relation(fields: [tenantId, receiptId], references: [tenantId, id])
+  operationKey       String
   requestFingerprint String
-  createdAt DateTime @default(now())
-  lines SupplierReceiptLine[]
+  createdAt          DateTime              @default(now())
+  lines              SupplierReceiptLine[]
+
   @@unique([tenantId, id])
   @@unique([tenantId, operationKey])
   @@unique([tenantId, receiptId])
@@ -656,16 +850,20 @@ model SupplierReceipt {
 }
 
 model SupplierReceiptLine {
-  id String @id @default(cuid())
-  tenantId String
+  stockExits        WmsStockExit[]
+  packageCount      Decimal?          @db.Decimal(16, 4)
+  id                String            @id @default(cuid())
+  tenantId          String
   supplierReceiptId String
-  supplierReceipt SupplierReceipt @relation(fields: [tenantId, supplierReceiptId], references: [tenantId, id])
-  orderLineId String
-  orderLine SupplierOrderLine @relation(fields: [tenantId, orderLineId], references: [tenantId, id])
-  receiptLineId String
-  receiptLine ReceiptLine @relation(fields: [tenantId, receiptLineId], references: [tenantId, id])
-  unitSnapshot String
+  supplierReceipt   SupplierReceipt   @relation(fields: [tenantId, supplierReceiptId], references: [tenantId, id])
+  orderLineId       String
+  orderLine         SupplierOrderLine @relation(fields: [tenantId, orderLineId], references: [tenantId, id])
+  receiptLineId     String
+  receiptLine       ReceiptLine       @relation(fields: [tenantId, receiptLineId], references: [tenantId, id])
+  unitSnapshot      String
+
   @@unique([tenantId, receiptLineId])
+  @@unique([tenantId, id])
   @@index([tenantId, orderLineId])
   @@map("supplier_receipt_lines")
 }
@@ -677,36 +875,39 @@ enum ServiceQuoteStatus {
 }
 
 model ServiceJobSkillRequirement {
-  id String @id @default(cuid())
+  id       String     @id @default(cuid())
   tenantId String
-  jobId String
-  job ServiceJob @relation(fields: [tenantId, jobId], references: [tenantId, id], onDelete: Cascade)
-  skillId String
-  skill HrSkill @relation(fields: [tenantId, skillId], references: [tenantId, id])
+  jobId    String
+  job      ServiceJob @relation(fields: [tenantId, jobId], references: [tenantId, id], onDelete: Cascade)
+  skillId  String
+  skill    HrSkill    @relation(fields: [tenantId, skillId], references: [tenantId, id])
+
   @@unique([tenantId, jobId, skillId])
   @@map("service_job_skill_requirements")
 }
 
 model ServiceQuote {
-  id String @id @default(cuid())
-  tenantId String
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  number String
-  partnerId String
-  partner BusinessPartner @relation(fields: [tenantId, partnerId], references: [tenantId, id])
-  title String
-  currency String
-  lines Json
-  totalAmount Decimal @db.Decimal(12, 2)
-  status ServiceQuoteStatus @default(DRAFT)
-  validUntil DateTime? @db.Date
-  projectId String?
-  project ServiceProject? @relation(fields: [tenantId, projectId], references: [tenantId, id])
-  operationKey String
-  fingerprint String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  acceptedAt DateTime?
+  documentCoordinates Json?
+  id                  String             @id @default(cuid())
+  tenantId            String
+  tenant              Tenant             @relation(fields: [tenantId], references: [id])
+  number              String
+  partnerId           String
+  partner             BusinessPartner    @relation(fields: [tenantId, partnerId], references: [tenantId, id])
+  title               String
+  currency            String
+  lines               Json
+  totalAmount         Decimal            @db.Decimal(12, 2)
+  status              ServiceQuoteStatus @default(DRAFT)
+  validUntil          DateTime?          @db.Date
+  projectId           String?
+  project             ServiceProject?    @relation(fields: [tenantId, projectId], references: [tenantId, id])
+  operationKey        String
+  fingerprint         String
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  acceptedAt          DateTime?
+
   @@unique([tenantId, id])
   @@unique([tenantId, number])
   @@unique([tenantId, operationKey])
@@ -717,15 +918,16 @@ model ServiceQuote {
 
 // Keeps a retry tombstone even when the user explicitly deletes a draft invoice.
 model ServiceInvoiceBatch {
-  id String @id @default(cuid())
-  tenantId String
-  projectId String
-  project ServiceProject @relation(fields: [tenantId, projectId], references: [tenantId, id])
-  invoiceId String? @unique
-  invoice CustomerInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  id           String           @id @default(cuid())
+  tenantId     String
+  projectId    String
+  project      ServiceProject   @relation(fields: [tenantId, projectId], references: [tenantId, id])
+  invoiceId    String?          @unique
+  invoice      CustomerInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   operationKey String
-  fingerprint String
-  createdAt DateTime @default(now())
+  fingerprint  String
+  createdAt    DateTime         @default(now())
+
   @@unique([tenantId, operationKey])
   @@index([tenantId, projectId])
   @@map("service_invoice_batches")
@@ -738,32 +940,36 @@ enum TenantStatus {
 }
 
 model Tenant {
-  serviceQuotes ServiceQuote[]
-  qualityPlans QualityPlan[]
-  hrTeams HrTeam[]
-  hrSkills HrSkill[]
-  hrEmployees HrEmployee[]
-  qualityInspections QualityInspection[]
-  supportCases SupportCase[]
-  materialSuppliers MaterialSupplier[]
-  materialPurchaseOrders MaterialPurchaseOrder[]
+  supplierSchedules SupplierInvoiceSchedule[]
+  supplierCredits SupplierCredit[]
+  supplierInvoices SupplierInvoice[]
+  stockExits WmsStockExit[]
+  serviceQuotes            ServiceQuote[]
+  qualityPlans             QualityPlan[]
+  hrTeams                  HrTeam[]
+  hrSkills                 HrSkill[]
+  hrEmployees              HrEmployee[]
+  qualityInspections       QualityInspection[]
+  supportCases             SupportCase[]
+  materialSuppliers        MaterialSupplier[]
+  materialPurchaseOrders   MaterialPurchaseOrder[]
   materialPurchaseReceipts MaterialPurchaseReceipt[]
-  mrpPreparations MrpPreparation[]
-  mrpProductMappings MrpProductMapping[]
-  mrpReviews MrpReview[]
-  bomRevisions BomRevision[]
-  mrpPolicies MrpItemPolicy[]
-  mrpEntries MrpEntry[]
-  mrpRuns MrpRun[]
-  id         String       @id @default(cuid())
-  slug       String       @unique
-  name       String
-  status     TenantStatus @default(TRIAL)
-  settings   Json         @default("{}")
+  mrpPreparations          MrpPreparation[]
+  mrpProductMappings       MrpProductMapping[]
+  mrpReviews               MrpReview[]
+  bomRevisions             BomRevision[]
+  mrpPolicies              MrpItemPolicy[]
+  mrpEntries               MrpEntry[]
+  mrpRuns                  MrpRun[]
+  id                       String                    @id @default(cuid())
+  slug                     String                    @unique
+  name                     String
+  status                   TenantStatus              @default(TRIAL)
+  settings                 Json                      @default("{}")
   // OIDC SSO config: { enabled, issuer, clientId, clientSecret (enc:v1), defaultRoleId }
-  authConfig Json?
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  authConfig               Json?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
 
   users                   User[]
   businessPartners        BusinessPartner[]
@@ -852,6 +1058,13 @@ model Tenant {
   crmProducts             CrmProduct[]
   salesOrders             SalesOrder[]
   emailConfig             TenantEmailConfig?
+  smsConfig               TenantSmsConfig?
+  smsMessages             SmsMessage[]
+  dossierCommunications   DossierCommunication[]
+  communicationPreferences CommunicationPreference[]
+  communicationTemplates CommunicationTemplate[]
+  smsWebhookEvents        SmsWebhookEvent[]
+  smsSuppressions         SmsSuppression[]
   emailMessages           EmailMessage[]
   emailTemplates          EmailTemplate[]
   emailThreads            EmailThread[]
@@ -863,7 +1076,10 @@ model Tenant {
   taxTemplates            TaxTemplate[]
   bankAccounts            BankAccount[]
   budgets                 Budget[]
+  accountingProfileRevisions AccountingProfileRevision[]
+  budgetRevisions BudgetRevision[]
   fixedAssets             FixedAsset[]
+  fixedAssetOperations FixedAssetOperation[]
   subscriptions           Subscription[]
   workingCalendars        WorkingCalendar[]
   workCenters             WorkCenter[]
@@ -895,46 +1111,66 @@ enum UserStatus {
 }
 
 model User {
-  qualityAssignments QualityNonconformity[] @relation("QualityAssignee")
-  hrEmployee HrEmployee? @relation("HrEmployeeUser")
-  issuedQualifications HrQualification[] @relation("QualificationIssuer")
-  revokedQualifications HrQualification[] @relation("QualificationRevoker")
-  assignedSupportCases SupportCase[] @relation("SupportAssignee")
-  hrLeavesCreated HrLeaveRequest[] @relation("HrLeaveCreator")
-  hrLeaveEvents HrLeaveEvent[] @relation("HrLeaveActor")
-  qualityEvents QualityEvent[]
-  supportCaseEvents SupportCaseEvent[]
-  id           String     @id @default(cuid())
-  tenantId     String
-  email        String
-  passwordHash String
-  firstName    String
-  lastName     String
-  status       UserStatus @default(ACTIVE)
+  dossierCommunications DossierCommunication[]
+  smsMessages SmsMessage[]
+  ledgerCurrencyRevisions LedgerCurrencyRevision[]
+  fixedAssetOperations FixedAssetOperation[]
+  accountingProfileRevisions AccountingProfileRevision[]
+  budgetRevisions BudgetRevision[]
+  supplierInvoiceOperations SupplierInvoiceOperation[]
+  supplierSchedules SupplierInvoiceSchedule[]
+  supplierCreditOperations SupplierCreditOperation[]
+  stockExitsCreated WmsStockExit[] @relation("StockExitCreator")
+  stockExitsClosed WmsStockExit[] @relation("StockExitCloser")
+  supplierReturnReports SupplierReturnReport[]
+  lotDecisions WmsLotDecision[]
+  manufacturingReversals ManufacturingDeclarationReversal[]
+  qualityAssignments    QualityNonconformity[] @relation("QualityAssignee")
+  hrEmployee            HrEmployee?            @relation("HrEmployeeUser")
+  issuedQualifications  HrQualification[]      @relation("QualificationIssuer")
+  revokedQualifications HrQualification[]      @relation("QualificationRevoker")
+  assignedSupportCases  SupportCase[]          @relation("SupportAssignee")
+  hrLeavesCreated       HrLeaveRequest[]       @relation("HrLeaveCreator")
+  hrLeaveEvents         HrLeaveEvent[]         @relation("HrLeaveActor")
+  qualityEvents         QualityEvent[]
+  supportCaseEvents     SupportCaseEvent[]
+  id                    String                 @id @default(cuid())
+  tenantId              String
+  email                 String
+  passwordHash          String
+  firstName             String
+  lastName              String
+  status                UserStatus             @default(ACTIVE)
   // Stable OIDC identifier (ID token "sub"); email is only a first-login fallback.
-  oidcSubject  String?
-  lastLoginAt  DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  oidcSubject           String?
+  lastLoginAt           DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
-  tenant                 Tenant            @relation(fields: [tenantId], references: [id])
-  roles                  UserRole[]
-  refreshTokens          RefreshToken[]
-  actionTokens           UserActionToken[]
-  auditLogs              AuditLog[]
-  notifications          Notification[]
-  uploadedDocuments      Document[]
-  createdTransportOrders TransportOrder[]
-  recordedTrackingEvents TrackingEvent[]
-  receivedPods           ProofOfDelivery[]
-  agentServiceFor        Agent[]           @relation("AgentServiceUser")
-  preferences            UserPreferences?
-  assignedServiceJobs    ServiceJob[] @relation("ServiceAssignee")
-  serviceTimeEntries     ServiceTimeEntry[] @relation("ServiceTimePerson")
-  authoredServiceTime    ServiceTimeEntry[] @relation("ServiceTimeAuthor")
-  serviceTimeReviews     ServiceTimeReview[] @relation("ServiceTimeReviewer")
-  servicePartUsages      ServicePartUsage[] @relation("ServicePartAuthor")
-  servicePartReturns     ServicePartUsage[] @relation("ServicePartReturnAuthor")
+  tenant                    Tenant               @relation(fields: [tenantId], references: [id])
+  roles                     UserRole[]
+  refreshTokens             RefreshToken[]
+  actionTokens              UserActionToken[]
+  auditLogs                 AuditLog[]
+  notifications             Notification[]
+  uploadedDocuments         Document[]
+  createdTransportOrders    TransportOrder[]
+  recordedTrackingEvents    TrackingEvent[]
+  receivedPods              ProofOfDelivery[]
+  agentServiceFor           Agent[]              @relation("AgentServiceUser")
+  preferences               UserPreferences?
+  assignedServiceJobs       ServiceJob[]         @relation("ServiceAssignee")
+  serviceTimeEntries        ServiceTimeEntry[]   @relation("ServiceTimePerson")
+  authoredServiceTime       ServiceTimeEntry[]   @relation("ServiceTimeAuthor")
+  serviceTimeReviews        ServiceTimeReview[]  @relation("ServiceTimeReviewer")
+  serviceAcceptanceRecords ServiceAcceptanceRecord[]
+  servicePartUsages         ServicePartUsage[]   @relation("ServicePartAuthor")
+  servicePartReturns        ServicePartUsage[]   @relation("ServicePartReturnAuthor")
+  servicePartReturnEntries  ServicePartReturn[]  @relation("ServicePartReturnEntryAuthor")
+  customerCreditsCreated    CustomerCreditNote[] @relation("CreditAuthor")
+  customerCreditsIssued     CustomerCreditNote[] @relation("CreditIssuer")
+  customerCreditsPublished  CustomerCreditNote[] @relation("CreditPublisher")
+  customerInvoicesPublished CustomerInvoice[]    @relation("InvoicePublisher")
 
   @@unique([tenantId, id])
   @@unique([tenantId, email])
@@ -944,6 +1180,7 @@ model User {
 }
 
 model UserPreferences {
+  timeZone           String?
   id                 String    @id @default(cuid())
   userId             String    @unique
   deskLayout         Json      @default("{}")
@@ -1121,23 +1358,29 @@ model AuditLog {
 
 // Document metadata only — binary storage (S3/local) is referenced by storageKey.
 model Document {
-  qualityEvidence QualityEvidence[]
-  id           String   @id @default(cuid())
-  tenantId     String
-  entityType   String
-  entityId     String
-  fileName     String
-  mimeType     String
-  sizeBytes    Int
-  storageKey   String
-  uploadedById String?
-  createdAt    DateTime @default(now())
+  ledgerCurrencyEvidence LedgerCurrencyEvidence[]
+  supplierInvoiceEvidence SupplierInvoiceEvidence[]
+  supplierCreditEvidence SupplierCreditEvidence[]
+  stockExitEvidence WmsStockExitEvidence[]
+  customerCredits     CustomerCreditNote[]
+  customerInvoicePdfs CustomerInvoice[]
+  qualityEvidence     QualityEvidence[]
+  id                  String               @id @default(cuid())
+  tenantId            String
+  entityType          String
+  entityId            String
+  fileName            String
+  mimeType            String
+  sizeBytes           Int
+  storageKey          String
+  uploadedById        String?
+  createdAt           DateTime             @default(now())
 
   tenant     Tenant @relation(fields: [tenantId], references: [id])
   uploadedBy User?  @relation(fields: [uploadedById], references: [id])
 
-  @@index([tenantId, entityType, entityId])
   @@unique([tenantId, id])
+  @@index([tenantId, entityType, entityId])
   @@map("documents")
 }
 
@@ -1173,18 +1416,18 @@ enum IntegrationStatus {
 }
 
 model Integration {
-  id       String            @id @default(cuid())
-  tenantId String
-  key      String // e.g. "telematics-samsara", "edi-204"
-  name     String
-  status   IntegrationStatus @default(DISABLED)
-  config   Json              @default("{}")
+  id               String            @id @default(cuid())
+  tenantId         String
+  key              String // e.g. "telematics-samsara", "edi-204"
+  name             String
+  status           IntegrationStatus @default(DISABLED)
+  config           Json              @default("{}")
   // sha256 of the inbound webhook token (POST /public/hooks/:inboundToken).
   // Column, not config: the receiver looks the integration up BY this hash, and
   // an encrypted Json blob cannot be indexed. The raw token is shown once.
-  inboundTokenHash String?  @unique
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  inboundTokenHash String?           @unique
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   tenant     Tenant            @relation(fields: [tenantId], references: [id])
   deliveries WebhookDelivery[]
@@ -1257,22 +1500,26 @@ model TenantModule {
 // ============================================================================
 
 model Customer {
-  businessPartner BusinessPartner?
-  id          String   @id @default(cuid())
-  tenantId    String
-  code        String
-  name        String
-  contactName String?
-  email       String?
-  phone       String?
-  notes       String?
+  businessProfile  PartyBusinessProfile?
+  directoryEntries PartyDirectoryEntry[]
+  billingAddress   Json?
+  shippingAddress  Json?
+  businessPartner  BusinessPartner?
+  id               String                @id @default(cuid())
+  tenantId         String
+  code             String
+  name             String
+  contactName      String?
+  email            String?
+  phone            String?
+  notes            String?
   // Customer Portal capability link (module customer-portal must be enabled).
-  portalToken String?  @unique
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  portalToken      String?               @unique
+  isActive         Boolean               @default(true)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
 
-  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  tenant           Tenant                @relation(fields: [tenantId], references: [id])
   locations        Location[]
   transportOrders  TransportOrder[]
   rates            Rate[]
@@ -1286,6 +1533,76 @@ model Customer {
   @@unique([tenantId, id])
   @@index([tenantId])
   @@map("customers")
+}
+
+enum PartyDirectoryKind {
+  ADDRESS
+  CONTACT
+}
+
+// Exactly one owner, enforced by SQL. No portal user, sales role or stock location.
+// Private, descriptive profile. Never a source of workflow, tax or portal authority.
+model PartyBusinessProfile {
+  id         String           @id @default(cuid())
+  tenantId   String
+  customerId String?
+  partnerId  String?
+  companyId  String?
+  customer   Customer?        @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Restrict, map: "party_profile_customer_fk")
+  partner    BusinessPartner? @relation(fields: [tenantId, partnerId], references: [tenantId, id], onDelete: Restrict, map: "party_profile_partner_fk")
+  company    CrmCompany?      @relation(fields: [tenantId, companyId], references: [tenantId, id], onDelete: Restrict, map: "party_profile_company_fk")
+  data       Json
+  version    Int              @default(1)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@unique([tenantId, customerId])
+  @@unique([tenantId, partnerId])
+  @@unique([tenantId, companyId])
+  @@map("party_business_profiles")
+}
+
+model PartyDirectoryEntry {
+  id         String                   @id @default(cuid())
+  tenantId   String
+  customerId String?
+  partnerId  String?
+  companyId  String?
+  company    CrmCompany?              @relation(fields: [tenantId, companyId], references: [tenantId, id], onDelete: Restrict)
+  customer   Customer?                @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Restrict)
+  partner    BusinessPartner?         @relation(fields: [tenantId, partnerId], references: [tenantId, id], onDelete: Restrict)
+  kind       PartyDirectoryKind
+  label      String
+  data       Json
+  version    Int                      @default(1)
+  createdAt  DateTime                 @default(now())
+  updatedAt  DateTime                 @updatedAt
+  revisions  PartyDirectoryRevision[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, customerId, kind])
+  @@index([tenantId, partnerId, kind])
+  @@index([tenantId, companyId, kind])
+  @@map("party_directory_entries")
+}
+
+// Append-only versions and idempotency receipt are written in the same transaction.
+model PartyDirectoryRevision {
+  id           String              @id @default(cuid())
+  tenantId     String
+  entryId      String
+  entry        PartyDirectoryEntry @relation(fields: [tenantId, entryId], references: [tenantId, id], onDelete: Restrict)
+  version      Int
+  snapshot     Json
+  actorId      String
+  reason       String
+  operationKey String
+  fingerprint  String
+  createdAt    DateTime            @default(now())
+
+  @@unique([tenantId, entryId, version])
+  @@unique([tenantId, actorId, operationKey])
+  @@map("party_directory_revisions")
 }
 
 // Mirrors PortalUserRole from @pulsar/shared/portal (rule 3).
@@ -1419,31 +1736,31 @@ enum LocationType {
 }
 
 model Location {
-  workingCalendars WorkingCalendar[]
-  mrpPreparations MrpPreparation[]
+  workingCalendars    WorkingCalendar[]
+  mrpPreparations     MrpPreparation[]
   manufacturingOrders ManufacturingOrder[]
-  mrpPolicies MrpItemPolicy[]
-  mrpEntries MrpEntry[]
-  mrpRuns MrpRun[]
-  id           String       @id @default(cuid())
-  tenantId     String
-  customerId   String?
-  code         String
-  name         String
-  type         LocationType @default(OTHER)
-  addressLine1 String
-  addressLine2 String?
-  city         String
-  state        String?
-  postalCode   String?
-  country      String       @default("CA")
-  latitude     Float?
-  longitude    Float?
-  timezone     String?
-  yardPlan     Json?        // Display-only Yard buildings / zones; never operational state
-  isActive     Boolean      @default(true)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  mrpPolicies         MrpItemPolicy[]
+  mrpEntries          MrpEntry[]
+  mrpRuns             MrpRun[]
+  id                  String               @id @default(cuid())
+  tenantId            String
+  customerId          String?
+  code                String
+  name                String
+  type                LocationType         @default(OTHER)
+  addressLine1        String
+  addressLine2        String?
+  city                String
+  state               String?
+  postalCode          String?
+  country             String               @default("CA")
+  latitude            Float?
+  longitude           Float?
+  timezone            String?
+  yardPlan            Json? // Display-only Yard buildings / zones; never operational state
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   tenant               Tenant            @relation(fields: [tenantId], references: [id])
   customer             Customer?         @relation(fields: [customerId], references: [id])
@@ -1524,9 +1841,9 @@ model Driver {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id])
-  carrier Carrier? @relation(fields: [carrierId], references: [id])
-  loads   Load[]
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  carrier           Carrier?           @relation(fields: [carrierId], references: [id])
+  loads             Load[]
   inspectionReports InspectionReport[]
 
   @@index([tenantId])
@@ -1548,21 +1865,21 @@ enum VehicleType {
 }
 
 model Vehicle {
-  id         String      @id @default(cuid())
-  tenantId   String
-  carrierId  String?
-  unitNumber String
-  type       VehicleType @default(TRACTOR)
-  make       String?
-  model      String?
-  year       Int?
-  vin        String?
-  plate      String?
-  status     AssetStatus @default(AVAILABLE)
-  fixedAssetId String?   // soft FK to billing FixedAsset (book value display; ownership checked in service)
-  customData Json?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  id           String      @id @default(cuid())
+  tenantId     String
+  carrierId    String?
+  unitNumber   String
+  type         VehicleType @default(TRACTOR)
+  make         String?
+  model        String?
+  year         Int?
+  vin          String?
+  plate        String?
+  status       AssetStatus @default(AVAILABLE)
+  fixedAssetId String? // soft FK to billing FixedAsset (book value display; ownership checked in service)
+  customData   Json?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   tenant               Tenant                @relation(fields: [tenantId], references: [id])
   carrier              Carrier?              @relation(fields: [carrierId], references: [id])
@@ -1597,7 +1914,7 @@ model Trailer {
   capacityPallets  Int?
   plate            String?
   status           AssetStatus @default(AVAILABLE)
-  fixedAssetId     String?     // soft FK to billing FixedAsset (book value display; ownership checked in service)
+  fixedAssetId     String? // soft FK to billing FixedAsset (book value display; ownership checked in service)
   customData       Json?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
@@ -1685,6 +2002,7 @@ model TransportOrder {
   palletCount            Int?
   notes                  String?
   customData             Json?
+  documentCoordinates    Json?
   createdById            String?
   // Fulfillment bridge (CRM → TMS). Null for ordinary transport orders. When a
   // transport order is created from a CRM sales order, these carry the source
@@ -1918,24 +2236,24 @@ enum TenderStatus {
 // Offer sent to a carrier to haul a load. The carrier responds through a
 // public tokenized link — no Pulsar account required.
 model Tender {
-  id            String       @id @default(cuid())
-  tenantId      String
-  loadId        String
-  carrierId     String
-  status        TenderStatus @default(PENDING)
+  id              String       @id @default(cuid())
+  tenantId        String
+  loadId          String
+  carrierId       String
+  status          TenderStatus @default(PENDING)
   // Part of an automatic sequence: on decline/expiry the next carrier in the
   // lane preference list is tendered automatically.
-  isAuto        Boolean      @default(false)
-  token         String       @unique
-  message       String?
-  declineReason String?
-  expiresAt     DateTime
-  sentAt        DateTime     @default(now())
-  respondedAt   DateTime?
+  isAuto          Boolean      @default(false)
+  token           String       @unique
+  message         String?
+  declineReason   String?
+  expiresAt       DateTime
+  sentAt          DateTime     @default(now())
+  respondedAt     DateTime?
   // Frozen offer snapshot taken at send time from Load.estimatedCost/costCurrency.
   // The carrier-facing projection reads THIS, never the live load cost — a later
   // recompute of the load must not change an offer already sent (immutability).
-  offeredAmount   Decimal?   @db.Decimal(12, 2)
+  offeredAmount   Decimal?     @db.Decimal(12, 2)
   offeredCurrency String?
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
@@ -2318,6 +2636,229 @@ enum FreightAuditStatus {
 // Draft invoice grouping the estimated costs of a carrier's completed,
 // not-yet-invoiced loads. Reconciled against the carrier's actual invoice
 // (tolerance on gross variance), disputed when over, PAID tracked.
+enum SupplierInvoiceStatus {
+  DRAFT
+  QUALIFIED
+  CANCELLED
+}
+
+model SupplierInvoice {
+  schedules SupplierInvoiceSchedule[]
+  credits SupplierCredit[]
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  number String
+  supplierId String
+  supplier BusinessPartner @relation(fields: [tenantId, supplierId], references: [tenantId, id], onDelete: Restrict)
+  supplierSnapshot Json
+  externalNumber String
+  externalNumberKey String
+  invoiceDate DateTime @db.Date
+  dueDate DateTime? @db.Date
+  currency String
+  status SupplierInvoiceStatus @default(DRAFT)
+  notes String
+  netAmount Decimal @db.Decimal(12, 2)
+  taxAmount Decimal @db.Decimal(12, 2)
+  totalAmount Decimal @db.Decimal(12, 2)
+  taxes Json
+  originalEvidenceId String?
+  originalEvidence SupplierInvoiceEvidence? @relation("SupplierInvoiceOriginal", fields: [tenantId, id, originalEvidenceId], references: [tenantId, invoiceId, id], onDelete: Restrict)
+  qualificationNote String?
+  closedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lines SupplierInvoiceLine[]
+  evidence SupplierInvoiceEvidence[] @relation("SupplierInvoiceFiles")
+  operations SupplierInvoiceOperation[]
+  @@unique([tenantId, id])
+  @@unique([tenantId, number])
+  @@unique([tenantId, supplierId, externalNumberKey])
+  @@index([tenantId, status, createdAt])
+  @@map("supplier_invoices")
+}
+
+model SupplierInvoiceLine {
+  creditLines SupplierCreditLine[]
+  id String @id @default(cuid())
+  tenantId String
+  invoiceId String
+  invoice SupplierInvoice @relation(fields: [tenantId, invoiceId], references: [tenantId, id], onDelete: Restrict)
+  position Int
+  description String
+  quantity Decimal @db.Decimal(13, 4)
+  unit String
+  netAmount Decimal @db.Decimal(12, 2)
+  purchaseLineId String?
+  purchaseLine SupplierOrderLine? @relation(fields: [tenantId, purchaseLineId], references: [tenantId, id], onDelete: Restrict)
+  purchaseSnapshot Json?
+  @@unique([tenantId, id])
+  @@unique([tenantId, invoiceId, position])
+  @@map("supplier_invoice_lines")
+}
+
+model SupplierInvoiceEvidence {
+  id String @id @default(cuid())
+  tenantId String
+  invoiceId String
+  invoice SupplierInvoice @relation("SupplierInvoiceFiles", fields: [tenantId, invoiceId], references: [tenantId, id], onDelete: Restrict)
+  originals SupplierInvoice[] @relation("SupplierInvoiceOriginal")
+  documentId String
+  document Document @relation(fields: [tenantId, documentId], references: [tenantId, id], onDelete: Restrict)
+  caption String
+  sha256 String
+  operationKey String
+  fingerprint String
+  createdAt DateTime @default(now())
+  @@unique([tenantId, id])
+  @@unique([tenantId, invoiceId, id])
+  @@unique([tenantId, documentId])
+  @@unique([tenantId, operationKey])
+  @@map("supplier_invoice_evidence")
+}
+
+model SupplierInvoiceOperation {
+  id String @id @default(cuid())
+  tenantId String
+  invoiceId String
+  invoice SupplierInvoice @relation(fields: [tenantId, invoiceId], references: [tenantId, id], onDelete: Restrict)
+  actorId String
+  actor User @relation(fields: [tenantId, actorId], references: [tenantId, id], onDelete: Restrict)
+  operationKey String
+  fingerprint String
+  kind String
+  createdAt DateTime @default(now())
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, invoiceId, createdAt])
+  @@map("supplier_invoice_operations")
+}
+
+enum SupplierCreditStatus {
+  DRAFT
+  QUALIFIED
+  CANCELLED
+}
+
+model SupplierCredit {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  invoiceId String
+  invoice SupplierInvoice @relation(fields: [tenantId, invoiceId], references: [tenantId, id], onDelete: Restrict)
+  supplierId String
+  supplier BusinessPartner @relation(fields:[tenantId,supplierId], references:[tenantId,id], onDelete:Restrict)
+  number String
+  externalNumber String
+  externalNumberKey String
+  creditDate DateTime @db.Date
+  reason String
+  status SupplierCreditStatus @default(DRAFT)
+  netAmount Decimal @db.Decimal(12,2)
+  taxAmount Decimal @db.Decimal(12,2)
+  totalAmount Decimal @db.Decimal(12,2)
+  taxes Json
+  returnReportId String?
+  returnReport SupplierReturnReport? @relation(fields: [tenantId, returnReportId], references: [tenantId,id], onDelete: Restrict)
+  returnSnapshot Json?
+  originalEvidenceId String?
+  originalEvidence SupplierCreditEvidence? @relation("SupplierCreditOriginal", fields: [tenantId,id,originalEvidenceId], references: [tenantId,creditId,id], onDelete: Restrict)
+  qualificationNote String?
+  closedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lines SupplierCreditLine[]
+  evidence SupplierCreditEvidence[] @relation("SupplierCreditFiles")
+  operations SupplierCreditOperation[]
+  @@unique([tenantId,id])
+  @@unique([tenantId,number])
+  @@unique([tenantId,supplierId,externalNumberKey])
+  @@index([tenantId,invoiceId,status])
+  @@map("supplier_credits")
+}
+
+model SupplierCreditLine {
+  id String @id @default(cuid())
+  tenantId String
+  creditId String
+  credit SupplierCredit @relation(fields: [tenantId,creditId], references: [tenantId,id], onDelete: Restrict)
+  invoiceLineId String
+  invoiceLine SupplierInvoiceLine @relation(fields: [tenantId,invoiceLineId], references: [tenantId,id], onDelete: Restrict)
+  netAmount Decimal @db.Decimal(12,2)
+  @@unique([tenantId,creditId,invoiceLineId])
+  @@map("supplier_credit_lines")
+}
+
+model SupplierCreditEvidence {
+  id String @id @default(cuid())
+  tenantId String
+  creditId String
+  credit SupplierCredit @relation("SupplierCreditFiles", fields: [tenantId,creditId], references: [tenantId,id], onDelete: Restrict)
+  originals SupplierCredit[] @relation("SupplierCreditOriginal")
+  documentId String
+  document Document @relation(fields: [tenantId,documentId], references: [tenantId,id], onDelete: Restrict)
+  caption String
+  sha256 String
+  operationKey String
+  fingerprint String
+  createdAt DateTime @default(now())
+  @@unique([tenantId,id])
+  @@unique([tenantId,creditId,id])
+  @@unique([tenantId,documentId])
+  @@unique([tenantId,operationKey])
+  @@map("supplier_credit_evidence")
+}
+
+model SupplierCreditOperation {
+  id String @id @default(cuid())
+  tenantId String
+  creditId String
+  credit SupplierCredit @relation(fields: [tenantId,creditId], references: [tenantId,id], onDelete: Restrict)
+  actorId String
+  actor User @relation(fields: [tenantId,actorId], references: [tenantId,id], onDelete: Restrict)
+  operationKey String
+  fingerprint String
+  kind String
+  createdAt DateTime @default(now())
+  @@unique([tenantId,operationKey])
+  @@index([tenantId,creditId,createdAt])
+  @@map("supplier_credit_operations")
+}
+
+enum SupplierScheduleStatus {
+  CONFIRMED
+  WITHDRAWN
+}
+
+model SupplierInvoiceSchedule {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields:[tenantId], references:[id])
+  invoiceId String
+  invoice SupplierInvoice @relation(fields:[tenantId,invoiceId], references:[tenantId,id], onDelete:Restrict)
+  revision Int
+  status SupplierScheduleStatus
+  previousRevisionId String?
+  previousRevision SupplierInvoiceSchedule? @relation("SupplierScheduleHistory", fields:[tenantId,invoiceId,previousRevisionId], references:[tenantId,invoiceId,id], onDelete:Restrict, map: "supplier_invoice_schedules_tenantId_invoiceId_previousRevis_fke")
+  nextRevisions SupplierInvoiceSchedule[] @relation("SupplierScheduleHistory")
+  amountSnapshot Decimal @db.Decimal(12,2)
+  currencySnapshot String
+  creditsSnapshot Json
+  installments Json
+  note String
+  actorId String
+  actor User @relation(fields:[tenantId,actorId], references:[tenantId,id], onDelete:Restrict)
+  operationKey String
+  fingerprint String
+  createdAt DateTime @default(now())
+  @@unique([tenantId,id])
+  @@unique([tenantId,invoiceId,id])
+  @@unique([tenantId,invoiceId,revision])
+  @@unique([tenantId,previousRevisionId])
+  @@unique([tenantId,operationKey])
+  @@map("supplier_invoice_schedules")
+}
+
 model Invoice {
   id            String        @id @default(cuid())
   tenantId      String
@@ -2347,9 +2888,9 @@ model Invoice {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant  Tenant        @relation(fields: [tenantId], references: [id])
-  carrier Carrier       @relation(fields: [carrierId], references: [id])
-  lines   InvoiceLine[]
+  tenant        Tenant                  @relation(fields: [tenantId], references: [id])
+  carrier       Carrier                 @relation(fields: [carrierId], references: [id])
+  lines         InvoiceLine[]
   incomingAudit IncomingCarrierInvoice?
 
   @@unique([tenantId, id])
@@ -2385,62 +2926,142 @@ enum CustomerInvoiceStatus {
 // CUSTOMER's rates (rating engine 7.1), one statement per currency encountered.
 // Wording: emails/UI say "billing statement" until taxes exist (spec 7.3).
 model CustomerInvoice {
-  serviceBatch ServiceInvoiceBatch?
-  id            String                @id @default(cuid())
-  tenantId      String
-  invoiceNumber String
-  customerId    String
-  status        CustomerInvoiceStatus @default(DRAFT)
-  currency      String                @default("CAD")
-  totalAmount   Decimal               @db.Decimal(12, 2)
-  amountPaid    Decimal               @default(0) @db.Decimal(12, 2)
-  taxAmount     Decimal               @default(0) @db.Decimal(12, 2)
-  taxTemplateId String?
-  taxDetail     Json?
-  approvedAt    DateTime?
-  sentAt        DateTime?
-  paidAt        DateTime?
-  customData    Json?
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
+  documentSnapshot       Json?
+  publicationFingerprint String?
+  publishedAt            DateTime?
+  publishedById          String?
+  documentId             String?
+  documentHash           String?
+  publishedBy            User?                 @relation("InvoicePublisher", fields: [tenantId, publishedById], references: [tenantId, id], onDelete: Restrict)
+  document               Document?             @relation(fields: [tenantId, documentId], references: [tenantId, id], onDelete: Restrict)
+  documentCoordinates    Json?
+  creditedAmount         Decimal               @default(0) @db.Decimal(12, 2)
+  creditVersion          Int                   @default(0)
+  creditNotes            CustomerCreditNote[]
+  serviceBatch           ServiceInvoiceBatch?
+  id                     String                @id @default(cuid())
+  tenantId               String
+  invoiceNumber          String
+  customerId             String
+  status                 CustomerInvoiceStatus @default(DRAFT)
+  currency               String                @default("CAD")
+  totalAmount            Decimal               @db.Decimal(12, 2)
+  amountPaid             Decimal               @default(0) @db.Decimal(12, 2)
+  taxAmount              Decimal               @default(0) @db.Decimal(12, 2)
+  taxTemplateId          String?
+  taxDetail              Json?
+  approvedAt             DateTime?
+  sentAt                 DateTime?
+  paidAt                 DateTime?
+  customData             Json?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
 
   tenant   Tenant                @relation(fields: [tenantId], references: [id])
   customer Customer              @relation(fields: [customerId], references: [id])
   lines    CustomerInvoiceLine[]
 
   @@unique([tenantId, invoiceNumber])
+  @@unique([tenantId, id])
   @@index([tenantId, status])
   @@index([tenantId, customerId])
   @@map("customer_invoices")
 }
 
 model CustomerInvoiceLine {
-  serviceTimeEntryId String? @unique
-  serviceTimeEntry ServiceTimeEntry? @relation(fields: [serviceTimeEntryId], references: [id], onDelete: Restrict)
-  servicePartUsageId String? @unique
-  servicePartUsage ServicePartUsage? @relation(fields: [servicePartUsageId], references: [id], onDelete: Restrict)
-  id                String   @id @default(cuid())
-  customerInvoiceId String
+  credits            CustomerCreditLine[]
+  serviceTimeEntryId String?              @unique
+  serviceTimeEntry   ServiceTimeEntry?    @relation(fields: [serviceTimeEntryId], references: [id], onDelete: Restrict)
+  servicePartUsageId String?              @unique
+  servicePartUsage   ServicePartUsage?    @relation(fields: [servicePartUsageId], references: [id], onDelete: Restrict)
+  id                 String               @id @default(cuid())
+  customerInvoiceId  String
   // One line per order; the unique prevents double-billing an order. Freed by
   // deleting a DRAFT statement (cascade) — the only escape path by design.
   // Nullable to support free (non-order) invoice lines.
-  transportOrderId  String?  @unique
-  description       String
-  amount            Decimal  @db.Decimal(12, 2)
+  transportOrderId   String?              @unique
+  description        String
+  amount             Decimal              @db.Decimal(12, 2)
   // Frozen sell-side snapshot (customer rate as used + inputs + lines), same
   // self-contained structure as Load.costDetail. Never recomputed once APPROVED.
   // Nullable for free lines that have no rate snapshot.
-  priceDetail       Json?
+  priceDetail        Json?
   // Free-line fields (null on order-linked lines)
-  source            String?
-  quantity          Decimal?
-  unitPrice         Decimal?
-  salesOrderLineId  String?
+  source             String?
+  quantity           Decimal?
+  unitPrice          Decimal?
+  salesOrderLineId   String?
 
   customerInvoice CustomerInvoice @relation(fields: [customerInvoiceId], references: [id], onDelete: Cascade)
   transportOrder  TransportOrder? @relation(fields: [transportOrderId], references: [id], onDelete: Restrict)
 
   @@map("customer_invoice_lines")
+}
+
+enum CustomerCreditStatus {
+  DRAFT
+  ISSUED
+  CANCELLED
+}
+
+model CustomerCreditNote {
+  id                     String               @id @default(cuid())
+  tenantId               String
+  invoiceId              String
+  number                 String
+  status                 CustomerCreditStatus @default(DRAFT)
+  reason                 String
+  currency               String
+  invoiceVersion         Int
+  netAmount              Decimal              @db.Decimal(12, 2)
+  taxAmount              Decimal              @db.Decimal(12, 2)
+  totalAmount            Decimal              @db.Decimal(12, 2)
+  createdById            String
+  issuedById             String?
+  createdAt              DateTime             @default(now())
+  issuedAt               DateTime?
+  cancelledAt            DateTime?
+  operationKey           String
+  fingerprint            String
+  documentSnapshot       Json?
+  publicationFingerprint String?
+  publishedAt            DateTime?
+  publishedById          String?
+  documentId             String?
+  documentHash           String?
+  publishedBy            User?                @relation("CreditPublisher", fields: [tenantId, publishedById], references: [tenantId, id], onDelete: Restrict)
+  document               Document?            @relation(fields: [tenantId, documentId], references: [tenantId, id], onDelete: Restrict)
+  invoice                CustomerInvoice      @relation(fields: [tenantId, invoiceId], references: [tenantId, id])
+  createdBy              User                 @relation("CreditAuthor", fields: [tenantId, createdById], references: [tenantId, id])
+  issuedBy               User?                @relation("CreditIssuer", fields: [tenantId, issuedById], references: [tenantId, id], onDelete: Restrict)
+  lines                  CustomerCreditLine[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, number])
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, invoiceId, createdAt])
+  @@map("customer_credit_notes")
+}
+
+model CustomerCreditLine {
+  id            String              @id @default(cuid())
+  tenantId      String
+  creditNoteId  String
+  invoiceLineId String
+  description   String
+  quantity      Decimal             @db.Decimal(14, 4)
+  netAmount     Decimal             @db.Decimal(12, 2)
+  taxAmount     Decimal             @db.Decimal(12, 2)
+  totalAmount   Decimal             @db.Decimal(12, 2)
+  taxDetail     Json
+  creditNote    CustomerCreditNote  @relation(fields: [tenantId, creditNoteId], references: [tenantId, id])
+  invoiceLine   CustomerInvoiceLine @relation(fields: [invoiceLineId], references: [id])
+  stockReturns  ServicePartReturn[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, creditNoteId, invoiceLineId])
+  @@index([tenantId, invoiceLineId])
+  @@map("customer_credit_lines")
 }
 
 model IncomingCarrierInvoice {
@@ -2470,10 +3091,10 @@ model IncomingCarrierInvoice {
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
-  tenant  Tenant                @relation(fields: [tenantId], references: [id])
-  carrier Carrier               @relation(fields: [carrierId], references: [id])
-  lines   IncomingInvoiceLine[]
-  accountingInvoice Invoice? @relation(fields: [tenantId, accountingInvoiceId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict, map: "incoming_carrier_invoices_accounting_invoice_fkey")
+  tenant            Tenant                @relation(fields: [tenantId], references: [id])
+  carrier           Carrier               @relation(fields: [carrierId], references: [id])
+  lines             IncomingInvoiceLine[]
+  accountingInvoice Invoice?              @relation(fields: [tenantId, accountingInvoiceId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict, map: "incoming_carrier_invoices_accounting_invoice_fkey")
 
   @@unique([tenantId, accountingInvoiceId])
   @@index([tenantId, status])
@@ -2853,16 +3474,16 @@ enum OdometerSource {
 /// Append-only odometer history per asset (vehicle XOR trailer). Drives cost/km and
 /// utilisation KPIs. Never the source of asset status (rule 32 preserved).
 model OdometerReading {
-  id        String         @id @default(cuid())
-  tenantId  String
-  vehicleId String?
-  trailerId String?
-  readingKm Int
-  readAt    DateTime       @default(now())
-  source    OdometerSource @default(MANUAL)
-  note      String?
+  id          String         @id @default(cuid())
+  tenantId    String
+  vehicleId   String?
+  trailerId   String?
+  readingKm   Int
+  readAt      DateTime       @default(now())
+  source      OdometerSource @default(MANUAL)
+  note        String?
   createdById String?
-  createdAt DateTime       @default(now())
+  createdAt   DateTime       @default(now())
 
   tenant  Tenant   @relation(fields: [tenantId], references: [id])
   vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
@@ -2927,15 +3548,15 @@ enum InspectionResult {
 
 /// Reusable DVIR / inspection checklist template (a named list of items).
 model InspectionTemplate {
-  id        String                   @id @default(cuid())
+  id        String            @id @default(cuid())
   tenantId  String
   name      String
-  appliesTo InspectionSubject        @default(ANY)
-  isActive  Boolean                  @default(true)
-  createdAt DateTime                 @default(now())
-  updatedAt DateTime                 @updatedAt
+  appliesTo InspectionSubject @default(ANY)
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 
-  tenant  Tenant                     @relation(fields: [tenantId], references: [id])
+  tenant  Tenant                   @relation(fields: [tenantId], references: [id])
   items   InspectionTemplateItem[]
   reports InspectionReport[]
 
@@ -2944,12 +3565,12 @@ model InspectionTemplate {
 }
 
 model InspectionTemplateItem {
-  id         String             @id @default(cuid())
+  id         String  @id @default(cuid())
   tenantId   String
   templateId String
   label      String
   category   String?
-  order      Int                @default(0)
+  order      Int     @default(0)
 
   tenant   Tenant             @relation(fields: [tenantId], references: [id])
   template InspectionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
@@ -3111,6 +3732,8 @@ model CustomFieldDefinition {
 }
 
 enum StockMovementType {
+  DISPOSAL
+  SUPPLIER_RETURN
   CONSUMPTION
   PRODUCTION
   RECEIPT
@@ -3139,32 +3762,35 @@ enum PickOrderStatus {
 }
 
 model WmsItem {
-  mrpPreparations MrpPreparation[]
+  stockExits WmsStockExit[]
+  lotTracked         Boolean             @default(false)
+  lots               WmsLot[]
+  mrpPreparations    MrpPreparation[]
   mrpProductMappings MrpProductMapping[]
   outputBomRevisions BomRevision[]
-  bomRevisionLines BomRevisionLine[]
-  mrpPolicies MrpItemPolicy[]
-  mrpEntries MrpEntry[]
-  id           String   @id @default(cuid())
-  tenantId     String
-  sku          String
-  name         String
-  unit         String   @default("EA")
-  barcode      String?
-  reorderPoint Int?
-  reorderQty   Int?
-  isActive     Boolean  @default(true)
-  createdById  String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  bomRevisionLines   BomRevisionLine[]
+  mrpPolicies        MrpItemPolicy[]
+  mrpEntries         MrpEntry[]
+  id                 String              @id @default(cuid())
+  tenantId           String
+  sku                String
+  name               String
+  unit               String              @default("EA")
+  barcode            String?
+  reorderPoint       Int?
+  reorderQty         Int?
+  isActive           Boolean             @default(true)
+  createdById        String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
-  tenant          Tenant           @relation(fields: [tenantId], references: [id])
-  levels          InventoryLevel[]
-  movements       StockMovement[]
-  receiptLines    ReceiptLine[]
-  pickLines       PickLine[]
-  cycleCountLines CycleCountLine[]
-  stockLink CatalogStockLink?
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  levels            InventoryLevel[]
+  movements         StockMovement[]
+  receiptLines      ReceiptLine[]
+  pickLines         PickLine[]
+  cycleCountLines   CycleCountLine[]
+  stockLink         CatalogStockLink?
   servicePartUsages ServicePartUsage[]
 
   @@unique([tenantId, sku])
@@ -3184,17 +3810,18 @@ enum CycleCountStatus {
 /// the physical count, then reconcile — variances post ADJUSTMENT movements via
 /// InventoryService (rule 33; never below 0).
 model CycleCount {
-  id           String           @id @default(cuid())
-  tenantId     String
-  number       String
-  binId        String
-  status       CycleCountStatus @default(OPEN)
-  note         String?
-  countedAt    DateTime?
-  reconciledAt DateTime?
-  createdById  String?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  stockMovementCount Int? // Immutable bin ledger watermark; NULL = historical, not reconcilable.
+  id                 String           @id @default(cuid())
+  tenantId           String
+  number             String
+  binId              String
+  status             CycleCountStatus @default(OPEN)
+  note               String?
+  countedAt          DateTime?
+  reconciledAt       DateTime?
+  createdById        String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   tenant Tenant           @relation(fields: [tenantId], references: [id])
   bin    Bin              @relation(fields: [binId], references: [id])
@@ -3207,6 +3834,9 @@ model CycleCount {
 }
 
 model CycleCountLine {
+  lotId        String?
+  unitSnapshot String?
+  lot          WmsLot?  @relation(fields: [tenantId, itemId, lotId], references: [tenantId, itemId, id], onDelete: Restrict, map: "wms_cycle_count_lines_lot_fk")
   id           String   @id @default(cuid())
   tenantId     String
   cycleCountId String
@@ -3224,24 +3854,26 @@ model CycleCountLine {
 }
 
 model Bin {
-  id         String   @id @default(cuid())
-  tenantId   String
-  locationId String
-  code       String
-  zone       String?  // Display grouping only; never a stock location or capacity rule.
-  kind       BinKind  @default(STORAGE)
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  stockExits WmsStockExit[]
+  lotBalances WmsLotBalance[]
+  id          String          @id @default(cuid())
+  tenantId    String
+  locationId  String
+  code        String
+  zone        String? // Display grouping only; never a stock location or capacity rule.
+  kind        BinKind         @default(STORAGE)
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
-  tenant        Tenant           @relation(fields: [tenantId], references: [id])
-  location      Location         @relation(fields: [locationId], references: [id])
-  levels        InventoryLevel[]
-  movementsFrom StockMovement[]  @relation("MovementFromBin")
-  movementsTo   StockMovement[]  @relation("MovementToBin")
-  receiptLines  ReceiptLine[]
-  pickLines     PickLine[]
-  cycleCounts   CycleCount[]
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  location          Location           @relation(fields: [locationId], references: [id])
+  levels            InventoryLevel[]
+  movementsFrom     StockMovement[]    @relation("MovementFromBin")
+  movementsTo       StockMovement[]    @relation("MovementToBin")
+  receiptLines      ReceiptLine[]
+  pickLines         PickLine[]
+  cycleCounts       CycleCount[]
   servicePartUsages ServicePartUsage[]
 
   @@unique([tenantId, locationId, code])
@@ -3269,62 +3901,67 @@ model InventoryLevel {
 }
 
 model StockMovement {
-  id          String            @id @default(cuid())
-  tenantId    String
-  type        StockMovementType
-  itemId      String
-  fromBinId   String?
-  toBinId     String?
-  qty         Decimal           @db.Decimal(14, 3)
-  refType     String?
-  refId       String?
-  note        String?
-  createdById String?
-  createdAt   DateTime          @default(now())
+  stockExit WmsStockExit?
+  lotId              String?
+  lot                WmsLot?           @relation(fields: [tenantId, itemId, lotId], references: [tenantId, itemId, id], onDelete: Restrict, map: "wms_stock_movements_lot_fk")
+  id                 String            @id @default(cuid())
+  tenantId           String
+  type               StockMovementType
+  itemId             String
+  fromBinId          String?
+  toBinId            String?
+  qty                Decimal           @db.Decimal(14, 3)
+  refType            String?
+  refId              String?
+  note               String?
+  createdById        String?
+  createdAt          DateTime          @default(now())
   // Durable identity for explicit MOVE requests; legacy/internal movements keep NULL.
-  operationKey String?
+  operationKey       String?
   requestFingerprint String?
-  unitSnapshot String?
+  unitSnapshot       String?
 
-  tenant  Tenant  @relation(fields: [tenantId], references: [id])
-  item    WmsItem @relation(fields: [itemId], references: [id])
-  fromBin Bin?    @relation("MovementFromBin", fields: [fromBinId], references: [id])
-  toBin   Bin?    @relation("MovementToBin", fields: [toBinId], references: [id])
-  servicePartIssue ServicePartUsage? @relation("ServicePartIssue")
-  servicePartReturn ServicePartUsage? @relation("ServicePartReturn")
+  tenant                 Tenant             @relation(fields: [tenantId], references: [id])
+  item                   WmsItem            @relation(fields: [itemId], references: [id])
+  fromBin                Bin?               @relation("MovementFromBin", fields: [fromBinId], references: [id])
+  toBin                  Bin?               @relation("MovementToBin", fields: [toBinId], references: [id])
+  servicePartIssue       ServicePartUsage?  @relation("ServicePartIssue")
+  servicePartReturn      ServicePartUsage?  @relation("ServicePartReturn")
+  servicePartReturnEntry ServicePartReturn? @relation("ServicePartReturnEntryMovement")
 
   @@unique([tenantId, id])
+  @@unique([tenantId, operationKey])
   @@index([tenantId, itemId])
   @@index([tenantId, createdAt])
+  @@index([tenantId, lotId, createdAt])
   @@index([tenantId, refType, refId])
-  @@unique([tenantId, operationKey])
   @@index([tenantId, fromBinId, createdAt])
   @@index([tenantId, toBinId, createdAt])
   @@map("wms_stock_movements")
 }
 
 model Receipt {
-  qualityInspections QualityInspection[]
+  qualityInspections      QualityInspection[]
   materialPurchaseReceipt MaterialPurchaseReceipt?
-  mrpEntries MrpEntry[]
-  id          String        @id @default(cuid())
-  tenantId    String
-  number      String
-  locationId  String
-  status      ReceiptStatus @default(DRAFT)
-  reference   String?
-  note        String?
-  postedAt    DateTime?
-  createdById String?
-  customData  Json?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  mrpEntries              MrpEntry[]
+  id                      String                   @id @default(cuid())
+  tenantId                String
+  number                  String
+  locationId              String
+  status                  ReceiptStatus            @default(DRAFT)
+  reference               String?
+  note                    String?
+  postedAt                DateTime?
+  createdById             String?
+  customData              Json?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
 
-  tenant   Tenant        @relation(fields: [tenantId], references: [id])
-  location Location      @relation(fields: [locationId], references: [id])
-  lines    ReceiptLine[]
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  location         Location          @relation(fields: [locationId], references: [id])
+  lines            ReceiptLine[]
   yardDossierLinks YardDossierLink[]
-  supplierReceipt SupplierReceipt?
+  supplierReceipt  SupplierReceipt?
 
   @@unique([tenantId, id])
   @@unique([tenantId, number])
@@ -3333,6 +3970,8 @@ model Receipt {
 }
 
 model ReceiptLine {
+  lotId     String?
+  lot       WmsLot? @relation(fields: [tenantId, itemId, lotId], references: [tenantId, itemId, id], onDelete: Restrict, map: "wms_receipt_lines_lot_fk")
   id        String  @id @default(cuid())
   tenantId  String
   receiptId String
@@ -3340,9 +3979,9 @@ model ReceiptLine {
   toBinId   String
   qty       Decimal @db.Decimal(14, 3)
 
-  receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-  item    WmsItem @relation(fields: [itemId], references: [id])
-  toBin   Bin     @relation(fields: [toBinId], references: [id])
+  receipt             Receipt              @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  item                WmsItem              @relation(fields: [itemId], references: [id])
+  toBin               Bin                  @relation(fields: [toBinId], references: [id])
   supplierReceiptLine SupplierReceiptLine?
 
   @@unique([tenantId, id])
@@ -3365,10 +4004,10 @@ model PickOrder {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
-  tenant   Tenant     @relation(fields: [tenantId], references: [id])
-  location Location   @relation(fields: [locationId], references: [id])
-  shipment Shipment?  @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
-  lines    PickLine[]
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  location         Location          @relation(fields: [locationId], references: [id])
+  shipment         Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  lines            PickLine[]
   yardDossierLinks YardDossierLink[]
 
   @@unique([tenantId, number])
@@ -3378,6 +4017,8 @@ model PickOrder {
 }
 
 model PickLine {
+  lotId       String?
+  lot         WmsLot? @relation(fields: [tenantId, itemId, lotId], references: [tenantId, itemId, id], onDelete: Restrict, map: "wms_pick_lines_lot_fk")
   id          String  @id @default(cuid())
   tenantId    String
   pickOrderId String
@@ -3391,6 +4032,192 @@ model PickLine {
 
   @@index([tenantId, pickOrderId])
   @@map("wms_pick_lines")
+}
+
+model WmsLot {
+  stockExits WmsStockExit[]
+  qualityInspections QualityInspection[]
+  disposition       LotDisposition     @default(UNRESTRICTED)
+  dispositionRevision Int              @default(0)
+  dispositionReason String?
+  decisions         WmsLotDecision[]
+  servicePartUsages ServicePartUsage[]
+  cycleCountLines   CycleCountLine[]
+  id                String             @id @default(cuid())
+  tenantId          String
+  itemId            String
+  code              String
+  supplierLot       String?
+  manufacturedOn    DateTime?          @db.Date
+  expiresOn         DateTime?          @db.Date
+  createdAt         DateTime           @default(now())
+  item              WmsItem            @relation(fields: [tenantId, itemId], references: [tenantId, id], onDelete: Restrict, map: "wms_lots_item_fk")
+  balances          WmsLotBalance[]
+  movements         StockMovement[]
+  receiptLines      ReceiptLine[]
+  pickLines         PickLine[]
+
+  @@unique([tenantId, itemId, id])
+  @@unique([tenantId, itemId, code])
+  @@index([tenantId, expiresOn])
+  @@map("wms_lots")
+}
+
+enum LotDisposition {
+  UNRESTRICTED
+  QUARANTINED
+}
+
+enum StockExitKind {
+  DISPOSAL
+  SUPPLIER_RETURN
+}
+enum StockExitStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+model WmsStockExit {
+  purchaseSourceId String?
+  purchaseSnapshot Json?
+  purchaseSource SupplierReceiptLine? @relation(fields:[tenantId,purchaseSourceId],references:[tenantId,id],onDelete:Restrict)
+  attachments WmsStockExitEvidence[]
+  supplierReports SupplierReturnReport[]
+  id String @id @default(cuid())
+  tenantId String
+  number String
+  kind StockExitKind
+  status StockExitStatus @default(DRAFT)
+  itemId String
+  lotId String
+  binId String
+  quantity Decimal @db.Decimal(14,3)
+  unitSnapshot String
+  reason String
+  supplierId String?
+  reference String?
+  destination String?
+  snapshot Json
+  evidence Json?
+  operationKey String
+  requestFingerprint String
+  resolutionKey String?
+  resolutionFingerprint String?
+  completionNote String?
+  cancellationReason String?
+  movementId String?
+  createdById String
+  closedById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  closedAt DateTime?
+  tenant Tenant @relation(fields:[tenantId],references:[id],onDelete:Restrict)
+  item WmsItem @relation(fields:[tenantId,itemId],references:[tenantId,id],onDelete:Restrict)
+  lot WmsLot @relation(fields:[tenantId,itemId,lotId],references:[tenantId,itemId,id],onDelete:Restrict)
+  bin Bin @relation(fields:[tenantId,binId],references:[tenantId,id],onDelete:Restrict)
+  supplier BusinessPartner? @relation(fields:[tenantId,supplierId],references:[tenantId,id],onDelete:Restrict)
+  createdBy User @relation("StockExitCreator",fields:[tenantId,createdById],references:[tenantId,id],onDelete:Restrict)
+  closedBy User? @relation("StockExitCloser",fields:[tenantId,closedById],references:[tenantId,id],onDelete:Restrict)
+  movement StockMovement? @relation(fields:[tenantId,movementId],references:[tenantId,id],onDelete:Restrict)
+  @@unique([tenantId,id])
+  @@unique([tenantId,number])
+  @@unique([tenantId,operationKey])
+  @@unique([tenantId,resolutionKey])
+  @@unique([tenantId,movementId])
+  @@index([tenantId,lotId,createdAt])
+  @@index([tenantId,status,createdAt])
+  @@index([tenantId,purchaseSourceId,status])
+  @@map("wms_stock_exits")
+}
+
+model WmsStockExitEvidence {
+  supplierReports SupplierReturnReport[]
+  id String @id @default(cuid())
+  tenantId String
+  stockExitId String
+  documentId String
+  caption String
+  sha256 String
+  recordedStatus StockExitStatus
+  operationKey String
+  fingerprint String
+  createdAt DateTime @default(now())
+  stockExit WmsStockExit @relation(fields:[tenantId,stockExitId],references:[tenantId,id],onDelete:Restrict)
+  document Document @relation(fields:[tenantId,documentId],references:[tenantId,id],onDelete:Restrict)
+  @@unique([tenantId,operationKey])
+  @@unique([tenantId,documentId])
+  @@unique([tenantId,stockExitId,id])
+  @@index([tenantId,stockExitId,createdAt])
+  @@map("wms_stock_exit_evidence")
+}
+
+// Append-only cumulative statements. Never modifies the original physical exit.
+model SupplierReturnReport {
+  credits SupplierCredit[]
+  id String @id @default(cuid())
+  tenantId String
+  stockExitId String
+  revision Int
+  received Decimal @db.Decimal(14,3)
+  accepted Decimal @db.Decimal(14,3)
+  refused Decimal @db.Decimal(14,3)
+  evidenceId String
+  reportedAt DateTime
+  reference String
+  note String
+  correctionReason String?
+  operationKey String
+  fingerprint String
+  createdById String
+  createdAt DateTime @default(now())
+  stockExit WmsStockExit @relation(fields:[tenantId,stockExitId],references:[tenantId,id],onDelete:Restrict)
+  evidence WmsStockExitEvidence @relation(fields:[tenantId,stockExitId,evidenceId],references:[tenantId,stockExitId,id],onDelete:Restrict)
+  createdBy User @relation(fields:[tenantId,createdById],references:[tenantId,id],onDelete:Restrict)
+  @@unique([tenantId,stockExitId,revision])
+  @@unique([tenantId,id])
+  @@unique([tenantId,operationKey])
+  @@map("supplier_return_reports")
+}
+
+model WmsLotDecision {
+  qualityInspectionId String?
+  qualityInspection QualityInspection? @relation(fields: [tenantId, qualityInspectionId], references: [tenantId, id], onDelete: Restrict, map: "wms_lot_decisions_inspection_fk")
+  qualitySnapshot Json?
+  id String @id @default(cuid())
+  tenantId String
+  itemId String
+  lotId String
+  revision Int
+  fromDisposition LotDisposition
+  toDisposition LotDisposition
+  reason String
+  controlNote String?
+  operationKey String
+  fingerprint String
+  createdById String
+  createdAt DateTime @default(now())
+  lot WmsLot @relation(fields: [tenantId, itemId, lotId], references: [tenantId, itemId, id], onDelete: Restrict, map: "wms_lot_decisions_lot_fk")
+  createdBy User @relation(fields: [tenantId, createdById], references: [tenantId, id], onDelete: Restrict, map: "wms_lot_decisions_actor_fk")
+
+  @@unique([tenantId, operationKey])
+  @@unique([tenantId, lotId, revision])
+  @@map("wms_lot_decisions")
+}
+
+model WmsLotBalance {
+  id        String   @id @default(cuid())
+  tenantId  String
+  itemId    String
+  lotId     String
+  binId     String
+  qtyOnHand Decimal  @default(0) @db.Decimal(14, 3)
+  updatedAt DateTime @updatedAt
+  lot       WmsLot   @relation(fields: [tenantId, itemId, lotId], references: [tenantId, itemId, id], onDelete: Restrict, map: "wms_lot_balances_lot_fk")
+  bin       Bin      @relation(fields: [tenantId, binId], references: [tenantId, id], onDelete: Restrict, map: "wms_lot_balances_bin_fk")
+
+  @@unique([tenantId, lotId, binId])
+  @@index([tenantId, itemId, binId])
+  @@map("wms_lot_balances")
 }
 
 enum YardSpotType {
@@ -3465,13 +4292,13 @@ model YardVisit {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  tenant      Tenant           @relation(fields: [tenantId], references: [id])
-  location    Location         @relation(fields: [locationId], references: [id])
-  trailer     Trailer?         @relation(fields: [trailerId], references: [id])
-  carrier     Carrier?         @relation(fields: [carrierId], references: [id])
-  spot        YardSpot?        @relation(fields: [spotId], references: [id])
-  appointment DockAppointment? @relation(fields: [appointmentId], references: [id])
-  moves       YardMove[]
+  tenant       Tenant            @relation(fields: [tenantId], references: [id])
+  location     Location          @relation(fields: [locationId], references: [id])
+  trailer      Trailer?          @relation(fields: [trailerId], references: [id])
+  carrier      Carrier?          @relation(fields: [carrierId], references: [id])
+  spot         YardSpot?         @relation(fields: [spotId], references: [id])
+  appointment  DockAppointment?  @relation(fields: [appointmentId], references: [id])
+  moves        YardMove[]
   dossierLinks YardDossierLink[]
 
   @@unique([tenantId, visitNumber])
@@ -3517,11 +4344,11 @@ model DockAppointment {
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
 
-  tenant   Tenant      @relation(fields: [tenantId], references: [id])
-  location Location    @relation(fields: [locationId], references: [id])
-  spot     YardSpot?   @relation(fields: [spotId], references: [id])
-  carrier  Carrier?    @relation(fields: [carrierId], references: [id])
-  visits   YardVisit[]
+  tenant       Tenant            @relation(fields: [tenantId], references: [id])
+  location     Location          @relation(fields: [locationId], references: [id])
+  spot         YardSpot?         @relation(fields: [spotId], references: [id])
+  carrier      Carrier?          @relation(fields: [carrierId], references: [id])
+  visits       YardVisit[]
   dossierLinks YardDossierLink[]
 
   @@unique([tenantId, appointmentNumber])
@@ -3811,28 +4638,30 @@ enum CrmActivityType {
 }
 
 model CrmCompany {
-  businessPartner BusinessPartner?
-  id           String           @id @default(cuid())
-  tenantId     String
-  name         String
-  domain       String?
-  industry     String?
-  status       CrmCompanyStatus @default(PROSPECT)
-  ownerUserId  String?
-  customerId   String?
-  carrierId    String?
-  customData   Json?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  tenant       Tenant           @relation(fields: [tenantId], references: [id])
-  contacts     CrmContact[]
-  deals        CrmDeal[]
-  activities   CrmActivity[]
-  salesOrders  SalesOrder[]
+  businessProfile  PartyBusinessProfile?
+  directoryEntries PartyDirectoryEntry[]
+  businessPartner  BusinessPartner?
+  id               String                @id @default(cuid())
+  tenantId         String
+  name             String
+  domain           String?
+  industry         String?
+  status           CrmCompanyStatus      @default(PROSPECT)
+  ownerUserId      String?
+  customerId       String?
+  carrierId        String?
+  customData       Json?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  tenant           Tenant                @relation(fields: [tenantId], references: [id])
+  contacts         CrmContact[]
+  deals            CrmDeal[]
+  activities       CrmActivity[]
+  salesOrders      SalesOrder[]
 
+  @@unique([tenantId, id])
   @@index([tenantId])
   @@index([tenantId, status])
-  @@unique([tenantId, id])
   @@map("crm_companies")
 }
 
@@ -3858,27 +4687,27 @@ model CrmContact {
 }
 
 model CrmDeal {
-  id                  String       @id @default(cuid())
+  id                  String            @id @default(cuid())
   tenantId            String
   title               String
   companyId           String
-  stage               CrmDealStage @default(LEAD)
+  stage               CrmDealStage      @default(LEAD)
   pipelineId          String?
   pipelineStageId     String?
   primaryContactId    String?
-  stageRevision       Int          @default(0)
+  stageRevision       Int               @default(0)
   amount              Decimal?
-  currency            String       @default("CAD")
+  currency            String            @default("CAD")
   ownerUserId         String?
   expectedCloseDate   DateTime?
   lastActivityAt      DateTime?
   convertedCustomerId String?
   customData          Json?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
-  tenant              Tenant       @relation(fields: [tenantId], references: [id])
-  company             CrmCompany   @relation(fields: [companyId], references: [id])
-  pipeline            CrmPipeline? @relation(fields: [pipelineId], references: [id])
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  tenant              Tenant            @relation(fields: [tenantId], references: [id])
+  company             CrmCompany        @relation(fields: [companyId], references: [id])
+  pipeline            CrmPipeline?      @relation(fields: [pipelineId], references: [id])
   pipelineStage       CrmPipelineStage? @relation(fields: [pipelineStageId], references: [id])
   lineItems           CrmDealLineItem[]
 
@@ -3891,20 +4720,20 @@ model CrmDeal {
 
 model CrmProduct {
   mrpProductMappings MrpProductMapping[]
-  id          String   @id @default(cuid())
-  tenantId    String
-  name        String
-  sku         String?
-  description String?
-  unitPrice   Decimal  @default(0)
-  currency    String   @default("CAD")
-  active      Boolean  @default(true)
-  customData  Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String              @id @default(cuid())
+  tenantId           String
+  name               String
+  sku                String?
+  description        String?
+  unitPrice          Decimal             @default(0)
+  currency           String              @default("CAD")
+  active             Boolean             @default(true)
+  customData         Json?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
-  tenant    Tenant            @relation(fields: [tenantId], references: [id])
-  lineItems CrmDealLineItem[]
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  lineItems           CrmDealLineItem[]
   salesOrderLineItems SalesOrderLineItem[]
 
   @@index([tenantId, active])
@@ -3967,26 +4796,28 @@ enum SalesOrderStatus {
 }
 
 model SalesOrder {
-  id           String           @id @default(cuid())
-  tenantId     String
-  number       String                       // SO-xxxx via SequencesService
-  status       SalesOrderStatus @default(DRAFT)
-  companyId    String                        // CRM company (source commerciale)
-  customerId   String?                       // Customer lié (si converti)
-  dealId       String?                       // deal d'origine
-  ownerUserId  String?
-  currency     String           @default("CAD")
-  totalAmount  Decimal          @default(0)  // recalculé depuis les lignes
-  notes        String?
-  customData   Json?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  tenant   Tenant       @relation(fields: [tenantId], references: [id])
-  company  CrmCompany   @relation(fields: [companyId], references: [id])
-  lineItems SalesOrderLineItem[]
+  documentCoordinates Json?
+  id                  String               @id @default(cuid())
+  tenantId            String
+  number              String // SO-xxxx via SequencesService
+  status              SalesOrderStatus     @default(DRAFT)
+  companyId           String // CRM company (source commerciale)
+  customerId          String? // Customer lié (si converti)
+  dealId              String? // deal d'origine
+  ownerUserId         String?
+  currency            String               @default("CAD")
+  totalAmount         Decimal              @default(0) // recalculé depuis les lignes
+  notes               String?
+  customData          Json?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  company             CrmCompany           @relation(fields: [companyId], references: [id])
+  lineItems           SalesOrderLineItem[]
   // Fulfillment bridge: a sales order can request 0..N transport orders (rule 9
   // ownership + explicit logistics data supplied at creation, never inferred).
-  fulfillmentOrders TransportOrder[] @relation("SalesOrderFulfillment")
+  fulfillmentOrders   TransportOrder[]     @relation("SalesOrderFulfillment")
+
   @@unique([tenantId, number])
   @@index([tenantId, status])
   @@index([tenantId, companyId])
@@ -3994,20 +4825,21 @@ model SalesOrder {
 }
 
 model SalesOrderLineItem {
-  mrpDemands MrpEntry[]
-  id           String   @id @default(cuid())
+  mrpDemands   MrpEntry[]
+  id           String      @id @default(cuid())
   tenantId     String
   salesOrderId String
   productId    String?
   name         String
-  quantity     Decimal  @default(1)
-  unitPrice    Decimal  @default(0)
-  discountPct  Decimal  @default(0)
-  currency     String   @default("CAD")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  salesOrder SalesOrder  @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
-  product    CrmProduct? @relation(fields: [productId], references: [id])
+  quantity     Decimal     @default(1)
+  unitPrice    Decimal     @default(0)
+  discountPct  Decimal     @default(0)
+  currency     String      @default("CAD")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  salesOrder   SalesOrder  @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  product      CrmProduct? @relation(fields: [productId], references: [id])
+
   @@index([tenantId, salesOrderId])
   @@map("sales_order_line_items")
 }
@@ -4055,20 +4887,20 @@ model CrmListMember {
 }
 
 model CrmCampaign {
-  id          String            @id @default(cuid())
-  tenantId    String
-  name        String
-  listId      String
-  subject     String
-  html        String
-  templateKey String?
-  status      CrmCampaignStatus @default(DRAFT)
-  recipientCount Int?
-  enqueueFailedCount Int @default(0)
-  ownerUserId String?
-  sentAt      DateTime?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  id                 String            @id @default(cuid())
+  tenantId           String
+  name               String
+  listId             String
+  subject            String
+  html               String
+  templateKey        String?
+  status             CrmCampaignStatus @default(DRAFT)
+  recipientCount     Int?
+  enqueueFailedCount Int               @default(0)
+  ownerUserId        String?
+  sentAt             DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   tenant Tenant  @relation(fields: [tenantId], references: [id])
   list   CrmList @relation(fields: [listId], references: [id])
@@ -4106,32 +4938,200 @@ enum EmailDirection {
 }
 
 /// Per-tenant SMTP configuration. Password encrypted via CryptoService (never returned in clear).
+enum SmsStatus {
+  SENDING
+  SIMULATED
+  ACCEPTED
+  REJECTED
+  UNKNOWN
+}
+
+enum SmsDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  UNCONFIRMED
+}
+
+model TenantSmsConfig {
+  id String @id @default(cuid())
+  tenantId String @unique
+  apiKeyEnc String?
+  fromNumber String
+  messagingProfileId String
+  live Boolean @default(false)
+  liveAuthorized Boolean @default(false)
+  webhookPublicKey String?
+  webhookOrigin String?
+  lastWebhookAt DateTime?
+  active Boolean @default(false)
+  dailyLimit Int @default(100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  @@map("tenant_sms_configs")
+}
+
+model SmsMessage {
+  dossierCommunication DossierCommunication?
+  id String @id @default(cuid())
+  tenantId String
+  actorId String
+  operationKey String
+  fingerprint String
+  fromNumber String
+  toNumber String
+  text String
+  messagingProfileId String
+  live Boolean
+  configVersion DateTime
+  status SmsStatus @default(SENDING)
+  providerMessageId String?
+  webhookUrl String?
+  deliveryStatus SmsDeliveryStatus @default(PENDING)
+  deliveryAt DateTime?
+  errorCode String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  actor User @relation(fields: [tenantId, actorId], references: [tenantId, id])
+  @@unique([tenantId, operationKey])
+  @@unique([tenantId, id])
+  @@index([tenantId, createdAt, id])
+  @@index([tenantId, providerMessageId])
+  @@map("sms_messages")
+}
+
+/// Signed, bounded provider evidence. No outbound side effects from ingestion.
+model SmsWebhookEvent {
+  id String @id @default(cuid())
+  tenantId String
+  eventId String
+  fingerprint String
+  eventType String
+  providerMessageId String
+  messagingProfileId String
+  fromNumber String
+  toNumber String
+  text String?
+  deliveryStatus SmsDeliveryStatus?
+  occurredAt DateTime
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  @@unique([tenantId, eventId])
+  @@index([tenantId, providerMessageId])
+  @@index([tenantId, eventType, createdAt, id])
+  @@map("sms_webhook_events")
+}
+
+model SmsSuppression {
+  id String @id @default(cuid())
+  tenantId String
+  phoneNumber String
+  sourceEventId String
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  @@unique([tenantId, phoneNumber])
+  @@index([tenantId, createdAt, id])
+  @@map("sms_suppressions")
+}
+
+enum CommunicationChannel {
+  SMS
+  EMAIL
+}
+
+enum DossierEmailStatus {
+  SENDING
+  SIMULATED
+  ACCEPTED
+  UNKNOWN
+}
+
+/// Single-attempt human operational messages. Source references are checked on every read/replay.
+model DossierCommunication {
+  id String @id @default(cuid())
+  tenantId String
+  actorId String
+  contextKind String
+  contextId String
+  contextLabel String
+  operationKey String
+  fingerprint String
+  channel CommunicationChannel
+  recipient String
+  subject String?
+  text String
+  preferenceVersion Int
+  smsMessageId String? @unique
+  emailStatus DossierEmailStatus?
+  live Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  actor User @relation(fields: [tenantId, actorId], references: [tenantId, id])
+  smsMessage SmsMessage? @relation(fields: [tenantId, smsMessageId], references: [tenantId, id])
+  @@unique([tenantId, smsMessageId])
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, contextKind, contextId, createdAt, id], map: "dossier_communications_tenantId_contextKind_contextId_created_i")
+  @@map("dossier_communications")
+}
+
+/// Unknown is absence. AuditLog keeps each human decision and proof, atomically.
+model CommunicationPreference {
+  id String @id @default(cuid())
+  tenantId String
+  channel CommunicationChannel
+  recipient String
+  allowed Boolean
+  version Int @default(1)
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  @@unique([tenantId, channel, recipient])
+  @@map("communication_preferences")
+}
+
+model CommunicationTemplate {
+  id String @id @default(cuid())
+  tenantId String
+  channel CommunicationChannel
+  name String
+  subject String?
+  text String
+  active Boolean @default(true)
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  @@index([tenantId, channel, active])
+  @@map("communication_templates")
+}
+
 model TenantEmailConfig {
-  id           String      @id @default(cuid())
-  tenantId     String      @unique
-  driver       EmailDriver @default(SMTP)
-  host         String?
-  port         Int?
-  secure       Boolean     @default(false)
-  username     String?
-  passwordEnc  String?
-  fromName     String?
-  fromEmail    String?
-  replyTo      String?
+  id              String      @id @default(cuid())
+  tenantId        String      @unique
+  driver          EmailDriver @default(SMTP)
+  host            String?
+  port            Int?
+  secure          Boolean     @default(false)
+  username        String?
+  passwordEnc     String?
+  fromName        String?
+  fromEmail       String?
+  replyTo         String?
   // Inbound (IMAP) — password encrypted via CryptoService, never returned in clear.
   imapHost        String?
   imapPort        Int?
-  imapSecure      Boolean   @default(true)
+  imapSecure      Boolean     @default(true)
   imapUsername    String?
   imapPasswordEnc String?
-  inboundActive   Boolean   @default(false)
+  inboundActive   Boolean     @default(false)
+  inboundLive     Boolean     @default(false)
   lastPollAt      DateTime?
   lastPollOk      Boolean?
-  active       Boolean     @default(true)
-  lastTestAt   DateTime?
-  lastTestOk   Boolean?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  active          Boolean     @default(true)
+  lastTestAt      DateTime?
+  lastTestOk      Boolean?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
@@ -4140,57 +5140,60 @@ model TenantEmailConfig {
 
 /// Durable outbox + history for every email sent by the platform.
 model EmailMessage {
-  id              String      @id @default(cuid())
-  tenantId        String
-  dedupKey        String?
-  toAddresses     String[]
-  cc              String[]    @default([])
-  subject         String
-  html            String
-  text            String?
-  status          EmailStatus @default(QUEUED)
-  attempts        Int         @default(0)
-  lastError       String?
-  provider        String?
-  relatedType     String?
-  relatedId       String?
-  templateKey     String?
-  createdByUserId String?
-  agentId         String?
-  threadId    String?
-  direction   EmailDirection @default(OUTBOUND)
-  messageId   String?
-  inReplyTo   String?
-  references  String?
-  fromAddress String?
-  sentAt          DateTime?
-  nextAttemptAt   DateTime?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  id                String         @id @default(cuid())
+  tenantId          String
+  dedupKey          String?
+  toAddresses       String[]
+  cc                String[]       @default([])
+  subject           String
+  html              String
+  text              String?
+  status            EmailStatus    @default(QUEUED)
+  attempts          Int            @default(0)
+  lastError         String?
+  provider          String?
+  deliveryChannel   String?
+  deliveryUncertain Boolean        @default(false)
+  relatedType       String?
+  relatedId         String?
+  templateKey       String?
+  createdByUserId   String?
+  agentId           String?
+  threadId          String?
+  direction         EmailDirection @default(OUTBOUND)
+  messageId         String?
+  inReplyTo         String?
+  references        String?
+  fromAddress       String?
+  sentAt            DateTime?
+  nextAttemptAt     DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
   tenant      Tenant            @relation(fields: [tenantId], references: [id])
   attachments EmailAttachment[]
 
+  @@unique([tenantId, dedupKey])
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
   @@index([status, nextAttemptAt])
   @@index([tenantId, threadId])
   @@index([tenantId, messageId])
-  @@unique([tenantId, dedupKey])
   @@map("email_messages")
 }
 
 model CrmPipeline {
-  id String @id @default(cuid())
-  tenantId String
-  key String
-  name String
-  revision Int @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  stages CrmPipelineStage[]
-  deals CrmDeal[]
+  id        String             @id @default(cuid())
+  tenantId  String
+  key       String
+  name      String
+  revision  Int                @default(0)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  stages    CrmPipelineStage[]
+  deals     CrmDeal[]
+
   @@unique([tenantId, key])
   @@index([tenantId])
   @@map("crm_pipelines")
@@ -4198,34 +5201,36 @@ model CrmPipeline {
 
 /// Labels and ordering are configurable; kind preserves CRM business invariants.
 model CrmPipelineStage {
-  id String @id @default(cuid())
-  tenantId String
+  id         String       @id @default(cuid())
+  tenantId   String
   pipelineId String
-  name String
-  kind CrmDealStage
-  position Int
-  archived Boolean @default(false)
-  pipeline CrmPipeline @relation(fields: [pipelineId], references: [id], onDelete: Restrict)
-  deals CrmDeal[]
+  name       String
+  kind       CrmDealStage
+  position   Int
+  archived   Boolean      @default(false)
+  pipeline   CrmPipeline  @relation(fields: [pipelineId], references: [id], onDelete: Restrict)
+  deals      CrmDeal[]
+
   @@index([tenantId, pipelineId, archived, position])
   @@map("crm_pipeline_stages")
 }
 
 /// Durable stage-entry outbox. Created in the same transaction as the deal move.
 model CrmStageEntry {
-  id String @id @default(cuid())
-  tenantId String
-  dealId String
-  stageId String
-  revision Int
-  contactId String?
-  sequenceId String?
+  id               String    @id @default(cuid())
+  tenantId         String
+  dealId           String
+  stageId          String
+  revision         Int
+  contactId        String?
+  sequenceId       String?
   sequenceSnapshot Json?
-  userId String
-  createdAt DateTime @default(now())
-  processedAt DateTime?
-  reason String?
-  runId String?
+  userId           String
+  createdAt        DateTime  @default(now())
+  processedAt      DateTime?
+  reason           String?
+  runId            String?
+
   @@unique([tenantId, dealId, revision])
   @@index([processedAt, createdAt])
   @@index([tenantId, dealId, createdAt])
@@ -4236,11 +5241,13 @@ enum CrmSequenceMode {
   SIMULATION
   GOVERNED
 }
+
 enum CrmSequenceTrigger {
   MANUAL
   CONTACT_CREATED
   DEAL_STAGE_ENTERED
 }
+
 enum CrmSequenceRunStatus {
   ACTIVE
   PAUSED
@@ -4248,6 +5255,7 @@ enum CrmSequenceRunStatus {
   COMPLETED
   FAILED
 }
+
 enum CrmSequenceStepStatus {
   PENDING
   PROPOSED
@@ -4257,6 +5265,7 @@ enum CrmSequenceStepStatus {
   CANCELLED
   FAILED
 }
+
 enum CommunicationConsent {
   UNKNOWN
   GRANTED
@@ -4265,42 +5274,44 @@ enum CommunicationConsent {
 
 /// Frozen on enrollment; editing a scenario never changes a running sequence.
 model CrmSequence {
-  id String @id @default(cuid())
-  tenantId String
-  name String
-  enabled Boolean @default(false)
-  mode CrmSequenceMode @default(SIMULATION)
-  trigger CrmSequenceTrigger @default(MANUAL)
-  agentId String?
-  pipelineStageId String? @unique
-  steps Json
-  createdById String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  runs CrmSequenceRun[]
+  id              String             @id @default(cuid())
+  tenantId        String
+  name            String
+  enabled         Boolean            @default(false)
+  mode            CrmSequenceMode    @default(SIMULATION)
+  trigger         CrmSequenceTrigger @default(MANUAL)
+  agentId         String?
+  pipelineStageId String?            @unique
+  steps           Json
+  createdById     String
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  runs            CrmSequenceRun[]
+
   @@index([tenantId, enabled, trigger])
   @@map("crm_sequences")
 }
 
 model CrmSequenceRun {
-  id String @id @default(cuid())
-  tenantId String
-  sequenceId String
-  contactId String
-  enrollmentKey String @default("manual")
-  dealId String?
+  id              String               @id @default(cuid())
+  tenantId        String
+  sequenceId      String
+  contactId       String
+  enrollmentKey   String               @default("manual")
+  dealId          String?
   pipelineStageId String?
-  stageRevision Int?
-  email String
-  mode CrmSequenceMode
-  agentId String?
-  status CrmSequenceRunStatus @default(ACTIVE)
-  reason String?
-  createdById String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  sequence CrmSequence @relation(fields: [sequenceId], references: [id], onDelete: Restrict)
-  steps CrmSequenceStepRun[]
+  stageRevision   Int?
+  email           String
+  mode            CrmSequenceMode
+  agentId         String?
+  status          CrmSequenceRunStatus @default(ACTIVE)
+  reason          String?
+  createdById     String
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  sequence        CrmSequence          @relation(fields: [sequenceId], references: [id], onDelete: Restrict)
+  steps           CrmSequenceStepRun[]
+
   @@unique([tenantId, sequenceId, contactId, enrollmentKey])
   @@index([tenantId, dealId])
   @@index([tenantId, status])
@@ -4309,21 +5320,22 @@ model CrmSequenceRun {
 }
 
 model CrmSequenceStepRun {
-  id String @id @default(cuid())
-  tenantId String
-  runId String
-  position Int
+  id           String                @id @default(cuid())
+  tenantId     String
+  runId        String
+  position     Int
   delayMinutes Int
-  subject String
-  body String
-  status CrmSequenceStepStatus @default(PENDING)
-  dueAt DateTime?
-  proposalId String?
-  emailId String?
-  detail String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  run CrmSequenceRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  subject      String
+  body         String
+  status       CrmSequenceStepStatus @default(PENDING)
+  dueAt        DateTime?
+  proposalId   String?
+  emailId      String?
+  detail       String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  run          CrmSequenceRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+
   @@unique([tenantId, runId, position])
   @@index([tenantId, status, dueAt])
   @@map("crm_sequence_step_runs")
@@ -4331,14 +5343,15 @@ model CrmSequenceStepRun {
 
 /// Address-bound: changing a contact's address does not transfer consent.
 model CrmEmailPreference {
-  id String @id @default(cuid())
-  tenantId String
-  email String
-  consent CommunicationConsent @default(UNKNOWN)
-  source String?
-  unsubscribeToken String @unique
-  updatedById String?
-  updatedAt DateTime @updatedAt
+  id               String               @id @default(cuid())
+  tenantId         String
+  email            String
+  consent          CommunicationConsent @default(UNKNOWN)
+  source           String?
+  unsubscribeToken String               @unique
+  updatedById      String?
+  updatedAt        DateTime             @updatedAt
+
   @@unique([tenantId, email])
   @@map("crm_email_preferences")
 }
@@ -4455,15 +5468,15 @@ enum ManufacturingFirmness {
 }
 
 model WorkingCalendar {
-  locationId String? @map("location_id")
-  location Location? @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  id        String   @id @default(cuid())
-  tenantId  String
-  code      String
-  name      String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  locationId String?   @map("location_id")
+  location   Location? @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  id         String    @id @default(cuid())
+  tenantId   String
+  code       String
+  name       String
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   tenant      Tenant            @relation(fields: [tenantId], references: [id])
   shifts      WorkCenterShift[]
@@ -4490,18 +5503,18 @@ model WorkCenterShift {
 }
 
 model WorkCenter {
-  serviceJobs ServiceJob[]
+  serviceJobs       ServiceJob[]
   skillRequirements WorkCenterSkillRequirement[]
-  id           String   @id @default(cuid())
-  tenantId     String
-  code         String
-  name         String
-  calendarId   String
-  capabilities String[] @default([])
-  efficiency   Float    @default(1)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String                       @id @default(cuid())
+  tenantId          String
+  code              String
+  name              String
+  calendarId        String
+  capabilities      String[]                     @default([])
+  efficiency        Float                        @default(1)
+  isActive          Boolean                      @default(true)
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
 
   tenant   Tenant          @relation(fields: [tenantId], references: [id])
   calendar WorkingCalendar @relation(fields: [calendarId], references: [id])
@@ -4548,16 +5561,16 @@ model RoutingStep {
 }
 
 model Bom {
-  revisions BomRevision[]
+  revisions   BomRevision[]
   mrpPolicies MrpItemPolicy[]
-  id         String   @id @default(cuid())
-  tenantId   String
-  code       String
-  name       String
-  productRef String?
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String          @id @default(cuid())
+  tenantId    String
+  code        String
+  name        String
+  productRef  String?
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
   tenant Tenant    @relation(fields: [tenantId], references: [id])
   lines  BomLine[]
@@ -4584,28 +5597,28 @@ model BomLine {
 
 model ManufacturingOrder {
   qualityInspections QualityInspection[]
-  declarations ManufacturingDeclaration[]
-  mrpPreparation MrpPreparation?
-  locationId String?
-  bomRevisionId String?
-  materialSnapshot Json?
-  location Location? @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  bomRevision BomRevision? @relation(fields: [bomRevisionId], references: [id], onDelete: Restrict)
-  id          String                   @id @default(cuid())
-  tenantId    String
-  number      String
-  name        String
-  productRef  String
-  quantity    Int                      @default(1)
-  dueDate     DateTime
-  releaseDate DateTime
-  priority    ManufacturingPriority    @default(NORMAL)
-  status      ManufacturingOrderStatus @default(DRAFT)
-  firmness    ManufacturingFirmness    @default(FIRM)
-  routingId   String?
-  bomId       String?
-  createdAt   DateTime                 @default(now())
-  updatedAt   DateTime                 @updatedAt
+  declarations       ManufacturingDeclaration[]
+  mrpPreparation     MrpPreparation?
+  locationId         String?
+  bomRevisionId      String?
+  materialSnapshot   Json?
+  location           Location?                  @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  bomRevision        BomRevision?               @relation(fields: [bomRevisionId], references: [id], onDelete: Restrict)
+  id                 String                     @id @default(cuid())
+  tenantId           String
+  number             String
+  name               String
+  productRef         String
+  quantity           Int                        @default(1)
+  dueDate            DateTime
+  releaseDate        DateTime
+  priority           ManufacturingPriority      @default(NORMAL)
+  status             ManufacturingOrderStatus   @default(DRAFT)
+  firmness           ManufacturingFirmness      @default(FIRM)
+  routingId          String?
+  bomId              String?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
 
   tenant     Tenant                   @relation(fields: [tenantId], references: [id])
   operations ManufacturingOperation[]
@@ -4707,11 +5720,11 @@ enum LandingPageStatus {
 model LandingPage {
   id            String            @id @default(cuid())
   tenantId      String
-  slug          String                          // public id, globally unique
+  slug          String // public id, globally unique
   title         String
   status        LandingPageStatus @default(DRAFT)
-  content       Json                            // ordered blocks
-  captureListId String?                         // optional CrmList to add leads to
+  content       Json // ordered blocks
+  captureListId String? // optional CrmList to add leads to
   publishedAt   DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
@@ -4728,8 +5741,8 @@ model LandingPageSubmission {
   id            String   @id @default(cuid())
   tenantId      String
   landingPageId String
-  data          Json                            // raw submitted fields
-  contactId     String?                         // matched/created CrmContact (if CRM active)
+  data          Json // raw submitted fields
+  contactId     String? // matched/created CrmContact (if CRM active)
   createdAt     DateTime @default(now())
 
   page LandingPage @relation(fields: [landingPageId], references: [id], onDelete: Cascade)
@@ -4817,6 +5830,11 @@ model ChartOfAccount {
 }
 
 model JournalEntry {
+  currencyQualification LedgerCurrencyQualification? @relation("QualifiedEntry")
+  sourcedCurrencyQualifications LedgerCurrencyQualification[] @relation("QualificationSource")
+  currencyRevisions LedgerCurrencyRevision[]
+  currencyEvidence LedgerCurrencyEvidence[]
+  depreciationEntries DepreciationEntry[]
   id          String   @id @default(cuid())
   tenantId    String
   date        DateTime
@@ -4826,22 +5844,87 @@ model JournalEntry {
   sourceKind  String?
   createdById String?
   createdAt   DateTime @default(now())
+  // NULL: historical or unqualified source. Never assume the tenant's default currency.
+  currency    String?
+  fingerprint String?
 
   tenant Tenant        @relation(fields: [tenantId], references: [id])
   lines  JournalLine[]
 
-  @@index([tenantId, date])
   @@unique([tenantId, sourceType, sourceId, sourceKind])
+  @@unique([tenantId,id])
+  @@index([tenantId, date])
+  @@index([tenantId, currency, date])
   @@map("journal_entries")
 }
 
+enum LedgerCurrencyState {
+  QUALIFIED
+  WITHDRAWN
+}
+
+model LedgerCurrencyQualification {
+  id String @id @default(cuid())
+  tenantId String
+  entryId String
+  entry JournalEntry @relation("QualifiedEntry", fields: [tenantId, entryId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  sourceEntryId String?
+  sourceEntry JournalEntry? @relation("QualificationSource", fields: [tenantId, sourceEntryId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "ledger_currency_qualifications_sourceEntryId_fkey")
+  state LedgerCurrencyState
+  currency String? @db.VarChar(3)
+  version Int
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, entryId])
+  @@index([tenantId, state, currency])
+  @@index([tenantId, sourceEntryId])
+  @@map("ledger_currency_qualifications")
+}
+
+model LedgerCurrencyRevision {
+  id String @id @default(cuid())
+  tenantId String
+  entryId String
+  entry JournalEntry @relation(fields: [tenantId, entryId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  actorId String
+  actor User @relation(fields: [tenantId, actorId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  evidenceId String
+  evidence LedgerCurrencyEvidence @relation(fields: [tenantId, entryId, evidenceId], references: [tenantId, entryId, id], onDelete: Restrict, onUpdate: NoAction)
+  version Int
+  operationKey String @db.Uuid
+  fingerprint String
+  snapshot Json
+  createdAt DateTime @default(now())
+  @@unique([tenantId, operationKey])
+  @@unique([tenantId, entryId, version])
+  @@map("ledger_currency_revisions")
+}
+
+model LedgerCurrencyEvidence {
+  id String @id @default(cuid())
+  tenantId String
+  entryId String
+  entry JournalEntry @relation(fields: [tenantId, entryId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  documentId String
+  document Document @relation(fields: [tenantId, documentId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  revisions LedgerCurrencyRevision[]
+  caption String
+  sha256 String
+  operationKey String @db.Uuid
+  fingerprint String
+  createdAt DateTime @default(now())
+  @@unique([tenantId, entryId, id])
+  @@unique([tenantId, documentId])
+  @@unique([tenantId, operationKey])
+  @@map("ledger_currency_evidence")
+}
+
 model JournalLine {
-  id             String   @id @default(cuid())
+  id             String  @id @default(cuid())
   tenantId       String
   journalEntryId String
   accountId      String
-  debit          Decimal  @default(0)
-  credit         Decimal  @default(0)
+  debit          Decimal @default(0)
+  credit         Decimal @default(0)
   memo           String?
 
   entry   JournalEntry   @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
@@ -4866,6 +5949,7 @@ model ModeOfPayment {
   updatedAt   DateTime  @updatedAt
   tenant      Tenant    @relation(fields: [tenantId], references: [id])
   payments    Payment[]
+
   @@unique([tenantId, name])
   @@index([tenantId])
   @@map("modes_of_payment")
@@ -4894,6 +5978,7 @@ model Payment {
   tenant          Tenant              @relation(fields: [tenantId], references: [id])
   modeOfPayment   ModeOfPayment       @relation(fields: [modeOfPaymentId], references: [id])
   allocations     PaymentAllocation[]
+
   @@unique([tenantId, paymentNumber])
   @@index([tenantId, status])
   @@index([tenantId, partyType, partyId])
@@ -4908,6 +5993,7 @@ model PaymentAllocation {
   targetId   String
   amount     Decimal           @db.Decimal(12, 2)
   payment    Payment           @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
   @@index([tenantId, targetType, targetId])
   @@index([tenantId, paymentId])
   @@map("payment_allocations")
@@ -4954,38 +6040,40 @@ model TaxTemplateLine {
 // ============================================================================
 
 model BankAccount {
-  id            String   @id @default(cuid())
+  id            String            @id @default(cuid())
   tenantId      String
   name          String
-  accountNumber String?            // masqué à l'affichage (4 derniers)
-  glAccountCode String   @default("1010")
-  currency      String   @default("CAD")
-  isDefault     Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  accountNumber String? // masqué à l'affichage (4 derniers)
+  glAccountCode String            @default("1010")
+  currency      String            @default("CAD")
+  isDefault     Boolean           @default(false)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  tenant        Tenant            @relation(fields: [tenantId], references: [id])
   transactions  BankTransaction[]
+
   @@unique([tenantId, name])
   @@index([tenantId])
   @@map("bank_accounts")
 }
 
 model BankTransaction {
-  id               String        @id @default(cuid())
-  tenantId         String
-  bankAccountId    String
-  date             DateTime
-  description      String
-  amount           Decimal       @db.Decimal(12, 2)   // signé
-  reference        String?
+  id                String        @id @default(cuid())
+  tenantId          String
+  bankAccountId     String
+  date              DateTime
+  description       String
+  amount            Decimal       @db.Decimal(12, 2) // signé
+  reference         String?
   importFingerprint String?
-  status           BankTxnStatus @default(UNRECONCILED)
-  matchedPaymentId String?       @unique
-  createdAt        DateTime      @default(now())
-  bankAccount      BankAccount   @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  status            BankTxnStatus @default(UNRECONCILED)
+  matchedPaymentId  String?       @unique
+  createdAt         DateTime      @default(now())
+  bankAccount       BankAccount   @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, bankAccountId, importFingerprint], map: "bank_transactions_import_fingerprint_key")
   @@index([tenantId, bankAccountId, status])
   @@index([tenantId, bankAccountId, date])
-  @@unique([tenantId, bankAccountId, importFingerprint], map: "bank_transactions_import_fingerprint_key")
   @@map("bank_transactions")
 }
 
@@ -4994,18 +6082,67 @@ model BankTransaction {
 // ============================================================================
 
 model Budget {
-  id         String   @id @default(cuid())
+  id         String       @id @default(cuid())
   tenantId   String
   name       String
   fiscalYear Int
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  currency String? @db.VarChar(3)
+  periodFrom DateTime? @db.Date
+  periodTo DateTime? @db.Date
+  version Int @default(0)
+  revisions BudgetRevision[]
+  isActive   Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  tenant     Tenant       @relation(fields: [tenantId], references: [id])
   lines      BudgetLine[]
+
   @@unique([tenantId, name, fiscalYear])
+  @@unique([tenantId, id])
   @@index([tenantId, fiscalYear])
   @@map("budgets")
+}
+
+enum AccountingTarget {
+  NATIVE
+  EXTERNAL
+}
+
+model AccountingProfileRevision {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields:[tenantId], references:[id], onDelete:Restrict, onUpdate:NoAction)
+  version Int
+  target AccountingTarget
+  targetCurrency String @db.VarChar(3)
+  externalSystem String
+  reason String
+  actorId String
+  actor User @relation(fields:[tenantId,actorId], references:[tenantId,id], onDelete:Restrict, onUpdate:NoAction, map:"accounting_profile_actor_fk")
+  operationKey String @db.Uuid
+  fingerprint String
+  createdAt DateTime @default(now())
+  @@unique([tenantId, version])
+  @@unique([tenantId, operationKey])
+  @@map("accounting_profile_revisions")
+}
+
+model BudgetRevision {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields:[tenantId], references:[id], onDelete:Restrict, onUpdate:NoAction)
+  budgetId String
+  budget Budget @relation(fields:[tenantId,budgetId], references:[tenantId,id], onDelete:Restrict, onUpdate:NoAction)
+  version Int
+  actorId String
+  actor User @relation(fields:[tenantId,actorId], references:[tenantId,id], onDelete:Restrict, onUpdate:NoAction, map:"budget_revision_actor_fk")
+  operationKey String @db.Uuid
+  fingerprint String
+  snapshot Json
+  createdAt DateTime @default(now())
+  @@unique([tenantId, operationKey])
+  @@unique([tenantId,budgetId,version])
+  @@map("budget_revisions")
 }
 
 model BudgetLine {
@@ -5015,6 +6152,7 @@ model BudgetLine {
   accountCode String
   amount      Decimal @db.Decimal(12, 2)
   budget      Budget  @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
   @@index([tenantId, budgetId])
   @@map("budget_lines")
 }
@@ -5024,41 +6162,84 @@ model BudgetLine {
 // ============================================================================
 
 model FixedAsset {
-  id              String   @id @default(cuid())
-  tenantId        String
-  assetCode       String
-  name            String
-  category        String?
-  acquisitionDate DateTime
-  cost            Decimal  @db.Decimal(12, 2)
-  salvageValue    Decimal  @default(0) @db.Decimal(12, 2)
-  usefulLifeMonths Int
-  method          DepreciationMethod @default(STRAIGHT_LINE)
-  status          FixedAssetStatus   @default(DRAFT)
-  accumulatedDepreciation Decimal @default(0) @db.Decimal(12, 2)
-  depreciationExpenseAccountCode      String @default("5100")
-  accumulatedDepreciationAccountCode  String @default("1590")
-  disposedAt      DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  tenant          Tenant   @relation(fields: [tenantId], references: [id])
-  depreciations   DepreciationEntry[]
+  currency String? @db.VarChar(3)
+  depreciationStartDate DateTime? @db.Date
+  acquisitionReference String?
+  version Int @default(0)
+  planSnapshot Json?
+  planHash String?
+  operations FixedAssetOperation[]
+  id                                 String              @id @default(cuid())
+  tenantId                           String
+  assetCode                          String
+  name                               String
+  category                           String?
+  acquisitionDate                    DateTime
+  cost                               Decimal             @db.Decimal(12, 2)
+  salvageValue                       Decimal             @default(0) @db.Decimal(12, 2)
+  usefulLifeMonths                   Int
+  method                             DepreciationMethod  @default(STRAIGHT_LINE)
+  status                             FixedAssetStatus    @default(DRAFT)
+  accumulatedDepreciation            Decimal             @default(0) @db.Decimal(12, 2)
+  depreciationExpenseAccountCode     String              @default("5100")
+  accumulatedDepreciationAccountCode String              @default("1590")
+  disposedAt                         DateTime?
+  createdAt                          DateTime            @default(now())
+  updatedAt                          DateTime            @updatedAt
+  tenant                             Tenant              @relation(fields: [tenantId], references: [id])
+  depreciations                      DepreciationEntry[]
+
   @@unique([tenantId, assetCode])
+  @@unique([tenantId,id])
   @@index([tenantId, status])
   @@map("fixed_assets")
 }
 
 model DepreciationEntry {
-  id        String   @id @default(cuid())
-  tenantId  String
-  assetId   String
-  period    DateTime
-  amount    Decimal  @db.Decimal(12, 2)
-  postedAt  DateTime @default(now())
-  asset     FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  currency String? @db.VarChar(3)
+  ordinal Int?
+  journalEntryId String?
+  journalEntry JournalEntry? @relation(fields:[tenantId,journalEntryId], references:[tenantId,id], onDelete:Restrict, onUpdate:NoAction)
+  id       String     @id @default(cuid())
+  tenantId String
+  assetId  String
+  period   DateTime
+  amount   Decimal    @db.Decimal(12, 2)
+  postedAt DateTime   @default(now())
+  asset    FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
   @@unique([tenantId, assetId, period])
+  @@unique([tenantId,journalEntryId])
   @@index([tenantId, assetId])
   @@map("depreciation_entries")
+}
+
+enum FixedAssetOperationKind {
+  CREATE
+  UPDATE
+  ACTIVATE
+  DEPRECIATE
+  RETIRE
+}
+
+model FixedAssetOperation {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields:[tenantId], references:[id], onDelete:Restrict, onUpdate:NoAction)
+  assetId String
+  asset FixedAsset @relation(fields:[tenantId,assetId], references:[tenantId,id], onDelete:Restrict, onUpdate:NoAction)
+  actorId String
+  actor User @relation(fields:[tenantId,actorId], references:[tenantId,id], onDelete:Restrict, onUpdate:NoAction)
+  kind FixedAssetOperationKind
+  version Int
+  operationKey String @db.Uuid
+  fingerprint String
+  result Json
+  reason String?
+  createdAt DateTime @default(now())
+  @@unique([tenantId,operationKey])
+  @@unique([tenantId,assetId,version])
+  @@map("fixed_asset_operations")
 }
 
 // ============================================================================
@@ -5066,21 +6247,22 @@ model DepreciationEntry {
 // ============================================================================
 
 model Subscription {
-  id          String               @id @default(cuid())
+  id          String                @id @default(cuid())
   tenantId    String
   name        String
   customerId  String
-  status      SubscriptionStatus   @default(ACTIVE)
-  interval    SubscriptionInterval @default(MONTHLY)
+  status      SubscriptionStatus    @default(ACTIVE)
+  interval    SubscriptionInterval  @default(MONTHLY)
   startDate   DateTime
   nextRunDate DateTime
-  currency    String               @default("CAD")
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
-  tenant      Tenant               @relation(fields: [tenantId], references: [id])
-  customer    Customer             @relation(fields: [customerId], references: [id])
+  currency    String                @default("CAD")
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  tenant      Tenant                @relation(fields: [tenantId], references: [id])
+  customer    Customer              @relation(fields: [customerId], references: [id])
   lines       SubscriptionLine[]
   generated   SubscriptionInvoice[]
+
   @@index([tenantId, status, nextRunDate])
   @@map("subscriptions")
 }
@@ -5092,6 +6274,7 @@ model SubscriptionLine {
   description    String
   amount         Decimal      @db.Decimal(12, 2)
   subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
   @@index([tenantId, subscriptionId])
   @@map("subscription_lines")
 }
@@ -5104,6 +6287,7 @@ model SubscriptionInvoice {
   customerInvoiceId String
   createdAt         DateTime     @default(now())
   subscription      Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
   @@unique([tenantId, subscriptionId, periodStart])
   @@index([tenantId, subscriptionId])
   @@map("subscription_invoices")
@@ -5123,54 +6307,56 @@ enum MrpEntryKind {
 
 model MrpItemPolicy {
   bomRevisionId String?
-  bomRevision BomRevision? @relation(fields: [bomRevisionId], references: [id], onDelete: Restrict)
-  id String @id @default(cuid())
-  tenantId String
-  locationId String
-  itemId String
-  method MrpSourcingMethod @default(BUY)
-  bomId String?
-  unitSnapshot String
-  leadDays Int @default(0)
-  safetyStock Decimal @default(0) @db.Decimal(14, 3)
-  minimumOrder Decimal @default(0) @db.Decimal(14, 3)
-  orderMultiple Decimal @default(0.001) @db.Decimal(14, 3)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  tenant Tenant @relation(fields: [tenantId], references: [id], onUpdate: NoAction, onDelete: NoAction)
-  location Location @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
-  item WmsItem @relation(fields: [itemId], references: [id], onUpdate: NoAction, onDelete: NoAction)
-  bom Bom? @relation(fields: [bomId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  bomRevision   BomRevision?      @relation(fields: [bomRevisionId], references: [id], onDelete: Restrict)
+  id            String            @id @default(cuid())
+  tenantId      String
+  locationId    String
+  itemId        String
+  method        MrpSourcingMethod @default(BUY)
+  bomId         String?
+  unitSnapshot  String
+  leadDays      Int               @default(0)
+  safetyStock   Decimal           @default(0) @db.Decimal(14, 3)
+  minimumOrder  Decimal           @default(0) @db.Decimal(14, 3)
+  orderMultiple Decimal           @default(0.001) @db.Decimal(14, 3)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  location      Location          @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  item          WmsItem           @relation(fields: [itemId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  bom           Bom?              @relation(fields: [bomId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+
   @@unique([tenantId, locationId, itemId])
   @@index([tenantId, locationId])
   @@map("mrp_item_policies")
 }
 
 model MrpEntry {
-  forecastStart DateTime? @db.Date
-  forecastId String?
-  forecast MrpEntry? @relation("MrpForecastConsumption", fields: [forecastId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  consumingDemands MrpEntry[] @relation("MrpForecastConsumption")
+  forecastStart          DateTime?           @db.Date
+  forecastId             String?
+  forecast               MrpEntry?           @relation("MrpForecastConsumption", fields: [forecastId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  consumingDemands       MrpEntry[]          @relation("MrpForecastConsumption")
   sourceSalesOrderLineId String?
-  sourceSalesOrderLine SalesOrderLineItem? @relation(fields: [sourceSalesOrderLineId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  sourceSnapshot Json?
-  id String @id @default(cuid())
-  tenantId String
-  locationId String
-  itemId String
-  kind MrpEntryKind
-  quantity Decimal @db.Decimal(14, 3)
-  unitSnapshot String
-  dueDate DateTime @db.Date
-  reference String
-  isActive Boolean @default(true)
-  receiptId String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  tenant Tenant @relation(fields: [tenantId], references: [id], onUpdate: NoAction, onDelete: NoAction)
-  location Location @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
-  item WmsItem @relation(fields: [itemId], references: [id], onUpdate: NoAction, onDelete: NoAction)
-  receipt Receipt? @relation(fields: [receiptId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  sourceSalesOrderLine   SalesOrderLineItem? @relation(fields: [sourceSalesOrderLineId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sourceSnapshot         Json?
+  id                     String              @id @default(cuid())
+  tenantId               String
+  locationId             String
+  itemId                 String
+  kind                   MrpEntryKind
+  quantity               Decimal             @db.Decimal(14, 3)
+  unitSnapshot           String
+  dueDate                DateTime            @db.Date
+  reference              String
+  isActive               Boolean             @default(true)
+  receiptId              String?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  tenant                 Tenant              @relation(fields: [tenantId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  location               Location            @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  item                   WmsItem             @relation(fields: [itemId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  receipt                Receipt?            @relation(fields: [receiptId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+
   @@unique([tenantId, receiptId, itemId])
   @@unique([tenantId, sourceSalesOrderLineId])
   @@index([tenantId, forecastId])
@@ -5179,61 +6365,64 @@ model MrpEntry {
 }
 
 model MrpRun {
-  preparations MrpPreparation[]
-  reviews MrpReview[]
+  preparations   MrpPreparation[]
+  reviews        MrpReview[]
   sourceMetadata Json?
-  id String @id @default(cuid())
-  tenantId String
-  locationId String
-  createdById String
-  asOf DateTime @db.Date
-  horizonEnd DateTime @db.Date
-  sourceHash String
-  inputSnapshot Json
-  result Json
-  proposalCount Int
+  id             String           @id @default(cuid())
+  tenantId       String
+  locationId     String
+  createdById    String
+  asOf           DateTime         @db.Date
+  horizonEnd     DateTime         @db.Date
+  sourceHash     String
+  inputSnapshot  Json
+  result         Json
+  proposalCount  Int
   exceptionCount Int
-  createdAt DateTime @default(now())
-  tenant Tenant @relation(fields: [tenantId], references: [id], onUpdate: NoAction, onDelete: NoAction)
-  location Location @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  createdAt      DateTime         @default(now())
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  location       Location         @relation(fields: [locationId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+
   @@index([tenantId, locationId, createdAt])
   @@map("mrp_runs")
 }
 
 model MrpProductMapping {
-  id String @id @default(cuid())
-  tenantId String
-  productId String
-  itemId String
+  id             String     @id @default(cuid())
+  tenantId       String
+  productId      String
+  itemId         String
   commercialUnit String
-  numerator Decimal @db.Decimal(18,6)
-  denominator Decimal @db.Decimal(18,6)
-  unitSnapshot String
-  isActive Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  product CrmProduct @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  item WmsItem @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  numerator      Decimal    @db.Decimal(18, 6)
+  denominator    Decimal    @db.Decimal(18, 6)
+  unitSnapshot   String
+  isActive       Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  tenant         Tenant     @relation(fields: [tenantId], references: [id])
+  product        CrmProduct @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  item           WmsItem    @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
   @@unique([tenantId, productId])
   @@index([tenantId, itemId])
   @@map("mrp_product_mappings")
 }
 
 model MrpReview {
-  id String @id @default(cuid())
-  tenantId String
-  runId String
-  taskId String
-  agentId String
-  createdById String
-  contentHash String
-  summary String
-  itemIds Json
+  id            String   @id @default(cuid())
+  tenantId      String
+  runId         String
+  taskId        String
+  agentId       String
+  createdById   String
+  contentHash   String
+  summary       String
+  itemIds       Json
   staleAtReview Boolean
-  createdAt DateTime @default(now())
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  run MrpRun @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdAt     DateTime @default(now())
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  run           MrpRun   @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
   @@unique([tenantId, contentHash])
   @@index([tenantId, runId, createdAt])
   @@map("mrp_reviews")
@@ -5241,27 +6430,28 @@ model MrpReview {
 
 // Published industrial definitions. Append-only; working Bom/BomLine remain editable.
 model BomRevision {
-  validFrom DateTime? @db.Date @map("valid_from")
-  validUntil DateTime? @db.Date @map("valid_until")
-  id String @id @default(cuid())
-  tenantId String
-  bomId String
-  revision Int
-  code String
-  name String
+  validFrom    DateTime?            @map("valid_from") @db.Date
+  validUntil   DateTime?            @map("valid_until") @db.Date
+  id           String               @id @default(cuid())
+  tenantId     String
+  bomId        String
+  revision     Int
+  code         String
+  name         String
   outputItemId String
-  outputSku String
-  outputName String
-  outputUnit String
-  contentHash String
-  createdById String
-  createdAt DateTime @default(now())
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  bom Bom @relation(fields: [bomId], references: [id], onDelete: Restrict)
-  outputItem WmsItem @relation(fields: [outputItemId], references: [id], onDelete: Restrict)
-  lines BomRevisionLine[]
-  policies MrpItemPolicy[]
-  orders ManufacturingOrder[]
+  outputSku    String
+  outputName   String
+  outputUnit   String
+  contentHash  String
+  createdById  String
+  createdAt    DateTime             @default(now())
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  bom          Bom                  @relation(fields: [bomId], references: [id], onDelete: Restrict)
+  outputItem   WmsItem              @relation(fields: [outputItemId], references: [id], onDelete: Restrict)
+  lines        BomRevisionLine[]
+  policies     MrpItemPolicy[]
+  orders       ManufacturingOrder[]
+
   @@unique([tenantId, bomId, revision])
   @@index([tenantId, outputItemId])
   @@map("bom_revisions")
@@ -5274,33 +6464,34 @@ enum MrpPreparationStatus {
 
 // Internal request (BUY) or linked OF (MAKE), never stock or confirmed supply.
 model MrpPreparation {
-  purchaseOrder MaterialPurchaseOrder?
-  id String @id @default(cuid())
-  tenantId String @map("tenant_id")
-  runId String @map("run_id")
-  proposalId String @map("proposal_id")
-  operationKey String @map("operation_key")
-  fingerprint String
-  sourceHash String @map("source_hash")
-  proposalSnapshot Json @map("proposal_snapshot")
-  number String
-  method MrpSourcingMethod
-  status MrpPreparationStatus @default(DRAFT)
-  locationId String @map("location_id")
-  itemId String @map("item_id")
-  quantity Decimal @db.Decimal(14, 3)
-  unitSnapshot String @map("unit_snapshot")
-  releaseDate DateTime @db.Date @map("release_date")
-  dueDate DateTime @db.Date @map("due_date")
-  manufacturingOrderId String? @unique @map("manufacturing_order_id")
-  createdById String @map("created_by_id")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  run MrpRun @relation(fields: [runId], references: [id], onDelete: Restrict)
-  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  item WmsItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
-  manufacturingOrder ManufacturingOrder? @relation(fields: [manufacturingOrderId], references: [id], onDelete: Restrict)
+  purchaseOrder        MaterialPurchaseOrder?
+  id                   String                 @id @default(cuid())
+  tenantId             String                 @map("tenant_id")
+  runId                String                 @map("run_id")
+  proposalId           String                 @map("proposal_id")
+  operationKey         String                 @map("operation_key")
+  fingerprint          String
+  sourceHash           String                 @map("source_hash")
+  proposalSnapshot     Json                   @map("proposal_snapshot")
+  number               String
+  method               MrpSourcingMethod
+  status               MrpPreparationStatus   @default(DRAFT)
+  locationId           String                 @map("location_id")
+  itemId               String                 @map("item_id")
+  quantity             Decimal                @db.Decimal(14, 3)
+  unitSnapshot         String                 @map("unit_snapshot")
+  releaseDate          DateTime               @map("release_date") @db.Date
+  dueDate              DateTime               @map("due_date") @db.Date
+  manufacturingOrderId String?                @unique @map("manufacturing_order_id")
+  createdById          String                 @map("created_by_id")
+  createdAt            DateTime               @default(now()) @map("created_at")
+  updatedAt            DateTime               @updatedAt @map("updated_at")
+  tenant               Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  run                  MrpRun                 @relation(fields: [runId], references: [id], onDelete: Restrict)
+  location             Location               @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  item                 WmsItem                @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  manufacturingOrder   ManufacturingOrder?    @relation(fields: [manufacturingOrderId], references: [id], onDelete: Restrict)
+
   @@unique([tenantId, runId, proposalId])
   @@unique([tenantId, operationKey])
   @@unique([tenantId, number])
@@ -5309,16 +6500,17 @@ model MrpPreparation {
 }
 
 model BomRevisionLine {
-  id String @id @default(cuid())
-  tenantId String
-  revisionId String
-  itemId String
-  sku String
-  name String
-  unit String
-  quantityPerUnit Decimal @db.Decimal(24, 9)
-  revision BomRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict)
-  item WmsItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  id              String      @id @default(cuid())
+  tenantId        String
+  revisionId      String
+  itemId          String
+  sku             String
+  name            String
+  unit            String
+  quantityPerUnit Decimal     @db.Decimal(24, 9)
+  revision        BomRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+  item            WmsItem     @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
   @@index([tenantId, revisionId])
   @@index([tenantId, itemId])
   @@map("bom_revision_lines")
@@ -5331,17 +6523,18 @@ enum MaterialPurchaseStatus {
 }
 
 model MaterialSupplier {
-  id String @id @default(cuid())
-  tenantId String
-  code String
-  name String
-  email String?
-  terms String?
-  isActive Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  orders MaterialPurchaseOrder[]
+  id        String                  @id @default(cuid())
+  tenantId  String
+  code      String
+  name      String
+  email     String?
+  terms     String?
+  isActive  Boolean                 @default(true)
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+  tenant    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  orders    MaterialPurchaseOrder[]
+
   @@unique([tenantId, code])
   @@index([tenantId, isActive])
   @@map("material_suppliers")
@@ -5349,31 +6542,32 @@ model MaterialSupplier {
 
 // One exact BUY preparation per order in v1. No hidden unit/quantity conversion.
 model MaterialPurchaseOrder {
-  closedAt DateTime?
-  closedQuantity Decimal @default(0) @db.Decimal(18, 3)
-  amendments MaterialPurchaseAmendment[]
-  id String @id @default(cuid())
-  tenantId String
-  preparationId String @unique
-  supplierId String
-  number String
-  status MaterialPurchaseStatus @default(DRAFT)
-  supplierSnapshot Json
-  unitPrice Decimal @db.Decimal(18, 6)
-  currency String
-  expectedDate DateTime @db.Date
-  terms String?
+  closedAt          DateTime?
+  closedQuantity    Decimal                     @default(0) @db.Decimal(18, 3)
+  amendments        MaterialPurchaseAmendment[]
+  id                String                      @id @default(cuid())
+  tenantId          String
+  preparationId     String                      @unique
+  supplierId        String
+  number            String
+  status            MaterialPurchaseStatus      @default(DRAFT)
+  supplierSnapshot  Json
+  unitPrice         Decimal                     @db.Decimal(18, 6)
+  currency          String
+  expectedDate      DateTime                    @db.Date
+  terms             String?
   supplierReference String?
-  confirmedAt DateTime?
-  operationKey String
-  fingerprint String
-  createdById String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  preparation MrpPreparation @relation(fields: [preparationId], references: [id], onDelete: Restrict)
-  supplier MaterialSupplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  receipts MaterialPurchaseReceipt[]
+  confirmedAt       DateTime?
+  operationKey      String
+  fingerprint       String
+  createdById       String
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  tenant            Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  preparation       MrpPreparation              @relation(fields: [preparationId], references: [id], onDelete: Restrict)
+  supplier          MaterialSupplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  receipts          MaterialPurchaseReceipt[]
+
   @@unique([tenantId, number])
   @@unique([tenantId, operationKey])
   @@index([tenantId, status, expectedDate])
@@ -5382,16 +6576,17 @@ model MaterialPurchaseOrder {
 
 // Link created atomically with a draft WMS receipt; received quantity is derived.
 model MaterialPurchaseReceipt {
-  id String @id @default(cuid())
-  tenantId String
+  id              String                @id @default(cuid())
+  tenantId        String
   purchaseOrderId String
-  receiptId String @unique
-  operationKey String
-  fingerprint String
-  createdAt DateTime @default(now())
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  purchaseOrder MaterialPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
-  receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  receiptId       String                @unique
+  operationKey    String
+  fingerprint     String
+  createdAt       DateTime              @default(now())
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  purchaseOrder   MaterialPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  receipt         Receipt               @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+
   @@unique([tenantId, operationKey])
   @@index([tenantId, purchaseOrderId])
   @@map("material_purchase_receipts")
@@ -5399,38 +6594,62 @@ model MaterialPurchaseReceipt {
 
 // Append-only promise/closure history. No stock side effects.
 model MaterialPurchaseAmendment {
-  id String @id @default(cuid())
-  tenantId String
+  id              String                @id @default(cuid())
+  tenantId        String
   purchaseOrderId String
-  kind String
-  reason String
-  previousDate DateTime @db.Date
-  expectedDate DateTime @db.Date
-  closedQuantity Decimal @default(0) @db.Decimal(18, 3)
-  createdById String
-  createdAt DateTime @default(now())
-  purchaseOrder MaterialPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  kind            String
+  reason          String
+  previousDate    DateTime              @db.Date
+  expectedDate    DateTime              @db.Date
+  closedQuantity  Decimal               @default(0) @db.Decimal(18, 3)
+  createdById     String
+  createdAt       DateTime              @default(now())
+  purchaseOrder   MaterialPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+
   @@index([tenantId, purchaseOrderId, createdAt])
   @@map("material_purchase_amendments")
 }
 
 // Atomic declaration with immutable actual consumption/movement proofs.
 model ManufacturingDeclaration {
-  id String @id @default(cuid())
-  tenantId String
-  orderId String
-  goodQuantity Int
+  id            String             @id @default(cuid())
+  tenantId      String
+  orderId       String
+  goodQuantity  Int
   scrapQuantity Int
-  note String
-  evidence Json
-  operationKey String
-  fingerprint String
-  createdById String
-  createdAt DateTime @default(now())
-  order ManufacturingOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  note          String
+  evidence      Json
+  operationKey  String
+  fingerprint   String
+  createdById   String
+  createdAt     DateTime           @default(now())
+  order         ManufacturingOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  reversal      ManufacturingDeclarationReversal?
+
+  @@unique([tenantId, id])
   @@unique([tenantId, operationKey])
   @@index([tenantId, orderId, createdAt])
   @@map("manufacturing_declarations")
+}
+
+// Append-only full compensation. Never edits the original declaration or its proof.
+model ManufacturingDeclarationReversal {
+  id            String @id @default(cuid())
+  tenantId      String
+  declarationId String
+  operationKey  String
+  fingerprint   String
+  reason        String
+  evidence      Json
+  createdById   String
+  createdAt     DateTime @default(now())
+  declaration   ManufacturingDeclaration @relation(fields: [tenantId, declarationId], references: [tenantId, id], onDelete: Restrict, map: "manufacturing_reversal_declaration_fkey")
+  createdBy     User @relation(fields: [tenantId, createdById], references: [tenantId, id], onDelete: Restrict, map: "manufacturing_reversal_actor_fkey")
+
+  @@unique([tenantId, declarationId])
+  @@unique([tenantId, operationKey])
+  @@index([tenantId, createdAt])
+  @@map("manufacturing_declaration_reversals")
 }
 
 // ============================================================================

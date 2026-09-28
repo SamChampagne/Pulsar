@@ -1,0 +1,19 @@
+# No host volumes, database, credentials, published port or external network.
+services:
+  qualification:
+    image: pulsar-hermes:qualification
+    build:
+      context: ../..
+      dockerfile: deploy/agents/Dockerfile.qualification
+    network_mode: none
+    read_only: true
+    user: '1000:1000'
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 2g
+    cpus: 2
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m,mode=1777
+    restart: 'no'

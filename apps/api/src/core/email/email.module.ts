@@ -1,5 +1,4 @@
 import { Global, Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { CryptoModule } from '../crypto/crypto.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { DocumentsModule } from '../documents/documents.module';
@@ -19,6 +18,7 @@ import { InboundController } from './inbound/inbound.controller';
 import { LogInboundDriver } from './inbound/log-inbound.driver';
 import { ImapPollDriver } from './inbound/imap-poll.driver';
 import { INBOUND_EMAIL_DRIVER } from './inbound/inbound-driver';
+import { TenantInboundDriver } from './inbound/tenant-inbound.driver';
 
 @Global()
 @Module({
@@ -35,11 +35,10 @@ import { INBOUND_EMAIL_DRIVER } from './inbound/inbound-driver';
     InboundEmailService,
     LogInboundDriver,
     ImapPollDriver,
+    TenantInboundDriver,
     {
       provide: INBOUND_EMAIL_DRIVER,
-      useFactory: (cfg: ConfigService, log: LogInboundDriver, imap: ImapPollDriver) =>
-        cfg.get('EMAIL_DRIVER', 'log') === 'smtp' ? imap : log,
-      inject: [ConfigService, LogInboundDriver, ImapPollDriver],
+      useExisting: TenantInboundDriver,
     },
   ],
   exports: [

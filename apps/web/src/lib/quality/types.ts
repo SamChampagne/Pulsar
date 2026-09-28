@@ -28,6 +28,20 @@ export type Inspection = {
   outcome: QualityOutcome | null;
   updatedAt: string;
   source: { kind: string; available: boolean; id?: string; label?: string; href?: string };
+  lotContext?: {
+    fresh: boolean;
+    disposition: string | null;
+    dispositionRevision: number | null;
+    movementCount: number;
+    snapshot: {
+      code: string;
+      sku: string;
+      name: string;
+      unit: string;
+      disposition: string;
+      dispositionRevision: number;
+    };
+  };
   nonconformity: { id: string; number: string; status: QualityNonconformityStatus } | null;
 };
 export type Nonconformity = {
@@ -62,7 +76,7 @@ export function readInspectionIntent(raw: string): InspectionIntent {
     !p.planId ||
     typeof p.title !== 'string' ||
     !p.title.trim() ||
-    !['MANUAL', 'RECEIPT', 'MANUFACTURING', 'SUPPORT'].includes(p.sourceKind) ||
+    !['MANUAL', 'RECEIPT', 'MANUFACTURING', 'SUPPORT', 'LOT'].includes(p.sourceKind) ||
     (p.sourceKind !== 'MANUAL' && (typeof p.sourceId !== 'string' || !p.sourceId))
   )
     throw new Error(

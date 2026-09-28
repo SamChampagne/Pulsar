@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime as fmtUserInstant } from '$lib/format';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import MrpSalesDemandDrawer from '$lib/components/manufacturing/MrpSalesDemandDrawer.svelte';
@@ -809,7 +810,7 @@
         >
           <div>
             <p class="text-sm font-medium text-ink">
-              {new Date(run.createdAt).toLocaleString('fr-CA')}
+              {fmtUserInstant(run.createdAt)}
             </p>
             <p class="mt-1 text-xs text-ink-muted">
               Horizon {date(run.horizonEnd)} · {run.proposalCount} propositions · {run.exceptionCount}

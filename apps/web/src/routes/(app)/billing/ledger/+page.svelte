@@ -1,4 +1,19 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
+  import {
+    CURRENCIES,
+    formatLedgerAmount,
+    ledgerCents,
+    ledgerAmount,
+    validateLedgerLines,
+    isCalendarDate,
+  } from '@pulsar/shared';
+  import LedgerCoverage from '$lib/components/billing/LedgerCoverage.svelte';
+  import {
+    readLedgerIntent,
+    rememberLedgerIntent,
+    type LedgerIntent,
+  } from '$lib/billing/ledger-intent';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { PERMISSIONS } from '@pulsar/shared';
@@ -43,6 +58,9 @@
   }
 
   interface JournalEntry {
+    originalCurrency: string | null;
+    currencyQualification?: { state: string; currency: string | null; version: number } | null;
+    currency: string | null;
     id: string;
     date: string;
     memo: string | null;
@@ -62,6 +80,12 @@
   }
 
   interface TrialBalance {
+    currency: string;
+    coverage: {
+      unknownEntries: number;
+      selectedEntries: number;
+      otherCurrencies: { currency: string; count: number }[];
+    };
     rows: TrialBalanceRow[];
     totalDebit: string;
     totalCredit: string;
@@ -87,6 +111,42 @@
   const sourceId = $derived(page.url.searchParams.get('sourceId') || '');
   const canManage = $derived($auth?.user.permissions.includes(PERMISSIONS.BILLING.LEDGER_MANAGE));
   let accountId = $state('');
+  let balanceCurrency = $state(''),
+    journalCurrency = $state(''),
+    manualCurrency = $state('');
+  let balanceGeneration = 0;
+  const intentKey = $derived('pulsar:ledger-manual:' + $auth?.tenant.id + ':' + $auth?.user.id);
+  let pending = $state<LedgerIntent | null>(null),
+    intentError = $state('');
+  $effect(() => {
+    void intentKey;
+    untrack(() => {
+      try {
+        pending = readLedgerIntent(intentKey);
+        intentError = '';
+        if (pending) {
+          manualDate = pending.date;
+          manualCurrency = pending.currency;
+          manualMemo = pending.memo ?? '';
+          manualLines = pending.lines.map((l) => ({
+            accountCode: l.accountCode,
+            debit: l.debit ?? '0',
+            credit: l.credit ?? '0',
+            memo: l.memo ?? '',
+          }));
+          showManualForm = true;
+        }
+      } catch (e) {
+        intentError = (e as Error).message;
+      }
+    });
+  });
+  $effect(() => {
+    if (page.url.searchParams.get('unqualified') === 'true') {
+      journalCurrency = 'UNQUALIFIED';
+      activeTab = 'journal';
+    }
+  });
   let dateFrom = $state('');
   let dateTo = $state('');
   let journalGeneration = 0;
@@ -118,6 +178,7 @@
     void sourceType;
     void sourceId;
     void accountId;
+    void journalCurrency;
     void dateFrom;
     void dateTo;
     journalPage = 1;
@@ -146,13 +207,15 @@
 
   function money(val: string | null): string {
     if (val === null || val === undefined) return '—';
-    const n = Number(val);
-    if (isNaN(n)) return '—';
-    return n.toLocaleString('fr-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    try {
+      return formatLedgerAmount(String(val));
+    } catch {
+      return '—';
+    }
   }
 
   function fmtDate(iso: string): string {
-    return new Date(iso).toLocaleDateString('fr-CA');
+    return iso.slice(0, 10);
   }
 
   const ACCOUNT_TYPE_TONE: Record<string, Tone> = {
@@ -170,7 +233,7 @@
   const totalPages = $derived(Math.ceil(journalTotal / journalPageSize));
 
   const balanceBalanced = $derived(
-    trialBalance !== null && Number(trialBalance.totalDebit) === Number(trialBalance.totalCredit),
+    trialBalance !== null && trialBalance.totalDebit === trialBalance.totalCredit,
   );
 
   // ── Load functions ────────────────────────────────────────────────────────────
@@ -192,6 +255,8 @@
     const query = {
       page: journalPage,
       pageSize: journalPageSize,
+      currency: journalCurrency === 'UNQUALIFIED' ? undefined : journalCurrency || undefined,
+      unqualified: journalCurrency === 'UNQUALIFIED' ? 'true' : undefined,
       sourceType: sourceType || undefined,
       sourceId: sourceId || undefined,
       accountId: accountId || undefined,
@@ -199,6 +264,8 @@
       dateTo: dateTo || undefined,
     };
     loadingJournal = true;
+    journalEntries = [];
+    journalTotal = 0;
     errorJournal = '';
     try {
       const result = await api<Paginated<JournalEntry>>('/billing/ledger/journal', {
@@ -216,16 +283,21 @@
   }
 
   async function loadBalance() {
-    loadingBalance = true;
+    const g = ++balanceGeneration;
+    trialBalance = null;
     errorBalance = '';
+    loadingBalance = false;
+    if (!balanceCurrency) return;
+    loadingBalance = true;
     try {
-      const query: Record<string, string | number> = {};
-      if (asOf) query.asOf = asOf;
-      trialBalance = await api<TrialBalance>('/billing/ledger/trial-balance', { query });
+      const r = await api<TrialBalance>('/billing/ledger/trial-balance', {
+        query: { currency: balanceCurrency, asOf: asOf || undefined },
+      });
+      if (g === balanceGeneration) trialBalance = r;
     } catch (e) {
-      errorBalance = e instanceof ApiError ? e.message : 'Échec du chargement de la balance';
+      if (g === balanceGeneration) errorBalance = (e as Error).message;
     } finally {
-      loadingBalance = false;
+      if (g === balanceGeneration) loadingBalance = false;
     }
   }
 
@@ -271,12 +343,31 @@
   let manualSaving = $state(false);
   let manualError = $state('');
 
-  // Live totals so the operator sees imbalance before submitting.
-  const manualTotalDebit = $derived(manualLines.reduce((s, l) => s + (Number(l.debit) || 0), 0));
-  const manualTotalCredit = $derived(manualLines.reduce((s, l) => s + (Number(l.credit) || 0), 0));
-  const manualBalanced = $derived(
-    Math.round((manualTotalDebit - manualTotalCredit) * 100) === 0 && manualTotalDebit > 0,
-  );
+  function exactSum(side: 'debit' | 'credit') {
+    try {
+      return ledgerAmount(
+        manualLines.reduce((s, l) => s + ledgerCents(String(l[side] || '0')), 0n),
+      );
+    } catch {
+      return '0.00';
+    }
+  }
+  const manualTotalDebit = $derived(exactSum('debit')),
+    manualTotalCredit = $derived(exactSum('credit'));
+  const manualBalanced = $derived.by(() => {
+    try {
+      validateLedgerLines(
+        manualLines.map((l) => ({
+          ...l,
+          debit: String(l.debit || '0'),
+          credit: String(l.credit || '0'),
+        })),
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  });
 
   async function loadSettings() {
     try {
@@ -301,6 +392,7 @@
 
   function resetManualForm() {
     manualDate = '';
+    manualCurrency = '';
     manualMemo = '';
     manualLines = [
       { accountCode: '', debit: '', credit: '', memo: '' },
@@ -309,85 +401,85 @@
     manualError = '';
   }
 
-  async function submitManualEntry() {
-    if (manualSaving || !canManage || !manualEntriesEnabled) return;
-    manualError = '';
-    if (
-      manualLines.some((line) => {
-        const debit = Number(line.debit || 0),
-          credit = Number(line.credit || 0);
-        return (
-          !Number.isFinite(debit) ||
-          !Number.isFinite(credit) ||
-          debit < 0 ||
-          credit < 0 ||
-          (debit > 0 && credit > 0)
-        );
-      })
-    ) {
-      manualError =
-        'Chaque ligne doit contenir un montant valide au débit ou au crédit, jamais les deux.';
-      return;
-    }
-    // Build payload: drop empty lines, send only populated debit/credit.
-    const lines = manualLines
-      .filter((l) => l.accountCode.trim() !== '')
-      .map((l) => {
-        const debit = Number(l.debit) || 0;
-        const credit = Number(l.credit) || 0;
-        return {
-          accountCode: l.accountCode.trim(),
-          ...(debit > 0 ? { debit } : {}),
-          ...(credit > 0 ? { credit } : {}),
-          ...(l.memo.trim() ? { memo: l.memo.trim() } : {}),
-        };
-      });
-    if (lines.length < 2) {
-      manualError = 'Au moins deux lignes avec un compte sont requises.';
-      return;
-    }
-    if (
-      !manualBalanced ||
-      manualLines.some((l) => (Number(l.debit) || Number(l.credit)) && !l.accountCode.trim())
-    ) {
-      manualError = 'Associez chaque montant à un compte et équilibrez les débits et crédits.';
-      return;
-    }
+  async function finishManual() {
+    localStorage.removeItem(intentKey);
+    pending = null;
+    resetManualForm();
+    showManualForm = false;
+    await Promise.all([loadJournal(), loadBalance()]);
+  }
+  async function executeManual(p: LedgerIntent) {
+    if (manualSaving || !canManage) return;
     manualSaving = true;
+    manualError = '';
     try {
-      if (
-        !(await confirmAction(
-          'Cette écriture sera immédiatement comptabilisée au grand livre. Vérifiez les comptes, la date et les montants.',
-          {
-            title: 'Comptabiliser l’écriture ?',
-            confirmLabel: 'Comptabiliser',
-            dangerous: false,
-          },
-        ))
-      )
-        return;
-      await api('/billing/ledger/entries', {
-        method: 'POST',
-        body: {
-          ...(manualDate ? { date: manualDate } : {}),
-          ...(manualMemo.trim() ? { memo: manualMemo.trim() } : {}),
-          lines,
-        },
-      });
-      toast.success('Écriture enregistrée');
-      resetManualForm();
-      showManualForm = false;
-      accountId = '';
-      dateFrom = '';
-      dateTo = '';
-      await clearSource();
-      await Promise.all([loadJournal(), loadBalance()]);
+      rememberLedgerIntent(intentKey, p);
+      pending = p;
+      await api('/billing/ledger/entries', { method: 'POST', body: p });
+      await finishManual();
+      toast.success('Écriture conservée, sans doublon.');
     } catch (e) {
-      // Surface the API 400 (e.g. unbalanced, unknown account code).
-      manualError = e instanceof ApiError ? e.message : 'Échec de l’enregistrement';
+      manualError = (e as Error).message;
     } finally {
       manualSaving = false;
     }
+  }
+  async function verifyManual() {
+    if (!pending || manualSaving) return;
+    manualSaving = true;
+    manualError = '';
+    try {
+      await api('/billing/ledger/requests/' + pending.operationKey);
+      await finishManual();
+      toast.success('Écriture retrouvée dans le journal.');
+    } catch (e) {
+      manualError =
+        e instanceof ApiError && e.statusCode === 404
+          ? 'Aucune écriture trouvée : reprenez exactement la même demande.'
+          : (e as Error).message;
+    } finally {
+      manualSaving = false;
+    }
+  }
+  async function submitManualEntry() {
+    if (manualSaving || pending || intentError || !canManage || !manualEntriesEnabled) return;
+    manualError = '';
+    let lines: ReturnType<typeof validateLedgerLines>;
+    try {
+      if (!isCalendarDate(manualDate) || !CURRENCIES.some((c) => c.code === manualCurrency))
+        throw Error('Choisissez explicitement une date civile réelle et une devise.');
+      lines = validateLedgerLines(
+        manualLines.map((l) => ({
+          ...l,
+          debit: String(l.debit || '0'),
+          credit: String(l.credit || '0'),
+        })),
+      );
+    } catch (e) {
+      manualError = (e as Error).message;
+      return;
+    }
+    const body: LedgerIntent = {
+      date: manualDate,
+      currency: manualCurrency,
+      memo: manualMemo.trim(),
+      lines,
+      operationKey: crypto.randomUUID(),
+    };
+    manualSaving = true;
+    let confirmed = false;
+    try {
+      confirmed = await confirmAction(
+        'Écriture définitive en ' +
+          body.currency +
+          '. Vérifiez la date, les comptes et les montants. Aucun change ou clôture de période n’est appliqué.',
+        { title: 'Comptabiliser l’écriture ?', confirmLabel: 'Comptabiliser', dangerous: false },
+      );
+    } finally {
+      manualSaving = false;
+    }
+    if (!confirmed) return;
+    await executeManual(body);
   }
 
   $effect(() => {
@@ -395,6 +487,7 @@
   });
   function closeManual() {
     if (manualSaving) return false;
+    if (pending) return true;
     if (
       !manualDate &&
       !manualMemo &&
@@ -421,6 +514,10 @@
 />
 
 <svelte:head><title>Grand livre · Pulsar</title></svelte:head>
+<a
+  class="mb-4 inline-block text-sm text-accent hover:underline"
+  href="/billing/ledger-qualification">Reprise documentée du journal historique</a
+>
 <Tabs {tabs} bind:active={activeTab} label="Vues du grand livre">
   <!-- ── Plan comptable ──────────────────────────────────────────────────────── -->
   {#if activeTab === 'chart'}
@@ -483,6 +580,15 @@
         <Button variant="ghost" onclick={clearSource}>Voir toutes les écritures</Button>
       </div>
     {/if}
+    <div class="mb-4 max-w-sm">
+      <Field label="Devise du journal"
+        ><Select bind:value={journalCurrency}
+          ><option value="">Toutes, sans total commun</option><option value="UNQUALIFIED"
+            >Sans devise — à qualifier</option
+          >{#each CURRENCIES as c}<option value={c.code}>{c.code}</option>{/each}</Select
+        ></Field
+      >
+    </div>
     <div class="mb-4 grid gap-3 sm:grid-cols-3">
       <Field label="Compte"
         ><Select bind:value={accountId}
@@ -504,6 +610,9 @@
             <div class="mb-3 flex flex-wrap items-start justify-between gap-2">
               <div>
                 <span class="font-mono text-xs text-ink-faint">{fmtDate(entry.date)}</span>
+                <span class="ml-2 text-sm font-medium"
+                  >{entry.currency ?? 'Sans devise — à qualifier'}</span
+                >
                 <span class="ml-2"
                   ><Badge tone={entry.sourceKind === 'reversal' ? 'warn' : 'neutral'}
                     >{entry.sourceKind === 'reversal'
@@ -520,6 +629,13 @@
                 {#if sourceHref(entry)}<a
                     class="ml-2 text-xs font-medium text-accent hover:underline"
                     href={sourceHref(entry)}>Ouvrir la source</a
+                  >{/if}
+                {#if entry.originalCurrency === null}<a
+                    class="ml-2 text-xs text-accent hover:underline"
+                    href={'/billing/ledger-qualification?entryId=' + encodeURIComponent(entry.id)}
+                    >{entry.currencyQualification?.state === 'QUALIFIED'
+                      ? 'Devise qualifiée sur preuve'
+                      : 'Examiner la devise historique'}</a
                   >{/if}
               </div>
               {#if entry.memo}
@@ -598,6 +714,19 @@
 
   <!-- ── Balance de vérification ────────────────────────────────────────────── -->
   {#if activeTab === 'balance'}
+    <div class="mb-4 max-w-sm">
+      <Field label="Devise de la balance"
+        ><Select bind:value={balanceCurrency}
+          ><option value="">Choisir une devise</option>{#each CURRENCIES as c}<option value={c.code}
+              >{c.code} · {c.name}</option
+            >{/each}</Select
+        ></Field
+      >
+    </div>
+    {#if trialBalance}<LedgerCoverage
+        currency={trialBalance.currency}
+        coverage={trialBalance.coverage}
+      />{/if}
     <div class="mb-4 flex items-center gap-3">
       <label class="text-sm font-medium text-ink" for="asof-input">Au</label>
       <input
@@ -606,7 +735,7 @@
         bind:value={asOf}
         class="rounded-lg border border-edge px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
       />
-      <span class="text-xs text-ink-faint">(laisser vide pour la date courante)</span>
+      <span class="text-xs text-ink-faint">(laisser vide pour inclure toutes les dates)</span>
     </div>
 
     <ErrorNotice message={errorBalance} onretry={loadBalance} />
@@ -614,9 +743,12 @@
     {#if loadingBalance}
       <Card padded={false}><Skeleton rows={8} /></Card>
     {:else if trialBalance}
+      <p class="mb-2 text-xs text-ink-muted sm:hidden">
+        Faites défiler le tableau horizontalement pour consulter débits, crédits et soldes.
+      </p>
       <Card padded={false}>
         <div class="overflow-x-auto">
-          <table class="w-full">
+          <table class="w-full min-w-[40rem]">
             <thead>
               <tr
                 class="border-b border-edge text-xs font-semibold tracking-wide text-ink-faint uppercase"
@@ -661,9 +793,9 @@
                 <td class="px-4 py-3 text-right tabular-nums">{money(trialBalance.totalCredit)}</td>
                 <td class="px-4 py-3 text-right">
                   {#if balanceBalanced}
-                    <Badge tone="ok">Équilibré ✓</Badge>
+                    <Badge tone="ok">Équilibre arithmétique</Badge>
                   {:else}
-                    <Badge tone="danger">Déséquilibré !</Badge>
+                    <Badge tone="danger">Déséquilibré</Badge>
                   {/if}
                 </td>
               </tr>
@@ -675,7 +807,9 @@
       <Card>
         <EmptyState
           title="Aucune balance"
-          message="Impossible de charger la balance de vérification."
+          message={balanceCurrency
+            ? 'Impossible de charger la balance de vérification.'
+            : 'Choisissez une devise. Les écritures historiques sans devise restent à qualifier.'}
         />
       </Card>
     {/if}
@@ -692,7 +826,36 @@
     Les débits et crédits doivent être équilibrés. L’enregistrement crée une écriture définitive,
     pas un brouillon. Cette écriture manuelle est indépendante de la source filtrée.
   </p>
-  <fieldset class="min-w-0" disabled={manualSaving}>
+  {#if intentError}<p role="alert" class="mb-3 text-danger">{intentError}</p>{/if}
+  {#if pending}<section class="mb-4 space-y-2 rounded-md border border-warn/40 p-3">
+      <h3 class="font-medium">Écriture à vérifier</h3>
+      <p class="text-sm">
+        La demande exacte en {pending.currency} du {pending.date} est conservée. Ne créez pas une autre
+        écriture.
+      </p>
+      <div class="flex flex-wrap gap-2">
+        <Button variant="secondary" disabled={manualSaving || !canManage} onclick={verifyManual}
+          >Vérifier l’écriture</Button
+        ><Button
+          variant="secondary"
+          disabled={manualSaving || !canManage}
+          onclick={() => {
+            if (pending) void executeManual(pending);
+          }}>Reprendre la même écriture</Button
+        >
+      </div>
+    </section>{/if}
+  {#if manualError}<p role="alert" class="mb-3 text-danger">{manualError}</p>{/if}
+  <fieldset class="min-w-0" disabled={manualSaving || !!pending || !!intentError}>
+    <div class="mb-4">
+      <Field label="Devise de l’écriture"
+        ><Select bind:value={manualCurrency}
+          ><option value="">Choisir explicitement</option>{#each CURRENCIES as c}<option
+              value={c.code}>{c.code} · {c.name}</option
+            >{/each}</Select
+        ></Field
+      >
+    </div>
     <div class="mb-3 grid gap-3 sm:grid-cols-2">
       <div>
         <label class="mb-1 block text-xs font-medium text-ink-muted" for="manual-date">Date</label>
@@ -702,7 +865,9 @@
           bind:value={manualDate}
           class="w-full rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
         />
-        <p class="mt-1 text-xs text-ink-faint">Laisser vide pour la date courante.</p>
+        <p class="mt-1 text-xs text-ink-faint">
+          Date civile obligatoire, conservée sans conversion de fuseau.
+        </p>
       </div>
       <div>
         <label class="mb-1 block text-xs font-medium text-ink-muted" for="manual-memo"
@@ -747,7 +912,8 @@
               </td>
               <td class="py-1 px-1 text-right">
                 <input
-                  type="number"
+                  type="text"
+                  inputmode="decimal"
                   step="0.01"
                   min="0"
                   aria-label={`Débit · ligne ${i + 1}`}
@@ -757,7 +923,8 @@
               </td>
               <td class="py-1 px-1 text-right">
                 <input
-                  type="number"
+                  type="text"
+                  inputmode="decimal"
                   step="0.01"
                   min="0"
                   aria-label={`Crédit · ligne ${i + 1}`}
@@ -805,10 +972,6 @@
         </tfoot>
       </table>
     </div>
-
-    {#if manualError}
-      <p role="alert" class="mt-3 text-sm text-danger">{manualError}</p>
-    {/if}
   </fieldset>
   {#snippet footer()}
     <Button
@@ -819,7 +982,12 @@
       }}>Fermer</Button
     >
     <Button
-      disabled={manualSaving || !manualBalanced}
+      disabled={manualSaving ||
+        !manualBalanced ||
+        !manualCurrency ||
+        !manualDate ||
+        !!pending ||
+        !!intentError}
       loading={manualSaving}
       onclick={submitManualEntry}>Comptabiliser l’écriture</Button
     >

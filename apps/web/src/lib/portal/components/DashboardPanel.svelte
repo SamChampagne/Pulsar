@@ -77,7 +77,7 @@
   const dueByCurrency = $derived.by(() => {
     const totals = new Map<string, number>();
     for (const invoice of unpaid) {
-      const outstanding = invoice.totalAmount - invoice.amountPaid;
+      const outstanding = invoice.outstanding;
       if (outstanding <= 0) continue;
       totals.set(invoice.currency, (totals.get(invoice.currency) ?? 0) + outstanding);
     }

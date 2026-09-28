@@ -119,19 +119,15 @@ export class MrpAssistanceService {
         return {
           asOf: view.asOf,
           baselineId: view.baselineId,
-          orders: matching
-            .slice(0, 50)
-            .map((o) => ({
-              ...o,
-              components: o.components
-                .slice(0, 50)
-                .map((c) => ({
-                  ...c,
-                  sources: c.sources.slice(0, 20),
-                  totalSources: c.sources.length,
-                })),
-              totalComponents: o.components.length,
+          orders: matching.slice(0, 50).map((o) => ({
+            ...o,
+            components: o.components.slice(0, 50).map((c) => ({
+              ...c,
+              sources: c.sources.slice(0, 20),
+              totalSources: c.sources.length,
             })),
+            totalComponents: o.components.length,
+          })),
           totalOrders: matching.length,
           unassessedOrders: view.unassessedOrders.slice(0, 50),
           totalUnassessedOrders: view.unassessedOrders.length,
@@ -177,6 +173,7 @@ export class MrpAssistanceService {
       totalMaterialPurchases: (metadata?.materialPurchases ?? []).filter((p) => ids.has(p.itemId))
         .length,
       preparationGuidance:
+        'Une déclaration portant reversal est contrepassée dans ce snapshot : ne pas compter ses quantités ni ses consommations comme actives. Ses mouvements compensatoires sont déjà dans WMS. Ne jamais additionner le registre au stock ni appliquer une correction actuelle à un ancien snapshot. Aucun outil de correction n’est exposé au worker. ' +
         'Les préparations ne sont pas du stock. Les commandes CONFIRMED alimentent les arrivages uniquement pour leur reste non reçu et non clôturé. Une clôture ne produit aucun stock. Le WMS contient déjà les réceptions POSTED et la production bonne déclarée, moins les consommations : ne rien additionner à nouveau; un rebut ne crée aucun produit fini. materialPurchases et productionDeclarations sont figés au calcul; purchaseOrder et currentMaterialImpact décrivent le présent, pas le scénario historique. currentMaterialImpact reste consultatif et borné à 50 OF, 50 composants et 20 sources par composant; les OF non évalués empêchent une conclusion globale. La capacité exige une simulation APS et une validation humaine. Aucun outil de création achat/OF, de réception ou de déclaration atelier n’est exposé à ce worker.',
       salesDemands: (metadata?.salesDemands ?? [])
         .filter((d) => d.itemId && ids.has(d.itemId))

@@ -1,4 +1,15 @@
 import { forwardRef, Module } from '@nestjs/common';
+import { LotsService } from './lots/lots.service';
+import { LotsController } from './lots/lots.controller';
+import { LotTraceService } from './lots/lot-trace.service';
+import { StockExitsService } from './stock-exits/stock-exits.service';
+import { StockExitsController } from './stock-exits/stock-exits.controller';
+import { StockExitPurchasesService } from './stock-exits/stock-exit-purchases.service';
+import { StockExitEvidenceService } from './stock-exits/stock-exit-evidence.service';
+import { StockExitEvidenceController } from './stock-exits/stock-exit-evidence.controller';
+import { SupplierReturnReportsService } from './stock-exits/supplier-return-reports.service';
+import { SupplierReturnReportsController } from './stock-exits/supplier-return-reports.controller';
+import { DocumentsModule } from '../../core/documents/documents.module';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { CustomFieldsModule } from '../../core/custom-fields/custom-fields.module';
 import { OperatingModule } from '../../core/operating/operating.module';
@@ -36,8 +47,17 @@ import { CycleCountsController } from './cycle-counts/cycle-counts.controller';
  * so it resolves from providers.
  */
 @Module({
-  imports: [AuditLogsModule, CustomFieldsModule, forwardRef(() => OperatingModule)],
+  imports: [
+    DocumentsModule,
+    AuditLogsModule,
+    CustomFieldsModule,
+    forwardRef(() => OperatingModule),
+  ],
   controllers: [
+    SupplierReturnReportsController,
+    StockExitEvidenceController,
+    StockExitsController,
+    LotsController,
     WmsWorkspaceController,
     CustomFieldsController,
     ItemsController,
@@ -50,6 +70,12 @@ import { CycleCountsController } from './cycle-counts/cycle-counts.controller';
     CycleCountsController,
   ],
   providers: [
+    SupplierReturnReportsService,
+    StockExitPurchasesService,
+    StockExitEvidenceService,
+    StockExitsService,
+    LotTraceService,
+    LotsService,
     MovementHistoryService,
     WmsWorkspaceService,
     ItemsService,

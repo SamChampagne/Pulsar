@@ -4,6 +4,7 @@ import type { Readable } from 'node:stream';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FILE_STORAGE, type FileStorage } from './storage/file-storage';
 import { assertGenericDocumentType, PROTECTED_DOCUMENT_TYPES } from './protected-documents';
+import type { ProtectedDocumentContext } from './protected-documents';
 
 export interface UploadDocumentInput {
   entityType: string;
@@ -57,7 +58,7 @@ export class DocumentsService {
   async upload(
     tenantId: string,
     input: UploadDocumentInput,
-    protectedContext?: 'quality-evidence',
+    protectedContext?: ProtectedDocumentContext,
   ) {
     if (input.entityType !== protectedContext) assertGenericDocumentType(input.entityType);
     if (input.body.length > MAX_SIZE_BYTES) {
@@ -83,7 +84,7 @@ export class DocumentsService {
   async download(
     tenantId: string,
     id: string,
-    protectedContext?: 'quality-evidence',
+    protectedContext?: ProtectedDocumentContext,
   ): Promise<{ stream: Readable; fileName: string; mimeType: string }> {
     const doc = await this.prisma.document.findFirst({ where: { id, tenantId } });
     if (!doc) throw new NotFoundException('Document not found');
@@ -164,15 +165,33 @@ export class DocumentsService {
     });
   }
 
-  async remove(tenantId: string, id: string, protectedContext?: 'quality-evidence') {
+  async remove(tenantId: string, id: string, protectedContext?: ProtectedDocumentContext) {
     const doc = await this.prisma.document.findFirst({ where: { id, tenantId } });
     if (!doc) throw new NotFoundException('Document not found');
     if (doc.entityType !== protectedContext) assertGenericDocumentType(doc.entityType);
+    if (['customer-credit-pdf', 'customer-invoice-pdf'].includes(doc.entityType))
+      throw new BadRequestException(
+        'Les PDF financiers sont conservés, y compris après un échec de publication.',
+      );
+    if (
+      doc.entityType === 'wms-stock-exit-evidence' &&
+      (await this.prisma.wmsStockExitEvidence.count({ where: { tenantId, documentId: id } }))
+    )
+      throw new BadRequestException('Une pièce liée est conservée dans l’historique de sortie.');
     if (
       doc.entityType === 'quality-evidence' &&
       (await this.prisma.qualityEvidence.count({ where: { tenantId, documentId: id } }))
     )
       throw new BadRequestException('Une preuve liée est conservée dans l’historique.');
+    if (doc.entityType === 'supplier-invoice-evidence' &&
+      await this.prisma.supplierInvoiceEvidence.count({ where: { tenantId, documentId: id } }))
+      throw new BadRequestException('Une pièce liée est conservée dans la facture fournisseur.');
+    if (doc.entityType === 'supplier-credit-evidence' &&
+      await this.prisma.supplierCreditEvidence.count({ where: { tenantId, documentId: id } }))
+      throw new BadRequestException('Une pièce liée est conservée dans l’avoir fournisseur.');
+    if (doc.entityType === 'ledger-currency-evidence' &&
+      await this.prisma.ledgerCurrencyEvidence.count({ where: { tenantId, documentId: id } }))
+      throw new BadRequestException('Une preuve liée est conservée dans le journal historique.');
     await this.storage.delete(doc.storageKey);
     await this.prisma.document.delete({ where: { id } });
     return { deleted: true };

@@ -188,7 +188,8 @@ describe('Scanners and first-entry tours (HTTP)', () => {
         tenantId: tid,
         binId: bin,
         number: 'CC-SCAN',
-        lines: { create: { tenantId: tid, itemId: item, systemQty: 3 } },
+        stockMovementCount: 0,
+        lines: { create: { tenantId: tid, itemId: item, systemQty: 3, unitSnapshot: 'EA' } },
       },
       include: { lines: true },
     });

@@ -1,396 +1,501 @@
-/**
- * E2E: Billing Fixed Assets — create, schedule, activate, depreciate (GL + idempotence),
- * dispose, and tenant isolation.
- *
- * Covers:
- *   1. POST /billing/fixed-assets → 201, status DRAFT.
- *   2. GET  /billing/fixed-assets/:id/schedule → 12 rows × 100, last bookValue 0, sum 1200.
- *   3. POST /billing/fixed-assets/:id/activate → status ACTIVE.
- *   4. POST /billing/fixed-assets/:id/depreciate {period} → 200; accumulatedDepreciation 100;
- *      balanced GL entry sourceType='depreciation' with Dr 5100 = 100 and Cr 1590 = 100.
- *   5. Re-depreciate same month → 409 'Period already depreciated'.
- *   6. Depreciate a second distinct month → accumulatedDepreciation 200.
- *   7. POST /billing/fixed-assets/:id/dispose → status DISPOSED.
- *   8. Tenant isolation: second-tenant token gets 404 on first tenant's asset.
- *
- * Prerequisites: running Postgres, db:migrate + db:seed applied.
- */
-import { INestApplication, Injectable, ValidationPipe } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { SchedulerRegistry } from '@nestjs/schedule';
 import request from 'supertest';
+import { hashSync } from 'bcryptjs';
+import { randomUUID } from 'node:crypto';
+import { MODULE_CATALOG, PERMISSION_CATALOG } from '@pulsar/shared';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { AgentsService } from '../src/core/agents/agents.service';
 import { AgentRuntimeService } from '../src/core/agents/agent-runtime.service';
+import { EmailService } from '../src/core/email/email.service';
+import { LedgerService } from '../src/modules/billing/ledger/ledger.service';
+import { AuditLogsService } from '../src/core/audit-logs/audit-logs.service';
+import { TenantModulesCacheService } from '../src/prisma/tenant-modules-cache.service';
 
-// ---------------------------------------------------------------------------
-// Stub — keeps the app bootable without a real Hermes process
-// ---------------------------------------------------------------------------
-@Injectable()
-class FakeAgentRuntimeService {
-  constructor(private readonly _agents: AgentsService) {}
-  async openSession(): Promise<string> { return 'fake-session'; }
-  async *sendTurn(): AsyncGenerator<never> { /* no turns */ }
-  async closeSession(): Promise<void> { /* no-op */ }
-  async killAgentSessions(): Promise<void> { /* no-op */ }
-}
-
-// ---------------------------------------------------------------------------
-// Shared state
-// ---------------------------------------------------------------------------
-
-const ADMIN = { email: 'admin@pulsar.dev', password: 'admin123', tenant: 'acme' };
-const suffix = `${Date.now()}-ast`;
-
-let app: INestApplication;
-let http: ReturnType<INestApplication['getHttpServer']>;
-let prisma: PrismaService;
-let token = '';
-let tenantId = '';
-
-// Cleanup tracking
-const assetIds: string[] = [];
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const auth = () => ({ Authorization: `Bearer ${token}` });
-
-async function enableModule(key: string) {
-  const mod = await prisma.moduleDefinition.findUniqueOrThrow({ where: { key } });
-  await prisma.tenantModule.upsert({
-    where: { tenantId_moduleId: { tenantId, moduleId: mod.id } },
-    update: { enabled: true },
-    create: { tenantId, moduleId: mod.id, enabled: true, enabledAt: new Date() },
-  });
-}
-
-async function ensurePermission(adminRoleId: string, key: string, module: string) {
-  const perm = await prisma.permission.upsert({
-    where: { key },
-    update: {},
-    create: { key, module, description: `Permission: ${key}` },
-  });
-  await prisma.rolePermission.upsert({
-    where: { roleId_permissionId: { roleId: adminRoleId, permissionId: perm.id } },
-    update: {},
-    create: { roleId: adminRoleId, permissionId: perm.id },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Bootstrap
-// ---------------------------------------------------------------------------
-
-describe('Fixed Assets (e2e)', () => {
+describe('I2m.2c qualified fixed assets', () => {
+  let app: INestApplication, db: PrismaService, http: any;
+  const prefix = `asset-currency-${Date.now()}`,
+    base = 'billing/fixed-assets';
+  const tenants: { id: string; tokens: Record<string, string> }[] = [];
+  const R = 'billing.assets.read',
+    M = 'billing.assets.manage',
+    Q = 'billing.assets.post';
+  function call(
+    method: 'get' | 'post' | 'put' | 'delete' | 'patch',
+    path: string,
+    data?: object,
+    role = 'manager',
+    tenant = 0,
+  ) {
+    const r = request(http)
+      [method](`/api/v1/${path}`)
+      .set('Authorization', `Bearer ${tenants[tenant].tokens[role]}`);
+    return data ? r.send(data) : r;
+  }
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const mod = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(EmailService)
+      .useValue({ channel: 'log', send: jest.fn(async () => true) })
       .overrideProvider(AgentRuntimeService)
-      .useClass(FakeAgentRuntimeService)
+      .useValue({ killAgentSessions: async () => {}, closeSession: async () => {} })
       .compile();
-
-    app = moduleRef.createNestApplication();
+    app = mod.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
+      new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }),
     );
     await app.listen(0);
     http = app.getHttpServer();
-    prisma = app.get(PrismaService);
-
-    const login = await request(http).post('/api/v1/auth/login').send(ADMIN).expect(200);
-    token = (login.body as { accessToken: string }).accessToken;
-
-    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: 'acme' } });
-    tenantId = tenant.id;
-
-    await enableModule('billing');
-
-    // Ensure assets permissions are assigned to the admin role.
-    const adminRole = await prisma.role.findFirstOrThrow({ where: { tenantId, key: 'admin' } });
-    for (const [key, module] of [
-      ['billing.assets.read', 'billing'],
-      ['billing.assets.manage', 'billing'],
-    ] as [string, string][]) {
-      await ensurePermission(adminRole.id, key, module);
-    }
-
-    // Re-login to get a fresh JWT that includes the newly assigned assets permissions.
-    const loginRefresh = await request(http).post('/api/v1/auth/login').send(ADMIN).expect(200);
-    token = (loginRefresh.body as { accessToken: string }).accessToken;
-
-    // Ensure the depreciation GL accounts (5100/1590) exist for acme.
-    // These were added to DEFAULT_CHART after the initial seed and may not be present
-    // if db:seed has not been re-run. Upsert them explicitly so the test is self-contained.
-    for (const { code, name, type } of [
-      { code: '5100', name: 'Dotation aux amortissements', type: 'EXPENSE' },
-      { code: '1590', name: 'Amortissement cumulé', type: 'ASSET' },
-    ]) {
-      await prisma.chartOfAccount.upsert({
-        where: { tenantId_code: { tenantId, code } },
-        update: { name, type: type as any },
-        create: { tenantId, code, name, type: type as any },
-      });
-    }
-  });
-
-  afterAll(async () => {
-    // Clean up depreciation entries first (FK → asset), then assets.
-    if (assetIds.length > 0) {
-      await prisma.depreciationEntry.deleteMany({ where: { assetId: { in: assetIds } } }).catch(() => undefined);
-      await prisma.fixedAsset.deleteMany({ where: { id: { in: assetIds } } }).catch(() => undefined);
-    }
-    await app?.close();
-  });
-
-  // ===========================================================================
-  // Main happy-path suite
-  // ===========================================================================
-  describe('Happy path: create → schedule → activate → depreciate → dispose', () => {
-    const COST = 1200;
-    const SALVAGE = 0;
-    const LIFE = 12;
-    const assetCode = `FA-${suffix}`;
-    const thisYear = new Date().getUTCFullYear();
-    const period1 = `${thisYear}-01-15`; // first month
-    const period2 = `${thisYear}-02-15`; // second month
-
-    let assetId = '';
-
-    // -----------------------------------------------------------------------
-    // 1. Create asset → 201, status DRAFT
-    // -----------------------------------------------------------------------
-    it('1. POST /billing/fixed-assets → 201, status DRAFT', async () => {
-      const res = await request(http)
-        .post('/api/v1/billing/fixed-assets')
-        .set(auth())
-        .send({
-          assetCode,
-          name: `Test Asset ${suffix}`,
-          acquisitionDate: `${thisYear}-01-01`,
-          cost: COST,
-          salvageValue: SALVAGE,
-          usefulLifeMonths: LIFE,
-        })
-        .expect(201);
-
-      const body = res.body as { id: string; status: string };
-      expect(body.id).toBeTruthy();
-      expect(body.status).toBe('DRAFT');
-      assetId = body.id;
-      assetIds.push(assetId);
-    });
-
-    // -----------------------------------------------------------------------
-    // 2. GET :id/schedule → 12 rows × 100, last bookValue 0, sum 1200
-    // -----------------------------------------------------------------------
-    it('2. GET :id/schedule → 12 rows × 100, last bookValue 0, sum 1200', async () => {
-      const res = await request(http)
-        .get(`/api/v1/billing/fixed-assets/${assetId}/schedule`)
-        .set(auth())
-        .expect(200);
-
-      const rows = res.body as Array<{ period: number; amount: number; accumulated: number; bookValue: number }>;
-      expect(rows).toHaveLength(12);
-
-      // Every row has amount 100
-      for (const row of rows) {
-        expect(row.amount).toBe(100);
+    db = app.get(PrismaService);
+    for (const job of app.get(SchedulerRegistry).getCronJobs().values()) job.stop();
+    for (const p of PERMISSION_CATALOG)
+      await db.permission.upsert({ where: { key: p.key }, create: p, update: p });
+    for (let i = 0; i < 3; i++) {
+      const slug = `${prefix}-${i}`,
+        t = await db.tenant.create({ data: { slug, name: slug } }),
+        tokens: Record<string, string> = {};
+      for (const m of MODULE_CATALOG.filter((m) =>
+        i === 0
+          ? m.key === 'billing'
+          : i === 1
+            ? ['billing', 'purchasing', 'wms'].includes(m.key)
+            : m.key === 'purchasing',
+      )) {
+        const def = await db.moduleDefinition.upsert({
+          where: { key: m.key },
+          create: m,
+          update: m,
+        });
+        await db.tenantModule.create({ data: { tenantId: t.id, moduleId: def.id, enabled: true } });
       }
+      for (const [key, keys] of Object.entries({
+        manager: PERMISSION_CATALOG.map((p) => p.key),
+        writer: [R, M],
+        poster: [R, M, Q],
+        reader: [R],
+        planner: [R, 'billing.ledger-currency.manage'],
+        carrier: ['billing.invoices.read', 'billing.invoices.manage'],
+      })) {
+        const ps = await db.permission.findMany({ where: { key: { in: keys } } });
+        const role = await db.role.create({
+          data: {
+            tenantId: t.id,
+            key,
+            name: key,
+            permissions: { create: ps.map((p) => ({ permissionId: p.id })) },
+          },
+        });
+        const email = `${key}@${slug}.test`;
+        await db.user.create({
+          data: {
+            tenantId: t.id,
+            email,
+            firstName: key,
+            lastName: 'Invoices',
+            status: 'ACTIVE',
+            passwordHash: hashSync('Test1234!', 4),
+            roles: { create: { roleId: role.id } },
+          },
+        });
+        tokens[key] = (
+          await request(http)
+            .post('/api/v1/auth/login')
+            .send({ tenant: slug, email, password: 'Test1234!' })
+            .expect(200)
+        ).body.accessToken;
+      }
+      tenants.push({ id: t.id, tokens });
+    }
+    console.log(`ASSET_CURRENCY_TENANT=${prefix}-0`);
+    for (const t of tenants) await app.get(LedgerService).ensureChart(t.id);
+  }, 120000);
+  afterAll(async () => app?.close());
 
-      // Last row bookValue is 0
-      const last = rows[rows.length - 1];
-      expect(last.bookValue).toBe(0);
-
-      // Sum of amounts = 1200
-      const total = rows.reduce((s, r) => s + r.amount, 0);
-      expect(total).toBe(COST - SALVAGE);
-    });
-
-    // -----------------------------------------------------------------------
-    // 3. Activate → status ACTIVE
-    // -----------------------------------------------------------------------
-    it('3. POST :id/activate → status ACTIVE', async () => {
-      const res = await request(http)
-        .post(`/api/v1/billing/fixed-assets/${assetId}/activate`)
-        .set(auth())
-        .expect((r) => expect([200, 201]).toContain(r.status));
-
-      expect((res.body as { status: string }).status).toBe('ACTIVE');
-    });
-
-    // -----------------------------------------------------------------------
-    // 4. Depreciate period1 → accumulatedDepreciation 100; balanced GL entry
-    // -----------------------------------------------------------------------
-    it('4a. POST :id/depreciate {period1} → 200/201; accumulatedDepreciation 100', async () => {
-      const res = await request(http)
-        .post(`/api/v1/billing/fixed-assets/${assetId}/depreciate`)
-        .set(auth())
-        .send({ period: period1 })
-        .expect((r) => expect([200, 201]).toContain(r.status));
-
-      const body = res.body as { accumulatedDepreciation: string | number };
-      expect(Number(body.accumulatedDepreciation)).toBe(100);
-    });
-
-    it('4b. Balanced GL entry: sourceType=depreciation, Dr 5100 = 100, Cr 1590 = 100', async () => {
-      // Look up the DepreciationEntry for this asset + period
-      const d = new Date(period1);
-      const periodUtc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-
-      const depEntry = await prisma.depreciationEntry.findFirst({
-        where: { tenantId, assetId },
-        orderBy: { period: 'asc' },
-      });
-      expect(depEntry).not.toBeNull();
-
-      // The GL entry is keyed by the DepreciationEntry id
-      const glEntry = await prisma.journalEntry.findFirst({
-        where: { tenantId, sourceType: 'depreciation', sourceId: depEntry!.id },
-        include: { lines: { include: { account: true } } },
-      });
-      expect(glEntry).not.toBeNull();
-
-      const totalDebit = glEntry!.lines.reduce((s, l) => s + Number(l.debit), 0);
-      const totalCredit = glEntry!.lines.reduce((s, l) => s + Number(l.credit), 0);
-      expect(totalDebit).toBe(100);
-      expect(totalCredit).toBe(100);
-
-      // Dr 5100 (depreciation expense) = 100
-      const drLine = glEntry!.lines.find((l) => l.account.code === '5100');
-      expect(drLine).toBeDefined();
-      expect(Number(drLine!.debit)).toBe(100);
-
-      // Cr 1590 (accumulated depreciation contra-asset) = 100
-      const crLine = glEntry!.lines.find((l) => l.account.code === '1590');
-      expect(crLine).toBeDefined();
-      expect(Number(crLine!.credit)).toBe(100);
-    });
-
-    // -----------------------------------------------------------------------
-    // 5. Re-depreciate same month → 409
-    // -----------------------------------------------------------------------
-    it('5. POST :id/depreciate same period again → 409 (Period already depreciated)', async () => {
-      await request(http)
-        .post(`/api/v1/billing/fixed-assets/${assetId}/depreciate`)
-        .set(auth())
-        .send({ period: period1 })
-        .expect(409);
-    });
-
-    // -----------------------------------------------------------------------
-    // 6. Depreciate a second distinct month → accumulatedDepreciation 200
-    // -----------------------------------------------------------------------
-    it('6. Depreciate second month → accumulatedDepreciation 200', async () => {
-      const res = await request(http)
-        .post(`/api/v1/billing/fixed-assets/${assetId}/depreciate`)
-        .set(auth())
-        .send({ period: period2 })
-        .expect((r) => expect([200, 201]).toContain(r.status));
-
-      const body = res.body as { accumulatedDepreciation: string | number };
-      expect(Number(body.accumulatedDepreciation)).toBe(200);
-    });
-
-    // -----------------------------------------------------------------------
-    // 7. Dispose → status DISPOSED
-    // -----------------------------------------------------------------------
-    it('7. POST :id/dispose → status DISPOSED', async () => {
-      const res = await request(http)
-        .post(`/api/v1/billing/fixed-assets/${assetId}/dispose`)
-        .set(auth())
-        .expect((r) => expect([200, 201]).toContain(r.status));
-
-      expect((res.body as { status: string }).status).toBe('DISPOSED');
-    });
+  const input = (change: object = {}) => ({
+    operationKey: randomUUID(),
+    assetCode: 'A-' + randomUUID().slice(0, 12),
+    name: 'Machine',
+    category: 'Atelier',
+    acquisitionReference: 'Facture test',
+    currency: 'CAD',
+    acquisitionDate: '2024-01-25',
+    depreciationStartMonth: '2024-01',
+    cost: '100.00',
+    salvageValue: '0.00',
+    usefulLifeMonths: 3,
+    depreciationExpenseAccountCode: '5100',
+    accumulatedDepreciationAccountCode: '1590',
+    ...change,
   });
-
-  // ===========================================================================
-  // Suite 2 — Tenant isolation
-  // ===========================================================================
-  describe('Tenant isolation', () => {
-    let firstTenantAssetId = '';
-    let otherTenantId = '';
-    let otherToken = '';
-
-    beforeAll(async () => {
-      // Create a DRAFT asset in the first (acme) tenant to probe.
-      const res = await request(http)
-        .post('/api/v1/billing/fixed-assets')
-        .set(auth())
-        .send({
-          assetCode: `FA-ISO-${suffix}`,
-          name: `Iso Asset ${suffix}`,
-          acquisitionDate: `${new Date().getUTCFullYear()}-01-01`,
-          cost: 500,
-          salvageValue: 0,
-          usefulLifeMonths: 5,
-        })
-        .expect(201);
-
-      firstTenantAssetId = (res.body as { id: string }).id;
-      assetIds.push(firstTenantAssetId);
-
-      // Create a second tenant + admin user.
-      const otherSlug = `ast-iso-${suffix}`;
-      const otherEmail = `ast-iso-${suffix}@example.test`;
-
-      const other = await prisma.tenant.create({
-        data: { slug: otherSlug, name: `Ast Iso ${suffix}` },
-      });
-      otherTenantId = other.id;
-
-      // Enable billing for the other tenant.
-      const billingMod = await prisma.moduleDefinition.findUniqueOrThrow({ where: { key: 'billing' } });
-      await prisma.tenantModule.create({
-        data: { tenantId: otherTenantId, moduleId: billingMod.id, enabled: true, enabledAt: new Date() },
-      });
-
-      // Grant billing.assets.read to the other tenant role.
-      const assetsReadPerm = await prisma.permission.findUniqueOrThrow({
-        where: { key: 'billing.assets.read' },
-      });
-      const otherRole = await prisma.role.create({
-        data: {
-          tenantId: otherTenantId,
-          key: 'admin',
-          name: 'Admin',
-          isSystem: true,
-          permissions: { create: [{ permissionId: assetsReadPerm.id }] },
-        },
-      });
-
-      const { hashSync } = await import('bcryptjs');
-      await prisma.user.create({
-        data: {
-          tenantId: otherTenantId,
-          email: otherEmail,
-          passwordHash: hashSync('Test1234!', 10),
-          firstName: 'Other',
-          lastName: 'Admin',
-          status: 'ACTIVE',
-          roles: { create: [{ roleId: otherRole.id }] },
-        },
-      });
-
-      // Login as the other tenant user.
-      const otherLogin = await request(http)
-        .post('/api/v1/auth/login')
-        .send({ email: otherEmail, password: 'Test1234!', tenant: otherSlug })
-        .expect(200);
-      otherToken = (otherLogin.body as { accessToken: string }).accessToken;
+  const action = (version: number, change: object = {}) => ({
+    operationKey: randomUUID(),
+    expectedVersion: version,
+    confirmed: true,
+    ...change,
+  });
+  const create = async (change: object = {}) =>
+    (await call('post', base, input(change)).expect(201)).body;
+  async function activate(a: any) {
+    const r = (await call('get', base + '/' + a.id + '/schedule').expect(200)).body;
+    return (
+      await call(
+        'post',
+        base + '/' + a.id + '/activate',
+        action(a.version, { reviewToken: r.reviewToken }),
+      ).expect(201)
+    ).body;
+  }
+  it('isolates tenants, modules, readers and dedicated posting permission', async () => {
+    await call('get', base, undefined, 'manager', 2).expect(403);
+    await call('get', base, undefined, 'carrier').expect(403);
+    await call('post', base, input(), 'reader').expect(403);
+    expect(
+      (await call('get', base + '/accounts', undefined, 'writer').expect(200)).body.some(
+        (a: any) => a.code === '5100',
+      ),
+    ).toBe(true);
+    const a = await activate(await create());
+    await call(
+      'post',
+      base + '/' + a.id + '/depreciate',
+      action(a.version, { period: '2024-01' }),
+      'writer',
+    ).expect(403);
+    for (const suffix of ['', '/schedule', '/history'])
+      await call('get', base + '/' + a.id + suffix, undefined, 'manager', 1).expect(404);
+    await call(
+      'post',
+      base + '/' + a.id + '/depreciate',
+      action(a.version, { period: '2024-01' }),
+      'manager',
+      1,
+    ).expect(404);
+    await call(
+      'post',
+      base + '/' + a.id + '/depreciate',
+      action(a.version, { period: '2024-01' }),
+      'poster',
+    ).expect(201);
+  });
+  it('rejects invalid contracts instead of coercing financial numbers or dates', async () => {
+    for (const change of [
+      { currency: 'XXX' },
+      { cost: 100 },
+      { cost: '100.001' },
+      { cost: '-1' },
+      { salvageValue: '101' },
+      { usefulLifeMonths: 0 },
+      { acquisitionDate: '2024-02-30' },
+      { depreciationStartMonth: '2023-12' },
+      { depreciationExpenseAccountCode: '4000' },
+      { accumulatedDepreciationAccountCode: '5100' },
+      { name: ' ' },
+      { tenantId: tenants[1].id },
+    ])
+      await call('post', base, input(change)).expect(400);
+    const d = input();
+    delete (d as any).operationKey;
+    await call('post', base, d).expect(400);
+  });
+  it('creates exact currency-qualified drafts, replays actor-bound requests, and versions edits', async () => {
+    const d = input({ assetCode: 'EXACT-USD', currency: 'USD' });
+    const rs = await Promise.all([
+      call('post', base, d).expect(201),
+      call('post', base, d).expect(201),
+    ]);
+    expect(rs[0].body).toEqual(rs[1].body);
+    const a = rs[0].body;
+    expect(a).toMatchObject({ version: 1, currency: 'USD', status: 'DRAFT', planHash: null });
+    expect(a).not.toHaveProperty('planSnapshot');
+    await call('post', base, { ...d, cost: '101' }).expect(409);
+    await call('post', base, d, 'writer').expect(409);
+    const edit = { ...d, operationKey: randomUUID(), expectedVersion: 1, cost: '120.00' };
+    const b = (await call('patch', base + '/' + a.id, edit).expect(200)).body;
+    expect(b.version).toBe(2);
+    await call('patch', base + '/' + a.id, { ...edit, operationKey: randomUUID() }).expect(409);
+    expect((await call('patch', base + '/' + a.id, edit).expect(200)).body).toEqual(b);
+    const oldReview = (await call('get', base + '/' + a.id + '/schedule')).body;
+    await call(
+      'post',
+      base + '/' + a.id + '/activate',
+      action(2, { reviewToken: 'a'.repeat(64) }),
+    ).expect(409);
+    await call(
+      'post',
+      base + '/' + a.id + '/activate',
+      action(2, { reviewToken: oldReview.reviewToken, confirmed: false }),
+    ).expect(400);
+    await activate(b);
+    await call('patch', base + '/' + a.id, {
+      ...edit,
+      operationKey: randomUUID(),
+      expectedVersion: 3,
+    }).expect(409);
+    await call('delete', base + '/' + a.id).expect(409);
+    expect(
+      (await call('get', base + '/' + a.id + '/history')).body.map((h: any) => h.version),
+    ).toEqual([3, 2, 1]);
+  });
+  it('freezes exact schedule and posts chronological months with one GL entry per positive amount', async () => {
+    let a = await activate(await create({ assetCode: 'POST-CAD' }));
+    const frozen = await db.fixedAsset.findFirstOrThrow({
+      where: { tenantId: tenants[0].id, id: a.id },
     });
-
-    afterAll(async () => {
-      await prisma.tenant.deleteMany({ where: { id: otherTenantId } }).catch(() => undefined);
+    const review = (await call('get', base + '/' + a.id + '/schedule')).body;
+    expect(review.rows.map((r: any) => r.amount)).toEqual(['33.33', '33.34', '33.33']);
+    await call(
+      'post',
+      base + '/' + a.id + '/depreciate',
+      action(a.version, { period: '2024-02' }),
+    ).expect(409);
+    const d = action(a.version, { period: '2024-01' });
+    const rs = await Promise.all([
+      call('post', base + '/' + a.id + '/depreciate', d).expect(201),
+      call('post', base + '/' + a.id + '/depreciate', d).expect(201),
+    ]);
+    expect(rs[0].body).toEqual(rs[1].body);
+    a = rs[0].body;
+    for (const period of ['2024-02', '2024-03'])
+      a = (
+        await call('post', base + '/' + a.id + '/depreciate', action(a.version, { period })).expect(
+          201,
+        )
+      ).body;
+    expect(a.accumulatedDepreciation).toBe('100');
+    await call(
+      'post',
+      base + '/' + a.id + '/depreciate',
+      action(a.version, { period: '2024-04' }),
+    ).expect(409);
+    const entries = await db.depreciationEntry.findMany({
+      where: { tenantId: tenants[0].id, assetId: a.id },
+      orderBy: { ordinal: 'asc' },
+      include: { journalEntry: { include: { lines: true } } },
     });
-
-    it('8. Other-tenant token gets 404 on GET /billing/fixed-assets/:id of first tenant', async () => {
-      await request(http)
-        .get(`/api/v1/billing/fixed-assets/${firstTenantAssetId}`)
-        .set({ Authorization: `Bearer ${otherToken}` })
-        .expect(404);
+    expect(entries).toHaveLength(3);
+    expect(entries.map((e) => e.journalEntry?.date.toISOString().slice(0, 10))).toEqual([
+      '2024-01-31',
+      '2024-02-29',
+      '2024-03-31',
+    ]);
+    for (const e of entries) {
+      expect(e.currency).toBe('CAD');
+      expect(e.journalEntry?.currency).toBe('CAD');
+      expect(e.journalEntry?.lines).toHaveLength(2);
+      expect(
+        e.journalEntry?.lines.reduce((n, l) => n + Number(l.debit) - Number(l.credit), 0),
+      ).toBe(0);
+    }
+    const after = await db.fixedAsset.findFirstOrThrow({
+      where: { tenantId: tenants[0].id, id: a.id },
     });
+    expect(after.planSnapshot).toEqual(frozen.planSnapshot);
+    expect(after.planHash).toBe(frozen.planHash);
+    expect(
+      (await call('post', base + '/' + a.id + '/depreciate', d).expect(201)).body.version,
+    ).toBe(3);
+  });
+  it('serializes distinct competing requests and never overruns the base', async () => {
+    let a = await activate(await create({ cost: '0.05', usefulLifeMonths: 2 }));
+    const rs = await Promise.all([
+      call('post', base + '/' + a.id + '/depreciate', action(a.version, { period: '2024-01' })),
+      call('post', base + '/' + a.id + '/depreciate', action(a.version, { period: '2024-02' })),
+    ]);
+    expect(rs.map((r) => r.status).sort()).toEqual([201, 409]);
+    a = (await call('get', base + '/' + a.id)).body;
+    a = (
+      await call(
+        'post',
+        base + '/' + a.id + '/depreciate',
+        action(a.version, { period: '2024-02' }),
+      ).expect(201)
+    ).body;
+    expect(a.accumulatedDepreciation).toBe('0.05');
+  });
+  it('records zero months without fake GL and preserves the residual floor', async () => {
+    let a = await activate(await create({ cost: '0.02', salvageValue: '0.01' }));
+    for (const period of ['2024-01', '2024-02', '2024-03'])
+      a = (
+        await call('post', base + '/' + a.id + '/depreciate', action(a.version, { period })).expect(
+          201,
+        )
+      ).body;
+    const es = await db.depreciationEntry.findMany({
+      where: { tenantId: tenants[0].id, assetId: a.id },
+      orderBy: { ordinal: 'asc' },
+    });
+    expect(es.map((e) => e.amount.toFixed(2))).toEqual(['0.00', '0.01', '0.00']);
+    expect(es.filter((e) => e.journalEntryId)).toHaveLength(1);
+    expect(a.accumulatedDepreciation).toBe('0.01');
+  });
+  it('prevents future postings, incomplete bodies and stale reviews', async () => {
+    const d = input({ acquisitionDate: '2090-01-01', depreciationStartMonth: '2090-01' });
+    let a = (await call('post', base, d)).body;
+    const old = (await call('get', base + '/' + a.id + '/schedule')).body;
+    a = (
+      await call('patch', base + '/' + a.id, {
+        ...d,
+        operationKey: randomUUID(),
+        expectedVersion: 1,
+        cost: '50',
+      })
+    ).body;
+    await call(
+      'post',
+      base + '/' + a.id + '/activate',
+      action(a.version, { reviewToken: old.reviewToken }),
+    ).expect(409);
+    a = await activate(a);
+    await call(
+      'post',
+      base + '/' + a.id + '/depreciate',
+      action(a.version, { period: '2090-01' }),
+    ).expect(409);
+    await call('post', base + '/' + a.id + '/depreciate', { period: '2090-01' }).expect(400);
+    await call(
+      'post',
+      base + '/' + a.id + '/depreciate',
+      action(a.version, { period: '2090-01', amount: '1' }),
+    ).expect(400);
+  });
+  it('keeps historical NULL records readable and blocks all new unqualified postings', async () => {
+    const a = await db.fixedAsset.create({
+      data: {
+        tenantId: tenants[0].id,
+        assetCode: 'HISTORICAL',
+        name: 'Historical asset',
+        acquisitionDate: new Date('2020-01-01'),
+        cost: '100',
+        usefulLifeMonths: 12,
+        status: 'ACTIVE',
+      },
+    });
+    const r = (await call('get', base + '/' + a.id + '/schedule').expect(200)).body;
+    expect(r).toMatchObject({ qualified: false, rows: [], next: null, reviewToken: null });
+    await call('post', base + '/' + a.id + '/depreciate', action(1, { period: '2024-01' })).expect(
+      409,
+    );
+    await call('post', base + '/' + a.id + '/dispose', action(1, { reason: 'Legacy stop' })).expect(
+      409,
+    );
+    await call('patch', base + '/' + a.id, { ...input(), expectedVersion: 1 }).expect(409);
+    await expect(
+      db.$transaction((tx) =>
+        app.get(LedgerService).postTx(tx, tenants[0].id, {
+          currency: null,
+          sourceType: 'depreciation',
+          sourceId: randomUUID(),
+          lines: [
+            { accountCode: '5100', debit: '1' },
+            { accountCode: '1590', credit: '1' },
+          ],
+        }),
+      ),
+    ).rejects.toThrow('Devise');
+  });
+  it('rechecks active account types before activation/posting without breaking exact replay', async () => {
+    let a = await create();
+    const r = (await call('get', base + '/' + a.id + '/schedule')).body;
+    await db.chartOfAccount.updateMany({
+      where: { tenantId: tenants[0].id, code: '5100' },
+      data: { active: false },
+    });
+    try {
+      await call(
+        'post',
+        base + '/' + a.id + '/activate',
+        action(a.version, { reviewToken: r.reviewToken }),
+      ).expect(400);
+    } finally {
+      await db.chartOfAccount.updateMany({
+        where: { tenantId: tenants[0].id, code: '5100' },
+        data: { active: true },
+      });
+    }
+    a = await activate(a);
+    const d = action(a.version, { period: '2024-01' });
+    a = (await call('post', base + '/' + a.id + '/depreciate', d)).body;
+    await db.chartOfAccount.updateMany({
+      where: { tenantId: tenants[0].id, code: '5100' },
+      data: { active: false },
+    });
+    try {
+      expect((await call('post', base + '/' + a.id + '/depreciate', d).expect(201)).body).toEqual(
+        a,
+      );
+      await call(
+        'post',
+        base + '/' + a.id + '/depreciate',
+        action(a.version, { period: '2024-02' }),
+      ).expect(400);
+    } finally {
+      await db.chartOfAccount.updateMany({
+        where: { tenantId: tenants[0].id, code: '5100' },
+        data: { active: true },
+      });
+    }
+  });
+  it('rolls back GL, period, cumulative amount, operation and version when audit fails', async () => {
+    const a = await activate(await create());
+    const audit = app.get(AuditLogsService),
+      original = audit.log.bind(audit);
+    const spy = jest.spyOn(audit, 'log').mockImplementation(async (entry: any, tx: any) => {
+      if (entry.entityType === 'fixed-asset') throw Error('Audit unavailable');
+      return original(entry, tx);
+    });
+    try {
+      await call(
+        'post',
+        base + '/' + a.id + '/depreciate',
+        action(a.version, { period: '2024-01' }),
+      ).expect(500);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await call('get', base + '/' + a.id)).body.version).toBe(a.version);
+    expect(
+      await db.depreciationEntry.count({ where: { tenantId: tenants[0].id, assetId: a.id } }),
+    ).toBe(0);
+    expect(
+      await db.fixedAssetOperation.count({ where: { tenantId: tenants[0].id, assetId: a.id } }),
+    ).toBe(2);
+    expect(
+      await db.journalEntry.count({
+        where: { tenantId: tenants[0].id, memo: 'Dotation ' + a.assetCode + ' 2024-01' },
+      }),
+    ).toBe(0);
+  });
+  it('withdraws with reason and version without pretending to dispose accounting balances', async () => {
+    let a = await activate(await create());
+    a = (
+      await call(
+        'post',
+        base + '/' + a.id + '/depreciate',
+        action(a.version, { period: '2024-01' }),
+      )
+    ).body;
+    const count = await db.journalEntry.count({ where: { tenantId: tenants[0].id } });
+    await call('post', base + '/' + a.id + '/dispose', action(a.version, { reason: '  ' })).expect(
+      400,
+    );
+    const d = action(a.version, { reason: 'Remplacement équipement' });
+    const retired = (await call('post', base + '/' + a.id + '/dispose', d).expect(201)).body;
+    expect(retired).toMatchObject({
+      status: 'DISPOSED',
+      accumulatedDepreciation: a.accumulatedDepreciation,
+    });
+    expect((await call('post', base + '/' + a.id + '/dispose', d).expect(201)).body).toEqual(
+      retired,
+    );
+    await call(
+      'post',
+      base + '/' + a.id + '/depreciate',
+      action(retired.version, { period: '2024-02' }),
+    ).expect(409);
+    expect(await db.journalEntry.count({ where: { tenantId: tenants[0].id } })).toBe(count);
+    expect((await call('get', base + '/' + a.id + '/history')).body[0].reason).toBe(
+      'Remplacement équipement',
+    );
   });
 });

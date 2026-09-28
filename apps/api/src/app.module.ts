@@ -11,6 +11,8 @@ import { HealthModule } from './core/health/health.module';
 import { AgentsModule } from './core/agents/agents.module';
 import { ApsModule } from './core/aps/aps.module';
 import { EmailModule } from './core/email/email.module';
+import { SmsModule } from './core/sms/sms.module';
+import { CommunicationsModule } from './core/communications/communications.module';
 import { RoutingModule } from './core/routing/routing.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { ModulesGuard } from './common/guards/modules.guard';
@@ -49,6 +51,7 @@ import { ScanningModule } from './core/scanning/scanning.module';
 import { BusinessModule } from './modules/business/business.module';
 import { QualityModule } from './modules/quality/quality.module';
 import { HrModule } from './modules/hr/hr.module';
+import { ReferenceDataModule } from './core/reference-data/reference-data.module';
 
 @Module({
   imports: [
@@ -65,6 +68,8 @@ import { HrModule } from './modules/hr/hr.module';
     PrismaModule,
     HealthModule,
     EmailModule,
+    SmsModule,
+    CommunicationsModule,
     RoutingModule,
     ApiKeysModule,
     AgentsModule,
@@ -105,6 +110,7 @@ import { HrModule } from './modules/hr/hr.module';
     BusinessModule,
     QualityModule,
     HrModule,
+    ReferenceDataModule,
   ],
   providers: [
     // Guard order matters: authenticate, then check module activation, then permissions.

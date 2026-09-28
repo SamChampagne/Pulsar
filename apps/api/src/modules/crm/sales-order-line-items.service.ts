@@ -86,11 +86,10 @@ export class SalesOrderLineItemsService {
     salesOrderId: string,
     dto: CreateSalesOrderLineItemDto,
   ) {
-    const order = await this.assertOrderDraft(tenantId, salesOrderId);
+    await this.assertOrderDraft(tenantId, salesOrderId);
 
     let name = dto.name;
     let unitPrice = dto.unitPrice;
-    const currency = order.currency;
 
     if (dto.productId) {
       const product = await this.prisma.crmProduct.findFirst({
@@ -105,7 +104,7 @@ export class SalesOrderLineItemsService {
 
     const created = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
-      await this.assertOrderDraft(tenantId, salesOrderId, tx);
+      const currentOrder = await this.assertOrderDraft(tenantId, salesOrderId, tx);
       const line = await tx.salesOrderLineItem.create({
         data: {
           tenantId,
@@ -115,7 +114,7 @@ export class SalesOrderLineItemsService {
           quantity: dto.quantity ?? 1,
           unitPrice: unitPrice ?? 0,
           discountPct: dto.discountPct ?? 0,
-          currency,
+          currency: currentOrder.currency,
         },
       });
       await this.recomputeOrderTotal(tx, tenantId, salesOrderId);

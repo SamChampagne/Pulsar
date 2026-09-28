@@ -256,6 +256,7 @@ export class OrdersService {
       ) {
         const actuals = await tx.manufacturingDeclaration.findMany({
           where: { tenantId, orderId: id },
+          include: { reversal: { select: { id: true } } },
         });
         if (target === ManufacturingOrderStatus.CANCELLED && actuals.length)
           throw new ConflictException(
@@ -263,7 +264,9 @@ export class OrdersService {
           );
         if (
           target === ManufacturingOrderStatus.COMPLETED &&
-          actuals.reduce((sum, d) => sum + d.goodQuantity + d.scrapQuantity, 0) !== order.quantity
+          actuals
+            .filter((d) => !d.reversal)
+            .reduce((sum, d) => sum + d.goodQuantity + d.scrapQuantity, 0) !== order.quantity
         )
           throw new ConflictException(
             'Déclarez la production et les rebuts de toute la quantité avant de terminer l’OF.',

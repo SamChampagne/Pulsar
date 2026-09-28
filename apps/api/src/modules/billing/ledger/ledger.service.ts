@@ -1,5 +1,19 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
-import { AuditAction, DEFAULT_CHART, isBalanced } from '@pulsar/shared';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { AuditAction, DEFAULT_CHART, exactTrialBalance, validateLedgerLines } from '@pulsar/shared';
+import { createHash } from 'node:crypto';
+import {
+  checkedCurrency,
+  effectiveCurrencyWhere,
+  ledgerDateRange,
+  parseLedgerDate,
+  readLedger,
+} from './ledger-read';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
@@ -8,6 +22,8 @@ import { paginated, paginationArgs } from '../../../common/pagination';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 
 export interface PostInput {
+  currency: string | null;
+  operationKey?: string;
   date?: Date;
   memo?: string;
   sourceType?: string;
@@ -15,18 +31,14 @@ export interface PostInput {
   sourceKind?: string;
   lines: {
     accountCode: string;
-    debit?: number;
-    credit?: number;
+    debit?: number | string;
+    credit?: number | string;
     memo?: string;
   }[];
 }
 
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-
 @Injectable()
 export class LedgerService {
-  private readonly logger = new Logger(LedgerService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogsService,
@@ -47,7 +59,13 @@ export class LedgerService {
     if (s.ledgerManualEntries === false) {
       throw new ForbiddenException('Manual ledger entries are disabled for this tenant');
     }
-    return this.post(tenantId, input, userId);
+    checkedCurrency(input.currency ?? undefined);
+    if (!input.operationKey) throw new BadRequestException('Clé de reprise obligatoire.');
+    return this.post(
+      tenantId,
+      { ...input, sourceType: 'manual', sourceId: input.operationKey, sourceKind: 'posted' },
+      userId,
+    );
   }
 
   /**
@@ -75,17 +93,74 @@ export class LedgerService {
    *
    * Rules preserved:
    * - Account-code resolution goes through `tx` (tenant-scoped).
-   * - `isBalanced` check (rule 41 — balanced double-entry).
+   * - Exact cents validation via validateLedgerLines.
    * - Idempotence on (tenantId, sourceType, sourceId, sourceKind) via `tx` read +
-   *   P2002 no-op catch on concurrent inserts.
-   * - Audit via `this.audit` (not `tx`) — AuditLogsService uses its own PrismaService.
+   *   tenant advisory lock before lookup (including nullable sourceKind).
+   * - Audit via AuditLogsService in the SAME transaction.
    */
   async postTx(
-    tx: any,
+    tx: Prisma.TransactionClient,
     tenantId: string,
     input: PostInput,
     userId?: string,
   ): Promise<{ posted: boolean; journalEntryId?: string }> {
+    await tx.$executeRawUnsafe(
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      'pulsar:ledger:' + tenantId,
+    );
+    try {
+      input = { ...input, lines: validateLedgerLines(input.lines) };
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+    if (input.currency !== null) checkedCurrency(input.currency);
+    else if (!(input.sourceType === 'payment' && input.sourceKind === 'reversal'))
+      throw new BadRequestException('Devise comptable obligatoire.');
+    if (input.date) ledgerDateRange(input.date, input.date);
+    const fingerprint =
+      input.sourceType === 'manual'
+        ? createHash('sha256')
+            .update(
+              JSON.stringify([
+                tenantId,
+                userId,
+                input.date?.toISOString(),
+                input.currency,
+                input.memo ?? '',
+                input.lines,
+              ]),
+            )
+            .digest('hex')
+        : null;
+    if (input.currency === null && input.sourceType === 'payment') {
+      const original = await tx.journalEntry.findFirst({
+        where: { tenantId, sourceType: 'payment', sourceId: input.sourceId, sourceKind: null },
+        select: { currency: true },
+      });
+      if (!original || original.currency !== null)
+        throw new ConflictException('Devise de la contrepassation historique incohérente.');
+    }
+    // Step 3: idempotence check on (tenantId, sourceType, sourceId, sourceKind)
+    if (input.sourceType && input.sourceId) {
+      const existing = await tx.journalEntry.findFirst({
+        where: {
+          tenantId,
+          sourceType: input.sourceType,
+          sourceId: input.sourceId,
+          sourceKind: input.sourceKind ?? null,
+        },
+        select: { id: true, currency: true, fingerprint: true },
+      });
+      if (existing) {
+        if (
+          (fingerprint && fingerprint !== existing.fingerprint) ||
+          (existing.currency !== null && existing.currency !== input.currency)
+        )
+          throw new ConflictException('Clé ou source déjà utilisée pour une écriture différente.');
+        return { posted: false, journalEntryId: existing.id };
+      }
+    }
+
     // Step 1: resolve accountCode → accountId (tenant-scoped) via caller's tx
     const codes = [...new Set(input.lines.map((l) => l.accountCode))];
     const accounts = await tx.chartOfAccount.findMany({
@@ -102,80 +177,50 @@ export class LedgerService {
       }
     }
 
-    // Step 2: validate balance using isBalanced from @pulsar/shared (Decimal→Number at boundary)
-    const balanceLines = input.lines.map((l) => ({
-      debit: Number(l.debit ?? 0),
-      credit: Number(l.credit ?? 0),
-    }));
-    if (!isBalanced(balanceLines)) {
-      throw new BadRequestException('Journal entry is not balanced');
-    }
-
-    // Step 3: idempotence check on (tenantId, sourceType, sourceId, sourceKind)
-    if (input.sourceType && input.sourceId) {
-      const existing = await tx.journalEntry.findFirst({
-        where: {
-          tenantId,
-          sourceType: input.sourceType,
-          sourceId: input.sourceId,
-          sourceKind: input.sourceKind ?? null,
-        },
-        select: { id: true },
-      });
-      if (existing) return { posted: false, journalEntryId: (existing as { id: string }).id };
-    }
-
     // Step 4: persist entry + lines inside caller's transaction.
-    // P2002 catch: a concurrent call may have raced past the findFirst check
-    // and already inserted the same (tenantId, sourceType, sourceId, sourceKind)
-    // tuple. Treat as successful idempotent no-op.
-    let entry: { id: string };
-    try {
-      entry = await tx.journalEntry.create({
-        data: {
-          tenantId,
-          date: input.date ?? new Date(),
-          memo: input.memo,
-          sourceType: input.sourceType,
-          sourceId: input.sourceId,
-          sourceKind: input.sourceKind,
-          createdById: userId,
-          lines: {
-            create: input.lines.map((l) => ({
-              tenantId,
-              accountId: codeToId.get(l.accountCode)!,
-              debit: l.debit ?? 0,
-              credit: l.credit ?? 0,
-              memo: l.memo,
-            })),
-          },
-        },
-        select: { id: true },
-      });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        // Concurrent post of the same source tuple — already posted.
-        return { posted: false };
-      }
-      throw err;
-    }
-
-    // Step 5: audit (règle 6) — uses this.audit (its own PrismaService, not the tx)
-    await this.audit.log({
-      tenantId,
-      userId,
-      action: AuditAction.CREATE,
-      entityType: 'journal-entry',
-      entityId: entry.id,
-      after: {
+    const entry = await tx.journalEntry.create({
+      data: {
+        tenantId,
+        currency: input.currency,
+        fingerprint,
         date: input.date ?? new Date(),
         memo: input.memo,
         sourceType: input.sourceType,
         sourceId: input.sourceId,
         sourceKind: input.sourceKind,
-        lineCount: input.lines.length,
+        createdById: userId,
+        lines: {
+          create: input.lines.map((l) => ({
+            tenantId,
+            accountId: codeToId.get(l.accountCode)!,
+            debit: l.debit ?? 0,
+            credit: l.credit ?? 0,
+            memo: l.memo,
+          })),
+        },
       },
+      select: { id: true },
     });
+    // Journal + audit commit or roll back together.
+    await this.audit.log(
+      {
+        tenantId,
+        userId,
+        action: AuditAction.CREATE,
+        entityType: 'journal-entry',
+        entityId: entry.id,
+        after: {
+          date: input.date ?? new Date(),
+          memo: input.memo,
+          currency: input.currency,
+          sourceType: input.sourceType,
+          sourceId: input.sourceId,
+          sourceKind: input.sourceKind,
+          lineCount: input.lines.length,
+        },
+      },
+      tx,
+    );
 
     return { posted: true, journalEntryId: entry.id };
   }
@@ -202,85 +247,16 @@ export class LedgerService {
     );
   }
 
-  /**
-   * Read-time trial balance. Groups JournalLines by account, sums debit/credit.
-   * Optional asOf: only includes journal entries on or before that date.
-   */
-  async trialBalance(
-    tenantId: string,
-    asOf?: Date,
-  ): Promise<{
-    rows: {
-      accountId: string;
-      code: string;
-      name: string;
-      type: string;
-      debit: number;
-      credit: number;
-      balance: number;
-    }[];
-    totalDebit: number;
-    totalCredit: number;
-  }> {
-    // Normalize asOf to end of that calendar day so entries posted at any time
-    // during that day are included (e.g. 2024-06-01T23:59:59.999Z).
-    let asOfEnd: Date | undefined;
-    if (asOf) {
-      asOfEnd = new Date(asOf);
-      asOfEnd.setHours(23, 59, 59, 999);
-    }
-
-    // Fetch all lines (tenant-scoped) with entry date filter if asOf provided
-    const lines = await this.prisma.journalLine.findMany({
-      where: {
-        tenantId,
-        ...(asOfEnd
-          ? {
-              entry: {
-                date: { lte: asOfEnd },
-              },
-            }
-          : {}),
+  /** Exact per-currency view. Unknown history is counted, never converted. */
+  async trialBalance(tenantId: string, asOf?: Date, currency?: string) {
+    checkedCurrency(currency);
+    return this.prisma.$transaction(
+      async (tx) => {
+        const result = await readLedger(tx, tenantId, currency!, undefined, asOf);
+        return { ...result, ...exactTrialBalance(result.rows) };
       },
-      select: {
-        accountId: true,
-        debit: true,
-        credit: true,
-        account: { select: { code: true, name: true, type: true } },
-      },
-    });
-
-    // Group by accountId, summing debit/credit (Decimal→Number at boundary)
-    const map = new Map<
-      string,
-      { accountId: string; code: string; name: string; type: string; debit: number; credit: number }
-    >();
-
-    for (const line of lines) {
-      const existing = map.get(line.accountId);
-      if (existing) {
-        existing.debit = round2(existing.debit + Number(line.debit));
-        existing.credit = round2(existing.credit + Number(line.credit));
-      } else {
-        map.set(line.accountId, {
-          accountId: line.accountId,
-          code: line.account.code,
-          name: line.account.name,
-          type: line.account.type,
-          debit: round2(Number(line.debit)),
-          credit: round2(Number(line.credit)),
-        });
-      }
-    }
-
-    const rows = [...map.values()]
-      .sort((a, b) => a.code.localeCompare(b.code))
-      .map((r) => ({ ...r, balance: round2(r.debit - r.credit) }));
-
-    const totalDebit = round2(rows.reduce((s, r) => s + r.debit, 0));
-    const totalCredit = round2(rows.reduce((s, r) => s + r.credit, 0));
-
-    return { rows, totalDebit, totalCredit };
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   /** Returns the tenant's full chart of accounts, ordered by code. */
@@ -289,6 +265,21 @@ export class LedgerService {
       where: { tenantId },
       orderBy: { code: 'asc' },
     });
+  }
+
+  async manualRequest(tenantId: string, userId: string, key: string) {
+    const r = await this.prisma.journalEntry.findFirst({
+      where: {
+        tenantId,
+        createdById: userId,
+        sourceType: 'manual',
+        sourceId: key,
+        sourceKind: 'posted',
+      },
+      select: { id: true, currency: true, date: true },
+    });
+    if (!r) throw new NotFoundException('Aucune écriture pour cette demande.');
+    return r;
   }
 
   /** Returns a paginated list of journal entries with their lines (+ account), ordered date desc. */
@@ -300,40 +291,61 @@ export class LedgerService {
       dateTo?: string;
       sourceType?: string;
       sourceId?: string;
+      currency?: string;
+      unqualified?: boolean;
     },
   ) {
     const { page, pageSize, skip, take } = paginationArgs(query);
 
-    const where: Prisma.JournalEntryWhereInput = { tenantId };
+    if (query.currency && query.unqualified)
+      throw new BadRequestException('Choisir devise ou écritures sans devise.');
+    const where: Prisma.JournalEntryWhereInput = {
+      tenantId,
+      date: ledgerDateRange(parseLedgerDate(query.dateFrom), parseLedgerDate(query.dateTo)),
+    };
+    if (query.currency)
+      Object.assign(where, effectiveCurrencyWhere(checkedCurrency(query.currency)));
+    if (query.unqualified) Object.assign(where, effectiveCurrencyWhere(null));
     if (query.sourceType) where.sourceType = query.sourceType;
     if (query.sourceId) where.sourceId = query.sourceId;
     if (query.accountId) {
-      where.lines = { some: { accountId: query.accountId } };
+      where.lines = { some: { tenantId, accountId: query.accountId } };
     }
-    if (query.dateFrom || query.dateTo) {
-      where.date = {
-        ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-        ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
-      };
-    }
-
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.journalEntry.findMany({
-        where,
-        orderBy: { date: 'desc' },
-        skip,
-        take,
-        include: {
-          lines: {
-            include: {
-              account: { select: { id: true, code: true, name: true, type: true } },
+    const [items, total] = await this.prisma.$transaction(
+      [
+        this.prisma.journalEntry.findMany({
+          where,
+          orderBy: [{ date: 'desc' }, { id: 'desc' }],
+          skip,
+          take,
+          include: {
+            currencyQualification: { select: { state: true, currency: true, version: true } },
+            lines: {
+              where: { tenantId, account: { tenantId } },
+              include: {
+                account: { select: { id: true, code: true, name: true, type: true } },
+              },
             },
           },
-        },
-      }),
-      this.prisma.journalEntry.count({ where }),
-    ]);
+        }),
+        this.prisma.journalEntry.count({ where }),
+      ],
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
 
-    return paginated(items, total, page, pageSize);
+    return paginated(
+      items.map(({ fingerprint: _private, ...entry }) => ({
+        ...entry,
+        originalCurrency: entry.currency,
+        currency:
+          entry.currency ??
+          (entry.currencyQualification?.state === 'QUALIFIED'
+            ? entry.currencyQualification.currency
+            : null),
+      })),
+      total,
+      page,
+      pageSize,
+    );
   }
 }

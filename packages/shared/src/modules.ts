@@ -5,6 +5,7 @@
  */
 export const MODULE_KEYS = {
   CORE: 'core',
+  CLIENTS: 'clients',
   TRANSPORTATION: 'transportation',
   // Planned modules — declared here so keys are reserved from day one.
   FLEET: 'fleet',
@@ -38,6 +39,14 @@ export interface ModuleDescriptor {
 }
 
 export const MODULE_CATALOG: ModuleDescriptor[] = [
+  {
+    key: MODULE_KEYS.CLIENTS,
+    name: 'Clients',
+    description:
+      'Référentiel client, coordonnées et adresses de facturation/livraison. Centre facultatif des fiches partagées.',
+    isCore: false,
+    available: true,
+  },
   {
     key: MODULE_KEYS.HR,
     name: 'Ressources humaines',

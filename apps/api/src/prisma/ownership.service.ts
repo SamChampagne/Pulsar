@@ -4,6 +4,15 @@ import type { Prisma } from '@pulsar/database';
 
 /** Tenant-scoped entities that can be referenced by id in write payloads. */
 export type OwnedEntity =
+  | 'supplierInvoice'
+  | 'supplierInvoiceLine'
+  | 'supplierCreditEvidence'
+  | 'supplierReturnReport'
+  | 'supplierOrderLine'
+  | 'supplierInvoiceEvidence'
+  | 'catalogPackage'
+  | 'catalogSupplierOffer'
+  | 'customerCreditLine'
   | 'crmCompany'
   | 'serviceTimeEntry'
   | 'servicePartUsage'
@@ -29,6 +38,7 @@ export type OwnedEntity =
   | 'receipt'
   | 'pickOrder'
   | 'wmsItem'
+  | 'wmsLot'
   | 'bin'
   | 'carrier'
   | 'driver'

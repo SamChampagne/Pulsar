@@ -450,14 +450,14 @@ describe('Phase 7.3 — sell-side statements (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Test 7 — lifecycle: DRAFT → APPROVED → SENT → PAID, and invalid transitions rejected
+  // Test 7 — lifecycle: DRAFT → APPROVED → PAID; delivery is a separate proof.
   // ---------------------------------------------------------------------------
-  it('lifecycle: approve → send → pay; invalid transitions return 400', async () => {
-    // send on DRAFT → 400
+  it('lifecycle: approve → pay; legacy delivery shortcut fails closed', async () => {
+    // The old send endpoint no longer infers a recipient.
     await request(http)
       .post(`/api/v1/billing/customer-invoices/${ids.cadInvoice}/send`)
       .set(auth())
-      .expect(400);
+      .expect(409);
 
     // pay on DRAFT → 400
     await request(http)
@@ -473,33 +473,25 @@ describe('Phase 7.3 — sell-side statements (e2e)', () => {
     expect(approved.body.status).toBe('APPROVED');
     expect(approved.body.approvedAt).toBeTruthy();
 
-    // pay on APPROVED (not SENT yet) → 400
-    await request(http)
-      .post(`/api/v1/billing/customer-invoices/${ids.cadInvoice}/pay`)
-      .set(auth())
-      .expect(400);
-
     // approve again on APPROVED → 400
     await request(http)
       .post(`/api/v1/billing/customer-invoices/${ids.cadInvoice}/approve`)
       .set(auth())
       .expect(400);
 
-    // APPROVED → SENT (EMAIL_DRIVER=log in dev — email succeeds silently)
-    const sent = await request(http)
+    // Summary-only sending is retired; simulation must not imply SENT.
+    await request(http)
       .post(`/api/v1/billing/customer-invoices/${ids.cadInvoice}/send`)
       .set(auth())
-      .expect(201);
-    expect(sent.body.status).toBe('SENT');
-    expect(sent.body.sentAt).toBeTruthy();
+      .expect(409);
 
-    // approve on SENT → 400
+    // Approve an already approved invoice → 400
     await request(http)
       .post(`/api/v1/billing/customer-invoices/${ids.cadInvoice}/approve`)
       .set(auth())
       .expect(400);
 
-    // SENT → PAID
+    // APPROVED → PAID through the existing payment workflow, independently of email.
     const paid = await request(http)
       .post(`/api/v1/billing/customer-invoices/${ids.cadInvoice}/pay`)
       .set(auth())

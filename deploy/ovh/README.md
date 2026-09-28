@@ -18,9 +18,15 @@ routage externe désactivé. Aucune donnée réelle pour cette première qualifi
 Les logs du pilote email peuvent contenir des liens d'invitation : accès opérateur
 uniquement, ne pas les partager ni les joindre à un ticket sans nettoyage.
 
-Les images API existantes tournent encore en root et incluent les outils de build.
-Leur réduction et le passage non-root sont une étape de durcissement séparée.
-Ce profil de dev n'est pas une certification de production.
+L'image API utilise désormais l'utilisateur `node` (UID/GID 1000). Le profil OVH
+monte sa racine en lecture seule, retire les capabilities Linux et interdit
+l'élévation de privilèges; seuls le volume documents et `/tmp` sont inscriptibles.
+Les outils de build restent inclus : réduction d'image encore à faire. Ce profil
+de dev n'est pas une certification de production. Pour un volume déjà utilisé
+par une ancienne image root, suivre la migration de permissions ci-dessous.
+
+Le [banc IA Linux](../agents/README.md) est séparé et sans réseau externe : il
+qualifie le contrat ACP, **ne fournit pas un service d'agents sur le VPS**.
 
 Qualification locale du 2026-09-13 : images API/web construites ; script
 `scripts/test-ovh-smoke.mjs` réussi (migrations, bootstrap idempotent, aucun tenant
@@ -29,6 +35,14 @@ APS nécessitent encore sa base et son runtime complet. Voir les résultats dét
 dans [le plan de relance](../../docs/plans/control-center-workflows.md).
 
 ## 1. Pré-vol — à effectuer avec accès au VPS
+
+Dans **Administration SaaS → Exploitation → Préparer le pilote**, choisir le profil
+et l'option IA puis exporter le précontrôle daté. Il compare les scripts de migration
+à l'historique de la base et indique les vérifications restantes, sans exécuter de
+migration, envoyer de courriel ou appeler un LLM. Un précontrôle local ou un SHA
+déclaré ne prouve ni la CI, ni le contenu de l'image, ni la recette du VPS. Refaire
+ce contrôle après déploiement; conserver séparément les preuves terrain. Contrat :
+[cinq priorités du pilote](../../docs/plans/pilot-next-stage.md).
 
 - Confirmer la distribution, ressources libres et sauvegardes du serveur.
 - Inspecter `docker ps`, `docker compose version`, `ss -lntp` et la configuration
@@ -98,6 +112,28 @@ la [recette métier détaillée](../../docs/plans/connected-business-server-acce
 
 ## 4. Sauvegarde, mise à jour et retour arrière
 
+### Exercice local automatisé (projets jetables uniquement)
+
+Le script `node scripts/test-ovh-smoke.mjs` vérifie le démarrage puis restaure une
+copie dans un **second projet Docker isolé**. Prérequis : Docker et les images
+`pulsar-api:control-center-test` / `pulsar-web:control-center-test`, construites à
+partir du code à qualifier; le port local 8180 doit être libre.
+
+Il arrête les writers de son premier projet, effectue un `pg_dump -Fc` et une
+archive des documents, restaure les deux dans de nouveaux volumes, compare les
+empreintes des migrations, le mot de passe opérateur et un fichier binaire témoin,
+puis contrôle readiness et l'obligation MFA après restauration. Une mutation
+dans la copie confirme qu'elle ne change pas la source. Les archives ne sortent
+pas de la machine et ne sont pas imprimées. Les deux projets jetables sont nettoyés.
+
+Ce test n'utilise **ni la base de développement ni les fichiers de l'utilisateur**.
+Le fichier témoin vérifie le stockage, pas le parcours d'upload métier. Il ne
+prouve pas une sauvegarde hors VPS, la restauration de clés perdues, un test de
+charge ou le fonctionnement TLS/SMTP/APS/Hermes. Conserver ces points dans la
+recette serveur. Ne pas adapter ce script en lui donnant le nom du projet actif.
+
+### Procédure sur l'environnement réellement déployé
+
 Avant toute mise à jour, arrêter les écritures de ce projet (`dc stop web api`),
 faire un dump PostgreSQL et une copie des documents, des secrets et de la révision.
 Les secrets doivent être sauvegardés chiffrés avec un accès limité.
@@ -122,9 +158,58 @@ schéma, arrêter les écritures et restaurer un jeu cohérent base + documents 
 dans un environnement séparé avant bascule. Ne jamais exécuter `down -v` sur ce
 projet : cela détruirait ses volumes.
 
+### Première mise à jour depuis une image API root
+
+Après sauvegarde avec l'ancienne image et arrêt de `web api`, vérifier que le
+volume `documents` de **ce projet** est bien celui monté à `/app/storage`.
+Ne jamais viser un dossier hôte calculé ni le volume d'une autre application.
+Un volume neuf prend déjà le propriétaire 1000 : cette étape concerne l'existant.
+
+Avec la nouvelle image construite et la fonction `dc` définie plus haut :
+
+```bash
+# Opération ponctuelle, explicitement privilégiée, sur le seul volume documents.
+dc run --rm --no-deps -T --user 0 --cap-add CHOWN --cap-add DAC_OVERRIDE --entrypoint chown api -R 1000:1000 /app/storage
+# Puis contrôle sans privilèges, avant de redémarrer l'API.
+dc run --rm --no-deps -T --entrypoint node api -e 'const fs=require("node:fs"); fs.accessSync("/app/storage",fs.constants.R_OK|fs.constants.W_OK); console.log("documents: accessible")'
+```
+
+Arrêter au premier échec. Ne pas ajouter `privileged`, ne pas lancer l'API en root
+et ne pas faire de `chmod 777` pour contourner une erreur. Les capacités ajoutées
+ne concernent que ce conteneur ponctuel de migration, jamais le service API.
+Vérifier ensuite dépôt/téléchargement d'un document et redémarrage. Restaurer les
+archives avec leurs permissions dans un environnement séparé en cas de retour arrière.
+
 ## À confirmer avant le vrai déploiement
 
 Accès SSH configuré localement (pas de clé privée dans le chat), emplacement du
 checkout, Nginx hôte ou conteneur, DNS/TLS, méthode de restriction du pilote,
 destination des sauvegardes et créneau de déploiement. Aucune de ces opérations
 distantes n'est exécutée par la préparation locale.
+
+## Connexions externes pendant le pilote
+
+`EMAIL_DRIVER=log` ne désactive pas un SMTP **tenant** déjà configuré : celui-ci
+peut envoyer réellement. Les nouveaux panneaux de dossier utilisent leur SMTP
+tenant ou une simulation, sans repli plateforme. Vérifier les connexions dans
+Pulsar avant tout essai; SMS réel et réception IMAP ont leurs confirmations propres.
+Ne pas restaurer des données de production avec leurs connexions actives dans un
+environnement de recette connecté à Internet.
+
+Les envois webhook/EDI et les pings réels revalident la destination à chaque
+tentative : DNS A/AAAA vérifiés, adresse du socket épinglée, pas de redirection,
+délai total de cinq secondes. Renseigner l'URL finale publique; les plages privées,
+réservées et les mécanismes de transition IPv6 ne sont pas pris en charge.
+`WEBHOOK_ALLOW_PRIVATE_URLS=true` est exclusivement un réglage dev/tests; le
+démarrage en production le refuse et le transport ne l'honore pas en production.
+
+Désactiver une connexion suspend les lignes en attente sans effacer l'historique;
+un envoi déjà en vol peut finir. La réactivation reprend les lignes conservées et
+revérifie les droits d'écriture de la cible entrante. Évaluer le stock d'événements
+avant de réactiver. Le destinataire doit dédupliquer `X-Pulsar-Delivery` : une
+réponse perdue peut provoquer un renvoi. Le test ne promet pas d'exactly-once.
+
+La protection applicative complète, sans le remplacer, un filtrage réseau sortant
+du VPS. Références : [OWASP SSRF](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html),
+[client HTTP Node](https://nodejs.org/docs/latest-v22.x/api/http.html) et
+[plages IPv6 spéciales IANA](https://www.iana.org/assignments/iana-ipv6-special-registry/iana-ipv6-special-registry.xhtml).

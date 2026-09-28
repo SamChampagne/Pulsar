@@ -36,4 +36,40 @@ describe('Durable supplier receipt intent', () => {
     expect(() => rememberReceiptIntent('new', value)).toThrow();
     spy.mockRestore();
   });
+  it('preserves optional package counts verbatim and refuses malformed stored counts', () => {
+    const packaged = {
+      ...value,
+      body: { ...value.body, lines: [{ ...value.body.lines[0], packageCount: '2.0000' }] },
+    };
+    rememberReceiptIntent('packages', packaged);
+    expect(readReceiptIntent('packages')).toEqual(packaged);
+    for (const packageCount of ['1e2', '-1', 2, null]) {
+      localStorage.setItem(
+        'pulsar.purchasing.receipts.v1:corrupt',
+        JSON.stringify({
+          ...packaged,
+          body: { ...packaged.body, lines: [{ ...packaged.body.lines[0], packageCount }] },
+        }),
+      );
+      expect(() => readReceiptIntent('corrupt')).toThrow();
+    }
+  });
+  it('preserves the selected lot and rejects corrupt lot references on recovery', () => {
+    const request = {
+      ...value,
+      body: { ...value.body, lines: [{ ...value.body.lines[0], lotId: 'lot-001' }] },
+    };
+    rememberReceiptIntent('lot', request);
+    expect(readReceiptIntent('lot')).toEqual(request);
+    for (const lotId of ['', null, 3]) {
+      localStorage.setItem(
+        'pulsar.purchasing.receipts.v1:bad-lot',
+        JSON.stringify({
+          ...request,
+          body: { ...request.body, lines: [{ ...request.body.lines[0], lotId }] },
+        }),
+      );
+      expect(() => readReceiptIntent('bad-lot')).toThrow();
+    }
+  });
 });

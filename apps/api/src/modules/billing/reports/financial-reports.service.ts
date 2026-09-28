@@ -1,17 +1,16 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@pulsar/database';
 import {
-  AccountBalanceInput,
-  ReportLine,
-  buildProfitAndLoss,
-  buildBalanceSheet,
-  naturalBalance,
-  buildAging,
-  AgingItemInput,
+  exactProfitAndLoss,
+  exactBalanceSheet,
+  exactCashFlow,
+  exactCurrentAging,
+  ledgerCents,
+  ledgerAmount,
 } from '@pulsar/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
-
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+import { checkedCurrency, ledgerDateRange, readLedger } from '../ledger/ledger-read';
 
 @Injectable()
 export class FinancialReportsService {
@@ -19,143 +18,115 @@ export class FinancialReportsService {
     private readonly prisma: PrismaService,
     private readonly moduleSettings: ModuleSettingsService,
   ) {}
-
-  /**
-   * Aggregates JournalLines by account (tenant-scoped, optional date range).
-   * Mirrors LedgerService.trialBalance: Decimal→Number, round2, end-of-day normalization.
-   */
-  private async aggregateByAccount(
+  private read(
     tenantId: string,
-    range: { from?: Date; to?: Date },
-  ): Promise<AccountBalanceInput[]> {
-    let toEnd: Date | undefined;
-    if (range.to) {
-      toEnd = new Date(range.to);
-      toEnd.setHours(23, 59, 59, 999);
-    }
-
-    const lines = await this.prisma.journalLine.findMany({
-      where: {
-        tenantId,
-        ...(range.from || toEnd
-          ? {
-              entry: {
-                date: {
-                  ...(range.from ? { gte: range.from } : {}),
-                  ...(toEnd ? { lte: toEnd } : {}),
-                },
-              },
-            }
-          : {}),
+    currency: string | undefined,
+    from: Date | undefined,
+    to: Date | undefined,
+    kind: 'pl' | 'bs' | 'cf',
+    cashCodes: string[] = [],
+  ) {
+    checkedCurrency(currency);
+    return this.prisma.$transaction(
+      async (tx) => {
+        const result = await readLedger(tx, tenantId, currency!, from, to);
+        const report =
+          kind === 'pl'
+            ? exactProfitAndLoss(result.rows)
+            : kind === 'bs'
+              ? exactBalanceSheet(result.rows)
+              : exactCashFlow(result.rows, cashCodes);
+        return {
+          ...report,
+          currency: result.currency,
+          coverage: result.coverage,
+          basis: result.basis,
+        };
       },
-      select: {
-        accountId: true,
-        debit: true,
-        credit: true,
-        account: { select: { code: true, name: true, type: true } },
-      },
-    });
-
-    const map = new Map<
-      string,
-      AccountBalanceInput & { accountId: string }
-    >();
-
-    for (const line of lines) {
-      const existing = map.get(line.accountId);
-      if (existing) {
-        existing.debit = round2(existing.debit + Number(line.debit));
-        existing.credit = round2(existing.credit + Number(line.credit));
-      } else {
-        map.set(line.accountId, {
-          accountId: line.accountId,
-          code: line.account.code,
-          name: line.account.name,
-          type: line.account.type,
-          debit: round2(Number(line.debit)),
-          credit: round2(Number(line.credit)),
-        });
-      }
-    }
-
-    return [...map.values()].sort((a, b) => a.code.localeCompare(b.code));
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
-
-  async profitAndLoss(tenantId: string, from?: Date, to?: Date) {
-    const rows = await this.aggregateByAccount(tenantId, { from, to });
-    return buildProfitAndLoss(rows);
+  profitAndLoss(tenantId: string, from?: Date, to?: Date, currency?: string) {
+    return this.read(tenantId, currency, from, to, 'pl');
   }
-
-  async balanceSheet(tenantId: string, asOf?: Date) {
-    const rows = await this.aggregateByAccount(tenantId, { to: asOf });
-    const { netIncome } = buildProfitAndLoss(rows);
-    return buildBalanceSheet(rows, netIncome);
+  balanceSheet(tenantId: string, asOf?: Date, currency?: string) {
+    return this.read(tenantId, currency, undefined, asOf, 'bs');
   }
-
-  async cashFlow(
-    tenantId: string,
-    from?: Date,
-    to?: Date,
-  ): Promise<{ accounts: ReportLine[]; netChange: number }> {
+  async cashFlow(tenantId: string, from?: Date, to?: Date, currency?: string) {
     const settings = await this.moduleSettings.resolve(tenantId, 'billing');
-    const cashCode = settings['cashAccountCode'] as string | undefined;
-    const bankCode = settings['bankAccountCode'] as string | undefined;
-
-    const rows = await this.aggregateByAccount(tenantId, { from, to });
-
-    const cashCodes = new Set<string>();
-    if (cashCode) cashCodes.add(cashCode);
-    if (bankCode) cashCodes.add(bankCode);
-
-    const accounts: ReportLine[] =
-      cashCodes.size === 0
-        ? []
-        : rows
-            .filter((r) => cashCodes.has(r.code))
-            .map((r) => ({ code: r.code, name: r.name, amount: naturalBalance(r) }));
-
-    const netChange = round2(accounts.reduce((s, a) => s + a.amount, 0));
-
-    return { accounts, netChange };
+    return this.read(
+      tenantId,
+      currency,
+      from,
+      to,
+      'cf',
+      [settings.cashAccountCode, settings.bankAccountCode].filter(
+        (v): v is string => typeof v === 'string',
+      ),
+    );
   }
-
-  async arAging(tenantId: string, asOf?: Date) {
+  /** Current outstanding, classified by approval/creation age, NOT historical due-date aging. */
+  async arAging(tenantId: string, asOf?: Date, currency?: string) {
+    checkedCurrency(currency);
     const ref = asOf ?? new Date();
-    const invoices = await this.prisma.customerInvoice.findMany({
-      where: { tenantId, status: { not: 'DRAFT' } },
-      include: { customer: { select: { name: true } } },
+    ledgerDateRange(undefined, ref);
+    const rows = await this.prisma.customerInvoice.findMany({
+      where: { tenantId, currency, status: { not: 'DRAFT' } },
+      select: {
+        customerId: true,
+        customer: { select: { name: true } },
+        approvedAt: true,
+        createdAt: true,
+        totalAmount: true,
+        amountPaid: true,
+        creditedAmount: true,
+      },
     });
-
-    const items: AgingItemInput[] = invoices
-      .map((inv) => ({
-        partyId: inv.customerId,
-        partyName: inv.customer.name,
-        reference: inv.invoiceNumber,
-        date: inv.approvedAt ?? inv.createdAt,
-        outstanding: round2(Number(inv.totalAmount) - Number(inv.amountPaid)),
-      }))
-      .filter((it) => it.outstanding > 0);
-
-    return buildAging(items, ref);
+    const items = rows.map((r) => ({
+      partyId: r.customerId,
+      partyName: r.customer.name,
+      date: r.approvedAt ?? r.createdAt,
+      outstanding: ledgerAmount(
+        ledgerCents(r.totalAmount.toString()) -
+          ledgerCents(r.amountPaid.toString()) -
+          ledgerCents(r.creditedAmount.toString()),
+      ),
+    }));
+    return {
+      ...exactCurrentAging(items, ref),
+      currency,
+      basis: 'CURRENT_BALANCE_BY_APPROVAL_AGE',
+      referenceDate: ref.toISOString().slice(0, 10),
+    };
   }
-
-  async apAging(tenantId: string, asOf?: Date) {
+  async apAging(tenantId: string, asOf?: Date, currency?: string) {
+    checkedCurrency(currency);
     const ref = asOf ?? new Date();
-    const invoices = await this.prisma.invoice.findMany({
-      where: { tenantId, status: { not: 'DRAFT' } },
-      include: { carrier: { select: { name: true } } },
+    ledgerDateRange(undefined, ref);
+    const rows = await this.prisma.invoice.findMany({
+      where: { tenantId, currency, status: { not: 'DRAFT' } },
+      select: {
+        carrierId: true,
+        carrier: { select: { name: true } },
+        approvedAt: true,
+        createdAt: true,
+        totalAmount: true,
+        amountPaid: true,
+      },
     });
-
-    const items: AgingItemInput[] = invoices
-      .map((inv) => ({
-        partyId: inv.carrierId,
-        partyName: inv.carrier.name,
-        reference: inv.invoiceNumber,
-        date: inv.approvedAt ?? inv.createdAt,
-        outstanding: round2(Number(inv.totalAmount) - Number(inv.amountPaid)),
-      }))
-      .filter((it) => it.outstanding > 0);
-
-    return buildAging(items, ref);
+    const items = rows.map((r) => ({
+      partyId: r.carrierId,
+      partyName: r.carrier.name,
+      date: r.approvedAt ?? r.createdAt,
+      outstanding: ledgerAmount(
+        ledgerCents(r.totalAmount.toString()) - ledgerCents(r.amountPaid.toString()),
+      ),
+    }));
+    return {
+      ...exactCurrentAging(items, ref),
+      currency,
+      basis: 'CURRENT_CARRIER_BALANCE_BY_APPROVAL_AGE',
+      referenceDate: ref.toISOString().slice(0, 10),
+    };
   }
 }

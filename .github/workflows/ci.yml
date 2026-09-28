@@ -85,6 +85,8 @@ jobs:
         run: pnpm --filter @pulsar/shared build && pnpm --filter @pulsar/database build
       - name: Unit tests (shared + api + web)
         run: pnpm test
+      - name: Offline runtime source manifest guards (no Python runtime required)
+        run: node --test scripts/runtime-source-manifest.test.mjs
 
   api-e2e:
     runs-on: ubuntu-latest

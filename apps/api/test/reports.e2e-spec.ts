@@ -49,7 +49,7 @@ const suffix = `${Date.now()}-rpt`;
 
 // Wide date range so all GL activity is in scope regardless of other suites.
 const FROM = '2000-01-01';
-const AS_OF = '2999-12-31';
+const AS_OF = '2199-12-31';
 
 // Amounts for this suite.
 const AMOUNT_REV = 400;  // customer invoice paid via payment
@@ -244,21 +244,21 @@ describe('Financial Reports (e2e)', () => {
     it('GET /billing/reports/profit-and-loss → totalRevenue >= AMOUNT_REV; netIncome = totalRevenue − totalExpense', async () => {
       const res = await request(http)
         .get('/api/v1/billing/reports/profit-and-loss')
-        .query({ from: FROM, to: AS_OF })
+        .query({ from: FROM, to: AS_OF, currency:'CAD' })
         .set(auth())
         .expect(200);
 
       const body = res.body as {
-        revenue: Array<{ code: string; name: string; amount: number }>;
-        expense: Array<{ code: string; name: string; amount: number }>;
-        totalRevenue: number;
-        totalExpense: number;
-        netIncome: number;
+        revenue: Array<{ code: string; name: string; amount: string }>;
+        expense: Array<{ code: string; name: string; amount: string }>;
+        totalRevenue: string;
+        totalExpense: string;
+        netIncome: string;
       };
 
-      expect(typeof body.totalRevenue).toBe('number');
-      expect(typeof body.totalExpense).toBe('number');
-      expect(typeof body.netIncome).toBe('number');
+      expect(typeof body.totalRevenue).toBe('string');
+      expect(typeof body.totalExpense).toBe('string');
+      expect(typeof body.netIncome).toBe('string');
 
       // Revenue must include at least AMOUNT_REV (other suites may add more).
       expect(Number(body.totalRevenue)).toBeGreaterThanOrEqual(AMOUNT_REV);
@@ -281,18 +281,18 @@ describe('Financial Reports (e2e)', () => {
     it('GET /billing/reports/balance-sheet?asOf=far-future → balanced===true; totalAssets > 0', async () => {
       const res = await request(http)
         .get('/api/v1/billing/reports/balance-sheet')
-        .query({ asOf: AS_OF })
+        .query({ asOf: AS_OF, currency:'CAD' })
         .set(auth())
         .expect(200);
 
       const body = res.body as {
-        assets: Array<{ code: string; name: string; amount: number }>;
-        liabilities: Array<{ code: string; name: string; amount: number }>;
-        equity: Array<{ code: string; name: string; amount: number }>;
-        totalAssets: number;
-        totalLiabilities: number;
-        totalEquity: number;
-        netIncome: number;
+        assets: Array<{ code: string; name: string; amount: string }>;
+        liabilities: Array<{ code: string; name: string; amount: string }>;
+        equity: Array<{ code: string; name: string; amount: string }>;
+        totalAssets: string;
+        totalLiabilities: string;
+        totalEquity: string;
+        netIncome: string;
         balanced: boolean;
       };
 
@@ -360,7 +360,7 @@ describe('Financial Reports (e2e)', () => {
       // absolute lower bound that depends on suite order or previous runs.
       const before = await request(http)
         .get('/api/v1/billing/reports/cash-flow')
-        .query({ from: FROM, to: AS_OF })
+        .query({ from: FROM, to: AS_OF, currency:'CAD' })
         .set(auth())
         .expect(200);
       cashBeforePayment = Number(before.body.accounts.find((a: { code: string }) => a.code === '1000')?.amount ?? 0);
@@ -376,13 +376,13 @@ describe('Financial Reports (e2e)', () => {
     it('GET /billing/reports/cash-flow → cash account and net change increase by the payment amount', async () => {
       const res = await request(http)
         .get('/api/v1/billing/reports/cash-flow')
-        .query({ from: FROM, to: AS_OF })
+        .query({ from: FROM, to: AS_OF, currency:'CAD' })
         .set(auth())
         .expect(200);
 
       const body = res.body as {
-        accounts: Array<{ code: string; name: string; amount: number }>;
-        netChange: number;
+        accounts: Array<{ code: string; name: string; amount: string }>;
+        netChange: string;
       };
 
       expect(Array.isArray(body.accounts)).toBe(true);
@@ -424,7 +424,7 @@ describe('Financial Reports (e2e)', () => {
     it('GET /billing/reports/ar-aging?asOf=far-future → customer in rows; grandTotal >= AMOUNT_AR', async () => {
       const res = await request(http)
         .get('/api/v1/billing/reports/ar-aging')
-        .query({ asOf: AS_OF })
+        .query({ asOf: AS_OF, currency:'CAD' })
         .set(auth())
         .expect(200);
 
@@ -432,15 +432,15 @@ describe('Financial Reports (e2e)', () => {
         rows: Array<{
           partyId: string;
           partyName: string;
-          buckets: Record<string, number>;
-          total: number;
+          buckets: Record<string, string>;
+          total: string;
         }>;
-        totals: Record<string, number>;
-        grandTotal: number;
+        totals: Record<string, string>;
+        grandTotal: string;
       };
 
       expect(Array.isArray(body.rows)).toBe(true);
-      expect(typeof body.grandTotal).toBe('number');
+      expect(typeof body.grandTotal).toBe('string');
 
       // Our customer must appear.
       const row = body.rows.find((r) => r.partyId === customerId);
@@ -483,7 +483,7 @@ describe('Financial Reports (e2e)', () => {
     it('GET /billing/reports/ap-aging?asOf=far-future → carrier in rows; grandTotal >= AMOUNT_AP', async () => {
       const res = await request(http)
         .get('/api/v1/billing/reports/ap-aging')
-        .query({ asOf: AS_OF })
+        .query({ asOf: AS_OF, currency:'CAD' })
         .set(auth())
         .expect(200);
 
@@ -491,15 +491,15 @@ describe('Financial Reports (e2e)', () => {
         rows: Array<{
           partyId: string;
           partyName: string;
-          buckets: Record<string, number>;
-          total: number;
+          buckets: Record<string, string>;
+          total: string;
         }>;
-        totals: Record<string, number>;
-        grandTotal: number;
+        totals: Record<string, string>;
+        grandTotal: string;
       };
 
       expect(Array.isArray(body.rows)).toBe(true);
-      expect(typeof body.grandTotal).toBe('number');
+      expect(typeof body.grandTotal).toBe('string');
 
       // Our carrier must appear.
       const row = body.rows.find((r) => r.partyId === carrierId);
@@ -593,11 +593,11 @@ describe('Financial Reports (e2e)', () => {
     it('6a. ar-aging grandTotal === 0 (no acme invoices)', async () => {
       const res = await request(otherHttp)
         .get('/api/v1/billing/reports/ar-aging')
-        .query({ asOf: AS_OF })
+        .query({ asOf: AS_OF, currency:'CAD' })
         .set({ Authorization: `Bearer ${otherToken}` })
         .expect(200);
 
-      const body = res.body as { grandTotal: number; rows: unknown[] };
+      const body = res.body as { grandTotal: string; rows: unknown[] };
       expect(Number(body.grandTotal)).toBe(0);
       expect(body.rows).toHaveLength(0);
     });
@@ -605,11 +605,11 @@ describe('Financial Reports (e2e)', () => {
     it('6b. ap-aging grandTotal === 0 (no acme invoices)', async () => {
       const res = await request(otherHttp)
         .get('/api/v1/billing/reports/ap-aging')
-        .query({ asOf: AS_OF })
+        .query({ asOf: AS_OF, currency:'CAD' })
         .set({ Authorization: `Bearer ${otherToken}` })
         .expect(200);
 
-      const body = res.body as { grandTotal: number; rows: unknown[] };
+      const body = res.body as { grandTotal: string; rows: unknown[] };
       expect(Number(body.grandTotal)).toBe(0);
       expect(body.rows).toHaveLength(0);
     });
@@ -617,11 +617,11 @@ describe('Financial Reports (e2e)', () => {
     it('6c. profit-and-loss netIncome === 0 (no GL for this tenant)', async () => {
       const res = await request(otherHttp)
         .get('/api/v1/billing/reports/profit-and-loss')
-        .query({ from: FROM, to: AS_OF })
+        .query({ from: FROM, to: AS_OF, currency:'CAD' })
         .set({ Authorization: `Bearer ${otherToken}` })
         .expect(200);
 
-      const body = res.body as { totalRevenue: number; totalExpense: number; netIncome: number };
+      const body = res.body as { totalRevenue: string; totalExpense: string; netIncome: string };
       expect(Number(body.totalRevenue)).toBe(0);
       expect(Number(body.totalExpense)).toBe(0);
       expect(Number(body.netIncome)).toBe(0);
@@ -630,11 +630,11 @@ describe('Financial Reports (e2e)', () => {
     it('6d. balance-sheet balanced === true; totalAssets === 0 (no GL for this tenant)', async () => {
       const res = await request(otherHttp)
         .get('/api/v1/billing/reports/balance-sheet')
-        .query({ asOf: AS_OF })
+        .query({ asOf: AS_OF, currency:'CAD' })
         .set({ Authorization: `Bearer ${otherToken}` })
         .expect(200);
 
-      const body = res.body as { totalAssets: number; balanced: boolean };
+      const body = res.body as { totalAssets: string; balanced: boolean };
       expect(body.balanced).toBe(true);
       expect(Number(body.totalAssets)).toBe(0);
     });

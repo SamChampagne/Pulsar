@@ -263,7 +263,7 @@
             {type === 'RECEIVE' ? 'Client' : 'Transporteur'}
           </p>
           <EntityPicker
-            endpoint={type === 'RECEIVE' ? '/transportation/customers' : '/transportation/carriers'}
+            endpoint={type === 'RECEIVE' ? '/billing/payments/data/customers' : '/billing/payments/data/carriers'}
             label={type === 'RECEIVE' ? 'Client' : 'Transporteur'}
             bind:value={partyId}
             disabled={saving}

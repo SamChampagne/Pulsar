@@ -344,6 +344,12 @@
               <div class="min-w-0">
                 <h3 class="font-mono text-sm font-semibold">{line.item.sku}</h3>
                 <p class="mt-1 break-words text-sm text-ink-muted">{line.item.name}</p>
+                {#if line.lot}<p class="mt-2 text-xs text-ink-muted">
+                    <a class="text-accent underline" href={`/wms/items/${line.itemId}/lots`}
+                      >Lot {line.lot.code}</a
+                    >
+                    · Péremption déclarée : {line.lot.expiresOn?.slice(0, 10) ?? 'non renseignée'}
+                  </p>{/if}
               </div>
               <div class="text-right">
                 <p class="text-xs text-ink-muted">
@@ -391,8 +397,8 @@
               <div class="mt-4 rounded-md bg-surface-muted p-3">
                 <div class="flex flex-wrap justify-between gap-2 text-xs">
                   <span
-                    >Stock physique : <b class="font-mono">{check.stockOnHand} {line.item.unit}</b
-                    ></span
+                    >{line.lot ? 'Stock du lot' : 'Stock physique'} :
+                    <b class="font-mono">{check.stockOnHand} {line.item.unit}</b></span
                   ><span
                     >Besoin du dossier ici : <b class="font-mono"
                       >{check.requiredFromBin} {line.item.unit}</b

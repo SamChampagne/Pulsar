@@ -17,18 +17,20 @@ import {
   PaymentPartyType,
   PaymentTargetType,
   PaymentType,
+  invoiceBalance,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
-import { MailService } from '../../core/email/mail.service';
 import { ModuleSettingsService } from '../../core/module-registry/module-settings.service';
 import { RatingService } from '../transportation/rating/rating.service';
 import { LedgerService } from './ledger/ledger.service';
 import { PaymentsService } from './payments.service';
 import { TaxTemplatesService } from './tax-templates.service';
+import { DocumentCoordinatesService } from '../../core/reference-data/document-coordinates.service';
+import { lockBusinessTenant, nextBusinessVersion } from '../business/business-lock';
 
 const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -137,12 +139,12 @@ export class CustomerInvoicesService {
     private readonly ownership: OwnershipService,
     private readonly sequences: SequencesService,
     private readonly audit: AuditLogsService,
-    private readonly mail: MailService,
     private readonly moduleSettings: ModuleSettingsService,
     private readonly rating: RatingService,
     private readonly ledger: LedgerService,
     private readonly payments: PaymentsService,
     private readonly taxTemplates: TaxTemplatesService,
+    private readonly coordinates: DocumentCoordinatesService,
   ) {}
 
   private async defaultModeId(tenantId: string): Promise<string> {
@@ -411,13 +413,33 @@ export class CustomerInvoicesService {
     from: CustomerInvoiceStatus,
     to: CustomerInvoiceStatus,
     extra: Prisma.CustomerInvoiceUpdateManyMutationInput = {},
+    expectedUpdatedAt?: string,
   ) {
     if (!canTransitionCustomerInvoice(from, to)) {
       throw new BadRequestException(`Invalid transition ${from} → ${to}`);
     }
-    const { count } = await this.prisma.customerInvoice.updateMany({
-      where: { id, tenantId, status: from },
-      data: { status: to, ...extra },
+    const { count } = await this.prisma.$transaction(async (tx) => {
+      await lockBusinessTenant(tx, tenantId);
+      const invoice = await tx.customerInvoice.findFirst({ where: { tenantId, id, status: from } });
+      if (!invoice) throw new BadRequestException(`Statement is not ${from}`);
+      if (to === CustomerInvoiceStatus.APPROVED) {
+        if (invoice.documentCoordinates && !expectedUpdatedAt)
+          throw new ConflictException(
+            'Revoyez la version de la facture et de ses coordonnées avant approbation.',
+          );
+        if (expectedUpdatedAt) nextBusinessVersion(invoice, expectedUpdatedAt);
+      }
+      const documentCoordinates =
+        to === CustomerInvoiceStatus.APPROVED
+          ? await this.coordinates.freeze(tx, tenantId, invoice.documentCoordinates, {
+              kind: 'customer',
+              id: invoice.customerId,
+            })
+          : undefined;
+      return tx.customerInvoice.updateMany({
+        where: { id, tenantId, status: from, updatedAt: invoice.updatedAt },
+        data: { status: to, ...extra, ...(documentCoordinates ? { documentCoordinates } : {}) },
+      });
     });
     if (count === 0) {
       throw new BadRequestException(`Statement is not ${from}`);
@@ -434,7 +456,7 @@ export class CustomerInvoicesService {
     return this.get(tenantId, id);
   }
 
-  async approve(tenantId: string, userId: string, id: string) {
+  async approve(tenantId: string, userId: string, id: string, expectedUpdatedAt?: string) {
     const result = await this.transition(
       tenantId,
       userId,
@@ -444,6 +466,7 @@ export class CustomerInvoicesService {
       {
         approvedAt: new Date(),
       },
+      expectedUpdatedAt,
     );
     const s = await this.moduleSettings.resolve(tenantId, 'billing');
     // Auto-post ledger entry: DR AR = gross / CR Revenue = net / CR <taxAccount> per tax line.
@@ -468,6 +491,7 @@ export class CustomerInvoicesService {
           tenantId,
           {
             memo: `Facture client ${result.invoiceNumber} approuvée`,
+            currency: result.currency,
             sourceType: 'customer-invoice',
             sourceId: id,
             sourceKind: 'approved',
@@ -485,107 +509,16 @@ export class CustomerInvoicesService {
         );
       }
     }
-    if (s.autoSendOnApproval === true) {
-      try {
-        await this.send(tenantId, userId, id);
-      } catch {
-        /* no email / send failed: stays APPROVED, best-effort */
-      }
-    }
-    // autoEmailInvoicePdf: queue an email with the invoice summary (and any existing
-    // PDF Document attached to this invoice) to the customer — best-effort, non-blocking.
-    if (s.autoEmailInvoicePdf === true) {
-      void this.queueInvoicePdfEmail(tenantId, userId, id).catch(() => undefined);
+    if (s.autoSendOnApproval === true || s.autoEmailInvoicePdf === true) {
+      this.logger.warn('Customer invoice automatic delivery retired: publish and confirm the canonical PDF from Billing.');
     }
     return result;
   }
 
-  /**
-   * Best-effort: sends the invoice summary (HTML) to the customer with any
-   * attached PDF Document found for this invoice. Called when autoEmailInvoicePdf=true.
-   * Does NOT change invoice status — it is purely a notification side-effect.
-   */
-  private async queueInvoicePdfEmail(tenantId: string, userId: string, id: string): Promise<void> {
-    const statement = await this.get(tenantId, id);
-    if (!statement.customer.email) return; // no recipient → skip silently
-
-    const rows = statement.lines
-      .map(
-        (l) =>
-          `<tr><td>${l.transportOrder?.orderNumber ?? l.description}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
-      )
-      .join('');
-
-    // Look for any PDF Document already uploaded for this invoice.
-    const pdfDocs = await this.prisma.document.findMany({
-      where: {
-        tenantId,
-        entityType: 'customer-invoice',
-        entityId: id,
-        mimeType: 'application/pdf',
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 1,
-      select: { id: true, fileName: true },
-    });
-
-    const attachments = pdfDocs.map((d) => ({ documentId: d.id, filename: d.fileName }));
-
-    await this.mail.queue(tenantId, {
-      toAddresses: [statement.customer.email],
-      subject: `Invoice ${statement.invoiceNumber} — ${statement.totalAmount} ${statement.currency}`,
-      html: [
-        `<p>Please find your invoice <strong>${statement.invoiceNumber}</strong> attached${attachments.length ? ' (PDF)' : ' below'}.</p>`,
-        `<table><tr><th>Order</th><th>Description</th><th>Amount</th></tr>${rows}</table>`,
-        `<p><strong>Total: ${statement.totalAmount} ${statement.currency}</strong></p>`,
-      ].join('\n'),
-      text: `Invoice ${statement.invoiceNumber} — total ${statement.totalAmount} ${statement.currency}`,
-      relatedType: 'customer-invoice',
-      relatedId: id,
-      createdByUserId: userId,
-      ...(attachments.length > 0 ? { attachments } : {}),
-    });
-  }
-
-  /** Emails the statement summary to the customer contact; no email, no SENT. */
-  async send(tenantId: string, userId: string, id: string) {
-    const statement = await this.get(tenantId, id);
-    if (statement.status !== CustomerInvoiceStatus.APPROVED) {
-      throw new BadRequestException('Only APPROVED statements can be sent');
-    }
-    if (!statement.customer.email) {
-      throw new BadRequestException('Customer has no email address on file');
-    }
-    const rows = statement.lines
-      .map(
-        (l) =>
-          `<tr><td>${l.transportOrder?.orderNumber ?? l.description}</td><td>${l.description}</td><td style="text-align:right">${l.amount} ${statement.currency}</td></tr>`,
-      )
-      .join('');
-    // Route through the durable outbox — recorded in email history with relatedType/Id.
-    await this.mail.queue(tenantId, {
-      toAddresses: [statement.customer.email],
-      subject: `Billing statement ${statement.invoiceNumber}`,
-      html: [
-        `<p>Please find below your billing statement <strong>${statement.invoiceNumber}</strong>.</p>`,
-        `<table><tr><th>Order</th><th>Description</th><th>Amount</th></tr>${rows}</table>`,
-        `<p><strong>Total: ${statement.totalAmount} ${statement.currency}</strong></p>`,
-      ].join('\n'),
-      text: `Billing statement ${statement.invoiceNumber} — total ${statement.totalAmount} ${statement.currency}`,
-      relatedType: 'customer-invoice',
-      relatedId: id,
-      createdByUserId: userId,
-    });
-    return this.transition(
-      tenantId,
-      userId,
-      id,
-      CustomerInvoiceStatus.APPROVED,
-      CustomerInvoiceStatus.SENT,
-      {
-        sentAt: new Date(),
-      },
-    );
+  /** Compatibility endpoint fails closed: no summary, inferred recipient or arbitrary attachment. */
+  async send(tenantId: string, _userId: string, id: string) {
+    await this.get(tenantId, id);
+    throw new ConflictException('Publiez le PDF puis confirmez son destinataire dans Document et envoi de la facture.');
   }
 
   async markPaid(tenantId: string, userId: string, id: string, paidAt?: string) {
@@ -596,14 +529,19 @@ export class CustomerInvoicesService {
         status: true,
         totalAmount: true,
         amountPaid: true,
+        creditedAmount: true,
         customerId: true,
         currency: true,
       },
     });
     if (!inv) throw new NotFoundException('Statement not found');
-    if (inv.status !== 'SENT')
-      throw new BadRequestException('Only SENT statements can be marked paid via this endpoint');
-    const outstanding = Number(inv.totalAmount) - Number(inv.amountPaid);
+    if (inv.status !== 'APPROVED' && inv.status !== 'SENT')
+      throw new BadRequestException('Only approved statements can be marked paid via this endpoint');
+    const outstanding = invoiceBalance(
+      inv.totalAmount.toString(),
+      inv.amountPaid.toString(),
+      inv.creditedAmount.toString(),
+    ).outstanding;
     if (outstanding <= 0) throw new BadRequestException('Statement already settled');
     const payment = await this.payments.create(tenantId, userId, {
       type: PaymentType.RECEIVE,

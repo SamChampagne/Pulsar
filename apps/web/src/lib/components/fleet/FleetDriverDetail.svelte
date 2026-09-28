@@ -84,7 +84,7 @@
     error = '';
     try {
       const [d, cd] = await Promise.all([
-        api<Driver>(`/transportation/drivers/${driverId}`),
+        api<Driver>(`/fleet/data/drivers/${driverId}`),
         api<ComplianceDoc[]>('/fleet/compliance-documents', {
           query: { subjectType: 'DRIVER', subjectId: driverId },
         }),
@@ -123,7 +123,7 @@
     }
     saving = true;
     try {
-      await api(`/transportation/drivers/${driverId}`, {
+      await api(`/fleet/data/drivers/${driverId}`, {
         method: 'PATCH',
         body: {
           firstName: editForm.firstName.trim(),

@@ -11,6 +11,7 @@
 </script>
 
 <script lang="ts">
+  import { formatDateTime } from '$lib/format';
   let { entries = [] as TimelineEntry[] } = $props();
 
   const dotClass: Record<Tone, string> = {
@@ -25,7 +26,7 @@
     if (!ts) return '';
     const d = typeof ts === 'string' ? new Date(ts) : ts;
     if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleString('fr-CA');
+    return formatDateTime(d.toISOString());
   }
 </script>
 

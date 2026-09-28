@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime as fmtUserInstant } from '$lib/format';
   import type { ManufacturingMaterialSnapshot } from '@pulsar/shared';
   import { api } from '$lib/api/client';
   import { auth } from '$lib/stores/auth';
@@ -118,8 +119,8 @@
           </div>{/each}
       </div>
       <p class="mt-3 text-xs text-ink-muted">
-        Figé le {new Date(snapshot.capturedAt).toLocaleString('fr-CA')}. Ces besoins ne constituent
-        ni une réservation ni une consommation de stock.
+        Figé le {fmtUserInstant(snapshot.capturedAt)}. Ces besoins ne constituent ni une réservation
+        ni une consommation de stock.
       </p>
     {:else if order.bomRevision}
       <div class="my-4 flex gap-2">

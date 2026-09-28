@@ -1,5 +1,12 @@
 # Pièces Services et documentation des connexions
 
+> Complément du 25 septembre : [lots explicites des pièces Services](services-part-lots.md),
+> identité figée et retours au lot d’origine; aucune déduction sur l’historique.
+
+> Évolution du 22 septembre : les limites de retour intégral décrites dans ce lot
+> historique sont remplacées par les [retours partiels et la facturation nette](services-partial-returns.md).
+> Les invariants de sortie physique, de snapshot et de verrouillage restent applicables.
+
 Lot local du 21 septembre 2026, branche `codex/end-user-workflows`. Suite de
 [l’approbation des heures](services-time-approval.md). Pas de push/PR ni de déploiement externe.
 

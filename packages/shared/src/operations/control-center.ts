@@ -1,3 +1,4 @@
+import type { DeploymentObservation } from './pilot-readiness';
 /** Read-only operations contracts. Pure data; safe for the browser. */
 export type ServiceState =
   | 'OPERATIONAL'
@@ -32,6 +33,7 @@ export interface QueueObservation {
   detail: string;
 }
 export interface PlatformOperations {
+  deploymentChecks?: DeploymentObservation;
   checkedAt: string;
   environment: { name: string; version: string; uptimeSeconds: number; deployment: string };
   services: ServiceObservation[];

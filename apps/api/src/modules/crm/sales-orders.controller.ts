@@ -6,7 +6,12 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireModule } from '../../common/decorators/require-module.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { SalesOrdersService } from './sales-orders.service';
-import { CreateSalesOrderDto, SalesOrderListQueryDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
+import {
+  CreateSalesOrderDto,
+  SalesOrderListQueryDto,
+  UpdateSalesOrderDto,
+  SalesOrderTransitionDto,
+} from './dto/sales-order.dto';
 
 @ApiTags('crm')
 @ApiBearerAuth()
@@ -42,28 +47,68 @@ export class SalesOrdersController {
   @Post(':id/confirm')
   @HttpCode(200)
   @RequirePermissions(PERMISSIONS.CRM.MANAGE)
-  confirm(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.service.transition(user.tenantId, user.id, id, SalesOrderStatus.CONFIRMED);
+  confirm(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: SalesOrderTransitionDto,
+  ) {
+    return this.service.transition(
+      user.tenantId,
+      user.id,
+      id,
+      SalesOrderStatus.CONFIRMED,
+      dto.expectedUpdatedAt,
+    );
   }
 
   @Post(':id/fulfill')
   @HttpCode(200)
   @RequirePermissions(PERMISSIONS.CRM.MANAGE)
-  fulfill(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.service.transition(user.tenantId, user.id, id, SalesOrderStatus.FULFILLED);
+  fulfill(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: SalesOrderTransitionDto,
+  ) {
+    return this.service.transition(
+      user.tenantId,
+      user.id,
+      id,
+      SalesOrderStatus.FULFILLED,
+      dto.expectedUpdatedAt,
+    );
   }
 
   @Post(':id/invoice')
   @HttpCode(200)
   @RequirePermissions(PERMISSIONS.CRM.MANAGE)
-  invoice(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.service.transition(user.tenantId, user.id, id, SalesOrderStatus.INVOICED);
+  invoice(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: SalesOrderTransitionDto,
+  ) {
+    return this.service.transition(
+      user.tenantId,
+      user.id,
+      id,
+      SalesOrderStatus.INVOICED,
+      dto.expectedUpdatedAt,
+    );
   }
 
   @Post(':id/cancel')
   @HttpCode(200)
   @RequirePermissions(PERMISSIONS.CRM.MANAGE)
-  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.service.transition(user.tenantId, user.id, id, SalesOrderStatus.CANCELLED);
+  cancel(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: SalesOrderTransitionDto,
+  ) {
+    return this.service.transition(
+      user.tenantId,
+      user.id,
+      id,
+      SalesOrderStatus.CANCELLED,
+      dto.expectedUpdatedAt,
+    );
   }
 }

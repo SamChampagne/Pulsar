@@ -33,6 +33,7 @@ import {
 } from '@pulsar/shared';
 import { IsContactPhone } from '../../common/validators/contact';
 import { ListQueryDto } from '../../common/dto/list-query.dto';
+import { ContactAddressesDto } from '../../common/dto/postal-address.dto';
 const Trim = () => Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
 const Optional = () => ValidateIf((_o, value) => value !== undefined);
 export class BusinessQueryDto extends ListQueryDto {
@@ -53,6 +54,7 @@ export class ServicePartQueryDto extends ListQueryDto {
   @IsOptional() @IsString() @Length(1, 100) catalogItemId?: string;
 }
 export class ConsumeServicePartDto extends VersionDto {
+  @Optional() @IsString() @Length(1, 100) lotId?: string;
   @IsString() @Length(1, 100) catalogItemId!: string;
   @IsString() @Length(1, 100) binId!: string;
   @IsNumber({ maxDecimalPlaces: 3 }) @Min(0.001) @Max(1000000000) quantity!: number;
@@ -60,10 +62,13 @@ export class ConsumeServicePartDto extends VersionDto {
   @IsUUID('4') operationKey!: string;
 }
 export class ReturnServicePartDto extends VersionDto {
+  @Optional() @IsString() @Length(1, 100) creditLineId?: string;
+  // Legacy omission means the full original quantity, never an implicit remaining balance.
+  @Optional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0.001) @Max(1000000000) quantity?: number;
   @IsString() @Trim() @Length(1, 1000) reason!: string;
   @IsUUID('4') operationKey!: string;
 }
-export class CreatePartnerDto {
+export class CreatePartnerDto extends ContactAddressesDto {
   @IsString() @Trim() @Length(1, 50) code!: string;
   @IsString() @Trim() @Length(1, 200) name!: string;
   @IsOptional() @IsEmail() @MaxLength(254) email?: string | null;
@@ -92,6 +97,7 @@ export class UpdateCatalogItemDto extends PartialType(
   @Optional() @IsBoolean() active?: boolean;
 }
 export class CreateProjectDto {
+  @Optional() @IsBoolean() acceptanceRequired?: boolean;
   @IsString() @Trim() @Length(1, 200) title!: string;
   @IsString() @Length(1, 100) partnerId!: string;
   @Optional() @IsString() @MaxLength(4000) description?: string;
@@ -127,6 +133,11 @@ export class JobTransitionDto extends VersionDto {
   @Optional() @IsString() @Trim() @MaxLength(8000) report?: string;
 }
 export class SupplierLineDto {
+  @Optional() @IsString() @Length(1, 100) packageId?: string;
+  @Optional() @IsInt() @Min(1) @Max(2147483646) packageVersion?: number;
+  @Optional() @IsString() @Matches(/^(?:0|[1-9]\d{0,9})(?:\.\d{1,4})?$/) packageCount?: string;
+  @Optional() @IsString() @Length(1, 100) supplierOfferId?: string;
+  @Optional() @IsInt() @Min(1) @Max(2147483646) supplierOfferVersion?: number;
   @IsString() @Length(1, 100) catalogItemId!: string;
   @IsNumber({ maxDecimalPlaces: 4 }) @Min(0.0001) @Max(1000000000) quantity!: number;
   @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) @Max(1000000000) unitPrice!: number;
@@ -153,6 +164,8 @@ export class SupplierOrderTransitionDto extends VersionDto {
   @Optional() @IsString() @Trim() @Length(1, 1000) closeReason?: string;
 }
 export class SupplierReceiptLineDto {
+  @Optional() @IsString() @Length(1, 100) lotId?: string;
+  @Optional() @IsString() @Matches(/^(?:0|[1-9]\d{0,9})(?:\.\d{1,4})?$/) packageCount?: string;
   @IsString() @Length(1, 100) orderLineId!: string;
   @IsString() @Length(1, 100) binId!: string;
   @IsNumber({ maxDecimalPlaces: 3 }) @Min(0.001) @Max(1000000000) quantity!: number;

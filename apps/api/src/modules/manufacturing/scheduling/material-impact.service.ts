@@ -4,6 +4,7 @@ import { deriveMaterialImpact, type ManufacturingMaterialSnapshot } from '@pulsa
 import { PrismaService } from '../../../prisma/prisma.service';
 import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
 import { materialArrivals } from './material-arrivals';
+import { quarantinedByItem, availableAfterQuarantine } from '../../wms/lots/lot-availability';
 
 @Injectable()
 export class MaterialImpactService {
@@ -25,7 +26,9 @@ export class MaterialImpactService {
           throw new BadRequestException('Choisissez un entrepôt actif de cette entreprise.');
         const orders = await tx.manufacturingOrder.findMany({
           where: { tenantId, locationId, status: { in: ['RELEASED', 'IN_PROGRESS'] } },
-          include: { declarations: { where: { tenantId }, orderBy: { id: 'asc' } } },
+          include: {
+            declarations: { where: { tenantId, reversal: null }, orderBy: { id: 'asc' } },
+          },
           orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
           take: 2001,
         });
@@ -40,6 +43,7 @@ export class MaterialImpactService {
           },
           _sum: { qtyOnHand: true },
         });
+        const held = await quarantinedByItem(tx, tenantId, locationId);
         const arrivals = await materialArrivals(tx, tenantId, locationId);
         const baseline = await tx.schedulingRun.findFirst({
           where: { tenantId, isBaseline: true },
@@ -89,7 +93,10 @@ export class MaterialImpactService {
           today,
           stocks: stocks.map((s) => ({
             itemId: s.itemId,
-            quantity: (s._sum.qtyOnHand ?? new Prisma.Decimal(0)).toFixed(),
+            quantity: availableAfterQuarantine(
+              s._sum.qtyOnHand ?? new Prisma.Decimal(0),
+              held.get(s.itemId),
+            ).toFixed(),
           })),
           arrivals,
           orders: eligible.map((o) => {

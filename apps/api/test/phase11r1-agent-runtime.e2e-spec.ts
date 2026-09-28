@@ -240,7 +240,7 @@ describe('Phase 11 R1 — agent runtime config (e2e)', () => {
 
     const cfg = await request(http).get('/api/v1/agent-runtime').set(auth()).expect(200);
     expect(cfg.body.provider).toBe('openai-codex');
-    expect(cfg.body.hasApiKey).toBe(true); // key preserved from the prior PUT (no leak though)
+    expect(cfg.body.hasApiKey).toBe(false); // changing identity discards the previous key
     expect(cfg.body.authMode).toBe('login');
 
     const res = await request(http).post('/api/v1/agent-runtime/connect').set(auth()).expect(201);

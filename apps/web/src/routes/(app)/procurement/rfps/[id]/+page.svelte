@@ -161,7 +161,7 @@
       const [rfpRes, lanesRes, carriersRes] = await Promise.all([
         api<Rfp>(`/procurement/rfps/${rfpId}`),
         api<Paginated<LaneOption>>('/transportation/lanes', { query: { pageSize: 100 } }),
-        api<Paginated<CarrierOption>>('/transportation/carriers', { query: { pageSize: 100 } }),
+        api<Paginated<CarrierOption>>('/procurement/data/carriers', { query: { pageSize: 100 } }),
       ]);
       rfp = rfpRes;
       allLanes = lanesRes.items;

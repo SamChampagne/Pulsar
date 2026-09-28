@@ -7,7 +7,16 @@ export type WmsDocumentKind = 'receipt' | 'pickOrder';
 export class WmsVersionDto {
   @IsOptional() @IsDateString() expectedUpdatedAt?: string;
 }
-const itemSelect = { sku: true, name: true, unit: true, isActive: true } as const;
+const itemSelect = { sku: true, name: true, unit: true, isActive: true, lotTracked: true } as const;
+const lotSelect = {
+  disposition: true,
+  dispositionReason: true,
+  id: true,
+  code: true,
+  expiresOn: true,
+  manufacturedOn: true,
+  supplierLot: true,
+} as const;
 const binSelect = { id: true, code: true, zone: true, isActive: true, locationId: true } as const;
 const locationSelect = { id: true, code: true, name: true, type: true } as const;
 
@@ -80,7 +89,11 @@ export async function readWmsDocument(
             location: { select: locationSelect },
             lines: {
               orderBy: { id: 'asc' },
-              include: { item: { select: itemSelect }, toBin: { select: binSelect } },
+              include: {
+                item: { select: itemSelect },
+                toBin: { select: binSelect },
+                lot: { select: lotSelect },
+              },
             },
           },
         })
@@ -90,7 +103,11 @@ export async function readWmsDocument(
             location: { select: locationSelect },
             lines: {
               orderBy: { id: 'asc' },
-              include: { item: { select: itemSelect }, fromBin: { select: binSelect } },
+              include: {
+                item: { select: itemSelect },
+                fromBin: { select: binSelect },
+                lot: { select: lotSelect },
+              },
             },
             shipment: { select: { id: true, shipmentNumber: true, status: true } },
           },
@@ -102,10 +119,11 @@ export async function readWmsDocument(
     ...line,
     bin: 'toBin' in line ? line.toBin : line.fromBin,
   }));
-  const key = (itemId: string, binId: string) => JSON.stringify([itemId, binId]);
+  const key = (itemId: string, binId: string, lotId?: string | null) =>
+    JSON.stringify([itemId, binId, lotId ?? null]);
   const demand = new Map<string, Prisma.Decimal>();
   for (const line of rows) {
-    const k = key(line.itemId, line.bin.id);
+    const k = key(line.itemId, line.bin.id, line.lotId);
     demand.set(k, (demand.get(k) ?? new Prisma.Decimal(0)).plus(line.qty));
   }
   const levels =
@@ -120,13 +138,27 @@ export async function readWmsDocument(
         })
       : [];
   const stock = new Map(levels.map((l) => [key(l.itemId, l.binId), l.qtyOnHand]));
+  if (kind === 'pickOrder' && applicable) {
+    const lots = await db.wmsLotBalance.findMany({
+      where: {
+        tenantId,
+        lotId: { in: rows.flatMap((l) => (l.lotId ? [l.lotId] : [])) },
+        binId: { in: rows.map((l) => l.bin.id) },
+      },
+    });
+    for (const l of lots) stock.set(key(l.itemId, l.binId, l.lotId), l.qtyOnHand);
+  }
   const checks = rows.map((line) => {
     const issues: string[] = [];
-    const required = demand.get(key(line.itemId, line.bin.id))!;
-    const onHand = stock.get(key(line.itemId, line.bin.id)) ?? new Prisma.Decimal(0);
+    const required = demand.get(key(line.itemId, line.bin.id, line.lotId))!;
+    const onHand = stock.get(key(line.itemId, line.bin.id, line.lotId)) ?? new Prisma.Decimal(0);
     if (applicable) {
       if (doc.location.type !== 'WAREHOUSE') issues.push('Site non configuré comme entrepôt');
       if (!line.item.isActive) issues.push('Article inactif');
+      if (line.item.lotTracked && !line.lot) issues.push('Choisissez le lot de cette ligne');
+      if (!line.item.lotTracked && line.lot) issues.push('Article non suivi par lot');
+      if (kind === 'pickOrder' && line.lot?.disposition === 'QUARANTINED')
+        issues.push(`Lot en quarantaine : ${line.lot.dispositionReason ?? 'sortie interdite'}`);
       if (!line.bin.isActive) issues.push('Emplacement inactif');
       if (line.bin.locationId !== doc.locationId) issues.push('Emplacement d’un autre site');
       if (line.qty.lte(0)) issues.push('Quantité non positive');

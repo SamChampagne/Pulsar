@@ -13,12 +13,12 @@ then [ROADMAP.md](./ROADMAP.md) / [TODO.md](./TODO.md); domain context in
 
 ## Layout
 
-| Path                | Contents                                                                |
-| ------------------- | ----------------------------------------------------------------------- |
-| `apps/api`          | NestJS REST API. `src/core/*` = platform, `src/modules/*` = business    |
-| `apps/web`          | SvelteKit **SPA** (Svelte 5 runes, `ssr=false`, adapter-static)         |
-| `packages/shared`   | Source of truth: status enums, state machines, permission catalog, types|
-| `packages/database` | Prisma schema + seed; re-exports `@prisma/client`                       |
+| Path                | Contents                                                                 |
+| ------------------- | ------------------------------------------------------------------------ |
+| `apps/api`          | NestJS REST API. `src/core/*` = platform, `src/modules/*` = business     |
+| `apps/web`          | SvelteKit **SPA** (Svelte 5 runes, `ssr=false`, adapter-static)          |
+| `packages/shared`   | Source of truth: status enums, state machines, permission catalog, types |
+| `packages/database` | Prisma schema + seed; re-exports `@prisma/client`                        |
 
 ## Commands
 
@@ -136,7 +136,7 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
 28. (phase 13 — Main-d'œuvre 24/7) Tout réveil d'un agent always-on passe par
     `AgentWorkerService` (dispatcher unique, file en mémoire, concurrence plafonnée
     global/tenant/agent) ; chaque réveil est enregistré comme `AgentRun` (durable). Un run ne
-    *revert* la tâche (IN_PROGRESS→OPEN) QUE s'il l'a réellement *claim* (sinon il finit SKIPPED
+    _revert_ la tâche (IN*PROGRESS→OPEN) QUE s'il l'a réellement \_claim* (sinon il finit SKIPPED
     sans toucher l'état d'un autre run). `PAUSED` est le kill switch à chaud réversible (tue les
     sessions Hermes en vol via `AgentRuntimeService.killAgentSessions`) ; `REVOKED` reste
     permanent. Le retry ne s'applique qu'aux erreurs de connectivité runtime
@@ -196,7 +196,8 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     Le statut de conformité est **calculé** (`computeComplianceStatus`, pur `@pulsar/shared`), JAMAIS
     persisté ; `ComplianceDocument.subjectId` est une FK souple polymorphe (VEHICLE/TRAILER/DRIVER) dont
     l'ownership est vérifiée en service selon `subjectType` (règle 9). Le roster d'assets réutilise les
-    endpoints `transportation/{vehicles,trailers,drivers}` (pas de duplication CRUD). Tout endpoint
+    writers communs via `OperationalRecordsModule` et les façades `fleet/data/*`
+    (pas de duplication CRUD ni activation TMS requise; les endpoints TMS historiques restent compatibles). Tout endpoint
     Fleet est `@RequireModule(MODULE_KEYS.FLEET)` + `fleet.read|manage`, tenant-scopé (règle 1) ;
     fichiers via `DocumentsService` (règle 12).
 
@@ -240,7 +241,7 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     (`@pulsar/shared`) avant persistance — jamais écrites sans validation (ni sur create, ni sur
     update). Les définitions vivent dans la table dédiée `CustomFieldDefinition` (tenant-scopée,
     `@@unique([tenantId, module, entityType, key])`) ; les valeurs sont tenant-scopées dans la
-    colonne `customData Json?` de chaque entité TMS. Les *réglages de processus* (eux) restent dans
+    colonne `customData Json?` de chaque entité TMS. Les _réglages de processus_ (eux) restent dans
     `TenantModule.settings` via le framework de config. Le compteur de séquence est indexé
     sur la **clé** (`SequenceKey`), jamais sur le préfixe — changer `documentPrefixTransportOrder`
     ne remet pas le compteur à zéro.
@@ -270,6 +271,7 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     `@RequireModule(ANALYTICS)` + `analytics.read`, tenant-scopé (règle 1). `moduleOfEventType`
     (même package) est la seule source de vérité pour la correspondance type→module — ne pas
     réimplémenter.
+
 ## Hard rules (continued, arc B — tressage automatique)
 
 38. (arc B — réactions déterministes `RUN_ACTION`) Les réactions cross-module ne s'exécutent
@@ -442,6 +444,404 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
     figées, le contexte IA courant est identifié; aucun nouveau pouvoir mutating.
     Voir `docs/plans/manufacturing-operational-loop.md`.
 
+53. (Référentiels — carnet enterprise E1a, étendu E1b.5) Une `PartyDirectoryEntry` appartient à exactement
+    un Customer OU BusinessPartner OU CrmCompany du tenant (FK composites et XOR SQL). Les writers
+    passent par `PartyDirectoryService`, validation partagée fermée et verrou business tenant;
+    entrée courante et révision append-only sont atomiques. Édition à version attendue,
+    reprise liée tenant/acteur/clé/corps; rejouer retourne le reçu sans restaurer l'ancien état.
+    Les façades appliquent les droits du module consommateur, jamais un module fourni dans
+    le payload. La fonction et les dates de validité d'un contact sont descriptives : aucun
+    accès portail, envoi, changement d'adresse principale ou réécriture de document implicite.
+    Voir `docs/plans/enterprise-audit-program.md`.
+
+54. (Coordonnées document E1b) `documentCoordinates` de ServiceQuote/CustomerInvoice/TransportOrder/SalesOrder/SupplierOrder est
+    choisi via `DocumentCoordinatesService`, jamais depuis un snapshot fourni par le client.
+    Tenant/propriétaire/type/version/validité sont recontrôlés; édition avec version attendue
+    et verrou business tenant partagé avec le carnet. Le workflow accepte/approuve ET fige
+    la copie dans la même transaction. Une facture capturée exige `expectedUpdatedAt` à
+    l'approbation. Après engagement, aucune réécriture depuis le carnet; aucun backfill des
+    documents historiques. Un contact choisi ne change pas le destinataire d'envoi, les taxes,
+    la Location ou les droits portail. Voir `docs/plans/document-coordinates.md`.
+
+55. (Commandes Transport E1b.2) L'édition et les transitions TransportOrder prennent le verrou
+    business tenant et relisent le statut/version avant CAS. Une commande avec coordonnées
+    exige `expectedUpdatedAt` pour édition/confirmation; le gel est atomique à CONFIRMED.
+    Changer de client exige le retrait explicite préalable des choix. Planification :
+    numéros + toutes les expéditions + statut PLANNED dans la même transaction, jamais
+    de création partielle; ajout d'expédition garde le statut PLANNED par CAS. Les coordonnées
+    privées ne sont pas propagées aux Locations, BOL/public, emails ou factures implicitement.
+
+56. (Avoirs — coordonnées E1b.3) Le choix `INVOICE` projette la copie `documentCoordinates`
+    gelée et appartenant au client de la facture via `invoiceCreditRecipient`, avec empreinte
+    recontrôlée au premier gel. Jamais de relecture du carnet actuel pour reconstruire le passé.
+    Une saisie manuelle alternative exige un motif si une copie existe. Le rejeu conserve
+    instantané et PDF canoniques, y compris après panne de stockage; les anciennes empreintes
+    manuelles restent compatibles. Contact capturé = suggestion explicite, jamais autorité
+    d'envoi. Notes privées, livraison et email ne sont pas imprimés. Contrats :
+    `docs/plans/credit-document-coordinates.md`.
+
+57. (Factures clients — documents E1b.4) Publication hors DRAFT sous verrou de facture tenant,
+    snapshot immuable et PDF canonique via DocumentsService, rattachement conditionnel et SHA-256.
+    Ne jamais recalculer les taxes historiques ni choisir un upload arbitraire. Envoi explicitement
+    confirmé via la voie financière MailService, un par canal; simulation/file ne changent pas
+    le statut comptable. L’ancien send implicite et les options auto client sont fermés; les
+    messages historiques sans canal qualifié ne sont pas rejoués. Ancien envoi ⇒ revue opérateur.
+    Le portail sert le canonique vérifié dès publication, sans fallback en cas de panne.
+    Aucun nouvel outil agent. Contrat et déploiement : `docs/plans/customer-invoice-documents.md`.
+
+58. (CRM — coordonnées E1b.5) Le carnet accepte Customer XOR BusinessPartner XOR
+    CrmCompany (FK tenant et XOR SQL). CRM seul utilise le carnet de la société,
+    jamais un Customer déduit. La commande choisit ses versions via le service commun;
+    confirmation sous verrous business puis tenant/MRP, relecture/version/CAS et gel atomique.
+    Aucun backfill ni propagation implicite. Ne pas changer la forme des anciens fingerprints
+    de reprise des carnets. Devise figée après confirmation; aucune conversion implicite
+    des lignes. Voir `docs/plans/crm-order-coordinates.md`.
+
+59. (Achats fournisseurs — coordonnées E1b.6) `SupplierOrder` capture le BusinessPartner
+    avec `owner.kind='supplier'` et rôle `isSupplier`; jamais un client déduit. Le slot
+    technique `billingAddress` signifie ici adresse DU fournisseur; `deliveryAddress`
+    est interdit, car le site de réception appartient à l’acheteur. Confirmation et gel
+    atomiques sous verrou business, version et CAS; changer le fournisseur exige de vider
+    explicitement les choix. Aucun transfert vers WMS/MaterialPurchaseOrder/PDF/envoi.
+    Une réception ne relit pas le carnet pour réécrire l’engagement. Contrats et limites :
+    `docs/plans/supplier-order-coordinates.md`.
+
+60. (Carnet — impact E1b.7) Les usages sont une lecture bornée par entrée et type,
+    filtrée AVANT requête par module et droits consommateurs. Aucun compteur de document
+    masqué. FK du document ET propriétaire du snapshot doivent correspondre au carnet;
+    aucun parcours implicite des liens Customer/BusinessPartner/CRM. Brouillons et copies
+    figées historiques sont distincts; la revue d’une entrée ne valide pas tout le dossier.
+    Aucun writer, propagation ou backfill. Contrat : `docs/plans/directory-document-impact.md`.
+
+61. (Fiches entreprise et identités E1b.8) `PartyBusinessProfile` est privé, descriptif et
+    appartient à un seul Customer/BusinessPartner/CrmCompany (XOR + FK tenant). Validation
+    fermée par `validatePartyProfile`, version obligatoire et verrou business; aucune
+    propagation aux documents/portails ou règle opérationnelle implicite. Les rapprochements
+    réutilisent `ServicesCommerceService.partnerLinks`; revue/confirmation recontrôlent
+    acteur, versions et cibles, droits consommateurs avant projection. Ne jamais retourner
+    `CrmCompany.customerId` dans une projection CRM sans droits sur la famille Customer.
+    Les writers CRM de liens/conversion prennent le même verrou; aucune correspondance
+    contradictoire ni client dupliqué sur lecture périmée. Voir
+    `docs/plans/enterprise-information-depth.md`.
+
+## Hard rules (continued, Catalogue/Achats)
+
+62. (Catalogue/Achats I1a) `CatalogItemDetails` est privé, validé par `validateCatalogDetails`
+    et versionné sous verrou business tenant. Mesures par unité seulement, jamais conversion
+    ou capacité implicite. `CatalogSupplierOffer` : FK tenant, une référence courante par
+    article/fournisseur, prix/minimum/multiple dans l’unité catalogue. Choix explicite
+    ID+version sur ligne; `captureSupplierTerms` revalide exactement sous verrou à la saisie
+    ET confirmation. Snapshot serveur figé après engagement, aucun backfill. Pas de coûts
+    fournisseur dans Services ni de nouveau pouvoir IA. Voir `docs/plans/catalog-purchasing-depth.md`.
+
+63. (Catalogue/Achats I1b) `CatalogPackage` : contenu/code/code-barres/fractionnement immuables,
+    libellé/activation versionnés sous verrou business tenant. `packageQuantity` est l’unique
+    conversion exacte, sans arrondi (commande 4 décimales, WMS 3). Prix et quantités des lignes
+    restent en unité de base. Choix ID/version/nombre revalidé à saisie ET confirmation;
+    snapshot serveur figé ensuite, lu à réception sans réinterprétation du catalogue courant.
+    Scan = sélection sans mutation. Nombre de colis reçu conservé, fingerprint historique
+    préservé si absent; stock uniquement par le writer WMS transactionnel existant.
+    Voir `docs/plans/catalog-packaging.md`.
+
+64. (WMS — lots I2a) `lotTracked` est opt-in à création et immuable, sans backfill. `WmsLot`
+    identité/dates sont immuables. Réception/préparation/mouvement portent une FK composite
+    tenant/article/lot. `postMovement` exige/refuse le lot selon l’article, vérifie le solde
+    du lot et écrit solde lot + total + journal sous le même verrou/transaction. Aucun
+    prélèvement implicite sur un autre lot. Readiness groupe article/bin/lot, sans réservation.
+    Dates déclaratives seulement, aucun FEFO/quarantaine. Writers non équipés et comptages
+    agrégés refusent les articles suivis. Fingerprints/replays historiques préservés sans lot;
+    reprise navigateur conserve le lot exact. Voir `docs/plans/wms-lots.md`.
+
+## Hard rules (continued, WMS — comptages)
+
+65. (WMS — comptages I2b) Writers de comptage sous le verrou tenant de stock avant lecture.
+    Snapshot immuable article/lot/unité et nombre de mouvements du bin; changement du registre
+    (même net zéro) ⇒ 409, jamais recalage automatique. NULL historique ⇒ consultation/annulation,
+    pas de réconciliation ni backfill. Toutes les lignes exigent une quantité explicite.
+    Réconciliation via state machine + CAS et postMovement dans la même transaction.
+    Ajustement manuel avec operationKey : acteur/corps/lot signés, replay avant disponibilité,
+    clé unique partagée avec MOVE; même clé/corps après réponse incertaine. Aucun effacement
+    aveugle d’intention navigateur. Contrat : `docs/plans/wms-lot-counts.md`.
+
+## Hard rules (continued, Services — lots des pièces)
+
+66. (Services — lots I2c) `ServicePartUsage.lotId/lotSnapshot` sont des preuves immuables
+    capturées à la consommation, avec FK tenant/article/lot et sans backfill historique.
+    Verrou business puis WMS; usage + PICK + soldes total/lot dans la même transaction.
+    Un retour conserve le lot/bin/article/unité d’origine; vérifier sa preuve PICK avant
+    postMovement, jamais suivre une nouvelle correspondance Catalogue ni accepter un lot
+    du client au retour. Droits WMS et avoirs toujours vérifiés; lecture historique Services
+    seule sans projection de stock courant. Fingerprints sans lot historiques inchangés.
+    Une reprise incertaine conserve sa clé/corps/lot, même si la reprise est refusée.
+    Voir `docs/plans/services-part-lots.md`.
+
+## Hard rules (continued, Fabrication — lots atelier)
+
+67. (Fabrication — lots I2d) Les déclarations capturent `evidence.version=2`, lots sources
+    et lot produit explicites, dans la même transaction que les mouvements et soldes WMS.
+    Une ligne zéro ne porte pas de lot; rebut seul ne produit aucun stock. Un lot de sortie
+    par déclaration, plusieurs lots/bins par composant. Généalogie directe de cette déclaration
+    seulement : jamais d’allocation par pièce ou rattachement implicite aux consommations
+    antérieures. Les preuves v1 et fingerprints sans lot restent inchangés, aucun backfill.
+    Lien OF du journal WMS gardé par Fabrication activée + manufacturing.read avant projection.
+    Reprise incertaine garde clé/corps/lots après refus intermédiaire. Voir
+    `docs/plans/manufacturing-lots.md`.
+
+## Hard rules (continued, Fabrication — corrections atelier)
+
+68. (Fabrication — corrections I2e) Contrepassation complète v2 sur OF IN_PROGRESS seulement.
+    Revue/version/hash puis recontrôle sous verrou tenant WMS; correction, ajustements via
+    postMovement, soldes et version d’OF atomiques. Retrait produit avant restitutions;
+    mêmes lots/bins/unités, manque ⇒ refus. Original immuable, aucune réouverture/édition
+    destructive. Quantités nettes et impacts excluent les contrepassées; MRP capture la
+    correction sans réécrire les anciens runs. APS global et annulation OF restent gardés
+    par tout historique. Replay lié acteur/corps/clé; reprise UI conserve la demande après
+    refus intermédiaire. Aucun nouvel outil IA. Voir `docs/plans/manufacturing-reversals.md`.
+
+69. (WMS — quarantaine I2f) La disposition d’un lot entier passe par la state machine partagée,
+    révision attendue et verrou tenant WMS. Décision append-only et état atomiques; replay lié
+    tenant/acteur/corps/clé avant version. Libération : wms.lots.release + motif/compte rendu.
+    postMovement bloque toutes les jambes sortantes sauf MOVE conservant le lot; entrées et
+    retours ne libèrent rien. Ajustements négatifs/comptages/contrepassations ne contournent pas
+    le blocage. MRP/APS/impacts excluent le stock bloqué au site; snapshots historiques intacts.
+    Aucun effet automatique de Qualité ni nouvelle permission IA. Voir `docs/plans/wms-lot-quarantine.md`.
+
+## Hard rules (continued, Qualité — contrôles de lots)
+
+70. (Qualité ↔ lots I2g) Source LOT immuable dès la création, FK tenant/article/lot,
+    identité + révision de disposition + compteur de mouvements capturés. Verrou business
+    puis WMS à création/clôture; mouvement même net zéro ou décision ⇒ contrôle périmé.
+    Aucun effet stock d’une inspection. Citation facultative à la libération : Qualité active
+    - quality.read, même lot, COMPLETED/PASS, version exacte et contexte inchangé sous verrou
+      WMS. Résumé figé dans la décision append-only; replay exact après droits actuels, anciens
+      fingerprints manuels préservés. Preuve structurée masquée sans lecture Qualité; source
+      masquée sans lecture WMS. Pas de rattachement rétroactif ni rappel transitif. WMS seul
+      garde sa libération manuelle. Voir `docs/plans/quality-lot-controls.md`.
+
+## Hard rules (continued, WMS — traçabilité bornée)
+
+71. (Lots I2h) La traçabilité amont/aval est une lecture RepeatableRead, jamais un
+    workflow de rappel. Liens depuis preuves v2 et mouvements exacts d’une même déclaration
+    non contrepassée; chronologie physique et bornes explicites obligatoires. Aucun lien
+    reconstruit depuis BOM ou stock actuel, aucune allocation par pièce ni somme des sorties
+    répétées entre arêtes. Les dossiers directs couvrent toutes les dates du lot, sans les
+    attribuer à un chemin. WMS autonome; métadonnées Fabrication/Services/Transport seulement
+    avec module et droits de lecture correspondants. Aucun effet de stock, blocage ou IA.
+    Voir `docs/plans/wms-lot-traceability.md`.
+
+72. (WMS I2i — sorties documentées) DISPOSAL/SUPPLIER_RETURN passent par
+    `StockExitsService` : DRAFT ne réserve rien, revue fraîche et confirmation humaine
+    avec `wms.stock.dispose|return`, version et reprise acteur/clé/corps. Verrou business
+    puis WMS; mouvement, soldes lot/total, preuve et POSTED atomiques. Le writer central
+    exige un dossier DRAFT exactement correspondant et sans mouvement antérieur;
+    `stock-exit` est une source réservée, index partiel unique à préserver. Seule la
+    quantité documentée peut sortir en quarantaine, sans libérer le reste. Fournisseur
+    explicite capturé, changement avant sortie bloquant; WMS autonome sans Achats.
+    POSTED/CANCELLED terminaux. Aucun avoir, transport, envoi externe ou outil IA ajouté.
+    Voir `docs/plans/wms-stock-exits.md`.
+
+73. (WMS I2j — rapprochement et justificatifs) Le retour peut capturer une réception
+    fournisseur POSTED exacte (fournisseur/article/lot/site/unité), jamais un lien implicite.
+    Source/copie immuables; cumul DRAFT+POSTED borné par la ligne reçue, sous verrou business
+    puis WMS. La lecture commerciale et les écritures liées/replays exigent Achats + read;
+    WMS autonome reste possible. Les reçus ne diminuent pas et aucun avoir n’est calculé.
+    `WmsStockExitEvidence` est append-only et n’altère pas la preuve/updatedAt du dossier.
+    Upload via DocumentsService, type réservé aux endpoints métier, précontrôle/recontrôle
+    sous verrou, fichier non lié nettoyé, reprise acteur/clé/corps/hash identiques. Ajout
+    après POSTED identifié, aucun nouvel ajout CANCELLED, aucune suppression de pièce liée.
+    Voir `docs/plans/wms-return-purchase-evidence.md`.
+
+## Hard rules (continued, WMS — suivi fournisseur)
+
+74. (WMS I2k — suivi fournisseur) `SupplierReturnReport` est append-only : cumuls reçus,
+    acceptés, refusés, version attendue, pièce du même retour POSTED, motif obligatoire
+    pour baisse/date antérieure. Verrou business puis WMS, reprise acteur/clé/corps,
+    humains actifs et wms.stock.return. Calculs exacts Shared; aucune mutation du parent,
+    de sa preuve/updatedAt, des mouvements, des reçus d’achat ou de la finance. WMS autonome;
+    copie commerciale I2j toujours gardée séparément. Voir `docs/plans/wms-supplier-return-followup.md`.
+
+## Hard rules (continued, Finance — factures fournisseur documentaires)
+
+75. (I2l.1) `SupplierInvoice` est distinct des factures transporteur et clients.
+    Finance seul fonctionne via les références partagées; montants déclarés exacts,
+    aucune taxe/prix inféré. DRAFT → QUALIFIED/CANCELLED via state machine Shared,
+    verrou business, version attendue et opération acteur/clé/corps atomique.
+    QUALIFIED fige lignes et original, sans paiement, grand livre, stock ni envoi.
+    Justificatifs protégés via DocumentsService, append-only et upload DRAFT seulement.
+    Liens d’achat explicites : mêmes fournisseur/devise/unité, module/droit Achats
+    revérifiés, snapshot commercial masqué sans accès, y compris sur reprise.
+    Une acceptation WMS ne crée jamais de crédit financier. Aucun nouveau pouvoir IA.
+    Contrat et limites : `docs/plans/billing-supplier-invoices.md`.
+
+## Hard rules (continued, Finance — avoirs fournisseur reçus)
+
+76. (Finance I2l.2 — avoir reçu) SupplierCredit ne référence qu’une SupplierInvoice
+    QUALIFIED, source immuable et devise/fournisseur hérités. Montants déclarés sans
+    quantité physique; cumuls QUALIFIED plafonnés par ligne et position de taxe via
+    supplierCreditBalance, recontrôlés sous verrou business à qualification. Brouillons
+    sans réservation, state machine, version et reprise acteur/clé/corps obligatoires.
+    Original du même avoir protégé; aucune mutation de facture, stock ou comptabilité.
+    Retour facultatif = dernière révision SupplierReturnReport du même fournisseur,
+    copie figée; nouvelle révision bloque le brouillon, jamais réécriture historique.
+    Accès WMS revérifié pour les mutations/replays liés, contexte masqué sans accès.
+    Aucun prix d’achat ni montant déduit du retour. Voir `docs/plans/billing-supplier-credits.md`.
+
+77. (Finance I2l.3 — dossier fournisseur) Dossier = lecture financière seulement,
+    aucune dette/paiement inférée. Synthèse QUALIFIED exacte par devise via Shared,
+    indépendante des filtres; pas de Number monétaire, pas de store de rollup.
+    UNION paginées et count en snapshot RepeatableRead; toutes les branches/jointures
+    sont tenant-scopées. Aucun snapshot ou ID Achats/WMS ni clé de stockage exposé.
+    Les preuves utilisent les téléchargements protégés existants. Voir
+    `docs/plans/billing-supplier-dossiers.md`.
+
+78. (Finance I2m.1 — échéancier fournisseur) Planning opérationnel, jamais une dette
+    comptabilisée ou preuve de paiement. Révisions append-only via
+    `canTransitionSupplierSchedule`, revue hashée, version, confirmation humaine,
+    verrou business tenant partagé avec factures/avoirs et reprise acteur/clé/corps.
+    Sommes exactes du reste QUALIFIED, sans conversion de devise; nouvel avoir ⇒
+    À revoir calculé, anciennes dates hors prévision jusqu’à reconfirmation.
+    Dates civiles distinctes croissantes, zéro explicite, retrait sans effacer.
+    Lecture/synthèse paginées SQL sous RepeatableRead, pas de balance historique.
+    Ne jamais brancher ce registre sur le GL historique sans devise ni les paiements
+    clients/transporteurs. Aucun nouvel outil mutating IA.
+    Contrat : `docs/plans/billing-supplier-schedules.md`.
+
+## Hard rules (continued, Finance — devise du journal)
+
+79. (Finance I2m.2a — devise du journal) Toute nouvelle écriture capture la devise
+    de sa source, jamais un défaut tenant; historique NULL sans backfill. Seules les
+    contrepassations de paiements historiques NULL peuvent créer un NULL (exception
+    amortissement fermée depuis I2m.2c). Reversal = devise originale; avoir client exige original
+    connu de même devise, ou qualifié par le rapprochement I2m.2d.2b (règle 84).
+    Writers par LedgerService.postTx, verrou GL tenant avant
+    lookup, validation exacte Shared, audit dans la même transaction. Saisie manuelle
+    UUID/acteur/corps, reprise exacte; pas d’effacement d’une demande incertaine.
+    Rapports GL par devise explicite, SQL NUMERIC + Shared BigInt, couverture dans
+    le même snapshot; jamais sommer les devises. Aucun change, période fermée ou
+    branchement du registre fournisseur documentaire dans ce lot. Contrat et API :
+    `docs/plans/billing-ledger-currency.md`.
+
+80. (Finance I2m.2b — préparation comptable) Le profil est une cible configurable,
+    jamais une activation du GL officiel ni un défaut de devise/conversion.
+    Révisions append-only, droit dédié, version et reprise acteur/UUID/corps.
+    Les nouveaux budgets figent devise et dates inclusives UTC; historique NULL
+    laissé en lecture seule. Révisions et archivage sans suppression, verrou
+    business tenant, audit atomique, replay avant revalidation des comptes.
+    Écarts exacts dans le snapshot du budget; couverture limitée aux comptes
+    sélectionnés, pas de faux total entre natures comptables. Voir
+    `docs/plans/billing-accounting-profile-budgets.md`.
+
+81. (Finance I2m.2c — immobilisations) Nouveaux actifs à devise explicite; anciens
+    NULL en lecture seule. Plan exact Shared figé à l’activation après reviewToken,
+    jamais régénéré pour un actif actif. Dotations chronologiques, fin civile UTC
+    non future, montant serveur; période nulle tracée sans faux GL. Writers sous
+    verrou business tenant puis GL, version et UUID/acteur/corps; replay avant
+    nouvel état. Dotation/cumul/journal/opération/audit atomiques. Humain actif et
+    `billing.assets.post`, aucun nouvel outil agent. Retrait motivé via state machine,
+    aucune suppression ni cession comptable implicite. Voir
+    `docs/plans/billing-fixed-assets-currency.md`.
+
+82. (Finance I2m.2d.1 — reprise historique) La qualification manuelle concerne
+    seulement les écritures NULL manuelles/sans source, jamais les sources métier.
+    Aucun writer ne modifie les lignes originales ni leur devise NULL : annotation
+    QUALIFIED/WITHDRAWN versionnée via Shared, preuve protégée et revue liée à
+    l’acteur. Humain actif + `billing.ledger.qualify`; business lock puis GL;
+    annotation/révision/audit atomiques, reprise UUID/acteur/corps avant état courant.
+    Retrait motivé sans contrepassation. Lectures GL/rapports/budgets utilisent la
+    devise effective et signalent la qualification actuelle des périodes historiques.
+    Aucun nouvel outil agent. Voir `docs/plans/billing-historical-qualification.md`.
+
+## Hard rules (continued, Finance — reprise des paiements)
+
+83. (Finance I2m.2d.2a — paiements historiques) Qualification via rapprochement du
+    paiement/affectations/original/contrepassation, jamais par le parcours manuel.
+    Devise attestée = source; NULL original conservé. `sourceEntryId` relie les
+    annotations atomiques; révision sur l’original, enfants non modifiables seuls.
+    Verrous business → paiement → GL, mêmes droits source sur preuve/replay.
+    Annulation inverse les lignes originales et transmet leur annotation dans la
+    même transaction; jamais les réglages courants. Qualification/retrait interdits
+    tant que le paiement est rapproché en banque. Voir
+    `docs/plans/billing-payment-qualification.md`.
+
+## Hard rules (continued, Finance — reprise des factures)
+
+84. (Finance I2m.2d.2b — factures historiques) La reprise rapproche facture,
+    lignes, taxes figées, tiers, journal et avoirs clients émis dans le tenant.
+    Aucun GL absent créé, taux recalculé ou payable déduit pour remplacer le header.
+    Facture NULL et avoirs NULL sont qualifiés/retirés atomiquement avec provenance
+    `sourceEntryId`; pas de décision enfant. Avoir connu conservé tel quel et retrait
+    isolé interdit. Nouvel avoir après reprise : devise source connue, jamais NULL;
+    source recontrôlée sous verrou facture partagé avec qualification/retrait.
+    Verrous business → facture → GL; droits facture sur dossier/preuve/replay.
+    Cents exacts Shared, aucun nouveau pouvoir IA ni activation TMS implicite.
+    Contrat et limites : `docs/plans/billing-invoice-qualification.md`.
+
+## Hard rules (continued, Finance — paiements partiellement affectés)
+
+85. (Finance I2m.2d.2c) La qualification d'un paiement historique porte uniquement
+    sur ses affectations positives : journal exact = somme affectée ≤ montant
+    déclaré, via `reconcilePaymentLedger` (Shared). Le reste est hors journal,
+    jamais crédit client, avance fournisseur ou preuve bancaire implicite.
+    Montants déclaré/affecté/reste capturés dans la revue et montrés dans l'UI;
+    original/contrepassation gardent les règles 83. Aucun solde ou affectation
+    modifié par la reprise. Banque exige toujours une affectation complète,
+    même après qualification. Voir `docs/plans/billing-partial-payment-qualification.md`.
+
+## Hard rules (continued, Finance — payable transporteur accepté)
+
+86. (Finance I2m.2d.2d) Une reprise de facture transporteur ajustée exige une
+    acceptation `ACCEPT_INVOICED` unique/cohérente dans l'audit du tenant et le
+    rapprochement exact des lignes reçues/écarts, via Shared. Payable = header,
+    jamais somme attendue; net comptabilisé = payable moins taxes déjà figées,
+    validé contre le journal existant. Aucun recalcul fiscal ou GL manquant créé.
+    La revue capture les montants et l'empreinte de la décision; source réévaluée
+    sous les verrous de la règle 84. Attendu/reçu/payable/écarts distincts dans l'UI,
+    droits source sur preuves/replays, aucun nouveau pouvoir IA. Voir
+    `docs/plans/billing-accepted-carrier-qualification.md`.
+
+## Hard rules (continued, Finance — dotations historiques groupées)
+
+87. (Finance I2m.2d.2e.1) Les dotations historiques d'un actif se qualifient ou
+    se retirent ensemble, ancrées sur la première période, jamais individuellement.
+    `reconcileAssetHistory` (Shared exact) rapproche chaque GL existant et le cumul;
+    mois absents signalés, aucun recalcul ni GL créé. La devise est explicitement
+    attestée sur preuve; actif/périodes/journaux NULL restent inchangés et le plan
+    futur reste bloqué. Revue capturée, verrou business → actif → GL, annotations
+    groupées/révision/audit atomiques, reprise UUID/acteur/corps. Droits actifs et
+    journal sur dossier/preuve/replay, aucun nouveau pouvoir IA. Voir
+    `docs/plans/billing-asset-history-qualification.md`.
+
+## Pilot preparation P1a
+
+Le précontrôle d'Exploitation est réservé au plan plateforme : lecture seule,
+aucune migration, email, action métier ou appel LLM. La comparaison des migrations
+est bornée et retourne inconnu en cas d'échec, jamais zéro. Noms/checksums/erreurs
+brutes et secrets ne sont pas exposés. `derivePilotReadiness` (Shared pur) ne donne
+jamais un verdict prêt production : les preuves VPS/métier/IA restent une recette
+distincte. Profil et option IA ne changent ni modules ni réglages. Voir
+`docs/plans/pilot-next-stage.md`.
+
+## Customer workspace P2a
+
+Le dossier 360° est une lecture RepeatableRead via les façades PARTY_ACCESS.
+Filtrer PARTY_WORKSPACE_SOURCES par module ET droit document AVANT requête ou
+compteur; le droit référentiel ne suffit pas. Une seule correspondance actuelle
+Customer/BusinessPartner/CrmCompany, jamais de transitivité ni matching par nom.
+Toute relation de sélection porte tenantId serveur, y compris les anciennes FK
+CRM. Recherche/pagination en base, erreurs explicites et projection fermée; aucun
+total monétaire, document privé, mutation ou pouvoir IA. Voir
+`docs/plans/customer-workspace.md`.
+
+## Services work acceptance P3a.1
+
+L’acceptation porte sur le rapport de travaux terminés, jamais les quantités/prix.
+Choix `acceptanceRequired` en DRAFT seulement; défaut false, aucun backfill supposé.
+Décisions via `canTransitionServiceAcceptance`, humain actif et droit dédié;
+verrou business, version/CAS, record append-only et audit atomiques, UUID/acteur/corps.
+ACCEPTED terminal; le client du projet est figé dès une décision. Facture Services
+et clôture relisent l’exigence sous le même verrou. Aucune signature client ou action
+IA implicite. Contrat : `docs/plans/services-work-acceptance.md`.
+
 ## Adding a business module (the recipe)
 
 1. Reserve the key in `packages/shared/src/modules.ts` (it's probably already in `MODULE_CATALOG`;
@@ -479,7 +879,70 @@ Swagger: http://localhost:3000/api/docs. Env: copy `.env.example` → `.env` at 
 12. Files go through `DocumentsService.upload/download` (FILE_STORAGE driver) — never touch the
     filesystem or S3 directly from feature code.
 
+## Hard rules (communications — Telnyx / email)
+
+- SMS via `SmsService` : core, tenant-scopé, utilisateur humain actif, confirmation,
+  version de connexion et clé acteur/corps/tenant. Registre et audit avant réseau,
+  cap de tentatives sous verrou tenant; aucun nouvel outil agent ou réaction sortante.
+- Réel SMS autorisé dans l’UI par tenant (`liveAuthorized`, confirmation humaine,
+  version et audit); `SMS_DRIVER` ne contrôle plus l’envoi. Migration fail-closed.
+  API Telnyx fixe, aucun retry après engagement.
+  SENDING/UNKNOWN ne doivent jamais être réémis : conserver la demande, inspecter le
+  fournisseur. Les transitions utilisent `canTransitionSms`; ACCEPTED n’est pas DELIVERED.
+- Retours Telnyx : octets raw + signature Ed25519/fenêtre 5 min, tenant résolu côté
+  serveur, profil/numéros contrôlés. Conserver l’index partiel unique profil/numéro
+  vérifié. Événement dédoublonné et audit atomiques sous verrou SMS; rapprochement
+  exact par ID fournisseur, jamais par texte. Livraison via `canTransitionSmsDelivery`.
+  STOP tenant/numéro bloque toute nouvelle préparation; START ne lève rien. Aucun
+  effet externe automatique. La télémétrie webhook ne change pas la version config.
+- Secrets par tenant chiffrés via CryptoService, projections sans ciphertext. Changer
+  hôte/identifiant SMTP ou IMAP retire l’ancien secret sans remplacement explicite.
+  SMTP tenant peut envoyer réellement même en EMAIL_DRIVER=log; désactiver ce SMTP
+  réutilise le transport plateforme, sans kill switch global implicite.
+- IMAP : routeur `TenantInboundDriver`, `inboundLive` confirmé dans Pulsar, jamais
+  EMAIL_DRIVER. Migration des anciennes boîtes en simulation; compte changé ⇒
+  nouvelle confirmation humaine. SMTP plateforme reste le repli historique.
+- Contrats et limites : `docs/plans/communications-telnyx-email.md`.
+
 ## Known gotchas / debt (don't "fix" silently, see TODO.md)
+
+- IA A1 : lancement ACP via `scripts/pulsar-hermes-acp.py`, environnement OS en
+  liste fermée + clé tenant, workspace tenant. Outils MCP Pulsar seulement; refus
+  de toute permission hôte ACP, protocole 1 requis. Ne jamais restaurer l’auto-allow
+  ni ignorer un échec du modèle choisi. Changer fournisseur/auth/URL retire l’ancien
+  secret/login et invalide tests/modèles; résultat de test/login lié à la version.
+  Diagnostic = métadonnées locales sans LLM, contrôle ACP != inférence validée.
+  Qualifier le wrapper/fork avant upgrade; aucun sandbox OS revendiqué. Contrat :
+  `docs/plans/ai-runtime-renewal.md`.
+  A2a : reprise par `session/load` avec rejet explicite `None` dans le wrapper;
+  jamais `session/resume` qui peut créer une autre session sans identifiant retourné.
+  `scripts/fixtures/hermes-qualification-entry.py` est exclusivement un banc isolé,
+  jamais un point d’entrée API. Candidat 0.21.5 non promu : contrat et blocages dans
+  `docs/plans/ai-runtime-qualification.md`.
+  A2b/A3a : le wrapper classe les champs structurés de `AIAgent`, jamais sa prose,
+  dans `_meta.pulsarTurn` v1. Résultat absent/invalide ⇒ échec; `end` seul n’est pas
+  un succès. Worker : un seul résultat réussi sans erreur; aucune relance automatique
+  après un tour commencé/FAILED/KILLED. Annulation ne défait aucun effet métier.
+  Libération d’une tâche réellement claimée via `releaseWorkerClaim`, state machine,
+  CAS IN_PROGRESS→OPEN et audit; jamais rouvrir RESOLVED. Timeout de tour 120 s,
+  enfant arrêté; compteurs explicitement cumulatifs, jamais un prix inventé.
+  Titres IA auxiliaires désactivés. Contrat : `docs/plans/ai-turn-outcomes.md`.
+  A2c.1 : `deploy/agents` est un banc OFFLINE, jamais un runner de production.
+  Ne lui monter ni secrets ni homes réels ni socket Docker. Son réseau est `none`;
+  manifestes et lock vérifiés avant/après. Ne pas confondre deux homes synthétiques
+  dans un conteneur avec une frontière OS inter-tenants. L'API OVH reste sans Hermes;
+  non-root/read-only avec seul volume documents inscriptible, migration explicite
+  des anciennes permissions. Contrat : `docs/plans/ai-linux-qualification.md`.
+
+- Communications de dossier C3a : accès fermé `COMMUNICATION_ACCESS`, module/droit
+  source + canal sur lecture ET replay. Suggestions par FK explicite tenant-scopée,
+  jamais matching par numéro/nom. Journal exact par dossier; SMS liés exclus du
+  journal global. Préférence tenant/canal/coordonnée versionnée avec preuve auditée,
+  inconnue bloquante dans les dossiers; STOP ne se réactive pas ici.
+  Registre/audit avant réseau; SMS via le hook interne de `SmsService`, courriel
+  via un seul appel `EmailService` avec SMTP tenant capturé (sinon simulation,
+  jamais repli plateforme). UNKNOWN/SENDING sans retry. Aucun fichier financier,
+  auto-envoi ou nouvel outil IA. Contrat : `docs/plans/dossier-communications.md`.
 
 - Permissions are embedded in the JWT → role changes apply at next **refresh** (15 min max).
 - `ModulesGuard` uses a 30 s in-memory cache (single-process; Redis when scaling out).

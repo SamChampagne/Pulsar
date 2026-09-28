@@ -47,7 +47,7 @@
     lines: SubscriptionLine[];
   }
 
-  /** Paginated list returned by GET /transportation/customers */
+  /** Paginated list returned by GET /billing/subscriptions/data/customers */
   interface CustomerItem {
     id: string;
     code: string;
@@ -135,7 +135,7 @@
     if (customers.length > 0) return;
     loadingCustomers = true;
     try {
-      const res = await api<Paginated<CustomerItem>>('/transportation/customers?pageSize=100');
+      const res = await api<Paginated<CustomerItem>>('/billing/subscriptions/data/customers?pageSize=100');
       customers = res.items;
     } catch {
       // non-blocking; select will be empty

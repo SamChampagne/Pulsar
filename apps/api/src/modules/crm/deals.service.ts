@@ -17,6 +17,8 @@ import { paginationArgs, paginated } from '../../common/pagination';
 import { CreateDealDto, DealListQueryDto, UpdateDealDto } from './dto/deal.dto';
 import { PipelinesService } from './pipelines.service';
 import { SequencesService as CommunicationsService } from './sequences.service';
+import { lockBusinessTenant } from '../business/business-lock';
+import { assertCompanyCustomerLink } from '../business/identity-links';
 
 /**
  * CRM deals service. All operations are tenant-scoped (rule 1).
@@ -369,14 +371,17 @@ export class DealsService {
    * sets company.customerId + company.status=ACTIVE, records convertedCustomerId.
    */
   async convert(tenantId: string, id: string, userId: string) {
-    const deal = await this.prisma.crmDeal.findFirstOrThrow({
-      where: { id, tenantId },
-      include: { company: true },
-    });
-    if (deal.stage !== CrmDealStage.WON) {
-      throw new BadRequestException('Only WON deals can be converted');
-    }
     return this.prisma.$transaction(async (tx) => {
+      await lockBusinessTenant(tx, tenantId);
+      const deal = await tx.crmDeal.findFirstOrThrow({
+        where: { id, tenantId },
+        include: { company: true },
+      });
+      if (deal.stage !== CrmDealStage.WON)
+        throw new BadRequestException('Only WON deals can be converted');
+      // Conversion provenance is historical; a later company mapping never rewrites it.
+      if (deal.convertedCustomerId) return { dealId: id, customerId: deal.convertedCustomerId };
+      await assertCompanyCustomerLink(tx, tenantId, deal.companyId, deal.company.customerId);
       let customerId = deal.company.customerId;
       if (!customerId) {
         const code = await this.sequences.nextNumber(tenantId, 'customer');
@@ -389,7 +394,10 @@ export class DealsService {
           data: { customerId, status: 'ACTIVE' },
         });
       }
-      await tx.crmDeal.update({ where: { id }, data: { convertedCustomerId: customerId } });
+      await tx.crmDeal.update({
+        where: { id, tenantId },
+        data: { convertedCustomerId: customerId },
+      });
       await this.audit.log({
         tenantId,
         userId,

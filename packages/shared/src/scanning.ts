@@ -30,6 +30,7 @@ export function normalizeScan(raw: string): string {
   return value; // preserve leading zeroes and case
 }
 export const TOUR_MODULE_KEYS = [
+  'clients',
   'hr',
   'quality',
   'support',

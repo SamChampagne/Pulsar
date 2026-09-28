@@ -82,9 +82,9 @@
     try {
       const [ov, veh, trl, drv] = await Promise.all([
         api<Overview>('/fleet/overview'),
-        api<Paginated<Asset>>('/transportation/vehicles', { query: { pageSize: 100 } }),
-        api<Paginated<Asset>>('/transportation/trailers', { query: { pageSize: 100 } }),
-        api<Paginated<Driver>>('/transportation/drivers', { query: { pageSize: 100 } }),
+        api<Paginated<Asset>>('/fleet/data/vehicles', { query: { pageSize: 100 } }),
+        api<Paginated<Asset>>('/fleet/data/trailers', { query: { pageSize: 100 } }),
+        api<Paginated<Driver>>('/fleet/data/drivers', { query: { pageSize: 100 } }),
       ]);
       rosterPartial =
         veh.total > veh.items.length ||

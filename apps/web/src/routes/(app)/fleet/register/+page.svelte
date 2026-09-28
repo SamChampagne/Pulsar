@@ -317,9 +317,9 @@
     try {
       const [ov, veh, trl, drv] = await Promise.all([
         api<Overview>('/fleet/overview'),
-        api<Paginated<Asset>>('/transportation/vehicles', { query: { pageSize: 100 } }),
-        api<Paginated<Asset>>('/transportation/trailers', { query: { pageSize: 100 } }),
-        api<Paginated<Driver>>('/transportation/drivers', { query: { pageSize: 100 } }),
+        api<Paginated<Asset>>('/fleet/data/vehicles', { query: { pageSize: 100 } }),
+        api<Paginated<Asset>>('/fleet/data/trailers', { query: { pageSize: 100 } }),
+        api<Paginated<Driver>>('/fleet/data/drivers', { query: { pageSize: 100 } }),
       ]);
       overview = ov;
       vehicles = veh.items;
@@ -381,7 +381,7 @@
     try {
       let label: string;
       if (assetForm.kind === 'vehicle') {
-        await api('/transportation/vehicles', {
+        await api('/fleet/data/vehicles', {
           method: 'POST',
           body: clean({
             unitNumber: assetForm.unitNumber.trim(),
@@ -396,7 +396,7 @@
         activeTab = 'vehicles';
         label = assetForm.unitNumber.trim();
       } else if (assetForm.kind === 'trailer') {
-        await api('/transportation/trailers', {
+        await api('/fleet/data/trailers', {
           method: 'POST',
           body: clean({
             unitNumber: assetForm.unitNumber.trim(),
@@ -411,7 +411,7 @@
         activeTab = 'trailers';
         label = assetForm.unitNumber.trim();
       } else {
-        await api('/transportation/drivers', {
+        await api('/fleet/data/drivers', {
           method: 'POST',
           body: clean({
             firstName: assetForm.firstName.trim(),

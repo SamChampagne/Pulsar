@@ -1,5 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { formatTime } from './format';
+import { formatTime, formatDate, formatDateTime } from './format';
+import { userTimeZone } from './stores/time-zone.svelte';
+import { afterEach } from 'vitest';
+afterEach(() => userTimeZone.load(null));
+
+it('uses the user zone, distinguishes DST and leaves civil dates unchanged', () => {
+  userTimeZone.load('America/Toronto');
+  expect(formatTime('2026-01-15T15:00:00Z')).toContain('10 h 00');
+  expect(formatTime('2026-07-15T15:00:00Z')).toContain('11 h 00');
+  const early = formatDateTime('2026-11-01T05:30:00Z');
+  const late = formatDateTime('2026-11-01T06:30:00Z');
+  expect(early).not.toEqual(late);
+  userTimeZone.load('America/Vancouver');
+  expect(formatTime('2026-07-15T15:00:00Z')).toContain('08 h 00');
+  expect(formatDate('2026-01-01')).toBe('2026-01-01');
+  expect(formatDateTime('bad')).toBe('—');
+});
 
 describe('formatTime', () => {
   it('formats a fixed ISO instant as fr-CA 24h clock ("H h mm", no AM/PM)', () => {

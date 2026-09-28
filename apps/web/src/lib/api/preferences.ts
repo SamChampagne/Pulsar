@@ -13,6 +13,7 @@ export function getPreferences() {
     appearance: unknown;
     releaseNotesSeenAt?: string | null;
     moduleTours?: ModuleTours;
+    timeZone?: string | null;
   }>('/me/preferences');
 }
 
@@ -23,7 +24,11 @@ export function putModuleTour(moduleKey: TourModuleKey, progress: ModuleTourProg
   });
 }
 
-export function putPreferences(patch: { deskLayout?: DeskLayout; appearance?: Appearance }) {
+export function putPreferences(patch: {
+  deskLayout?: DeskLayout;
+  appearance?: Appearance;
+  timeZone?: string | null;
+}) {
   return api<{ deskLayout: unknown; appearance: unknown; releaseNotesSeenAt?: string | null }>(
     '/me/preferences',
     {

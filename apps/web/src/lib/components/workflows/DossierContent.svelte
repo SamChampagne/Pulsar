@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime as fmtUserInstant } from '$lib/format';
   import type { WorkflowDossier } from '@pulsar/shared';
   import { Badge, labelFor, toneFor } from '$lib/components/ui';
   let { data }: { data: WorkflowDossier } = $props();
@@ -98,8 +99,7 @@
                 href={entry.href}>{entry.label} ↗</a
               >{:else}<p class="mt-1 break-words text-sm">{entry.label}</p>{/if}<time
               datetime={entry.at}
-              class="mt-1 block text-xs text-ink-muted"
-              >{new Date(entry.at).toLocaleString('fr-CA')}</time
+              class="mt-1 block text-xs text-ink-muted">{fmtUserInstant(entry.at)}</time
             >
           </li>{/each}
       </ol>
@@ -108,8 +108,7 @@
   <aside class="space-y-2 rounded-inner bg-surface-muted p-3 text-xs leading-5 text-ink-muted">
     {#each data.notices as notice}<p>{notice}</p>{/each}
     <p>
-      Lecture : {new Date(data.checkedAt).toLocaleString('fr-CA')}. Les états restent ceux des
-      modules sources.
+      Lecture : {fmtUserInstant(data.checkedAt)}. Les états restent ceux des modules sources.
     </p>
   </aside>
 </div>

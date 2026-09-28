@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CommunicationButton from '$lib/components/communications/CommunicationButton.svelte';
   import { untrack } from 'svelte';
   import { auth } from '$lib/stores/auth';
   import LineItemsEditor, { type LineItem } from '$lib/components/crm/LineItemsEditor.svelte';
@@ -217,8 +218,9 @@
           class="hover:text-ink hover:underline"
           href="/crm/companies/{deal!.company.id}">{deal!.company.name}</a
         >{/if}{/snippet}
-    {#snippet actions()}<Button variant="secondary" href="/crm/coach?dealId={deal!.id}"
-        >Coach IA</Button
+    {#snippet actions()}<CommunicationButton access="crm/deals" entityId={deal!.id} /><Button
+        variant="secondary"
+        href="/crm/coach?dealId={deal!.id}">Coach IA</Button
       >{#if deal!.stage === 'WON' && canManage}<Button
           loading={creatingOrder}
           onclick={() => void createSalesOrder()}>Créer une commande</Button

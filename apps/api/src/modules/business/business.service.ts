@@ -5,6 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@pulsar/database';
+import { captureSupplierTerms } from './catalog-details.service';
+import { capturePackage } from './catalog-packaging.service';
+import type { CatalogPackageSnapshot } from '@pulsar/shared';
+import type { SupplierTermsSnapshot } from '@pulsar/shared';
 import {
   AuditAction,
   canTransitionServiceProject,
@@ -18,6 +22,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { OwnershipService } from '../../prisma/ownership.service';
 import { SequencesService } from '../../prisma/sequences.service';
 import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
+import { DocumentCoordinatesService } from '../../core/reference-data/document-coordinates.service';
 import { paginated, paginationArgs } from '../../common/pagination';
 import { receiptProgress, supplierReceiptLines } from './supplier-receipts.service';
 import { assertServiceSlot } from './service-scheduling';
@@ -46,8 +51,11 @@ import {
 } from './business.dto';
 
 type Tx = Prisma.TransactionClient;
+import { addressData } from '../../common/dto/postal-address.dto';
 const partnerSummary = { id: true, code: true, name: true } as const;
 const partnerPublic = {
+  billingAddress: true,
+  shippingAddress: true,
   ...partnerSummary,
   active: true,
   email: true,
@@ -63,7 +71,9 @@ const projectInclude = {
   _count: { select: { jobs: true } },
 } as const;
 const jobInclude = {
-  project: { select: { id: true, number: true, title: true, status: true } },
+  project: {
+    select: { id: true, number: true, title: true, status: true, acceptanceRequired: true },
+  },
   assignee: { select: servicePersonSelect },
   catalogItem: { select: itemSummary },
 } as const;
@@ -85,6 +95,7 @@ export class BusinessService {
     private readonly ownership: OwnershipService,
     private readonly sequences: SequencesService,
     private readonly audit: AuditLogsService,
+    private readonly coordinates: DocumentCoordinatesService,
   ) {}
   private async locked<T>(tenantId: string, work: (tx: Tx) => Promise<T>): Promise<T> {
     try {
@@ -124,12 +135,24 @@ export class BusinessService {
       );
     return row;
   }
-  async partners(tenantId: string, q: BusinessQueryDto, role?: 'isCustomer' | 'isSupplier') {
+  async partners(
+    tenantId: string,
+    q: BusinessQueryDto,
+    role?: 'isCustomer' | 'isSupplier',
+    workspace = false,
+  ) {
     const { page, pageSize, skip, take } = paginationArgs(q);
     const where: Prisma.BusinessPartnerWhereInput = {
       tenantId,
       ...search(q.search, ['code', 'name']),
-      ...(role ? { [role]: true, active: true } : q.active ? { active: q.active === 'true' } : {}),
+      ...(role
+        ? {
+            [role]: true,
+            ...(!workspace ? { active: true } : q.active ? { active: q.active === 'true' } : {}),
+          }
+        : q.active
+          ? { active: q.active === 'true' }
+          : {}),
     };
     const [items, total] = await this.db.$transaction([
       this.db.businessPartner.findMany({
@@ -137,7 +160,7 @@ export class BusinessService {
         skip,
         take,
         orderBy: { name: 'asc' },
-        select: role ? partnerSummary : partnerPublic,
+        select: role && !workspace ? partnerSummary : partnerPublic,
       }),
       this.db.businessPartner.count({ where }),
     ]);
@@ -170,19 +193,42 @@ export class BusinessService {
     if (!dto.isCustomer && !dto.isSupplier)
       throw new BadRequestException('Choisissez au moins un rôle.');
     return this.locked(tenantId, (tx) =>
-      tx.businessPartner.create({ data: { ...dto, tenantId }, select: partnerPublic }),
+      tx.businessPartner.create({
+        data: { ...dto, ...addressData(dto), tenantId },
+        select: partnerPublic,
+      }),
     );
   }
-  async updatePartner(tenantId: string, id: string, dto: UpdatePartnerDto) {
+  async referencePartner(tenantId: string, id: string, role: 'isCustomer' | 'isSupplier') {
+    return this.found(
+      await this.db.businessPartner.findFirst({
+        where: { tenantId, id, [role]: true },
+        select: partnerPublic,
+      }),
+    );
+  }
+  async referenceItem(tenantId: string, id: string) {
+    return this.found(await this.db.catalogItem.findFirst({ where: { tenantId, id } }));
+  }
+  async updatePartner(
+    tenantId: string,
+    id: string,
+    dto: UpdatePartnerDto,
+    role?: 'isCustomer' | 'isSupplier',
+  ) {
     return this.locked(tenantId, async (tx) => {
-      const old = this.found(await tx.businessPartner.findFirst({ where: { tenantId, id } }));
+      const old = this.found(
+        await tx.businessPartner.findFirst({
+          where: { tenantId, id, ...(role ? { [role]: true } : {}) },
+        }),
+      );
       const { expectedUpdatedAt, ...data } = dto;
       const updatedAt = this.version(old, expectedUpdatedAt);
       if (!(data.isCustomer ?? old.isCustomer) && !(data.isSupplier ?? old.isSupplier))
         throw new BadRequestException('Choisissez au moins un rôle.');
       await tx.businessPartner.updateMany({
         where: { tenantId, id, updatedAt: old.updatedAt },
-        data: { ...data, updatedAt },
+        data: { ...data, ...addressData(dto), updatedAt },
       });
       return tx.businessPartner.findFirstOrThrow({
         where: { tenantId, id },
@@ -248,6 +294,24 @@ export class BusinessService {
       const updatedAt = this.version(old, expectedUpdatedAt);
       if (data.partnerId) await this.partner(tx, tenantId, data.partnerId, 'isCustomer');
       if (
+        data.acceptanceRequired !== undefined &&
+        data.acceptanceRequired !== old.acceptanceRequired &&
+        old.status !== 'DRAFT'
+      )
+        throw new ConflictException(
+          'L’exigence d’acceptation se choisit avant l’activation du projet.',
+        );
+      if (
+        data.partnerId &&
+        data.partnerId !== old.partnerId &&
+        (await tx.serviceAcceptanceRecord.count({
+          where: { tenantId, job: { tenantId, projectId: id } },
+        }))
+      )
+        throw new ConflictException(
+          'Le client est figé par l’historique d’acceptation des travaux.',
+        );
+      if (
         data.partnerId &&
         data.partnerId !== old.partnerId &&
         ((await tx.serviceQuote.count({ where: { tenantId, projectId: id } })) ||
@@ -296,6 +360,21 @@ export class BusinessService {
           'Terminez ou annulez les interventions ouvertes avant de fermer le projet.',
         );
       if (dto.status === 'ACTIVE') await this.partner(tx, tenantId, old.partnerId, 'isCustomer');
+      if (
+        dto.status === 'COMPLETED' &&
+        old.acceptanceRequired &&
+        (await tx.serviceJob.count({
+          where: {
+            tenantId,
+            projectId: id,
+            status: 'COMPLETED',
+            acceptanceStatus: { not: 'ACCEPTED' },
+          },
+        }))
+      )
+        throw new ConflictException(
+          'Recueillez l’acceptation des interventions terminées avant de clôturer ce projet.',
+        );
       if (
         ['COMPLETED', 'CANCELLED'].includes(dto.status) &&
         (await tx.serviceTimeEntry.count({
@@ -463,7 +542,11 @@ export class BusinessService {
       if (
         dto.status === 'CANCELLED' &&
         (await tx.servicePartUsage.count({
-          where: { tenantId, jobId: id, returnMovementId: null },
+          where: {
+            tenantId,
+            jobId: id,
+            returnedQuantity: { lt: tx.servicePartUsage.fields.quantity },
+          },
         }))
       )
         throw new ConflictException(
@@ -550,11 +633,65 @@ export class BusinessService {
       ),
     );
   }
-  private async lines(tx: Tx, tenantId: string, lines: SupplierLineDto[]) {
+  private async lines(
+    tx: Tx,
+    tenantId: string,
+    lines: SupplierLineDto[],
+    supplierId: string,
+    currency: string,
+  ) {
     return Promise.all(
       lines.map(async (line, position) => {
         const item = await this.item(tx, tenantId, line.catalogItemId);
+        const packageFields = [line.packageId, line.packageVersion, line.packageCount].filter(
+          (v) => v !== undefined,
+        ).length;
+        if (packageFields !== 0 && packageFields !== 3)
+          throw new BadRequestException(
+            'Choisissez ensemble le conditionnement, sa version et son nombre.',
+          );
+        if (line.packageId)
+          await this.ownership.assertOwned('catalogPackage', line.packageId, tenantId, tx);
+        const packageSnapshot = line.packageId
+          ? await capturePackage(
+              tx,
+              tenantId,
+              item.id,
+              line.packageId,
+              line.packageVersion!,
+              line.packageCount!,
+              new Prisma.Decimal(line.quantity),
+            )
+          : undefined;
+        if (!!line.supplierOfferId !== !!line.supplierOfferVersion)
+          throw new BadRequestException(
+            'Référence fournisseur et version doivent être choisies ensemble.',
+          );
+        if (line.supplierOfferId)
+          await this.ownership.assertOwned(
+            'catalogSupplierOffer',
+            line.supplierOfferId,
+            tenantId,
+            tx,
+          );
+        const supplierTermsSnapshot = line.supplierOfferId
+          ? await captureSupplierTerms(tx, tenantId, {
+              offerId: line.supplierOfferId,
+              version: line.supplierOfferVersion!,
+              supplierId,
+              currency,
+              catalogItemId: item.id,
+              quantity: new Prisma.Decimal(line.quantity),
+              unitPrice: new Prisma.Decimal(line.unitPrice),
+            })
+          : undefined;
         return {
+          ...(packageSnapshot
+            ? { packageSnapshot: packageSnapshot as unknown as Prisma.InputJsonObject }
+            : {}),
+          ...(supplierTermsSnapshot
+            ? { supplierTermsSnapshot: supplierTermsSnapshot as unknown as Prisma.InputJsonObject }
+            : {}),
           tenantId,
           position,
           catalogItemId: item.id,
@@ -571,7 +708,7 @@ export class BusinessService {
     return this.locked(tenantId, async (tx) => {
       await this.partner(tx, tenantId, dto.supplierId, 'isSupplier');
       const { lines, ...data } = dto;
-      const newLines = await this.lines(tx, tenantId, lines);
+      const newLines = await this.lines(tx, tenantId, lines, dto.supplierId, dto.currency);
       const order = await tx.supplierOrder.create({
         data: { ...data, tenantId, number, expectedDate: date(dto.expectedDate) },
       });
@@ -593,14 +730,19 @@ export class BusinessService {
       const updatedAt = this.version(old, expectedUpdatedAt);
       if (old.status !== 'DRAFT')
         throw new ConflictException('Seul un brouillon peut être modifié.');
+      if (dto.supplierId !== old.supplierId && old.documentCoordinates)
+        throw new ConflictException(
+          'Retirez explicitement les coordonnées choisies avant de changer le fournisseur.',
+        );
       await this.partner(tx, tenantId, dto.supplierId, 'isSupplier');
-      const newLines = await this.lines(tx, tenantId, lines);
+      const newLines = await this.lines(tx, tenantId, lines, dto.supplierId, dto.currency);
       await tx.supplierOrderLine.deleteMany({ where: { tenantId, orderId: id } });
       await tx.supplierOrderLine.createMany({ data: newLines.map((l) => ({ ...l, orderId: id })) });
-      await tx.supplierOrder.updateMany({
-        where: { tenantId, id, updatedAt: old.updatedAt },
+      const written = await tx.supplierOrder.updateMany({
+        where: { tenantId, id, status: 'DRAFT', updatedAt: old.updatedAt },
         data: { ...data, expectedDate: date(dto.expectedDate), updatedAt },
       });
+      if (written.count !== 1) throw new ConflictException('La commande a changé. Rechargez-la.');
       return this.total(
         await tx.supplierOrder.findFirstOrThrow({ where: { tenantId, id }, include: orderInclude }),
       );
@@ -639,15 +781,49 @@ export class BusinessService {
         await this.partner(tx, tenantId, old.supplierId, 'isSupplier');
         if (!old.lines.length) throw new BadRequestException('Ajoutez au moins une ligne.');
         for (const line of old.lines) await this.item(tx, tenantId, line.catalogItemId);
+        for (const line of old.lines) {
+          if (line.packageSnapshot) {
+            const pack = line.packageSnapshot as unknown as CatalogPackageSnapshot;
+            await capturePackage(
+              tx,
+              tenantId,
+              line.catalogItemId,
+              pack.packageId,
+              pack.version,
+              pack.orderedCount,
+              line.quantity,
+            );
+          }
+          if (!line.supplierTermsSnapshot) continue;
+          const snapshot = line.supplierTermsSnapshot as unknown as SupplierTermsSnapshot;
+          await captureSupplierTerms(tx, tenantId, {
+            offerId: snapshot.offerId,
+            version: snapshot.version,
+            supplierId: old.supplierId,
+            catalogItemId: line.catalogItemId,
+            currency: old.currency,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+          });
+        }
       }
-      await tx.supplierOrder.updateMany({
+      const documentCoordinates =
+        dto.status === 'CONFIRMED'
+          ? await this.coordinates.freeze(tx, tenantId, old.documentCoordinates, {
+              kind: 'supplier',
+              id: old.supplierId,
+            })
+          : undefined;
+      const written = await tx.supplierOrder.updateMany({
         where: { tenantId, id, status: old.status, updatedAt: old.updatedAt },
         data: {
           status: dto.status,
           updatedAt,
+          ...(documentCoordinates ? { documentCoordinates } : {}),
           ...(dto.status === 'CLOSED' ? { closeReason: dto.closeReason ?? null } : {}),
         },
       });
+      if (written.count !== 1) throw new ConflictException('La commande a changé. Rechargez-la.');
       return {
         before: old,
         after: this.total(

@@ -2,6 +2,14 @@ import { createHmac } from 'node:crypto';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { CryptoService } from '../crypto/crypto.service';
 import { WebhooksService } from './webhooks.service';
+import type { WebhookTransportService } from './webhook-transport.service';
+
+// Format/signature tests isolate the transport. Network safety has its own
+// socket/DNS tests; no application code uses fetch for webhook delivery now.
+const transport = {
+  post: (url: string, headers: Record<string, string>, body: string) =>
+    fetch(url, { method: 'POST', headers, body }),
+} as unknown as WebhookTransportService;
 
 interface FetchCall {
   url: string;
@@ -24,7 +32,7 @@ function harness(config: Record<string, unknown>, ok = true) {
       occurredAt: '2026-09-17T12:00:00.000Z',
       data: { loadId: 'ld_1', loadNumber: 'LD-000045' },
     },
-    integration: { id: 'int_1', key: 'webhook-main', config: 'enc' },
+    integration: { id: 'int_1', key: 'webhook-main', config: 'enc', status: 'ENABLED' },
   };
   const prisma = {
     webhookDelivery: {
@@ -42,7 +50,7 @@ function harness(config: Record<string, unknown>, ok = true) {
     return { ok, status: ok ? 200 : 500 };
   }) as unknown as typeof fetch;
 
-  return { svc: new WebhooksService(prisma, crypto), calls, updates };
+  return { svc: new WebhooksService(prisma, crypto, transport), calls, updates, delivery };
 }
 
 describe('WebhooksService delivery formats', () => {
@@ -132,6 +140,17 @@ describe('WebhooksService delivery formats', () => {
     expect(koRun.updates[0].data.attempts).toBe(1);
     expect(koRun.updates[0].data.lastError).toContain('HTTP 500');
   });
+
+  it('leaves queued work untouched while the integration is disabled', async () => {
+    const { svc, calls, updates, delivery } = harness({ url: 'https://hook.example.com' });
+    delivery.integration.status = 'DISABLED';
+    await svc.attempt('dlv_1');
+    expect(calls).toHaveLength(0);
+    expect(updates).toHaveLength(0);
+    delivery.integration.status = 'ENABLED';
+    await svc.attempt('dlv_1');
+    expect(calls).toHaveLength(1);
+  });
 });
 
 describe('WebhooksService.ping', () => {
@@ -146,7 +165,7 @@ describe('WebhooksService.ping', () => {
       calls.push({ url, init });
       return { ok: true, status: 204 };
     }) as unknown as typeof fetch;
-    const svc = new WebhooksService({} as PrismaService, {} as CryptoService);
+    const svc = new WebhooksService({} as PrismaService, {} as CryptoService, transport);
 
     const result = await svc.ping({ url: 'https://hook.example.com', secret: 'abc' });
 
@@ -165,7 +184,7 @@ describe('WebhooksService.ping', () => {
     global.fetch = (async () => {
       throw new Error('ECONNREFUSED');
     }) as unknown as typeof fetch;
-    const svc = new WebhooksService({} as PrismaService, {} as CryptoService);
+    const svc = new WebhooksService({} as PrismaService, {} as CryptoService, transport);
 
     const result = await svc.ping({ url: 'https://nope.example.com' });
     expect(result.ok).toBe(false);
@@ -173,7 +192,7 @@ describe('WebhooksService.ping', () => {
   });
 
   it('reports a missing url without any network call', async () => {
-    const svc = new WebhooksService({} as PrismaService, {} as CryptoService);
+    const svc = new WebhooksService({} as PrismaService, {} as CryptoService, transport);
     const result = await svc.ping({});
     expect(result.ok).toBe(false);
     expect(result.error).toContain('URL');
@@ -185,7 +204,7 @@ describe('WebhooksService.ping', () => {
       calls.push({ url, init });
       return { ok: true, status: 200 };
     }) as unknown as typeof fetch;
-    const svc = new WebhooksService({} as PrismaService, {} as CryptoService);
+    const svc = new WebhooksService({} as PrismaService, {} as CryptoService, transport);
 
     const result = await svc.ping({ endpointUrl: 'https://studio.example.com/in' });
     expect(result.ok).toBe(true);

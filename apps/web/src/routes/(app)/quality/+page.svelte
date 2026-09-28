@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { page } from '$app/state';
   import { beforeNavigate, goto } from '$app/navigation';
   import { api, ApiError } from '$lib/api/client';
   import { auth } from '$lib/stores/auth';
@@ -21,6 +22,7 @@
     { key: 'MANUAL', label: 'Contrôle indépendant' },
     ...[
       { key: 'RECEIPT', label: 'Réception WMS validée', module: 'wms', permission: 'wms.read' },
+      { key: 'LOT', label: 'Lot de stock WMS', module: 'wms', permission: 'wms.read' },
       {
         key: 'MANUFACTURING',
         label: 'Ordre de fabrication',
@@ -56,7 +58,11 @@
   let planId = $state(''),
     title = $state(''),
     sourceKind = $state('MANUAL'),
-    sourceId = $state('');
+    sourceId = $state(''),
+    sourceLabel = $state('');
+  $effect(() => {
+    if (!sourceId) sourceLabel = '';
+  });
   $effect(() => {
     const q = { search, status: status || undefined, page: current, pageSize: 20 },
       v = refresh;
@@ -97,6 +103,30 @@
     } catch (e) {
       storageError = (e as Error).message;
     }
+    const lotId = page.url.searchParams.get('lotId'),
+      itemId = page.url.searchParams.get('itemId');
+    if (
+      lotId &&
+      itemId &&
+      manage &&
+      !pending &&
+      !storageError &&
+      sources.some((s) => s.key === 'LOT')
+    ) {
+      void api<{ id: string; code: string }>(
+        `/wms/items/${encodeURIComponent(itemId)}/lots/${encodeURIComponent(lotId)}`,
+      )
+        .then((lot) => {
+          start();
+          sourceKind = 'LOT';
+          sourceId = lot.id;
+          sourceLabel = lot.code;
+          title = `Contrôle du lot ${lot.code}`;
+        })
+        .catch((e) => {
+          error = e.message;
+        });
+    }
   });
   function start() {
     formError = '';
@@ -104,6 +134,7 @@
     title = '';
     sourceKind = 'MANUAL';
     sourceId = '';
+    sourceLabel = '';
     open = true;
   }
   function clearPending() {
@@ -288,7 +319,10 @@
         ><Select
           aria-label="Type de dossier source"
           bind:value={sourceKind}
-          onchange={() => (sourceId = '')}
+          onchange={() => {
+            sourceId = '';
+            sourceLabel = '';
+          }}
           >{#each sources as s}<option value={s.key}>{s.label}</option>{/each}</Select
         ></Field
       >
@@ -297,6 +331,10 @@
           label="Dossier source"
           filters={{ kind: sourceKind }}
           bind:value={sourceId}
+          selectedLabel={sourceLabel}
+          onselect={(r) => {
+            sourceLabel = String(r.name ?? '');
+          }}
         />{/if}
       <p class="text-sm text-ink-muted">
         Les critères du plan sont copiés à la création. Le dossier source ne sera pas modifié.

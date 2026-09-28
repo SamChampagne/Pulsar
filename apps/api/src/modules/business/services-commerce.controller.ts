@@ -21,6 +21,33 @@ import {
 @RequireModule(MODULE_KEYS.SERVICES)
 export class ServicesCommerceController {
   constructor(private readonly commerce: ServicesCommerceService) {}
+  @Get('references/billing-customers')
+  @RequirePermissions(PERMISSIONS.SERVICES.READ, PERMISSIONS.BILLING.CUSTOMER_INVOICES_READ)
+  customers(@CurrentUser() u: AuthUser, @Query() q: BusinessQueryDto) {
+    return this.commerce.billingCustomers(u, q, 'services');
+  }
+  @Get('partners/:id/links')
+  @RequirePermissions(PERMISSIONS.SERVICES.READ)
+  links(@CurrentUser() u: AuthUser, @Param('id') id: string) {
+    return this.commerce.partnerLinks(u, id, undefined, 'services');
+  }
+  @Patch('partners/:id/links')
+  @RequirePermissions(PERMISSIONS.SERVICES.READ, PERMISSIONS.SERVICES.MANAGE)
+  @Audit('business-partner-links', AuditAction.UPDATE)
+  updateLinks(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: PartnerLinksDto) {
+    return this.commerce.partnerLinks(u, id, dto, 'services');
+  }
+  @Post('partners/:id/billing-customer')
+  @RequirePermissions(
+    PERMISSIONS.SERVICES.READ,
+    PERMISSIONS.SERVICES.MANAGE,
+    PERMISSIONS.BILLING.CUSTOMER_INVOICES_READ,
+    PERMISSIONS.BILLING.CUSTOMER_INVOICES_MANAGE,
+  )
+  @Audit('business-partner-billing-customer', AuditAction.CREATE)
+  createCustomer(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: VersionDto) {
+    return this.commerce.createBillingCustomer(u, id, dto, 'services');
+  }
   @Get('quotes')
   @RequirePermissions(PERMISSIONS.SERVICES.READ)
   list(@CurrentUser() u: AuthUser, @Query() q: BusinessQueryDto) {

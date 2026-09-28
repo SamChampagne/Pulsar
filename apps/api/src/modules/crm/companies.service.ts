@@ -7,6 +7,8 @@ import { AuditLogsService } from '../../core/audit-logs/audit-logs.service';
 import { CustomFieldsService } from '../../core/custom-fields/custom-fields.service';
 import { paginationArgs, paginated } from '../../common/pagination';
 import { CompanyListQueryDto, CreateCompanyDto, UpdateCompanyDto } from './dto/company.dto';
+import { lockBusinessTenant } from '../business/business-lock';
+import { assertCompanyCustomerLink } from '../business/identity-links';
 
 /**
  * CRM companies service. All operations are tenant-scoped (rule 1).
@@ -27,9 +29,7 @@ export class CompaniesService {
     const where = {
       tenantId,
       ...(query.status ? { status: query.status as CrmCompanyStatus } : {}),
-      ...(query.search
-        ? { name: { contains: query.search, mode: 'insensitive' as const } }
-        : {}),
+      ...(query.search ? { name: { contains: query.search, mode: 'insensitive' as const } } : {}),
     };
     const [items, total] = await Promise.all([
       this.prisma.crmCompany.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take }),
@@ -56,7 +56,11 @@ export class CompaniesService {
     await this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId);
 
     const customData = await this.customFields.validateValues(
-      'crm', tenantId, CustomFieldEntity.CRM_COMPANY, dto.customData, { partial: false },
+      'crm',
+      tenantId,
+      CustomFieldEntity.CRM_COMPANY,
+      dto.customData,
+      { partial: false },
     );
 
     const company = await this.prisma.crmCompany.create({
@@ -90,21 +94,30 @@ export class CompaniesService {
     await this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId);
 
     const customData = await this.customFields.validateValues(
-      'crm', tenantId, CustomFieldEntity.CRM_COMPANY, dto.customData, { partial: true },
+      'crm',
+      tenantId,
+      CustomFieldEntity.CRM_COMPANY,
+      dto.customData,
+      { partial: true },
     );
 
-    const { count } = await this.prisma.crmCompany.updateMany({
-      where: { id, tenantId },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.domain !== undefined ? { domain: dto.domain } : {}),
-        ...(dto.industry !== undefined ? { industry: dto.industry } : {}),
-        ...(dto.status !== undefined ? { status: dto.status } : {}),
-        ...(dto.ownerUserId !== undefined ? { ownerUserId: dto.ownerUserId } : {}),
-        ...(dto.customerId !== undefined ? { customerId: dto.customerId } : {}),
-        ...(dto.carrierId !== undefined ? { carrierId: dto.carrierId } : {}),
-        ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
-      },
+    const { count } = await this.prisma.$transaction(async (tx) => {
+      await lockBusinessTenant(tx, tenantId);
+      if (dto.customerId !== undefined)
+        await assertCompanyCustomerLink(tx, tenantId, id, dto.customerId ?? null);
+      return tx.crmCompany.updateMany({
+        where: { id, tenantId },
+        data: {
+          ...(dto.name !== undefined ? { name: dto.name } : {}),
+          ...(dto.domain !== undefined ? { domain: dto.domain } : {}),
+          ...(dto.industry !== undefined ? { industry: dto.industry } : {}),
+          ...(dto.status !== undefined ? { status: dto.status } : {}),
+          ...(dto.ownerUserId !== undefined ? { ownerUserId: dto.ownerUserId } : {}),
+          ...(dto.customerId !== undefined ? { customerId: dto.customerId } : {}),
+          ...(dto.carrierId !== undefined ? { carrierId: dto.carrierId } : {}),
+          ...(customData !== undefined ? { customData: customData as Prisma.InputJsonValue } : {}),
+        },
+      });
     });
     if (count === 0) throw new NotFoundException('CRM company not found');
 

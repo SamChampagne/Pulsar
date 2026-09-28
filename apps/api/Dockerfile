@@ -45,7 +45,10 @@ ENV NODE_ENV=production
 # Only API_PORT is honored by the app (apps/api/src/main.ts reads
 # config.get('API_PORT', 3000) — there is no generic PORT fallback).
 ENV API_PORT=3000
+ENV PULSAR_REPO_ROOT=/app
 COPY --from=build /app /app
+RUN mkdir -p /app/storage && chown node:node /app/storage
+USER node
 EXPOSE 3000
 
 # No `prisma generate` at startup: the build stage already generated the client

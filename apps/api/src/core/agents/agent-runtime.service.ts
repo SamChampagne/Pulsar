@@ -16,11 +16,13 @@ import {
   deriveRuntimeReadiness,
   type RuntimeAuthMode,
   type RuntimeReadiness,
+  agentTurnMessage,
+  failedAgentTurn,
 } from '@pulsar/shared';
 import { HermesAcpClient, type AcpEvent, type AcpModelOption } from './hermes-acp.client';
 import { AgentsService } from './agents.service';
 import { RuntimeConfigService } from './runtime-config.service';
-import { buildRuntimeEnv, renderCliConfig } from './agent-runtime-env';
+import { buildRuntimeEnv, isolatedRuntimeEnv, renderCliConfig } from './agent-runtime-env';
 import { isInstalled, repoRoot, venvPython } from './runtime-install';
 
 /**
@@ -71,6 +73,7 @@ export interface LoginEvent {
 
 @Injectable()
 export class AgentRuntimeService implements OnModuleDestroy {
+  private readonly turnTimeoutMs = 120_000;
   private readonly logger = new Logger(AgentRuntimeService.name);
   /** One Hermes process PER conversation (isolation — spike finding). Keyed by hermes sessionId. */
   private readonly live = new Map<string, LiveSession>();
@@ -113,12 +116,18 @@ export class AgentRuntimeService implements OnModuleDestroy {
     child: ChildProcessWithoutNullStreams;
     client: HermesAcpClient;
     defaultModel: string | null;
+    cwd: string;
+    configVersion: Date;
   }> {
     if (!isInstalled()) {
       throw new BadRequestException('Agent runtime not installed — run `pnpm agents:setup`');
     }
     const { config, decryptedKey } = await this.runtimeConfig.resolveForSpawn(tenantId);
-    const { env, homeDir } = buildRuntimeEnv(config, decryptedKey, this.runtimeConfig.hermesHomeRoot());
+    const { env, homeDir } = buildRuntimeEnv(
+      config,
+      decryptedKey,
+      this.runtimeConfig.hermesHomeRoot(),
+    );
 
     // Provision the managed HERMES_HOME with the provider/model config. The Hermes
     // adapter reads HERMES_HOME/config.yaml (hermes_cli.config.load_config →
@@ -127,17 +136,26 @@ export class AgentRuntimeService implements OnModuleDestroy {
     // model and produced no tool calls. Schema is identical (model.provider/default/base_url).
     fs.mkdirSync(homeDir, { recursive: true });
     fs.writeFileSync(path.join(homeDir, 'config.yaml'), renderCliConfig(config));
+    const cwd = path.join(homeDir, 'workspace');
+    fs.mkdirSync(cwd, { recursive: true });
 
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(venvPython(), ['-m', 'acp_adapter'], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        cwd: path.join(repoRoot(), 'hermes-agent'),
-        env: { ...process.env, ...env },
-      }) as ChildProcessWithoutNullStreams;
+      child = spawn(
+        venvPython(),
+        ['-I', path.join(repoRoot(), 'scripts', 'pulsar-hermes-acp.py')],
+        {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          cwd,
+          env: isolatedRuntimeEnv(env),
+          windowsHide: true,
+        },
+      ) as ChildProcessWithoutNullStreams;
     } catch {
       throw new ServiceUnavailableException('Agent runtime (Hermes) unavailable');
     }
+    // spawn() failures can arrive asynchronously; never let EventEmitter crash Nest.
+    child.on('error', () => this.logger.warn('Hermes process could not start.'));
     // Capture the child's stderr (logs) and exit so a fast crash is diagnosable
     // instead of surfacing only the opaque "ACP transport closed" from stdout EOF.
     const stderrTail: string[] = [];
@@ -164,10 +182,18 @@ export class AgentRuntimeService implements OnModuleDestroy {
       await withTimeout(
         client.initialize(),
         10_000,
-        () => { child.kill(); },
+        () => {
+          child.kill();
+        },
         'Agent runtime did not start in time',
       );
-      return { child, client, defaultModel: config.defaultModel };
+      return {
+        child,
+        client,
+        defaultModel: config.defaultModel,
+        cwd,
+        configVersion: config.updatedAt,
+      };
     } catch (e) {
       child.kill();
       const tail = stderrTail.join('').split(/\r?\n/).filter(Boolean).slice(-25).join('\n');
@@ -182,13 +208,18 @@ export class AgentRuntimeService implements OnModuleDestroy {
 
   /** Spawns a dedicated Hermes ACP process, opens a session scoped to this agent. Returns the hermes sessionId. */
   async openSession(input: OpenSessionInput): Promise<string> {
-    const { child, client, defaultModel } = await this.spawnRuntime(input.tenantId);
+    const { child, client, defaultModel, cwd } = await this.spawnRuntime(input.tenantId);
     try {
       const token = this.agents.mintSessionToken(input.agent.id, 300, input.triggeredByRef);
       const { sessionId } = await client.newSession({
-        cwd: process.cwd(),
+        cwd,
         mcpServers: [
-          { type: 'http', name: 'pulsar', url: input.pulsarMcpUrl, headers: [{ name: 'X-Agent-Key', value: token }] },
+          {
+            type: 'http',
+            name: 'pulsar',
+            url: input.pulsarMcpUrl,
+            headers: [{ name: 'X-Agent-Key', value: token }],
+          },
         ],
       });
       // Always pin the model via session/set_model (which correctly splits the
@@ -197,21 +228,36 @@ export class AgentRuntimeService implements OnModuleDestroy {
       // a `provider:model` value 404s at the provider (prefix not stripped).
       const effectiveModel = input.agent.model || defaultModel;
       if (effectiveModel) {
-        await client.setModel(sessionId, effectiveModel).catch(() => undefined);
+        await client.setModel(sessionId, effectiveModel);
       }
-      this.live.set(sessionId, { agentId: input.agent.id, client, child, persona: input.agent.persona, firstTurnDone: false });
+      this.rememberSession(sessionId, {
+        agentId: input.agent.id,
+        client,
+        child,
+        persona: input.agent.persona,
+        firstTurnDone: false,
+      });
       return sessionId;
     } catch (err) {
       child.kill();
       const detail = err instanceof Error ? err.message : String(err);
       console.error('[agent-runtime] openSession failed:', detail);
-      throw new ServiceUnavailableException(`Session Hermes échouée : ${detail}`);
+      throw new ServiceUnavailableException(
+        'Session Hermes indisponible; vérifiez le runtime et le modèle choisi.',
+      );
     }
   }
 
   /** True when a Hermes session is currently live in this process. */
   isLive(sessionId: string | null | undefined): boolean {
     return !!sessionId && this.live.has(sessionId);
+  }
+
+  private rememberSession(id: string, session: LiveSession): void {
+    this.live.set(id, session);
+    session.child.once('close', () => {
+      if (this.live.get(id)?.child === session.child) this.live.delete(id);
+    });
   }
 
   /**
@@ -222,33 +268,48 @@ export class AgentRuntimeService implements OnModuleDestroy {
    * `firstTurnDone` is set true so the persona isn't re-sent — the resumed
    * transcript already carries it.
    */
-  async resumeSession(input: OpenSessionInput & { existingSessionId?: string | null }): Promise<string> {
+  async resumeSession(
+    input: OpenSessionInput & { existingSessionId?: string | null },
+  ): Promise<string> {
     // No prior session id to resume → behave like a fresh open.
     if (!input.existingSessionId) return this.openSession(input);
 
-    const { child, client, defaultModel } = await this.spawnRuntime(input.tenantId);
+    const { child, client, defaultModel, cwd } = await this.spawnRuntime(input.tenantId);
     try {
       const token = this.agents.mintSessionToken(input.agent.id, 300, input.triggeredByRef);
       const { sessionId } = await client.resumeSession(
         {
-          cwd: process.cwd(),
+          cwd,
           mcpServers: [
-            { type: 'http', name: 'pulsar', url: input.pulsarMcpUrl, headers: [{ name: 'X-Agent-Key', value: token }] },
+            {
+              type: 'http',
+              name: 'pulsar',
+              url: input.pulsarMcpUrl,
+              headers: [{ name: 'X-Agent-Key', value: token }],
+            },
           ],
         },
         input.existingSessionId,
       );
       const effectiveModel = input.agent.model || defaultModel;
       if (effectiveModel) {
-        await client.setModel(sessionId, effectiveModel).catch(() => undefined);
+        await client.setModel(sessionId, effectiveModel);
       }
-      this.live.set(sessionId, { agentId: input.agent.id, client, child, persona: input.agent.persona, firstTurnDone: true });
+      this.rememberSession(sessionId, {
+        agentId: input.agent.id,
+        client,
+        child,
+        persona: input.agent.persona,
+        firstTurnDone: true,
+      });
       return sessionId;
     } catch (err) {
       child.kill();
       const detail = err instanceof Error ? err.message : String(err);
       console.error('[agent-runtime] resumeSession failed:', detail);
-      throw new ServiceUnavailableException(`Reprise de session Hermes échouée : ${detail}`);
+      throw new ServiceUnavailableException(
+        'Reprise Hermes indisponible; vérifiez le runtime et le modèle choisi.',
+      );
     }
   }
 
@@ -262,7 +323,36 @@ export class AgentRuntimeService implements OnModuleDestroy {
       ? text
       : [AGENT_SYSTEM_PREAMBLE, live.persona, '---', text].filter(Boolean).join('\n\n');
     live.firstTurnDone = true;
-    yield* live.client.prompt(sessionId, prompt);
+    const iterator = live.client.prompt(sessionId, prompt);
+    const timedOut = Symbol('turn-timeout');
+    let timer: ReturnType<typeof setTimeout>;
+    const deadline = new Promise<typeof timedOut>((resolve) => {
+      timer = setTimeout(() => resolve(timedOut), this.turnTimeoutMs);
+    });
+    try {
+      while (true) {
+        const next = await Promise.race([iterator.next(), deadline]);
+        if (next === timedOut) {
+          try {
+            live.client.cancel(sessionId);
+          } catch {
+            /* child may already be gone */
+          }
+          await this.closeSession(sessionId);
+          const result = failedAgentTurn('TIMEOUT');
+          yield { type: 'error', message: agentTurnMessage(result) };
+          yield { type: 'result', result };
+          yield { type: 'end' };
+          return;
+        }
+        if (next.done) return;
+        yield next.value;
+      }
+    } finally {
+      clearTimeout(timer!);
+      // A dead transport may not settle immediately; do not keep the caller stuck.
+      void iterator.return?.(undefined).catch(() => undefined);
+    }
   }
 
   async closeSession(sessionId: string): Promise<void> {
@@ -300,7 +390,7 @@ export class AgentRuntimeService implements OnModuleDestroy {
     const config = await this.runtimeConfig.get(tenantId);
     // Prefer the provider catalog's auth mode; fall back to the stored config value.
     const authMode: RuntimeAuthMode | null = config
-      ? getRuntimeProvider(config.provider)?.authMode ?? (config.authMode as RuntimeAuthMode)
+      ? (getRuntimeProvider(config.provider)?.authMode ?? (config.authMode as RuntimeAuthMode))
       : null;
     return deriveRuntimeReadiness({
       installed: isInstalled(),
@@ -320,23 +410,43 @@ export class AgentRuntimeService implements OnModuleDestroy {
    */
   async testConnection(
     tenantId: string,
-  ): Promise<{ ok: boolean; models?: AcpModelOption[]; error?: string }> {
+  ): Promise<{ ok: boolean; scope: 'RUNTIME_ONLY'; models?: AcpModelOption[]; error?: string }> {
     let child: ChildProcessWithoutNullStreams | undefined;
+    let configVersion: Date | undefined;
     try {
+      configVersion = (await this.runtimeConfig.get(tenantId))?.updatedAt;
       const spawned = await this.spawnRuntime(tenantId);
+      configVersion = spawned.configVersion;
       child = spawned.child;
-      const { sessionId, models } = await spawned.client.newSession({
-        cwd: process.cwd(),
-        mcpServers: [],
-      });
-      await spawned.client.closeSession(sessionId).catch(() => undefined);
-      // Cache the provider's real model list so the agent create/edit dropdown
-      // only ever offers valid ids (no free-text typos → no 404s).
-      await this.runtimeConfig.markTested(tenantId, true, models);
-      return { ok: true, models };
+      const { sessionId, models } = await withTimeout(
+        spawned.client.newSession({
+          cwd: spawned.cwd,
+          mcpServers: [],
+        }),
+        15_000,
+        () => child?.kill(),
+        'Runtime check timed out',
+      );
+      await withTimeout(
+        spawned.client.closeSession(sessionId),
+        2_000,
+        () => child?.kill(),
+        'Runtime close timed out',
+      ).catch(() => undefined);
+      // A runtime catalog, not proof of provider entitlement or model availability.
+      await this.runtimeConfig.markTested(tenantId, true, models, spawned.configVersion);
+      return { ok: true, scope: 'RUNTIME_ONLY', models };
     } catch (err) {
-      await this.runtimeConfig.markTested(tenantId, false).catch(() => undefined);
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      if (configVersion)
+        await this.runtimeConfig
+          .markTested(tenantId, false, undefined, configVersion)
+          .catch(() => undefined);
+      // Do not expose stderr or mistake opening an ACP session for provider inference.
+      return {
+        ok: false,
+        scope: 'RUNTIME_ONLY',
+        error: 'Le contrôle local du runtime a échoué. Aucun appel au modèle n’a été validé.',
+      };
     } finally {
       child?.kill();
     }
@@ -361,7 +471,11 @@ export class AgentRuntimeService implements OnModuleDestroy {
       return;
     }
 
-    const { env, homeDir } = buildRuntimeEnv(config, decryptedKey, this.runtimeConfig.hermesHomeRoot());
+    const { env, homeDir } = buildRuntimeEnv(
+      config,
+      decryptedKey,
+      this.runtimeConfig.hermesHomeRoot(),
+    );
     fs.mkdirSync(homeDir, { recursive: true });
 
     // e.g. "login" → [-m, hermes_cli.main, login]; "auth add openai-codex" → [..., auth, add, openai-codex]
@@ -372,7 +486,8 @@ export class AgentRuntimeService implements OnModuleDestroy {
       child = spawn(venvPython(), loginArgs, {
         stdio: ['ignore', 'pipe', 'pipe'],
         cwd: path.join(repoRoot(), 'hermes-agent'),
-        env: { ...process.env, ...env, HERMES_HOME: homeDir },
+        env: isolatedRuntimeEnv(env),
+        windowsHide: true,
       });
     } catch (err) {
       yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
@@ -421,7 +536,7 @@ export class AgentRuntimeService implements OnModuleDestroy {
       while (queue.length) yield queue.shift()!;
 
       if (exitCode === 0) {
-        await this.runtimeConfig.markConnected(tenantId);
+        await this.runtimeConfig.markConnected(tenantId, config.updatedAt);
         yield { type: 'end' };
       } else {
         yield { type: 'error', message: `Login exited with code ${exitCode}` };

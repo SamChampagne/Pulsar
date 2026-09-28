@@ -1,4 +1,7 @@
 <script lang="ts">
+  import EmailPreview from '$lib/components/email/EmailPreview.svelte';
+  import EmailBodyEditor from '$lib/components/email/EmailBodyEditor.svelte';
+  import { confirmAction } from '$lib/stores/confirmation';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toast';
   import {
@@ -13,7 +16,6 @@
     Field,
     ErrorNotice,
     Modal,
-    Textarea,
   } from '$lib/components/ui';
 
   interface EmailTemplate {
@@ -98,7 +100,7 @@
     try {
       if (editingId) {
         await api(`/emails/templates/${editingId}`, {
-          method: 'PATCH',
+          method: 'PUT',
           body: {
             name: form.name,
             subject: form.subject,
@@ -130,6 +132,12 @@
   }
 
   async function deleteTemplate(id: string) {
+    if (
+      !(await confirmAction('Supprimer ce gabarit ? Les courriels déjà envoyés seront conservés.', {
+        confirmLabel: 'Supprimer',
+      }))
+    )
+      return;
     deletingId = id;
     try {
       await api(`/emails/templates/${id}`, { method: 'DELETE' });
@@ -185,13 +193,15 @@
                 type="button"
                 onclick={() => openEdit(tpl)}
                 class="inline-flex items-center justify-center rounded-md border border-edge bg-surface px-3 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-muted"
-              >Modifier</button>
+                >Modifier</button
+              >
               <button
                 type="button"
                 onclick={() => deleteTemplate(tpl.id)}
                 disabled={deletingId === tpl.id}
                 class="inline-flex items-center justify-center rounded-md border border-danger/30 bg-danger-soft px-3 py-1 text-xs font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
-              >{deletingId === tpl.id ? '…' : 'Supprimer'}</button>
+                >{deletingId === tpl.id ? '…' : 'Supprimer'}</button
+              >
             </div>
           </td>
         </tr>
@@ -213,44 +223,50 @@
 <Modal
   bind:open={showForm}
   title={editingId ? 'Modifier le gabarit' : 'Nouveau gabarit'}
-  size="lg"
+  size="xl"
   onclose={closeForm}
 >
-  <div class="flex flex-col gap-4">
-    <div>
-      <Field label="Clé">
-        <Input
-          bind:value={form.key}
-          placeholder="tender_accepted"
-          disabled={!!editingId}
-        />
+  <div class="grid items-start gap-5 lg:grid-cols-2">
+    <div class="flex flex-col gap-4">
+      <div>
+        <Field label="Clé">
+          <Input bind:value={form.key} placeholder="tender_accepted" disabled={!!editingId} />
+        </Field>
+        <p class="mt-1 text-xs text-ink-faint">
+          Identifiant technique unique (ex. <code class="font-mono">tender_accepted</code>)
+        </p>
+      </div>
+
+      <Field label="Nom">
+        <Input bind:value={form.name} placeholder="Appel d'offres accepté" />
       </Field>
-      <p class="mt-1 text-xs text-ink-faint">Identifiant technique unique (ex. <code class="font-mono">tender_accepted</code>)</p>
+
+      <Field label="Catégorie (optionnelle)">
+        <Input bind:value={form.category} placeholder="TMS, Facturation…" />
+      </Field>
+
+      <div>
+        <Field label="Sujet">
+          <Input
+            bind:value={form.subject}
+            placeholder="Votre appel d'offres {'{ref}'} a été accepté"
+          />
+        </Field>
+        <p class="mt-1 text-xs text-ink-faint">
+          Variables : utilisez <code class="font-mono">{'{variable}'}</code> (accolades simples)
+        </p>
+      </div>
+
+      <div>
+        <EmailBodyEditor bind:html={form.html} />
+        <p class="mt-1 text-xs text-ink-faint">
+          Variables : utilisez <code class="font-mono">{'{variable}'}</code> (accolades simples)
+        </p>
+      </div>
     </div>
 
-    <Field label="Nom">
-      <Input bind:value={form.name} placeholder="Appel d'offres accepté" />
-    </Field>
-
-    <Field label="Catégorie (optionnelle)">
-      <Input bind:value={form.category} placeholder="TMS, Facturation…" />
-    </Field>
-
-    <div>
-      <Field label="Sujet">
-        <Input bind:value={form.subject} placeholder="Votre appel d'offres {'{ref}'} a été accepté" />
-      </Field>
-      <p class="mt-1 text-xs text-ink-faint">Variables : utilisez <code class="font-mono">{'{variable}'}</code> (accolades simples)</p>
-    </div>
-
-    <div>
-      <Field label="Corps HTML">
-        <Textarea bind:value={form.html} rows={10} placeholder="<p>Bonjour {'{nom}'},</p>" />
-      </Field>
-      <p class="mt-1 text-xs text-ink-faint">Variables : utilisez <code class="font-mono">{'{variable}'}</code> (accolades simples)</p>
-    </div>
+    <EmailPreview html={form.html} subject={form.subject} />
   </div>
-
   {#snippet footer()}
     <Button variant="secondary" onclick={closeForm} disabled={formSaving}>Annuler</Button>
     <Button onclick={saveForm} disabled={formSaving}>

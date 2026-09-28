@@ -23,6 +23,7 @@ function harness(stored?: Record<string, unknown>) {
         key: 'inbound-orders',
         name: 'Receveur commandes',
         status: 'ENABLED',
+        updatedAt: new Date('2026-09-22T12:00:00.000Z'),
         inboundTokenHash: 'hash',
         config: { ...stored },
       }

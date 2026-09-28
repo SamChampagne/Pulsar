@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import LotChoice from './LotChoice.svelte';
   import { api, ApiError } from '$lib/api/client';
   import { confirmAction } from '$lib/stores/confirmation';
   import type { WmsGuidedDocument, WmsDocumentLine } from '@pulsar/shared';
@@ -23,6 +24,8 @@
     uncertain = $state(false);
   let itemId = $state(untrack(() => line?.itemId ?? ''));
   let binId = $state(untrack(() => line?.toBinId ?? line?.fromBinId ?? ''));
+  let lotId = $state(untrack(() => line?.lotId ?? '')),
+    lotReady = $state(false);
   let qty = $state<number | null>(untrack(() => (line ? Number(line.qty) : null)));
   const version = untrack(() => document.updatedAt);
   let item = $state<{ unit: string; isActive: boolean } | null>(null);
@@ -92,7 +95,7 @@
     else onclose();
   }
   async function save() {
-    if (busy || checking || uncertain || referenceError) return;
+    if (busy || checking || uncertain || referenceError || !lotReady) return;
     if (
       !itemId ||
       !binId ||
@@ -116,6 +119,7 @@
           [kind === 'receipt' ? 'toBinId' : 'fromBinId']: binId,
           qty,
           expectedUpdatedAt: version,
+          ...(lotId ? { lotId } : {}),
         },
       });
       // A successful line write must never be replayed when refreshing the screen fails.
@@ -182,11 +186,22 @@
         Seulement les emplacements actifs de cet entrepôt. Recherche par code ou zone.
       </p>
     </section>
+    <LotChoice
+      outgoing={kind === 'pick-order'}
+      {itemId}
+      binId={kind === 'pick-order' ? binId : ''}
+      allowCreate={kind === 'receipt'}
+      bind:value={lotId}
+      bind:ready={lotReady}
+      disabled={busy || uncertain}
+    />
     {#if checking}<p role="status" class="text-xs text-ink-muted">
         Vérification des références…
       </p>{/if}
     {#if stock !== null}<div class="rounded-md bg-surface-muted p-3 text-sm">
-        Stock physique : <span class="font-mono font-semibold">{stock} {item?.unit}</span>
+        Stock physique total (tous lots) : <span class="font-mono font-semibold"
+          >{stock} {item?.unit}</span
+        >
         <p class="mt-1 text-xs text-ink-muted">
           Non réservé. Le besoin cumulé des lignes sera contrôlé dans le dossier, puis à la sortie
           de stock.
@@ -207,7 +222,7 @@
     >
     {#if !uncertain}<Button
         loading={busy}
-        disabled={checking || !!referenceError || !itemId || !binId}
+        disabled={checking || !!referenceError || !itemId || !binId || !lotReady}
         onclick={save}>Enregistrer la ligne</Button
       >{/if}
   {/snippet}

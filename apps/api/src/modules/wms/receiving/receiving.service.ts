@@ -20,6 +20,7 @@ import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { assertLot } from '../lots/lots.service';
 import { assertMaterialReceipt } from './material-purchase-receipt';
 import {
   assertWmsLine,
@@ -208,7 +209,13 @@ export class ReceivingService {
       const doc = await lockWmsDocument(tx, tenantId, 'receipt', id, dto.expectedUpdatedAt);
       if (doc.status !== 'DRAFT') throw new ConflictException('Ce document n’est plus modifiable.');
       await assertWmsLine(tx, tenantId, doc.locationId, dto.itemId, dto.toBinId, dto.qty);
-      const data = { itemId: dto.itemId, toBinId: dto.toBinId, qty: dto.qty };
+      await assertLot(tx, tenantId, dto.itemId, dto.lotId);
+      const data = {
+        itemId: dto.itemId,
+        toBinId: dto.toBinId,
+        qty: dto.qty,
+        lotId: dto.lotId ?? null,
+      };
       if (lineId) {
         const result = await tx.receiptLine.updateMany({
           where: { id: lineId, tenantId, receiptId: id },
@@ -309,6 +316,7 @@ export class ReceivingService {
         qty: Number(line.qty),
         locationId: receipt.locationId,
         refType: 'receipt',
+        lotId: line.lotId,
         refId: id,
       });
     }

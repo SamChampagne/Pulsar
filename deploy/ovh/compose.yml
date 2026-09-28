@@ -76,6 +76,12 @@ services:
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
     environment: *api-environment
     volumes:
       - documents:/app/storage

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime as fmtUserInstant } from '$lib/format';
   import { beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount, tick } from 'svelte';
@@ -387,7 +388,7 @@
           : 'Votre première demande SAV'}
         message={search || followup || caseStatus
           ? 'Ajustez la recherche ou les filtres pour retrouver un autre dossier.'
-          : 'Choisissez un client du Catalogue, décrivez le problème et sa priorité. La demande peut ensuite être reliée à une intervention du même client.'}
+          : 'Choisissez ou ajoutez le client dans le sélecteur, décrivez le problème et sa priorité. Catalogue n’est pas requis. Le lien vers une intervention Services reste facultatif.'}
       />{:else}<table class="w-full text-left text-sm">
         <thead class="bg-surface-muted"
           ><tr
@@ -579,7 +580,7 @@
           {historyError}
         </p>{/if}{#each events as event}<article class="border-l-2 border-edge pl-3">
           <p class="text-xs text-ink-muted">
-            {new Date(event.createdAt).toLocaleString('fr-CA')} · {event.actor.firstName}
+            {fmtUserInstant(event.createdAt)} · {event.actor.firstName}
             {event.actor.lastName} · {SUPPORT_STATUS_LABELS[event.action as SupportCaseStatus] ??
               (event.action === 'CREATE' ? 'Création' : 'Modification')}
           </p>

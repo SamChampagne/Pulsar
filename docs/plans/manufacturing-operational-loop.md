@@ -1,5 +1,17 @@
 # Fabrication — boucle achats, matières, capacité et atelier
 
+> [I2e — corrections](manufacturing-reversals.md) ajoute une contrepassation complète
+> de déclaration v2 sur OF en cours. Les totaux et besoins actuels sont nets des corrections;
+> l’annulation de l’OF et l’APS global restent bloqués par son historique d’exécution.
+
+> [I2e — corrections](manufacturing-reversals.md) ajoute une contrepassation complète
+> de déclaration v2 sur OF en cours. Les totaux et besoins actuels sont nets des corrections;
+> l’annulation de l’OF et l’APS global restent bloqués par son historique d’exécution.
+
+> Complément du 25 septembre : [I2d — lots atelier](manufacturing-lots.md) ajoute
+> plusieurs lots/bins par composant dans le formulaire, lot produit, preuve v2 figée et
+> lien du journal vers l’OF. Les limites historiques ci-dessous sont précisées par ce contrat.
+
 15 septembre 2026 · branche `codex/manufacturing-visual-workspace`.
 
 ## Résultat de ce lot

@@ -1,5 +1,7 @@
 <script lang="ts">
   import DossierButton from '$lib/components/workflows/DossierButton.svelte';
+  import DocumentCoordinates from '$lib/components/reference-data/DocumentCoordinates.svelte';
+  import PartyDirectory from '$lib/components/reference-data/PartyDirectory.svelte';
   import { untrack } from 'svelte';
   import { auth } from '$lib/stores/auth';
   import LineItemsEditor, { type LineItem } from '$lib/components/crm/LineItemsEditor.svelte';
@@ -42,6 +44,7 @@
     companyId: string;
     customerId: string | null;
     dealId: string | null;
+    updatedAt: string;
   }
 
   // ── State ────────────────────────────────────────────────────────────────────
@@ -60,6 +63,15 @@
   // Status action state
   let transitioning = $state(false);
   let transitionError = $state('');
+  let transitionUncertain = $state(false);
+  let coordinatesBusy = $state(false),
+    coordinatesBlocked = $state(true),
+    linesBlocked = $state(false);
+  let showDirectory = $state(false),
+    coordinateRevision = $state(0);
+  const mutationBlocked = $derived(
+    transitioning || transitionUncertain || coordinatesBusy || linesBlocked || !!linesError,
+  );
 
   // CRM module settings (gates direct invoicing of a fulfilled order)
   let directInvoicing = $state(false);
@@ -89,9 +101,12 @@
           },
           {
             label: 'Client',
-            items: order.customerId
-              ? [{ label: 'Client lié', href: `/customers/${order.customerId}` }]
-              : [],
+            items:
+              order.customerId &&
+              $auth?.tenant.enabledModules.includes('clients') &&
+              $auth?.user.permissions.includes('clients.read')
+                ? [{ label: 'Client lié', href: '/clients' }]
+                : [],
           },
         ]
       : [],
@@ -149,6 +164,8 @@
       if (order?.id !== id) return;
       order = freshOrder;
       lines = freshLines;
+      transitionUncertain = false;
+      transitionError = '';
     } catch (e) {
       linesError = 'Données non actualisées. Rechargez les lignes avant de poursuivre.';
     }
@@ -197,8 +214,21 @@
   }
 
   async function doTransition(verb: TransitionVerb) {
-    if (!order || transitioning || !canManage) return;
+    if (!order || mutationBlocked || !canManage || (verb === 'confirm' && coordinatesBlocked))
+      return;
     const id = order.id;
+    const expectedUpdatedAt = order.updatedAt;
+    if (
+      verb === 'confirm' &&
+      !(await confirmAction(
+        'Les lignes et les coordonnées choisies seront figées. Les intégrations et automatisations configurées conservent leurs propres règles; ce contact ne devient pas un destinataire d’envoi.',
+        {
+          title: 'Confirmer la commande',
+          confirmLabel: 'Confirmer la commande',
+        },
+      ))
+    )
+      return;
     if (
       verb === 'cancel' &&
       !(await confirmAction('Annuler cette commande de vente ?', {
@@ -207,15 +237,20 @@
       }))
     )
       return;
-    if (order?.id !== id || transitioning) return;
+    if (order?.id !== id || order.updatedAt !== expectedUpdatedAt || mutationBlocked) return;
     transitioning = true;
     transitionError = '';
     try {
-      await api(`/crm/sales-orders/${order.id}/${verb}`, { method: 'POST' });
+      await api(`/crm/sales-orders/${order.id}/${verb}`, {
+        method: 'POST',
+        body: { expectedUpdatedAt },
+      });
+      transitionUncertain = true;
       await reloadAll();
       if (verb === 'invoice') toast.success('Commande facturée');
     } catch (e) {
       transitionError = e instanceof ApiError ? e.message : 'Erreur lors du changement de statut';
+      transitionUncertain = true;
     } finally {
       transitioning = false;
     }
@@ -403,6 +438,9 @@
     untrack(() => {
       order = null;
       lines = [];
+      transitionUncertain = false;
+      transitionError = '';
+      showDirectory = false;
       void loadOrder();
     });
     void loadSettings();
@@ -446,13 +484,22 @@
       />{#if canManage}{#each allowedActions(order!.status) as action (action.verb)}<Button
             variant={action.variant === 'danger' ? 'ghost' : action.variant}
             loading={transitioning}
+            disabled={mutationBlocked || (action.verb === 'confirm' && coordinatesBlocked)}
             onclick={() => void doTransition(action.verb)}>{action.label}</Button
           >{/each}{/if}{/snippet}
   </RecordHeader>
   <ErrorNotice message={transitionError} />
+  {#if transitionUncertain}
+    <p class="my-2 text-sm text-ink-muted">
+      Résultat à vérifier : relisez la commande avant une autre action, sans renvoyer la
+      confirmation.
+    </p>
+    <Button variant="secondary" onclick={reloadAll}>Vérifier le statut enregistré</Button>
+  {/if}
   <RecordNav
     sections={[
       { id: 'record-lines', label: 'Lignes' },
+      { id: 'record-coordinates', label: 'Coordonnées' },
       ...(!noTransportAccess ? [{ id: 'record-shipping', label: 'Expédition' }] : []),
       { id: 'record-info', label: 'Informations' },
       { id: 'record-related', label: 'Dossiers liés' },
@@ -480,12 +527,41 @@
             {lines}
             currency={order!.currency}
             total={order!.totalAmount}
-            editable={canManage && isDraft && !transitioning}
+            editable={canManage &&
+              isDraft &&
+              !transitioning &&
+              !transitionUncertain &&
+              !coordinatesBusy}
+            bind:blocked={linesBlocked}
             loading={linesLoading}
             error={linesError}
             onretry={reloadAll}
             onchanged={reloadAll}
           />{/key}
+      </RecordSection>
+      <RecordSection id="record-coordinates" label="Coordonnées">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="text-xs text-ink-muted">
+            Carnet propre à la société CRM. Aucun module Transport, Clients ou Facturation requis;
+            aucun contact commercial copié automatiquement.
+          </p>
+          <Button
+            variant="secondary"
+            disabled={mutationBlocked}
+            onclick={() => {
+              showDirectory = true;
+            }}>Carnet de la société</Button
+          >
+        </div>
+        <DocumentCoordinates
+          endpoint={`/crm/sales-orders/${order.id}/coordinates`}
+          directoryBase="/crm/companies"
+          canManage={canManage && !transitioning && !transitionUncertain && !linesBlocked}
+          documentVersion={`${order.updatedAt}:${coordinateRevision}`}
+          bind:busy={coordinatesBusy}
+          bind:blocked={coordinatesBlocked}
+          onchanged={reloadAll}
+        />
       </RecordSection>
       <!-- Préparer l'expédition (fulfillment bridge) -->
       {#if !noTransportAccess}
@@ -790,4 +866,16 @@
       </div>
     </fieldset>
   </Drawer>
+{/if}
+
+{#if showDirectory && order}
+  <PartyDirectory
+    endpoint={`/crm/companies/${order.companyId}/directory`}
+    name={order.company?.name ?? 'Société CRM'}
+    {canManage}
+    onclose={() => {
+      showDirectory = false;
+      coordinateRevision++;
+    }}
+  />
 {/if}

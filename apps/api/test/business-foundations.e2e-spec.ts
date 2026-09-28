@@ -175,6 +175,7 @@ describe('Business foundations (real HTTP + Postgres)', () => {
         await db.supportCase.deleteMany({ where: { tenantId: { in: tids } } });
         await db.supplierReceiptLine.deleteMany({ where: { tenantId: { in: tids } } });
         await db.supplierReceipt.deleteMany({ where: { tenantId: { in: tids } } });
+        await db.servicePartReturn.deleteMany({ where: { tenantId: { in: tids } } });
         await db.servicePartUsage.deleteMany({ where: { tenantId: { in: tids } } });
         await db.catalogStockLink.deleteMany({ where: { tenantId: { in: tids } } });
         await db.stockMovement.deleteMany({ where: { tenantId: { in: tids } } });
@@ -186,6 +187,8 @@ describe('Business foundations (real HTTP + Postgres)', () => {
         await db.serviceJob.deleteMany({ where: { tenantId: { in: tids } } });
         await db.serviceProject.deleteMany({ where: { tenantId: { in: tids } } });
         await db.catalogItem.deleteMany({ where: { tenantId: { in: tids } } });
+        await db.partyDirectoryRevision.deleteMany({ where: { tenantId: { in: tids } } });
+        await db.partyDirectoryEntry.deleteMany({ where: { tenantId: { in: tids } } });
         await db.businessPartner.deleteMany({ where: { tenantId: { in: tids } } });
       }
     } finally {
@@ -1208,7 +1211,11 @@ describe('Business foundations (real HTTP + Postgres)', () => {
     const history = (await call('get', route, undefined, reader).expect(200)).body.items[0];
     expect(history.nameSnapshot).toBe('Joint de pompe');
     expect(history.unitSnapshot).toBe('EA');
-    expect(history.returnMovementId).toBeTruthy();
+    expect(history.remainingQuantity).toBe('0');
+    expect(history.returnedQuantity).toBe('2');
+    expect(history.returns).toHaveLength(1);
+    expect(history.returns[0].movementId).toBeTruthy();
+    expect(history.returns[0]).not.toHaveProperty('requestFingerprint');
     expect(history).not.toHaveProperty('requestFingerprint');
     expect(history).not.toHaveProperty('tenantId');
     const journal = (
@@ -1233,6 +1240,89 @@ describe('Business foundations (real HTTP + Postgres)', () => {
     await db.bin.updateMany({ where: { tenantId, id: f.bin.id }, data: { isActive: true } });
     await call('post', route, f.body, reader).expect(403);
     await call('post', route, { ...f.body, tenantId: foreign }).expect(400);
+  });
+  it('records partial returns once, rejects over-returns and stale versions, and only cancels after a full return', async () => {
+    const f = await partsFixture();
+    const route = `services/jobs/${f.j.id}/parts`;
+    const part = (await call('post', route, f.body).expect(201)).body;
+    const freshJob = async () => (await call('get', `services/jobs/${f.j.id}`).expect(200)).body;
+    const level = async () =>
+      Number(
+        (
+          await db.inventoryLevel.findFirstOrThrow({
+            where: { tenantId, itemId: f.wms.id, binId: f.bin.id },
+          })
+        ).qtyOnHand,
+      );
+    const body = {
+      operationKey: randomUUID(),
+      quantity: 0.375,
+      reason: 'Premier reliquat physique',
+      expectedUpdatedAt: (await freshJob()).updatedAt,
+    };
+    for (const quantity of [null, 0, -1, 0.0001, 1000000001, '1'])
+      await call('post', `${route}/${part.id}/return`, { ...body, quantity }).expect(400);
+    await call('post', `${route}/${part.id}/return`, body, reader).expect(403);
+    await call('post', `services/jobs/foreign/parts/${part.id}/return`, body).expect(404);
+    const responses = await Promise.all([
+      call('post', `${route}/${part.id}/return`, body),
+      call('post', `${route}/${part.id}/return`, body),
+    ]);
+    expect(responses.map((r) => r.status)).toEqual([201, 201]);
+    expect(responses.map((r) => r.body.replayed).sort()).toEqual([false, true]);
+    expect(responses[0].body.remainingQuantity).toBe('1.625');
+    expect(responses[0].body.returnedQuantity).toBe('0.375');
+    expect(await level()).toBe(3.375);
+    await call('post', `${route}/${part.id}/return`, { ...body, quantity: 0.5 }).expect(409);
+    await call('post', `${route}/${part.id}/return`, {
+      ...body,
+      operationKey: randomUUID(),
+    }).expect(409);
+    const current = await freshJob();
+    await call('post', `services/jobs/${f.j.id}/transition`, {
+      status: 'CANCELLED',
+      expectedUpdatedAt: current.updatedAt,
+    }).expect(409);
+    await call('post', `${route}/${part.id}/return`, {
+      ...body,
+      operationKey: randomUUID(),
+      quantity: 1.626,
+      expectedUpdatedAt: current.updatedAt,
+    }).expect(409);
+    // A legacy omission still means the full original quantity, not an implicit remainder.
+    await call('post', `${route}/${part.id}/return`, {
+      operationKey: randomUUID(),
+      reason: 'Ancien client',
+      expectedUpdatedAt: current.updatedAt,
+    }).expect(409);
+    const finalBody = {
+      ...body,
+      operationKey: randomUUID(),
+      quantity: 1.625,
+      expectedUpdatedAt: current.updatedAt,
+    };
+    const competing = await Promise.all([
+      call('post', `${route}/${part.id}/return`, finalBody),
+      call('post', `${route}/${part.id}/return`, { ...finalBody, operationKey: randomUUID() }),
+    ]);
+    expect(competing.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(await level()).toBe(5);
+    expect(await db.servicePartReturn.count({ where: { tenantId, usageId: part.id } })).toBe(2);
+    await call('post', `services/jobs/${f.j.id}/transition`, {
+      status: 'CANCELLED',
+      expectedUpdatedAt: (await freshJob()).updatedAt,
+    }).expect(201);
+    expect((await call('post', `${route}/${part.id}/return`, body).expect(201)).body.replayed).toBe(
+      true,
+    );
+    const history = (await call('get', route, undefined, reader).expect(200)).body.items[0];
+    expect(history.quantity).toBe('2');
+    expect(history.remainingQuantity).toBe('0');
+    expect(history.returnCount).toBe(2);
+    expect(history).not.toHaveProperty('billingLine');
+    expect(
+      await db.stockMovement.count({ where: { tenantId, refType: 'service-job', refId: f.j.id } }),
+    ).toBe(3);
   });
   it('serializes competing stock issues and refuses stale job versions', async () => {
     const f = await partsFixture();
@@ -1301,7 +1391,7 @@ describe('Business foundations (real HTTP + Postgres)', () => {
     await call('get', route).expect(200);
     await app.get(ModuleRegistryService).setEnabled(tenantId, 'wms', true);
   });
-  async function purchaseFixture() {
+  async function purchaseFixture(withCoordinates = false) {
     const f = await partsFixture();
     let o = (
       await call('post', 'purchasing/orders', {
@@ -1310,6 +1400,36 @@ describe('Business foundations (real HTTP + Postgres)', () => {
         lines: [{ catalogItemId: f.product.id, quantity: 10, unitPrice: 2 }],
       }).expect(201)
     ).body;
+    if (withCoordinates) {
+      const contact = (
+        await call('post', `purchasing/data/suppliers/${partner.id}/directory`, {
+          operationKey: randomUUID(),
+          reason: 'Interlocuteur de cet achat',
+          entry: {
+            kind: 'CONTACT',
+            label: 'Contact achat figé',
+            role: 'Commandes',
+            active: true,
+            validFrom: null,
+            validUntil: null,
+            email: 'achat@example.test',
+            phone: '',
+            notes: '',
+            address: null,
+          },
+        }).expect(201)
+      ).body;
+      await call('patch', `purchasing/orders/${o.id}/coordinates`, {
+        expectedUpdatedAt: o.updatedAt,
+        reason: 'Accord fournisseur revu',
+        selections: {
+          billingAddress: null,
+          deliveryAddress: null,
+          contact: { id: contact.id, version: 1 },
+        },
+      }).expect(200);
+      o = (await call('get', `purchasing/orders/${o.id}`).expect(200)).body;
+    }
     o = (
       await call('post', `purchasing/orders/${o.id}/transition`, {
         status: 'CONFIRMED',
@@ -1325,6 +1445,36 @@ describe('Business foundations (real HTTP + Postgres)', () => {
     };
     return { ...f, o, body };
   }
+  it('keeps the supplier commitment independent from current directory and physical WMS arrivals', async () => {
+    const f = await purchaseFixture(true),
+      path = `purchasing/orders/${f.o.id}/receipts`;
+    const snapshot = f.o.documentCoordinates;
+    expect(snapshot.frozenAt).toBeTruthy();
+    expect(snapshot.entries.deliveryAddress).toBeNull();
+    const first = (await call('post', path, f.body).expect(201)).body;
+    expect((await call('get', `wms/receipts/${first.receiptId}`).expect(200)).body.locationId).toBe(
+      f.bin.locationId,
+    );
+    let o = (await call('get', `purchasing/orders/${f.o.id}`).expect(200)).body;
+    expect(o.documentCoordinates).toEqual(snapshot);
+    expect(o.lines[0]).toMatchObject({ received: '4', remaining: '6' });
+    const contact = snapshot.entries.contact;
+    await call('patch', `purchasing/data/suppliers/${partner.id}/directory/${contact.id}`, {
+      operationKey: randomUUID(),
+      reason: 'Interlocuteur remplacé après engagement',
+      expectedVersion: 1,
+      entry: { ...contact.data, active: false },
+    }).expect(200);
+    await call('post', path, {
+      ...f.body,
+      operationKey: randomUUID(),
+      expectedUpdatedAt: o.updatedAt,
+      lines: [{ ...f.body.lines[0], quantity: 6 }],
+    }).expect(201);
+    o = (await call('get', `purchasing/orders/${f.o.id}`).expect(200)).body;
+    expect(o.documentCoordinates).toEqual(snapshot);
+    expect(o.lines[0]).toMatchObject({ received: '10', remaining: '0' });
+  });
   it('receives partial supplier arrivals atomically, replays once, then closes a fulfilled order', async () => {
     const f = await purchaseFixture(),
       path = `purchasing/orders/${f.o.id}/receipts`;

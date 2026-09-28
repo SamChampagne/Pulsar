@@ -98,6 +98,10 @@ export class ItemsService {
         // Same stock lock as Services issues/mapping and InventoryService.postMovement.
         await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE`;
         const old = await tx.wmsItem.findFirstOrThrow({ where: { tenantId, id } });
+        if (dto.lotTracked !== undefined && dto.lotTracked !== old.lotTracked)
+          throw new ConflictException(
+            'Le suivi par lot est choisi à la création et ne se change pas. Créez un nouvel article; aucun historique ne sera réinterprété.',
+          );
         if (
           dto.unit !== undefined &&
           dto.unit !== old.unit &&

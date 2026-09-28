@@ -3,6 +3,7 @@
   import { toast } from '$lib/stores/toast';
   import { formatDateTime } from '$lib/format';
   import { streamRuntimeConnect } from '$lib/api/agent-runtime-connect';
+  import RuntimeHealth from './RuntimeHealth.svelte';
   import {
     PageHeader,
     Button,
@@ -39,7 +40,8 @@
 
   interface TestResult {
     ok: boolean;
-    models?: string[];
+    models?: { value: string; label: string }[];
+    scope?: 'RUNTIME_ONLY';
     error?: string;
   }
 
@@ -66,6 +68,21 @@
   let saving = $state(false);
 
   const selectedProvider = $derived(providers.find((p) => p.id === selectedProviderId) ?? null);
+  const dirty = $derived(
+    selectedProviderId !== config?.provider ||
+      !!apiKey.trim() ||
+      defaultModel.trim() !== (config?.defaultModel ?? '') ||
+      baseUrl.trim() !== (config?.baseUrl ?? ''),
+  );
+
+  function providerChanged(event: Event & { currentTarget: HTMLSelectElement }) {
+    selectedProviderId = event.currentTarget.value;
+    apiKey = '';
+    testResult = null;
+    connectLog = '';
+    defaultModel = '';
+    baseUrl = selectedProviderId === 'openai' ? 'https://api.openai.com/v1' : '';
+  }
 
   async function load() {
     try {
@@ -84,7 +101,7 @@
       defaultModel = cfg.defaultModel ?? '';
       baseUrl = cfg.baseUrl ?? '';
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Failed to load runtime config';
+      error = e instanceof ApiError ? e.message : 'Impossible de charger la configuration IA';
     } finally {
       loading = false;
     }
@@ -120,6 +137,7 @@
     error = '';
     try {
       testResult = await api<TestResult>('/agent-runtime/test', { method: 'POST' });
+      config = await api<RuntimeConfig>('/agent-runtime');
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Test failed';
     } finally {
@@ -139,9 +157,11 @@
       if (defaultModel.trim()) body.defaultModel = defaultModel.trim();
       if (baseUrl.trim()) body.baseUrl = baseUrl.trim();
 
-      config = await api<RuntimeConfig>('/agent-runtime', { method: 'PUT', body });
+      const saved = await api<RuntimeConfig>('/agent-runtime', { method: 'PUT', body });
+      config = { ...saved, installed: config?.installed ?? false };
       apiKey = ''; // clear the raw key field after save
-      toast.success('Runtime config saved');
+      testResult = null;
+      toast.success('Configuration IA enregistrée');
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Save failed';
     } finally {
@@ -159,12 +179,14 @@
   });
 </script>
 
-<PageHeader title="Runtime agents" />
+<PageHeader title="Connexion IA" />
 
 <p class="mb-4 text-sm text-ink-muted">
-  Configure the LLM provider that powers Hermes — the AI runtime used by ⌘K agents and the dispatch
-  assistant. Pick a provider, authenticate, set a default model, and test the connection.
+  Hermes exécute les conversations et missions des agents. Le fournisseur fournit le modèle; Pulsar
+  conserve les permissions, les approbations et les plafonds métier.
 </p>
+
+<RuntimeHealth />
 
 {#if loading}
   <Card padded={false}><Skeleton rows={4} /></Card>
@@ -175,21 +197,21 @@
     >
       <span class="mt-0.5 text-warning">⚠</span>
       <div class="flex-1 text-sm text-ink">
-        <span class="font-semibold">Hermes runtime not installed.</span>
-        Run
+        <span class="font-semibold">Moteur Hermes non installé.</span>
+        L’administrateur serveur doit exécuter
         <button
           type="button"
           class="mx-1 cursor-pointer rounded bg-surface-muted px-1.5 py-0.5 font-mono text-xs hover:bg-surface-hover"
           onclick={copySetupCommand}
-          title="Click to copy">pnpm agents:setup</button
-        > to install it.
+          title="Copier la commande">pnpm agents:setup</button
+        >. Les clés et modèles se configurent ensuite ici par entreprise.
       </div>
     </div>
   {:else if config !== null && config.configured}
     <div
       class="mb-4 flex flex-wrap items-center gap-3 rounded-card border border-edge bg-surface px-4 py-3 text-sm"
     >
-      <Badge tone="ok">Configuré</Badge>
+      <Badge tone="neutral">Paramètres enregistrés</Badge>
       {#if config.provider}
         <span class="text-ink"
           >Fournisseur : <span class="font-semibold">{config.provider}</span></span
@@ -201,8 +223,8 @@
       {#if config.lastTestAt}
         <span class="text-ink-muted">
           Dernier test : {formatDateTime(config.lastTestAt)}
-          {#if config.lastTestOk !== undefined}
-            — {config.lastTestOk ? '✅ OK' : '❌ Échec'}
+          {#if config.lastTestOk != null}
+            — {config.lastTestOk ? 'session runtime ouverte' : 'échec du runtime'}
           {/if}
         </span>
       {/if}
@@ -217,13 +239,17 @@
     <!-- Provider selection -->
     <Card>
       <h2 class="mb-4 text-sm font-semibold text-ink">Fournisseur</h2>
-      <Field label="Provider">
-        <Select bind:value={selectedProviderId}>
+      <Field label="Fournisseur du modèle">
+        <Select bind:value={selectedProviderId} onchange={providerChanged}>
           {#each providers as p (p.id)}
             <option value={p.id}>{p.label}</option>
           {/each}
         </Select>
       </Field>
+      <p class="mt-2 text-xs text-ink-muted">
+        Changer de fournisseur ou d’URL retire l’ancienne clé et invalide le contrôle précédent.
+        Enregistrez avant de connecter ou vérifier.
+      </p>
     </Card>
 
     <!-- Auth block: conditional on authMode -->
@@ -244,8 +270,8 @@
             </Field>
             {#if selectedProvider.keyEnvVar}
               <p class="text-xs text-ink-muted">
-                Variable d'environnement : <code class="rounded bg-surface-muted px-1 text-xs"
-                  >{selectedProvider.keyEnvVar}</code
+                Clé chiffrée pour cette entreprise; injectée uniquement dans <code
+                  class="rounded bg-surface-muted px-1 text-xs">{selectedProvider.keyEnvVar}</code
                 >
               </p>
             {/if}
@@ -264,7 +290,11 @@
                 <span class="text-ink-muted">{formatDateTime(config.connectedAt)}</span>
               </div>
             {/if}
-            <Button variant="primary" onclick={connectLogin} disabled={connecting}>
+            <Button
+              variant="primary"
+              onclick={connectLogin}
+              disabled={connecting || dirty || saving}
+            >
               {connecting ? 'Connexion en cours…' : `Connecter ${selectedProvider.label}`}
             </Button>
             {#if connectLog}
@@ -293,8 +323,8 @@
         <Input bind:value={defaultModel} placeholder="ex. anthropic:claude-sonnet-4-6" />
       </Field>
       <p class="mt-1.5 text-xs text-ink-muted">
-        Laissez vide pour utiliser le modèle par défaut du fournisseur. Les agents peuvent
-        surcharger ce réglage.
+        Les agents peuvent remplacer ce choix dans leur profil. Sans modèle ici ni dans le profil,
+        une mission ne peut pas démarrer. Le nom doit correspondre au fournisseur sélectionné.
       </p>
     </Card>
 
@@ -303,14 +333,26 @@
       <Button
         variant="secondary"
         onclick={testConnection}
-        disabled={testing || !config?.configured}
+        disabled={testing || !config?.configured || dirty || saving || connecting}
       >
-        {testing ? 'Test en cours…' : 'Tester la connexion'}
+        {testing ? 'Contrôle en cours…' : 'Vérifier le runtime'}
       </Button>
-      <Button variant="primary" onclick={save} disabled={saving || !selectedProviderId}>
+      <Button
+        variant="primary"
+        onclick={save}
+        disabled={saving || !selectedProviderId || testing || connecting}
+      >
         {saving ? 'Enregistrement…' : 'Enregistrer'}
       </Button>
     </div>
+    {#if dirty}<p class="text-xs text-ink-muted">
+        Des modifications ne sont pas enregistrées.
+      </p>{/if}
+    <p class="text-xs text-ink-muted">
+      Le contrôle ouvre une session ACP et lit ses modèles proposés. Il n’envoie aucun prompt et ne
+      prouve pas que la clé, la facturation fournisseur ou une mission métier fonctionnent. Les
+      missions réelles restent à qualifier séparément.
+    </p>
 
     <!-- Test result -->
     {#if testResult}
@@ -318,13 +360,13 @@
         class={`rounded-card border px-4 py-3 text-sm ${testResult.ok ? 'border-ok bg-ok-soft text-ok' : 'border-danger bg-danger-soft text-danger'}`}
       >
         {#if testResult.ok}
-          <span class="font-semibold">✅ Connexion OK</span>
+          <span class="font-semibold">Session runtime ouverte — inférence non testée</span>
           {#if testResult.models && testResult.models.length > 0}
             <div class="mt-2 text-xs text-ink-muted">
               Modèles disponibles :
               <ul class="mt-1 list-inside list-disc space-y-0.5">
-                {#each testResult.models as m (m)}
-                  <li><code class="rounded bg-surface-muted px-1">{m}</code></li>
+                {#each testResult.models as m (m.value)}
+                  <li><code class="rounded bg-surface-muted px-1">{m.label}</code></li>
                 {/each}
               </ul>
             </div>

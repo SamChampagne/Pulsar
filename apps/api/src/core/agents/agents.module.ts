@@ -61,6 +61,7 @@ import { AgentConversationsService } from './agent-conversations.service';
 import { AgentConversationsController } from './agent-conversations.controller';
 import { RuntimeConfigService } from './runtime-config.service';
 import { RuntimeConfigController } from './runtime-config.controller';
+import { RuntimeHealthService } from './runtime-health.service';
 
 /**
  * Agent governance + MCP exposure (phase 11).
@@ -103,6 +104,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
     AgentRuntimeService,
     AgentConversationsService,
     RuntimeConfigService,
+    RuntimeHealthService,
     {
       provide: AGENT_TOOL_SERVICES,
       inject: [
@@ -248,7 +250,7 @@ import { RuntimeConfigController } from './runtime-config.controller';
             freightAudit.dispute(t, a, id, dto as never, agentId),
         },
         ledger: {
-          trialBalance: (tenantId, asOf) => ledger.trialBalance(tenantId, asOf),
+          trialBalance: (tenantId, asOf, currency) => ledger.trialBalance(tenantId, asOf, currency),
           listJournal: (tenantId, query) => ledger.listJournal(tenantId, query),
         },
         vehicles: {

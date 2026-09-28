@@ -1,5 +1,7 @@
 <script lang="ts">
   import MasterDataEdit from '$lib/components/transportation/MasterDataEdit.svelte';
+  import PartyDirectory from '$lib/components/reference-data/PartyDirectory.svelte';
+  import PartyDossier from '$lib/components/reference-data/PartyDossier.svelte';
   import { enterNext } from '$lib/forms/enter-next';
   import { getAccessToken } from '$lib/stores/auth';
   import type { Paginated } from '@pulsar/shared';
@@ -31,6 +33,7 @@
   }
 
   let customers = $state<CustomerRow[]>([]);
+  let directory = $state<CustomerRow | null>(null);
   let total = $state(0);
   let page = $state(1);
   const pageSize = 25;
@@ -262,8 +265,16 @@
             </Badge>
           </td>
           <td
-            ><div class="flex justify-end gap-2">
+            ><div class="flex flex-wrap justify-end gap-2">
+              <PartyDossier endpoint={`/transportation/customers/${customer.id}`} name={customer.name} />
               <MasterDataEdit kind="customers" id={customer.id} onsaved={load} />
+              <Button
+                variant="secondary"
+                aria-label={`Carnet de ${customer.name}`}
+                onclick={() => {
+                  directory = customer;
+                }}>Carnet</Button
+              >
               {#if hasPortal && canManageLinks}
                 <Button variant="secondary" onclick={() => portalLink(customer)}
                   >Lien portail</Button
@@ -391,3 +402,9 @@
     </form>
   {/snippet}
 </Modal>
+{#if directory}{#key directory.id}<PartyDirectory
+      endpoint={`/transportation/customers/${directory.id}/directory`}
+      name={directory.name}
+      canManage={$auth?.user.permissions.includes('transportation.master-data.manage') ?? false}
+      onclose={() => (directory = null)}
+    />{/key}{/if}

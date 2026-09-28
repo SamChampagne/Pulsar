@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PERMISSIONS, MODULE_KEYS, RiskTier } from '@pulsar/shared';
+import { CURRENCIES, isCalendarDate, PERMISSIONS, MODULE_KEYS, RiskTier } from '@pulsar/shared';
 import type { ToolDef } from '../tool-types';
 
 export const billingTools: ToolDef[] = [
@@ -7,15 +7,19 @@ export const billingTools: ToolDef[] = [
   {
     name: 'get_trial_balance',
     description:
-      "Returns the tenant's trial balance (sum of debits and credits per account). Optional asOf date (ISO string) to filter entries up to that date. The totals should always balance (total debit === total credit) for a healthy ledger.",
+      'Exact trial balance in one required transaction currency. coverage reports excluded unknown entries and other currencies; balanced is arithmetic only, never proof of a complete or certified ledger. No exchange conversion. Optional asOf ISO date.',
     tier: RiskTier.READ,
     permission: PERMISSIONS.BILLING.LEDGER_READ,
     module: MODULE_KEYS.BILLING,
-    inputSchema: z.object({ asOf: z.string().optional() }),
+    inputSchema: z.object({
+      asOf: z.string().refine(isCalendarDate).optional(),
+      currency: z.string().refine((v) => CURRENCIES.some((c) => c.code === v)),
+    }),
     run: (args, ctx) =>
       ctx.services.ledger.trialBalance(
         ctx.principal.user.tenantId,
         args.asOf ? new Date(args.asOf as string) : undefined,
+        args.currency as string,
       ),
   },
   {

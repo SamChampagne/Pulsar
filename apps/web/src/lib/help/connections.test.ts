@@ -5,6 +5,57 @@ import type { NavDomain } from '$lib/modules/navigation';
 import { SECTOR_ROADMAP } from './sector-roadmap';
 import { MODULE_CATALOG } from '@pulsar/shared';
 describe('Documented cross-module contracts', () => {
+  it('distinguishes Telnyx acceptance from delivery and keeps automated messaging out of v1', () => {
+    expect(KNOWLEDGE_DETAILS.connect.rules.join(' ')).toContain('sans variable serveur');
+    expect(KNOWLEDGE_DETAILS.connect.limits.join(' ')).toContain('START ne le réactive pas');
+    expect(KNOWLEDGE_DETAILS.emails.rules.join(' ')).toContain('mode réel dans l’application');
+    expect(KNOWLEDGE_DETAILS.connect.rules.join(' ')).toContain(
+      'jamais de nouvel envoi automatique',
+    );
+    expect(KNOWLEDGE_DETAILS.connect.limits.join(' ')).toContain('pas livré');
+    expect(KNOWLEDGE_DETAILS.emails.rules.join(' ')).toContain('pas à une interdiction globale');
+    expect(KNOWLEDGE_DETAILS.emails.rules.join(' ')).toContain('images distantes bloqués');
+  });
+  it('distinguishes pilot observations from real acceptance without activating modules', () => {
+    expect(KNOWLEDGE_DETAILS.settings.rules.join(' ')).toContain('Le choix ne change aucun module');
+    expect(KNOWLEDGE_DETAILS.settings.rules.join(' ')).toContain('pas une certification');
+    expect(KNOWLEDGE_DETAILS.settings.limits.join(' ')).toContain('APS est requis seulement');
+    expect(KNOWLEDGE_DETAILS.settings.limits.join(' ')).toContain('aucune preuve externe');
+  });
+  it('keeps supplier credit, physical return and payment separate', () => {
+    const c = MODULE_CONNECTIONS.find((c) => c.id === 'supplier-return-credit')!;
+    expect(c.kind).toBe('context');
+    expect(c.noEffect).toContain('Aucun montant calculé');
+    expect(c.recovery).toContain('jamais une nouvelle clé');
+    expect(KNOWLEDGE_DETAILS.billing.rules.join(' ')).toContain('reste créditable');
+    expect(KNOWLEDGE_DETAILS.billing.rules.join(' ')).toContain('billing.supplier-credits.manage');
+  });
+  it('explains net parts, draft correction and the separate credit/physical-return workflow', () => {
+    const services = KNOWLEDGE_DETAILS.services;
+    expect(services.rules.join(' ')).toContain('2,75 à facturer');
+    expect(services.rules.join(' ')).toContain('supprimez le brouillon');
+    expect(services.rules.join(' ')).toContain('billing.credit-notes.approve');
+    expect(KNOWLEDGE_DETAILS.billing.rules.join(' ')).toContain('Un avoir n’est pas un paiement');
+    expect(KNOWLEDGE_DETAILS.billing.rules.join(' ')).toContain('billing.credit-notes.send');
+    expect(KNOWLEDGE_DETAILS.billing.rules.join(' ')).toContain('jamais une relance automatique');
+    expect(KNOWLEDGE_DETAILS.billing.limits.join(' ')).toContain('pas de remboursement bancaire');
+    expect(MODULE_CONNECTIONS.find((c) => c.id === 'billing-credit-email')?.noEffect).toContain(
+      'Simuler ne contacte pas le client',
+    );
+    expect(services.limits.join(' ')).not.toContain('retours de pièces sont intégraux');
+    expect(MODULE_CONNECTIONS.find((c) => c.id === 'services-wms')?.effect).toContain('partiel');
+    expect(MODULE_CONNECTIONS.find((c) => c.id === 'services-billing')?.effect).toContain(
+      'sélection périmée',
+    );
+  });
+  it('explains live connector tests, suspended retries and backup qualification limits', () => {
+    expect(KNOWLEDGE_DETAILS.connect.rules.join(' ')).toContain('redirections HTTP');
+    expect(KNOWLEDGE_DETAILS.connect.rules.join(' ')).toContain('livraisons encore en attente');
+    expect(KNOWLEDGE_DETAILS.connect.limits.join(' ')).toContain('Simulation');
+    expect(KNOWLEDGE_DETAILS.connect.limits.join(' ')).toContain('X-Pulsar-Delivery');
+    expect(KNOWLEDGE_DETAILS.settings.rules.join(' ')).toContain('restauration');
+    expect(KNOWLEDGE_DETAILS.settings.limits.join(' ')).toContain('qualification Docker locale');
+  });
   it('uses known modules, unique identities and complete operational explanations', () => {
     expect(new Set(MODULE_CONNECTIONS.map((c) => c.id)).size).toBe(MODULE_CONNECTIONS.length);
     const covered = new Set(MODULE_CONNECTIONS.flatMap((c) => [c.from, c.to]));
@@ -39,7 +90,10 @@ describe('Documented cross-module contracts', () => {
     expect(MODULE_CONNECTIONS.find((c) => c.id === 'hr-services')?.kind).toBe('context');
     expect(MODULE_CONNECTIONS.find((c) => c.id === 'hr-manufacturing')?.kind).toBe('context');
     for (const c of MODULE_CONNECTIONS.filter((c) => c.from === 'quality'))
-      expect(c.kind).toBe('context');
+      expect(c.kind).toBe(c.id === 'quality-lot-release' ? 'operation' : 'context');
+    const lotRelease = MODULE_CONNECTIONS.find((c) => c.id === 'quality-lot-release')!;
+    expect(lotRelease.noEffect).toContain('libération automatique');
+    expect(lotRelease.requires).toContain('WMS seul');
   });
   it('indexes deep connection content in the module search', () => {
     const articles = knowledgeArticles([
@@ -53,6 +107,9 @@ describe('Documented cross-module contracts', () => {
       },
     ]);
     expect(matchesKnowledge(articles.find((a) => a.key === 'services')!, 'retour intégral')).toBe(
+      true,
+    );
+    expect(matchesKnowledge(articles.find((a) => a.key === 'services')!, 'dossier 360°')).toBe(
       true,
     );
     for (const j of BUSINESS_JOURNEYS) {

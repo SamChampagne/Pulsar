@@ -20,8 +20,11 @@ export class CountLineDto {
   @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) countedQty!: number;
 }
 
-export class RecordCountsDto {
+export class CountActionDto {
   @IsOptional() @IsDateString() expectedUpdatedAt?: string;
+}
+
+export class RecordCountsDto extends CountActionDto {
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

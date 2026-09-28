@@ -85,6 +85,13 @@ export async function login(page: Page, credentials = DEMO_USER): Promise<void> 
   await page.getByLabel('Email').fill(credentials.email);
   await page.getByLabel('Password').fill(credentials.password);
   await page.getByLabel('Tenant (optional)').fill(credentials.tenant);
+  // Do not navigate away while the initial preference route is still being fulfilled.
+  // Aborting it during the next page.goto otherwise races with route.fulfill.
+  const preferencesReady = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/v1/me/preferences' &&
+      response.request().method() === 'GET',
+  );
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.waitForURL('**/dashboard');
+  await Promise.all([page.waitForURL('**/dashboard'), preferencesReady]);
 }

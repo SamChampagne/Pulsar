@@ -21,6 +21,14 @@ export interface WmsDocumentBin {
   locationId: string;
 }
 export interface WmsDocumentLine {
+  lotId?: string | null;
+  lot?: {
+    id: string;
+    code: string;
+    expiresOn: string | null;
+    manufacturedOn: string | null;
+    supplierLot: string | null;
+  } | null;
   id: string;
   itemId: string;
   qty: string;

@@ -17,7 +17,9 @@
   } from '$lib/components/ui';
   import type { Partner, CatalogItem } from './types';
   import StockLink from './StockLink.svelte';
+  import ItemDossier from './ItemDossier.svelte';
   import PartnerLinks from './PartnerLinks.svelte';
+  import PartyDossier from '../reference-data/PartyDossier.svelte';
   let { partners = false }: { partners?: boolean } = $props();
   const canManage = $derived(
     (($auth?.user.permissions ?? []) as string[]).includes('catalog.manage'),
@@ -183,10 +185,13 @@
                     variant="ghost"
                     onclick={() => edit(row)}
                     aria-label={`Modifier ${row.name}`}>Modifier</Button
-                  >{/if}{#if 'kind' in row}<StockLink
-                    item={row}
-                    onchanged={() => void load()}
-                  />{:else}<PartnerLinks partner={row} onchanged={() => void load()} />{/if}</td
+                  >{/if}{#if 'kind' in row}<ItemDossier
+                    endpoint={`/catalog/items/${row.id}`}
+                    name={row.name}
+                  /><StockLink item={row} onchanged={() => void load()} />{:else}<PartyDossier
+                    endpoint={`/catalog/partners/${row.id}`}
+                    name={row.name}
+                  /><PartnerLinks partner={row} onchanged={() => void load()} />{/if}</td
               ></tr
             >{/each}</tbody
         >

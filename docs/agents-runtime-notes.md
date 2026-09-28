@@ -1,5 +1,14 @@
 # Hermes agent runtime — verified contract (phase 11, R1)
 
+> **Superseded execution boundary, 2026-09-27/28:** see
+> [AI runtime A1](./plans/ai-runtime-renewal.md). Pulsar now launches its own
+> `scripts/pulsar-hermes-acp.py` wrapper, passes an allowlisted environment and
+> refuses ACP host permissions. Only the Pulsar MCP toolset is exposed. The
+> historical verification below concerns 0.16.0, NOT the latest upstream release.
+> `config.yaml` in the tenant home is the actual generated configuration file;
+> the older `cli-config.yaml` path below describes the original investigation.
+> Opening a runtime session does not validate inference/provider credentials.
+
 This documents the **vendored Hermes** runtime (`hermes-agent/`) that Pulsar's
 `AgentRuntimeService` will spawn. Everything below is verified against the
 vendored source with file:line citations. No speculation; open questions are

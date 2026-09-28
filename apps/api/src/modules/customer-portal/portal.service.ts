@@ -9,13 +9,15 @@ import { Prisma } from '@pulsar/database';
 import type { PortalAuthUser } from '@pulsar/shared';
 import {
   AuditAction,
+  invoiceBalance,
   CustomerInvoiceStatus,
   MODULE_KEYS,
   ShipmentStatus,
   TransportMode,
   TransportOrderStatus,
 } from '@pulsar/shared';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
+import { Readable } from 'node:stream';
 import { ListQueryDto } from '../../common/dto/list-query.dto';
 import { paginated, paginationArgs } from '../../common/pagination';
 import { OwnershipService } from '../../prisma/ownership.service';
@@ -606,6 +608,7 @@ export class PortalService {
         currency: true,
         totalAmount: true,
         amountPaid: true,
+        creditedAmount: true,
         taxAmount: true,
         approvedAt: true,
         sentAt: true,
@@ -623,6 +626,8 @@ export class PortalService {
         // Numbers, never serialized Decimal strings (spec B2.2).
         totalAmount: total,
         amountPaid: amount(invoice.amountPaid),
+        creditedAmount: amount(invoice.creditedAmount),
+        ...invoiceBalance(total, amount(invoice.amountPaid), amount(invoice.creditedAmount)),
         taxAmount: tax,
         netAmount: round2(total - tax),
         approvedAt: invoice.approvedAt,
@@ -651,9 +656,29 @@ export class PortalService {
         customerId: ctx.customerId,
         status: { in: PORTAL_VISIBLE_INVOICE_STATUSES },
       },
-      select: { id: true },
+      select: { id: true, publishedAt: true, documentId: true, documentHash: true },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
+    if (invoice.publishedAt) {
+      // Once publication starts, never fall back to an arbitrary older upload.
+      if (!invoice.documentId || !invoice.documentHash)
+        throw new NotFoundException('Invoice not found');
+      try {
+        const file = await this.documents.download(
+          ctx.tenantId,
+          invoice.documentId,
+          'customer-invoice-pdf',
+        );
+        const chunks: Buffer[] = [];
+        for await (const chunk of file.stream) chunks.push(Buffer.from(chunk));
+        const body = Buffer.concat(chunks);
+        if (createHash('sha256').update(body).digest('hex') !== invoice.documentHash)
+          throw new Error('Integrity');
+        return { ...file, stream: Readable.from([body]) };
+      } catch {
+        throw new NotFoundException('Invoice not found');
+      }
+    }
     const document = await this.prisma.document.findFirst({
       where: {
         tenantId: ctx.tenantId,

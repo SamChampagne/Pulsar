@@ -1,4 +1,8 @@
 <script lang="ts">
+  import PartyDirectory from '$lib/components/reference-data/PartyDirectory.svelte';
+  import PartyDossier from '$lib/components/reference-data/PartyDossier.svelte';
+  import { auth } from '$lib/stores/auth';
+  import { PERMISSIONS } from '@pulsar/shared';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { api, ApiError } from '$lib/api/client';
@@ -55,6 +59,7 @@
   // ── State ────────────────────────────────────────────────────────────────────
 
   let company = $state<CompanyDetail | null>(null);
+  let showDirectory = $state(false);
   let loading = $state(true);
   let notFound = $state(false);
   let error = $state('');
@@ -110,40 +115,59 @@
 
   function statusTone(status: string): Tone {
     switch (status) {
-      case 'ACTIVE':   return 'ok';
-      case 'PROSPECT': return 'info';
-      case 'INACTIVE': return 'neutral';
-      default:         return 'neutral';
+      case 'ACTIVE':
+        return 'ok';
+      case 'PROSPECT':
+        return 'info';
+      case 'INACTIVE':
+        return 'neutral';
+      default:
+        return 'neutral';
     }
   }
 
   function statusLabel(status: string): string {
     switch (status) {
-      case 'ACTIVE':   return 'Actif';
-      case 'PROSPECT': return 'Prospect';
-      case 'INACTIVE': return 'Inactif';
-      default:         return status;
+      case 'ACTIVE':
+        return 'Actif';
+      case 'PROSPECT':
+        return 'Prospect';
+      case 'INACTIVE':
+        return 'Inactif';
+      default:
+        return status;
     }
   }
 
   function stageTone(stage: string): Tone {
     switch (stage) {
-      case 'WON':       return 'ok';
-      case 'LOST':      return 'danger';
-      case 'PROPOSAL':  return 'warn';
-      case 'QUALIFIED': return 'info';
-      default:          return 'neutral';
+      case 'WON':
+        return 'ok';
+      case 'LOST':
+        return 'danger';
+      case 'PROPOSAL':
+        return 'warn';
+      case 'QUALIFIED':
+        return 'info';
+      default:
+        return 'neutral';
     }
   }
 
   function stageLabel(stage: string): string {
     switch (stage) {
-      case 'LEAD':      return 'Prospect';
-      case 'QUALIFIED': return 'Qualifié';
-      case 'PROPOSAL':  return 'Proposition';
-      case 'WON':       return 'Gagné';
-      case 'LOST':      return 'Perdu';
-      default:          return stage;
+      case 'LEAD':
+        return 'Prospect';
+      case 'QUALIFIED':
+        return 'Qualifié';
+      case 'PROPOSAL':
+        return 'Proposition';
+      case 'WON':
+        return 'Gagné';
+      case 'LOST':
+        return 'Perdu';
+      default:
+        return stage;
     }
   }
 
@@ -191,19 +215,27 @@
 
   function threadStatusTone(status: string): Tone {
     switch (status) {
-      case 'UNLINKED': return 'warn';
-      case 'LINKED':   return 'ok';
-      case 'ARCHIVED': return 'neutral';
-      default:         return 'neutral';
+      case 'UNLINKED':
+        return 'warn';
+      case 'LINKED':
+        return 'ok';
+      case 'ARCHIVED':
+        return 'neutral';
+      default:
+        return 'neutral';
     }
   }
 
   function threadStatusLabel(status: string): string {
     switch (status) {
-      case 'UNLINKED': return 'À trier';
-      case 'LINKED':   return 'Rattaché';
-      case 'ARCHIVED': return 'Archivé';
-      default:         return status;
+      case 'UNLINKED':
+        return 'À trier';
+      case 'LINKED':
+        return 'Rattaché';
+      case 'ARCHIVED':
+        return 'Archivé';
+      default:
+        return status;
     }
   }
 
@@ -250,11 +282,16 @@
   <div class="mb-6 flex items-start justify-between gap-4">
     <div class="min-w-0">
       <div class="mb-1 flex items-center gap-2">
-        <Button variant="secondary" onclick={() => goto('/crm/companies')}>
-          ← Sociétés
-        </Button>
+        <Button variant="secondary" onclick={() => goto('/crm/companies')}>← Sociétés</Button>
       </div>
       <h1 class="mt-2 text-2xl font-bold text-ink">{company.name}</h1>
+      <PartyDossier endpoint={`/crm/companies/${company.id}`} name={company.name} />
+      <Button
+        variant="secondary"
+        onclick={() => {
+          showDirectory = true;
+        }}>Adresses et contacts du carnet</Button
+      >
       <div class="mt-1 flex flex-wrap items-center gap-2">
         <Badge tone={statusTone(company.status)}>{statusLabel(company.status)}</Badge>
         {#if company.domain}
@@ -270,7 +307,6 @@
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
     <!-- ── Left column: hero fields + contacts + deals ── -->
     <div class="space-y-6 lg:col-span-2">
-
       <!-- Company meta -->
       <Card>
         <h2 class="mb-3 text-sm font-semibold text-ink">Informations</h2>
@@ -293,19 +329,25 @@
           {/if}
           {#if company.ownerUserId}
             <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Responsable</div>
+              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">
+                Responsable
+              </div>
               <div class="font-mono text-xs text-ink">{company.ownerUserId.slice(0, 8)}…</div>
             </div>
           {/if}
           {#if company.customerId}
             <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Client lié</div>
+              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">
+                Client lié
+              </div>
               <div class="font-mono text-xs text-accent">{company.customerId.slice(0, 8)}…</div>
             </div>
           {/if}
           {#if company.carrierId}
             <div>
-              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">Transporteur lié</div>
+              <div class="mb-0.5 font-semibold uppercase tracking-wide text-ink-muted">
+                Transporteur lié
+              </div>
               <div class="font-mono text-xs text-accent">{company.carrierId.slice(0, 8)}…</div>
             </div>
           {/if}
@@ -374,7 +416,9 @@
         {:else}
           <ul class="space-y-2">
             {#each company.deals as deal (deal.id)}
-              <li class="flex items-center justify-between gap-3 rounded-md border border-edge bg-surface-muted px-3 py-2.5 text-xs">
+              <li
+                class="flex items-center justify-between gap-3 rounded-md border border-edge bg-surface-muted px-3 py-2.5 text-xs"
+              >
                 <div class="min-w-0">
                   <div class="truncate font-semibold text-ink">{deal.title}</div>
                   <div class="text-ink-muted">{formatAmount(deal.amount, deal.currency)}</div>
@@ -408,14 +452,21 @@
               <li class="rounded-md border border-edge bg-surface-muted px-3 py-2.5 text-xs">
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0 flex-1">
-                    <div class="truncate font-semibold text-ink">{thread.subject || '(sans objet)'}</div>
+                    <div class="truncate font-semibold text-ink">
+                      {thread.subject || '(sans objet)'}
+                    </div>
                     <div class="mt-0.5 text-ink-faint">{relativeTime(thread.lastMessageAt)}</div>
                   </div>
                   <div class="flex shrink-0 flex-col items-end gap-1">
                     {#if thread.messageCount > 1}
-                      <span class="rounded-full bg-surface px-1.5 py-0.5 font-mono text-[10px] font-semibold text-ink-muted">{thread.messageCount}</span>
+                      <span
+                        class="rounded-full bg-surface px-1.5 py-0.5 font-mono text-[10px] font-semibold text-ink-muted"
+                        >{thread.messageCount}</span
+                      >
                     {/if}
-                    <Badge tone={threadStatusTone(thread.status)}>{threadStatusLabel(thread.status)}</Badge>
+                    <Badge tone={threadStatusTone(thread.status)}
+                      >{threadStatusLabel(thread.status)}</Badge
+                    >
                   </div>
                 </div>
               </li>
@@ -434,10 +485,7 @@
 
       <Card>
         <h2 class="mb-3 text-sm font-semibold text-ink">Enregistrer une activité</h2>
-        <LogActivity
-          companyId={company.id}
-          onLogged={() => void refresh()}
-        />
+        <LogActivity companyId={company.id} onLogged={() => void refresh()} />
       </Card>
 
       <RecordEmails
@@ -447,4 +495,15 @@
       />
     </div>
   </div>
+{/if}
+
+{#if showDirectory && company}
+  <PartyDirectory
+    endpoint={`/crm/companies/${company.id}/directory`}
+    name={company.name}
+    canManage={!!$auth?.user.permissions.includes(PERMISSIONS.CRM.MANAGE)}
+    onclose={() => {
+      showDirectory = false;
+    }}
+  />
 {/if}

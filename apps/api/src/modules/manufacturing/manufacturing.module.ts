@@ -26,6 +26,7 @@ import { MaterialPurchasesController } from './purchasing/material-purchases.con
 import { WmsModule } from '../wms/wms.module';
 import { ShopFloorController } from './shop-floor/shop-floor.controller';
 import { ShopFloorService } from './shop-floor/shop-floor.service';
+import { DeclarationReversalsService } from './shop-floor/declaration-reversals.service';
 import { MaterialImpactService } from './scheduling/material-impact.service';
 
 /**
@@ -58,6 +59,7 @@ import { MaterialImpactService } from './scheduling/material-impact.service';
     SchedulingController,
   ],
   providers: [
+    DeclarationReversalsService,
     MaterialImpactService,
     ShopFloorService,
     MaterialPurchasesService,

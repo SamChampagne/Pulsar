@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime as fmtUserInstant } from '$lib/format';
   import { onDestroy } from 'svelte';
   import { beforeNavigate } from '$app/navigation';
   import { auth } from '$lib/stores/auth';
@@ -192,7 +193,7 @@
             {event.actor.lastName}
           </p>
           <p class="mt-1 text-xs text-ink-muted">
-            {new Date(event.createdAt).toLocaleString('fr-CA')} · {statuses[event.fromStatus]} → {statuses[
+            {fmtUserInstant(event.createdAt)} · {statuses[event.fromStatus]} → {statuses[
               event.toStatus
             ]}
           </p>

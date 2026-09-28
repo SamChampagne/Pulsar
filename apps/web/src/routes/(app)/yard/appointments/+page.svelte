@@ -493,7 +493,7 @@
     </Field>
     <Field label="Transporteur (optionnel)">
       <EntityPicker
-        endpoint="/transportation/carriers"
+        endpoint="/yard/data/carriers"
         label="Transporteur"
         labelKey="name"
         detailKey="code"

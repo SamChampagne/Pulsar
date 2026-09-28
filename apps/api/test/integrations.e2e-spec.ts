@@ -25,6 +25,7 @@ import type { AddressInfo } from 'node:net';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { WebhooksService } from '../src/core/integrations/webhooks.service';
 
 const ADMIN = { email: 'admin@pulsar.dev', password: 'admin123', tenant: 'acme' };
 const SECRET = 'e2e-webhook-secret';
@@ -48,6 +49,8 @@ describe('Outbound integrations: events → webhooks (e2e)', () => {
   const jsonKey = `webhook-test-json-${suffix}`;
   const slackKey = `webhook-test-slack-${suffix}`;
   const studioKey = `webhook-test-studio-${suffix}`;
+  const redirectKey = `webhook-test-redirect-${suffix}`;
+  const previousPrivateFlag = process.env.WEBHOOK_ALLOW_PRIVATE_URLS;
   const auth = () => ({ Authorization: `Bearer ${token}` });
   let jsonIntegrationId = '';
   let slackIntegrationId = '';
@@ -85,6 +88,11 @@ describe('Outbound integrations: events → webhooks (e2e)', () => {
     process.env.WEBHOOK_ALLOW_PRIVATE_URLS = 'true';
 
     hookServer = createServer((req, res) => {
+      if (req.url === '/redirect') {
+        res.writeHead(307, { Location: '/should-not-receive-secrets' });
+        res.end();
+        return;
+      }
       const chunks: Buffer[] = [];
       req.on('data', (chunk) => chunks.push(chunk as Buffer));
       req.on('end', () => {
@@ -116,7 +124,7 @@ describe('Outbound integrations: events → webhooks (e2e)', () => {
   afterAll(async () => {
     if (prisma) {
       await prisma.integration
-        .deleteMany({ where: { key: { in: [jsonKey, slackKey, studioKey] } } })
+        .deleteMany({ where: { key: { in: [jsonKey, slackKey, studioKey, redirectKey] } } })
         .catch(() => undefined);
       await prisma.carrier
         .deleteMany({ where: { code: { in: carrierCodes } } })
@@ -124,6 +132,8 @@ describe('Outbound integrations: events → webhooks (e2e)', () => {
     }
     await app?.close();
     await new Promise<void>((resolve) => hookServer.close(() => resolve()));
+    if (previousPrivateFlag === undefined) delete process.env.WEBHOOK_ALLOW_PRIVATE_URLS;
+    else process.env.WEBHOOK_ALLOW_PRIVATE_URLS = previousPrivateFlag;
   });
 
   it('S0: creates two ENABLED webhook integrations pointing at the local endpoint', async () => {
@@ -377,5 +387,57 @@ describe('Outbound integrations: events → webhooks (e2e)', () => {
     // Give the (fire-and-forget) bridge a chance to misbehave before asserting silence.
     await new Promise((resolve) => setTimeout(resolve, 3000));
     expect(received.filter((r) => r.headers['x-pulsar-event'] === EVENT)).toHaveLength(0);
+  });
+
+  it('S9: disabling also suspends an existing queued delivery; reactivation preserves it', async () => {
+    const integration = await prisma.integration.findUniqueOrThrow({
+      where: { id: jsonIntegrationId },
+    });
+    const delivery = await prisma.webhookDelivery.create({
+      data: {
+        tenantId: integration.tenantId,
+        integrationId: integration.id,
+        event: EVENT,
+        payload: { event: EVENT, data: { restoredQueue: true } },
+      },
+    });
+    received.length = 0;
+    await app.get(WebhooksService).attempt(delivery.id);
+    expect(received).toHaveLength(0);
+    expect(await prisma.webhookDelivery.findUnique({ where: { id: delivery.id } })).toMatchObject({
+      status: 'PENDING',
+      attempts: 0,
+    });
+    await request(http)
+      .patch(`/api/v1/integrations/${integration.id}`)
+      .set(auth())
+      .send({ status: 'ENABLED' })
+      .expect(200);
+    await app.get(WebhooksService).attempt(delivery.id);
+    expect(received).toHaveLength(1);
+    expect(received[0].headers['x-pulsar-delivery']).toBe(delivery.id);
+    expect(await prisma.webhookDelivery.findUnique({ where: { id: delivery.id } })).toMatchObject({
+      status: 'DELIVERED',
+      attempts: 1,
+    });
+  });
+
+  it('S10: real ping reports a redirect without following it', async () => {
+    const created = await request(http)
+      .post('/api/v1/integrations')
+      .set(auth())
+      .send({
+        key: redirectKey,
+        name: 'E2E redirect refused',
+        config: { url: hookUrl.replace('/hook', '/redirect'), secret: SECRET },
+      })
+      .expect(201);
+    received.length = 0;
+    const ping = await request(http)
+      .post(`/api/v1/integrations/${created.body.id}/test`)
+      .set(auth())
+      .expect(201);
+    expect(ping.body).toMatchObject({ live: true, status: 'blocked', statusCode: 307 });
+    expect(received).toHaveLength(0);
   });
 });

@@ -1,13 +1,15 @@
 import { getAccessToken } from '$lib/stores/auth';
+import {
+  parseAgentTurnResult,
+  failedAgentTurn,
+  agentTurnMessage,
+  type AgentTurnEvent,
+} from '@pulsar/shared';
 
 const BASE = '/api/v1';
 
 /** Parsed frames relayed from the agent-conversation SSE stream. */
-export type AgentStreamEvent =
-  | { type: 'text'; text: string }
-  | { type: 'tool_call'; name: string; args: unknown }
-  | { type: 'error'; message: string }
-  | { type: 'end' };
+export type AgentStreamEvent = AgentTurnEvent;
 
 /**
  * POST a conversation turn and yield parsed SSE events as they arrive.
@@ -23,15 +25,21 @@ export async function* streamAgentTurn(
   text: string,
 ): AsyncGenerator<AgentStreamEvent> {
   const token = getAccessToken();
-  const response = await fetch(`${BASE}/agent-conversations/${conversationId}/messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ text }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${BASE}/agent-conversations/${conversationId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ text }),
+    });
+  } catch {
+    yield* disconnectedStream();
+    return;
+  }
 
   if (!response.ok || !response.body) {
     let message = response.statusText || 'Stream request failed';
@@ -44,18 +52,22 @@ export async function* streamAgentTurn(
       // non-JSON body — keep the status text
     }
     yield { type: 'error', message };
+    yield { type: 'result', result: failedAgentTurn('RUNTIME_FAILURE') };
+    yield { type: 'end' };
     return;
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let hasResult = false;
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+      buffer = buffer.replace(/\r\n/g, '\n');
 
       // Frames are separated by a blank line. Keep the trailing partial.
       let sep: number;
@@ -63,15 +75,33 @@ export async function* streamAgentTurn(
         const frame = buffer.slice(0, sep);
         buffer = buffer.slice(sep + 2);
         const parsed = parseFrame(frame);
+        if (parsed?.type === 'result') hasResult = true;
+        if (parsed?.type === 'end' && !hasResult) break;
         if (parsed) yield parsed;
       }
     }
     // Flush any final frame left without a trailing blank line.
-    const tail = parseFrame(buffer);
-    if (tail) yield tail;
+    const tail = parseFrame(buffer + decoder.decode());
+    if (tail?.type === 'result') hasResult = true;
+    if (tail && (tail.type !== 'end' || hasResult)) yield tail;
+    if (!hasResult) {
+      const result = failedAgentTurn('TRANSPORT_CLOSED');
+      yield { type: 'error', message: agentTurnMessage(result) };
+      yield { type: 'result', result };
+      yield { type: 'end' };
+    }
+  } catch {
+    yield* disconnectedStream();
   } finally {
     reader.releaseLock();
   }
+}
+
+function* disconnectedStream(): Generator<AgentStreamEvent> {
+  const result = failedAgentTurn('TRANSPORT_CLOSED');
+  yield { type: 'error', message: agentTurnMessage(result) };
+  yield { type: 'result', result };
+  yield { type: 'end' };
 }
 
 function parseFrame(frame: string): AgentStreamEvent | null {
@@ -88,7 +118,11 @@ function parseFrame(frame: string): AgentStreamEvent | null {
   let data: Record<string, unknown> = {};
   if (dataText.trim()) {
     try {
-      data = JSON.parse(dataText) as Record<string, unknown>;
+      const value: unknown = JSON.parse(dataText);
+      data =
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? (value as Record<string, unknown>)
+          : {};
     } catch {
       data = {};
     }
@@ -110,6 +144,8 @@ function parseFrame(frame: string): AgentStreamEvent | null {
       };
     case 'end':
       return { type: 'end' };
+    case 'result':
+      return { type: 'result', result: parseAgentTurnResult(data.result) };
     default:
       return null;
   }

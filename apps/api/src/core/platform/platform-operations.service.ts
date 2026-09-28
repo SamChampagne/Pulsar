@@ -10,6 +10,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { ApsRuntimeService } from '../aps/aps-runtime.service';
 import { isInstalled } from '../agents/runtime-install';
+import { DeploymentObservationService, unknownMigrations } from './deployment-observation.service';
 
 /** Platform-plane observations only. No tenant content, credentials or raw errors. */
 @Injectable()
@@ -18,6 +19,7 @@ export class PlatformOperationsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly aps: ApsRuntimeService,
+    private readonly deployment: DeploymentObservationService,
   ) {}
 
   private async bounded<T>(work: Promise<T>, ms = 5000): Promise<T> {
@@ -44,11 +46,12 @@ export class PlatformOperationsService {
       nextAction: string,
     ): ServiceObservation => ({ key, label, state, detail, nextAction, checkedAt });
     const start = Date.now();
-    const [db, aps, queues, tenants] = await Promise.allSettled([
+    const [db, aps, queues, tenants, migrations] = await Promise.allSettled([
       this.bounded(this.prisma.$queryRaw`SELECT 1`.then(() => Date.now() - start)),
       this.bounded(this.aps.status()),
       this.bounded(this.queues()),
       this.bounded(this.tenantCounts()),
+      this.bounded(this.deployment.migrations()),
     ]);
     const services: ServiceObservation[] = [
       observation(
@@ -153,6 +156,10 @@ export class PlatformOperationsService {
     };
     return {
       checkedAt,
+      deploymentChecks: {
+        migrations: migrations.status === 'fulfilled' ? migrations.value : unknownMigrations(),
+        platformMfaEnforced: this.config.get('PLATFORM_MFA_ENFORCED') === 'true',
+      },
       environment: {
         name: label('PULSAR_ENVIRONMENT', 'local'),
         version: label('PULSAR_BUILD_VERSION', 'non renseignée'),

@@ -338,7 +338,7 @@
       <ErrorNotice message={formError} />
       <fieldset class="min-w-0" disabled={saving}>
         <EntityPicker
-          endpoint="/transportation/carriers"
+          endpoint="/billing/freight-audit/data/carriers"
           label="Transporteur"
           bind:value={carrierId}
           disabled={saving}

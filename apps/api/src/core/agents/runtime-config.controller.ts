@@ -10,6 +10,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { RuntimeConfigService } from './runtime-config.service';
 import { AgentRuntimeService } from './agent-runtime.service';
 import { isInstalled } from './runtime-install';
+import { RuntimeHealthService } from './runtime-health.service';
 
 class UpsertRuntimeDto {
   @IsString() @IsIn(RUNTIME_PROVIDERS.map((p) => p.id)) provider!: string;
@@ -26,6 +27,7 @@ export class RuntimeConfigController {
     private readonly runtimeConfig: RuntimeConfigService,
     private readonly runtime: AgentRuntimeService,
     private readonly audit: AuditLogsService,
+    private readonly health: RuntimeHealthService,
   ) {}
 
   @Get('providers')
@@ -50,6 +52,28 @@ export class RuntimeConfigController {
     if (!provider) {
       throw new BadRequestException(`Unknown runtime provider "${dto.provider}"`);
     }
+    if (dto.baseUrl) {
+      let url: URL;
+      try {
+        url = new URL(dto.baseUrl);
+      } catch {
+        throw new BadRequestException('URL du fournisseur invalide');
+      }
+      if (
+        !provider.needsBaseUrl ||
+        !['https:', 'http:'].includes(url.protocol) ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash
+      ) {
+        throw new BadRequestException(
+          'Utilisez une URL HTTP(S) sans identifiants, paramètres ni fragment pour un fournisseur compatible.',
+        );
+      }
+    }
+    if (provider.authMode === 'login' && dto.apiKey)
+      throw new BadRequestException('Ce fournisseur utilise une connexion OAuth, pas une clé API.');
     const config = await this.runtimeConfig.upsert(user.tenantId, {
       provider: provider.id,
       authMode: provider.authMode,
@@ -74,6 +98,12 @@ export class RuntimeConfigController {
     // "can this tenant's agents actually run right now" chip instead of only surfacing the
     // block reason as a toast after a failed "Run now" click. Pure RuntimeReadiness, no secrets.
     return this.runtime.readiness(user.tenantId);
+  }
+
+  @Get('health')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
+  healthStatus() {
+    return this.health.inspect();
   }
 
   @Post('test')

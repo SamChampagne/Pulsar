@@ -26,6 +26,7 @@
     "db:seed": "pnpm --filter @pulsar/database seed",
     "db:studio": "pnpm --filter @pulsar/database studio",
     "agents:setup": "node scripts/setup-agents.mjs",
+    "agents:qualify": "node scripts/qualify-agent-runtime.mjs",
     "aps:setup": "node scripts/setup-aps.mjs"
   },
   "devDependencies": {

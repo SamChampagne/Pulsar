@@ -1,4 +1,7 @@
 <script lang="ts">
+  import DocumentCoordinates from '$lib/components/reference-data/DocumentCoordinates.svelte';
+  import CustomerCredits from '$lib/components/business/CustomerCredits.svelte';
+  import FinancialDocument from '$lib/components/business/FinancialDocument.svelte';
   import { onDestroy } from 'svelte';
   import { auth } from '$lib/stores/auth';
   import { PERMISSIONS } from '@pulsar/shared';
@@ -439,6 +442,8 @@
     transportOrder: { id: string; orderNumber: string; customerReference: string | null } | null;
   }
   interface StatementRow {
+    amountPaid: string;
+    creditedAmount: string;
     id: string;
     invoiceNumber: string;
     status: 'DRAFT' | 'APPROVED' | 'SENT' | 'PAID';
@@ -451,6 +456,7 @@
     sentAt: string | null;
     paidAt: string | null;
     createdAt: string;
+    updatedAt: string;
     customer: { id: string; code: string; name: string; email: string | null };
     lines: StatementLine[];
   }
@@ -593,29 +599,16 @@
 
   async function approveStatement(stmt: StatementRow) {
     try {
-      await api(`/billing/customer-invoices/${stmt.id}/approve`, { method: 'POST' });
+      await api(`/billing/customer-invoices/${stmt.id}/approve`, {
+        method: 'POST',
+        body: { expectedUpdatedAt: stmt.updatedAt },
+      });
       toast.success(`${stmt.invoiceNumber} approved`);
       await loadCustomerData();
     } catch (e) {
       toast.error(
         (mutationError = e instanceof ApiError ? e.message : 'Failed to approve statement'),
       );
-    }
-  }
-
-  async function sendStatement(stmt: StatementRow) {
-    if (
-      !(await confirmAction(
-        `Send statement ${stmt.invoiceNumber} by email to the customer contact?`,
-      ))
-    )
-      return;
-    try {
-      await api(`/billing/customer-invoices/${stmt.id}/send`, { method: 'POST' });
-      toast.success(`${stmt.invoiceNumber} sent`);
-      await loadCustomerData();
-    } catch (e) {
-      toast.error((mutationError = e instanceof ApiError ? e.message : 'Failed to send statement'));
     }
   }
 
@@ -780,7 +773,7 @@
         <Button variant="secondary" onclick={exportCsv}>Export CSV</Button>
         <div class="w-56">
           <EntityPicker
-            endpoint="/transportation/carriers"
+            endpoint="/billing/data/carriers"
             label="Transporteur à facturer"
             labelKey="name"
             placeholder="Transporteur à facturer…"
@@ -882,81 +875,94 @@
       <!-- ══════════════════════════════════════════════════════════ CUSTOMER TAB -->
     {:else}
       <!-- Billable preview panel -->
-      <Card>
-        <h2 class="text-sm font-bold text-ink mb-3">Préparer les relevés clients</h2>
-        <div class="flex gap-2 items-center flex-wrap">
-          <div class="w-64">
-            <EntityPicker
-              endpoint="/transportation/customers"
-              label="Client à facturer"
-              labelKey="name"
-              detailKey="code"
-              placeholder="Client à facturer…"
-              bind:value={selectedCustomerId}
-            />
-          </div>
-          <Button
-            variant="secondary"
-            disabled={!selectedCustomerId || previewLoading || invoiceBusy || !canManageStatements}
-            onclick={previewBillable}
-          >
-            {previewLoading ? 'Loading…' : 'Prévisualiser les ordres facturables'}
-          </Button>
-          {#if previewDone && previewRatable.length > 0}
+      {#if $auth?.tenant.enabledModules.includes('transportation')}
+        <Card>
+          <h2 class="text-sm font-bold text-ink mb-3">Préparer les relevés clients</h2>
+          <div class="flex gap-2 items-center flex-wrap">
+            <div class="w-64">
+              <EntityPicker
+                endpoint="/billing/data/customers"
+                label="Client à facturer"
+                labelKey="name"
+                detailKey="code"
+                placeholder="Client à facturer…"
+                bind:value={selectedCustomerId}
+              />
+            </div>
             <Button
-              disabled={!canManageStatements}
-              loading={invoiceBusy}
-              onclick={() => perform(generateStatements)}
+              variant="secondary"
+              disabled={!selectedCustomerId ||
+                previewLoading ||
+                invoiceBusy ||
+                !canManageStatements}
+              onclick={previewBillable}
             >
-              Generate statements ({previewRatable.length} order{previewRatable.length !== 1
-                ? 's'
-                : ''})
+              {previewLoading ? 'Loading…' : 'Prévisualiser les ordres facturables'}
             </Button>
-          {/if}
-        </div>
-
-        {#if previewDone}
-          <div class="mt-4 flex gap-4 flex-wrap items-start">
-            {#if previewRatable.length > 0}
-              <div class="flex-1 min-w-60">
-                <p class="text-xs text-ink-muted mb-2">Ratable ({previewRatable.length})</p>
-                <Table>
-                  {#snippet head()}<th>Order #</th><th class="text-right">Amount</th>{/snippet}
-                  {#snippet body()}
-                    {#each previewRatable as row (row.orderId)}
-                      <tr>
-                        <td>{row.orderNumber}</td>
-                        <td class="text-right"
-                          >{Number(row.amount).toLocaleString('fr-CA')} {row.currency}</td
-                        >
-                      </tr>
-                    {/each}
-                  {/snippet}
-                </Table>
-              </div>
-            {:else}
-              <p class="text-sm text-ink-muted mt-4">No ratable orders found for this customer.</p>
-            {/if}
-
-            {#if previewUnratable.length > 0}
-              <div class="flex-1 min-w-60">
-                <p class="text-xs text-ink-muted mb-2">Not ratable ({previewUnratable.length})</p>
-                <Table>
-                  {#snippet head()}<th>Order #</th><th>Reason</th>{/snippet}
-                  {#snippet body()}
-                    {#each previewUnratable as row (row.orderId)}
-                      <tr>
-                        <td>{row.orderNumber}</td>
-                        <td><Badge tone="warn">{row.reason}</Badge></td>
-                      </tr>
-                    {/each}
-                  {/snippet}
-                </Table>
-              </div>
+            {#if previewDone && previewRatable.length > 0}
+              <Button
+                disabled={!canManageStatements}
+                loading={invoiceBusy}
+                onclick={() => perform(generateStatements)}
+              >
+                Generate statements ({previewRatable.length} order{previewRatable.length !== 1
+                  ? 's'
+                  : ''})
+              </Button>
             {/if}
           </div>
-        {/if}
-      </Card>
+
+          {#if previewDone}
+            <div class="mt-4 flex gap-4 flex-wrap items-start">
+              {#if previewRatable.length > 0}
+                <div class="flex-1 min-w-60">
+                  <p class="text-xs text-ink-muted mb-2">Ratable ({previewRatable.length})</p>
+                  <Table>
+                    {#snippet head()}<th>Order #</th><th class="text-right">Amount</th>{/snippet}
+                    {#snippet body()}
+                      {#each previewRatable as row (row.orderId)}
+                        <tr>
+                          <td>{row.orderNumber}</td>
+                          <td class="text-right"
+                            >{Number(row.amount).toLocaleString('fr-CA')} {row.currency}</td
+                          >
+                        </tr>
+                      {/each}
+                    {/snippet}
+                  </Table>
+                </div>
+              {:else}
+                <p class="text-sm text-ink-muted mt-4">
+                  No ratable orders found for this customer.
+                </p>
+              {/if}
+
+              {#if previewUnratable.length > 0}
+                <div class="flex-1 min-w-60">
+                  <p class="text-xs text-ink-muted mb-2">Not ratable ({previewUnratable.length})</p>
+                  <Table>
+                    {#snippet head()}<th>Order #</th><th>Reason</th>{/snippet}
+                    {#snippet body()}
+                      {#each previewUnratable as row (row.orderId)}
+                        <tr>
+                          <td>{row.orderNumber}</td>
+                          <td><Badge tone="warn">{row.reason}</Badge></td>
+                        </tr>
+                      {/each}
+                    {/snippet}
+                  </Table>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </Card>
+      {:else}<p
+          class="mb-4 rounded-lg border border-edge bg-surface-muted p-4 text-sm text-ink-muted"
+        >
+          Les relevés issus du transport sont disponibles avec Transport. Les factures Services et
+          les abonnements gardent leurs parcours dédiés; vos clients se gèrent dans Facturation →
+          Données.
+        </p>{/if}
 
       <!-- Statements list -->
       <FilterBar>
@@ -1269,6 +1275,16 @@
     </div>
     <ErrorNotice message={mutationError} />
     <div class="min-w-0 space-y-4">
+      {#key stmt.id + stmt.status}
+        <DocumentCoordinates
+          directoryBase="/billing/data/customers"
+          endpoint={`/billing/customer-invoices/${stmt.id}/coordinates`}
+          documentVersion={stmt.updatedAt}
+          bind:busy={invoiceBusy}
+          canManage={canManageStatements && !invoiceBusy}
+          onchanged={loadCustomerData}
+        />
+      {/key}
       <p class="text-xs text-ink-muted">
         Lines — {stmt.lines.length} order{stmt.lines.length !== 1 ? 's' : ''}
         {#if stmt.customer.email}
@@ -1294,7 +1310,7 @@
                 >{Number(line.amount).toLocaleString('fr-CA')} {stmt.currency}</td
               >
               <td class="text-right">
-                {#if line.priceDetail}
+                {#if line.priceDetail?.rate && line.priceDetail?.result}
                   <button
                     class="text-xs text-accent hover:underline bg-transparent border-none p-0 cursor-pointer"
                     onclick={() => togglePriceDetail(line.id)}
@@ -1304,7 +1320,7 @@
                 {/if}
               </td>
             </tr>
-            {#if line.priceDetail && priceDetailExpanded[line.id]}
+            {#if line.priceDetail?.rate && line.priceDetail?.result && priceDetailExpanded[line.id]}
               {@const pd = line.priceDetail}
               <tr>
                 <td colspan="4" class="p-3">
@@ -1394,6 +1410,16 @@
       {/if}
 
       <!-- Tax template selector (DRAFT only) -->
+      {#if stmt.status !== 'DRAFT'}{#key stmt.id}<FinancialDocument
+            kind="invoice"
+            invoiceId={stmt.id}
+            number={stmt.invoiceNumber}
+            bind:busy={invoiceBusy}
+          />{/key}<CustomerCredits
+          invoiceId={stmt.id}
+          bind:busy={invoiceBusy}
+          onchanged={loadCustomerData}
+        />{/if}
       {#if stmt.status === 'DRAFT'}
         <div class="flex items-center gap-2 flex-wrap">
           <span class="text-xs text-ink-muted">Gabarit de taxe :</span>
@@ -1421,7 +1447,7 @@
     {#if selectedStatement}
       {@const stmt = selectedStatement}
       <div class="flex flex-wrap items-center gap-2">
-        {#if canPay && (stmt.status === 'APPROVED' || stmt.status === 'SENT')}<Button
+        {#if canPay && Number(stmt.totalAmount) > Number(stmt.amountPaid) + Number(stmt.creditedAmount) && (stmt.status === 'APPROVED' || stmt.status === 'SENT')}<Button
             href={paymentLink('CUSTOMER', stmt.customer.id, stmt.id)}
             >Préparer un encaissement</Button
           >{/if}
@@ -1436,11 +1462,7 @@
               <Button variant="danger" onclick={() => perform(() => deleteStatement(stmt))}
                 >Supprimer le brouillon</Button
               >
-            {:else if stmt.status === 'APPROVED'}
-              <Button variant="primary" onclick={() => perform(() => sendStatement(stmt))}
-                >Envoyer</Button
-              >
-            {:else if stmt.status === 'SENT'}
+            {:else if stmt.status === 'SENT' && Number(stmt.totalAmount) > Number(stmt.amountPaid) + Number(stmt.creditedAmount)}
               <Button variant="secondary" onclick={() => perform(() => payStatement(stmt))}
                 >Paiement intégral rapide</Button
               >

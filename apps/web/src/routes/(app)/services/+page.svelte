@@ -72,7 +72,7 @@
     >
       <EmptyState
         title="Organisez votre premier travail client"
-        message="Préparez le client dans Catalogue, créez un projet puis activez-le pour planifier des interventions."
+        message="Créez un projet et ajoutez son client depuis le sélecteur au besoin, sans quitter Services. Activez ensuite le projet pour planifier les interventions."
       />
     </div>{:else}<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
       {#each rows as p}<a

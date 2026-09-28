@@ -39,6 +39,7 @@ packages/database/generated/
 # swallowed the apps/api/src/core/documents/storage/ SOURCES (lost, re-authored
 # in phase 6). Keep this path-anchored.
 /apps/api/storage/
+/storage/
 
 # OSRM extract data (phase 10, see docs/getting-started.md)
 osrm-data/
@@ -46,6 +47,10 @@ osrm-data/
 # Vendored Hermes agent runtime (phase 11): venv + per-machine HERMES_HOME
 hermes-agent/.venv/
 hermes-agent/.hermes-home/
+# Python adapter/test bytecode (not source or tenant runtime data)
+/scripts/__pycache__/
+/scripts/fixtures/__pycache__/
+/deploy/agents/runtime-manifest.generated.json
 
 # Playwright browser E2E (Wave 6): local browser binaries + run artifacts
 apps/web/playwright-report/

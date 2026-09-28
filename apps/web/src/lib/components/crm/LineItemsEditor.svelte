@@ -37,6 +37,7 @@
     error = '',
     onretry,
     onchanged,
+    blocked = $bindable(false),
   }: {
     endpoint: string;
     lines: LineItem[];
@@ -47,6 +48,7 @@
     error?: string;
     onretry: () => void;
     onchanged: () => Promise<void>;
+    blocked?: boolean;
   } = $props();
 
   type NumericField = 'quantity' | 'unitPrice' | 'discountPct';
@@ -66,6 +68,9 @@
   let unitPrice = $state<number | null>(0);
   let addError = $state('');
   const dirty = $derived(!!productId || !!name.trim() || quantity !== 1 || unitPrice !== 0);
+  $effect(() => {
+    blocked = busy || !!editing || showAdd || !!mutationError || !!addError;
+  });
 
   $effect(() => {
     endpoint;
@@ -227,6 +232,24 @@
   </div>
   <ErrorNotice message={error} {onretry} />
   <ErrorNotice message={mutationError} />
+  {#if mutationError}
+    <Button
+      variant="secondary"
+      disabled={busy}
+      onclick={async () => {
+        busy = true;
+        try {
+          await onchanged();
+          mutationError = '';
+          editing = null;
+        } catch (e) {
+          mutationError = e instanceof Error ? e.message : 'Impossible de relire les lignes.';
+        } finally {
+          busy = false;
+        }
+      }}>Vérifier les lignes enregistrées</Button
+    >
+  {/if}
   {#if loading}<Skeleton rows={4} />
   {:else if !error && !lines.length}<div
       class="rounded-md border border-dashed border-edge px-4 py-7 text-center text-sm text-ink-muted"

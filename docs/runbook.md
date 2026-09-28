@@ -22,7 +22,7 @@ at the repo root. Copy it and fill in real values — never commit real secrets.
 | `API_PORT` | no | Default `3000`. This is the **only** port variable the app reads (no generic `PORT` fallback) — `apps/api/src/main.ts`. |
 | `API_URL`, `WEB_URL` | yes in prod | Public base URLs used to build links (OIDC redirects, tender/tracking/driver links, email links). |
 | `EMAIL_DRIVER` (+`SMTP_*`) | yes | `log` (dev/CI, logs only) or `smtp` for real delivery. |
-| `STORAGE_DRIVER` (+`S3_*` / `STORAGE_LOCAL_DIR`) | yes | `local` (filesystem, dev only — not durable across container restarts/redeploys) or `s3` (any S3-compatible bucket). **Use `s3` in production**; `local` storage is lost when the container is replaced. |
+| `STORAGE_DRIVER` (+`S3_*` / `STORAGE_LOCAL_DIR`) | yes | `local` requires a persistent volume and independent backups (OVH mounts `/app/storage`), otherwise replacement loses files. `s3` uses an S3-compatible bucket. Neither mode replaces a tested backup/restore procedure. |
 | Agent runtime (`AGENT_SESSION_SECRET`, `HERMES_ACP_CMD/ARGS/CWD`, `PULSAR_MCP_URL`, `HERMES_HOME_ROOT`) | only if using AI employee-agents | Best-effort subsystem — see §7. Requires the vendored `hermes-agent/` Python venv (`pnpm agents:setup`), which is **not** part of the API container image (see §3). |
 | APS (`APS_PORT`, `APS_API_KEY`, `APS_DATABASE_URL`, `APS_AUTOSTART`) | only if using manufacturing/APS planning | Same posture as the agent runtime: vendored Python sidecar (`services/aps`, `pnpm aps:setup`), not part of the API image. Set `APS_AUTOSTART=false` if you run it as its own container/process instead. |
 
@@ -56,11 +56,13 @@ docker build -f apps/api/Dockerfile -t pulsar-api .
 docker build -f apps/web/Dockerfile -t pulsar-web .
 ```
 
-- **`apps/api/Dockerfile`**: `node:20-alpine`, multi-stage. Installs with pnpm,
+- **`apps/api/Dockerfile`**: `node:22-alpine`, multi-stage. Installs with pnpm 10,
   builds in the same order as the root `build` script (`shared` → `database`
-  [`prisma generate` + `tsc`] → `api`). The runtime stage re-runs
-  `prisma generate` (so the query engine binary matches the alpine/musl image)
-  and then starts `node apps/api/dist/main.js`. Exposes `3000` (`API_PORT`).
+  [`prisma generate` + `tsc`] → `api`). The client is generated at build time
+  for the same Alpine/musl base, never regenerated at startup. Runs as `node`
+  (UID/GID 1000), starts `node apps/api/dist/main.js`, exposes `3000` (`API_PORT`).
+  OVH adds a read-only root and drops capabilities. Existing root-owned document
+  volumes need the scoped migration in [the OVH guide](../deploy/ovh/README.md).
 - **`apps/web/Dockerfile`**: builds the static SPA (`pnpm --filter @pulsar/web
   build`, output `apps/web/build/` per `adapter-static`'s default), then serves
   it from an `nginx:alpine` stage. The nginx config is rendered at container

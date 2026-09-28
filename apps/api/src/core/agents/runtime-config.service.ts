@@ -69,30 +69,53 @@ export class RuntimeConfigService {
 
   /**
    * Creates or updates the tenant's runtime config. A non-empty `apiKey` is
-   * encrypted at rest; when absent, the existing `apiKeyEnc` is preserved.
+   * encrypted at rest; an absent key is retained ONLY for the same identity.
    */
   async upsert(tenantId: string, input: UpsertRuntimeInput): Promise<AgentRuntimeConfig> {
     const hasKey = typeof input.apiKey === 'string' && input.apiKey.length > 0;
     const apiKeyEnc = hasKey ? this.crypto.encryptString(input.apiKey as string) : undefined;
 
-    return this.prisma.agentRuntimeConfig.upsert({
-      where: { tenantId },
-      create: {
-        tenantId,
-        provider: input.provider,
-        authMode: input.authMode,
-        defaultModel: input.defaultModel ?? null,
-        baseUrl: input.baseUrl ?? null,
-        ...(apiKeyEnc !== undefined ? { apiKeyEnc } : {}),
-      },
-      update: {
-        provider: input.provider,
-        authMode: input.authMode,
-        defaultModel: input.defaultModel ?? null,
-        baseUrl: input.baseUrl ?? null,
-        // Preserve existing apiKeyEnc when no new key is supplied.
-        ...(apiKeyEnc !== undefined ? { apiKeyEnc } : {}),
-      },
+    return this.prisma.$transaction(async (tx) => {
+      // Serialize read/preserve/write: changing provider or endpoint must never
+      // forward the previous provider's credential to a different destination.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`agent-runtime:${tenantId}`}, 0))`;
+      const current = await tx.agentRuntimeConfig.findUnique({ where: { tenantId } });
+      const identityChanged =
+        !!current &&
+        (current.provider !== input.provider ||
+          current.authMode !== input.authMode ||
+          current.baseUrl !== (input.baseUrl ?? null));
+      const changed =
+        !current ||
+        identityChanged ||
+        hasKey ||
+        current.defaultModel !== (input.defaultModel ?? null);
+      return tx.agentRuntimeConfig.upsert({
+        where: { tenantId },
+        create: {
+          tenantId,
+          provider: input.provider,
+          authMode: input.authMode,
+          defaultModel: input.defaultModel ?? null,
+          baseUrl: input.baseUrl ?? null,
+          ...(apiKeyEnc !== undefined ? { apiKeyEnc } : {}),
+        },
+        update: {
+          provider: input.provider,
+          authMode: input.authMode,
+          defaultModel: input.defaultModel ?? null,
+          baseUrl: input.baseUrl ?? null,
+          ...(input.authMode === 'login'
+            ? { apiKeyEnc: null }
+            : apiKeyEnc !== undefined
+              ? { apiKeyEnc }
+              : identityChanged
+                ? { apiKeyEnc: null }
+                : {}),
+          ...(identityChanged ? { connectedAt: null } : {}),
+          ...(changed ? { lastTestAt: null, lastTestOk: null, availableModels: [] } : {}),
+        },
+      });
     });
   }
 
@@ -108,29 +131,31 @@ export class RuntimeConfigService {
     return { config, decryptedKey };
   }
 
-  async markConnected(tenantId: string): Promise<void> {
-    await this.prisma.agentRuntimeConfig.update({
-      where: { tenantId },
+  async markConnected(tenantId: string, expectedUpdatedAt?: Date): Promise<void> {
+    const result = await this.prisma.agentRuntimeConfig.updateMany({
+      where: { tenantId, ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}) },
       data: { connectedAt: new Date() },
     });
+    if (result.count !== 1)
+      throw new BadRequestException('La configuration a changé; reconnectez le fournisseur.');
   }
 
   async markTested(
     tenantId: string,
     ok: boolean,
     models?: RuntimeModelOption[],
+    expectedUpdatedAt?: Date,
   ): Promise<void> {
-    await this.prisma.agentRuntimeConfig.update({
-      where: { tenantId },
+    const result = await this.prisma.agentRuntimeConfig.updateMany({
+      where: { tenantId, ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}) },
       data: {
         lastTestAt: new Date(),
         lastTestOk: ok,
-        // Only refresh the model cache on a successful probe with a non-empty list.
-        ...(ok && models && models.length > 0
-          ? { availableModels: models as unknown as Prisma.InputJsonValue }
-          : {}),
+        ...(ok && models ? { availableModels: models as unknown as Prisma.InputJsonValue } : {}),
       },
     });
+    if (result.count !== 1)
+      throw new BadRequestException('La configuration a changé; relancez le contrôle.');
   }
 
   /**

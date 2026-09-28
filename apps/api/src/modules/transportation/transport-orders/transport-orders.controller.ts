@@ -9,6 +9,7 @@ import { RequirePermissions } from '../../../common/decorators/require-permissio
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
 import {
   CreateTransportOrderDto,
+  ConfirmTransportOrderDto,
   CreateTransportOrderFromSalesOrderDto,
   PlanTransportOrderDto,
   ShipmentSplitDto,
@@ -76,14 +77,22 @@ export class TransportOrdersController {
 
   @Patch(':id')
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.ORDERS_MANAGE)
-  update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateTransportOrderDto) {
-    return this.orders.update(user.tenantId, id, dto);
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateTransportOrderDto,
+  ) {
+    return this.orders.update(user.tenantId, id, dto, user.id);
   }
 
   @Post(':id/confirm')
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.ORDERS_MANAGE)
-  confirm(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.orders.confirm(user.tenantId, user.id, id);
+  confirm(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: ConfirmTransportOrderDto,
+  ) {
+    return this.orders.confirm(user.tenantId, user.id, id, dto?.expectedUpdatedAt);
   }
 
   @Post(':id/plan')
@@ -95,7 +104,11 @@ export class TransportOrdersController {
   /** Appends an additional shipment to a PLANNED order (post-planning re-split). */
   @Post(':id/shipments')
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
-  addShipment(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ShipmentSplitDto) {
+  addShipment(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: ShipmentSplitDto,
+  ) {
     return this.orders.addShipment(user.tenantId, user.id, id, dto);
   }
 

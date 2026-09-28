@@ -1,4 +1,11 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import { PERMISSIONS } from '@pulsar/shared';
+import { Prisma } from '@pulsar/database';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { OwnershipService } from '../../prisma/ownership.service';
 import type { CryptoService } from '../crypto/crypto.service';
@@ -177,12 +184,13 @@ describe('IntegrationsService.eventCatalog', () => {
 
 /** Harness for tests that need `update()` on a specific stored integration row. */
 function updateHarness(integration: { id: string; tenantId: string; key: string; config: any }) {
+  const version = new Date('2026-09-22T12:00:00.000Z');
   const updates: any[] = [];
   const prisma = {
     integration: {
       findFirst: async ({ where }: any) => {
         if (where.id !== integration.id || where.tenantId !== integration.tenantId) return null;
-        return { ...integration };
+        return { ...integration, updatedAt: version };
       },
       update: async ({ where, data }: any) => {
         updates.push({ where, data });
@@ -204,6 +212,7 @@ function updateHarness(integration: { id: string; tenantId: string; key: string;
     svc: new IntegrationsService(prisma, crypto, webhooks, audit, config, ownership),
     updates,
     integration,
+    prisma,
   };
 }
 
@@ -256,5 +265,107 @@ describe('IntegrationsService.update — eventsBackfilledAt stamping (finding B)
     await svc.update('t1', 'int_1', { config: { url: 'https://erp.example.com/v2' } });
 
     expect(integration.config.eventsBackfilledAt).toBeUndefined();
+  });
+});
+
+describe('IntegrationsService.update — status-only activation gates', () => {
+  it('rejects a concurrent target change instead of activating the new target with stale rights', async () => {
+    const { svc, prisma } = updateHarness({
+      id: 'int_1',
+      tenantId: 't1',
+      key: 'webhook-x',
+      config: { url: 'https://hook.example.com' },
+    });
+    const update = jest.spyOn(prisma.integration, 'update').mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('stale row', {
+        code: 'P2025',
+        clientVersion: 'test',
+      }),
+    );
+    await expect(svc.update('t1', 'int_1', { status: 'ENABLED' })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(update.mock.calls[0][0].where).toEqual({
+      id: 'int_1',
+      tenantId: 't1',
+      updatedAt: new Date('2026-09-22T12:00:00.000Z'),
+    });
+    expect(update.mock.calls[0][0].data.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it('requires the existing generic inbound target permission on activation', async () => {
+    const { svc, updates } = updateHarness({
+      id: 'int_1',
+      tenantId: 't1',
+      key: 'inbound-orders',
+      config: { target: 'transport-order.create', inboundSecret: 'stored-secret' },
+    });
+    await expect(
+      svc.update('t1', 'int_1', { status: 'ENABLED' }, { id: 'limited', permissions: [] }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(updates).toHaveLength(0);
+    await svc.update(
+      't1',
+      'int_1',
+      { status: 'ENABLED' },
+      {
+        id: 'allowed',
+        permissions: [PERMISSIONS.TRANSPORTATION.ORDERS_MANAGE],
+      },
+    );
+    expect(updates[0].data.config).toBeUndefined();
+  });
+
+  it('requires the EDI target permission even when config is omitted', async () => {
+    const { svc, updates } = updateHarness({
+      id: 'int_1',
+      tenantId: 't1',
+      key: 'edi-carrier',
+      config: { format: 'x12', customerId: 'customer_1' },
+    });
+    await expect(
+      svc.update('t1', 'int_1', { status: 'ENABLED' }, { id: 'limited', permissions: [] }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(updates).toHaveLength(0);
+    await svc.update(
+      't1',
+      'int_1',
+      { status: 'ENABLED' },
+      {
+        id: 'allowed',
+        permissions: [PERMISSIONS.TRANSPORTATION.ORDERS_MANAGE],
+      },
+    );
+    expect(updates).toHaveLength(1);
+    expect(updates[0].data.config).toBeUndefined();
+  });
+
+  it('revalidates legacy private URLs without rewriting stored secrets', async () => {
+    const { svc, updates } = updateHarness({
+      id: 'int_1',
+      tenantId: 't1',
+      key: 'webhook-old',
+      config: { url: 'http://127.0.0.1', secret: 'preserve' },
+    });
+    await expect(svc.update('t1', 'int_1', { status: 'ENABLED' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(updates).toHaveLength(0);
+    // An operator must still be able to disable an unsafe existing connection.
+    await svc.update('t1', 'int_1', { status: 'DISABLED' });
+    expect(updates[0].data.config).toBeUndefined();
+  });
+
+  it('does not activate a connection from another tenant', async () => {
+    const { svc, updates } = updateHarness({
+      id: 'int_1',
+      tenantId: 't1',
+      key: 'webhook-x',
+      config: {},
+    });
+    await expect(svc.update('t2', 'int_1', { status: 'ENABLED' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(updates).toHaveLength(0);
   });
 });

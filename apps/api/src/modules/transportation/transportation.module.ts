@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { DocumentCoordinatesModule } from '../../core/reference-data/document-coordinates.module';
+import { OperationalRecordsModule } from '../../core/reference-data/operational-records.module';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
 import { CoreLocationsModule } from '../../core/locations/locations.module';
 import { DocumentsModule } from '../../core/documents/documents.module';
@@ -8,16 +10,11 @@ import { NotificationsModule } from '../../core/notifications/notifications.modu
 import { OperatingModule } from '../../core/operating/operating.module';
 import { DelayDetectionService } from './exceptions/delay-detection.service';
 import { CustomersController } from './customers/customers.controller';
-import { CustomersService } from './customers/customers.service';
 import { LocationsController } from './locations/locations.controller';
 import { CarriersController } from './carriers/carriers.controller';
-import { CarriersService } from './carriers/carriers.service';
 import { DriversController } from './drivers/drivers.controller';
-import { DriversService } from './drivers/drivers.service';
 import { VehiclesController } from './vehicles/vehicles.controller';
-import { VehiclesService } from './vehicles/vehicles.service';
 import { TrailersController } from './trailers/trailers.controller';
-import { TrailersService } from './trailers/trailers.service';
 import { RatesController } from './rates/rates.controller';
 import { RatesService } from './rates/rates.service';
 import { TransportOrdersController } from './transport-orders/transport-orders.controller';
@@ -58,7 +55,18 @@ import { CustomFieldsController } from './custom-fields/custom-fields.controller
  * tenants without the module enabled get a 403 from ModulesGuard.
  */
 @Module({
-  imports: [AuditLogsModule, CoreLocationsModule, CustomFieldsModule, DocumentsModule, IntegrationsModule, ModuleRegistryModule, NotificationsModule, OperatingModule],
+  imports: [
+    DocumentCoordinatesModule,
+    OperationalRecordsModule,
+    AuditLogsModule,
+    CoreLocationsModule,
+    CustomFieldsModule,
+    DocumentsModule,
+    IntegrationsModule,
+    ModuleRegistryModule,
+    NotificationsModule,
+    OperatingModule,
+  ],
   controllers: [
     CustomersController,
     LocationsController,
@@ -83,11 +91,6 @@ import { CustomFieldsController } from './custom-fields/custom-fields.controller
     PublicLinksController,
   ],
   providers: [
-    CustomersService,
-    CarriersService,
-    DriversService,
-    VehiclesService,
-    TrailersService,
     RatesService,
     TransportOrdersService,
     ShipmentsService,
@@ -117,11 +120,7 @@ import { CustomFieldsController } from './custom-fields/custom-fields.controller
     ShipmentsService,
     TendersService,
     AnalyticsService,
-    VehiclesService,
-    TrailersService,
-    // Consumed by ConnectModule (CSV importer).
-    CustomersService,
-    CarriersService,
+    OperationalRecordsModule,
   ],
 })
 export class TransportationModule {}
