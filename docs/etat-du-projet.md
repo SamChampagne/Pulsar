@@ -1,5 +1,12 @@
 # État du projet — point de reprise
 
+> **Complément CI Yard — 28 septembre 2026**, même PR #82. Le run `36476942641`
+> élimine les échecs initiaux et les cas instables : cinq jobs verts, 345 tests
+> navigateur réussis, 114 ignorés et un échec de fixture Yard. Référentiels
+> `/yard/data/*`, fermeture du sélecteur animé et POST unique désormais contrôlés;
+> 45 exécutions du poste Yard + 10 dossiers liés réussis localement sans retry.
+> CI du nouveau commit à vérifier; aucun code applicatif modifié.
+
 > **Correctif CI navigateur — 28 septembre 2026**, [PR #82](https://github.com/SamChampagne/Pulsar/pull/82),
 > branche `codex/pilot-business-depth`. Le premier run distant passe APS, types,
 > unités, API HTTP et build; navigateur rouge (13 échecs, 24 cas instables).

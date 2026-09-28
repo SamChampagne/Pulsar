@@ -191,8 +191,8 @@ test('legacy gate inherits the booked direction and resets an incompatible site 
   await page.route('**/api/v1/yard/spots', (r) => r.fulfill({ json: [] }));
   await page.route('**/api/v1/yard/visits', (r) => r.fulfill({ json: [] }));
   await page.route('**/api/v1/yard/custom-fields?**', (r) => r.fulfill({ json: [] }));
-  for (const entity of ['trailers', 'carriers'])
-    await page.route(`**/api/v1/transportation/${entity}?**`, (r) =>
+  for (const entity of ['trailers', 'carriers', 'drivers'])
+    await page.route(`**/api/v1/yard/data/${entity}?**`, (r) =>
       r.fulfill({ json: { items: [], total: 0 } }),
     );
   await page.route('**/api/v1/locations?**', (r) =>

@@ -75,6 +75,15 @@ sur l'ensemble de ces deux exécutions; ce n'est pas une unique passe verte.
 Le nouveau test de préférences passe aussi trois répétitions consécutives.
 La CI GitHub du commit correctif reste l'autorité avant fusion/déploiement.
 
+Complément Yard : le run distant `36476942641` passe les cinq autres jobs,
+**345 cas navigateur / 114 ignorés**, sans cas instable, mais échoue sur l'arrivée
+incertaine Yard. Le fixture utilisait encore les catalogues TMS et le test
+interagissait avec le formulaire avant disparition du sélecteur animé. Mocks
+Yard et poste de garde alignés sur `/yard/data/*`, attente de disparition du
+dialogue (pas de pause arbitraire), contrôle du corps et d'un unique POST.
+Vérification locale : **15 scénarios Yard répétés trois fois (45 réussites)**
+et **10 dossiers Yard réussis**, sans retry. Aucune assertion d'alerte supprimée.
+
 ## Déployer en environnement de test, pas directement chez un client
 
 1. Attendre/revoir les checks de la PR unique, fusionner puis relever le SHA exact.
