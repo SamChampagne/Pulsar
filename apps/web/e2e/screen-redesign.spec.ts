@@ -179,9 +179,9 @@ test('desktop reset uses an in-app confirmation and can be cancelled without wri
 });
 
 for (const [route, trigger, title] of [
-  ['/billing/budgets', '+ Nouveau budget', 'Nouveau budget'],
+  ['/billing/budgets', 'Nouveau budget', 'Nouveau budget'],
   ['/billing/subscriptions', '+ Nouvel abonnement', 'Nouvel abonnement'],
-  ['/billing/fixed-assets', '+ Nouvelle immobilisation', 'Nouvelle immobilisation'],
+  ['/billing/fixed-assets', 'Nouvelle immobilisation', 'Nouvelle immobilisation'],
   ['/billing/banking', '+ Nouveau compte', 'Nouveau compte bancaire'],
 ]) {
   test(`billing editor is a bounded accessible dialog: ${route}`, async ({ page }) => {
@@ -190,12 +190,14 @@ for (const [route, trigger, title] of [
     await page.getByRole('button', { name: trigger, exact: true }).click();
     const dialog = page.getByRole('dialog', { name: title, exact: true });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole('button', { name: 'Fermer', exact: true })).toBeFocused();
+    // The asset form also has a footer action labelled Fermer; target the header icon.
+    await expect(dialog.getByLabel('Fermer', { exact: true })).toBeFocused();
     await page.setViewportSize({ width: 390, height: 680 });
     expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(390);
     expect((await dialog.boundingBox())!.height).toBeLessThanOrEqual(680);
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole('button', { name: trigger, exact: true })).toBeFocused();
   });
 }
 

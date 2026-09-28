@@ -229,7 +229,10 @@ test('documentation includes business connections and launches the six-step qual
   await login(page, account.credentials);
   await page.goto('/documentation?module=quality');
   await expect(page.getByRole('article')).toContainText('Une mesure exige une unité');
-  await expect(page.getByRole('article')).toContainText('Aucune quarantaine physique');
+  await expect(page.getByRole('article')).toContainText(
+    'Qualité ne bloque ni ne libère automatiquement le stock',
+  );
+  await expect(page.getByRole('article')).toContainText('Contrôle de lot et libération documentée');
   await page.getByRole('button', { name: 'Lancer le tutoriel' }).click();
   const tour = page.getByTestId('module-tour');
   await expect(tour).toContainText('Bienvenue dans Qualité');

@@ -1,6 +1,7 @@
 import { test, expect, type Page, type APIRequestContext } from './fixtures';
 import { login, DEMO_USER, tutorialAccount } from './helpers';
 import { TOUR_MODULE_KEYS } from '@pulsar/shared';
+import { MODULE_LESSONS } from '../src/lib/help/module-lessons';
 import { randomUUID } from 'node:crypto';
 let token: string, partner: any, item: any, currentUser: any;
 let pageErrors: string[] = [];
@@ -240,14 +241,23 @@ for (const [key, path, label] of [
     });
     await page.goto(path);
     const tour = page.getByTestId('module-tour');
-    await expect(tour).toContainText('Bienvenue dans ' + (key === 'support' ? 'le SAV' : label));
-    for (let step = 0; step < (key === 'purchasing' ? 6 : key === 'services' ? 5 : 4); step++) {
-      await tour.getByRole('button', { name: 'Suivant', exact: true }).click();
-      if (key === 'services' && step === 2) {
+    const lessons = MODULE_LESSONS[key];
+    const count = lessons?.length ?? 5;
+    await expect(tour).toContainText(
+      key === 'catalog'
+        ? 'Distinguer produit et prestation'
+        : 'Bienvenue dans ' + (key === 'support' ? 'le SAV' : label),
+    );
+    for (let step = 0; step < count; step++) {
+      await expect(tour).toContainText(`Étape ${step + 1} sur ${count}`);
+      if (lessons) await expect(tour.getByRole('heading')).toHaveText(lessons[step].title);
+      if (key === 'services' && lessons[step].title === 'Faire approuver le travail') {
         await tour.getByRole('button', { name: 'Explorer : Feuilles de temps' }).click();
         await expect(page).toHaveURL(/\/services\/time$/);
         await expect(tour).toContainText('Faire approuver le travail');
       }
+      if (step < count - 1)
+        await tour.getByRole('button', { name: 'Suivant', exact: true }).click();
     }
     await tour.getByRole('button', { name: 'Terminer', exact: true }).click();
     await expect(tour).toHaveCount(0);

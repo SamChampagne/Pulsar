@@ -1,5 +1,19 @@
 # État du projet — point de reprise
 
+> **Correctif CI navigateur — 28 septembre 2026**, [PR #82](https://github.com/SamChampagne/Pulsar/pull/82),
+> branche `codex/pilot-business-depth`. Le premier run distant passe APS, types,
+> unités, API HTTP et build; navigateur rouge (13 échecs, 24 cas instables).
+> Mocks Billing autonomes, contrats/libellés/tutoriels actualisés; connexion UI
+> sans fetch de préférences en vol pendant les navigations, sans écriture de
+> complétion fictive. Test utilisateur isolé ajouté et réussi trois fois.
+> Recette complète Docker jetable, 1 worker, aucun retry : **345 réussis / 114
+> ignorés / 1 échec de fixture plateforme**. Compte de test corrigé uniquement
+> dans cette base, puis parcours plateforme réussi séparément : les **346 cas
+> exécutables** ont donc réussi, mais pas dans une unique passe verte locale.
+> Les 114 ignorés exigent des fixtures HTTP dédiées, aucun nouveau skip ajouté.
+> Aucun code métier, secret réel, base de développement ou VPS modifié.
+> Nouvelle CI distante à vérifier avant fusion; [diagnostic et limites](./releases/pilot-enterprise-2026-09-28.md).
+
 > **IA A2c.1 / préparation PR serveur — 28 septembre 2026**, branche
 > `codex/pilot-business-depth`. [Preuves et limites](./plans/ai-linux-qualification.md).
 > Banc Linux hors ligne : **9 contrôles ACP** sur Hermes 0.16.0, Python 3.12.13,

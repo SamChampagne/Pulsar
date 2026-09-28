@@ -63,24 +63,25 @@ export async function tutorialAccount(request: APIRequestContext) {
 /** Logs in through the real UI form and waits for the authenticated landing route. */
 export async function login(page: Page, credentials = DEMO_USER): Promise<void> {
   // Domain tests exercise experienced users. First-entry/replay tours have their own suite.
-  // Intercept only the self-preference read; never change the seeded user's onboarding state.
-  await page.route('**/api/v1/me/preferences', async (route) => {
-    if (route.request().method() !== 'GET') return route.continue();
-    const response = await route.fetch();
-    if (!response.ok()) return route.fulfill({ response });
-    return route.fulfill({
-      response,
-      json: {
-        ...(await response.json()),
-        moduleTours: Object.fromEntries(
-          TOUR_MODULE_KEYS.map((k) => [
-            k,
-            { version: moduleTourVersion(k), step: 0, status: 'COMPLETED' },
-          ]),
-        ),
-      },
-    });
+  // Read this user's real preferences BEFORE installing browser routes. Several shell
+  // components load them concurrently: route.fetch() in each handler could still be
+  // awaiting the backend when the test navigated away. Do not mask those failures or
+  // write fake tutorial completion to the account. Preference persistence tests remove
+  // this read-only snapshot explicitly; writes always reach the real API.
+  const sessionResponse = await page.request.post('/api/v1/auth/login', { data: credentials });
+  expect(sessionResponse.ok()).toBeTruthy();
+  const session = await sessionResponse.json();
+  const response = await page.request.get('/api/v1/me/preferences', {
+    headers: { Authorization: `Bearer ${session.accessToken}` },
   });
+  expect(response.ok()).toBeTruthy();
+  const preferences = {
+    ...(await response.json()),
+    moduleTours: EXPERIENCED_PREFERENCES.moduleTours,
+  };
+  await page.route('**/api/v1/me/preferences', (route) =>
+    route.request().method() === 'GET' ? route.fulfill({ json: preferences }) : route.continue(),
+  );
   await page.goto('/login');
   await page.getByLabel('Email').fill(credentials.email);
   await page.getByLabel('Password').fill(credentials.password);
@@ -93,5 +94,9 @@ export async function login(page: Page, credentials = DEMO_USER): Promise<void> 
       response.request().method() === 'GET',
   );
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await Promise.all([page.waitForURL('**/dashboard'), preferencesReady]);
+  const [, initialPreferences] = await Promise.all([
+    page.waitForURL('**/dashboard'),
+    preferencesReady,
+  ]);
+  await initialPreferences.finished();
 }

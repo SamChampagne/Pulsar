@@ -13,6 +13,7 @@ const statement = {
   currency: 'CAD',
   totalAmount: '120',
   amountPaid: '0',
+  creditedAmount: '0',
   taxAmount: '0',
   taxDetail: null,
   taxTemplateId: null,
@@ -88,14 +89,14 @@ async function mockBilling(page: Page) {
       ],
     }),
   );
-  await page.route('**/api/v1/transportation/customers**', (r) =>
+  await page.route('**/api/v1/billing/payments/data/customers**', (r) =>
     r.fulfill({
       json: new URL(r.request().url()).pathname.endsWith('/customers')
         ? { items: [customer], total: 1 }
         : customer,
     }),
   );
-  await page.route('**/api/v1/transportation/carriers**', (r) =>
+  await page.route('**/api/v1/billing/payments/data/carriers**', (r) =>
     r.fulfill({
       json: new URL(r.request().url()).pathname.endsWith('/carriers')
         ? { items: [carrier], total: 1 }
@@ -135,28 +136,33 @@ test('late invoice responses cannot overwrite a newly selected party', async ({ 
       json: [{ ...openInvoice, id: 'second-invoice', invoiceNumber: 'CI-SECOND' }],
     });
   });
-  await page.route('**/api/v1/transportation/customers**', (r) =>
+  await page.route('**/api/v1/billing/payments/data/customers**', (r) =>
     r.fulfill({
       json: new URL(r.request().url()).pathname.endsWith('/customers')
         ? { items: [{ id: 'second-customer', name: 'Second client' }], total: 1 }
         : { id: 'second-customer', name: 'Second client' },
     }),
   );
-  await page.goto(`/billing/payments/new?party=${customer.id}`);
-  await expect.poll(() => oldRequested).toBe(true);
-  await page.getByRole('button', { name: /^Client :/ }).click();
-  const picker = page.getByRole('dialog', { name: 'Client', exact: true });
-  await picker.getByRole('option', { name: 'Second client', exact: true }).click();
-  await expect(page.getByLabel('Allocation · CI-SECOND', { exact: true })).toBeVisible();
-  const oldFinished = page.waitForResponse(
-    (r) =>
-      r.url().includes('/open-invoices?') &&
-      new URL(r.url()).searchParams.get('partyId') === customer.id,
-  );
-  releaseOld();
-  await oldFinished;
-  await expect(page.getByLabel('Allocation · CI-SECOND', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Allocation · CI-UI-1', { exact: true })).toHaveCount(0);
+  try {
+    await page.goto(`/billing/payments/new?party=${customer.id}`);
+    await expect.poll(() => oldRequested).toBe(true);
+    await page.getByRole('button', { name: /^Client :/ }).click();
+    const picker = page.getByRole('dialog', { name: 'Client', exact: true });
+    await picker.getByRole('option', { name: 'Second client', exact: true }).click();
+    await expect(page.getByLabel('Allocation · CI-SECOND', { exact: true })).toBeVisible();
+    const oldFinished = page.waitForResponse(
+      (r) =>
+        r.url().includes('/open-invoices?') &&
+        new URL(r.url()).searchParams.get('partyId') === customer.id,
+    );
+    releaseOld();
+    await oldFinished;
+    await expect(page.getByLabel('Allocation · CI-SECOND', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Allocation · CI-UI-1', { exact: true })).toHaveCount(0);
+  } finally {
+    // The route-draining fixture must also finish when an earlier assertion fails.
+    releaseOld();
+  }
 });
 
 test('unavailable invoices are shown as an error, not an empty account, and retry recovers', async ({
@@ -275,7 +281,7 @@ test('a linked invoice preselects only itself and client search is not limited t
   await page.getByRole('button', { name: 'Client : Atelier Boréal' }).click();
   const picker = page.getByRole('dialog', { name: 'Client', exact: true });
   const request = page.waitForRequest(
-    (r) => r.url().includes('/transportation/customers?') && r.url().includes('search=Bor'),
+    (r) => r.url().includes('/billing/payments/data/customers?') && r.url().includes('search=Bor'),
   );
   await picker.getByLabel('Rechercher : client').fill('Bor');
   expect(new URL((await request).url()).searchParams.get('pageSize')).toBe('20');

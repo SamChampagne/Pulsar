@@ -1,6 +1,7 @@
 # Version candidate pilote — 28 septembre 2026
 
-Branche : `codex/pilot-business-depth`, destinée à une seule PR vers `main`.
+Branche : `codex/pilot-business-depth`, [PR unique #82](https://github.com/SamChampagne/Pulsar/pull/82)
+vers `main`.
 Cette livraison consolide les lots accumulés depuis la fusion des workflows
 utilisateur; ce n'est pas seulement une mise à jour IA.
 
@@ -40,6 +41,39 @@ plans de chaque domaine. L'audit enterprise n'est pas déclaré entièrement clo
   une réussite des unités ne prouve pas tous les parcours métier/browser.
 - Limite locale APS : son ancien test autonome échoue avec base APS indisponible;
   le profil OVH ne fournit ni APS ni le runtime IA de production.
+
+## Correctif CI navigateur de la PR #82
+
+Le premier run `36433929068` passe APS, typecheck, unités, API HTTP et build Web,
+mais échoue côté navigateur : 13 échecs, 24 cas instables récupérés au retry,
+114 cas non exécutés faute de fixtures isolées et 308 réussites au premier essai.
+
+- Les mocks Finance utilisent désormais les référentiels propres à Billing,
+  sans dépendre des anciennes URL Transportation; la facture factice inclut le
+  montant crédité, comme le contrat API réel.
+- Navigation Portail, dialogues Finance, documentation Qualité et guides métier
+  testent les libellés/parcours actuels; la traversée des guides spécialisés
+  vérifie chaque titre et la persistance de leur complétion.
+- Le helper de connexion lit les préférences réelles avant la navigation et
+  installe ensuite un snapshot GET immédiat. Il ne laisse plus de `route.fetch`
+  en attente pendant les changements de document. Les écritures restent réelles,
+  les faux tutoriels terminés ne sont jamais enregistrés sur le compte.
+- Un test dédié utilise un nouvel utilisateur, plusieurs navigations et un
+  fuseau distinct; il contrôle l'UI et les préférences réellement conservées.
+  Les requêtes volontairement retardées sont libérées même si une assertion échoue.
+
+Aucun changement du code applicatif, des retries/délais CI ou des règles métier.
+Aucun nouveau `skip`; les cas nécessitant leurs fixtures HTTP dédiées restent une
+limite de couverture du profil CI standard, et non des réussites navigateur.
+
+Validation locale sur Docker jetable, 1 worker et `--retries=0` : **345 réussites,
+114 ignorés, 1 échec** en 10,6 minutes. Cet échec supplémentaire est dû aux
+identifiants de la fixture administrateur de cette copie (différents du seed CI),
+pas au produit : après création du compte de test attendu dans cette seule base,
+le scénario plateforme passe séparément. Les 346 cas exécutables passent donc
+sur l'ensemble de ces deux exécutions; ce n'est pas une unique passe verte.
+Le nouveau test de préférences passe aussi trois répétitions consécutives.
+La CI GitHub du commit correctif reste l'autorité avant fusion/déploiement.
 
 ## Déployer en environnement de test, pas directement chez un client
 
