@@ -258,17 +258,9 @@ test('first quality visit starts automatically and persists completion through t
 }) => {
   const account = await tutorialAccount(request);
   await login(page, account.credentials);
-  let started = false;
-  await page.route('**/api/v1/me/preferences', async (route) => {
-    if (route.request().method() !== 'GET') {
-      if (route.request().postDataJSON()?.moduleTour?.moduleKey === 'quality') started = true;
-      return route.continue();
-    }
-    const response = await route.fetch();
-    const preferences = await response.json();
-    if (!started) delete preferences.moduleTours?.quality;
-    await route.fulfill({ response, json: preferences });
-  });
+  // This isolated account is genuinely new: read/write real preferences, without
+  // the experienced-user snapshot or a fetch interceptor racing page reloads.
+  await page.unroute('**/api/v1/me/preferences');
   await page.goto('/quality');
   const tour = page.getByTestId('module-tour');
   await expect(tour).toContainText('Bienvenue dans Qualité');

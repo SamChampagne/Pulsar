@@ -1,5 +1,12 @@
 # État du projet — point de reprise
 
+> **Préférences des tutoriels — 28 septembre 2026**, même PR #82. Une répétition
+> locale révèle le proxy GET restant du scénario Qualité. Les comptes neufs RH
+> et Qualité utilisent désormais les vraies lectures/écritures API, sans proxy;
+> le thème sombre utilise un fixture immédiat. Les trois scénarios passent
+> chacun cinq fois, **15 réussites sans retry**. Aucun mock GET de préférences
+> ne fait désormais de `route.fetch`; contrôles de persistance inchangés.
+
 > **Complément CI Yard — 28 septembre 2026**, même PR #82. Le run `36476942641`
 > élimine les échecs initiaux et les cas instables : cinq jobs verts, 345 tests
 > navigateur réussis, 114 ignorés et un échec de fixture Yard. Référentiels

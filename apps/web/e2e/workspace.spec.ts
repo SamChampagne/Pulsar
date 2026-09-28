@@ -148,13 +148,10 @@ test('dark theme preserves desktop labels and folder keyboard behavior without s
   page,
 }) => {
   await login(page);
-  await page.route('**/api/v1/me/preferences', async (route) => {
+  await page.route('**/api/v1/me/preferences', (route) => {
     if (route.request().method() !== 'GET') return route.continue();
-    const response = await route.fetch();
-    const body = await response.json();
-    await route.fulfill({
-      response,
-      json: { ...body, ...EXPERIENCED_PREFERENCES, appearance: { theme: 'dark' } },
+    return route.fulfill({
+      json: { ...EXPERIENCED_PREFERENCES, appearance: { theme: 'dark' } },
     });
   });
   await page.goto('/apps');

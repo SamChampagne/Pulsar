@@ -84,6 +84,12 @@ dialogue (pas de pause arbitraire), contrôle du corps et d'un unique POST.
 Vérification locale : **15 scénarios Yard répétés trois fois (45 réussites)**
 et **10 dossiers Yard réussis**, sans retry. Aucune assertion d'alerte supprimée.
 
+Une répétition locale a également exposé le proxy de préférences propre au test
+du tutoriel Qualité. Les comptes neufs des tests RH/Qualité passent maintenant
+directement par l'API réelle (lectures et écritures, assertions de persistance
+préservées), sans intercepteur GET. Le thème sombre utilise un fixture immédiat.
+Les trois scénarios répétés cinq fois donnent **15 réussites sans retry**.
+
 ## Déployer en environnement de test, pas directement chez un client
 
 1. Attendre/revoir les checks de la PR unique, fusionner puis relever le SHA exact.
