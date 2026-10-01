@@ -2,6 +2,14 @@
 
 Branche : `codex/pilot-business-depth`, [PR unique #82](https://github.com/SamChampagne/Pulsar/pull/82)
 vers `main`.
+**État final vérifié le 30 septembre :** PR fusionnée le 28 septembre, six jobs
+verts sur le [run final](https://github.com/SamChampagne/Pulsar/actions/runs/36480581864)
+et [CI main verte](https://github.com/SamChampagne/Pulsar/actions/runs/36480597942).
+Navigateur : **346 réussites, 114 ignorés**, aucun cas instable signalé. Les échecs
+décrits plus bas sont les étapes historiques du diagnostic. Le déploiement déclaré
+par le propriétaire a fait l'objet d'une [recette partielle distincte](post-deployment-validation-2026-09-30.md),
+pas d'une certification production.
+
 Cette livraison consolide les lots accumulés depuis la fusion des workflows
 utilisateur; ce n'est pas seulement une mise à jour IA.
 

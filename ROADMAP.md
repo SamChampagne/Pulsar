@@ -2,6 +2,20 @@
 
 Phases are scoped to ship a usable increment each time. Detailed tasks live in [TODO.md](./TODO.md).
 
+## Revalidation après déploiement du 30 septembre 2026
+
+[Recette et constats](docs/releases/post-deployment-validation-2026-09-30.md) :
+PR #82 fusionnée, CI PR/main verte. VPS accessible, API/PostgreSQL OK et navigation
+des surfaces examinées fonctionnelle; cela ne clôt pas la recette métier. Hermes
+et APS signalés non installés; 114 tests navigateur spécialisés hors profil CI
+standard. Image/SHA, MFA et restauration VPS restent à attester.
+
+Ordre recommandé : preuves P1b → fixtures CI du pilote → parcours Services P2/P3
+complet. Préparer le runner IA isolé en parallèle, puis mission SAV en PROPOSE avec
+budget autorisé. Communications réelles et intégration comptable demandent leur
+recette propre. Conserver le bureau d'applications, les modules autonomes et les
+référentiels contextuels; différer les nouveaux modules.
+
 ## Ordre actif — pilote utilisable, 27 septembre 2026
 
 **Priorité IA demandée les 27–28 septembre :** [diagnostic et durcissement A1](docs/plans/ai-runtime-renewal.md).
