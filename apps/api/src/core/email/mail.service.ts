@@ -336,8 +336,10 @@ export class MailService {
         msg.attachments[0].documentId !== note.documentId
       )
         throw new Error('CREDIT_PDF_REQUIRED');
-      const transport = await this.emailConfigService.resolve(msg.tenantId);
-      const channel = transport ? 'smtp' : this.emailService.channel;
+      const transport =
+        (await this.emailConfigService.resolve(msg.tenantId)) ??
+        (await this.emailService.captureTransport());
+      const channel = transport ? 'smtp' : 'log';
       if (channel !== msg.deliveryChannel) throw new Error('CREDIT_DELIVERY_CHANNEL_CHANGED');
       const file = await this.documentsService.download(
         msg.tenantId,
@@ -365,7 +367,7 @@ export class MailService {
           messageId: msg.messageId ?? undefined,
           attachments: [{ filename: msg.attachments[0].filename, content }],
         },
-        transport ?? undefined,
+        transport,
       );
       if (!ok) throw new Error('CREDIT_PROVIDER_RESULT_UNCERTAIN');
       await this.prisma.emailMessage.update({

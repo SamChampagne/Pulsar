@@ -2,6 +2,41 @@ import type { PrismaClient } from '@pulsar/database';
 import { Prisma } from '@pulsar/database';
 import { decryptValue, encryptValue, isEncrypted } from './crypto.util';
 
+/** Platform SMTP secret participates in rotation; never log plaintext or fall back to another key. */
+export async function reencryptPlatformEmail(
+  prisma: PrismaClient,
+  oldKey: Buffer | null,
+  newKey: Buffer,
+): Promise<number> {
+  const row = await prisma.platformEmailConfig.findUnique({ where: { id: 'smtp' } });
+  if (!row?.passwordEnc) return 0;
+  let plain: string;
+  if (!isEncrypted(row.passwordEnc)) plain = row.passwordEnc;
+  else {
+    try {
+      decryptValue(newKey, row.passwordEnc);
+      return 0;
+    } catch {
+      /* Needs rotation. */
+    }
+    if (!oldKey) throw new Error('Platform SMTP: ENCRYPTION_KEY_OLD is required.');
+    try {
+      plain = decryptValue(oldKey, row.passwordEnc);
+    } catch {
+      throw new Error('Platform SMTP secret cannot be decrypted.');
+    }
+  }
+  const changed = await prisma.platformEmailConfig.updateMany({
+    where: { id: row.id, passwordEnc: row.passwordEnc, updatedAt: row.updatedAt },
+    data: { passwordEnc: encryptValue(newKey, plain) },
+  });
+  if (changed.count !== 1)
+    throw new Error(
+      'Platform SMTP changed during rotation; restart the rotation after stopping writes.',
+    );
+  return 1;
+}
+
 /**
  * Re-encrypts every Integration.config with `newKey`.
  * - enc:v1 rows are decrypted with `oldKey` first (rotation);
@@ -18,9 +53,7 @@ export async function reencryptIntegrations(
     let plain: string;
     if (isEncrypted(row.config)) {
       if (!oldKey) {
-        throw new Error(
-          `Integration ${row.id} is encrypted but ENCRYPTION_KEY_OLD is not set`,
-        );
+        throw new Error(`Integration ${row.id} is encrypted but ENCRYPTION_KEY_OLD is not set`);
       }
       try {
         plain = decryptValue(oldKey, row.config as unknown as string);

@@ -1273,10 +1273,42 @@ model PlatformUser {
   totpSecret    String?
   mfaEnabledAt  DateTime?
   recoveryCodes String[]           @default([])
+  serviceAudits PlatformServiceAudit[]
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
   @@map("platform_users")
+}
+
+// Platform infrastructure only. No row means the existing environment transport.
+model PlatformEmailConfig {
+  id          String   @id @default("smtp")
+  mode        String   @default("SIMULATION")
+  host        String?
+  port        Int      @default(587)
+  secure      Boolean  @default(false)
+  username    String?
+  passwordEnc String?
+  fromName    String?
+  fromEmail   String?
+  replyTo     String?
+  lastTestAt  DateTime?
+  lastTestOk  Boolean?
+  updatedAt   DateTime @updatedAt
+  @@map("platform_email_configs")
+}
+
+model PlatformServiceAudit {
+  id        String   @id @default(cuid())
+  actorId   String
+  tenantId  String?
+  service   String
+  action    String
+  detail    Json
+  createdAt DateTime @default(now())
+  actor     PlatformUser @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  @@index([createdAt])
+  @@map("platform_service_audits")
 }
 
 model Role {

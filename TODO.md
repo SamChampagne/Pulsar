@@ -2,6 +2,12 @@
 
 Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link PRs when relevant.
 
+## Centre plateforme — 1er octobre 2026
+
+- [x] Interface Services et connexions : SMTP global dynamique, SMTP et fournisseur IA par entreprise, OAuth existant, diagnostic runner, vérifications sans envoi et audit opérateur. [Contrat](docs/plans/platform-service-center.md).
+- [ ] Déployer la migration et les images API/Web, puis qualifier SMTP et OAuth réels sur une entreprise de test autorisée. Aucun secret/envoi réel dans la recette locale.
+- [ ] Provisionnement automatisé sécurisé des runners, recherche/pagination pour les parcs de plus de 500 entreprises, modes de service IA managé et budgets. Aucun socket Docker dans l’API.
+
 ## Priorités actives — décision du 27 septembre
 
 - [x] IA A1 : inventaire runtime visible, métadonnées bornées sans LLM, fournisseur/clé/URL isolés, validation liée à la configuration, permissions ACP système refusées, outils Hermes génériques retirés du parcours Pulsar, modèle explicite et session morte récupérable. [Analyse et contrat](docs/plans/ai-runtime-renewal.md).
@@ -1128,6 +1134,7 @@ clés API partenaires, flux iCal). Règles 53-55. Spec :
 
 - [ ] SFTP/FTP, OAuth client (QuickBooks, Shopify), télématique, AS2/VAN, SCIM, file durable
       partagée entre les deux outbox, export vers un entrepôt de données.
+
 # Suivi runner IA — 30 septembre 2026
 
 - [x] Image dédiée verrouillée, transport privé API, homes persistants, proxy,

@@ -110,7 +110,7 @@ export class EmailConfigService {
       outbound:
         config?.active && config.host
           ? 'smtp-tenant'
-          : this.environment.get('EMAIL_DRIVER', 'log') === 'smtp'
+          : (await this.email.effectiveChannel()) === 'smtp'
             ? 'smtp-platform'
             : 'log',
       inbound: config?.inboundLive && config?.inboundActive && config.imapHost ? 'imap' : 'log',
@@ -127,6 +127,7 @@ export class EmailConfigService {
     tenantId: string,
     dto: UpsertEmailConfigDto,
     userId?: string,
+    platformActor?: { id: string; email: string },
   ): Promise<EmailConfigProjection> {
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`email-config:${tenantId}`}, 0))`;
@@ -251,11 +252,22 @@ export class EmailConfigService {
             hasImapPassword: !!config.imapPasswordEnc,
             smtpSecretChanged: passwordEnc !== undefined,
             imapSecretChanged: imapPasswordEnc !== undefined,
+            ...(platformActor ? { platformActor: platformActor.email } : {}),
           },
         },
         tx,
       );
 
+      if (platformActor)
+        await tx.platformServiceAudit.create({
+          data: {
+            actorId: platformActor.id,
+            tenantId,
+            service: 'tenant-email',
+            action: 'CONFIGURE',
+            detail: { active: config.active, hasPassword: !!config.passwordEnc, host: config.host },
+          },
+        });
       return this.project(config);
     });
   }
@@ -324,14 +336,14 @@ export class EmailConfigService {
    * outcome.
    */
   async sendTest(tenantId: string, to: string): Promise<{ ok: boolean; simulated: boolean }> {
-    const transport = await this.resolve(tenantId);
+    const transport = (await this.resolve(tenantId)) ?? (await this.email.captureTransport());
     const ok = await this.email.send(
       {
         to,
         subject: 'Test Pulsar',
         html: '<p>Test de configuration email Pulsar. Si vous recevez ce message, la configuration est correcte.</p>',
       },
-      transport ?? undefined,
+      transport,
     );
 
     // Persist the test result — best-effort, never throw.
@@ -343,6 +355,6 @@ export class EmailConfigService {
       })
       .catch(() => undefined);
 
-    return { ok, simulated: !transport && this.environment.get('EMAIL_DRIVER', 'log') !== 'smtp' };
+    return { ok, simulated: !transport };
   }
 }

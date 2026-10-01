@@ -60,7 +60,7 @@ export class UpsertEmailConfigDto {
   @IsOptional()
   @IsEmail()
   @MaxLength(255)
-  replyTo?: string;
+  replyTo?: string | null;
 
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(255) imapHost?: string;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(65535) imapPort?: number;
