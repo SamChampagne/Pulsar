@@ -195,9 +195,26 @@ const server = createServer(async (req, res) => {
     assert.equal(req.url, '/v1/chat/completions', 'Unexpected provider endpoint');
     const names = (body.tools || []).map((t) => t.function.name).sort();
     assert.deepEqual(names, [fixtureTool], 'Host/unrelated tools exposed, or Pulsar MCP missing');
-    providerRequests.push({ model: body.model, tools: names });
+    providerRequests.push({ model: body.model, tools: names, messages: body.messages });
     const lastUser = body.messages.findLast((m) => m.role === 'user');
     const content = JSON.stringify(lastUser?.content);
+    if (content.includes('IMAGE_REJECTION_PROBE'))
+      return json(
+        res,
+        { error: { message: 'Model does not support image input', type: 'invalid_request_error' } },
+        400,
+      );
+    if (content.includes('VISION_PROBE')) {
+      const images = lastUser.content.filter((part) => part.type === 'image_url');
+      assert.equal(images.length, 1);
+      assert.equal(images[0].image_url.url, `data:image/png;base64,${visionImage}`);
+      return completion(
+        res,
+        body,
+        { role: 'assistant', content: 'VISION_PIXELS_RECEIVED' },
+        'stop',
+      );
+    }
     if (content.includes('PROVIDER_ERROR_PROBE'))
       return json(
         res,
@@ -334,9 +351,11 @@ async function stop(runtime) {
   runtime.child.kill();
   await bounded(closed, 'child shutdown', 5000);
 }
-async function turn(client, sessionId, prompt, expected = 'succeeded') {
+const visionImage =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==';
+async function turn(client, sessionId, prompt, expected = 'succeeded', images = []) {
   const events = [];
-  for await (const event of client.prompt(sessionId, prompt)) events.push(event);
+  for await (const event of client.prompt(sessionId, prompt, images)) events.push(event);
   assert.ok(!events.some((e) => e.type === 'error'), JSON.stringify(events));
   const results = events.filter((e) => e.type === 'result');
   assert.equal(results.length, 1);
@@ -364,6 +383,16 @@ try {
   );
   assert.equal(providerRequests.at(-1).model, 'fixture-model-2');
   passed('prompt + governed MCP tool round-trip after model rebuild');
+  assert.match(
+    await bounded(
+      turn(a.client, sessionId, 'VISION_PROBE', 'succeeded', [
+        { type: 'image', mimeType: 'image/png', data: visionImage },
+      ]),
+      'multimodal prompt',
+    ),
+    /VISION_PIXELS_RECEIVED/,
+  );
+  passed('real ACP image block reaches synthetic provider as exact inline pixels');
   await stop(a);
   a = start('A');
   await bounded(a.client.initialize(), 'restart');
@@ -376,6 +405,20 @@ try {
     /QUALIFIED.*TENANT_A/s,
   );
   passed('persisted history reload in a fresh process + MCP preserved');
+  assert.ok(
+    providerRequests
+      .at(-1)
+      .messages.some(
+        (m) =>
+          Array.isArray(m.content) &&
+          m.content.some(
+            (part) =>
+              part.type === 'image_url' &&
+              part.image_url.url === `data:image/png;base64,${visionImage}`,
+          ),
+      ),
+  );
+  passed('native image pixels preserved across strict history reload');
   const b = start('B');
   await bounded(b.client.initialize(), 'tenant B initialize');
   await assert.rejects(
@@ -388,6 +431,21 @@ try {
     /QUALIFIED.*TENANT_B/s,
   );
   passed('separate homes/processes: foreign history refused, own MCP marker only');
+  const beforeImageRejection = providerRequests.length;
+  const rejectedImageEvents = [];
+  for await (const event of b.client.prompt(bSession.sessionId, 'IMAGE_REJECTION_PROBE', [
+    { type: 'image', mimeType: 'image/png', data: visionImage },
+  ]))
+    rejectedImageEvents.push(event);
+  assert.equal(rejectedImageEvents.find((e) => e.type === 'result')?.result.status, 'failed');
+  const imageAttempts = providerRequests.slice(beforeImageRejection);
+  assert.ok(imageAttempts.length > 0 && imageAttempts.length <= 2);
+  assert.ok(
+    imageAttempts.every((attempt) =>
+      Array.isArray(attempt.messages.findLast((m) => m.role === 'user').content),
+    ),
+  );
+  passed('image rejection remains a failure; no text-only retry or auxiliary vision');
   // Provider rejection must be typed and sanitized, never assistant prose.
   const errorEvents = [];
   await bounded(

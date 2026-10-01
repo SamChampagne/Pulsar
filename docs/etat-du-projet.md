@@ -1,5 +1,66 @@
 # État du projet — point de reprise
 
+> **Espace IA multimodal A2e — 1er octobre 2026**, branche
+> `codex/production-agent-runner`. Images par fichier/collage/dépôt, aperçu/retrait,
+> optimisation JPEG sans EXIF, capture ponctuelle consentie (pas de vidéo/audio),
+> arrêt et copie de réponse. Historique images privé tenant/utilisateur, documents
+> réservés hors centre général, chargement différé. Aucun nouveau pouvoir métier.
+> Correction réelle du wrapper Hermes : l’override de persistance ACP supprimait
+> les pixels avant inférence; images maintenant conservées et reprises. Vision
+> auxiliaire et retry text-only interdits : refus du modèle ⇒ échec explicite.
+> **791 tests API**, **237 Web**, **14 runner/proxy**, **20 Python**, **5 scénarios
+> Chromium** réussis. **12 contrôles** de qualification du vrai Hermes 0.16 via
+> fournisseur/MCP simulés (pixels exacts, reprise, refus image et isolation).
+> Typechecks API/Web réussis, 12 avertissements Web préexistants; builds API/Web
+> et image runner réussis, 9 tests du wrapper également verts dans l’image Linux
+> non-root/read-only sans réseau. Aucune migration, aucune clé réelle, aucun
+> déploiement ni publication GitHub. La CI distante et le fournisseur réel restent
+> à valider; l’échec APS antérieur ci-dessous n’est pas corrigé par ce lot.
+> Contrat et limites : [Espace IA](plans/global-ai-workspace.md#images-et-capture--a2e-1er-octobre-2026).
+
+> **Espace IA global + concurrence A2d — 30 septembre 2026**, branche
+> `codex/production-agent-runner`. Icône de shell, historique privé, worker et
+> modèle configuré visibles, brouillons, réponses simultanées et badge d’activité;
+> mobile/clavier, erreurs et reprise manuelle. Aucun nouveau module ni pouvoir IA.
+> Runner : **4 processus** par défaut (plafond opérateur 1–8), configuration de
+> groupe immuable, login exclusif, compteur de capacité dans Connexion IA.
+> Correction de la CI #36798588507 : heap OOM des tests API → un worker séquentiel
+> recyclable à 768 Mo, plafond CI 3 Go; aucun test retiré.
+> **2 142 tests unitaires** (1 127 Shared / 778 API / 237 Web), **13 runner/proxy**,
+> garde Compose et **8 scénarios Chromium** réussis. Typecheck 0 erreur / 12
+> avertissements préexistants; builds API/Web/runner réussis. Quatre vrais processus
+> ACP, modèles et sessions distincts, déconnexion et reprise historique validés dans
+> l’image non-root/read-only sans réseau, 2 Go/2 CPU, sans appel LLM.
+> Suite HTTP locale complète terminée en 26 min sans OOM : 116 suites réussies,
+> 2 échouées, 1 ignorée. Doubles IA adaptés au contrat `installedForTenant`, puis
+> **16 tests HTTP IA / 3 suites réussis** à la relance. Bilan consolidé : 117 suites
+> réussies, seule la suite APS locale reste rouge (3 cas : `dbReady=false`, HTTP 500
+> sur les deux solveurs). Le bridge APS privé de fabrication passe. La CI distante
+> devra être relancée après publication; aucune validation fournisseur/OAuth réel
+> ni aucun déploiement VPS. Quelques traces de tâches cron après teardown restent à nettoyer.
+> Chat interactif mono-instance API; multi-réplicas exige un bail distribué.
+> [Usage, limites et tests](plans/global-ai-workspace.md).
+
+> **Runner IA de production A2c.2 — 30 septembre 2026**, branche
+> `codex/production-agent-runner`. Image séparée Hermes 0.16.0 verrouillée,
+> adaptateur HTTP privé API, une identité/volume/réseau par tenant, proxy HTTPS
+> en liste fermée. Clé/fournisseur/modèle et OAuth depuis Connexion IA après
+> rattachement opérateur initial. Diagnostics tenant et plateforme adaptés,
+> gouvernance et API non-root/read-only préservées; aucun nouveau pouvoir agent.
+> Un seul processus actif par tenant pour ce premier palier, libéré après chaque
+> tour distant; historique rechargé strictement. Provisioning automatique et
+> parallélisme multi-workers restent hors périmètre.
+> Revalidation : **2 137 tests unitaires** (1 127 Shared, 773 API, 237 Web),
+> **11 tests runner/proxy + 4 manifestes**, typecheck 0 erreur / 12 avertissements préexistants.
+> Dernière passe API ciblée : 34 tests, incluant un nouveau contrôle UTF-8 fragmenté.
+> Builds API/Web/runner/proxy et garde du Compose fusionné réussis; vrai ACP initialize/new/load inconnu refusé, arrêt sur
+> déconnexion, UID 1000, racine read-only, réseau none puis internal et persistance
+> après recréation vérifiés sans fournisseur. **3 scénarios UI Chromium** réussis
+> (dont responsive mobile). Premier passage UI perturbé par les rechargements
+> Vite concurrents aux checks; relance isolée verte. Avertissement Jest de teardown
+> antérieur toujours présent. Pas de recette métier/clé/OAuth réels, ni déploiement
+> VPS effectué. [Déploiement, limites, sauvegarde et rollback](../deploy/agent-runner/README.md).
+
 > **Recette après déploiement — 30 septembre 2026.** La PR #82 est fusionnée,
 > sa CI finale et celle de `main` sont vertes (six jobs; navigateur : **346
 > réussites, 114 ignorés**, aucun cas instable signalé). Les notes du 28 septembre

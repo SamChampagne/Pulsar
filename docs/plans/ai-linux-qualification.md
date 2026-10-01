@@ -1,5 +1,9 @@
 # IA A2c.1 — qualification Linux et préparation serveur
 
+Suite du 30 septembre : le [runner de production A2c.2](../../deploy/agent-runner/README.md)
+est distinct de ce banc et branché sur l’API. Qualification Docker locale sans
+fournisseur réel; déploiement OVH/OAuth/missions métier restent à valider.
+
 Date : 28 septembre 2026. Suite de [A2b/A3a](ai-turn-outcomes.md).
 Demande : préparer la suite puis une PR unique avant un déploiement par l'utilisateur.
 Pas d'accès VPS, de clé réelle, d'envoi réel ou de promotion automatique de Hermes.

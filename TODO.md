@@ -8,7 +8,10 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 - [x] IA A2a : candidat 0.21.5 installé séparément depuis son lock, huit contrôles ACP avec LLM/MCP synthétiques; reprise stricte, EOF et cancel. [Preuves et limites](docs/plans/ai-runtime-qualification.md). Runtime actif inchangé.
 - [x] IA A2b / A3a : résultat typé moteur → ACP → runtime → worker/chat, refus fournisseur explicite sans heuristique texte, annulation distincte, timeout de tour, reprise manuelle après FAILED/KILLED et compteurs cumulés honnêtes. Neuf contrôles sur l’actif 0.16.0 et le candidat 0.21.5 sans appel réel. [Contrat et limites](docs/plans/ai-turn-outcomes.md).
 - [x] IA A2c.1 : banc Linux hors ligne non-root, dépendances verrouillées et sources vérifiées; neuf contrôles ACP. API OVH non-root/read-only et exercice permissions/sauvegarde/restauration. [Preuves et limites](docs/plans/ai-linux-qualification.md).
-- [ ] IA A2c.2 : runner de production intégré, isolation OS par tenant, secrets/egress, reprise et rollback des homes. Le banc A2c.1 n'est pas un service IA; candidat toujours non promu, VPS non qualifié.
+- [x] IA A2c.2 code : image runner de production séparée, isolation OS par tenant, secrets/egress, reprise et rollback documentés. Candidat toujours non promu. [Profil de déploiement](deploy/agent-runner/README.md).
+- [x] IA A2d code : Espace IA global, historique privé, modèles et workers, conversations/brouillons parallèles; runner 4 processus par défaut, configuration de groupe immuable et login exclusif. [Contrat](docs/plans/global-ai-workspace.md).
+- [ ] IA A2c.2/A2d recette VPS : déployer le runner, tester connexion/OAuth réel et mission métier PROPOSE sur tenant pilote; aucune preuve locale ne remplace cette validation.
+- [ ] IA multi-réplicas : remplacer le verrou interactif mono-instance par un bail distribué avant tout scale-out de l’API.
 - [ ] IA A3–A5 : interface de moteur, benchmark métier autorisé (dossier/MRP/intervention), mesures de coûts et qualité, contexte sourcé, file durable et isolation serveur. Aucun gagnant ni production validée par les tests locaux A1.
 
 - [x] Priorité communications demandée : Telnyx sortant tenant-scopé, clé chiffrée, droits, confirmation, simulation et reprise sans réémission; SMTP/IMAP guidé et aperçus texte/HTML bureau/mobile. [Contrat](docs/plans/communications-telnyx-email.md).
@@ -1125,3 +1128,11 @@ clés API partenaires, flux iCal). Règles 53-55. Spec :
 
 - [ ] SFTP/FTP, OAuth client (QuickBooks, Shopify), télématique, AS2/VAN, SCIM, file durable
       partagée entre les deux outbox, export vers un entrepôt de données.
+# Suivi runner IA — 30 septembre 2026
+
+- [x] Image dédiée verrouillée, transport privé API, homes persistants, proxy,
+      diagnostic tenant et tests locaux sans fournisseur.
+- [ ] Déployer le profil sur l’entreprise de test OVH, vérifier sa panne/reprise.
+- [ ] Recette réelle fournisseur/OAuth et missions métier avec budget autorisé.
+- [ ] Provisioning automatique des runners, concurrence maîtrisée et file durable.
+      [Contrat de ce palier](deploy/agent-runner/README.md).

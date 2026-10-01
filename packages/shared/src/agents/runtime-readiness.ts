@@ -49,7 +49,11 @@ export interface RuntimeReadiness {
  */
 export function deriveRuntimeReadiness(input: RuntimeReadinessInput): RuntimeReadiness {
   const authReady =
-    input.authMode === 'login' ? input.connected : input.authMode === 'apiKey' ? input.hasApiKey : false;
+    input.authMode === 'login'
+      ? input.connected
+      : input.authMode === 'apiKey'
+        ? input.hasApiKey
+        : false;
   const modelReady = input.hasModel;
 
   let blockReason: RuntimeBlockReason | null = null;
@@ -72,16 +76,19 @@ export function deriveRuntimeReadiness(input: RuntimeReadinessInput): RuntimeRea
 }
 
 /** Human-facing (French) message for a block reason — used by the Run-now gate. */
-export function runtimeBlockMessage(reason: RuntimeBlockReason, authMode: RuntimeAuthMode | null): string {
+export function runtimeBlockMessage(
+  reason: RuntimeBlockReason,
+  authMode: RuntimeAuthMode | null,
+): string {
   switch (reason) {
     case 'not-installed':
-      return "Le runtime agent n'est pas installé — exécutez `pnpm agents:setup`.";
+      return 'Le moteur IA de cette entreprise est indisponible — consultez Réglages → Connexion IA ou contactez l’administrateur.';
     case 'not-configured':
       return "Le runtime agent n'est pas configuré — connectez un fournisseur dans Réglages → Runtime agents.";
     case 'auth-missing':
       return authMode === 'login'
         ? 'Le fournisseur requiert une connexion OAuth — connectez-le dans Réglages → Runtime agents.'
-        : "Clé API du fournisseur manquante — ajoutez-la dans Réglages → Runtime agents.";
+        : 'Clé API du fournisseur manquante — ajoutez-la dans Réglages → Runtime agents.';
     case 'model-missing':
       return "Aucun modèle connecté — choisissez un modèle dans le profil de l'agent ou la config runtime.";
     case 'test-failed':

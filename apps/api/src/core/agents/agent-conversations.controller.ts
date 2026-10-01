@@ -1,4 +1,22 @@
-import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
+import {
+  Body,
+  ConflictException,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Post,
+  Res,
+  StreamableFile,
+  UploadedFiles,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import {
+  AgentChatImagesService,
+  CHAT_IMAGE_BYTES,
+  validateChatImages,
+} from './agent-chat-images.service';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type { AuthUser } from '@pulsar/shared';
@@ -9,7 +27,7 @@ import {
   parseAgentTurnResult,
   agentTurnMessage,
 } from '@pulsar/shared';
-import { IsString } from 'class-validator';
+import { IsString, MaxLength, Matches } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { AgentsService } from './agents.service';
@@ -21,7 +39,7 @@ class StartDto {
 }
 
 class TurnDto {
-  @IsString() text!: string;
+  @IsString() @MaxLength(32000) @Matches(/\S/) text!: string;
 }
 
 const PULSAR_MCP_URL = process.env.PULSAR_MCP_URL ?? 'http://localhost:3000/api/v1/mcp';
@@ -30,10 +48,14 @@ const PULSAR_MCP_URL = process.env.PULSAR_MCP_URL ?? 'http://localhost:3000/api/
 @ApiBearerAuth()
 @Controller('agent-conversations')
 export class AgentConversationsController {
+  // Chat streams are owned by this API instance. No parallel prompt on the same
+  // history; independent conversations can progress concurrently.
+  private readonly activeTurns = new Set<string>();
   constructor(
     private readonly agents: AgentsService,
     private readonly runtime: AgentRuntimeService,
     private readonly conversations: AgentConversationsService,
+    private readonly images: AgentChatImagesService,
   ) {}
 
   @Get()
@@ -42,34 +64,102 @@ export class AgentConversationsController {
     return this.conversations.list(user.tenantId, user.id);
   }
 
+  @Get('workers')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_CHAT)
+  workers(@CurrentUser() user: AuthUser) {
+    return this.conversations.workers(user.tenantId);
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_CHAT)
-  get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.conversations.get(user.tenantId, user.id, id);
+  async get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const conv = await this.conversations.get(user.tenantId, user.id, id);
+    const images = await this.images.metadata(
+      user.tenantId,
+      conv.messages.map((m) => m.id),
+    );
+    return {
+      ...conv,
+      messages: conv.messages.map((m) => ({
+        ...m,
+        images: images.filter((i) => i.entityId === m.id).map(({ entityId, ...image }) => image),
+      })),
+    };
+  }
+
+  @Get(':id/images/:imageId')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_CHAT)
+  async image(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('imageId') imageId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const file = await this.images.download(user.tenantId, user.id, id, imageId);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return new StreamableFile(file.stream, { type: file.mimeType, disposition: 'attachment' });
   }
 
   @Post()
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_CHAT)
   async start(@CurrentUser() user: AuthUser, @Body() dto: StartDto) {
     const agent = await this.agents.getOwned(user.tenantId, dto.agentId);
+    if (agent.status !== 'ACTIVE')
+      throw new ForbiddenException('Ce worker est en pause ou révoqué.');
     const sessionId = await this.runtime.openSession({
       tenantId: user.tenantId,
       agent: { id: agent.id, model: agent.model, persona: agent.persona },
       pulsarMcpUrl: PULSAR_MCP_URL,
     });
-    return this.conversations.start(user.tenantId, user.id, dto.agentId, sessionId);
+    try {
+      return await this.conversations.start(user.tenantId, user.id, dto.agentId, sessionId);
+    } catch (error) {
+      this.runtime.closeSession(sessionId);
+      throw error;
+    }
   }
 
   @Post(':id/messages')
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_CHAT)
+  @UseInterceptors(
+    FilesInterceptor('images', 4, {
+      limits: { fileSize: CHAT_IMAGE_BYTES, files: 4, fields: 1, fieldSize: 128000, parts: 5 },
+    }),
+  )
   async turn(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() dto: TurnDto,
     @Res() res: Response,
+    @UploadedFiles() files: Express.Multer.File[] = [],
+  ) {
+    const key = `${user.tenantId}:${user.id}:${id}`;
+    if (this.activeTurns.has(key))
+      throw new ConflictException('Une réponse est déjà en cours dans cette conversation.');
+    this.activeTurns.add(key);
+    try {
+      return await this.streamTurn(user, id, dto, res, files);
+    } finally {
+      this.activeTurns.delete(key);
+    }
+  }
+
+  private async streamTurn(
+    user: AuthUser,
+    id: string,
+    dto: TurnDto,
+    res: Response,
+    files: Express.Multer.File[],
   ) {
     const conv = await this.conversations.assertOwned(user.tenantId, user.id, id);
-    await this.conversations.addMessage(conv.id, 'user', dto.text);
+    const agent = await this.agents.getOwned(user.tenantId, conv.agentId);
+    if (agent.status !== 'ACTIVE')
+      throw new ForbiddenException('Ce worker est en pause ou révoqué.');
+    const imageBlocks = validateChatImages(files);
+    const message = await this.conversations.addMessage(conv.id, 'user', dto.text);
+    if (files.length) await this.images.save(user.tenantId, user.id, message.id, files);
+    await this.conversations.titleFromMessage(user.tenantId, user.id, conv.id, dto.text);
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -83,13 +173,19 @@ export class AgentConversationsController {
     let outcome: AgentTurnResult | undefined;
     let hadError = false;
     let resultCount = 0;
+    let liveSessionId = conv.hermesSessionId;
+    let disconnected = res.destroyed === true;
+    const disconnect = () => {
+      disconnected = true;
+      if (liveSessionId) this.runtime.closeSession(liveSessionId);
+    };
+    res.once?.('close', disconnect);
     try {
       // Ensure a live Hermes session. The in-memory session dies on runtime
       // restart (or was never opened) — transparently resume the persisted
       // conversation so the user can keep chatting instead of hitting an error.
       let sessionId: string | null = conv.hermesSessionId;
       if (!this.runtime.isLive(sessionId)) {
-        const agent = await this.agents.getOwned(user.tenantId, conv.agentId);
         sessionId = await this.runtime.resumeSession({
           tenantId: user.tenantId,
           agent: { id: agent.id, model: agent.model, persona: agent.persona },
@@ -103,7 +199,12 @@ export class AgentConversationsController {
       if (!sessionId) {
         throw new Error('Conversation has no live session');
       }
-      for await (const ev of this.runtime.sendTurn(sessionId, dto.text)) {
+      liveSessionId = sessionId;
+      if (disconnected) {
+        this.runtime.closeSession(sessionId);
+        throw new Error('Client disconnected before prompt');
+      }
+      for await (const ev of this.runtime.sendTurn(sessionId, dto.text, imageBlocks)) {
         if (ev.type === 'text') {
           assistantText += ev.text;
           send('text', { text: ev.text });
@@ -142,6 +243,7 @@ export class AgentConversationsController {
       send('result', { result });
       send('end', {});
     } finally {
+      res.off?.('close', disconnect);
       res.end();
     }
   }

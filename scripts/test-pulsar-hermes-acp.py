@@ -14,6 +14,19 @@ spec.loader.exec_module(adapter)
 
 
 class ToolBoundaryTests(unittest.TestCase):
+    def test_images_remain_native_without_auxiliary_vision_calls(self):
+        adapter.configure_boundary()
+        from run_agent import AIAgent
+        messages = [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,fixture"}}]}]
+        self.assertIs(AIAgent._prepare_messages_for_non_vision_model(object(), messages), messages)
+        self.assertIs(AIAgent._prepare_anthropic_messages_for_api(object(), messages), messages)
+        with self.assertRaisesRegex(RuntimeError, "Auxiliary vision"):
+            AIAgent._describe_image_for_anthropic_fallback(object(), "not-a-url", "user")
+        import agent.conversation_loop
+        with self.assertRaisesRegex(RuntimeError, "rejected image"):
+            agent.conversation_loop._strip_images_from_messages(messages)
+        self.assertEqual(messages[0]["content"][0]["type"], "image_url")
+
     def test_missing_history_is_a_protocol_error_not_empty_success(self):
         adapter.configure_boundary()
         from acp_adapter.server import HermesACPAgent

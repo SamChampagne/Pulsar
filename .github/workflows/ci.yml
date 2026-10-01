@@ -87,6 +87,10 @@ jobs:
         run: pnpm test
       - name: Offline runtime source manifest guards (no Python runtime required)
         run: node --test scripts/runtime-source-manifest.test.mjs
+      - name: Isolated runner HTTP and egress guards (synthetic, no provider calls)
+        run: pnpm agents:test-runner
+      - name: Production runner Compose security guards (no services started)
+        run: node services/agent-runner/compose-guards.mjs
 
   api-e2e:
     runs-on: ubuntu-latest
@@ -124,6 +128,10 @@ jobs:
           pnpm --filter @pulsar/database exec prisma migrate deploy
           pnpm --filter @pulsar/database exec tsx prisma/seed.ts
       - name: E2E tests (api)
+        # One worker preserves serial DB fixtures. Jest recycles it between suites
+        # above 768MB (jest-e2e.json), instead of retaining every Nest/TS graph.
+        env:
+          NODE_OPTIONS: --max-old-space-size=3072
         run: pnpm --filter @pulsar/api test:e2e
 
   web-build:

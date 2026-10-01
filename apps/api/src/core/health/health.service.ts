@@ -66,6 +66,8 @@ export class HealthService {
 
   private checkAgentRuntime(): HealthCheckResult {
     try {
+      if (process.env.AGENT_RUNTIME_MODE === 'remote')
+        return { ok: true, mode: 'remote', scope: 'TENANT_DIAGNOSTIC_REQUIRED' };
       return { ok: true, installed: isAgentRuntimeInstalled() };
     } catch (err) {
       // Public endpoint — never echo a raw error (may embed a filesystem path).

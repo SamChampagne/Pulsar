@@ -51,6 +51,7 @@ hermes-agent/.hermes-home/
 /scripts/__pycache__/
 /scripts/fixtures/__pycache__/
 /deploy/agents/runtime-manifest.generated.json
+/deploy/agent-runner/.generated/
 
 # Playwright browser E2E (Wave 6): local browser binaries + run artifacts
 apps/web/playwright-report/

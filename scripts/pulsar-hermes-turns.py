@@ -34,6 +34,15 @@ def install_turn_contract(agent_class, acp_class):
         @wraps(original_run)
         def run(self, *args, **kwargs):
             # Bound to the actual AIAgent, never inferred from assistant prose.
+            content = kwargs.get("user_message")
+            if isinstance(content, list) and any(
+                isinstance(part, dict) and part.get("type") in ("image_url", "input_image")
+                for part in content
+            ):
+                # ACP 0.16 supplies a text-only persistence override. Its early
+                # crash-resilience save mutates live messages BEFORE inference,
+                # silently erasing images. Preserve pixels in the tenant history.
+                kwargs["persist_user_message"] = None
             try:
                 result = original_run(self, *args, **kwargs)
             except Exception:

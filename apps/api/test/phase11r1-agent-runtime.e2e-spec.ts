@@ -44,6 +44,9 @@ const SECRET = 'sk-test-SECRET';
  */
 @Injectable()
 class FakeAgentRuntimeService {
+  async installedForTenant(): Promise<boolean> {
+    return true;
+  }
   /** tenantId → the spawn env the runtime WOULD pass to Hermes (real build). */
   readonly recordedEnv = new Map<string, RuntimeEnv>();
 

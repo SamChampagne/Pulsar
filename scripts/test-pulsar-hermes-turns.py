@@ -11,6 +11,21 @@ spec.loader.exec_module(turns)
 
 
 class OutcomeTests(unittest.TestCase):
+    def test_multimodal_persistence_override_cannot_erase_pixels(self):
+        captured = {}
+        class Engine:
+            def run_conversation(self, *args, **kwargs):
+                captured.update(kwargs)
+                return {"completed": True}
+        class Acp:
+            async def prompt(self, *args, **kwargs):
+                pass
+        turns.install_turn_contract(Engine, Acp)
+        content = [{"type": "image_url", "image_url": {"url": "data:image/png;base64,fixture"}}]
+        Engine().run_conversation(user_message=content, persist_user_message="text only")
+        self.assertIsNone(captured["persist_user_message"])
+        self.assertIs(captured["user_message"], content)
+
     def test_success_requires_explicit_completion(self):
         for result in [None, {}, {"final_response": "Success!"}, {"completed": False}]:
             with self.subTest(result=result):

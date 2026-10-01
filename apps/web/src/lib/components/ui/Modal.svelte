@@ -11,7 +11,7 @@
     focusableElements,
   } from '$lib/stores/overlay-stack';
 
-  type Size = 'sm' | 'md' | 'lg' | 'xl';
+  type Size = 'sm' | 'md' | 'lg' | 'xl' | 'workspace';
   let {
     open = $bindable(false),
     title = '',
@@ -28,6 +28,7 @@
     md: 'max-w-lg',
     lg: 'max-w-2xl',
     xl: 'max-w-4xl',
+    workspace: 'max-w-7xl h-[calc(100dvh-2rem)]',
   };
 
   const reduce =
@@ -119,7 +120,9 @@
   >
     <div
       bind:this={dialogEl}
-      class="flex max-h-[calc(100dvh-2rem)] w-full {widths[size]} flex-col {variant === 'folder'
+      class="flex max-h-[calc(100dvh-2rem)] w-full {widths[size]} {size === 'workspace'
+        ? 'overflow-hidden'
+        : ''} flex-col {variant === 'folder'
         ? 'rounded-3xl bg-surface/95'
         : 'rounded-card bg-surface'} shadow-pop"
       tabindex="-1"
@@ -139,7 +142,12 @@
           <X class="size-4" />
         </button>
       </div>
-      <div class="workspace-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
+      <div
+        class="workspace-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain {size ===
+        'workspace'
+          ? 'flex overflow-hidden'
+          : 'p-4 sm:p-5'}"
+      >
         {@render children()}
       </div>
       {#if footer}

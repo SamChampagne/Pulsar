@@ -61,6 +61,27 @@ describe('AgentRuntimeService runtime-only safety', () => {
     child.emit('close');
     expect(svc.isLive('s1')).toBe(false);
   });
+  it('releases a remote process after each completed turn for strict resume next time', async () => {
+    const prior = process.env.AGENT_RUNTIME_MODE;
+    process.env.AGENT_RUNTIME_MODE = 'remote';
+    try {
+      const { svc, child, client } = setup();
+      client.prompt.mockReturnValue(
+        (async function* () {
+          yield { type: 'end' };
+        })(),
+      );
+      await svc.openSession(input);
+      for await (const _event of svc.sendTurn('s1', 'hello')) {
+        /* drain */
+      }
+      expect(child.kill).toHaveBeenCalledTimes(1);
+      expect(svc.isLive('s1')).toBe(false);
+    } finally {
+      if (prior === undefined) delete process.env.AGENT_RUNTIME_MODE;
+      else process.env.AGENT_RUNTIME_MODE = prior;
+    }
+  });
   it('does not silently fall back when the selected model fails', async () => {
     const { svc, child, client } = setup();
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});

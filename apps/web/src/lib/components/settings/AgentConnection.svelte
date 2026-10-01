@@ -36,6 +36,7 @@
     lastTestOk?: boolean;
     configured?: boolean;
     installed: boolean;
+    runtimeMode?: 'local' | 'remote';
   }
 
   interface TestResult {
@@ -158,7 +159,11 @@
       if (baseUrl.trim()) body.baseUrl = baseUrl.trim();
 
       const saved = await api<RuntimeConfig>('/agent-runtime', { method: 'PUT', body });
-      config = { ...saved, installed: config?.installed ?? false };
+      config = {
+        ...saved,
+        installed: config?.installed ?? false,
+        runtimeMode: config?.runtimeMode,
+      };
       apiKey = ''; // clear the raw key field after save
       testResult = null;
       toast.success('Configuration IA enregistrée');
@@ -197,14 +202,21 @@
     >
       <span class="mt-0.5 text-warning">⚠</span>
       <div class="flex-1 text-sm text-ink">
-        <span class="font-semibold">Moteur Hermes non installé.</span>
-        L’administrateur serveur doit exécuter
-        <button
-          type="button"
-          class="mx-1 cursor-pointer rounded bg-surface-muted px-1.5 py-0.5 font-mono text-xs hover:bg-surface-hover"
-          onclick={copySetupCommand}
-          title="Copier la commande">pnpm agents:setup</button
-        >. Les clés et modèles se configurent ensuite ici par entreprise.
+        {#if config.runtimeMode === 'remote'}
+          <span class="font-semibold">Service IA indisponible pour cette entreprise.</span>
+          Consultez le diagnostic ci-dessus : l’administrateur doit rattacher ou redémarrer le runner
+          dédié. Aucune commande d’installation à lancer dans l’API. Vous pouvez déjà enregistrer vos
+          paramètres ci-dessous.
+        {:else}
+          <span class="font-semibold">Moteur Hermes local non installé.</span>
+          L’administrateur serveur doit exécuter
+          <button
+            type="button"
+            class="mx-1 cursor-pointer rounded bg-surface-muted px-1.5 py-0.5 font-mono text-xs hover:bg-surface-hover"
+            onclick={copySetupCommand}
+            title="Copier la commande">pnpm agents:setup</button
+          >. Les clés et modèles se configurent ensuite ici par entreprise.
+        {/if}
       </div>
     </div>
   {:else if config !== null && config.configured}
@@ -279,6 +291,12 @@
               <Field label="Base URL">
                 <Input bind:value={baseUrl} placeholder="https://api.example.com/v1" />
               </Field>
+              {#if config?.runtimeMode === 'remote'}
+                <p class="text-xs text-ink-muted">
+                  HTTPS, port 443 uniquement. Le domaine doit être autorisé dans le réseau du runner
+                  par l’administrateur.
+                </p>
+              {/if}
             {/if}
           </div>
         {:else}

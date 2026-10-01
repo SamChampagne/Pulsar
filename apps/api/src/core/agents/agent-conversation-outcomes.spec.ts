@@ -6,6 +6,7 @@ describe('Conversation terminal outcomes', () => {
     const conversations = {
       assertOwned: jest.fn().mockResolvedValue({ id: 'c', hermesSessionId: 's' }),
       addMessage: jest.fn(),
+      titleFromMessage: jest.fn(),
     };
     const runtime = {
       isLive: () => true,
@@ -21,15 +22,17 @@ describe('Conversation terminal outcomes', () => {
       end: jest.fn(),
     };
     const controller = new AgentConversationsController(
-      {} as never,
+      { getOwned: jest.fn().mockResolvedValue({ id: 'a', status: 'ACTIVE' }) } as never,
       runtime as never,
       conversations as never,
+      {} as never,
     );
     return {
       conversations,
       frames,
       res,
       runtime,
+      controller,
       execute: () =>
         controller.turn({ tenantId: 't', id: 'u' } as never, 'c', { text: 'hello' }, res as never),
     };
@@ -88,5 +91,49 @@ describe('Conversation terminal outcomes', () => {
     await expect(h.execute()).rejects.toThrow('Not your');
     expect(h.conversations.addMessage).not.toHaveBeenCalled();
     expect(h.frames).toEqual([]);
+  });
+
+  it('refuses concurrent turns on one history, then releases its slot', async () => {
+    const h = setup([]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    h.runtime.sendTurn = async function* () {
+      await gate;
+      yield { type: 'end' };
+    };
+    const first = h.execute();
+    await expect(h.execute()).rejects.toThrow('déjà en cours');
+    release();
+    await first;
+    await expect(h.execute()).resolves.toBeUndefined();
+  });
+  it('lets independent conversations progress concurrently', async () => {
+    const h = setup([]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    h.runtime.sendTurn = async function* () {
+      await gate;
+      yield { type: 'end' };
+    };
+    const first = h.execute();
+    const second = h.controller.turn(
+      { tenantId: 't', id: 'u' } as never,
+      'other',
+      { text: 'next' },
+      h.res as never,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(h.conversations.assertOwned).toHaveBeenCalledWith('t', 'u', 'other');
+    release();
+    await Promise.all([first, second]);
+    expect(h.conversations.addMessage.mock.calls.filter((call) => call[1] === 'user')).toHaveLength(
+      2,
+    );
   });
 });

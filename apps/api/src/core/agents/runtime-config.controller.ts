@@ -9,7 +9,7 @@ import { RequirePermissions } from '../../common/decorators/require-permissions.
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { RuntimeConfigService } from './runtime-config.service';
 import { AgentRuntimeService } from './agent-runtime.service';
-import { isInstalled } from './runtime-install';
+import { remoteRuntimeEnabled } from './remote-runtime';
 import { RuntimeHealthService } from './runtime-health.service';
 
 class UpsertRuntimeDto {
@@ -41,7 +41,8 @@ export class RuntimeConfigController {
   async get(@CurrentUser() user: AuthUser) {
     return {
       ...this.runtimeConfig.project(await this.runtimeConfig.get(user.tenantId)),
-      installed: isInstalled(),
+      installed: await this.runtime.installedForTenant(user.tenantId),
+      runtimeMode: remoteRuntimeEnabled() ? 'remote' : 'local',
     };
   }
 
@@ -58,6 +59,14 @@ export class RuntimeConfigController {
         url = new URL(dto.baseUrl);
       } catch {
         throw new BadRequestException('URL du fournisseur invalide');
+      }
+      if (
+        remoteRuntimeEnabled() &&
+        (url.protocol !== 'https:' || (url.port && url.port !== '443'))
+      ) {
+        throw new BadRequestException(
+          'Le runner de production accepte uniquement HTTPS sur le port 443. Le domaine doit être autorisé par l’administrateur.',
+        );
       }
       if (
         !provider.needsBaseUrl ||
@@ -102,8 +111,8 @@ export class RuntimeConfigController {
 
   @Get('health')
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
-  healthStatus() {
-    return this.health.inspect();
+  healthStatus(@CurrentUser() user: AuthUser) {
+    return this.health.inspect(user.tenantId);
   }
 
   @Post('test')
@@ -121,9 +130,11 @@ export class RuntimeConfigController {
     res.flushHeaders?.();
     const send = (event: string, data: unknown) =>
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    const abort = new AbortController();
+    res.on('close', () => abort.abort());
 
     try {
-      for await (const ev of this.runtime.connectLogin(user.tenantId)) {
+      for await (const ev of this.runtime.connectLogin(user.tenantId, abort.signal)) {
         if (ev.type === 'text') {
           send('text', { text: ev.text });
         } else if (ev.type === 'error') {
