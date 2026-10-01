@@ -1,5 +1,22 @@
 # État du projet — point de reprise
 
+> **Recette après déploiement — 30 septembre 2026.** La PR #82 est fusionnée,
+> sa CI finale et celle de `main` sont vertes (six jobs; navigateur : **346
+> réussites, 114 ignorés**, aucun cas instable signalé). Les notes du 28 septembre
+> ci-dessous sont l'historique du diagnostic et non l'état courant de la CI.
+> Revalidation locale : **2 132 tests unitaires + 4 manifestes** réussis;
+> typecheck réussi, 0 erreur Svelte et 12 avertissements existants. Jest signale
+> un teardown à examiner malgré les assertions vertes.
+> VPS `pulsar.intebec.ca`, entreprise de test confirmée : connexion et entrées
+> des modules parcourues, formulaires Services/Transport ouverts sans enregistrer,
+> lecture d'un code article et responsive WMS vérifiés. API/PostgreSQL OK;
+> **Hermes et APS signalés non installés**, SMS inactif/courriel simulé.
+> Aucune écriture métier, installation, migration ou communication réelle.
+> SHA de l'image, MFA plateforme, restauration et parcours transactionnels restent
+> non attestés. [Rapport, périmètre et suite](./releases/post-deployment-validation-2026-09-30.md).
+> Suite : finir les preuves P1b, fixtures CI Services puis parcours complet P2/P3;
+> runner IA isolé distinct, pas de nouveau module avant qualification du pilote.
+
 > **Préférences des tutoriels — 28 septembre 2026**, même PR #82. Une répétition
 > locale révèle le proxy GET restant du scénario Qualité. Les comptes neufs RH
 > et Qualité utilisent désormais les vraies lectures/écritures API, sans proxy;

@@ -20,7 +20,10 @@ Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link 
 ne dicte plus à elle seule la prochaine priorité produit.
 
 - [x] P1a : précontrôle dans Exploitation, profils Services/Transport/Fabrication, IA optionnelle, migrations comparées et export daté; observations distinctes de la recette réelle.
-- [ ] P1b : version candidate globale, CI/publication revue puis recette VPS/TLS/invitations/documents/restauration. Accès SSH non confirmé; aucun test local ne valide ces points.
+- [x] P1b publication : PR #82 fusionnée, CI finale et `main` vertes; 346 tests navigateur réussis, 114 ignorés. [État final et recette du 30 septembre](docs/releases/post-deployment-validation-2026-09-30.md).
+- [ ] P1b exploitation : navigation VPS vérifiée sur l'entreprise de test, API/PostgreSQL OK. Restent image/SHA, migrations, MFA plateforme, deux tenants/rôles limités, invitations/documents et restauration; SSH non confirmé. Santé du cœur ne valide ni APS ni Hermes, signalés non installés.
+- [ ] Qualification CI pilote : préparer les fixtures HTTP dans la base du job navigateur, commencer par autonomie/dossier 360/acceptation Services actuellement conditionnels; ne pas compter les 114 ignorés comme réussites. Diagnostiquer aussi le teardown Jest signalé le 30 septembre.
+- [ ] Durcissement ingress : qualifier et tester les en-têtes HTTP absents sur le VPS (HSTS/CSP/anti-framing/nosniff/referrer) sans casser cartes, aperçus ni pages publiques; aucune modification serveur implicite.
 - [x] P2a : dossier client 360° en lecture seule, liens explicites directs, huit types de dossiers, sections/compteurs selon droits/modules, pagination/recherche et navigation vers les sources. [Contrat et limites](docs/plans/customer-workspace.md).
 - [ ] P3a : parcours Services complet avec exceptions, acceptation des travaux, correction après facture et reprise contrôlée.
 - [x] P3a.1 : acceptation des travaux configurable avant activation du projet; réserves/historique, droit dédié, reprise exacte, contrôle avant facture Services et clôture. [Contrat](docs/plans/services-work-acceptance.md). Pas de signature électronique; scénario global P3a encore ouvert.

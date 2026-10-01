@@ -2,8 +2,13 @@
 
 Décision du 27 septembre 2026 : lancer les cinq axes proposés après revue de la
 roadmap. Ce document fixe l'ordre actif; les anciennes phases restent des archives
-de livraison, pas un indicateur de disponibilité client. Branche conservée :
-`codex/pilot-business-depth`; changements non publiés préservés.
+de livraison, pas un indicateur de disponibilité client. La branche
+`codex/pilot-business-depth` a été fusionnée par la PR #82 le 28 septembre.
+
+Point du 30 septembre : [recette distante et direction recommandée](../releases/post-deployment-validation-2026-09-30.md).
+CI PR/main verte, navigation du tenant de test examinée; qualification serveur et
+parcours transactionnels encore partiels. Prioriser fixtures CI Services et
+parcours P2/P3 pendant la collecte des preuves P1b. Runner IA isolé en lot distinct.
 
 ## Ordre actif et critères de sortie
 
@@ -15,7 +20,7 @@ de livraison, pas un indicateur de disponibilité client. Branche conservée :
 | P4 — Finance à deux modes | Externe : échanges/maître et rapprochement; natif : périodes, corrections, change, sous-livres et affectations | Choix par entreprise, sources et totaux réconciliés par devise; aucune dette inférée d'un registre documentaire |
 | P5 — IA qualifiée         | Missions SAV/MRP/exceptions, vrai fournisseur, budget, qualité, refus et reprise worker                        | Propositions sourcées, droits/caps, coûts/latence mesurés, interruptions et instructions malveillantes testées  |
 
-P1 commence maintenant, puis P2/P3 sur Services, choix précédent du propriétaire.
+Terminer les preuves P1, puis P2/P3 sur Services, choix précédent du propriétaire.
 Transport (POD/quantités/partiels/remanifestes) et Fabrication (exécution partielle,
 replanification WIP) gardent des lots spécialisés. Le premier pilote concret peut
 faire évoluer leur priorité. Location/POS/restauration/e-commerce restent ultérieurs.
@@ -58,9 +63,11 @@ réelle avec second facteur ni la révocation des sessions déjà émises.
 
 ### Portée d'exécution
 
-Accès SSH non confirmé : le propriétaire ne sait pas encore si un alias existe.
-Pas de tentative VPS, modification DNS/TLS, email réel, appel LLM payant ou runtime
-distant. Aucun commit/push/PR automatique. Base locale isolée, aucun seed global.
+Accès SSH non confirmé. Le 30 septembre, cible HTTPS et entreprise de test
+confirmées, connexion faite par le propriétaire; recette en lecture et formulaires
+non enregistrés. Pas de modification DNS/TLS, installation, email réel ou appel
+LLM payant. La demande actuelle autorise une PR de revalidation, pas un déploiement.
+Tests HTTP/fixtures à garder en base isolée, jamais un seed global sur le VPS.
 
 ## Lots suivants
 
