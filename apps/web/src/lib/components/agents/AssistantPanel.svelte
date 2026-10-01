@@ -10,12 +10,30 @@
     PanelLeft,
     Plus,
     Wrench,
+    Paperclip,
+    Monitor,
+    X,
+    Square,
+    Copy,
   } from 'lucide-svelte';
   import { api, ApiError } from '$lib/api/client';
   import { streamAgentTurn } from '$lib/api/agent-stream';
   import { auth } from '$lib/stores/auth';
   import { Modal } from '$lib/components/ui';
   import { agentTurnMessage, type AgentTurnResult } from '@pulsar/shared';
+  import ChatImage from './ChatImage.svelte';
+  import { prepareChatImage, captureChatScreen, MAX_CHAT_IMAGES } from './chat-images';
+
+  interface ImagePreview {
+    id?: string;
+    fileName: string;
+    preview?: string;
+  }
+  interface DraftImage extends ImagePreview {
+    key: string;
+    file: File;
+    preview: string;
+  }
 
   let { open = $bindable(false), activeCount = $bindable(0) } = $props();
   interface Worker {
@@ -30,6 +48,7 @@
     text: string;
     tools: string[];
     result?: AgentTurnResult;
+    images?: ImagePreview[];
   }
   interface Thread {
     key: string;
@@ -42,6 +61,8 @@
     sending: boolean;
     error: string;
     draft: string;
+    images: DraftImage[];
+    preparing: boolean;
   }
   let workers = $state<Worker[]>([]);
   let threads = $state<Thread[]>([]);
@@ -52,14 +73,19 @@
   let historyOpen = $state(false);
   let listEl = $state<HTMLDivElement>();
   let search = $state('');
-  const requests = new Set<AbortController>();
+  let fileInput: HTMLInputElement;
+  let attachmentError = $state('');
+  let capturing = $state(false);
+  let captureRequest: AbortController | undefined;
+  const previews = new Set<string>();
+  const requests = new Map<string, AbortController>();
   let generation = 0;
   let identity = '';
   const current = $derived(threads.find((t) => t.key === selectedKey));
   const worker = $derived(workers.find((w) => w.id === (current?.agentId || workerId)));
   const visibleThreads = $derived(
     threads
-      .filter((t) => t.id || t.sending || t.draft)
+      .filter((t) => t.id || t.sending || t.draft || t.images.length || t.preparing)
       .filter((t) =>
         `${t.title} ${workers.find((w) => w.id === t.agentId)?.name ?? ''}`
           .toLowerCase()
@@ -74,7 +100,11 @@
 
   function clear() {
     generation++;
-    for (const request of requests) request.abort();
+    for (const request of requests.values()) request.abort();
+    captureRequest?.abort();
+    for (const url of previews) URL.revokeObjectURL(url);
+    previews.clear();
+    attachmentError = '';
     requests.clear();
     workers = [];
     threads = [];
@@ -97,6 +127,78 @@
       });
   });
   onDestroy(clear);
+  $effect(() => {
+    if (!open) captureRequest?.abort();
+  });
+
+  function draftThread() {
+    if (!current) newConversation();
+    return threads.find((t) => t.key === selectedKey);
+  }
+  async function attach(files: File[], thread = draftThread(), prepared = false) {
+    if (!thread || thread.sending || thread.preparing || worker?.status !== 'ACTIVE') return;
+    attachmentError = '';
+    if (files.length + thread.images.length > MAX_CHAT_IMAGES) {
+      attachmentError = 'Maximum 4 images par message.';
+      return;
+    }
+    const version = generation;
+    thread.preparing = true;
+    try {
+      for (const source of files) {
+        const file = prepared ? source : await prepareChatImage(source);
+        if (version !== generation) return;
+        const preview = URL.createObjectURL(file);
+        previews.add(preview);
+        thread.images.push({ key: crypto.randomUUID(), file, preview, fileName: file.name });
+      }
+    } catch (e) {
+      if (version === generation) attachmentError = failure(e);
+    } finally {
+      thread.preparing = false;
+    }
+  }
+  function removeImage(key: string) {
+    const image = current?.images.find((i) => i.key === key);
+    if (!image || current?.sending) return;
+    URL.revokeObjectURL(image.preview);
+    previews.delete(image.preview);
+    current!.images = current!.images.filter((i) => i.key !== key);
+  }
+  async function capture() {
+    if (capturing) return;
+    const thread = draftThread();
+    if (!thread || thread.sending || thread.preparing) return;
+    if (thread.images.length >= MAX_CHAT_IMAGES) {
+      attachmentError = 'Maximum 4 images par message.';
+      return;
+    }
+    capturing = true;
+    attachmentError = '';
+    const controller = new AbortController();
+    captureRequest = controller;
+    const version = generation;
+    try {
+      const file = await captureChatScreen(controller.signal);
+      if (!controller.signal.aborted && version === generation) await attach([file], thread, true);
+    } catch (e) {
+      if (!controller.signal.aborted && version === generation)
+        attachmentError =
+          e instanceof DOMException && e.name === 'NotAllowedError'
+            ? 'Capture annulée ou non autorisée. Aucune image envoyée.'
+            : failure(e);
+    } finally {
+      capturing = false;
+      if (captureRequest === controller) captureRequest = undefined;
+    }
+  }
+  async function copy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      attachmentError = 'Copie indisponible. Sélectionnez le texte manuellement.';
+    }
+  }
 
   function failure(e: unknown) {
     return e instanceof ApiError || e instanceof Error ? e.message : 'Connexion indisponible.';
@@ -130,6 +232,8 @@
             sending: false,
             error: '',
             draft: '',
+            images: [],
+            preparing: false,
           })),
       ];
     } catch (e) {
@@ -141,7 +245,9 @@
   function newConversation(id = workerId) {
     if (!id) return;
     const key = crypto.randomUUID();
-    threads = threads.filter((t) => t.id || t.sending || t.draft);
+    captureRequest?.abort();
+    attachmentError = '';
+    threads = threads.filter((t) => t.id || t.sending || t.draft || t.images.length || t.preparing);
     threads = [
       {
         key,
@@ -154,6 +260,8 @@
         sending: false,
         error: '',
         draft: '',
+        images: [],
+        preparing: false,
       },
       ...threads,
     ];
@@ -162,6 +270,8 @@
     historyOpen = false;
   }
   async function selectThread(key: string) {
+    captureRequest?.abort();
+    attachmentError = '';
     selectedKey = key;
     historyOpen = false;
     const thread = threads.find((t) => t.key === key);
@@ -172,13 +282,18 @@
     thread.loading = true;
     thread.error = '';
     try {
-      const data = await api<{ messages: { role: string; content: string }[] }>(
-        `/agent-conversations/${thread.id}`,
-      );
+      const data = await api<{
+        messages: { role: string; content: string; images?: ImagePreview[] }[];
+      }>(`/agent-conversations/${thread.id}`);
       if (version !== generation) return;
       thread.messages = data.messages
         .filter((m) => m.role === 'user' || m.role === 'assistant')
-        .map((m) => ({ role: m.role as Message['role'], text: m.content, tools: [] }));
+        .map((m) => ({
+          role: m.role as Message['role'],
+          text: m.content,
+          tools: [],
+          images: m.images,
+        }));
       thread.loaded = true;
     } catch (e) {
       if (version === generation) thread.error = failure(e);
@@ -194,13 +309,24 @@
   async function send(event?: Event) {
     event?.preventDefault();
     const thread = current;
-    const text = thread?.draft.trim();
-    if (!thread || !text || thread.sending || !thread.loaded || worker?.status !== 'ACTIVE') return;
+    const text =
+      thread?.draft.trim() || (thread?.images.length ? 'Analyse les images jointes.' : '');
+    if (
+      !thread ||
+      !text ||
+      thread.sending ||
+      thread.preparing ||
+      capturing ||
+      !thread.loaded ||
+      worker?.status !== 'ACTIVE'
+    )
+      return;
+    const images = [...thread.images];
     const version = generation;
     thread.sending = true;
     thread.error = '';
     const controller = new AbortController();
-    requests.add(controller);
+    requests.set(thread.key, controller);
     try {
       if (!thread.id) {
         const created = await api<{ id: string }>('/agent-conversations', {
@@ -210,15 +336,25 @@
         if (version !== generation) return;
         thread.id = created.id;
       }
+      if (controller.signal.aborted) {
+        thread.error = 'Envoi arrêté avant le message.';
+        return;
+      }
       thread.draft = '';
+      thread.images = [];
       thread.title = thread.messages.length ? thread.title : text.slice(0, 100);
       thread.messages.push(
-        { role: 'user', text, tools: [] },
+        { role: 'user', text, tools: [], images },
         { role: 'assistant', text: '', tools: [] },
       );
       const reply = thread.messages[thread.messages.length - 1];
       scroll(thread.key);
-      for await (const event of streamAgentTurn(thread.id, text, controller.signal)) {
+      for await (const event of streamAgentTurn(
+        thread.id,
+        text,
+        controller.signal,
+        images.map((i) => i.file),
+      )) {
         if (version !== generation) break;
         if (event.type === 'text') reply.text += event.text;
         if (event.type === 'tool_call') reply.tools.push(event.name);
@@ -232,9 +368,12 @@
     } catch (e) {
       if (version === generation) thread.error = failure(e);
     } finally {
-      requests.delete(controller);
+      requests.delete(thread.key);
       if (version === generation) {
         thread.sending = false;
+        if (controller.signal.aborted)
+          thread.error =
+            'Réponse arrêtée. Les actions déjà effectuées ne sont pas annulées; vérifiez le journal.';
         scroll(thread.key);
       }
     }
@@ -382,7 +521,7 @@
             ></div>
           </div>
         {:else if !current?.messages.length}
-          <div class="mx-auto flex h-full max-w-2xl flex-col justify-center py-6">
+          <div class="mx-auto flex min-h-full max-w-2xl flex-col justify-center py-6">
             <p class="mb-3 text-sm font-medium text-ink-muted">
               {worker?.name ?? 'Votre équipe IA'}{worker?.role ? ` / ${worker.role}` : ''}
             </p>
@@ -420,6 +559,20 @@
                   {message.role === 'user' ? 'Vous' : (worker?.name ?? 'Worker')}
                 </p>
                 <div class="text-sm leading-7 break-words whitespace-pre-wrap">{message.text}</div>
+                {#if message.images?.length}<div class="mt-3 flex flex-wrap gap-2">
+                    {#each message.images as image}<ChatImage
+                        {image}
+                        conversationId={current.id}
+                      />{/each}
+                  </div>{/if}
+                {#if message.role === 'assistant' && message.text && !(current.sending && index === current.messages.length - 1)}
+                  <button
+                    type="button"
+                    class="mt-2 inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-ink-muted hover:bg-surface-muted"
+                    aria-label="Copier la réponse"
+                    onclick={() => copy(message.text)}><Copy class="size-3" /> Copier</button
+                  >
+                {/if}
                 {#each message.tools as tool}<p
                     class="mt-2 flex items-center gap-2 text-xs text-ink-muted"
                   >
@@ -467,7 +620,65 @@
           <form
             class="rounded-2xl border border-edge bg-surface-muted p-3 shadow-sm focus-within:border-accent"
             onsubmit={send}
+            ondragover={(e) => {
+              if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+            }}
+            ondrop={(e) => {
+              e.preventDefault();
+              void attach(Array.from(e.dataTransfer?.files ?? []));
+            }}
+            onpaste={(e) => {
+              const files = Array.from(e.clipboardData?.files ?? []);
+              if (files.length) {
+                e.preventDefault();
+                void attach(files);
+              }
+            }}
           >
+            <input
+              bind:this={fileInput}
+              type="file"
+              class="sr-only"
+              tabindex="-1"
+              aria-label="Joindre des images"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              onchange={(e) => {
+                void attach(Array.from(e.currentTarget.files ?? []));
+                e.currentTarget.value = '';
+              }}
+            />
+            {#if current?.images.length}<div
+                class="mb-3 flex max-h-52 gap-3 overflow-x-auto overflow-y-auto px-1 pt-2 pb-1 sm:flex-wrap"
+                aria-label="Images à envoyer"
+              >
+                {#each current.images as image (image.key)}<div
+                    class="relative shrink-0 rounded-lg border border-edge bg-surface p-2"
+                  >
+                    <ChatImage {image} conversationId={current.id} />
+                    <p class="mt-1 max-w-36 truncate text-[11px] text-ink-muted">
+                      {image.fileName} · {Math.ceil(image.file.size / 1024)} Ko
+                    </p>
+                    <button
+                      type="button"
+                      aria-label={`Retirer ${image.fileName}`}
+                      disabled={current.sending}
+                      class="absolute -top-2 -right-2 rounded-full border border-edge bg-surface p-1 hover:bg-surface-muted"
+                      onclick={() => removeImage(image.key)}><X class="size-3" /></button
+                    >
+                  </div>{/each}
+              </div>{/if}
+            {#if current?.preparing || capturing}<p
+                role="status"
+                class="mb-2 text-xs text-ink-muted"
+              >
+                {capturing
+                  ? 'Choisissez une fenêtre. Une seule capture sera préparée, puis le partage sera arrêté.'
+                  : 'Optimisation des images…'}
+              </p>{/if}
+            {#if attachmentError}<p role="alert" class="mb-2 text-xs text-danger">
+                {attachmentError}
+              </p>{/if}
             <textarea
               aria-label="Message au worker"
               placeholder={worker
@@ -496,19 +707,61 @@
               }}
             ></textarea>
             <div class="flex items-center justify-between gap-3 pl-2">
-              <p class="text-xs text-ink-faint">
-                Entrée pour envoyer · Maj+Entrée pour une nouvelle ligne
-              </p>
-              <button
-                type="submit"
-                aria-label="Envoyer au worker"
-                class="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-opacity hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-30"
-                disabled={!current?.draft.trim() ||
-                  current.sending ||
-                  !current.loaded ||
-                  worker?.status !== 'ACTIVE'}><ArrowUp class="size-4" /></button
-              >
+              <div class="flex items-center gap-1">
+                <button
+                  type="button"
+                  class="shell-icon"
+                  aria-label="Ajouter des images"
+                  title="Images : choisir, coller ou déposer (4 maximum)"
+                  disabled={loading ||
+                    current?.sending ||
+                    current?.preparing ||
+                    capturing ||
+                    worker?.status !== 'ACTIVE' ||
+                    (current && !current.loaded)}
+                  onclick={() => fileInput.click()}><Paperclip class="size-4" /></button
+                >
+                <button
+                  type="button"
+                  class="shell-icon"
+                  aria-label="Capturer l’écran"
+                  title="Capture ponctuelle avec votre autorisation, sans audio"
+                  disabled={loading ||
+                    current?.sending ||
+                    current?.preparing ||
+                    capturing ||
+                    worker?.status !== 'ACTIVE' ||
+                    (current && !current.loaded)}
+                  onclick={capture}><Monitor class="size-4" /></button
+                >
+                <span class="hidden text-[11px] text-ink-faint sm:inline"
+                  >Images · Capture d’écran</span
+                >
+              </div>
+              {#if current?.sending}<button
+                  type="button"
+                  aria-label="Arrêter la réponse"
+                  class="flex size-9 shrink-0 items-center justify-center rounded-full bg-ink text-surface"
+                  onclick={() => requests.get(current!.key)?.abort()}
+                  ><Square class="size-3.5 fill-current" /></button
+                >
+              {:else}<button
+                  type="submit"
+                  aria-label="Envoyer au worker"
+                  class="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-opacity hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-30"
+                  disabled={(!current?.draft.trim() && !current?.images.length) ||
+                    current?.preparing ||
+                    capturing ||
+                    !current?.loaded ||
+                    worker?.status !== 'ACTIVE'}><ArrowUp class="size-4" /></button
+                >{/if}
             </div>
+            {#if current?.images.length}<p
+                class="mt-2 px-2 text-[11px] leading-relaxed text-ink-muted"
+              >
+                Vérifiez les informations visibles avant d’envoyer à votre fournisseur IA. Modèle
+                avec vision requis. Images optimisées, pas de partage vidéo continu.
+              </p>{/if}
           </form>
           <p class="mt-2 text-center text-[11px] text-ink-faint">
             Fermer cette fenêtre laisse les réponses avancer tant que Pulsar reste ouvert. Vérifiez

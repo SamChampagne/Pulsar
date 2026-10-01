@@ -63,6 +63,11 @@ export interface AcpModelOption {
 }
 
 export type AcpEvent = AgentTurnEvent;
+export interface AcpImage {
+  type: 'image';
+  mimeType: string;
+  data: string;
+}
 
 /**
  * Minimal injectable duplex transport. Tests inject a fake; `stdioTransport`
@@ -124,6 +129,7 @@ export class HermesAcpClient {
   private readonly updateQueues = new Map<string, AsyncQueue<object>>();
 
   private started = false;
+  private supportsImages = false;
   private pumpError: Error | null = null;
 
   constructor(private readonly transport: AcpTransport) {}
@@ -278,7 +284,10 @@ export class HermesAcpClient {
   // -- protocol methods -----------------------------------------------------
 
   async initialize(): Promise<void> {
-    const result = await this.call<{ protocolVersion?: number }>(METHODS.initialize, {
+    const result = await this.call<{
+      protocolVersion?: number;
+      agentCapabilities?: { promptCapabilities?: { image?: boolean } };
+    }>(METHODS.initialize, {
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
       clientInfo: { name: 'pulsar', version: '1.0.0' },
@@ -286,6 +295,7 @@ export class HermesAcpClient {
     if (result?.protocolVersion !== PROTOCOL_VERSION) {
       throw new Error('ACP protocol version incompatible with Pulsar');
     }
+    this.supportsImages = result.agentCapabilities?.promptCapabilities?.image === true;
   }
 
   async newSession(cfg: AcpNewSession): Promise<{ sessionId: string; models: AcpModelOption[] }> {
@@ -339,7 +349,13 @@ export class HermesAcpClient {
    * from the wrapper. A normal RPC return alone is NOT success. Every completed
    * stream emits exactly one result, then end; failures also emit a safe error.
    */
-  async *prompt(sessionId: string, text: string): AsyncGenerator<AcpEvent> {
+  async *prompt(
+    sessionId: string,
+    text: string,
+    images: AcpImage[] = [],
+  ): AsyncGenerator<AcpEvent> {
+    if (images.length && !this.supportsImages)
+      throw new Error('Ce runtime ne prend pas en charge les images.');
     this.ensurePump();
     if (this.updateQueues.has(sessionId))
       throw new Error('A turn is already running in this conversation');
@@ -349,7 +365,10 @@ export class HermesAcpClient {
     const box: { error: Error | null } = { error: null };
     const promptPromise = this.call(METHODS.sessionPrompt, {
       sessionId,
-      prompt: [{ type: 'text', text }],
+      prompt: [
+        { type: 'text', text },
+        ...images.map(({ mimeType, data }) => ({ type: 'image', mimeType, data })),
+      ],
     })
       .then((res) => res as { stopReason?: string; _meta?: { pulsarTurn?: unknown } })
       .catch((err: unknown) => {

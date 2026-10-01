@@ -1,5 +1,23 @@
 # État du projet — point de reprise
 
+> **Espace IA multimodal A2e — 1er octobre 2026**, branche
+> `codex/production-agent-runner`. Images par fichier/collage/dépôt, aperçu/retrait,
+> optimisation JPEG sans EXIF, capture ponctuelle consentie (pas de vidéo/audio),
+> arrêt et copie de réponse. Historique images privé tenant/utilisateur, documents
+> réservés hors centre général, chargement différé. Aucun nouveau pouvoir métier.
+> Correction réelle du wrapper Hermes : l’override de persistance ACP supprimait
+> les pixels avant inférence; images maintenant conservées et reprises. Vision
+> auxiliaire et retry text-only interdits : refus du modèle ⇒ échec explicite.
+> **791 tests API**, **237 Web**, **14 runner/proxy**, **20 Python**, **5 scénarios
+> Chromium** réussis. **12 contrôles** de qualification du vrai Hermes 0.16 via
+> fournisseur/MCP simulés (pixels exacts, reprise, refus image et isolation).
+> Typechecks API/Web réussis, 12 avertissements Web préexistants; builds API/Web
+> et image runner réussis, 9 tests du wrapper également verts dans l’image Linux
+> non-root/read-only sans réseau. Aucune migration, aucune clé réelle, aucun
+> déploiement ni publication GitHub. La CI distante et le fournisseur réel restent
+> à valider; l’échec APS antérieur ci-dessous n’est pas corrigé par ce lot.
+> Contrat et limites : [Espace IA](plans/global-ai-workspace.md#images-et-capture--a2e-1er-octobre-2026).
+
 > **Espace IA global + concurrence A2d — 30 septembre 2026**, branche
 > `codex/production-agent-runner`. Icône de shell, historique privé, worker et
 > modèle configuré visibles, brouillons, réponses simultanées et badge d’activité;

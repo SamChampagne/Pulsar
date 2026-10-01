@@ -25,6 +25,7 @@ describe('Conversation terminal outcomes', () => {
       { getOwned: jest.fn().mockResolvedValue({ id: 'a', status: 'ACTIVE' }) } as never,
       runtime as never,
       conversations as never,
+      {} as never,
     );
     return {
       conversations,

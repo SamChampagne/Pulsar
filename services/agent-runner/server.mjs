@@ -6,7 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
-const FRAME_LIMIT = 1024 * 1024;
+// Four 512 KiB images encoded as base64 + text/persona/protocol overhead.
+const FRAME_LIMIT = 4 * 1024 * 1024;
 const tokenEqual = (a, b) =>
   typeof a === 'string' &&
   Buffer.byteLength(a) === Buffer.byteLength(b) &&

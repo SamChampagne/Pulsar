@@ -5,6 +5,8 @@
   import { streamAgentTurn } from '$lib/api/agent-stream';
   import { Button, Badge } from '$lib/components/ui';
   import { agentTurnMessage, type AgentTurnResult } from '@pulsar/shared';
+  import ChatImage from './ChatImage.svelte';
+  type Image = { id: string; fileName: string };
 
   interface ToolCall {
     name: string;
@@ -17,6 +19,7 @@
     toolCalls: ToolCall[];
     streaming?: boolean;
     result?: AgentTurnResult;
+    images?: Image[];
   }
 
   interface ExistingMessage {
@@ -24,6 +27,7 @@
     content: string;
     toolCalls?: { name: string; args?: unknown }[];
     createdAt?: string;
+    images?: Image[];
   }
 
   let {
@@ -45,6 +49,7 @@
       initialMessages.map((m) => ({
         role: m.role === 'user' ? 'user' : 'assistant',
         text: m.content,
+        images: m.images,
         toolCalls: (m.toolCalls ?? []).map((tc) => ({ name: tc.name, args: tc.args ?? null })),
       })),
     ),
@@ -147,6 +152,9 @@
           class="max-w-[85%] rounded-card bg-accent px-3 py-2 text-sm text-white whitespace-pre-wrap"
         >
           {msg.text}
+          {#if msg.images?.length}<div class="mt-2 flex flex-wrap gap-2">
+              {#each msg.images as image}<ChatImage {image} {conversationId} />{/each}
+            </div>{/if}
         </div>
       </div>
     {:else}

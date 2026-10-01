@@ -947,6 +947,12 @@ IA implicite. Contrat : `docs/plans/services-work-acceptance.md`.
   fermée, wrapper Pulsar inchangé. OAuth ne valide que la version capturée.
   L’image offline n’est pas réutilisée. Contrat : `deploy/agent-runner/README.md`.
   Usage/concurrence : `docs/plans/global-ai-workspace.md`.
+  A2e : images privées via DocumentsService/type protégé agent-chat-image;
+  propriétaire/conversation/message revérifiés avant lecture, jamais accès générique.
+  ACP inline seulement, 4 × 512 Kio; capture ponctuelle explicitement confirmée.
+  Le wrapper conserve les pixels (pas d’override de persistance textuel), interdit
+  vision auxiliaire et fallback text-only après rejet. Ne pas retirer ces gardes
+  sur upgrade sans requalifier le test multimodal et la reprise historique.
 
 - Communications de dossier C3a : accès fermé `COMMUNICATION_ACCESS`, module/droit
   source + canal sur lecture ET replay. Suggestions par FK explicite tenant-scopée,

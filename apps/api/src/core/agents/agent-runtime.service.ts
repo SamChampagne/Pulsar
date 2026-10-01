@@ -356,7 +356,11 @@ export class AgentRuntimeService implements OnModuleDestroy {
   }
 
   /** Streams normalized events for one user turn. Prepends the persona on the first turn. */
-  async *sendTurn(sessionId: string, text: string): AsyncGenerator<AcpEvent> {
+  async *sendTurn(
+    sessionId: string,
+    text: string,
+    images: import('./hermes-acp.client').AcpImage[] = [],
+  ): AsyncGenerator<AcpEvent> {
     const live = this.live.get(sessionId);
     if (!live) throw new ServiceUnavailableException('Conversation session not live');
     // First turn carries the system grounding (keep the agent on Pulsar tools, off
@@ -365,7 +369,7 @@ export class AgentRuntimeService implements OnModuleDestroy {
       ? text
       : [AGENT_SYSTEM_PREAMBLE, live.persona, '---', text].filter(Boolean).join('\n\n');
     live.firstTurnDone = true;
-    const iterator = live.client.prompt(sessionId, prompt);
+    const iterator = live.client.prompt(sessionId, prompt, images);
     const timedOut = Symbol('turn-timeout');
     let timer: ReturnType<typeof setTimeout>;
     const deadline = new Promise<typeof timedOut>((resolve) => {

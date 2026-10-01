@@ -29,6 +29,55 @@ effectué. Les tâches automatiques durables restent dans `AgentWorkerService` /
 
 ## Contrat serveur
 
+### Images et capture — A2e (1er octobre 2026)
+
+- Trombone : choix de fichiers, collage et dépôt dans le compositeur; quatre
+  images maximum. Entrées PNG/JPEG/WebP de 10 Mo maximum, réencodées dans le
+  navigateur en JPEG (bord 1600 pixels, 512 Kio chacune). EXIF/GPS non recopiés.
+  La compression peut réduire la lisibilité : privilégier une capture recadrée.
+- Icône écran : sélecteur natif du navigateur, **une seule image**, pistes arrêtées
+  dans tous les chemins (succès, refus, erreur, fermeture du panneau, changement
+  de conversation). Un sélecteur résolu tardivement est également nettoyé.
+  Aucun audio, streaming vidéo, contrôle à distance ni envoi automatique.
+  HTTPS/navigateur compatible requis; l’import de capture reste disponible.
+- Aperçu agrandissable/retrait avant envoi, conservation par brouillon/worker.
+  L’utilisateur confirme l’envoi au fournisseur IA de l’entreprise. Images seules
+  permises dans l’UI avec la consigne explicite « Analyse les images jointes ».
+- Arrêter interrompt le flux, pas les effets métier déjà exécutés. Aucun replay.
+  Copier récupère le texte. Vignettes historiques chargées seulement à l’affichage.
+- `POST /agent-conversations/:id/messages` conserve JSON texte et accepte multipart
+  `text` + `images` : quatre fichiers, 512 Kio chacun; limites Multer avant
+  persistance, signature PNG/JPEG et dimensions ≤2048 contrôlées serveur. Il ne
+  s’agit pas d’un antivirus ni d’un décodage complet des pixels côté serveur.
+- Documents via `DocumentsService`, type réservé `agent-chat-image`, `entityId`
+  = identifiant de message. Aucune migration. Métadonnées jointes à l’historique
+  privé; `GET :id/images/:imageId` recontrôle tenant + propriétaire + conversation
+  - message, permission `core.agents.chat`, no-store et nosniff. Exclusion de TOUS
+    les accès documentaires génériques, y compris presign/confirmation/suppression.
+- En cas de sauvegarde partielle, nettoyage best-effort et marqueur « non transmis »;
+  aucun appel modèle. Comme les autres documents, les blobs sans ligne résultant
+  d’une panne DB après écriture storage nécessitent la maintenance stockage.
+- ACP reçoit des blocs image inline, jamais d’URL à récupérer ni de chemin local.
+  Capacité image du runtime négociée, trame du runner plafonnée à 4 Mio (2 Mio de
+  pixels compressés + base64 + texte). Le modèle/fournisseur doit accepter la vision;
+  absence de support = échec visible, jamais réussite textuelle sans pixels.
+- Wrapper verrouillé 0.16 : neutralise l’override textuel de persistance ACP qui
+  effaçait les pixels avant l’inférence. Préserve les images dans le home historique
+  du tenant. Désactive les descriptions vision auxiliaires ET le retry text-only
+  après refus image. Aucun nouvel outil système, aucun changement des caps/policies.
+- Pas encore : PDF/bureautique, OCR métier déterministe, analyse de vidéo continue,
+  rétention configurable des conversations, qualification d’un fournisseur réel.
+
+Recette : HTTP multipart réel avec services simulés, permissions de propriété et
+exclusion documentaire; Chromium avec capture synthétique; protocole Hermes réel
+avec fournisseur/MCP loopback simulés, pixels exacts et reprise historique,
+refus vision restant terminal. Aucune clé ni donnée de production.
+
+Références navigateur : [getDisplayMedia](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia)
+et [arrêt des pistes](https://developer.mozilla.org/en-US/docs/Web/API/MediaStreamTrack/stop).
+
+### Conversations
+
 - `GET /agent-conversations/workers` : permission chat, projection fermée du
   roster et du modèle effectif configuré; jamais clé, persona, service-user ni caps.
 - Historique : tenant JWT ET utilisateur propriétaire. Les autres conversations

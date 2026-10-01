@@ -1,4 +1,6 @@
 import { forwardRef, Module } from '@nestjs/common';
+import { DocumentsModule } from '../documents/documents.module';
+import { AgentChatImagesService } from './agent-chat-images.service';
 import { BusinessModule } from '../../modules/business/business.module';
 import { BusinessService } from '../../modules/business/business.service';
 import { SupportService } from '../../modules/business/support.service';
@@ -77,6 +79,7 @@ import { RuntimeHealthService } from './runtime-health.service';
  */
 @Module({
   imports: [
+    DocumentsModule,
     BusinessModule,
     TransportationModule,
     AuditLogsModule,
@@ -99,6 +102,7 @@ import { RuntimeHealthService } from './runtime-health.service';
     RuntimeConfigController,
   ],
   providers: [
+    AgentChatImagesService,
     AgentsService,
     ProposedActionsService,
     AgentRuntimeService,

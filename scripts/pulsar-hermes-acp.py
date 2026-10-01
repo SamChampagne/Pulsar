@@ -16,6 +16,21 @@ def governed_toolsets(toolsets=None, mcp_server_names=None):
                                  or "pulsar" in (mcp_server_names or []) else [])
 
 
+def native_image_messages(self, messages):
+    # Deliberate transport policy, NOT a claim that a model supports vision.
+    # Send the pixels to the configured provider; unsupported models must fail
+    # visibly. No silent replacement or auxiliary vision provider/tool call.
+    return messages
+
+
+def reject_auxiliary_vision(self, *args, **kwargs):
+    raise RuntimeError("Auxiliary vision is not permitted in Pulsar")
+
+
+def reject_image_stripping(*args, **kwargs):
+    raise RuntimeError("The configured model rejected image input")
+
+
 def configure_boundary():
     if version("hermes-agent") != "0.16.0":
         raise RuntimeError("Hermes version requires Pulsar adapter requalification")
@@ -33,6 +48,15 @@ def configure_boundary():
     acp_adapter.server._expand_acp_enabled_toolsets = governed_toolsets
     import importlib.util
     from run_agent import AIAgent
+    for name in ("_prepare_messages_for_non_vision_model", "_prepare_anthropic_messages_for_api"):
+        if not callable(getattr(AIAgent, name, None)):
+            raise RuntimeError("Image transport requires Pulsar adapter requalification")
+        setattr(AIAgent, name, native_image_messages)
+    AIAgent._describe_image_for_anthropic_fallback = reject_auxiliary_vision
+    import agent.conversation_loop
+    # Upstream otherwise retries a rejected image turn as TEXT ONLY and reports
+    # success. Keep images and return a typed failure through the turn contract.
+    agent.conversation_loop._strip_images_from_messages = reject_image_stripping
     # Pulsar owns conversation titles. The pinned runtime otherwise starts an
     # untracked auxiliary LLM call AFTER the reported turn has completed.
     import agent.title_generator

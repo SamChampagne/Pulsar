@@ -24,19 +24,25 @@ export async function* streamAgentTurn(
   conversationId: string,
   text: string,
   signal?: AbortSignal,
+  images: File[] = [],
 ): AsyncGenerator<AgentStreamEvent> {
   const token = getAccessToken();
   let response: Response;
+  const form = new FormData();
+  if (images.length) {
+    form.append('text', text);
+    for (const image of images) form.append('images', image);
+  }
   try {
     response = await fetch(`${BASE}/agent-conversations/${conversationId}/messages`, {
       method: 'POST',
       signal,
       headers: {
-        'Content-Type': 'application/json',
+        ...(images.length ? {} : { 'Content-Type': 'application/json' }),
         Accept: 'text/event-stream',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ text }),
+      body: images.length ? form : JSON.stringify({ text }),
     });
   } catch {
     yield* disconnectedStream();

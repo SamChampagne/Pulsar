@@ -150,6 +150,29 @@ test('capacity is bounded and releases on exit', async (t) => {
   third.res.resume();
 });
 
+test('bounded multimodal frame crosses the proxy; oversized frame closes the child', async (t) => {
+  const f = await fixture(t);
+  const { req, res, child } = await f.start();
+  res.resume();
+  const data = Buffer.alloc(512 * 1024, 1).toString('base64');
+  const frame = {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'session/prompt',
+    params: {
+      sessionId: 's',
+      prompt: Array.from({ length: 4 }, () => ({ type: 'image', mimeType: 'image/jpeg', data })),
+    },
+  };
+  const written = once(child.stdin, 'data');
+  req.write(JSON.stringify(frame) + '\n');
+  assert.deepEqual(JSON.parse((await written)[0].toString()), frame);
+  const closed = once(child, 'close');
+  req.write('x'.repeat(4 * 1024 * 1024 + 1));
+  await closed;
+  assert.equal(child.killed, true);
+});
+
 test('four conversations run independently, overflow and configuration changes are refused', async (t) => {
   const f = await fixture(t);
   const running = await Promise.all([f.start(), f.start(), f.start(), f.start()]);

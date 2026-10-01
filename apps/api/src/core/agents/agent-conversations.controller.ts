@@ -7,7 +7,16 @@ import {
   Param,
   Post,
   Res,
+  StreamableFile,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import {
+  AgentChatImagesService,
+  CHAT_IMAGE_BYTES,
+  validateChatImages,
+} from './agent-chat-images.service';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type { AuthUser } from '@pulsar/shared';
@@ -46,6 +55,7 @@ export class AgentConversationsController {
     private readonly agents: AgentsService,
     private readonly runtime: AgentRuntimeService,
     private readonly conversations: AgentConversationsService,
+    private readonly images: AgentChatImagesService,
   ) {}
 
   @Get()
@@ -62,8 +72,33 @@ export class AgentConversationsController {
 
   @Get(':id')
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_CHAT)
-  get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.conversations.get(user.tenantId, user.id, id);
+  async get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const conv = await this.conversations.get(user.tenantId, user.id, id);
+    const images = await this.images.metadata(
+      user.tenantId,
+      conv.messages.map((m) => m.id),
+    );
+    return {
+      ...conv,
+      messages: conv.messages.map((m) => ({
+        ...m,
+        images: images.filter((i) => i.entityId === m.id).map(({ entityId, ...image }) => image),
+      })),
+    };
+  }
+
+  @Get(':id/images/:imageId')
+  @RequirePermissions(PERMISSIONS.CORE.AGENTS_CHAT)
+  async image(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('imageId') imageId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const file = await this.images.download(user.tenantId, user.id, id, imageId);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return new StreamableFile(file.stream, { type: file.mimeType, disposition: 'attachment' });
   }
 
   @Post()
@@ -87,29 +122,43 @@ export class AgentConversationsController {
 
   @Post(':id/messages')
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_CHAT)
+  @UseInterceptors(
+    FilesInterceptor('images', 4, {
+      limits: { fileSize: CHAT_IMAGE_BYTES, files: 4, fields: 1, fieldSize: 128000, parts: 5 },
+    }),
+  )
   async turn(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() dto: TurnDto,
     @Res() res: Response,
+    @UploadedFiles() files: Express.Multer.File[] = [],
   ) {
     const key = `${user.tenantId}:${user.id}:${id}`;
     if (this.activeTurns.has(key))
       throw new ConflictException('Une réponse est déjà en cours dans cette conversation.');
     this.activeTurns.add(key);
     try {
-      return await this.streamTurn(user, id, dto, res);
+      return await this.streamTurn(user, id, dto, res, files);
     } finally {
       this.activeTurns.delete(key);
     }
   }
 
-  private async streamTurn(user: AuthUser, id: string, dto: TurnDto, res: Response) {
+  private async streamTurn(
+    user: AuthUser,
+    id: string,
+    dto: TurnDto,
+    res: Response,
+    files: Express.Multer.File[],
+  ) {
     const conv = await this.conversations.assertOwned(user.tenantId, user.id, id);
     const agent = await this.agents.getOwned(user.tenantId, conv.agentId);
     if (agent.status !== 'ACTIVE')
       throw new ForbiddenException('Ce worker est en pause ou révoqué.');
-    await this.conversations.addMessage(conv.id, 'user', dto.text);
+    const imageBlocks = validateChatImages(files);
+    const message = await this.conversations.addMessage(conv.id, 'user', dto.text);
+    if (files.length) await this.images.save(user.tenantId, user.id, message.id, files);
     await this.conversations.titleFromMessage(user.tenantId, user.id, conv.id, dto.text);
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -155,7 +204,7 @@ export class AgentConversationsController {
         this.runtime.closeSession(sessionId);
         throw new Error('Client disconnected before prompt');
       }
-      for await (const ev of this.runtime.sendTurn(sessionId, dto.text)) {
+      for await (const ev of this.runtime.sendTurn(sessionId, dto.text, imageBlocks)) {
         if (ev.type === 'text') {
           assistantText += ev.text;
           send('text', { text: ev.text });

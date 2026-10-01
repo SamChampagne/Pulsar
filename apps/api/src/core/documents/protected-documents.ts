@@ -1,6 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
 /** Only business endpoints may create, inspect or remove these documents. */
 export const PROTECTED_DOCUMENT_TYPES = [
+  'agent-chat-image',
   'ledger-currency-evidence',
   'supplier-invoice-evidence',
   'supplier-credit-evidence',
@@ -10,6 +11,7 @@ export const PROTECTED_DOCUMENT_TYPES = [
   'customer-invoice-pdf',
 ];
 export type ProtectedDocumentContext =
+  | 'agent-chat-image'
   | 'ledger-currency-evidence'
   | 'supplier-invoice-evidence'
   | 'supplier-credit-evidence'
