@@ -15,16 +15,22 @@ export type RuntimeConnectEvent =
  * Mirrors agent-stream.ts: same Bearer token source, same fetch+reader+`\n\n`
  * frame parsing, same `event:`/`data:` extraction.
  */
-export async function* streamRuntimeConnect(): AsyncGenerator<RuntimeConnectEvent> {
-  const token = getAccessToken();
-  const response = await fetch(`${BASE}/agent-runtime/connect`, {
+export async function* streamRuntimeConnect(options?: {
+  path: string;
+  token: string | null;
+  body: unknown;
+  signal: AbortSignal;
+}): AsyncGenerator<RuntimeConnectEvent> {
+  const token = options ? options.token : getAccessToken();
+  const response = await fetch(`${BASE}${options?.path ?? '/agent-runtime/connect'}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({}),
+    body: JSON.stringify(options?.body ?? {}),
+    signal: options?.signal,
   });
 
   if (!response.ok || !response.body) {
@@ -64,6 +70,7 @@ export async function* streamRuntimeConnect(): AsyncGenerator<RuntimeConnectEven
     const tail = parseConnectFrame(buffer);
     if (tail) yield tail;
   } finally {
+    await reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
 }

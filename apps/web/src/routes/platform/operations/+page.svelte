@@ -146,5 +146,8 @@
     <p class="mt-4 text-sm leading-6">{selected.detail}</p>
     <h3 class="mt-6 text-sm font-semibold">Prochaine action</h3>
     <p class="mt-2 text-sm leading-6 text-ink-muted">{selected.nextAction}</p>
+    <div class="mt-4">
+      <Button href="/platform/services" variant="secondary">Configurer les services</Button>
+    </div>
     <p class="mt-6 text-xs text-ink-muted">Dernière mesure : {date(selected.checkedAt)}</p>{/if}
 </Drawer>

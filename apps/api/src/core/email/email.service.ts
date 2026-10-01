@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createTransport, type Transporter } from 'nodemailer';
+import { createTransport } from 'nodemailer';
+import { PlatformEmailConfigService } from './platform-email-config.service';
 
 export interface OutgoingEmail {
   to: string;
@@ -20,6 +21,7 @@ export interface SmtpTransportOptions {
   host: string;
   port: number;
   secure: boolean;
+  requireTLS?: boolean;
   user?: string;
   pass?: string;
   from?: string;
@@ -35,44 +37,53 @@ export interface SmtpTransportOptions {
  *
  * An optional per-call `transport` can be supplied (e.g. from a tenant's stored
  * SMTP config). When given, a one-off transporter is built and used for that
- * single send; otherwise the env-level transporter / log driver is used.
- * Existing single-arg callers are unaffected.
+ * single send. Explicit null pins simulation. Otherwise the platform DB setting
+ * is resolved, then the legacy environment only when no override is configured.
+ * A settings read/decryption failure never silently selects another transport.
  */
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private readonly driver: string;
   private readonly from: string;
-  private transporter: Transporter | null = null;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    @Optional() private readonly platform?: PlatformEmailConfigService,
+  ) {
     this.driver = config.get<string>('EMAIL_DRIVER', 'log');
     this.from = config.get<string>('EMAIL_FROM', 'Pulsar <no-reply@pulsar.local>');
-    if (this.driver === 'smtp') {
-      this.transporter = createTransport({
-        host: config.getOrThrow<string>('SMTP_HOST'),
-        port: config.get<number>('SMTP_PORT', 587),
-        secure: config.get<string>('SMTP_SECURE') === 'true',
-        auth: config.get('SMTP_USER')
-          ? { user: config.get<string>('SMTP_USER'), pass: config.get<string>('SMTP_PASS') }
-          : undefined,
-      });
-    }
   }
 
-  /** Returns true when the email was handed to the driver successfully. */
-  get channel(): 'log' | 'smtp' {
-    return this.transporter ? 'smtp' : 'log';
+  /** Capture once before a governed send. null intentionally pins simulation. */
+  async captureTransport(): Promise<SmtpTransportOptions | null> {
+    const configured = await this.platform?.resolve();
+    if (configured !== undefined) return configured;
+    if (this.driver !== 'smtp') return null;
+    return {
+      host: this.config.getOrThrow<string>('SMTP_HOST'),
+      port: Number(this.config.get('SMTP_PORT', 587)),
+      secure: this.config.get('SMTP_SECURE') === 'true',
+      user: this.config.get('SMTP_USER'),
+      pass: this.config.get('SMTP_PASS'),
+      from: this.from,
+    };
   }
 
-  async send(email: OutgoingEmail, transport?: SmtpTransportOptions): Promise<boolean> {
+  async effectiveChannel(): Promise<'smtp' | 'log'> {
+    return (await this.captureTransport()) ? 'smtp' : 'log';
+  }
+
+  async send(email: OutgoingEmail, transport?: SmtpTransportOptions | null): Promise<boolean> {
     try {
+      if (transport === undefined) transport = await this.captureTransport();
       if (transport) {
         // Per-call one-off transporter (e.g. tenant SMTP config).
         const oneOff = createTransport({
           host: transport.host,
           port: transport.port,
           secure: transport.secure,
+          ...(transport.requireTLS !== undefined ? { requireTLS: transport.requireTLS } : {}),
           auth: transport.user ? { user: transport.user, pass: transport.pass } : undefined,
           connectionTimeout: 10_000,
           greetingTimeout: 10_000,
@@ -84,14 +95,12 @@ export class EmailService {
         } finally {
           oneOff.close();
         }
-      } else if (this.transporter) {
-        await this.transporter.sendMail({ from: email.from ?? this.from, ...email });
       } else {
         this.logger.log(`[email:log] to=${email.to} subject="${email.subject}"`);
       }
       return true;
     } catch (err) {
-      this.logger.warn(`Email to ${email.to} failed: ${String(err)}`);
+      this.logger.warn('Email delivery failed; inspect the configured connection.');
       return false;
     }
   }

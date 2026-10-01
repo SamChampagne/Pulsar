@@ -1,4 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { getRuntimeProvider } from '@pulsar/shared';
+import { remoteRuntimeEnabled } from './remote-runtime';
 import * as path from 'node:path';
 import type { AgentRuntimeConfig, Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -20,6 +22,7 @@ export interface RuntimeModelOption {
 
 /** Public projection of the runtime config — NEVER includes the encrypted key. */
 export interface RuntimeConfigProjection {
+  updatedAt?: string;
   configured: boolean;
   provider?: string;
   authMode?: string;
@@ -53,6 +56,7 @@ export class RuntimeConfigService {
     if (!config) return { configured: false };
     return {
       configured: true,
+      updatedAt: config.updatedAt?.toISOString(),
       provider: config.provider,
       authMode: config.authMode,
       defaultModel: config.defaultModel,
@@ -71,7 +75,36 @@ export class RuntimeConfigService {
    * Creates or updates the tenant's runtime config. A non-empty `apiKey` is
    * encrypted at rest; an absent key is retained ONLY for the same identity.
    */
-  async upsert(tenantId: string, input: UpsertRuntimeInput): Promise<AgentRuntimeConfig> {
+  async upsert(
+    tenantId: string,
+    input: UpsertRuntimeInput,
+    platform?: { actorId: string; expectedUpdatedAt: string | null },
+  ): Promise<AgentRuntimeConfig> {
+    const provider = getRuntimeProvider(input.provider);
+    if (!provider || provider.authMode !== input.authMode)
+      throw new BadRequestException('Fournisseur ou mode d’authentification invalide.');
+    if (input.authMode === 'login' && input.apiKey)
+      throw new BadRequestException('Ce fournisseur utilise OAuth, pas une clé API.');
+    if (input.baseUrl) {
+      let url: URL;
+      try {
+        url = new URL(input.baseUrl);
+      } catch {
+        throw new BadRequestException('URL du fournisseur invalide.');
+      }
+      if (
+        !provider.needsBaseUrl ||
+        !['http:', 'https:'].includes(url.protocol) ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash ||
+        (remoteRuntimeEnabled() && (url.protocol !== 'https:' || (url.port && url.port !== '443')))
+      )
+        throw new BadRequestException(
+          'URL fournisseur refusée. En production : HTTPS 443 sur un domaine autorisé par l’opérateur.',
+        );
+    }
     const hasKey = typeof input.apiKey === 'string' && input.apiKey.length > 0;
     const apiKeyEnc = hasKey ? this.crypto.encryptString(input.apiKey as string) : undefined;
 
@@ -80,6 +113,8 @@ export class RuntimeConfigService {
       // forward the previous provider's credential to a different destination.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`agent-runtime:${tenantId}`}, 0))`;
       const current = await tx.agentRuntimeConfig.findUnique({ where: { tenantId } });
+      if (platform && (current?.updatedAt.toISOString() ?? null) !== platform.expectedUpdatedAt)
+        throw new ConflictException('La connexion IA a changé. Rechargez avant de sauvegarder.');
       const identityChanged =
         !!current &&
         (current.provider !== input.provider ||
@@ -90,7 +125,7 @@ export class RuntimeConfigService {
         identityChanged ||
         hasKey ||
         current.defaultModel !== (input.defaultModel ?? null);
-      return tx.agentRuntimeConfig.upsert({
+      const saved = await tx.agentRuntimeConfig.upsert({
         where: { tenantId },
         create: {
           tenantId,
@@ -101,6 +136,7 @@ export class RuntimeConfigService {
           ...(apiKeyEnc !== undefined ? { apiKeyEnc } : {}),
         },
         update: {
+          updatedAt: new Date(Math.max(Date.now(), (current?.updatedAt?.getTime() ?? 0) + 1)),
           provider: input.provider,
           authMode: input.authMode,
           defaultModel: input.defaultModel ?? null,
@@ -116,6 +152,22 @@ export class RuntimeConfigService {
           ...(changed ? { lastTestAt: null, lastTestOk: null, availableModels: [] } : {}),
         },
       });
+      if (platform)
+        await tx.platformServiceAudit.create({
+          data: {
+            actorId: platform.actorId,
+            tenantId,
+            service: 'tenant-ai',
+            action: 'CONFIGURE',
+            detail: {
+              provider: input.provider,
+              authMode: input.authMode,
+              identityChanged,
+              hasApiKey: !!saved.apiKeyEnc,
+            },
+          },
+        });
+      return saved;
     });
   }
 

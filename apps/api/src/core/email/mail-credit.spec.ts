@@ -35,7 +35,11 @@ describe.each(['customer-credit', 'customer-invoice'])('%s PDF delivery safety',
       },
     };
     const extendedDb = { ...db, customerInvoice: db.customerCreditNote };
-    const provider = { channel, send: jest.fn(async () => true) };
+    const platformSmtp = { host: 'smtp.platform.test', port: 587, secure: false };
+    const provider = {
+      captureTransport: jest.fn(async () => (channel === 'smtp' ? platformSmtp : null)),
+      send: jest.fn(async () => true),
+    };
     const config = { resolve: jest.fn(async () => null as object | null) };
     const docs = { download: jest.fn(async () => ({ stream: Readable.from([bytes]) })) };
     const service = new MailService(
@@ -57,7 +61,7 @@ describe.each(['customer-credit', 'customer-invoice'])('%s PDF delivery safety',
       expect.objectContaining({
         attachments: [{ filename: 'credit.pdf', content: Buffer.from('%PDF immutable proof') }],
       }),
-      undefined,
+      { host: 'smtp.platform.test', port: 587, secure: false },
     ]);
     expect(docs.download).toHaveBeenCalledWith('tenant', 'doc', `${kind}-pdf`);
     expect(msg).toMatchObject({ status: 'SENT', deliveryUncertain: false });

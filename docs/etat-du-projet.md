@@ -1,5 +1,23 @@
 # État du projet — point de reprise
 
+> **Centre plateforme — 1er octobre 2026**, branche `codex/platform-service-center`.
+> Administration → Services et connexions : SMTP global dynamique, SMTP dédié ou
+> hérité par entreprise, connexion IA/OAuth et diagnostic réel du runner sélectionné.
+> Versions attendues, confirmations de portée, secrets chiffrés, audit opérateur
+> atomique; vérification SMTP sans envoi et ACP sans inférence. Les simulations
+> financières restent figées même si le transport global change. Aide intégrée,
+> guide serveur et distinction explicite entre configuration et provisionnement.
+> **807 tests API / 110 suites** en passe complète, puis **17 tests ciblés / 3 suites**
+> (dont 9 nouveaux cas complémentaires au total complet : bilan consolidé 816).
+> **237 tests Web / 37 fichiers**, **4 parcours Chromium**, typechecks API/Web et
+> builds API/Web réussis; 12 avertissements Web préexistants. Migration SQL et
+> quatre contraintes vérifiées dans PostgreSQL jetable sans réseau, conteneur arrêté.
+> Deux tables plateforme nouvelles; migration à appliquer avant les images.
+> Aucun SMTP/LLM/OAuth fournisseur réel, aucune modification de `.env`, de la base
+> de développement ou du VPS. Aucun déploiement effectué. Installation des
+> runners, SMS/IMAP réels et mode IA managé restent hors de ce premier palier.
+> [Usage, garanties, déploiement et rollback](plans/platform-service-center.md).
+
 > **Espace IA multimodal A2e — 1er octobre 2026**, branche
 > `codex/production-agent-runner`. Images par fichier/collage/dépôt, aperçu/retrait,
 > optimisation JPEG sans EXIF, capture ponctuelle consentie (pas de vidéo/audio),

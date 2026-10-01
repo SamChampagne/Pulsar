@@ -16,6 +16,10 @@ import { ApsModule } from '../aps/aps.module';
 import { PlatformOperationsController } from './platform-operations.controller';
 import { PlatformOperationsService } from './platform-operations.service';
 import { DeploymentObservationService } from './deployment-observation.service';
+import { PlatformServicesController } from './platform-services.controller';
+import { PlatformServicesService } from './platform-services.service';
+import { RuntimeConfigService } from '../agents/runtime-config.service';
+import { RuntimeHealthService } from '../agents/runtime-health.service';
 
 @Module({
   imports: [
@@ -32,12 +36,16 @@ import { DeploymentObservationService } from './deployment-observation.service';
     }),
   ],
   controllers: [
+    PlatformServicesController,
     PlatformAuthController,
     PlatformMfaController,
     PlatformTenantsController,
     PlatformOperationsController,
   ],
   providers: [
+    PlatformServicesService,
+    RuntimeConfigService,
+    RuntimeHealthService,
     DeploymentObservationService,
     PlatformOperationsService,
     PlatformAuthService,

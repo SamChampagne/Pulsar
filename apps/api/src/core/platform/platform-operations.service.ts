@@ -11,6 +11,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ApsRuntimeService } from '../aps/aps-runtime.service';
 import { isInstalled } from '../agents/runtime-install';
 import { DeploymentObservationService, unknownMigrations } from './deployment-observation.service';
+import { EmailService } from '../email/email.service';
 
 /** Platform-plane observations only. No tenant content, credentials or raw errors. */
 @Injectable()
@@ -20,6 +21,7 @@ export class PlatformOperationsService {
     private readonly config: ConfigService,
     private readonly aps: ApsRuntimeService,
     private readonly deployment: DeploymentObservationService,
+    private readonly emailService: EmailService,
   ) {}
 
   private async bounded<T>(work: Promise<T>, ms = 5000): Promise<T> {
@@ -112,23 +114,25 @@ export class PlatformOperationsService {
         'Runtime agents',
         process.env.AGENT_RUNTIME_MODE === 'remote' || installed ? 'UNVERIFIED' : 'NOT_CONFIGURED',
         process.env.AGENT_RUNTIME_MODE === 'remote'
-          ? 'Runners dédiés configurés en mode distant. Vérifier leur disponibilité dans chaque entreprise; le runtime n’est pas installé dans l’API.'
+          ? 'Mode distant actif. Le rattachement et la disponibilité des runners sont à vérifier dans Services et connexions; ce statut ne prouve pas leur présence.'
           : installed
             ? 'Runtime installé. Les identifiants, modèles et connexions restent propres à chaque entreprise.'
             : 'Runtime Hermes non installé sur ce processus API.',
-        'Ouvrir Agents > Connexion du modèle dans l’entreprise. Aucun appel LLM effectué ici.',
+        'Ouvrir Administration > Services et connexions, puis sélectionner une entreprise pour vérifier son runner et configurer son fournisseur. Aucun appel LLM effectué ici.',
       ),
     );
-    const email = this.config.get<string>('EMAIL_DRIVER', 'log');
+    const email = await this.emailService.effectiveChannel().catch(() => 'unavailable');
     services.push(
       observation(
         'email',
         'Courriels sortants',
-        email === 'log' ? 'NOT_CONFIGURED' : 'UNVERIFIED',
+        email === 'unavailable' ? 'UNAVAILABLE' : email === 'log' ? 'NOT_CONFIGURED' : 'UNVERIFIED',
         email === 'log'
           ? 'Pilote global log : les courriels globaux ne sont pas livrés. Des réglages par entreprise peuvent différer.'
-          : 'Pilote global configuré. La livraison réelle n’a pas été testée.',
-        'Vérifier SMTP et les comptes courriel des entreprises avant un envoi de test explicite.',
+          : email === 'unavailable'
+            ? 'Configuration du transport global indisponible. Aucun repli simulé supposé.'
+            : 'SMTP global configuré. La livraison réelle n’a pas été testée.',
+        'Ouvrir Administration > Services et connexions pour configurer le SMTP global ou celui d’une entreprise et vérifier la connexion sans envoyer.',
       ),
     );
     const storage = this.config.get<string>('STORAGE_DRIVER', 'local');

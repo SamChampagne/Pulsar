@@ -881,6 +881,16 @@ IA implicite. Contrat : `docs/plans/services-work-acceptance.md`.
 
 ## Hard rules (communications — Telnyx / email)
 
+- Centre plateforme : `/platform/services/**` utilise `PlatformController`, jamais
+  un JWT tenant ni une usurpation de User. Config SMTP global et connexions tenant
+  à version attendue; acteur réel et `PlatformServiceAudit` atomiques aux mutations.
+  Le SMTP plateforme BD prime sur l’environnement; absence/ENVIRONMENT conserve
+  le comportement historique. `EmailService.send(..., null)` fige une simulation;
+  `undefined` résout le transport global. Ne jamais transformer ce null en undefined
+  dans les envois financiers. Un défaut de lecture/chiffrement ne fait pas de repli.
+  Le contrôle SMTP explicite vérifie TLS/auth sans envoyer. Aucun provisioning Docker
+  ni consentement SMS/IMAP contourné. Contrat : `docs/plans/platform-service-center.md`.
+
 - SMS via `SmsService` : core, tenant-scopé, utilisateur humain actif, confirmation,
   version de connexion et clé acteur/corps/tenant. Registre et audit avant réseau,
   cap de tentatives sous verrou tenant; aucun nouvel outil agent ou réaction sortante.

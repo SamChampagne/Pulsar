@@ -2,6 +2,16 @@
 
 Phases are scoped to ship a usable increment each time. Detailed tasks live in [TODO.md](./TODO.md).
 
+## Centre plateforme — 1er octobre 2026
+
+[Services et connexions](docs/plans/platform-service-center.md) : SMTP global en
+interface, connexions IA/SMTP par entreprise, contrôles sans envoi/inférence,
+versions, audit opérateur et diagnostics runners. Migration additive, aucun
+déploiement ni service activé par la livraison locale. Suite : recette SMTP/OAuth
+autorisée sur VPS puis provisionnement opérateur reproductible des runners.
+IMAP réel/SMS restent soumis aux consentements internes; pas de bouton global
+qui contourne leur gouvernance.
+
 ## Espace IA global — 30 septembre 2026
 
 [A2d livré localement](docs/plans/global-ai-workspace.md) : conversations privées
@@ -324,6 +334,7 @@ arrive as a panel inside these surfaces (workbench v2). Design:
 - **Workflow Config Designer** (upcoming) — visual workflow/policy editor.
 - **Workbench v2 enhancements** (upcoming) — drag & drop (backlog → builder, stop reorder) and the
   agent "propose" panel ("Hermes optimizes this run" → `ProposedAction`).
+
 # Point IA — 30 septembre 2026
 
 Le runner de production dédié est implémenté sur `codex/production-agent-runner`.

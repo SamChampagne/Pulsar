@@ -4,6 +4,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { DocumentsModule } from '../documents/documents.module';
 import { OperatingModule } from '../operating/operating.module';
 import { EmailService } from './email.service';
+import { PlatformEmailConfigService } from './platform-email-config.service';
 import { EmailConfigService } from './email-config.service';
 import { EmailConfigController } from './email-config.controller';
 import { MailService } from './mail.service';
@@ -25,6 +26,7 @@ import { TenantInboundDriver } from './inbound/tenant-inbound.driver';
   imports: [CryptoModule, AuditLogsModule, DocumentsModule, OperatingModule],
   controllers: [EmailConfigController, TemplatesController, EmailsController, InboundController],
   providers: [
+    PlatformEmailConfigService,
     EmailService,
     EmailConfigService,
     MailService,
@@ -42,6 +44,7 @@ import { TenantInboundDriver } from './inbound/tenant-inbound.driver';
     },
   ],
   exports: [
+    PlatformEmailConfigService,
     EmailService,
     EmailConfigService,
     MailService,
