@@ -105,7 +105,10 @@ dans l’API est read-only et ne contient aucune clé fournisseur.
 
 ## Frontières et limites du premier palier
 
-- Un processus actif par runner/tenant (login **ou** conversation). Concurrence
+- Quatre processus par runner/tenant par défaut, un par conversation; login OAuth
+  exclusif. `PULSAR_AGENT_MAX_CONCURRENT` règle le plafond opérateur de 1 à 8,
+  à dimensionner avec la RAM/CPU/PID. Même génération de configuration tant que
+  des enfants vivent; modification incompatible refusée jusqu’au repos. Concurrence
   supplémentaire refusée, jamais envoyée à un autre tenant. L’API ferme le processus
   distant après chaque tour; le suivant recharge strictement le même historique.
   Un processus abandonné expire après 5 min, durée absolue 1 h, tour Pulsar 120 s.

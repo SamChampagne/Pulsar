@@ -128,6 +128,10 @@ jobs:
           pnpm --filter @pulsar/database exec prisma migrate deploy
           pnpm --filter @pulsar/database exec tsx prisma/seed.ts
       - name: E2E tests (api)
+        # One worker preserves serial DB fixtures. Jest recycles it between suites
+        # above 768MB (jest-e2e.json), instead of retaining every Nest/TS graph.
+        env:
+          NODE_OPTIONS: --max-old-space-size=3072
         run: pnpm --filter @pulsar/api test:e2e
 
   web-build:

@@ -30,6 +30,7 @@ services:
       RUNNER_TOKEN_FILE: /run/secrets/runner-token
       RUNNER_MCP_URL: http://api:3000/api/v1/mcp
       RUNNER_PROXY_URL: http://agent-egress:3128
+      RUNNER_MAX_CONCURRENT: ${PULSAR_AGENT_MAX_CONCURRENT:-4}
     volumes:
       - agent_tenant_data:/data
     secrets: [runner-token]

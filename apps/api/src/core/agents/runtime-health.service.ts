@@ -30,6 +30,8 @@ export interface RuntimeHealth {
   runtimeMode?: 'local' | 'remote';
   runnerStatus?: 'unassigned' | 'unreachable' | 'ready';
   runnerBusy?: boolean;
+  runnerActiveProcesses?: number;
+  runnerMaxConcurrent?: number;
 }
 
 function localCommand(command: string, args: string[], cwd: string): Promise<string> {
@@ -87,6 +89,12 @@ export class RuntimeHealthService {
         scope: 'REMOTE_METADATA_ONLY',
         runtimeMode: 'remote',
         runnerBusy: data?.busy === true,
+        runnerActiveProcesses: Number.isInteger(data?.activeProcesses)
+          ? Number(data?.activeProcesses)
+          : undefined,
+        runnerMaxConcurrent: Number.isInteger(data?.maxConcurrent)
+          ? Number(data?.maxConcurrent)
+          : undefined,
         runnerStatus:
           data && installed
             ? 'ready'

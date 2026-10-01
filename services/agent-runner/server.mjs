@@ -53,11 +53,12 @@ export function prepareRuntime(boot, options) {
   let model = cfg.defaultModel || '';
   if (model.startsWith(`${provider.providerKey}:`))
     model = model.slice(provider.providerKey.length + 1);
-  writeFileSync(
-    path.join(home, 'config.yaml'),
-    `model:\n  provider: ${JSON.stringify(provider.providerKey)}\n  default: ${JSON.stringify(model)}\n${cfg.baseUrl ? `  base_url: ${JSON.stringify(cfg.baseUrl)}\n` : ''}`,
-    { mode: 0o600 },
-  );
+  if (options.writeConfig !== false)
+    writeFileSync(
+      path.join(home, 'config.yaml'),
+      `model:\n  provider: ${JSON.stringify(provider.providerKey)}\n  default: ${JSON.stringify(model)}\n${cfg.baseUrl ? `  base_url: ${JSON.stringify(cfg.baseUrl)}\n` : ''}`,
+      { mode: 0o600 },
+    );
   const env = {
     PATH: '/usr/local/bin:/usr/bin:/bin',
     LANG: 'C.UTF-8',
@@ -134,7 +135,14 @@ export function createRunner(options) {
     proxy.hash
   )
     throw new Error('Invalid private endpoints');
-  let active = false; // Serialized tenant process: config and OAuth writes cannot race.
+  const maxConcurrent = options.maxConcurrent ?? 4;
+  if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 8)
+    throw new Error('Runner concurrency must be an integer between 1 and 8');
+  let active = 0;
+  let exclusive = false;
+  // A configuration generation is immutable while any child is alive. The pinned
+  // runtime locks OAuth refreshes cross-process and uses SQLite WAL for history.
+  let generation;
   const children = new Set();
   const server = http.createServer((req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -156,20 +164,32 @@ export function createRunner(options) {
           tenantId: options.tenantId,
           installed: true,
           ...options.metadata,
-          busy: active,
+          busy: active > 0,
+          activeProcesses: active,
+          maxConcurrent,
+          loginActive: exclusive,
         }),
       );
     }
     if (req.method !== 'POST' || !['/v1/acp', '/v1/login'].includes(req.url)) return fail(404);
-    if (active) return fail(409);
-    active = true;
+    const login = req.url === '/v1/login';
+    if (exclusive || active >= maxConcurrent || (login && active > 0)) return fail(409);
+    active++;
+    if (login) exclusive = true;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      active--;
+      if (login) exclusive = false;
+      if (active === 0) generation = undefined;
+    };
     let child,
       cwd,
       buffered = '',
       booted = false,
       stopped = false,
       outputBytes = 0;
-    const login = req.url === '/v1/login';
     let idle = setTimeout(() => stop(), 5000);
     const lifetime = setTimeout(() => stop(), login ? 600_000 : 3_600_000);
     const stop = () => {
@@ -184,10 +204,10 @@ export function createRunner(options) {
         // Do not release the lease until the process actually exits.
         child.once('close', () => {
           clearTimeout(force);
-          active = false;
+          release();
           children.delete(child);
         });
-      } else active = false;
+      } else release();
       if (!res.headersSent) res.writeHead(503);
       res.end();
     };
@@ -211,7 +231,24 @@ export function createRunner(options) {
           if (!booted) {
             const boot = validateBoot(frame, options.tenantId, options.providers);
             if (login && !boot.provider.loginCommand) throw new Error('Login unavailable');
-            const prepared = (options.prepare ?? prepareRuntime)(boot, options);
+            const fingerprint = createHash('sha256')
+              .update(
+                JSON.stringify([
+                  boot.config.provider,
+                  boot.config.authMode,
+                  boot.config.baseUrl ?? null,
+                  boot.config.defaultModel ?? null,
+                  boot.apiKey ?? null,
+                ]),
+              )
+              .digest('hex');
+            if (generation && generation !== fingerprint) {
+              res.writeHead(409);
+              return stop();
+            }
+            const writeConfig = !generation;
+            const prepared = (options.prepare ?? prepareRuntime)(boot, { ...options, writeConfig });
+            generation = fingerprint;
             cwd = prepared.cwd;
             const args = login
               ? ['-I', options.loginWrapper, ...boot.provider.loginCommand.split(/\s+/)]
@@ -232,7 +269,7 @@ export function createRunner(options) {
             child.stderr.on('error', stop);
             child.on('close', (code) => {
               children.delete(child);
-              active = false;
+              release();
               if (login && !stopped) sendLogin(code === 0 ? { type: 'end' } : { type: 'error' });
               clearTimeout(idle);
               clearTimeout(lifetime);
@@ -300,6 +337,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     loginWrapper: '/app/scripts/pulsar-hermes-login.py',
     mcpUrl: process.env.RUNNER_MCP_URL,
     proxyUrl: process.env.RUNNER_PROXY_URL,
+    maxConcurrent: Number(process.env.RUNNER_MAX_CONCURRENT ?? 4),
     metadata: JSON.parse(readFileSync('/app/runner/metadata.json', 'utf8')),
   });
   server.listen(3001, '0.0.0.0');

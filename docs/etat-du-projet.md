@@ -1,5 +1,28 @@
 # État du projet — point de reprise
 
+> **Espace IA global + concurrence A2d — 30 septembre 2026**, branche
+> `codex/production-agent-runner`. Icône de shell, historique privé, worker et
+> modèle configuré visibles, brouillons, réponses simultanées et badge d’activité;
+> mobile/clavier, erreurs et reprise manuelle. Aucun nouveau module ni pouvoir IA.
+> Runner : **4 processus** par défaut (plafond opérateur 1–8), configuration de
+> groupe immuable, login exclusif, compteur de capacité dans Connexion IA.
+> Correction de la CI #36798588507 : heap OOM des tests API → un worker séquentiel
+> recyclable à 768 Mo, plafond CI 3 Go; aucun test retiré.
+> **2 142 tests unitaires** (1 127 Shared / 778 API / 237 Web), **13 runner/proxy**,
+> garde Compose et **8 scénarios Chromium** réussis. Typecheck 0 erreur / 12
+> avertissements préexistants; builds API/Web/runner réussis. Quatre vrais processus
+> ACP, modèles et sessions distincts, déconnexion et reprise historique validés dans
+> l’image non-root/read-only sans réseau, 2 Go/2 CPU, sans appel LLM.
+> Suite HTTP locale complète terminée en 26 min sans OOM : 116 suites réussies,
+> 2 échouées, 1 ignorée. Doubles IA adaptés au contrat `installedForTenant`, puis
+> **16 tests HTTP IA / 3 suites réussis** à la relance. Bilan consolidé : 117 suites
+> réussies, seule la suite APS locale reste rouge (3 cas : `dbReady=false`, HTTP 500
+> sur les deux solveurs). Le bridge APS privé de fabrication passe. La CI distante
+> devra être relancée après publication; aucune validation fournisseur/OAuth réel
+> ni aucun déploiement VPS. Quelques traces de tâches cron après teardown restent à nettoyer.
+> Chat interactif mono-instance API; multi-réplicas exige un bail distribué.
+> [Usage, limites et tests](plans/global-ai-workspace.md).
+
 > **Runner IA de production A2c.2 — 30 septembre 2026**, branche
 > `codex/production-agent-runner`. Image séparée Hermes 0.16.0 verrouillée,
 > adaptateur HTTP privé API, une identité/volume/réseau par tenant, proxy HTTPS

@@ -29,16 +29,21 @@ const config = {
 const boot = { config, apiKey: 'only-this-tenant' };
 const headers = { authorization: `Bearer ${token}`, 'x-pulsar-tenant': 'tenant-a' };
 
-async function fixture(t) {
+async function fixture(t, maxConcurrent = 4) {
   const children = [];
+  const preparations = [];
   const runner = createRunner({
     tenantId: 'tenant-a',
     token,
+    maxConcurrent,
     providers,
     mcpUrl: 'http://api:3000/api/v1/mcp',
     proxyUrl: 'http://egress:3128',
     metadata: { version: '0.16.0' },
-    prepare: () => ({ cwd: '/tenant/work', env: {} }),
+    prepare: (_boot, options) => {
+      preparations.push(options.writeConfig);
+      return { cwd: '/tenant/work', env: {} };
+    },
     spawn: () => {
       const child = new EventEmitter();
       child.stdin = new PassThrough();
@@ -73,7 +78,7 @@ async function fixture(t) {
     const [res] = await response;
     return { req, res, child: children.at(-1) };
   };
-  return { url, start, children };
+  return { url, start, children, preparations };
 }
 
 test('authenticated metadata is bound to exactly one tenant', async (t) => {
@@ -130,8 +135,8 @@ test('ACP uses only Pulsar MCP and server workspace; client disconnect kills the
   assert.equal(child.killed, true);
 });
 
-test('concurrent process is refused; capacity releases on exit', async (t) => {
-  const f = await fixture(t);
+test('capacity is bounded and releases on exit', async (t) => {
+  const f = await fixture(t, 1);
   const first = await f.start();
   first.res.resume();
   const second = await f.start();
@@ -143,6 +148,50 @@ test('concurrent process is refused; capacity releases on exit', async (t) => {
   const third = await f.start();
   assert.equal(third.res.statusCode, 200);
   third.res.resume();
+});
+
+test('four conversations run independently, overflow and configuration changes are refused', async (t) => {
+  const f = await fixture(t);
+  const running = await Promise.all([f.start(), f.start(), f.start(), f.start()]);
+  for (const item of running) {
+    assert.equal(item.res.statusCode, 200);
+    item.res.resume();
+  }
+  const health = await (await fetch(`${f.url}/v1/health`, { headers })).json();
+  assert.equal(health.activeProcesses, 4);
+  assert.equal(health.maxConcurrent, 4);
+  assert.deepEqual(f.preparations, [true, false, false, false]);
+  const overflow = await f.start();
+  assert.equal(overflow.res.statusCode, 409);
+  overflow.res.resume();
+  const closed = once(f.children[0], 'close');
+  running[0].req.destroy();
+  await closed;
+  assert.equal(f.children[1].killed, false);
+  const changed = await f.start({ ...boot, apiKey: 'rotated' });
+  assert.equal(changed.res.statusCode, 409);
+  changed.res.resume();
+  const replacement = await f.start();
+  assert.equal(replacement.res.statusCode, 200);
+  replacement.res.resume();
+});
+
+test('OAuth login is exclusive in both directions', async (t) => {
+  const f = await fixture(t);
+  const oauth = { config: { ...config, provider: 'login', authMode: 'login', baseUrl: null } };
+  const first = await f.start();
+  first.res.resume();
+  const blockedLogin = await f.start(oauth, 'login');
+  assert.equal(blockedLogin.res.statusCode, 409);
+  blockedLogin.res.resume();
+  const closed = once(first.child, 'close');
+  first.req.destroy();
+  await closed;
+  const login = await f.start(oauth, 'login');
+  login.res.resume();
+  const blockedChat = await f.start();
+  assert.equal(blockedChat.res.statusCode, 409);
+  blockedChat.res.resume();
 });
 
 test('stdio MCP and malformed frames stop rather than execute', async (t) => {

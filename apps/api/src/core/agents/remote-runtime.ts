@@ -116,7 +116,13 @@ export async function openRemoteProcess(
       if (res.statusCode !== 200) {
         res.resume();
         close();
-        reject(unavailable());
+        reject(
+          res.statusCode === 409
+            ? new ServiceUnavailableException(
+                'Capacité IA occupée ou configuration en cours de changement. Attendez la fin d’une session; aucun message n’a été rejoué.',
+              )
+            : unavailable(),
+        );
         return;
       }
       res.pipe(stdout);

@@ -2,6 +2,15 @@
 
 Phases are scoped to ship a usable increment each time. Detailed tasks live in [TODO.md](./TODO.md).
 
+## Espace IA global — 30 septembre 2026
+
+[A2d livré localement](docs/plans/global-ai-workspace.md) : conversations privées
+depuis le shell, choix du worker, modèle visible, historique/brouillons et
+parallélisme borné du runner de production. Ni nouveau module ni extension de
+droits. Correction du heap OOM de la CI API par recyclage séquentiel des workers
+de tests; CI distante à revalider après publication. Prochaine preuve : déploiement
+du runner isolé, connexion fournisseur autorisée puis mission pilote en PROPOSE.
+
 ## Revalidation après déploiement du 30 septembre 2026
 
 [Recette et constats](docs/releases/post-deployment-validation-2026-09-30.md) :

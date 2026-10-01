@@ -23,12 +23,14 @@ export type AgentStreamEvent = AgentTurnEvent;
 export async function* streamAgentTurn(
   conversationId: string,
   text: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<AgentStreamEvent> {
   const token = getAccessToken();
   let response: Response;
   try {
     response = await fetch(`${BASE}/agent-conversations/${conversationId}/messages`, {
       method: 'POST',
+      signal,
       headers: {
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
@@ -93,6 +95,7 @@ export async function* streamAgentTurn(
   } catch {
     yield* disconnectedStream();
   } finally {
+    await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }

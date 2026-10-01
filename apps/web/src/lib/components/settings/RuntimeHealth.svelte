@@ -8,6 +8,8 @@
     runtimeMode?: 'local' | 'remote';
     runnerStatus?: 'unassigned' | 'unreachable' | 'ready';
     runnerBusy?: boolean;
+    runnerActiveProcesses?: number;
+    runnerMaxConcurrent?: number;
     declaredVersion: string | null;
     installedVersion: string | null;
     pythonVersion: string | null;
@@ -68,8 +70,12 @@
               ? 'Aucun runner valide rattaché à cette entreprise. Intervention administrateur requise pour le premier déploiement.'
               : 'Le runner rattaché ne répond pas. Les autres modules de Pulsar restent disponibles.'}
         </p>
+        {#if health.runnerMaxConcurrent}<p class="mb-3 text-sm text-ink-muted tabular-nums">
+            {health.runnerActiveProcesses ?? 0} / {health.runnerMaxConcurrent} processus IA actifs. La
+            capacité est partagée entre conversations et workers automatiques.
+          </p>{/if}
         {#if health.runnerBusy}<p class="mb-3 text-sm text-ink-muted">
-            Le runner traite actuellement une session. Attendez sa fin avant de tester ou
+            Des sessions sont en cours. Attendez leur fin avant de changer de configuration ou
             reconnecter un fournisseur.
           </p>{/if}
       {/if}

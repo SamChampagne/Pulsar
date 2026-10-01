@@ -23,6 +23,7 @@ describe('AI runtime hardening — isolated tenants, no LLM', () => {
     const mod = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AgentRuntimeService)
       .useValue({
+        installedForTenant: async () => true,
         testConnection: runtimeTest,
         killAgentSessions: async () => {},
         closeSession: async () => {},

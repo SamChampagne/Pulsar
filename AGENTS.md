@@ -936,11 +936,17 @@ IA implicite. Contrat : `docs/plans/services-work-acceptance.md`.
   A2c.2 : production distante via `services/agent-runner` / `deploy/agent-runner`.
   Une identité, un volume, un réseau interne et un secret par tenant; routage
   serveur uniquement, aucun fallback local en mode remote. ACP duplex fermé ⇒
-  enfant arrêté, aucun retry/replay de prompt. Un processus actif par tenant,
-  libéré après le tour; reprise stricte. Le runner ne connaît ni DB ni JWT.
+  enfant arrêté, aucun retry/replay de prompt. A2d : quatre processus simultanés
+  par défaut (plafond opérateur 1–8), un par conversation, libérés après le tour;
+  reprise stricte. Configuration de groupe immuable tant qu’un enfant vit, login
+  OAuth exclusif; ne jamais réécrire config.yaml à chaque démarrage concurrent.
+  Le runner ne connaît ni DB ni JWT. Le chat global est core, permission chat;
+  historique tenant/utilisateur, un tour par conversation sur l’instance API.
+  Multi-réplicas API exige un bail distribué, pas le Set local actuel.
   Egress HTTPS exact via proxy, jamais de Docker socket, provider env en liste
   fermée, wrapper Pulsar inchangé. OAuth ne valide que la version capturée.
   L’image offline n’est pas réutilisée. Contrat : `deploy/agent-runner/README.md`.
+  Usage/concurrence : `docs/plans/global-ai-workspace.md`.
 
 - Communications de dossier C3a : accès fermé `COMMUNICATION_ACCESS`, module/droit
   source + canal sur lecture ET replay. Suggestions par FK explicite tenant-scopée,

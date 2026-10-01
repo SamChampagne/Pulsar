@@ -69,6 +69,7 @@
   );
   let pendingActions = $state(0);
   let assistantOpen = $state(false);
+  let activeAgentChats = $state(0);
 
   async function loadNotifications() {
     try {
@@ -414,13 +415,17 @@
           title="Aller à… (Ctrl+K)"><Search class="size-4" /></button
         >
         {#if canChatAgents}<button
-            class="shell-icon hidden sm:inline-flex"
+            class="shell-icon relative"
             onclick={() => {
               closeFloaters();
               assistantOpen = true;
             }}
             aria-label="Assistant IA"
-            title="Assistant IA"><Bot class="size-4" /></button
+            title="Espace IA — conversations et workers"
+            ><Bot class="size-4" />{#if activeAgentChats > 0}<span
+                class="absolute -top-1 -right-1 flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] text-white"
+                aria-label="{activeAgentChats} conversations en cours">{activeAgentChats}</span
+              >{/if}</button
           >{/if}
         <a
           href="/whats-new"
@@ -616,5 +621,8 @@
     {:else}<p class="py-8 text-center text-sm text-ink-muted">Aucune notification à lire.</p>{/each}
   </Drawer>
   <CommandPalette bind:open={paletteOpen} commands={paletteCommands} />
-  {#if canChatAgents}<AssistantPanel bind:open={assistantOpen} />{/if}
+  {#if canChatAgents}<AssistantPanel
+      bind:open={assistantOpen}
+      bind:activeCount={activeAgentChats}
+    />{/if}
 {/if}

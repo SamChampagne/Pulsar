@@ -227,7 +227,9 @@ function parseMcp(res: request.Response): { result?: any; error?: any } {
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error(`Could not parse MCP response. status=${res.status} body=${text.slice(0, 500)}`);
+    throw new Error(
+      `Could not parse MCP response. status=${res.status} body=${text.slice(0, 500)}`,
+    );
   }
 }
 
@@ -322,6 +324,18 @@ describe('Phase 11b — agents-employés (conversation → governance) (e2e)', (
   }
 
   // -- tests ---------------------------------------------------------------
+
+  it('global chat roster projects only safe worker fields and requires authentication', async () => {
+    const agent = await registerAgent({ name: `workspace-${suffix}`, autonomyLevel: 'PROPOSE' });
+    await request(http).get('/api/v1/agent-conversations/workers').expect(401);
+    const response = await request(http)
+      .get('/api/v1/agent-conversations/workers')
+      .set(auth())
+      .expect(200);
+    const worker = response.body.find((row: { id: string }) => row.id === agent.id);
+    expect(worker.model).toBe('anthropic:claude-sonnet-4-6');
+    expect(Object.keys(worker).sort()).toEqual(['avatar', 'id', 'model', 'name', 'role', 'status']);
+  });
 
   it('PROPOSE: turn enqueues a governed proposal (no live mutation) and persists messages', async () => {
     const agent = await registerAgent({
