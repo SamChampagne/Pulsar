@@ -494,7 +494,7 @@ export const KNOWLEDGE_DETAILS: Record<string, Detail> = {
   agents: {
     prerequisites: 'Runtime et fournisseur configurés pour le tenant, rôle et outils autorisés.',
     rules: [
-      'Connexion IA distingue le moteur Hermes, le fournisseur/modèle et la gouvernance Pulsar. Le diagnostic lit les versions locales et une référence officielle datée; il ne contacte pas GitHub et ne met rien à jour. Inventaire incomplet signifie inconnu, pas sain.',
+      'Connexion IA distingue le moteur Hermes, le fournisseur/modèle et la gouvernance Pulsar. En production, un runner dédié à l’entreprise est rattaché une fois par l’administrateur; fournisseur, clé ou OAuth et modèle se configurent ensuite ici. Le diagnostic distingue un service non rattaché ou injoignable. En développement local, il lit les versions locales. Aucun appel au modèle ni mise à jour automatique.',
       'Vérifier le runtime ouvre une session ACP sans prompt : cela ne valide ni la clé fournisseur, ni la facturation, ni la qualité métier. Enregistrez avant le contrôle ou le login. Changer de fournisseur ou d’URL retire l’ancienne clé; une nouvelle clé doit être fournie explicitement.',
       'Le parcours agent expose uniquement les outils MCP de Pulsar, pas le terminal, les fichiers ou le navigateur du serveur. Une demande de privilège système ACP est refusée; une proposition métier approuvée ne donne jamais accès au système.',
       'Un agent ne dispose que de l’intersection entre ses permissions, les modules activés et sa liste d’outils.',

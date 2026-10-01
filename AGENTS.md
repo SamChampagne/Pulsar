@@ -933,6 +933,14 @@ IA implicite. Contrat : `docs/plans/services-work-acceptance.md`.
   dans un conteneur avec une frontière OS inter-tenants. L'API OVH reste sans Hermes;
   non-root/read-only avec seul volume documents inscriptible, migration explicite
   des anciennes permissions. Contrat : `docs/plans/ai-linux-qualification.md`.
+  A2c.2 : production distante via `services/agent-runner` / `deploy/agent-runner`.
+  Une identité, un volume, un réseau interne et un secret par tenant; routage
+  serveur uniquement, aucun fallback local en mode remote. ACP duplex fermé ⇒
+  enfant arrêté, aucun retry/replay de prompt. Un processus actif par tenant,
+  libéré après le tour; reprise stricte. Le runner ne connaît ni DB ni JWT.
+  Egress HTTPS exact via proxy, jamais de Docker socket, provider env en liste
+  fermée, wrapper Pulsar inchangé. OAuth ne valide que la version capturée.
+  L’image offline n’est pas réutilisée. Contrat : `deploy/agent-runner/README.md`.
 
 - Communications de dossier C3a : accès fermé `COMMUNICATION_ACCESS`, module/droit
   source + canal sur lecture ET replay. Suggestions par FK explicite tenant-scopée,

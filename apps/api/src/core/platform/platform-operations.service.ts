@@ -110,10 +110,12 @@ export class PlatformOperationsService {
       observation(
         'agents',
         'Runtime agents',
-        installed ? 'UNVERIFIED' : 'NOT_CONFIGURED',
-        installed
-          ? 'Runtime installé. Les identifiants, modèles et connexions restent propres à chaque entreprise.'
-          : 'Runtime Hermes non installé sur ce processus API.',
+        process.env.AGENT_RUNTIME_MODE === 'remote' || installed ? 'UNVERIFIED' : 'NOT_CONFIGURED',
+        process.env.AGENT_RUNTIME_MODE === 'remote'
+          ? 'Runners dédiés configurés en mode distant. Vérifier leur disponibilité dans chaque entreprise; le runtime n’est pas installé dans l’API.'
+          : installed
+            ? 'Runtime installé. Les identifiants, modèles et connexions restent propres à chaque entreprise.'
+            : 'Runtime Hermes non installé sur ce processus API.',
         'Ouvrir Agents > Connexion du modèle dans l’entreprise. Aucun appel LLM effectué ici.',
       ),
     );

@@ -5,6 +5,9 @@
   interface Health {
     checkedAt: string;
     installed: boolean;
+    runtimeMode?: 'local' | 'remote';
+    runnerStatus?: 'unassigned' | 'unreachable' | 'ready';
+    runnerBusy?: boolean;
     declaredVersion: string | null;
     installedVersion: string | null;
     pythonVersion: string | null;
@@ -46,7 +49,9 @@
       <div>
         <h2 class="text-sm font-semibold text-ink">Moteur IA · Hermes</h2>
         <p class="mt-1 text-xs text-ink-muted">
-          Inventaire local, sans appel au modèle ni mise à jour automatique.
+          {health?.runtimeMode === 'remote'
+            ? 'Runner dédié à votre entreprise'
+            : 'Inventaire local'}, sans appel au modèle ni mise à jour automatique.
         </p>
       </div>
       <Button variant="secondary" size="sm" onclick={load} disabled={loading}>
@@ -55,17 +60,38 @@
     </div>
     {#if error}<p role="alert" class="mb-3 text-sm text-danger">{error}</p>{/if}
     {#if health}
+      {#if health.runtimeMode === 'remote'}
+        <p class="mb-3 text-sm text-ink-muted" role="status">
+          {health.runnerStatus === 'ready'
+            ? 'Service IA joignable. Fournisseur, connexion et modèle se règlent ci-dessous.'
+            : health.runnerStatus === 'unassigned'
+              ? 'Aucun runner valide rattaché à cette entreprise. Intervention administrateur requise pour le premier déploiement.'
+              : 'Le runner rattaché ne répond pas. Les autres modules de Pulsar restent disponibles.'}
+        </p>
+        {#if health.runnerBusy}<p class="mb-3 text-sm text-ink-muted">
+            Le runner traite actuellement une session. Attendez sa fin avant de tester ou
+            reconnecter un fournisseur.
+          </p>{/if}
+      {/if}
       <div class="mb-4 flex flex-wrap items-center gap-2">
         <Badge tone={health.assessment === 'reference-match' ? 'neutral' : 'warn'}>
           {health.assessment === 'reference-match'
             ? 'Référence Pulsar reconnue'
             : health.assessment === 'not-installed'
-              ? 'Non installé'
+              ? health.runtimeMode === 'remote'
+                ? health.runnerStatus === 'unassigned'
+                  ? 'Non rattaché'
+                  : 'Injoignable'
+                : 'Non installé'
               : health.assessment === 'review-required'
                 ? 'Écart à qualifier'
                 : 'Inventaire incomplet'}
         </Badge>
-        <span class="text-xs text-ink-muted">{formatDateTime(health.checkedAt)} · cache 30 s</span>
+        <span class="text-xs text-ink-muted"
+          >{formatDateTime(health.checkedAt)} · {health.runtimeMode === 'remote'
+            ? 'lecture du runner'
+            : 'cache 30 s'}</span
+        >
       </div>
       <dl class="grid gap-4 border-y border-edge py-4 sm:grid-cols-3">
         <div>
@@ -86,7 +112,7 @@
             {health.sourceCommit?.slice(0, 12) ?? 'Inconnue'}
           </dd>
           <dd class="text-xs text-ink-muted">
-            {health.sourceModified === null
+            {health.sourceModified == null
               ? 'État source inconnu'
               : health.sourceModified
                 ? 'Sources modifiées localement'

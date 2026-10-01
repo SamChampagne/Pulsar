@@ -1,0 +1,7 @@
+[
+  {
+    "tenantId": "REPLACE_WITH_DATABASE_TENANT_ID",
+    "url": "http://agent-runner:3001",
+    "tokenFile": "/run/agent-routing/runner-token"
+  }
+]

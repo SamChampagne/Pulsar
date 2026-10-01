@@ -1,5 +1,25 @@
 # État du projet — point de reprise
 
+> **Runner IA de production A2c.2 — 30 septembre 2026**, branche
+> `codex/production-agent-runner`. Image séparée Hermes 0.16.0 verrouillée,
+> adaptateur HTTP privé API, une identité/volume/réseau par tenant, proxy HTTPS
+> en liste fermée. Clé/fournisseur/modèle et OAuth depuis Connexion IA après
+> rattachement opérateur initial. Diagnostics tenant et plateforme adaptés,
+> gouvernance et API non-root/read-only préservées; aucun nouveau pouvoir agent.
+> Un seul processus actif par tenant pour ce premier palier, libéré après chaque
+> tour distant; historique rechargé strictement. Provisioning automatique et
+> parallélisme multi-workers restent hors périmètre.
+> Revalidation : **2 137 tests unitaires** (1 127 Shared, 773 API, 237 Web),
+> **11 tests runner/proxy + 4 manifestes**, typecheck 0 erreur / 12 avertissements préexistants.
+> Dernière passe API ciblée : 34 tests, incluant un nouveau contrôle UTF-8 fragmenté.
+> Builds API/Web/runner/proxy et garde du Compose fusionné réussis; vrai ACP initialize/new/load inconnu refusé, arrêt sur
+> déconnexion, UID 1000, racine read-only, réseau none puis internal et persistance
+> après recréation vérifiés sans fournisseur. **3 scénarios UI Chromium** réussis
+> (dont responsive mobile). Premier passage UI perturbé par les rechargements
+> Vite concurrents aux checks; relance isolée verte. Avertissement Jest de teardown
+> antérieur toujours présent. Pas de recette métier/clé/OAuth réels, ni déploiement
+> VPS effectué. [Déploiement, limites, sauvegarde et rollback](../deploy/agent-runner/README.md).
+
 > **Recette après déploiement — 30 septembre 2026.** La PR #82 est fusionnée,
 > sa CI finale et celle de `main` sont vertes (six jobs; navigateur : **346
 > réussites, 114 ignorés**, aucun cas instable signalé). Les notes du 28 septembre

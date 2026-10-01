@@ -315,3 +315,10 @@ arrive as a panel inside these surfaces (workbench v2). Design:
 - **Workflow Config Designer** (upcoming) — visual workflow/policy editor.
 - **Workbench v2 enhancements** (upcoming) — drag & drop (backlog → builder, stop reorder) and the
   agent "propose" panel ("Hermes optimizes this run" → `ProposedAction`).
+# Point IA — 30 septembre 2026
+
+Le runner de production dédié est implémenté sur `codex/production-agent-runner`.
+Priorité suivante : déployer sur l’entreprise de test, valider son fournisseur
+avec budget explicite puis les trois missions métier; ne pas promouvoir Hermes
+ni l’autonomie avant ces preuves. Provisioning multi-tenant automatique et file
+durable restent à construire. [Runbook et limites](deploy/agent-runner/README.md).

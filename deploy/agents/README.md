@@ -58,3 +58,8 @@ le [guide OVH](../ovh/README.md); ne jamais remplacer un déploiement par ce ban
 Références : [uv dans Docker](https://docs.astral.sh/uv/guides/integration/docker/),
 [synchronisation verrouillée](https://docs.astral.sh/uv/concepts/projects/sync/),
 [services Docker Compose](https://docs.docker.com/reference/compose-file/services/).
+
+## Runner de production
+
+Pour déployer l’IA, utiliser [le profil dédié](../agent-runner/README.md).
+Le présent répertoire reste un banc **hors ligne**, pas le service de production.

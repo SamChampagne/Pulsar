@@ -1,0 +1,69 @@
+# Merge AFTER deploy/ovh/compose.yml, paths resolve relative to deploy/ovh.
+# One named runner/volume/network per tenant. Never expose either service via ports/Nginx.
+services:
+  api:
+    environment:
+      AGENT_RUNTIME_MODE: remote
+      AGENT_RUNNERS_FILE: /run/agent-routing/runners.json
+    volumes:
+      - ${PULSAR_AGENT_CONFIG_DIR:?Absolute path to protected runner config}:/run/agent-routing:ro
+    networks: [default, agent_tenant]
+
+  agent-runner:
+    image: pulsar-agent-runner:${PULSAR_BUILD_VERSION:?Tested commit}
+    build:
+      context: ../..
+      dockerfile: deploy/agent-runner/Dockerfile
+      target: runner
+    restart: unless-stopped
+    init: true
+    read_only: true
+    user: '1000:1000'
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 2g
+    cpus: 2
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=128m,mode=1777']
+    environment:
+      RUNNER_TENANT_ID: ${PULSAR_AGENT_TENANT_ID:?Database tenant ID, not slug}
+      RUNNER_TOKEN_FILE: /run/secrets/runner-token
+      RUNNER_MCP_URL: http://api:3000/api/v1/mcp
+      RUNNER_PROXY_URL: http://agent-egress:3128
+    volumes:
+      - agent_tenant_data:/data
+    secrets: [runner-token]
+    networks: [agent_tenant]
+    logging: &agent-logging
+      driver: json-file
+      options: { max-size: '10m', max-file: '3' }
+
+  agent-egress:
+    image: pulsar-agent-egress:${PULSAR_BUILD_VERSION:?Tested commit}
+    build:
+      context: ../..
+      dockerfile: deploy/agent-runner/Dockerfile
+      target: proxy
+    restart: unless-stopped
+    init: true
+    read_only: true
+    user: '1000:1000'
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 128m
+    cpus: 0.5
+    environment:
+      RUNNER_ALLOWED_HOSTS: ${PULSAR_AGENT_ALLOWED_HOSTS:?Exact provider HTTPS hostnames, comma-separated}
+    networks: [agent_tenant, agent_outbound]
+    logging: *agent-logging
+
+networks:
+  agent_tenant:
+    internal: true
+  agent_outbound: {}
+volumes:
+  agent_tenant_data: {}
+secrets:
+  runner-token:
+    file: ${PULSAR_AGENT_CONFIG_DIR:?Protected config directory}/runner-token

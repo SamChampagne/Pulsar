@@ -10,6 +10,7 @@ import {
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import {
   getRuntimeProvider,
   AGENT_SYSTEM_PREAMBLE,
@@ -24,6 +25,12 @@ import { AgentsService } from './agents.service';
 import { RuntimeConfigService } from './runtime-config.service';
 import { buildRuntimeEnv, isolatedRuntimeEnv, renderCliConfig } from './agent-runtime-env';
 import { isInstalled, repoRoot, venvPython } from './runtime-install';
+import {
+  remoteRuntimeEnabled,
+  openRemoteProcess,
+  inspectRemoteRuntime,
+  type RuntimeProcess,
+} from './remote-runtime';
 
 /**
  * Races `promise` against a deadline. If the deadline fires first, `onTimeout`
@@ -60,7 +67,7 @@ interface OpenSessionInput {
 interface LiveSession {
   agentId: string;
   client: HermesAcpClient;
-  child: ChildProcessWithoutNullStreams;
+  child: RuntimeProcess;
   persona: string | null;
   firstTurnDone: boolean;
 }
@@ -112,13 +119,50 @@ export class AgentRuntimeService implements OnModuleDestroy {
    * vendored venv python with the per-tenant config + provider env. Returns the
    * spawned child and the live HermesAcpClient (post-`initialize`).
    */
-  private async spawnRuntime(tenantId: string): Promise<{
-    child: ChildProcessWithoutNullStreams;
+  private async spawnRuntime(
+    tenantId: string,
+    requireAuth = false,
+  ): Promise<{
+    child: RuntimeProcess;
     client: HermesAcpClient;
     defaultModel: string | null;
     cwd: string;
     configVersion: Date;
   }> {
+    if (remoteRuntimeEnabled()) {
+      const { config, decryptedKey } = await this.runtimeConfig.resolveForSpawn(tenantId);
+      if (
+        requireAuth &&
+        ((config.authMode === 'login' && !config.connectedAt) ||
+          (config.authMode === 'apiKey' && !decryptedKey))
+      ) {
+        throw new ServiceUnavailableException(
+          'Connectez d’abord le fournisseur dans Connexion IA.',
+        );
+      }
+      const child = await openRemoteProcess(tenantId, 'acp', config, decryptedKey);
+      try {
+        const client = new HermesAcpClient(HermesAcpClient.stdioTransport(child));
+        await withTimeout(
+          client.initialize(),
+          10_000,
+          () => {
+            child.kill();
+          },
+          'Runner IA trop lent',
+        );
+        return {
+          child,
+          client,
+          defaultModel: config.defaultModel,
+          cwd: '/data/workspace',
+          configVersion: config.updatedAt,
+        };
+      } catch (error) {
+        child.kill();
+        throw error;
+      }
+    }
     if (!isInstalled()) {
       throw new BadRequestException('Agent runtime not installed — run `pnpm agents:setup`');
     }
@@ -208,7 +252,7 @@ export class AgentRuntimeService implements OnModuleDestroy {
 
   /** Spawns a dedicated Hermes ACP process, opens a session scoped to this agent. Returns the hermes sessionId. */
   async openSession(input: OpenSessionInput): Promise<string> {
-    const { child, client, defaultModel, cwd } = await this.spawnRuntime(input.tenantId);
+    const { child, client, defaultModel, cwd } = await this.spawnRuntime(input.tenantId, true);
     try {
       const token = this.agents.mintSessionToken(input.agent.id, 300, input.triggeredByRef);
       const { sessionId } = await client.newSession({
@@ -240,8 +284,7 @@ export class AgentRuntimeService implements OnModuleDestroy {
       return sessionId;
     } catch (err) {
       child.kill();
-      const detail = err instanceof Error ? err.message : String(err);
-      console.error('[agent-runtime] openSession failed:', detail);
+      this.logger.warn('Agent session could not be opened; runtime/model check required.');
       throw new ServiceUnavailableException(
         'Session Hermes indisponible; vérifiez le runtime et le modèle choisi.',
       );
@@ -274,7 +317,7 @@ export class AgentRuntimeService implements OnModuleDestroy {
     // No prior session id to resume → behave like a fresh open.
     if (!input.existingSessionId) return this.openSession(input);
 
-    const { child, client, defaultModel, cwd } = await this.spawnRuntime(input.tenantId);
+    const { child, client, defaultModel, cwd } = await this.spawnRuntime(input.tenantId, true);
     try {
       const token = this.agents.mintSessionToken(input.agent.id, 300, input.triggeredByRef);
       const { sessionId } = await client.resumeSession(
@@ -305,8 +348,7 @@ export class AgentRuntimeService implements OnModuleDestroy {
       return sessionId;
     } catch (err) {
       child.kill();
-      const detail = err instanceof Error ? err.message : String(err);
-      console.error('[agent-runtime] resumeSession failed:', detail);
+      this.logger.warn('Agent session could not be resumed; runtime/history check required.');
       throw new ServiceUnavailableException(
         'Reprise Hermes indisponible; vérifiez le runtime et le modèle choisi.',
       );
@@ -352,6 +394,9 @@ export class AgentRuntimeService implements OnModuleDestroy {
       clearTimeout(timer!);
       // A dead transport may not settle immediately; do not keep the caller stuck.
       void iterator.return?.(undefined).catch(() => undefined);
+      // Release the tenant runner between turns. The next turn strictly loads the
+      // persisted history; no speculative replay or fresh-session fallback.
+      if (remoteRuntimeEnabled()) await this.closeSession(sessionId);
     }
   }
 
@@ -393,7 +438,7 @@ export class AgentRuntimeService implements OnModuleDestroy {
       ? (getRuntimeProvider(config.provider)?.authMode ?? (config.authMode as RuntimeAuthMode))
       : null;
     return deriveRuntimeReadiness({
-      installed: isInstalled(),
+      installed: await this.installedForTenant(tenantId),
       configured: !!config,
       authMode,
       hasApiKey: !!config?.apiKeyEnc,
@@ -411,7 +456,7 @@ export class AgentRuntimeService implements OnModuleDestroy {
   async testConnection(
     tenantId: string,
   ): Promise<{ ok: boolean; scope: 'RUNTIME_ONLY'; models?: AcpModelOption[]; error?: string }> {
-    let child: ChildProcessWithoutNullStreams | undefined;
+    let child: RuntimeProcess | undefined;
     let configVersion: Date | undefined;
     try {
       configVersion = (await this.runtimeConfig.get(tenantId))?.updatedAt;
@@ -445,7 +490,8 @@ export class AgentRuntimeService implements OnModuleDestroy {
       return {
         ok: false,
         scope: 'RUNTIME_ONLY',
-        error: 'Le contrôle local du runtime a échoué. Aucun appel au modèle n’a été validé.',
+        error:
+          'Le contrôle du runtime a échoué. Aucun appel au modèle n’a été validé. Consultez le diagnostic Connexion IA.',
       };
     } finally {
       child?.kill();
@@ -459,7 +505,58 @@ export class AgentRuntimeService implements OnModuleDestroy {
    * home, streaming the CLI's stdout/stderr lines (which carry the device code
    * + verification URL) as `text` events. Exit 0 → `markConnected` + `end`.
    */
-  async *connectLogin(tenantId: string): AsyncGenerator<LoginEvent> {
+  async installedForTenant(tenantId: string): Promise<boolean> {
+    return remoteRuntimeEnabled()
+      ? (await inspectRemoteRuntime(tenantId))?.installed === true
+      : isInstalled();
+  }
+
+  async *connectLogin(tenantId: string, signal?: AbortSignal): AsyncGenerator<LoginEvent> {
+    if (remoteRuntimeEnabled()) {
+      const { config, decryptedKey } = await this.runtimeConfig.resolveForSpawn(tenantId);
+      const child = await openRemoteProcess(tenantId, 'login', config, decryptedKey);
+      const stop = () => {
+        child.kill();
+      };
+      signal?.addEventListener('abort', stop, { once: true });
+      if (signal?.aborted) stop();
+      let buffer = '';
+      const decoder = new StringDecoder('utf8');
+      let finished = false;
+      try {
+        for await (const chunk of child.stdout) {
+          buffer += typeof chunk === 'string' ? chunk : decoder.write(chunk);
+          if (buffer.length > 65_536) throw new Error('Login response too large');
+          let nl: number;
+          while ((nl = buffer.indexOf('\n')) >= 0) {
+            const event = JSON.parse(buffer.slice(0, nl));
+            buffer = buffer.slice(nl + 1);
+            if (event.type === 'text' && typeof event.text === 'string')
+              yield { type: 'text', text: event.text };
+            else if (event.type === 'end') {
+              if (!signal?.aborted)
+                await this.runtimeConfig.markConnected(tenantId, config.updatedAt);
+              finished = true;
+              yield { type: 'end' };
+              return;
+            } else if (event.type === 'error') {
+              finished = true;
+              yield { type: 'error', message: 'Connexion fournisseur interrompue ou refusée.' };
+              return;
+            }
+          }
+        }
+        if (!finished && !signal?.aborted)
+          yield {
+            type: 'error',
+            message: 'Connexion fournisseur interrompue. Relancez la connexion.',
+          };
+      } finally {
+        signal?.removeEventListener('abort', stop);
+        child.kill();
+      }
+      return;
+    }
     if (!isInstalled()) {
       yield { type: 'error', message: 'Agent runtime not installed — run `pnpm agents:setup`' };
       return;

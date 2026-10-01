@@ -87,6 +87,10 @@ jobs:
         run: pnpm test
       - name: Offline runtime source manifest guards (no Python runtime required)
         run: node --test scripts/runtime-source-manifest.test.mjs
+      - name: Isolated runner HTTP and egress guards (synthetic, no provider calls)
+        run: pnpm agents:test-runner
+      - name: Production runner Compose security guards (no services started)
+        run: node services/agent-runner/compose-guards.mjs
 
   api-e2e:
     runs-on: ubuntu-latest

@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { isolatedRuntimeEnv } from './agent-runtime-env';
 import { isInstalled, repoRoot, venvPython } from './runtime-install';
+import { remoteRuntimeEnabled, inspectRemoteRuntime, runnerTarget } from './remote-runtime';
 
 export const RUNTIME_REFERENCE = {
   version: '0.16.0',
@@ -25,7 +26,10 @@ export interface RuntimeHealth {
   sourceModified: boolean | null;
   reference: typeof RUNTIME_REFERENCE;
   assessment: 'not-installed' | 'unknown' | 'reference-match' | 'review-required';
-  scope: 'LOCAL_METADATA_ONLY';
+  scope: 'LOCAL_METADATA_ONLY' | 'REMOTE_METADATA_ONLY';
+  runtimeMode?: 'local' | 'remote';
+  runnerStatus?: 'unassigned' | 'unreachable' | 'ready';
+  runnerBusy?: boolean;
 }
 
 function localCommand(command: string, args: string[], cwd: string): Promise<string> {
@@ -53,7 +57,44 @@ export class RuntimeHealthService {
   private cached: RuntimeHealth | undefined;
   private expiresAt = 0;
 
-  async inspect(): Promise<RuntimeHealth> {
+  async inspect(tenantId?: string): Promise<RuntimeHealth> {
+    if (remoteRuntimeEnabled()) {
+      const data = tenantId ? await inspectRemoteRuntime(tenantId) : null;
+      const text = (key: string) =>
+        typeof data?.[key] === 'string' && /^[a-zA-Z0-9.+_-]{1,64}$/.test(data[key] as string)
+          ? (data[key] as string)
+          : null;
+      const installed = data?.installed === true;
+      return {
+        checkedAt: new Date().toISOString(),
+        installed,
+        declaredVersion: text('version'),
+        installedVersion: text('version'),
+        pythonVersion: text('pythonVersion'),
+        acpVersion: text('acpVersion'),
+        mcpVersion: text('mcpVersion'),
+        sourceCommit: text('sourceCommit'),
+        sourceModified: null,
+        reference: RUNTIME_REFERENCE,
+        assessment:
+          installed &&
+          text('sourceCommit') === RUNTIME_REFERENCE.commit &&
+          text('version') === RUNTIME_REFERENCE.version
+            ? 'reference-match'
+            : installed
+              ? 'review-required'
+              : 'not-installed',
+        scope: 'REMOTE_METADATA_ONLY',
+        runtimeMode: 'remote',
+        runnerBusy: data?.busy === true,
+        runnerStatus:
+          data && installed
+            ? 'ready'
+            : tenantId && runnerTarget(tenantId)
+              ? 'unreachable'
+              : 'unassigned',
+      };
+    }
     if (this.cached && Date.now() < this.expiresAt) return this.cached;
     if (this.pending) return this.pending;
     this.pending = this.collect()

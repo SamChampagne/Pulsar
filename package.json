@@ -27,6 +27,8 @@
     "db:studio": "pnpm --filter @pulsar/database studio",
     "agents:setup": "node scripts/setup-agents.mjs",
     "agents:qualify": "node scripts/qualify-agent-runtime.mjs",
+    "agents:prepare-image": "pnpm --filter @pulsar/shared build && node scripts/prepare-agent-runner.mjs",
+    "agents:test-runner": "node --test services/agent-runner/*.test.mjs",
     "aps:setup": "node scripts/setup-aps.mjs"
   },
   "devDependencies": {

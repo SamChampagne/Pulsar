@@ -18,6 +18,7 @@
  * and keeps the normalized surface below stable regardless of upstream churn.
  */
 
+import { StringDecoder } from 'node:string_decoder';
 import {
   agentTurnMessage,
   failedAgentTurn,
@@ -142,9 +143,10 @@ export class HermesAcpClient {
 
     async function* readLines(): AsyncIterable<object> {
       let buffer = '';
+      const decoder = new StringDecoder('utf8');
       // Node readable streams are async-iterable; chunks are Buffers/strings.
       for await (const chunk of child.stdout as any as AsyncIterable<Buffer | string>) {
-        buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+        buffer += typeof chunk === 'string' ? chunk : decoder.write(chunk);
         let nl: number;
         while ((nl = buffer.indexOf('\n')) >= 0) {
           const line = buffer.slice(0, nl).trim();
@@ -157,7 +159,7 @@ export class HermesAcpClient {
           }
         }
       }
-      const tail = buffer.trim();
+      const tail = (buffer + decoder.end()).trim();
       if (tail) {
         try {
           yield JSON.parse(tail) as object;

@@ -1125,3 +1125,11 @@ clés API partenaires, flux iCal). Règles 53-55. Spec :
 
 - [ ] SFTP/FTP, OAuth client (QuickBooks, Shopify), télématique, AS2/VAN, SCIM, file durable
       partagée entre les deux outbox, export vers un entrepôt de données.
+# Suivi runner IA — 30 septembre 2026
+
+- [x] Image dédiée verrouillée, transport privé API, homes persistants, proxy,
+      diagnostic tenant et tests locaux sans fournisseur.
+- [ ] Déployer le profil sur l’entreprise de test OVH, vérifier sa panne/reprise.
+- [ ] Recette réelle fournisseur/OAuth et missions métier avec budget autorisé.
+- [ ] Provisioning automatique des runners, concurrence maîtrisée et file durable.
+      [Contrat de ce palier](deploy/agent-runner/README.md).

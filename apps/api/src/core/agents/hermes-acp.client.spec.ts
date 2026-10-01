@@ -1,7 +1,19 @@
 import { HermesAcpClient, type AcpEvent } from './hermes-acp.client';
 import { FakeAcpServer } from '../../../test/support/fake-acp-server';
+import { Readable, PassThrough } from 'node:stream';
 
 describe('HermesAcpClient (ACP over injectable transport)', () => {
+  it('preserves UTF-8 characters split across remote stream chunks', async () => {
+    const raw = Buffer.from('{"text":"é 🚚"}\n');
+    const offset = raw.indexOf(Buffer.from('🚚')) + 2;
+    const transport = HermesAcpClient.stdioTransport({
+      stdin: new PassThrough(),
+      stdout: Readable.from([raw.subarray(0, offset), raw.subarray(offset)]),
+    });
+    const frames = [];
+    for await (const frame of transport.messages) frames.push(frame);
+    expect(frames).toEqual([{ text: 'é 🚚' }]);
+  });
   it.each([
     [null, 'end_turn', 'failed'],
     [
