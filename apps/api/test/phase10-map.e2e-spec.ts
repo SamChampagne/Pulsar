@@ -510,7 +510,7 @@ describe('Phase 10 — positions, public coords, active-map, haversine (e2e)', (
       .expect(200);
     await request(http)
       .post(`/api/v1/public/driver/${ids.driverToken}/pod`)
-      .send({ shipmentId: ids.shipmentId, signedByName: 'P10 Receiver' })
+      .send({ shipmentId: driverView.body.shipments[0].id, signedByName: 'P10 Receiver' })
       .expect(201);
     await request(http)
       .post(`/api/v1/transportation/loads/${ids.loadId}/complete`)

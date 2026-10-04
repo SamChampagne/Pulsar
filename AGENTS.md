@@ -980,7 +980,128 @@ IA implicite. Contrat : `docs/plans/services-work-acceptance.md`.
   delivered notices.
 - Webhooks go through a durable outbox (`webhook_deliveries`, 5 retries with backoff).
 - Auto-tender chains advance best-effort: a failure logs and leaves the load PLANNED.
-- Web route building is v0: stops auto-generated from shipments (pickups then deliveries);
-  manual reordering is a phase-1 leftover.
+- Tournées : `Route.deliveryPlan` capture hypothèses/segments/ETA/carburant, distincts
+  de la surcharge tarifaire. Version de Load obligatoire pour les plans gérés,
+  couverture recontrôlée sous transaction, MANUAL et coûts COMPLETED préservés.
+  `canTransitionStop` garde l'exécution ordonnée; arrivée/départ ne créent aucun POD.
+  Aucune donnée inconnue transformée en zéro. Voir `docs/plans/delivery-route-fuel.md`.
 - The e2e suites (`apps/api/test/*.e2e-spec.ts`) need a running, seeded database; they create
   their own master data with unique codes so reruns are safe.
+
+## Distribution D1 — colis physiques
+
+- `DeliveryPackage` et événements sont tenant-scopés par FK composites; contenus
+  fermés/exacts et états via Shared. Le code PKG utilise SequencesService, jamais
+  un nombre de lignes. Pas de WMS, POD, tarification ni envoi implicite.
+- Marqueur `Shipment.packageTrackingEnabledAt` irréversible au premier colis;
+  aucun backfill. Compléter le chargement exige toutes les expéditions suivies
+  DELIVERED/CLOSED et conserve leurs heures; jamais de livraison globale de colis.
+- Writers sous verrou d'opération puis load puis shipment, relecture de l'affectation,
+  version colis + ID/version load pour les confirmations physiques. Tous avancent
+  Load/Shipment.updatedAt de façon monotone; créations invalident le ramassage global.
+  UUID canonique, reçu/événement/audit atomiques; replay lié acteur/corps/clé avant
+  versions actuelles. D1 reste interne; surface publique D2b gardée ci-dessous.
+  Aucun nouvel outil agent.
+- Véhicule/remorque et affectation restent bloqués si colis engagés; retrait avant
+  transit seulement. Dispatch exige au moins un colis actif par expédition suivie.
+  Cap du poste cohérent aux writers : 200 expéditions/2 000 colis par chargement,
+  200 colis historiques par expédition. Journal jamais supprimé; snapshot chargé
+  conserve le contexte physique original. Contrat : `docs/plans/distribution-packages.md`.
+
+## Distribution D2a — manifestes et étiquettes
+
+- Émission depuis un aperçu complet : hash JSON canonique + version Load, verrou
+  opération puis Load/RepeatableRead, reçu tenant/acteur/corps/UUIDv4. Snapshot,
+  numéro MF via SequencesService, révision et audit atomiques; pas de mutation
+  opérationnelle. Conflits sérialisation y compris SQL brut 40001 → 409 sans retry.
+- Données émises immuables par trigger SQL; seules les premières références/hashes
+  des deux PDF sont assignables. Relecture jamais reconstruite depuis les adresses
+  actuelles. Pas de première édition/remanifeste sur Load COMPLETED/CANCELLED.
+- PDF via DocumentsService, enregistrement Document dans la transaction fournie;
+  vérification binaire après libération de cette transaction (pool=1 supporté).
+  Types delivery-manifest-pdf/delivery-labels-pdf protégés des chemins génériques,
+  supprimables par aucun writer public. Taille/type/tenant/dossier/hash revérifiés.
+- Code 128 = identification PKG seulement, aucune transition au scan, pas de jeton
+  public/GS1/transporteur. Pas de stock, facturation, notification ou outil agent.
+  Contrat, limites d’impression et suite : `docs/plans/distribution-manifests.md`.
+
+## Distribution D2b — poste chauffeur
+
+- DriverAccessService résout tenant/module directement en transaction et verrouille
+  Load avant revalidation du jeton. Toute mutation chauffeur reste DISPATCHED/IN_TRANSIT;
+  refs publiques HMAC par jeton/type, jamais IDs internes ni notes/coûts/documents bruts.
+  Changement driverId révoque driverToken atomiquement. BOL legacy non qualifié :
+  interdit en public, disponible seulement via ses droits internes.
+- Colis via DeliveryPackagesService, mêmes machines/POD/arrivée et versions que
+  le poste interne; autorité server-only revalidée sous lock avant tout replay.
+  Source DRIVER_LINK empreinte seulement, compte de service DISABLED réel; journal,
+  effets et audit atomiques. Depuis le batch connecté : incident append-only et
+  dossier DeliveryException actif; versions colis/expédition/load avancées, sans
+  transition physique ni stock au signalement.
+- Scan = sélection, jamais confirmation; GPS opt-in. Intentions minimales sous
+  sessionStorage SHA-256(token), jamais de renvoi automatique; pas de file offline.
+  Aucun nouveau pouvoir agent/fournisseur. Contrat : `docs/plans/distribution-driver.md`.
+
+## Distribution D2c — destinataire
+
+- Suivi public et portail réutilisent buildShipmentTrackingView : tenant actif et
+  Transportation revérifiés à chaque lecture, predicate jeton/client conservé dans
+  la projection finale. Le portail recontrôle aussi Customer Portal. Aucune mutation.
+- Colis publics = code/statut/loadedAt/deliveredAt uniquement. Pas de contenu,
+  libellé libre, IDs internes ou notes. Legacy non activé = counts null; activé vide
+  = zéro explicite, jamais livraison complète. Limites 200 colis/500 événements,
+  dépassement refusé, pas de troncature silencieuse.
+- Chronologie à messages fixes, GPS exclus; une seule dernière position avant
+  livraison, jamais autres stops/historique. POD limité inchangé. Contrat :
+  `docs/plans/distribution-recipient.md`.
+
+## Connexion IA — fiabilité et documentation
+
+- Python de connexion conserve `-I` et utilise `-u -X utf8` : PYTHONUNBUFFERED seul ne
+  fonctionne pas en mode isolé. Pas d’installation dynamique de CLI dans l’API;
+  OAuth reste celui du runtime qualifié, avec stockage isolé existant.
+- SSE tenant et plateforme : status/text/error/end, heartbeat 15 s, sans buffering
+  ni cache; sortie bornée et expiration 9 min. EOF seul n’est jamais un succès.
+  connectedAt seulement après succès et version inchangée; annulation recontrôlée
+  avant écriture et confirmation. Un CAS déjà en vol peut aboutir : l’interface
+  demande de relire l’état, sans promettre un rollback des jetons du fournisseur.
+  Navigateur : 15 s headers, 45 s silence, 10 min plafond; aucun retry automatique.
+  Ne pas lancer de processus si la réponse est déjà fermée après autorisation.
+  Les événements text sont des chunks : concaténation exacte, sans newline ajouté.
+  La confirmation UI recontrôle l’identité fournisseur/modèle/URL du début.
+- Documentation au champ près = référence éditoriale des contrats implémentés,
+  filtrée par modules/droits; ne pas inventer de validation, valeur par défaut,
+  intégration ou outil IA. Signaler la couverture réelle, conserver les guides
+  des autres modules et les règles existantes de tutoriel par utilisateur.
+  Contrat IA : `docs/plans/ai-connection-reliability.md`.
+
+## Distribution connectée — contrats locaux du 3 octobre 2026
+
+- Allocation : source CRM/WMS explicite, ligne entière et quantité exacte. Locks
+  opération → business tenant → tenant WMS → Load → Shipment. Les sources exigent
+  leurs propres modules/droits avant lecture ET replay. Attestation CRM 1:1 humaine;
+  aucune conversion ni déduction SKU. Après tout chargement historique, pas de
+  libération. RETURNED garde la couverture. Aucun mouvement de stock.
+- Incidents : un seul dossier actif par colis, machines shared et versions sous
+  locks opération → Load → Shipment. OPEN/RETURN_AUTHORIZED bloquent les gestes
+  physiques; RETRY_PLANNED→RESOLVED avec remise réelle ou décision motivée.
+  Réception retour = utilisateur ACTIVE non agent/service account, lieu actif
+  autorisé, preuve append-only et colis RETURNED dans la même transaction.
+  Le writer générique colis refuse RETURNED. Stock/avoir/remplacement restent
+  distincts; deliveredAt antérieur reste historique.
+- Clôture avec retours : tous les colis sont livrés/annulés ou RETURNED avec preuve
+  RETURN_RECEIVED de cette tournée, plus les gates d'arrêts/POD. Ne pas livrer les
+  expéditions retournées ni compléter leur commande. Émettre
+  load.closed-with-returns, pas load.completed; emails Delivered seulement pour
+  les expéditions réellement livrées sans colis retourné.
+- Carburant : révisions append-only, lock Load avant lock fuel tenant. Le plan fige
+  profil/prix/date/devise choisis, relus au commit. Première baseline réelle immuable
+  au fil des corrections; jamais de conversion ni recompute du coût clôturé.
+- Document chauffeur : projection fermée dédiée, humain actif, scope revalidé avant
+  et après I/O; PDF canonique figé. BOL legacy privé. Un fichier déjà téléchargé ne
+  peut pas être révoqué sur l'appareil.
+- IA : list_delivery_operations/get_delivery_context READ; plan_delivery_retry
+  MUTATING via registre/gouvernance, versions et clé idempotente. Aucun nouvel outil
+  pour confirmer une réception physique, le stock ou les remboursements. Brouillon
+  UI en mémoire par tenant/utilisateur, jamais d'envoi automatique.
+- Contrats : docs/plans/distribution-connected-batch.md et documents liés.

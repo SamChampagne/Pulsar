@@ -19,6 +19,11 @@ export const AGENT_TOOL_SERVICES = Symbol('AGENT_TOOL_SERVICES');
  *  - analytics.carrierScorecards(tenantId)  — plural
  */
 export interface ToolServices {
+  delivery: {
+    operations(tenantId: string, query: object): Promise<unknown>;
+    context(tenantId: string, loadId: string): Promise<unknown>;
+    retry(tenantId: string, actorId: string, id: string, dto: object): Promise<unknown>;
+  };
   connectedBusiness: {
     attention(actor: AuthUser, query: object): Promise<unknown>;
     planning(actor: AuthUser, query: object): Promise<unknown>;

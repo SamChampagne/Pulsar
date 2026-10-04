@@ -50,7 +50,13 @@ const SEEDS: CatalogSeed[] = [
   },
   {
     type: DOMAIN_EVENT_TYPES.LOAD_COMPLETED,
-    description: 'Un load est livré et clôturé.',
+    description: 'Un load est livré et clôturé sans colis retourné.',
+    example: { loadId: 'ld_1', loadNumber: 'LD-000045', carrierId: 'car_1' },
+  },
+  {
+    type: DOMAIN_EVENT_TYPES.LOAD_CLOSED_WITH_RETURNS,
+    description:
+      'Une tournée est clôturée après réception physique de retours; ses commandes non livrées restent à traiter.',
     example: { loadId: 'ld_1', loadNumber: 'LD-000045', carrierId: 'car_1' },
   },
   {

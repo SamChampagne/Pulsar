@@ -93,4 +93,56 @@ describe('tenant-bound remote runtime', () => {
     expect(received).toContain('provider-test-key');
     expect(received).not.toContain('DATABASE_URL');
   });
+
+  it('cancels a pending login before response headers without retrying', async () => {
+    let requests = 0;
+    let started!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    server = createServer((req) => {
+      requests++;
+      req.resume();
+      started();
+    });
+    await new Promise<void>((r) => server!.listen(0, '127.0.0.1', r));
+    configure(dir, `http://127.0.0.1:${(server.address() as { port: number }).port}`);
+    const abort = new AbortController();
+    const login = openRemoteProcess(
+      'a',
+      'login',
+      {
+        tenantId: 'a',
+        provider: 'openai-codex',
+        authMode: 'login',
+      },
+      null,
+      abort.signal,
+    );
+    const rejected = expect(login).rejects.toThrow('annulée');
+    await pending;
+    abort.abort();
+    await rejected;
+    expect(requests).toBe(1);
+  });
+
+  it('accepts a pre-cancelled signal without an unhandled request error', async () => {
+    configure(dir, 'http://127.0.0.1:1');
+    const abort = new AbortController();
+    abort.abort();
+    await expect(
+      openRemoteProcess(
+        'a',
+        'login',
+        {
+          tenantId: 'a',
+          provider: 'openai-codex',
+          authMode: 'login',
+        },
+        null,
+        abort.signal,
+      ),
+    ).rejects.toThrow('annulée');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  });
 });

@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import TrackMap from '$lib/components/TrackMap.svelte';
+  import RecipientPackagesPanel from '$lib/components/RecipientPackagesPanel.svelte';
   import TrackingTimeline from '$lib/components/TrackingTimeline.svelte';
   import {
     Badge,
@@ -53,6 +54,9 @@
 
   async function load(id: string) {
     loading = true;
+    loadedId = id;
+    tracking = null;
+    documents = [];
     error = '';
     try {
       const [view, docs] = await Promise.all([
@@ -60,10 +64,12 @@
         // Documents are a bonus: a failure there must not hide the tracking.
         client.get<PortalDocument[]>(`/shipments/${id}/documents`).catch(() => []),
       ]);
+      if (shipmentId !== id) return;
       tracking = view;
       documents = docs;
       loadedId = id;
     } catch (e) {
+      if (shipmentId !== id) return;
       tracking = null;
       documents = [];
       error = e instanceof PortalApiError ? e.message : 'Suivi indisponible.';
@@ -124,6 +130,8 @@
           {/if}
         </div>
 
+        <RecipientPackagesPanel tracking={tracking.packageTracking} />
+
         <!-- Map (re-created when the drawer switches shipment: Leaflet reads its
              props once, on mount). -->
         {#key tracking.shipmentNumber}
@@ -181,11 +189,6 @@
                 <span class="font-semibold">{tracking.proofOfDelivery.signedByName ?? '—'}</span>
                 le {formatDateTime(tracking.proofOfDelivery.signedAt)}
               </p>
-              {#if tracking.proofOfDelivery.notes}
-                <p class="mt-1 whitespace-pre-wrap text-sm text-ink-muted">
-                  {tracking.proofOfDelivery.notes}
-                </p>
-              {/if}
             </Card>
           </section>
         {/if}

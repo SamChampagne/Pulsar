@@ -4,7 +4,8 @@
   import DossierButton from '$lib/components/workflows/DossierButton.svelte';
   import { untrack } from 'svelte';
   import { page } from '$app/state';
-  import type { Paginated } from '@pulsar/shared';
+  import { PERMISSIONS, type Paginated } from '@pulsar/shared';
+  import { auth } from '$lib/stores/auth';
   import { api, ApiError } from '$lib/api/client';
   import { formatDate } from '$lib/format';
   import {
@@ -27,6 +28,11 @@
   import { confirmAction } from '$lib/stores/confirmation';
   import LoadRoutePanel from '$lib/components/loads/LoadRoutePanel.svelte';
   import LoadShipmentsPanel from '$lib/components/loads/LoadShipmentsPanel.svelte';
+  import LoadPackagesPanel from '$lib/components/loads/LoadPackagesPanel.svelte';
+  import LoadManifestsPanel from '$lib/components/loads/LoadManifestsPanel.svelte';
+  import LoadAllocationPanel from '$lib/components/loads/LoadAllocationPanel.svelte';
+  import LoadExceptionsPanel from '$lib/components/loads/LoadExceptionsPanel.svelte';
+  import LoadDriverDocumentsPanel from '$lib/components/loads/LoadDriverDocumentsPanel.svelte';
   import LoadDocumentsPanel from '$lib/components/loads/LoadDocumentsPanel.svelte';
   import LoadAccessorialsPanel from '$lib/components/loads/LoadAccessorialsPanel.svelte';
   import LoadSummaryPanel from '$lib/components/loads/LoadSummaryPanel.svelte';
@@ -41,6 +47,9 @@
   } from '$lib/components/loads/types';
 
   const loadId = $derived(page.params.id as string);
+  const canReadPackages = $derived(
+    $auth?.user.permissions.includes(PERMISSIONS.TRANSPORTATION.PLANNING_READ) ?? false,
+  );
 
   let detail = $state<LoadDetail | null>(null);
   let route = $state<RouteDetail | null>(null);
@@ -391,6 +400,9 @@
     sections={[
       { id: 'record-route', label: 'Itinéraire' },
       { id: 'record-shipments', label: 'Expéditions' },
+      ...(canReadPackages ? [{ id: 'record-packages', label: 'Colis' }] : []),
+      ...(canReadPackages ? [{ id: 'record-manifests', label: 'Manifestes' }] : []),
+      ...(canReadPackages ? [{ id: 'record-allocation', label: 'Sources' }, { id: 'record-driver-documents', label: 'Chauffeur' }, { id: 'record-exceptions', label: 'Incidents' }] : []),
       { id: 'record-documents', label: 'Documents' },
       { id: 'record-resources', label: 'Ressources' },
       { id: 'record-costs', label: 'Frais' },
@@ -448,6 +460,22 @@
           onReload={load}
         /></RecordSection
       >
+
+      {#if canReadPackages}<RecordSection id="record-packages" label="Colis et contenu">
+          <LoadPackagesPanel {loadId} refreshKey={detail.updatedAt} onReload={load} />
+        </RecordSection>{/if}
+      {#if canReadPackages}<RecordSection id="record-manifests" label="Manifestes et étiquettes">
+          <LoadManifestsPanel {loadId} refreshKey={detail.updatedAt} />
+        </RecordSection>{/if}
+      {#if canReadPackages}<RecordSection id="record-allocation" label="Commandes et préparation">
+          <LoadAllocationPanel {loadId} refreshKey={detail.updatedAt} onReload={load} />
+        </RecordSection>
+        <RecordSection id="record-driver-documents" label="Documents chauffeur">
+          <LoadDriverDocumentsPanel {loadId} refreshKey={detail.updatedAt} onChange={load} />
+        </RecordSection>{/if}
+      {#if canReadPackages}<RecordSection id="record-exceptions" label="Incidents et retours">
+          <LoadExceptionsPanel {loadId} refreshKey={detail.updatedAt} onReload={load} />
+        </RecordSection>{/if}
 
       <RecordSection id="record-documents" label="Documents"
         >{#if auxLoading}<Card><Skeleton rows={2} /></Card>{:else if sectionErrors.documents}<Card

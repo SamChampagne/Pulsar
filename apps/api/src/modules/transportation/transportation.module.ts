@@ -1,4 +1,25 @@
 import { Module } from '@nestjs/common';
+import { DeliveryAssistanceService } from './delivery-operations/delivery-assistance.service';
+import { DeliveryOperationsController } from './delivery-operations/delivery-operations.controller';
+import { DeliveryOperationsService } from './delivery-operations/delivery-operations.service';
+import { DeliveryExceptionsService } from './delivery-exceptions/delivery-exceptions.service';
+import { DeliveryExceptionsController } from './delivery-exceptions/delivery-exceptions.controller';
+import { DeliveryAllocationController } from './delivery-allocation/delivery-allocation.controller';
+import { DeliveryAllocationService } from './delivery-allocation/delivery-allocation.service';
+import { DeliveryFuelController } from './delivery-fuel/delivery-fuel.controller';
+import { DeliveryFuelService } from './delivery-fuel/delivery-fuel.service';
+import {
+  DriverDocumentsController,
+  PublicDriverDocumentsController,
+} from './driver-documents/driver-documents.controller';
+import { DriverDocumentsService } from './driver-documents/driver-documents.service';
+import { DriverAccessService } from './public/driver-access.service';
+import { DriverPackagesService } from './public/driver-packages.service';
+import { DriverPackagesController } from './public/driver-packages.controller';
+import { DeliveryManifestsController } from './delivery-manifests/delivery-manifests.controller';
+import { DeliveryManifestsService } from './delivery-manifests/delivery-manifests.service';
+import { DeliveryPackagesController } from './delivery-packages/delivery-packages.controller';
+import { DeliveryPackagesService } from './delivery-packages/delivery-packages.service';
 import { DocumentCoordinatesModule } from '../../core/reference-data/document-coordinates.module';
 import { OperationalRecordsModule } from '../../core/reference-data/operational-records.module';
 import { AuditLogsModule } from '../../core/audit-logs/audit-logs.module';
@@ -68,6 +89,15 @@ import { CustomFieldsController } from './custom-fields/custom-fields.controller
     OperatingModule,
   ],
   controllers: [
+    DeliveryOperationsController,
+    DeliveryExceptionsController,
+    DeliveryAllocationController,
+    DeliveryFuelController,
+    DriverDocumentsController,
+    PublicDriverDocumentsController,
+    DriverPackagesController,
+    DeliveryManifestsController,
+    DeliveryPackagesController,
     CustomersController,
     LocationsController,
     CarriersController,
@@ -91,6 +121,16 @@ import { CustomFieldsController } from './custom-fields/custom-fields.controller
     PublicLinksController,
   ],
   providers: [
+    DeliveryAssistanceService,
+    DeliveryOperationsService,
+    DeliveryExceptionsService,
+    DeliveryAllocationService,
+    DeliveryFuelService,
+    DriverDocumentsService,
+    DriverAccessService,
+    DriverPackagesService,
+    DeliveryManifestsService,
+    DeliveryPackagesService,
     RatesService,
     TransportOrdersService,
     ShipmentsService,
@@ -112,6 +152,9 @@ import { CustomFieldsController } from './custom-fields/custom-fields.controller
     PlanningBoardService,
   ],
   exports: [
+    DeliveryAssistanceService,
+    DeliveryExceptionsService,
+    DeliveryOperationsService,
     CustomFieldsModule,
     RatingService,
     // Consumed by the AgentsModule tool-services adapter (core/agents).

@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import type { Readable } from 'node:stream';
+import type { Prisma } from '@pulsar/database';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FILE_STORAGE, type FileStorage } from './storage/file-storage';
 import { assertGenericDocumentType, PROTECTED_DOCUMENT_TYPES } from './protected-documents';
@@ -59,6 +60,7 @@ export class DocumentsService {
     tenantId: string,
     input: UploadDocumentInput,
     protectedContext?: ProtectedDocumentContext,
+    transaction?: Prisma.TransactionClient,
   ) {
     if (input.entityType !== protectedContext) assertGenericDocumentType(input.entityType);
     if (input.body.length > MAX_SIZE_BYTES) {
@@ -67,7 +69,7 @@ export class DocumentsService {
     const safeName = input.fileName.replace(/[^\w.\-]+/g, '_').slice(-120);
     const storageKey = `${tenantId}/${input.entityType}/${input.entityId}/${randomBytes(8).toString('hex')}-${safeName}`;
     await this.storage.put(storageKey, input.body, input.mimeType);
-    return this.prisma.document.create({
+    return (transaction ?? this.prisma).document.create({
       data: {
         tenantId,
         entityType: input.entityType,
@@ -169,9 +171,9 @@ export class DocumentsService {
     const doc = await this.prisma.document.findFirst({ where: { id, tenantId } });
     if (!doc) throw new NotFoundException('Document not found');
     if (doc.entityType !== protectedContext) assertGenericDocumentType(doc.entityType);
-    if (['customer-credit-pdf', 'customer-invoice-pdf'].includes(doc.entityType))
+    if (['customer-credit-pdf', 'customer-invoice-pdf', 'delivery-manifest-pdf', 'delivery-labels-pdf'].includes(doc.entityType))
       throw new BadRequestException(
-        'Les PDF financiers sont conservés, y compris après un échec de publication.',
+        'Les PDF figés sont conservés, y compris après un échec de publication.',
       );
     if (
       doc.entityType === 'wms-stock-exit-evidence' &&

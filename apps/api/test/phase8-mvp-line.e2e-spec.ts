@@ -387,11 +387,13 @@ describe('Phase 8 — mode-filtered rating, BOL lifecycle, delay detection (e2e)
     const driverToken = driverUrl.split('/').pop()!;
     expect(driverToken.length).toBeGreaterThan(0);
 
-    // --- 3f: GET /public/driver/:token/bol → 200 PDF ---
+    // --- 3f: Legacy BOL may carry private notes; public diffusion must fail closed.
+    // Internal PDF access was verified above and remains unchanged.
     const publicBolRes = await request(http)
       .get(`/api/v1/public/driver/${driverToken}/bol`)
-      .expect(200);
-    expect(publicBolRes.headers['content-type']).toMatch(/application\/pdf/);
+      .expect(409);
+    expect(publicBolRes.headers['content-type']).toMatch(/application\/json/);
+    expect(publicBolRes.body.message).toContain('external sharing');
 
     // --- 3g: DELETE driver-link → GET /public/driver/:token/bol → 404 ---
     await request(http)

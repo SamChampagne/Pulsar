@@ -10,6 +10,10 @@
   import { PageHeader, Button } from '$lib/components/ui';
   import ModuleConnections from '$lib/components/help/ModuleConnections.svelte';
   import SectorRoadmap from '$lib/components/help/SectorRoadmap.svelte';
+  import FieldDictionary from '$lib/help/FieldDictionary.svelte';
+  import AiPilotGuide from '$lib/help/AiPilotGuide.svelte';
+  import { visibleAiPilots } from '$lib/help/ai-pilot';
+  import { visibleFieldGuides, matchesFieldGuide } from '$lib/help/field-reference';
   let search = $state('');
   const domains = $derived(
     visibleDomains({
@@ -18,7 +22,20 @@
     }),
   );
   const articles = $derived(knowledgeArticles(domains));
-  const filtered = $derived(articles.filter((a) => matchesKnowledge(a, search)));
+  const fieldAccess = $derived({
+    domains: domains.map((domain) => domain.key),
+    modules: $auth?.tenant.enabledModules ?? [],
+    can: (permission: string) => (($auth?.user.permissions ?? []) as string[]).includes(permission),
+  });
+  const fieldGuides = $derived(visibleFieldGuides(fieldAccess));
+  const pilots = $derived(visibleAiPilots(fieldAccess));
+  const filtered = $derived(
+    articles.filter(
+      (a) =>
+        matchesKnowledge(a, search) ||
+        fieldGuides.some((guide) => guide.domain === a.key && matchesFieldGuide(guide, search)),
+    ),
+  );
   const selectedKey = $derived(
     page.url.searchParams.has('view')
       ? ''
@@ -26,6 +43,8 @@
   );
   const connectionsView = $derived(page.url.searchParams.get('view') === 'connections');
   const roadmapView = $derived(page.url.searchParams.get('view') === 'roadmap');
+  const fieldsView = $derived(page.url.searchParams.get('view') === 'fields');
+  const pilotView = $derived(page.url.searchParams.get('view') === 'ai-pilot');
   const article = $derived(articles.find((a) => a.key === selectedKey));
   const details = $derived(article ? contextualGuides(article) : []);
   let launching = $state(false);
@@ -59,11 +78,23 @@
       class="rounded-lg border border-edge bg-surface p-3 lg:sticky lg:top-4 lg:max-h-[80dvh] lg:self-start lg:overflow-auto"
     >
       <a
+        href="/documentation?view=fields"
+        aria-current={fieldsView ? 'page' : undefined}
+        class={`mb-3 block rounded-md px-3 py-2 text-sm font-medium ${fieldsView ? 'bg-accent-soft text-accent' : 'text-ink hover:bg-surface-muted'}`}
+        >Dictionnaire des champs</a
+      >
+      <a
         href="/documentation?view=connections"
         aria-current={connectionsView ? 'page' : undefined}
         class={`mb-3 block rounded-md px-3 py-2 text-sm font-medium ${connectionsView ? 'bg-accent-soft text-accent' : 'text-ink hover:bg-surface-muted'}`}
         >Liens entre modules</a
       >
+      {#if pilots.length}<a
+          href="/documentation?view=ai-pilot"
+          aria-current={pilotView ? 'page' : undefined}
+          class={`mb-3 block rounded-md px-3 py-2 text-sm font-medium ${pilotView ? 'bg-accent-soft text-accent' : 'text-ink hover:bg-surface-muted'}`}
+          >Mettre l’IA au travail</a
+        >{/if}
       <a
         href="/documentation?view=roadmap"
         aria-current={roadmapView ? 'page' : undefined}
@@ -75,7 +106,7 @@
           aria-label="Rechercher dans la documentation"
           class="min-w-0 w-full bg-transparent text-sm outline-none"
           bind:value={search}
-          placeholder="Rechercher une règle…"
+          placeholder="Règle, champ, exemple…"
         /></label
       >
       <label class="block text-xs text-ink-muted lg:hidden"
@@ -106,7 +137,18 @@
         votre administrateur les active et vous autorise à les consulter.
       </p>
     </aside>
-    {#if roadmapView}<SectorRoadmap {search} />{:else if connectionsView}<article
+    {#if pilotView}{#key `${$auth?.tenant.id}:${$auth?.user.id}:${page.url.searchParams.get('pilot') ?? ''}:${pilots.map((pilot) => pilot.key).join(',')}`}<AiPilotGuide
+          {pilots}
+          pilotKey={page.url.searchParams.get('pilot') ?? ''}
+          canManageConnection={fieldAccess.can('core.agents.manage')}
+        />{/key}{:else if fieldsView}<FieldDictionary
+        guides={fieldGuides}
+        access={fieldAccess}
+        domainLabels={domains.map(({ key, label }) => ({ key, label }))}
+        domain={page.url.searchParams.get('domain') ?? ''}
+        {search}
+        topic={page.url.searchParams.get('topic') ?? ''}
+      />{:else if roadmapView}<SectorRoadmap {search} />{:else if connectionsView}<article
         class="min-w-0 rounded-lg border border-edge bg-surface p-5 sm:p-8"
         aria-label="Guide des liens entre modules"
       >
@@ -121,6 +163,11 @@
           <h2 class="text-2xl font-semibold tracking-tight">{article.title}</h2>
           <p class="mt-3 max-w-prose leading-7 text-ink-muted">{article.purpose}</p>
           <div class="mt-4 flex flex-wrap gap-2">
+            {#if fieldGuides.some((guide) => guide.domain === article.key)}<Button
+                variant="secondary"
+                href={`/documentation?view=fields&topic=${fieldGuides.find((guide) => guide.domain === article.key)!.key}`}
+                >Comprendre les champs</Button
+              >{/if}
             <Button variant="secondary" onclick={tutorial} loading={launching}
               ><Play size={15} />Lancer le tutoriel</Button
             >{#if article.key !== 'documentation'}<Button

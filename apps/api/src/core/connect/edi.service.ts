@@ -748,16 +748,17 @@ export class EdiService {
       },
     });
 
-    // The projection carries no stop reference (rule 10) — AT7 needs to know
-    // whether an arrival/departure happened at a pickup or a delivery.
-    const stopTypes = new Map<string, 'PICKUP' | 'DELIVERY'>();
-    const withStops = await this.prisma.trackingEvent.findMany({
-      where: { tenantId, shipmentId, stopId: { not: null } },
-      select: { id: true, stop: { select: { type: true } } },
+    // Recipient events intentionally have presentation-only IDs and no GPS
+    // history. EDI's AT7 contract needs the real stop type and POSITION_UPDATE
+    // events: read those minimal internal facts, never join public event IDs.
+    const sourceEvents = await this.prisma.trackingEvent.findMany({
+      where: { tenantId, shipmentId },
+      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+      take: 501,
+      select: { type: true, occurredAt: true, stop: { select: { type: true } } },
     });
-    for (const row of withStops) {
-      if (row.stop) stopTypes.set(row.id, row.stop.type as 'PICKUP' | 'DELIVERY');
-    }
+    if (sourceEvents.length > 500)
+      throw new BadRequestException('This shipment exceeds the 500-event EDI 214 limit');
 
     const placeOf = (code: string, stopType?: 'PICKUP' | 'DELIVERY') =>
       stopType === 'DELIVERY' || (stopType === undefined && DELIVERY_SIDE_AT7.has(code))
@@ -765,9 +766,8 @@ export class EdiService {
         : view.origin;
 
     const events: X12ShipmentStatusEvent[] = [];
-    // The projection is newest-first; a 214 reads oldest-first.
-    for (const event of [...view.events].reverse()) {
-      const stopType = stopTypes.get(event.id);
+    for (const event of sourceEvents) {
+      const stopType = event.stop?.type as 'PICKUP' | 'DELIVERY' | undefined;
       const code = at7ForTrackingEvent(event.type, stopType ? { stopType } : undefined);
       if (!code) continue;
       const place = placeOf(code, stopType);

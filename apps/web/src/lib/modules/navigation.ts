@@ -249,6 +249,7 @@ export function navCatalogue(): NavDomain[] {
       prefixes: [
         '/transportation',
         '/dispatch',
+        '/delivery-operations',
         '/planning',
         '/transport-orders',
         '/shipments',
@@ -267,6 +268,7 @@ export function navCatalogue(): NavDomain[] {
           label: 'Exécution',
           links: [
             { href: '/dispatch', label: 'Dispatch' },
+            { href: '/delivery-operations', label: 'Exploitation livraison', perm: PERMISSIONS.TRANSPORTATION.PLANNING_READ },
             {
               href: '/planning',
               label: 'Planification',

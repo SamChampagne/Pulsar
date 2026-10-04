@@ -66,7 +66,7 @@ async function setup(page: Page) {
     if (path.endsWith('/runtime/connect'))
       return route.fulfill({
         contentType: 'text/event-stream',
-        body: 'event: text\ndata: {"text":"Ouvrez le portail du fournisseur et confirmez le code de test."}\n\nevent: end\ndata: {}\n\n',
+        body: 'event: status\ndata: {"phase":"STARTING","message":"Préparation du runner"}\n\nevent: text\ndata: {"text":"Ouvrez le portail du fournisseur et confirmez le co"}\n\nevent: text\ndata: {"text":"de de test."}\n\nevent: end\ndata: {}\n\n',
       });
     if (path.endsWith('/runtime') && req.method() === 'PUT') {
       Object.assign(runtime, req.postDataJSON(), { updatedAt: '2026-10-01T12:00:00.000Z' });

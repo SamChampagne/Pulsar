@@ -144,10 +144,10 @@ export interface PortalTrackingEvent {
 /**
  * `GET /portal/shipments/:id` — the same projection the public tracking page
  * gets (rule 20: one position, never a history, never the other stops).
- * `proofOfDelivery.notes` is optional: today's projection carries the signer
- * and the signature date only.
+ * The POD projection carries the signer and signature date only, never notes.
  */
 export interface PortalShipmentTracking {
+  packageTracking?: import('$lib/components/recipient-packages').RecipientPackageTracking;
   shipper: string;
   shipmentNumber: string;
   status: string;
@@ -162,7 +162,6 @@ export interface PortalShipmentTracking {
   proofOfDelivery: {
     signedByName: string | null;
     signedAt: string | null;
-    notes?: string | null;
   } | null;
   events: PortalTrackingEvent[];
   lastPosition: PortalPosition | null;

@@ -1,9 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AuditAction, LoadStatus } from '@pulsar/shared';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { DocumentsService } from '../../../core/documents/documents.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SequencesService } from '../../../prisma/sequences.service';
+import { DriverAccessService } from '../public/driver-access.service';
 import { buildBolData } from './bol-data';
 import { renderBol } from './bol-render';
 
@@ -22,6 +28,7 @@ export class BolService {
     private readonly sequences: SequencesService,
     private readonly documents: DocumentsService,
     private readonly audit: AuditLogsService,
+    private readonly driverAccess: DriverAccessService,
   ) {}
 
   async generate(tenantId: string, userId: string, loadId: string) {
@@ -119,27 +126,15 @@ export class BolService {
     return this.documents.listForEntity(tenantId, BOL_ENTITY_TYPE, loadId);
   }
 
-  async driverBol(token: string) {
-    // Resolve the load by driverToken — server-side only, token is the credential
-    const load = await this.prisma.load.findUnique({
-      where: { driverToken: token },
-      select: { id: true, tenantId: true, driverToken: true },
-    });
-    if (!load) throw new NotFoundException('Unknown driver link');
+  async driverBol(token: string): Promise<Awaited<ReturnType<DocumentsService['download']>>> {
+    const load = await this.driverAccess.resolve(token);
+    // Internal historical documents remain available through the authenticated BOL endpoints.
+    this.driverAccess.assertMutable(load.status);
 
-    // Find the latest BOL document for this load
-    const doc = await this.prisma.document.findFirst({
-      where: {
-        tenantId: load.tenantId,
-        entityType: BOL_ENTITY_TYPE,
-        entityId: load.id,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!doc) throw new NotFoundException('No BOL has been generated for this load');
-
-    // Reuse DocumentsService.download — tenantId and doc.id are server-resolved,
-    // the public caller never sees the internal document id.
-    return this.documents.download(load.tenantId, doc.id);
+    // Historical BOL PDFs can contain private Load.notes and arbitrary generic uploads.
+    // No existing artifact is silently considered safe or reconstructed for a public actor.
+    throw new ConflictException(
+      'Driver BOL download is unavailable: these documents have not been qualified for external sharing. Contact dispatch.',
+    );
   }
 }

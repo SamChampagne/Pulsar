@@ -19,7 +19,7 @@ export const TOUR_ROUTES: Record<string, string[]> = {
   purchasing: ['/purchasing'],
   services: ['/services/quotes', '/services', '/services/planning', '/services/time'],
   dashboard: ['/apps', '/dashboard'],
-  transport: ['/customers', '/dispatch'],
+  transport: ['/customers', '/delivery-operations', '/dispatch'],
   wms: ['/wms/bins', '/wms/receiving'],
   manufacturing: ['/manufacturing/calendars', '/manufacturing/orders'],
   yard: ['/yard/spots', '/yard/appointments'],

@@ -14,6 +14,9 @@ import { MailService } from '../email/mail.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { OperatingModule } from '../operating/operating.module';
 import { TransportationModule } from '../../modules/transportation/transportation.module';
+import { DeliveryOperationsService } from '../../modules/transportation/delivery-operations/delivery-operations.service';
+import { DeliveryAssistanceService } from '../../modules/transportation/delivery-operations/delivery-assistance.service';
+import { DeliveryExceptionsService } from '../../modules/transportation/delivery-exceptions/delivery-exceptions.service';
 import { TransportOrdersService } from '../../modules/transportation/transport-orders/transport-orders.service';
 import { LoadsService } from '../../modules/transportation/loads/loads.service';
 import { RatingService } from '../../modules/transportation/rating/rating.service';
@@ -112,6 +115,9 @@ import { RuntimeHealthService } from './runtime-health.service';
     {
       provide: AGENT_TOOL_SERVICES,
       inject: [
+        DeliveryOperationsService,
+        DeliveryAssistanceService,
+        DeliveryExceptionsService,
         BusinessService,
         SupportService,
         ServicesPlanningService,
@@ -152,6 +158,9 @@ import { RuntimeHealthService } from './runtime-health.service';
         MrpAssistanceService,
       ],
       useFactory: (
+        deliveryOperations: DeliveryOperationsService,
+        deliveryAssistance: DeliveryAssistanceService,
+        deliveryExceptions: DeliveryExceptionsService,
         business: BusinessService,
         support: SupportService,
         servicePlanning: ServicesPlanningService,
@@ -191,6 +200,12 @@ import { RuntimeHealthService } from './runtime-health.service';
         crmSequences: CrmSequencesService,
         mrp: MrpAssistanceService,
       ): ToolServices => ({
+        delivery: {
+          operations: (tenantId, query) => deliveryOperations.list(tenantId, query as never),
+          context: (tenantId, id) => deliveryAssistance.context(tenantId, id),
+          retry: (tenantId, actorId, id, dto) =>
+            deliveryExceptions.transition(tenantId, actorId, id, dto as never),
+        },
         connectedBusiness: {
           attention: (u, q) => attention.list(u, q),
           planning: (u, q) => servicePlanning.board(u, q as never),

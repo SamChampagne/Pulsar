@@ -19,7 +19,7 @@ export class PlatformApiError extends Error {
 /** Minimal client for the platform plane: Bearer token, no refresh (12 h token). */
 export async function platformApi<T>(
   path: string,
-  options: { method?: string; body?: unknown } = {},
+  options: { method?: string; body?: unknown; signal?: AbortSignal } = {},
 ): Promise<T> {
   const token = getPlatformToken();
   const response = await fetch(BASE + path, {
@@ -29,6 +29,7 @@ export async function platformApi<T>(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    signal: options.signal,
   });
   if (response.status === 401 && !path.endsWith('/auth/login')) {
     clearPlatformToken();

@@ -10,6 +10,7 @@ interface LoadRef {
   id: string;
   loadNumber: string;
   carrierId?: string | null;
+  hasReturnedPackages?: boolean;
 }
 
 /**
@@ -48,7 +49,9 @@ export class LoadNotificationsService {
     // Best-effort domain event (rule 27).
     await this.domainEvents.emit(
       tenantId,
-      DOMAIN_EVENT_TYPES.LOAD_COMPLETED,
+      load.hasReturnedPackages
+        ? DOMAIN_EVENT_TYPES.LOAD_CLOSED_WITH_RETURNS
+        : DOMAIN_EVENT_TYPES.LOAD_COMPLETED,
       { type: 'load', id: load.id },
       { loadId: load.id, loadNumber: load.loadNumber, carrierId: load.carrierId ?? null },
     );
@@ -61,7 +64,12 @@ export class LoadNotificationsService {
    */
   private async notifyCustomersDelivered(tenantId: string, loadId: string): Promise<void> {
     const shipments = await this.prisma.shipment.findMany({
-      where: { tenantId, loadId },
+      where: {
+        tenantId,
+        loadId,
+        status: { in: ['DELIVERED', 'CLOSED'] },
+        deliveryPackages: { none: { tenantId, status: 'RETURNED' } },
+      },
       select: {
         shipmentNumber: true,
         trackingToken: true,

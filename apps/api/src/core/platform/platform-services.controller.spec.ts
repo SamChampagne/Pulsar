@@ -18,6 +18,11 @@ describe('Platform services HTTP boundary — isolated doubles, no DB/provider',
   const services = {
     overview: jest.fn(async () => ({ emailChannel: 'log' })),
     saveRuntime: jest.fn(async () => ({ configured: true })),
+    authorizeRuntimeAction: jest.fn(async () => undefined),
+    connectRuntime: jest.fn(async function* () {
+      yield { type: 'status', phase: 'STARTING', message: 'Démarrage' };
+      yield { type: 'end' };
+    }),
   };
   const smtp = { save: jest.fn(async () => ({ hasPassword: true })) };
   const db = {
@@ -125,5 +130,35 @@ describe('Platform services HTTP boundary — isolated doubles, no DB/provider',
       })
       .expect(400);
     expect(services.saveRuntime).not.toHaveBeenCalled();
+  });
+
+  it('streams platform login status only after authorization of the actual operator and tenant', async () => {
+    const change = { confirmed: true, expectedUpdatedAt: null };
+    const result = await request(app.getHttpServer())
+      .post('/platform/services/tenants/tenant-a/runtime/connect')
+      .set('Authorization', `Bearer ${token({ platformAdmin: true })}`)
+      .send(change)
+      .expect(201);
+    expect(services.authorizeRuntimeAction).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'operator' }),
+      'tenant-a',
+      change,
+      'OAUTH_CONNECT',
+    );
+    expect(services.connectRuntime).toHaveBeenCalledWith('tenant-a', expect.any(AbortSignal));
+    expect(result.headers['x-accel-buffering']).toBe('no');
+    expect(result.text).toContain('event: status');
+    expect(result.text).toContain('event: end');
+    expect(result.text).not.toContain('event: error');
+  });
+
+  it('never opens OAuth for a tenant JWT on the platform surface', async () => {
+    await request(app.getHttpServer())
+      .post('/platform/services/tenants/tenant-a/runtime/connect')
+      .set('Authorization', `Bearer ${token({ tenantId: 'tenant-a', permissions: ['*'] })}`)
+      .send({ confirmed: true, expectedUpdatedAt: null })
+      .expect(401);
+    expect(services.authorizeRuntimeAction).not.toHaveBeenCalled();
+    expect(services.connectRuntime).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,59 @@
 
 Phases are scoped to ship a usable increment each time. Detailed tasks live in [TODO.md](./TODO.md).
 
+## Distribution connectée — 3 octobre 2026, local
+
+Les cinq axes du [batch connecté](docs/plans/distribution-connected-batch.md) sont
+implémentés : document chauffeur sûr, incidents/retours, allocations facultatives
+CRM/WMS, carburant versionné et cockpit avec assistance IA gouvernée. La recette
+locale est suivie dans ce contrat. Aucun déploiement ni fournisseur réel qualifié.
+Prochain palier : recette humaine complète sur données de test, puis pilote IA
+PROPOSE. Routage poids lourds/multi-véhicules, connecteurs transporteurs/télématique
+réels et mobile hors ligne restent séparés. Retours sans stock ou avoir automatique.
+
+## Distribution — ordre approuvé le 2 octobre 2026
+
+[Colis et livraisons indépendantes](docs/plans/distribution-packages.md) : D1 identités,
+contenu déclaré, chargement physique et livraisons par colis → D2 chauffeur/destinataire
+et exceptions → D3 routage poids lourds/multi-camions → D4 transporteur externe et
+télématique qualifiés → D5 coûts et assistance. D1 est livré et vérifié localement;
+aucun connecteur, matériel, portail colis ou déploiement encore qualifié.
+[D2a](docs/plans/distribution-manifests.md) ajoute les manifestes/remanifestes figés,
+PDF et étiquettes Code 128, avec historique et reprise sûre.
+[D2b](docs/plans/distribution-driver.md) ajoute le poste chauffeur mobile, scans
+de sélection, confirmations physiques, incidents et reprise exacte, avec liens
+publics durcis. [D2c](docs/plans/distribution-recipient.md) ajoute les colis dans
+le lien destinataire et le portail client, les livraisons partielles et une
+chronologie sans notes internes. Suite : document chauffeur qualifié; hors-ligne
+durable et allocation commande/WMS restent distincts.
+
+## Connexion IA fiable et référence des champs — 2 octobre 2026
+
+[Connexion IA](docs/plans/ai-connection-reliability.md) : sorties immédiates du
+code OAuth sur runner isolé, progression et annulation, flux borné tenant/admin,
+distinction compte / runtime / inférence. Hermes reste verrouillé à la version
+qualifiée; aucune installation automatique de Codex dans l’API. Recette OAuth
+VPS et mission réelle restent à faire avec le compte autorisé.
+Documentation intégrée : **25 sujets / 278 champs et contrôles** Transport livraison,
+Entrepôt, Fabrication et IA, liés aux règles, sources et exemples d’usage autorisés.
+[Entrepôt](docs/plans/documentation-wms-fields.md) et
+[Fabrication](docs/plans/documentation-manufacturing-fields.md) : références partielles
+explicites, filtrées par application et droits, sans imposer WMS aux ressources seules.
+[Deux parcours pilotes IA](docs/plans/ai-business-pilot.md) préparent une revue Transport
+et une synthèse MRP affectée : checklist locale et prompt copiable, pas d’exécution.
+Suite : recette compte/runtime/inférence sur VPS puis une mission PROPOSE autorisée;
+étendre ensuite les champs Services/Finance et les sujets encore absents, sans
+annoncer une couverture exhaustive du logiciel.
+
+## Tournées et carburant — 1er octobre 2026
+
+[Premier poste de livraison](docs/plans/delivery-route-fuel.md) : segments routiers,
+ordre proposé sous précédence et fenêtres, manutention/attente/retour, budget
+carburant chargé/vide/ralenti, aperçu explicite et suivi des arrêts. Un chargement
+à la fois; ni VRP multi-camions ni certification poids lourds. Suite : profils
+véhicules/prix datés → affectation multi-camions → exceptions/POD quantitatif et
+comparaison estimé/réel. Recette routière réelle avant utilisation opérationnelle.
+
 ## Centre plateforme — 1er octobre 2026
 
 [Services et connexions](docs/plans/platform-service-center.md) : SMTP global en

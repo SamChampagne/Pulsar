@@ -5,6 +5,9 @@ import { PrismaService } from './prisma.service';
 import { TenantModulesCacheService } from './tenant-modules-cache.service';
 
 export type SequenceKey =
+  | 'driver-delivery-document'
+  | 'delivery-manifest'
+  | 'delivery-package'
   | 'supplier-credit'
   | 'supplier-invoice'
   | 'stock-exit'
@@ -40,6 +43,9 @@ export type SequenceKey =
   | 'material-purchase';
 
 const PREFIXES: Record<SequenceKey, string> = {
+  'driver-delivery-document': 'DL',
+  'delivery-manifest': 'MF',
+  'delivery-package': 'PKG',
   'supplier-credit': 'AVF',
   'supplier-invoice': 'FF',
   'stock-exit': 'SX',

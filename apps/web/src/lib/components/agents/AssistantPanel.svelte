@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import { assistantDraft } from '$lib/stores/assistant-draft';
   import {
     ArrowUp,
     Bot,
@@ -127,6 +128,18 @@
       });
   });
   onDestroy(clear);
+  $effect(() => {
+    const request = $assistantDraft;
+    const tenantId = $auth?.tenant.id, userId = $auth?.user.id;
+    if (!request) return;
+    if (request.tenantId !== tenantId || request.userId !== userId) { untrack(() => assistantDraft.set(null)); return; }
+    if (!open || loading || !workers.some((w) => w.status === 'ACTIVE')) return;
+    untrack(() => {
+      newConversation(workers.find((w) => w.id === workerId && w.status === 'ACTIVE')?.id ?? workers.find((w) => w.status === 'ACTIVE')!.id);
+      const thread = threads.find((t) => t.key === selectedKey);
+      if (thread) { thread.draft = request.prompt; thread.title = request.title; assistantDraft.set(null); }
+    });
+  });
   $effect(() => {
     if (!open) captureRequest?.abort();
   });
@@ -501,6 +514,7 @@
           onclick={() => newConversation()}><Plus class="size-4" /></button
         >
       </header>
+      {#if $assistantDraft && !workers.some((w) => w.status === 'ACTIVE')}<div role="status" class="border-b border-edge px-5 py-3 text-sm text-ink-muted">Votre brouillon « {$assistantDraft.title} » est conservé dans cette session. Activez un worker puis rechargez l’espace; aucun message n’a été envoyé. <button class="underline" onclick={() => { if ($assistantDraft) void copy($assistantDraft.prompt); }}>Copier le brouillon</button></div>{/if}
       {#if error}<div role="alert" class="bg-danger-soft px-5 py-3 text-sm text-danger">
           {error} <button class="ml-2 underline" onclick={load}>Réessayer le chargement</button>
         </div>{/if}

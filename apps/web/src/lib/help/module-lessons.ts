@@ -204,6 +204,12 @@ export const MODULE_LESSONS: Record<string, ModuleLesson[]> = {
   ],
   transport: [
     {
+      title: 'Choisir le prochain dossier de livraison',
+      href: '/delivery-operations',
+      target: '[data-tour="delivery-workspace"]',
+      text: 'Le poste Exploitation livraison filtre les chargements et indique une prochaine vérification, sans rien exécuter. Ouvrez le dossier pour agir. Un incident ouvert, une nouvelle tentative, un retour autorisé et un retour reçu sont distincts; recevoir un retour ne crée ni stock ni remboursement. Les compteurs sont des colis et des dossiers, jamais une somme de pièces et de kilogrammes.',
+    },
+    {
       title: 'Du besoin commercial au mouvement réel',
       text: 'Une commande décrit la demande; une expédition est une unité de fret; un chargement organise son transport. Confirmer une commande ne crée pas de facture et ne prévient pas le client.',
     },
@@ -226,6 +232,11 @@ export const MODULE_LESSONS: Record<string, ModuleLesson[]> = {
       title: 'Affecter et suivre l’exécution',
       href: '/dispatch',
       text: 'Affectez les expéditions à un chargement, vérifiez capacité et itinéraire, puis suivez le workflow de dispatch. Le connaissement utilise les lieux opérationnels, pas les coordonnées commerciales privées. La livraison et sa preuve restent des étapes distinctes.',
+    },
+    {
+      title: 'Relier le contenu à ses sources explicites',
+      href: '/loads',
+      text: 'Dans un chargement, De la commande à la livraison relie une ligne entière de colis à sa commande CRM source, à sa préparation WMS terminée, ou aux deux. Transport seul fonctionne sans ces liens. L’unité WMS doit correspondre exactement; l’unité commerciale sans champ natif exige une attestation humaine 1:1. Aucun SKU ne crée un lien automatiquement. Libérez un lien avant engagement pour le corriger; le premier chargement fige son historique, y compris après retour.',
     },
     {
       title: 'Informer le client d’une expédition',

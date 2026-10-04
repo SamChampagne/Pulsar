@@ -48,6 +48,11 @@ export class RoutingService {
     return this.osrm.route(points);
   }
 
+  /** Bounded, directed road matrix for a human-reviewed itinerary proposal. */
+  table(points: LatLng[]) {
+    return this.osrm?.table(points) ?? Promise.resolve(null);
+  }
+
   /** Address → coordinates through the persistent cache; null on miss/failure. */
   async geocode(address: string): Promise<LatLng | null> {
     if (!this.nominatim) return null;

@@ -378,6 +378,23 @@ describe('api() — 401 refresh + retry flow', () => {
 });
 
 describe('api() — request shape', () => {
+  it('cancels the caller waiting on refresh without cancelling other requests or logging out', async () => {
+    vi.mocked(authStore.getRefreshToken).mockReturnValue('fixture-refresh');
+    let release!: (value: Response) => void;
+    fetchMock.mockResolvedValueOnce(mockResponse(401, {}, false))
+      .mockImplementationOnce(() => new Promise<Response>(resolve => { release = resolve; }));
+    const controller = new AbortController();
+    const pending = api('/agent-runtime', { signal: controller.signal });
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(authStore.clearAuth).not.toHaveBeenCalled();
+    expect(goto).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    release(mockResponse(200, { accessToken: 'fixture-new', refreshToken: 'fixture-next' }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
   it('serialises the body as JSON', async () => {
     fetchMock.mockResolvedValueOnce(mockResponse(201, { id: 'new' }));
 

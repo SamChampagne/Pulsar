@@ -1,5 +1,11 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ShipmentStatus } from '@pulsar/shared';
+import type { Prisma } from '@pulsar/database';
 import { OwnershipService } from '../../../prisma/ownership.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreatePodDto, CreateTrackingEventDto } from './dto/tracking.dto';
@@ -46,19 +52,32 @@ export class TrackingService {
   }
 
   /** `userId` is absent when the POD comes from the public driver link. */
-  async createPod(tenantId: string, userId: string | undefined, dto: CreatePodDto) {
-    const shipment = await this.prisma.shipment.findFirst({
+  async createPod(
+    tenantId: string,
+    userId: string | undefined,
+    dto: CreatePodDto,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
+    const shipment = await tx.shipment.findFirst({
       where: { id: dto.shipmentId, tenantId },
-      include: { proofOfDelivery: true },
     });
     if (!shipment) throw new NotFoundException('Shipment not found');
-    if (shipment.proofOfDelivery) {
+    const existing = await tx.proofOfDelivery.findFirst({
+      where: { tenantId, shipmentId: shipment.id },
+      select: { id: true },
+    });
+    if (existing) {
       throw new ConflictException('A POD already exists for this shipment');
     }
-    if (shipment.status !== ShipmentStatus.DELIVERED && shipment.status !== ShipmentStatus.IN_TRANSIT) {
-      throw new BadRequestException('POD can only be captured for IN_TRANSIT or DELIVERED shipments');
+    if (
+      shipment.status !== ShipmentStatus.DELIVERED &&
+      shipment.status !== ShipmentStatus.IN_TRANSIT
+    ) {
+      throw new BadRequestException(
+        'POD can only be captured for IN_TRANSIT or DELIVERED shipments',
+      );
     }
-    return this.prisma.proofOfDelivery.create({
+    return tx.proofOfDelivery.create({
       data: {
         tenantId,
         shipmentId: dto.shipmentId,

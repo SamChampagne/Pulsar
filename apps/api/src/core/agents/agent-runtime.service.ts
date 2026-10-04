@@ -10,7 +10,8 @@ import {
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { StringDecoder } from 'node:string_decoder';
+import { streamLoginProcess, type LoginEvent } from './login-stream';
+export type { LoginEvent } from './login-stream';
 import {
   getRuntimeProvider,
   AGENT_SYSTEM_PREAMBLE,
@@ -72,18 +73,13 @@ interface LiveSession {
   firstTurnDone: boolean;
 }
 
-export interface LoginEvent {
-  type: 'text' | 'error' | 'end';
-  text?: string;
-  message?: string;
-}
-
 @Injectable()
 export class AgentRuntimeService implements OnModuleDestroy {
   private readonly turnTimeoutMs = 120_000;
   private readonly logger = new Logger(AgentRuntimeService.name);
   /** One Hermes process PER conversation (isolation — spike finding). Keyed by hermes sessionId. */
   private readonly live = new Map<string, LiveSession>();
+  private readonly logins = new Map<string, AbortController>();
 
   constructor(
     @Inject(forwardRef(() => AgentsService))
@@ -99,6 +95,8 @@ export class AgentRuntimeService implements OnModuleDestroy {
    * best-effort and isolated, never allowed to block or crash teardown).
    */
   onModuleDestroy(): void {
+    for (const login of this.logins.values()) login.abort();
+    this.logins.clear();
     const count = this.live.size;
     if (count === 0) return;
     for (const [sessionId, session] of this.live) {
@@ -516,134 +514,107 @@ export class AgentRuntimeService implements OnModuleDestroy {
   }
 
   async *connectLogin(tenantId: string, signal?: AbortSignal): AsyncGenerator<LoginEvent> {
-    if (remoteRuntimeEnabled()) {
+    if (signal?.aborted) return;
+    if (this.logins.has(tenantId)) {
+      yield {
+        type: 'error',
+        code: 'LOGIN_BUSY',
+        message:
+          'Une connexion est déjà en cours pour cette entreprise. Annulez-la avant de recommencer.',
+      };
+      return;
+    }
+    const abort = new AbortController();
+    const relayAbort = () => abort.abort();
+    signal?.addEventListener('abort', relayAbort, { once: true });
+    this.logins.set(tenantId, abort);
+    let child: ChildProcess | RuntimeProcess | undefined;
+    try {
+      yield {
+        type: 'status',
+        phase: 'STARTING',
+        message: 'Démarrage de la connexion sécurisée au fournisseur…',
+      };
+      const remote = remoteRuntimeEnabled();
+      if (!remote && !isInstalled()) {
+        yield {
+          type: 'error',
+          code: 'LOGIN_NOT_INSTALLED',
+          message:
+            'Le runtime IA est absent. Exécutez le provisionnement documenté ou configurez le runner dédié.',
+        };
+        return;
+      }
       const { config, decryptedKey } = await this.runtimeConfig.resolveForSpawn(tenantId);
-      const child = await openRemoteProcess(tenantId, 'login', config, decryptedKey);
-      const stop = () => {
-        child.kill();
-      };
-      signal?.addEventListener('abort', stop, { once: true });
-      if (signal?.aborted) stop();
-      let buffer = '';
-      const decoder = new StringDecoder('utf8');
-      let finished = false;
-      try {
-        for await (const chunk of child.stdout) {
-          buffer += typeof chunk === 'string' ? chunk : decoder.write(chunk);
-          if (buffer.length > 65_536) throw new Error('Login response too large');
-          let nl: number;
-          while ((nl = buffer.indexOf('\n')) >= 0) {
-            const event = JSON.parse(buffer.slice(0, nl));
-            buffer = buffer.slice(nl + 1);
-            if (event.type === 'text' && typeof event.text === 'string')
-              yield { type: 'text', text: event.text };
-            else if (event.type === 'end') {
-              if (!signal?.aborted)
-                await this.runtimeConfig.markConnected(tenantId, config.updatedAt);
-              finished = true;
-              yield { type: 'end' };
-              return;
-            } else if (event.type === 'error') {
-              finished = true;
-              yield { type: 'error', message: 'Connexion fournisseur interrompue ou refusée.' };
-              return;
-            }
-          }
-        }
-        if (!finished && !signal?.aborted)
-          yield {
-            type: 'error',
-            message: 'Connexion fournisseur interrompue. Relancez la connexion.',
-          };
-      } finally {
-        signal?.removeEventListener('abort', stop);
-        child.kill();
+      if (abort.signal.aborted) return;
+      const provider = getRuntimeProvider(config.provider);
+      if (!provider || provider.authMode !== 'login' || !provider.loginCommand) {
+        yield {
+          type: 'error',
+          code: 'LOGIN_UNSUPPORTED',
+          message: 'Ce fournisseur ne propose pas de connexion OAuth.',
+        };
+        return;
       }
-      return;
-    }
-    if (!isInstalled()) {
-      yield { type: 'error', message: 'Agent runtime not installed — run `pnpm agents:setup`' };
-      return;
-    }
-    const { config, decryptedKey } = await this.runtimeConfig.resolveForSpawn(tenantId);
-    const provider = getRuntimeProvider(config.provider);
-    if (!provider || provider.authMode !== 'login' || !provider.loginCommand) {
-      yield { type: 'error', message: `Provider "${config.provider}" does not use a login flow` };
-      return;
-    }
-
-    const { env, homeDir } = buildRuntimeEnv(
-      config,
-      decryptedKey,
-      this.runtimeConfig.hermesHomeRoot(),
-    );
-    fs.mkdirSync(homeDir, { recursive: true });
-
-    // e.g. "login" → [-m, hermes_cli.main, login]; "auth add openai-codex" → [..., auth, add, openai-codex]
-    const loginArgs = ['-m', 'hermes_cli.main', ...provider.loginCommand.split(/\s+/)];
-
-    let child: ChildProcess;
-    try {
-      child = spawn(venvPython(), loginArgs, {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        cwd: path.join(repoRoot(), 'hermes-agent'),
-        env: isolatedRuntimeEnv(env),
-        windowsHide: true,
-      });
-    } catch (err) {
-      yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
-      return;
-    }
-
-    const queue: LoginEvent[] = [];
-    let wake: (() => void) | null = null;
-    let exitCode: number | null = null;
-    let hasExited = false;
-    const push = (ev: LoginEvent) => {
-      queue.push(ev);
-      wake?.();
-    };
-    const lineEmitter = () => {
-      let buf = '';
-      return (chunk: Buffer | string) => {
-        buf += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-        let nl: number;
-        while ((nl = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, nl).replace(/\r$/, '');
-          buf = buf.slice(nl + 1);
-          push({ type: 'text', text: line });
-        }
-      };
-    };
-    child.stdout?.on('data', lineEmitter());
-    child.stderr?.on('data', lineEmitter());
-    child.on('error', (err) => push({ type: 'error', message: err.message }));
-    child.on('close', (code) => {
-      exitCode = code;
-      hasExited = true;
-      wake?.();
-    });
-
-    try {
-      while (true) {
-        while (queue.length) yield queue.shift()!;
-        if (hasExited) break;
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
-        wake = null;
-      }
-      // Drain any final buffered events.
-      while (queue.length) yield queue.shift()!;
-
-      if (exitCode === 0) {
-        await this.runtimeConfig.markConnected(tenantId, config.updatedAt);
-        yield { type: 'end' };
+      if (remote) {
+        child = await openRemoteProcess(tenantId, 'login', config, decryptedKey, abort.signal);
       } else {
-        yield { type: 'error', message: `Login exited with code ${exitCode}` };
+        const { env, homeDir } = buildRuntimeEnv(
+          config,
+          decryptedKey,
+          this.runtimeConfig.hermesHomeRoot(),
+        );
+        const cwd = path.join(homeDir, 'workspace');
+        fs.mkdirSync(cwd, { recursive: true });
+        child = spawn(
+          venvPython(),
+          [
+            '-I',
+            '-u',
+            '-X',
+            'utf8',
+            path.join(repoRoot(), 'scripts', 'pulsar-hermes-login.py'),
+            ...provider.loginCommand.split(/\s+/),
+          ],
+          {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            cwd,
+            env: isolatedRuntimeEnv(env),
+            windowsHide: true,
+          },
+        );
+      }
+      if (abort.signal.aborted) {
+        child.kill();
+        return;
+      }
+      for await (const event of streamLoginProcess(
+        child,
+        remote ? 'ndjson' : 'text',
+        abort.signal,
+      )) {
+        if (event.type !== 'end') {
+          yield event;
+          continue;
+        }
+        if (abort.signal.aborted) return;
+        yield {
+          type: 'status',
+          phase: 'VERIFYING',
+          message: 'Autorisation reçue. Vérification de la configuration de cette entreprise…',
+        };
+        if (abort.signal.aborted) return;
+        await this.runtimeConfig.markConnected(tenantId, config.updatedAt);
+        if (!abort.signal.aborted) yield { type: 'end' };
       }
     } finally {
-      child.kill();
+      signal?.removeEventListener('abort', relayAbort);
+      if (this.logins.get(tenantId) === abort) this.logins.delete(tenantId);
+      try {
+        child?.kill();
+      } catch {
+        /* best-effort isolated teardown */
+      }
     }
   }
 }

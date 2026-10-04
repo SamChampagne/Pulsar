@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import { api, ApiError } from '$lib/api/client';
   import { formatDateTime } from '$lib/format';
   import { Card, Badge, Button } from '$lib/components/ui';
@@ -29,20 +30,27 @@
   let health = $state<Health | null>(null);
   let loading = $state(false);
   let error = $state('');
+  const lifetime = new AbortController();
   async function load() {
     loading = true;
     error = '';
     try {
-      health = await api<Health>('/agent-runtime/health');
+      health = await api<Health>('/agent-runtime/health', {
+        signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(15_000)]),
+      });
     } catch (e) {
-      error = e instanceof ApiError ? e.message : 'Diagnostic indisponible';
+      error =
+        e instanceof ApiError
+          ? e.message
+          : 'Le diagnostic n’a pas répondu dans le délai prévu. Vérifiez le runner puis actualisez.';
     } finally {
       loading = false;
     }
   }
-  $effect(() => {
+  onMount(() => {
     void load();
   });
+  onDestroy(() => lifetime.abort());
 </script>
 
 <section aria-label="Diagnostic du moteur IA" class="mb-5">

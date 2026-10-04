@@ -264,6 +264,8 @@ describe('Collaboration & cost (e2e)', () => {
     const view = await request(http).get(`/api/v1/public/driver/${t}`).expect(200);
     expect(view.body.stops).toHaveLength(2);
     const [pickup, delivery] = view.body.stops;
+    const shipmentRef = view.body.shipments[0].id;
+    expect(shipmentRef).not.toBe(ids.shipment);
 
     await request(http)
       .post(`/api/v1/public/driver/${t}/stops/${pickup.id}/status`)
@@ -281,18 +283,18 @@ describe('Collaboration & cost (e2e)', () => {
 
     const pod = await request(http)
       .post(`/api/v1/public/driver/${t}/pod`)
-      .send({ shipmentId: ids.shipment, signedByName: 'Door 4 Receiver' })
+      .send({ shipmentId: shipmentRef, signedByName: 'Door 4 Receiver' })
       .expect(201);
-    expect(pod.body.signedByName).toBe('Door 4 Receiver');
+    expect(pod.body).toEqual({ ok: true });
 
     const photo = await request(http)
-      .post(`/api/v1/public/driver/${t}/pod/${ids.shipment}/photo`)
+      .post(`/api/v1/public/driver/${t}/pod/${shipmentRef}/photo`)
       .attach('file', Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43]), {
         filename: 'pod.jpg',
         contentType: 'image/jpeg',
       })
       .expect(201);
-    expect(photo.body.storageKey).toContain('proof-of-delivery');
+    expect(photo.body).toEqual({ ok: true });
 
     // Revoked links stop working.
     await request(http)
