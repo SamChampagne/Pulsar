@@ -2,6 +2,51 @@
 
 Conventions: `[ ]` open, `[x]` done. Keep this file updated as work lands; link PRs when relevant.
 
+## Distribution connectée — batch local du 3 octobre 2026
+
+- [x] Document chauffeur dédié, aperçu/publication humaine/PDF canonique et scope révocable; BOL legacy privé.
+- [x] Incidents, nouvelles tentatives, retour autorisé puis réception physique; aucun stock/avoir/livraison automatique. Événement distinct pour clôture avec retours et emails Delivered filtrés.
+- [x] Sources CRM/WMS facultatives par ligne de colis, couverture exacte, attestation d’unité CRM et verrous anti-double affectation.
+- [x] Profils véhicule, prix explicites par date/devise, hypothèses capturées et comparaison aux totaux réels déclarés; baseline et coûts clôturés préservés.
+- [x] Poste Exploitation livraison, prochaine action, navigation/aide/tutoriel adaptés. Brouillon IA explicite et outils lecture/proposition via gouvernance.
+- [x] Documentation intégrée au champ près : cinq sujets / 54 contrôles supplémentaires; contrats et limites documentés.
+- [ ] Après recette locale : validation humaine d’un scénario complet et du vocabulaire, puis une publication groupée autorisée. Aucun VPS dans ce lot.
+- [ ] Pilote réel IA sous compte/budget autorisés; ni connexion, ni modèle, ni fournisseur qualifiés par les mocks locaux.
+- [ ] Lot suivant séparé : routage camion multi-véhicules, intégration transporteur/télématique qualifiée, retours WMS/avoirs explicitement reliés et mode terrain hors ligne.
+
+[Contrat et preuves](docs/plans/distribution-connected-batch.md).
+
+## Connexion IA et documentation détaillée — 2 octobre 2026
+
+- [x] Corriger la sortie du code OAuth sur runner Python isolé (`-I -u`), borner flux/durée, annulation et diagnostics tenant/plateforme. [Contrat](docs/plans/ai-connection-reliability.md).
+- [x] Expliquer compte connecté / runtime ACP / inférence; rendre visibles les étapes et la reprise manuelle, ne pas lancer de mission ni contourner la gouvernance automatiquement.
+- [ ] Après publication : qualifier le login OpenAI Codex sur le VPS avec le compte autorisé, redémarrage du runner et maintien de la connexion; aucun succès fournisseur inféré des tests locaux.
+- [ ] Mission pilote IA de lecture puis proposition métier, budget et données de test autorisés, preuve des sources/outils/approbations; comparer qualité et latence avant de changer de moteur.
+- [x] Référence in-app au champ près Transport livraison et IA, validations/effets/limites/exemples/sources, recherche et droits conservés.
+- [x] Ajouter 8 sujets / 76 champs Entrepôt et 9 sujets / 106 champs Fabrication, avec règles métier, unités, versions, effets et limites; filtre par application et dépendances de lecture exactes. [WMS](docs/plans/documentation-wms-fields.md) · [Fabrication](docs/plans/documentation-manufacturing-fields.md).
+- [x] Préparer deux parcours IA documentés, Transport et worker MRP sur tâche affectée, avec checklist locale, prompt copiable, outils existants et preuves attendues. Aucun appel réel ni nouvelle autorité d’agent. [Contrat](docs/plans/ai-business-pilot.md).
+- [ ] Qualifier ces pilotes réellement : les cases de documentation ne prouvent ni connexion ni exécution. Compte/budget de test, retour fournisseur, proposition et décision humaine à vérifier séparément.
+- [ ] Étendre la référence exacte aux champs Services/Finance puis autres modules et sujets WMS/Fabrication encore hors couverture; la couverture partielle reste annoncée, sans reset des tutoriels.
+
+## Distribution D1 — 2 octobre 2026
+
+- [x] Colis identifiés et contenus exacts, journal append-only, chargement physique, retrait avant transit et livraisons indépendantes; aucun stock/transporteur/agent implicite. [Contrat et suite](docs/plans/distribution-packages.md).
+- [x] Clôture gardée par expédition, dates historiques conservées, version du colis et du chargement, reprise idempotente et protections véhicule/affectation; contrôle des colis actifs avant dispatch.
+- [x] Panneau Colis dans le chargement, saisie multi-lignes, scanner de sélection, confirmations, récupération après réponse incertaine et aide intégrée.
+- [x] D2a : manifeste/remanifeste figé, aperçu complet/version/hash, édition idempotente et auditée, PDF privés et étiquettes Code 128, réimpression canonique et historique UI. [Contrat](docs/plans/distribution-manifests.md).
+- [x] D2b : poste chauffeur mobile, sélection PKG, chargement/remise avec confirmations, incidents idempotents et reprise exacte; liens publics, POD/arrêts et projections durcis. [Contrat et limites](docs/plans/distribution-driver.md).
+- [x] D2c : suivi destinataire par colis partagé public/portail, compteurs et dates physiques, états legacy/vide/partiel, chronologie sans notes privées et recontrôle tenant/modules. [Contrat](docs/plans/distribution-recipient.md).
+- [ ] Document chauffeur explicitement qualifié (BOL legacy privé), allocation aux lignes de commande et vraie file hors ligne. Qualifier impression et lecteurs réels; la reprise sessionStorage n’est pas du hors-ligne.
+- [ ] Exceptions : refus/dommages/pertes/retours et corrections après livraison; pas de clôture forcée qui transforme un colis restant en livré.
+- [ ] D3/D4 : fournisseurs cartographiques et multi-véhicules, transporteur externe/télématique par tenant à qualifier sur matériel/comptes réels, sans promettre GPS live des transporteurs de colis.
+- [ ] Recette pilote autorisée et déploiement migration/images; aucune connexion fournisseur activée par D1.
+
+## Tournées et carburant — 1er octobre 2026
+
+- [x] Plan par chargement, legs/ETA, ordre proposé sous précédence, carburant chargé/vide/ralenti et retour; aperçu invalidable, sauvegarde versionnée, suivi d'arrêts gardé et aide intégrée. [Contrat et limites](docs/plans/delivery-route-fuel.md).
+- [ ] Déployer la migration additive et qualifier coordonnées/routage, consommations réelles et règles chauffeur/POD sur une entreprise de test.
+- [ ] Profils par véhicule, prix datés et réserve; affectation multi-camions avec capacités/fenêtres, fournisseur poids lourds et exceptions de livraison. Aucune promesse d'optimum global dans le premier lot.
+
 ## Centre plateforme — 1er octobre 2026
 
 - [x] Interface Services et connexions : SMTP global dynamique, SMTP et fournisseur IA par entreprise, OAuth existant, diagnostic runner, vérifications sans envoi et audit opérateur. [Contrat](docs/plans/platform-service-center.md).

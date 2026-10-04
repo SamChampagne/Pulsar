@@ -37,9 +37,24 @@ async function tryRefresh(): Promise<boolean> {
 }
 
 interface ApiOptions {
+  signal?: AbortSignal;
   method?: string;
   body?: unknown;
   query?: Record<string, string | number | undefined>;
+}
+
+/** A timed-out caller must not wait forever on a refresh shared with other requests. */
+function waitForRefresh(task: Promise<boolean>, signal?: AbortSignal): Promise<boolean> {
+  if (!signal) return task;
+  return new Promise((resolve, reject) => {
+    const cancel = () => reject(new DOMException('Request cancelled', 'AbortError'));
+    if (signal.aborted) {
+      cancel();
+      return;
+    }
+    signal.addEventListener('abort', cancel, { once: true });
+    task.then(resolve, reject).finally(() => signal.removeEventListener('abort', cancel));
+  });
 }
 
 /**
@@ -60,12 +75,13 @@ export async function api<T>(path: string, options: ApiOptions = {}, isRetry = f
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    signal: options.signal,
   });
 
   if (response.status === 401 && !path.startsWith('/auth/')) {
     if (!isRetry) {
       refreshing ??= tryRefresh().finally(() => (refreshing = null));
-      if (await refreshing) {
+      if (await waitForRefresh(refreshing, options.signal)) {
         return api<T>(path, options, true);
       }
     }

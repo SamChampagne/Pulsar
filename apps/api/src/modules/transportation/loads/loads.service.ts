@@ -14,6 +14,8 @@ import {
   TrackingEventType,
   TransportOrderStatus,
   canTransitionLoad,
+  canTransitionShipment,
+  deliveryCoverageError,
   checkCapacity,
 } from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
@@ -49,6 +51,7 @@ const loadInclude = {
       id: true,
       shipmentNumber: true,
       status: true,
+      packageTrackingEnabledAt: true,
       weightKg: true,
       volumeM3: true,
       palletCount: true,
@@ -314,6 +317,8 @@ export class LoadsService {
       throw new BadRequestException('shipmentIds must not be empty');
     }
     const ids = [...new Set(shipmentIds)];
+    if (ids.length > 200)
+      throw new BadRequestException('Maximum 200 expéditions par chargement pour ce poste.');
 
     // --- Validate ALL up front (no partial load on failure) ---
     const shipments = await this.prisma.shipment.findMany({
@@ -338,11 +343,33 @@ export class LoadsService {
     // --- Create the load + assign all shipments atomically (rule 18) ---
     const load = await this.prisma.$transaction(async (tx) => {
       const created = await tx.load.create({ data: { tenantId, loadNumber } });
-      for (const id of ids) {
-        await tx.shipment.updateMany({
-          where: { id, tenantId },
+      let packageCount = 0;
+      // Sorted locks serialize bulk attachment with individual assignment and
+      // package preparation. Never steal a shipment checked before this transaction.
+      for (const id of [...ids].sort()) {
+        await tx.$queryRaw`SELECT id FROM shipments WHERE id = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
+        const engagedPackages = await tx.deliveryPackage.count({
+          where: { tenantId, shipmentId: id, status: { in: ['LOADED', 'DELIVERED', 'RETURNED'] } },
+        });
+        if (engagedPackages)
+          throw new ConflictException(
+            'Une expédition avec des colis chargés ou livrés ne peut pas être réaffectée.',
+          );
+        packageCount += await tx.deliveryPackage.count({ where: { tenantId, shipmentId: id } });
+        if (packageCount > 2000)
+          throw new BadRequestException(
+            'Maximum 2 000 colis par chargement pour ce poste, historique inclus.',
+          );
+        if (!canTransitionShipment(ShipmentStatus.PENDING, ShipmentStatus.PLANNED))
+          throw new ConflictException('Transition d’expédition impossible.');
+        const assigned = await tx.shipment.updateMany({
+          where: { id, tenantId, status: ShipmentStatus.PENDING, loadId: null },
           data: { loadId: created.id, status: ShipmentStatus.PLANNED },
         });
+        if (!assigned.count)
+          throw new ConflictException(
+            'Une expédition a changé ou est déjà affectée. Rechargez avant de consolider.',
+          );
         // Junction mirrors the denormalized loadId in the SAME transaction (spec invariant).
         await tx.shipmentLoadLeg.upsert({
           where: { shipmentId_sequence: { shipmentId: id, sequence: 1 } },
@@ -396,6 +423,24 @@ export class LoadsService {
     const load = await this.get(tenantId, id);
     if (load.status !== LoadStatus.OPEN && load.status !== LoadStatus.PLANNED) {
       throw new BadRequestException('Resources can only be assigned to OPEN or PLANNED loads');
+    }
+    if (
+      (dto.vehicleId !== undefined && dto.vehicleId !== load.vehicleId) ||
+      (dto.trailerId !== undefined && dto.trailerId !== load.trailerId)
+    ) {
+      const engagedPackages = await this.prisma.deliveryPackage.count({
+        where: {
+          tenantId,
+          status: { in: ['LOADED', 'DELIVERED', 'RETURNED'] },
+          OR: [{ loadedLoadId: id }, { shipmentId: { in: load.shipments.map((s) => s.id) } }],
+        },
+      });
+      if (engagedPackages)
+        throw new ConflictException(
+          'Déchargez les colis avant de changer le véhicule ou la remorque.',
+        );
+      // A package mutation after this read advances load.updatedAt, so the CAS
+      // below rejects a concurrent loading scan before resources can change.
     }
     await Promise.all([
       this.ownership.assertOwnedIfSet('carrier', dto.carrierId, tenantId),
@@ -455,6 +500,10 @@ export class LoadsService {
       where: { id, tenantId, status: load.status, updatedAt: load.updatedAt },
       data: {
         ...resources,
+        // A mission capability must not survive a change of assigned driver.
+        ...(dto.driverId !== undefined && dto.driverId !== load.driverId
+          ? { driverToken: null }
+          : {}),
         status: load.status === LoadStatus.OPEN ? LoadStatus.PLANNED : undefined,
       },
     });
@@ -470,7 +519,13 @@ export class LoadsService {
       action: AuditAction.UPDATE,
       entityType: 'load',
       entityId: id,
-      after: { ...resources, ...capacityOverride },
+      after: {
+        ...resources,
+        ...capacityOverride,
+        ...(dto.driverId !== undefined && dto.driverId !== load.driverId
+          ? { driverLinkRevoked: true }
+          : {}),
+      },
     });
     return this.get(tenantId, id);
   }
@@ -560,6 +615,34 @@ export class LoadsService {
     if (load.shipments.length === 0) {
       throw new BadRequestException('Cannot dispatch a load without shipments');
     }
+    const managedShipmentIds = load.shipments
+      .filter((shipment) => shipment.packageTrackingEnabledAt)
+      .map((shipment) => shipment.id);
+    if (managedShipmentIds.length) {
+      const activePackages = await this.prisma.deliveryPackage.groupBy({
+        by: ['shipmentId'],
+        where: { tenantId, shipmentId: { in: managedShipmentIds }, status: { not: 'CANCELLED' } },
+      });
+      const activeShipments = new Set(activePackages.map((p) => p.shipmentId));
+      if (managedShipmentIds.some((shipmentId) => !activeShipments.has(shipmentId)))
+        throw new BadRequestException(
+          'Chaque expédition suivie doit avoir au moins un colis actif avant le dispatch.',
+        );
+      // Cancelling/creating a package advances the load version, so dispatch's
+      // existing CAS also rejects changes after this preflight read.
+    }
+    if (load.route?.deliveryPlan) {
+      const error = deliveryCoverageError(
+        load.route.stops.map((s) => ({
+          sequence: s.sequence,
+          type: s.type,
+          locationId: s.locationId,
+          shipmentId: s.shipmentId,
+        })),
+        load.shipments,
+      );
+      if (error) throw new BadRequestException(error);
+    }
     if (load.status === LoadStatus.TENDERED) {
       const accepted = await this.prisma.tender.findFirst({
         where: { tenantId, loadId: id, status: TenderStatus.ACCEPTED },
@@ -588,30 +671,36 @@ export class LoadsService {
     }
 
     const orderIds = [...new Set(load.shipments.map((s) => s.transportOrderId))];
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.load.update({
-        where: { id },
-        data: { status: LoadStatus.DISPATCHED, dispatchedAt: new Date() },
-        include: loadInclude,
-      }),
-      this.prisma.shipment.updateMany({
-        where: { loadId: id },
-        data: { status: ShipmentStatus.DISPATCHED },
-      }),
-      this.prisma.transportOrder.updateMany({
-        where: { id: { in: orderIds }, status: TransportOrderStatus.PLANNED },
-        data: { status: TransportOrderStatus.IN_EXECUTION },
-      }),
-      this.prisma.trackingEvent.create({
-        data: {
-          tenantId,
-          loadId: id,
-          type: TrackingEventType.DISPATCHED,
-          message: `Load ${load.loadNumber} dispatched`,
-          recordedById: userId,
-        },
-      }),
-    ]);
+    const [updated] = await this.prisma
+      .$transaction([
+        this.prisma.load.update({
+          where: { id, tenantId, status: load.status, updatedAt: load.updatedAt },
+          data: { status: LoadStatus.DISPATCHED, dispatchedAt: new Date() },
+          include: loadInclude,
+        }),
+        this.prisma.shipment.updateMany({
+          where: { tenantId, loadId: id },
+          data: { status: ShipmentStatus.DISPATCHED },
+        }),
+        this.prisma.transportOrder.updateMany({
+          where: { tenantId, id: { in: orderIds }, status: TransportOrderStatus.PLANNED },
+          data: { status: TransportOrderStatus.IN_EXECUTION },
+        }),
+        this.prisma.trackingEvent.create({
+          data: {
+            tenantId,
+            loadId: id,
+            type: TrackingEventType.DISPATCHED,
+            message: `Load ${load.loadNumber} dispatched`,
+            recordedById: userId,
+          },
+        }),
+      ])
+      .catch((error: unknown) => {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025')
+          throw new ConflictException('Le chargement a changé. Rechargez avant le dispatch.');
+        throw error;
+      });
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.DISPATCHED);
     await this.notifications.onDispatched(tenantId, {
       id,
@@ -624,68 +713,186 @@ export class LoadsService {
   async startTransit(tenantId: string, userId: string, id: string) {
     const load = await this.get(tenantId, id);
     this.assertTransition(load.status as LoadStatus, LoadStatus.IN_TRANSIT);
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.load.update({
-        where: { id },
-        data: { status: LoadStatus.IN_TRANSIT },
-        include: loadInclude,
-      }),
-      this.prisma.shipment.updateMany({
-        where: { loadId: id },
-        data: { status: ShipmentStatus.IN_TRANSIT, actualPickupAt: new Date() },
-      }),
-      this.prisma.trackingEvent.create({
-        data: {
-          tenantId,
-          loadId: id,
-          type: TrackingEventType.DEPARTED_STOP,
-          message: `Load ${load.loadNumber} in transit`,
-          recordedById: userId,
-        },
-      }),
-    ]);
+    if (!canTransitionShipment(ShipmentStatus.DISPATCHED, ShipmentStatus.IN_TRANSIT))
+      throw new ConflictException('Transition d’expédition impossible.');
+    const [updated] = await this.prisma
+      .$transaction([
+        this.prisma.load.update({
+          where: { id, tenantId, status: load.status, updatedAt: load.updatedAt },
+          data: { status: LoadStatus.IN_TRANSIT },
+          include: loadInclude,
+        }),
+        this.prisma.shipment.updateMany({
+          where: {
+            tenantId,
+            loadId: id,
+            status: ShipmentStatus.DISPATCHED,
+            packageTrackingEnabledAt: null,
+          },
+          data: { status: ShipmentStatus.IN_TRANSIT, actualPickupAt: new Date() },
+        }),
+        // A managed shipment can have packages waiting at later pickup stops.
+        // Only its package-loading workflow confirms the actual pickup time.
+        this.prisma.shipment.updateMany({
+          where: {
+            tenantId,
+            loadId: id,
+            status: ShipmentStatus.DISPATCHED,
+            packageTrackingEnabledAt: { not: null },
+          },
+          data: { status: ShipmentStatus.IN_TRANSIT },
+        }),
+        this.prisma.trackingEvent.create({
+          data: {
+            tenantId,
+            loadId: id,
+            type: TrackingEventType.DEPARTED_STOP,
+            message: `Load ${load.loadNumber} in transit`,
+            recordedById: userId,
+          },
+        }),
+      ])
+      .catch((error: unknown) => this.rethrowTransitionConflict(error));
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.IN_TRANSIT);
     return updated;
   }
 
-  /** Delivery: shipments DELIVERED; orders whose shipments are all delivered go to COMPLETED. */
+  /** Close a load without replacing the individual evidence of package-managed deliveries. */
   async complete(tenantId: string, userId: string, id: string) {
-    const load = await this.get(tenantId, id);
-    this.assertTransition(load.status as LoadStatus, LoadStatus.COMPLETED);
+    const initial = await this.get(tenantId, id);
     const tms = await this.moduleSettings.resolve(tenantId, 'transportation');
-    if (tms['podRequiredBeforeCompletion'] === true) {
-      const shipmentsWithoutPod = await this.prisma.shipment.count({
-        where: { tenantId, loadId: id, proofOfDelivery: null },
-      });
-      if (shipmentsWithoutPod > 0) {
-        throw new BadRequestException(
-          'Tenant policy requires a POD on every shipment before completion',
-        );
-      }
-    }
-    const now = new Date();
-
-    await this.prisma.$transaction([
-      // Tenant-scoped (rule 1) even though `id` is unique — the load was already
-      // verified for this tenant by get() above; keep the invariant explicit.
-      this.prisma.load.updateMany({
-        where: { id, tenantId },
-        data: { status: LoadStatus.COMPLETED, completedAt: now },
-      }),
-      this.prisma.shipment.updateMany({
-        where: { loadId: id, tenantId },
-        data: { status: ShipmentStatus.DELIVERED, actualDeliveryAt: now },
-      }),
-      this.prisma.trackingEvent.create({
-        data: {
-          tenantId,
-          loadId: id,
-          type: TrackingEventType.DELIVERED,
-          message: `Load ${load.loadNumber} delivered`,
-          recordedById: userId,
-        },
-      }),
-    ]);
+    const load = await this.prisma
+      .$transaction(async (tx) => {
+        // Package writers and stop execution lock this same row before reading
+        // shipment state. A delivery arriving concurrently cannot evade this gate.
+        await tx.$queryRaw`SELECT id FROM loads WHERE id = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
+        const load = await tx.load.findFirst({ where: { id, tenantId }, include: loadInclude });
+        if (!load || load.updatedAt.getTime() !== initial.updatedAt.getTime())
+          throw new ConflictException('Le chargement a changé. Rechargez avant de le compléter.');
+        this.assertTransition(load.status as LoadStatus, LoadStatus.COMPLETED);
+        if (
+          load.route?.deliveryPlan &&
+          load.route.stops.some((s) => s.status !== 'DEPARTED' && s.status !== 'COMPLETED')
+        )
+          throw new BadRequestException(
+            'Terminez tous les arrêts de la tournée avant de compléter le chargement. Un arrêt ignoré ne prouve pas une livraison.',
+          );
+        const openIncidents = await tx.deliveryException.count({
+          where: {
+            tenantId,
+            loadId: id,
+            status: { in: ['OPEN', 'RETRY_PLANNED', 'RETURN_AUTHORIZED'] },
+          },
+        });
+        if (openIncidents)
+          throw new BadRequestException(
+            'Traitez les incidents, nouvelles tentatives et retours autorisés avant de clôturer la tournée.',
+          );
+        const returnedPackages = await tx.deliveryPackage.findMany({
+          where: { tenantId, shipment: { tenantId, loadId: id } },
+          select: {
+            shipmentId: true,
+            status: true,
+            exceptions: {
+              where: { tenantId, loadId: id, status: 'RETURN_RECEIVED' },
+              select: { id: true },
+            },
+          },
+        });
+        const physicallySettled = (shipmentId: string) => {
+          const items = returnedPackages.filter((p) => p.shipmentId === shipmentId);
+          return (
+            items.some((p) => p.status === 'RETURNED') &&
+            items.every(
+              (p) =>
+                ['DELIVERED', 'CANCELLED'].includes(p.status) ||
+                (p.status === 'RETURNED' && p.exceptions.length > 0),
+            )
+          );
+        };
+        if (
+          load.shipments.some(
+            (shipment) =>
+              shipment.packageTrackingEnabledAt &&
+              shipment.status !== ShipmentStatus.DELIVERED &&
+              shipment.status !== ShipmentStatus.CLOSED &&
+              !physicallySettled(shipment.id),
+          )
+        )
+          throw new BadRequestException(
+            'Confirmez la livraison ou la réception physique des retours de tous les colis suivis avant de clôturer.',
+          );
+        if (
+          load.shipments.some(
+            (shipment) =>
+              !shipment.packageTrackingEnabledAt &&
+              shipment.status !== ShipmentStatus.DELIVERED &&
+              shipment.status !== ShipmentStatus.CLOSED &&
+              shipment.status !== ShipmentStatus.CANCELLED &&
+              !canTransitionShipment(shipment.status as ShipmentStatus, ShipmentStatus.DELIVERED),
+          )
+        )
+          throw new BadRequestException('Une expédition ne peut pas encore être livrée.');
+        if (tms['podRequiredBeforeCompletion'] === true) {
+          const shipmentsWithoutPod = await tx.shipment.count({
+            where: {
+              tenantId,
+              loadId: id,
+              proofOfDelivery: null,
+              status: { not: ShipmentStatus.CANCELLED },
+              id: {
+                notIn: load.shipments
+                  .filter(
+                    (s) =>
+                      physicallySettled(s.id) &&
+                      !returnedPackages.some(
+                        (p) => p.shipmentId === s.id && p.status === 'DELIVERED',
+                      ),
+                  )
+                  .map((s) => s.id),
+              },
+            },
+          });
+          if (shipmentsWithoutPod > 0)
+            throw new BadRequestException(
+              'Tenant policy requires a POD on every shipment before completion',
+            );
+        }
+        const now = new Date();
+        await tx.load.update({
+          where: { id, tenantId, status: load.status, updatedAt: load.updatedAt },
+          data: { status: LoadStatus.COMPLETED, completedAt: now },
+        });
+        // Legacy shipments retain bulk confirmation. Managed and already delivered
+        // shipments keep their status and actualDeliveryAt from their own workflow.
+        await tx.shipment.updateMany({
+          where: {
+            loadId: id,
+            tenantId,
+            packageTrackingEnabledAt: null,
+            status: ShipmentStatus.IN_TRANSIT,
+          },
+          data: { status: ShipmentStatus.DELIVERED, actualDeliveryAt: now },
+        });
+        await tx.trackingEvent.create({
+          data: {
+            tenantId,
+            loadId: id,
+            type: returnedPackages.some((p) => p.status === 'RETURNED')
+              ? TrackingEventType.EXCEPTION
+              : TrackingEventType.DELIVERED,
+            message: returnedPackages.some((p) => p.status === 'RETURNED')
+              ? `Tournée ${load.loadNumber} clôturée avec retours réceptionnés. Les commandes non livrées restent à traiter.`
+              : `Load ${load.loadNumber} delivered`,
+            recordedById: userId,
+          },
+        });
+        return {
+          ...load,
+          hasReturnedPackages: returnedPackages.some((p) => p.status === 'RETURNED'),
+        };
+      })
+      .catch((error: unknown) => this.rethrowTransitionConflict(error));
 
     // Complete parent orders whose shipments are now all delivered. The
     // transition, its audit and the fulfillment event are centralized in
@@ -721,27 +928,59 @@ export class LoadsService {
   async cancel(tenantId: string, userId: string, id: string) {
     const load = await this.get(tenantId, id);
     this.assertTransition(load.status as LoadStatus, LoadStatus.CANCELLED);
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.load.update({
-        where: { id },
-        data: { status: LoadStatus.CANCELLED },
-        include: loadInclude,
-      }),
-      // Shipments go back to the planning pool.
-      this.prisma.shipment.updateMany({
-        where: { loadId: id },
-        data: { status: ShipmentStatus.PENDING, loadId: null },
-      }),
-      // Any pending tender dies with the load.
-      this.prisma.tender.updateMany({
-        where: { loadId: id, status: TenderStatus.PENDING },
-        data: { status: TenderStatus.CANCELLED, respondedAt: new Date() },
-      }),
-      // Junction follows the pool return (spec invariant: legs stay in sync with Shipment.loadId).
-      this.prisma.shipmentLoadLeg.deleteMany({ where: { loadId: id } }),
-    ]);
+    const updated = await this.prisma
+      .$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM loads WHERE id = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
+        const engagedPackages = await tx.deliveryPackage.count({
+          where: {
+            tenantId,
+            status: { in: ['LOADED', 'DELIVERED', 'RETURNED'] },
+            OR: [{ loadedLoadId: id }, { shipmentId: { in: load.shipments.map((s) => s.id) } }],
+          },
+        });
+        if (engagedPackages)
+          throw new ConflictException(
+            'Un chargement avec des colis chargés ou livrés ne peut pas être annulé.',
+          );
+        const deliveredShipments = await tx.shipment.count({
+          where: {
+            tenantId,
+            loadId: id,
+            status: { in: [ShipmentStatus.DELIVERED, ShipmentStatus.CLOSED] },
+          },
+        });
+        if (deliveredShipments)
+          throw new ConflictException(
+            'Une livraison confirmée ne peut pas être annulée avec le chargement.',
+          );
+        const updated = await tx.load.update({
+          where: { id, tenantId, status: load.status, updatedAt: load.updatedAt },
+          data: { status: LoadStatus.CANCELLED },
+          include: loadInclude,
+        });
+        // Shipments go back to the planning pool.
+        await tx.shipment.updateMany({
+          where: { tenantId, loadId: id },
+          data: { status: ShipmentStatus.PENDING, loadId: null },
+        });
+        // Any pending tender dies with the load.
+        await tx.tender.updateMany({
+          where: { tenantId, loadId: id, status: TenderStatus.PENDING },
+          data: { status: TenderStatus.CANCELLED, respondedAt: new Date() },
+        });
+        // Junction follows the pool return (spec invariant: legs stay in sync with Shipment.loadId).
+        await tx.shipmentLoadLeg.deleteMany({ where: { tenantId, loadId: id } });
+        return updated;
+      })
+      .catch((error: unknown) => this.rethrowTransitionConflict(error));
     await this.logStatusChange(tenantId, userId, id, load.status, LoadStatus.CANCELLED);
     return updated;
+  }
+
+  private rethrowTransitionConflict(error: unknown): never {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025')
+      throw new ConflictException('Le chargement a changé. Rechargez avant de changer son état.');
+    throw error;
   }
 
   private assertTransition(from: LoadStatus, to: LoadStatus) {

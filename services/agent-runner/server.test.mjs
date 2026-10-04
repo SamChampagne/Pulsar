@@ -32,6 +32,7 @@ const headers = { authorization: `Bearer ${token}`, 'x-pulsar-tenant': 'tenant-a
 async function fixture(t, maxConcurrent = 4) {
   const children = [];
   const preparations = [];
+  const spawnCalls = [];
   const runner = createRunner({
     tenantId: 'tenant-a',
     token,
@@ -40,11 +41,13 @@ async function fixture(t, maxConcurrent = 4) {
     mcpUrl: 'http://api:3000/api/v1/mcp',
     proxyUrl: 'http://egress:3128',
     metadata: { version: '0.16.0' },
+    loginWrapper: '/app/scripts/pulsar-hermes-login.py',
     prepare: (_boot, options) => {
       preparations.push(options.writeConfig);
       return { cwd: '/tenant/work', env: {} };
     },
-    spawn: () => {
+    spawn: (...args) => {
+      spawnCalls.push(args);
       const child = new EventEmitter();
       child.stdin = new PassThrough();
       child.stdout = new PassThrough();
@@ -78,7 +81,7 @@ async function fixture(t, maxConcurrent = 4) {
     const [res] = await response;
     return { req, res, child: children.at(-1) };
   };
-  return { url, start, children, preparations };
+  return { url, start, children, preparations, spawnCalls };
 }
 
 test('authenticated metadata is bound to exactly one tenant', async (t) => {
@@ -242,13 +245,56 @@ test('OAuth streams completion only for exit zero', async (t) => {
   res.setEncoding('utf8');
   res.on('data', (c) => (body += c));
   const ended = once(res, 'end');
+  assert.deepEqual(f.spawnCalls[0][1], [
+    '-I',
+    '-u',
+    '-X',
+    'utf8',
+    '/app/scripts/pulsar-hermes-login.py',
+    'login',
+  ]);
+  const prompt = once(res, 'data');
   child.stdout.write('Use device code ABC');
+  // The prompt reaches the caller before the login process completes.
+  assert.match((await prompt)[0], /Use device code ABC/);
   child.emit('close', 0);
   await ended;
   assert.deepEqual(body.trim().split('\n').map(JSON.parse), [
     { type: 'text', text: 'Use device code ABC' },
     { type: 'end' },
   ]);
+});
+
+test('OAuth failures and oversized output are terminal, coded and never successful', async (t) => {
+  for (const mode of ['exit', 'output', 'error']) {
+    const f = await fixture(t);
+    const { res, child } = await f.start(
+      { config: { ...config, provider: 'login', authMode: 'login', baseUrl: null } },
+      'login',
+    );
+    let body = '';
+    res.setEncoding('utf8');
+    res.on('data', (chunk) => {
+      body += chunk;
+    });
+    const ended = once(res, 'end');
+    if (mode === 'exit') child.emit('close', 1);
+    else if (mode === 'output') child.stdout.write('é'.repeat(32769));
+    else child.emit('error', new Error('private provider diagnostic'));
+    await ended;
+    assert.deepEqual(body.trim().split('\n').map(JSON.parse), [
+      {
+        type: 'error',
+        code:
+          mode === 'exit'
+            ? 'LOGIN_EXIT'
+            : mode === 'output'
+              ? 'LOGIN_OUTPUT_LIMIT'
+              : 'LOGIN_PROCESS',
+      },
+    ]);
+    if (mode !== 'exit') assert.equal(child.killed, true);
+  }
 });
 
 test('provider input is closed; no HTTP private endpoint or multiline credential', () => {

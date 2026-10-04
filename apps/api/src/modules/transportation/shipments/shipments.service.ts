@@ -1,6 +1,17 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AuditAction, LoadStatus, ShipmentStatus, checkCapacity } from '@pulsar/shared';
+import {
+  AuditAction,
+  LoadStatus,
+  ShipmentStatus,
+  checkCapacity,
+  canTransitionShipment,
+} from '@pulsar/shared';
 import { Prisma } from '@pulsar/database';
 import { randomBytes } from 'node:crypto';
 import { ListQueryDto } from '../../../common/dto/list-query.dto';
@@ -9,7 +20,10 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { ModuleSettingsService } from '../../../core/module-registry/module-settings.service';
 import { LoadCostService } from '../loads/load-cost.service';
-import { projectShipmentComment, type ShipmentCommentView } from '../../customer-portal/portal.service';
+import {
+  projectShipmentComment,
+  type ShipmentCommentView,
+} from '../../customer-portal/portal.service';
 
 const shipmentInclude = {
   transportOrder: { select: { id: true, orderNumber: true, status: true } },
@@ -45,14 +59,15 @@ export class ShipmentsService {
     return { revoked: true };
   }
 
-  async list(tenantId: string, query: ListQueryDto & { status?: ShipmentStatus; unassigned?: boolean }) {
+  async list(
+    tenantId: string,
+    query: ListQueryDto & { status?: ShipmentStatus; unassigned?: boolean },
+  ) {
     const { page, pageSize, skip, take } = paginationArgs(query);
     const where: Prisma.ShipmentWhereInput = {
       tenantId,
       ...(query.status ? { status: query.status } : {}),
-      ...(query.search
-        ? { shipmentNumber: { contains: query.search, mode: 'insensitive' } }
-        : {}),
+      ...(query.search ? { shipmentNumber: { contains: query.search, mode: 'insensitive' } } : {}),
       ...(query.unassigned ? { loadId: null } : {}),
     };
     const [items, total] = await this.prisma.$transaction([
@@ -78,7 +93,12 @@ export class ShipmentsService {
   }
 
   /** Consolidation step: attach a PENDING shipment to an OPEN load. */
-  async assignToLoad(tenantId: string, userId: string, id: string, dto: { loadId: string; force?: boolean }) {
+  async assignToLoad(
+    tenantId: string,
+    userId: string,
+    id: string,
+    dto: { loadId: string; force?: boolean },
+  ) {
     const shipment = await this.get(tenantId, id);
     if (shipment.status !== ShipmentStatus.PENDING) {
       throw new BadRequestException('Only PENDING shipments can be assigned to a load');
@@ -100,10 +120,16 @@ export class ShipmentsService {
         });
         const all = [
           ...siblings,
-          { weightKg: shipment.weightKg, volumeM3: shipment.volumeM3, palletCount: shipment.palletCount },
+          {
+            weightKg: shipment.weightKg,
+            volumeM3: shipment.volumeM3,
+            palletCount: shipment.palletCount,
+          },
         ];
         const sum = (values: (number | null)[]) =>
-          values.some((v) => v !== null) ? values.reduce<number>((acc, v) => acc + (v ?? 0), 0) : null;
+          values.some((v) => v !== null)
+            ? values.reduce<number>((acc, v) => acc + (v ?? 0), 0)
+            : null;
         const excesses = checkCapacity(
           {
             weightKg: trailer.capacityWeightKg,
@@ -120,7 +146,10 @@ export class ShipmentsService {
           const tmsSettings = await this.moduleSettings.resolve(tenantId, 'transportation');
           const overage = tmsSettings['capacityOverage'] as string;
           if (overage === 'BLOCK') {
-            throw new ConflictException({ message: 'Trailer capacity exceeded (blocked by tenant policy)', excesses });
+            throw new ConflictException({
+              message: 'Trailer capacity exceeded (blocked by tenant policy)',
+              excesses,
+            });
           }
           if (!dto.force) {
             throw new BadRequestException({ message: 'Trailer capacity exceeded', excesses });
@@ -144,7 +173,9 @@ export class ShipmentsService {
         select: { mode: true },
       })
     )?.mode;
-    const siblingsCount = await this.prisma.shipment.count({ where: { loadId: dto.loadId, tenantId } });
+    const siblingsCount = await this.prisma.shipment.count({
+      where: { loadId: dto.loadId, tenantId },
+    });
     let modeWarning: { loadMode: string; orderMode: string } | undefined;
 
     // Build the transaction. Always: shipment update + junction upsert. Conditionally: load mode update.
@@ -161,29 +192,46 @@ export class ShipmentsService {
       modeWarning = { loadMode: load.mode, orderMode };
     }
 
-    const txOps: Prisma.PrismaPromise<unknown>[] = [
-      this.prisma.shipment.update({
-        where: { id },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Serialize membership with route planning and dispatch before changing a shipment.
+      const claim = await tx.load.updateMany({
+        where: { id: load.id, tenantId, status: load.status, updatedAt: load.updatedAt },
+        data: {
+          updatedAt: new Date(Math.max(Date.now(), load.updatedAt.getTime() + 1)),
+          ...(modeUpdateNeeded ? { mode: orderMode } : {}),
+        },
+      });
+      if (!claim.count)
+        throw new ConflictException('Le chargement a changé. Rechargez avant d’affecter.');
+      await tx.$queryRaw`SELECT id FROM shipments WHERE id = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      await this.assertNoEngagedPackages(tx, tenantId, id);
+      if ((await tx.shipment.count({ where: { tenantId, loadId: dto.loadId } })) >= 200)
+        throw new BadRequestException('Maximum 200 expéditions par chargement pour ce poste.');
+      const packageCount = await tx.deliveryPackage.count({
+        where: {
+          tenantId,
+          OR: [{ shipmentId: id }, { shipment: { tenantId, loadId: dto.loadId } }],
+        },
+      });
+      if (packageCount > 2000)
+        throw new BadRequestException(
+          'Maximum 2 000 colis par chargement pour ce poste, historique inclus.',
+        );
+      if (!canTransitionShipment(ShipmentStatus.PENDING, ShipmentStatus.PLANNED))
+        throw new ConflictException('Transition impossible.');
+      const assigned = await tx.shipment.updateMany({
+        where: { id, tenantId, status: ShipmentStatus.PENDING, loadId: null },
         data: { loadId: dto.loadId, status: ShipmentStatus.PLANNED },
-        include: shipmentInclude,
-      }),
-      // Junction mirrors the denormalized loadId in the SAME transaction (spec invariant).
-      this.prisma.shipmentLoadLeg.upsert({
+      });
+      if (!assigned.count)
+        throw new ConflictException('Cette expédition est déjà affectée ou a changé.');
+      await tx.shipmentLoadLeg.upsert({
         where: { shipmentId_sequence: { shipmentId: id, sequence: 1 } },
         update: { loadId: dto.loadId },
         create: { tenantId, shipmentId: id, loadId: dto.loadId, sequence: 1 },
-      }),
-    ];
-
-    if (modeUpdateNeeded) {
-      // First shipment on this load: inherit the order's transport mode.
-      txOps.push(this.prisma.load.update({ where: { id: dto.loadId }, data: { mode: orderMode } }));
-    }
-
-    const [updated] = (await this.prisma.$transaction(txOps)) as [
-      Awaited<ReturnType<typeof this.prisma.shipment.update>>,
-      ...unknown[],
-    ];
+      });
+      return tx.shipment.findFirstOrThrow({ where: { id, tenantId }, include: shipmentInclude });
+    });
 
     if (modeUpdateNeeded && orderMode) {
       // Audit the automatic mode inheritance so dispatchers can trace why the load mode changed.
@@ -207,10 +255,18 @@ export class ShipmentsService {
     if (shipment.status !== ShipmentStatus.PENDING) {
       throw new BadRequestException('Only PENDING shipments can be cancelled');
     }
-    return this.prisma.shipment.update({
-      where: { id },
-      data: { status: ShipmentStatus.CANCELLED },
-      include: shipmentInclude,
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM shipments WHERE id = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      await this.assertNoEngagedPackages(tx, tenantId, id);
+      if (!canTransitionShipment(ShipmentStatus.PENDING, ShipmentStatus.CANCELLED))
+        throw new ConflictException('Transition d’expédition impossible.');
+      const cancelled = await tx.shipment.updateMany({
+        where: { id, tenantId, status: ShipmentStatus.PENDING, loadId: null },
+        data: { status: ShipmentStatus.CANCELLED },
+      });
+      if (!cancelled.count)
+        throw new ConflictException('Cette expédition a changé ou a été affectée.');
+      return tx.shipment.findFirstOrThrow({ where: { id, tenantId }, include: shipmentInclude });
     });
   }
 
@@ -260,18 +316,51 @@ export class ShipmentsService {
       throw new BadRequestException('Only PLANNED shipments can be removed from a load');
     }
     const previousLoadId = shipment.loadId;
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.shipment.update({
-        where: { id },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (previousLoadId) {
+        const current = await tx.load.findFirst({ where: { id: previousLoadId, tenantId } });
+        if (!current) throw new ConflictException('Le chargement a changé.');
+        const claim = await tx.load.updateMany({
+          where: {
+            id: previousLoadId,
+            tenantId,
+            updatedAt: current.updatedAt,
+            status: { in: [LoadStatus.OPEN, LoadStatus.PLANNED] },
+          },
+          data: { updatedAt: new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1)) },
+        });
+        if (!claim.count)
+          throw new ConflictException('Un chargement engagé ne peut plus perdre une expédition.');
+      }
+      await tx.$queryRaw`SELECT id FROM shipments WHERE id = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      await this.assertNoEngagedPackages(tx, tenantId, id);
+      if (!canTransitionShipment(ShipmentStatus.PLANNED, ShipmentStatus.PENDING))
+        throw new ConflictException('Transition impossible.');
+      const removed = await tx.shipment.updateMany({
+        where: { id, tenantId, loadId: previousLoadId, status: ShipmentStatus.PLANNED },
         data: { loadId: null, status: ShipmentStatus.PENDING },
-        include: shipmentInclude,
-      }),
-      // Junction follows the pool return in the SAME transaction (spec invariant).
-      this.prisma.shipmentLoadLeg.deleteMany({ where: { shipmentId: id } }),
-    ]);
+      });
+      if (!removed.count) throw new ConflictException('Cette expédition a changé.');
+      await tx.shipmentLoadLeg.deleteMany({ where: { tenantId, shipmentId: id } });
+      return tx.shipment.findFirstOrThrow({ where: { id, tenantId }, include: shipmentInclude });
+    });
     if (previousLoadId) {
       await this.cost.recompute(tenantId, previousLoadId);
     }
     return updated;
+  }
+
+  private async assertNoEngagedPackages(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    shipmentId: string,
+  ) {
+    const engaged = await tx.deliveryPackage.count({
+      where: { tenantId, shipmentId, status: { in: ['LOADED', 'DELIVERED', 'RETURNED'] } },
+    });
+    if (engaged)
+      throw new ConflictException(
+        'Une expédition avec des colis chargés ou livrés ne peut pas être détachée ou réaffectée.',
+      );
   }
 }

@@ -152,7 +152,11 @@ export function interpolateTemplate(tpl: string, payload: Record<string, unknown
  * Resolves the subjectId following the fallback chain:
  * action.subjectField → payload.subjectId → payload.id → event-level subjectId.
  */
-function resolveSubjectId(action: CreateTaskAction, rule: AutomationRuleLike, event: DomainEventInput): string | null {
+function resolveSubjectId(
+  action: CreateTaskAction,
+  rule: AutomationRuleLike,
+  event: DomainEventInput,
+): string | null {
   const payload = event.payload ?? {};
   const candidates: unknown[] = [];
   if (action.subjectField) candidates.push(getByPath(payload, action.subjectField));
@@ -235,7 +239,7 @@ export const AUTOMATION_EVENT_CATALOG: AutomationEventDescriptor[] = [
   {
     type: DOMAIN_EVENT_TYPES.STOP_DELAYED,
     label: 'Stop en retard',
-    description: "Un arrêt a dépassé sa fenêtre — la tâche escalade selon les minutes de retard.",
+    description: 'Un arrêt a dépassé sa fenêtre — la tâche escalade selon les minutes de retard.',
     fields: [
       f('stopId', 'ID arrêt'),
       f('loadId', 'ID load'),
@@ -247,7 +251,7 @@ export const AUTOMATION_EVENT_CATALOG: AutomationEventDescriptor[] = [
   {
     type: DOMAIN_EVENT_TYPES.TENDER_DECLINED,
     label: 'Soumission refusée',
-    description: "Un transporteur a refusé une soumission (tender) sur un load.",
+    description: 'Un transporteur a refusé une soumission (tender) sur un load.',
     fields: [
       f('tenderId', 'ID tender'),
       f('loadId', 'ID load'),
@@ -259,7 +263,7 @@ export const AUTOMATION_EVENT_CATALOG: AutomationEventDescriptor[] = [
   {
     type: DOMAIN_EVENT_TYPES.TENDER_EXPIRED,
     label: 'Soumission expirée',
-    description: "Une soumission (tender) a expiré sans réponse du transporteur.",
+    description: 'Une soumission (tender) a expiré sans réponse du transporteur.',
     fields: [
       f('tenderId', 'ID tender'),
       f('loadId', 'ID load'),
@@ -271,19 +275,19 @@ export const AUTOMATION_EVENT_CATALOG: AutomationEventDescriptor[] = [
   {
     type: DOMAIN_EVENT_TYPES.CARRIER_INVOICE_RECEIVED,
     label: 'Facture transporteur reçue',
-    description: "Une facture transporteur entrante est arrivée — audit requis.",
+    description: 'Une facture transporteur entrante est arrivée — audit requis.',
     fields: [f('invoiceId', 'ID facture'), f('carrierId', 'ID transporteur')],
     defaultSubjectField: 'invoiceId',
   },
   {
     type: DOMAIN_EVENT_TYPES.FLEET_ASSET_MAINTENANCE,
     label: 'Asset en maintenance',
-    description: "Un véhicule/remorque entre en atelier et quitte le pool dispatchable.",
+    description: 'Un véhicule/remorque entre en atelier et quitte le pool dispatchable.',
     fields: [
       f('assetKind', "Type d'asset"),
       f('assetId', 'ID asset'),
       f('unitNumber', 'N° unité'),
-      f('woId', "ID ordre de travail"),
+      f('woId', 'ID ordre de travail'),
     ],
     defaultSubjectField: 'assetId',
   },
@@ -304,7 +308,7 @@ export const AUTOMATION_EVENT_CATALOG: AutomationEventDescriptor[] = [
   {
     type: DOMAIN_EVENT_TYPES.WMS_PICK_COMPLETED,
     label: 'Préparation terminée',
-    description: "Un pick order lié à un shipment est complété — fret prêt à expédier.",
+    description: 'Un pick order lié à un shipment est complété — fret prêt à expédier.',
     fields: [
       f('shipmentId', 'ID shipment'),
       f('shipmentNumber', 'N° shipment'),
@@ -315,7 +319,7 @@ export const AUTOMATION_EVENT_CATALOG: AutomationEventDescriptor[] = [
   {
     type: DOMAIN_EVENT_TYPES.WMS_ITEM_BELOW_MIN,
     label: 'Article sous le minimum',
-    description: "Un article est tombé au/sous son point de commande — réappro nécessaire.",
+    description: 'Un article est tombé au/sous son point de commande — réappro nécessaire.',
     fields: [
       f('itemId', 'ID article'),
       f('sku', 'SKU'),
@@ -326,8 +330,8 @@ export const AUTOMATION_EVENT_CATALOG: AutomationEventDescriptor[] = [
   },
   {
     type: DOMAIN_EVENT_TYPES.WMS_CYCLE_COUNT_VARIANCE,
-    label: "Écart de comptage cyclique",
-    description: "Un comptage cyclique réconcilié a trouvé des écarts de stock.",
+    label: 'Écart de comptage cyclique',
+    description: 'Un comptage cyclique réconcilié a trouvé des écarts de stock.',
     fields: [
       f('cycleCountId', 'ID comptage'),
       f('number', 'N° comptage'),
@@ -361,7 +365,7 @@ export const AUTOMATION_EVENT_CATALOG: AutomationEventDescriptor[] = [
   {
     type: DOMAIN_EVENT_TYPES.YARD_APPOINTMENT_LATE,
     label: 'Rendez-vous quai en retard',
-    description: "Un rendez-vous de quai planifié est passé et non honoré.",
+    description: 'Un rendez-vous de quai planifié est passé et non honoré.',
     fields: [
       f('appointmentId', 'ID rendez-vous'),
       f('number', 'N° rendez-vous'),
@@ -372,7 +376,7 @@ export const AUTOMATION_EVENT_CATALOG: AutomationEventDescriptor[] = [
   {
     type: DOMAIN_EVENT_TYPES.DRIVER_EXCEPTION,
     label: 'Exception conducteur',
-    description: "Un conducteur a signalé un incident (dommage, retard, refus, autre).",
+    description: 'Un conducteur a signalé un incident (dommage, retard, refus, autre).',
     fields: [
       f('loadId', 'ID load'),
       f('loadNumber', 'N° load'),
@@ -385,7 +389,7 @@ export const AUTOMATION_EVENT_CATALOG: AutomationEventDescriptor[] = [
   {
     type: DOMAIN_EVENT_TYPES.PORTAL_CHANGE_REQUEST,
     label: 'Demande de changement client',
-    description: "Un client a soumis une demande de changement via le portail.",
+    description: 'Un client a soumis une demande de changement via le portail.',
     fields: [
       f('subject.type', 'Type de sujet'),
       f('subject.id', 'ID sujet'),
@@ -400,7 +404,11 @@ export const AUTOMATION_EVENT_CATALOG: AutomationEventDescriptor[] = [
     type: DOMAIN_EVENT_TYPES.TRANSPORT_ORDER_PLANNED,
     label: 'Commande planifiée',
     description: 'Une commande a été planifiée (ses shipments existent).',
-    fields: [f('orderId', 'ID commande'), f('orderNumber', 'N° commande'), f('shipmentCount', 'Nb shipments', 'number')],
+    fields: [
+      f('orderId', 'ID commande'),
+      f('orderNumber', 'N° commande'),
+      f('shipmentCount', 'Nb shipments', 'number'),
+    ],
     defaultSubjectField: 'orderId',
   },
   {
@@ -413,7 +421,15 @@ export const AUTOMATION_EVENT_CATALOG: AutomationEventDescriptor[] = [
   {
     type: DOMAIN_EVENT_TYPES.LOAD_COMPLETED,
     label: 'Load livré',
-    description: 'Un load est livré/complété.',
+    description: 'Un load est livré/complété sans retour de colis.',
+    fields: [f('loadId', 'ID load'), f('loadNumber', 'N° load')],
+    defaultSubjectField: 'loadId',
+  },
+  {
+    type: DOMAIN_EVENT_TYPES.LOAD_CLOSED_WITH_RETURNS,
+    label: 'Tournée clôturée avec retours',
+    description:
+      'Colis retournés réceptionnés; aucune livraison, remise en stock ou facture déduite.',
     fields: [f('loadId', 'ID load'), f('loadNumber', 'N° load')],
     defaultSubjectField: 'loadId',
   },

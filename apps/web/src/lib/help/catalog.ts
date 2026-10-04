@@ -6,6 +6,18 @@ export interface PageGuide {
 }
 
 export const PAGE_GUIDES: Record<string, PageGuide> = {
+  '/delivery-operations': {
+    purpose: 'Repérer les chargements à examiner : contenu déclaré, colis à charger, remises en transit, incidents ouverts, nouvelles tentatives et retours. La page est entièrement en lecture seule.',
+    steps: [
+      'Choisir la vue correspondant au travail à effectuer. Les filtres et le total portent sur tous les dossiers autorisés; la page affiche seulement la tranche indiquée.',
+      'Comparer les compteurs de colis : préparés, dans le camion, livrés, retournés et annulés. Les expéditions sans colis actif sont signalées séparément; le suivi par colis reste facultatif.',
+      'Lire la prochaine vérification proposée puis ouvrir le chargement. Incident ouvert, retour autorisé, retour reçu et nouvelle tentative ne sont pas la même étape.',
+      'Dans le chargement, rapprocher volontairement les lignes de contenu avec la commande CRM ou une préparation WMS terminée. Une attestation humaine 1:1 est nécessaire pour la quantité commerciale sans unité native; aucun rapprochement par SKU ou nom.',
+      'Avant de conclure une opération, vérifier les versions, l’état réel et les preuves. Actualiser le poste pour relire les derniers états.',
+    ],
+    connections: 'Transport seul suffit. Commandes, expéditions, colis et incidents sont lus dans le même tenant. Les sources CRM/WMS restent facultatives et protégées par leurs droits. Les confirmations se font dans le dossier existant, pas depuis les compteurs.',
+    caution: 'Incidents ouverts n’est pas un diagnostic exhaustif de tous les blocages. Un retour reçu ne crée ni stock, ni remboursement; une attribution retournée reste engagée. Pas de somme de références ou unités différentes, pas d’envoi ni d’action IA automatique.',
+  },
   '/billing/ledger-qualification': {
     purpose:
       'Reprendre la devise d’un historique manuel, paiement, facture ou groupe de dotations rapprochées avec une preuve et une décision humaine, sans modifier les lignes originales.',
@@ -381,7 +393,7 @@ export const PAGE_GUIDES: Record<string, PageGuide> = {
     connections:
       'Tarif → table de carburant → coût estimé du chargement. Le moteur choisit le palier applicable à la date de référence.',
     caution:
-      'Une table seule ne modifie aucun coût. Les coûts des chargements terminés restent figés.',
+      'Une table seule ne modifie aucun coût. Les coûts des chargements terminés restent figés. Pour estimer les litres et le coût du camion, ouvrir Tournée et carburant dans le chargement : ce calcul est distinct de la surcharge.',
   },
   '/lanes': {
     purpose:
@@ -401,13 +413,18 @@ export const PAGE_GUIDES: Record<string, PageGuide> = {
       'Le chargement regroupe les expéditions qui voyagent ensemble, leurs ressources, leur tournée et leurs preuves de livraison.',
     steps: [
       'Créer un chargement et y affecter les expéditions.',
+      'Colis et contenu : déclarer les colis et leurs lignes avant engagement. Chaque code identifie un colis physique; scanner sélectionne seulement. Confirmer ensuite le chargement réel, puis chaque colis remis au destinataire en transit.',
+      'Manifestes et étiquettes : relire les adresses, arrêts et colis de l’aperçu, préciser un motif puis figer l’édition. Télécharger le manifeste ou les étiquettes 4 × 6 Code 128. Après modification, émettre une nouvelle édition; réimprimer conserve les coordonnées et états historiques.',
       'Ouvrir Ressources pour modifier transporteur, véhicule, chauffeur et tarif.',
-      'Générer ou modifier la tournée, proposer au transporteur, puis dispatcher.',
+      'Dans Tournée et carburant, saisir début, consommations chargé/à vide, prix par litre et manutention; activer le retour si nécessaire. Calculer ou proposer un meilleur ordre, puis examiner les segments, les heures et le budget avant de confirmer.',
+      'Après dispatch, déclarer arrivée et départ dans l’ordre. Les preuves de livraison restent séparées; un arrêt ignoré ne permet pas de terminer un chargement à plan géré.',
+      'Lien chauffeur : consulter sa mission et ses colis sur téléphone, scanner un code exact puis confirmer la présence dans le camion ou la remise. Signaler les incidents sans changer automatiquement l’état; GPS sur consentement et reprise explicite de la même demande après une réponse incertaine. Révoquer le lien si nécessaire; aucun BOL privé n’est partagé.',
+      'Une expédition suivie reste en transit tant que ses colis actifs ne sont pas tous livrés. La clôture du camion conserve les heures de livraison individuelles. Retirer physiquement les colis avant transit pour changer véhicule ou remorque.',
     ],
     connections:
       'Commandes → expéditions → chargement → suivi et preuves → facturation. Les dossiers de cour peuvent être reliés sans modifier automatiquement ces statuts.',
     caution:
-      'Les ressources et la tournée sont modifiables avant exécution (Ouvert / Planifié). Après dispatch, utilisez les actions de suivi, pas une réécriture de l’historique.',
+      'Les ressources et la tournée sont modifiables avant exécution (Ouvert / Planifié). Une édition invalide l’aperçu; après conflit ou réponse incertaine, recharger avant de recommencer. L’ordre proposé n’est pas un optimum garanti ni un trajet certifié poids lourds. Le carburant estimé ne remplace pas la surcharge tarifaire.',
   },
   '/customers': {
     purpose:
@@ -533,10 +550,14 @@ export const MODULE_GUIDES: Record<string, PageGuide> = {
     steps: [
       'Rechercher une opération ou choisir une application.',
       'Lire le parcours, les règles et les limites avant de modifier un dossier.',
+      'Passer à Champs détaillés pour rechercher un libellé ou une clé technique et lire type, obligation, validation, exemple, effets et limites du champ.',
+      'Filtrer le dictionnaire par application. Préparer un premier cas IA dans Mettre l’IA au travail, si vos droits et modules permettent le parcours.',
       'Ouvrir l’application ou relancer sa visite guidée depuis son article.',
     ],
     connections:
       'Les guides suivent les modules et permissions de votre compte. Documentation explique le logiciel; Documents conserve vos fichiers métier.',
+    caution:
+      'Les sujets détaillés couvrent Transport livraison, Entrepôt, Fabrication et IA, sans prétendre à l’exhaustivité. Une checklist IA ne vérifie pas le serveur et ne lance pas le worker; aucune opération ou autorisation n’est accordée par un article.',
   },
   catalog: {
     purpose:
@@ -654,6 +675,7 @@ export const MODULE_GUIDES: Record<string, PageGuide> = {
       'Préparer clients, transporteurs et lieux.',
       'Créer puis planifier une commande en expéditions.',
       'Regrouper en chargements, affecter les ressources et suivre l’exécution.',
+      'Ouvrir Exploitation livraison pour prioriser incidents, colis à charger, remises et retours; les liens ramènent au dossier, sans mutation automatique.',
     ],
     connections:
       'Les lieux sont partagés. Les préparations WMS et dossiers de cour apportent du contexte. La facturation reprend les opérations réalisées.',

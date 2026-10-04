@@ -1,6 +1,9 @@
 import { ForbiddenException } from '@nestjs/common';
 /** Only business endpoints may create, inspect or remove these documents. */
 export const PROTECTED_DOCUMENT_TYPES = [
+  'driver-delivery-document-pdf',
+  'delivery-manifest-pdf',
+  'delivery-labels-pdf',
   'agent-chat-image',
   'ledger-currency-evidence',
   'supplier-invoice-evidence',
@@ -11,6 +14,9 @@ export const PROTECTED_DOCUMENT_TYPES = [
   'customer-invoice-pdf',
 ];
 export type ProtectedDocumentContext =
+  | 'driver-delivery-document-pdf'
+  | 'delivery-manifest-pdf'
+  | 'delivery-labels-pdf'
   | 'agent-chat-image'
   | 'ledger-currency-evidence'
   | 'supplier-invoice-evidence'

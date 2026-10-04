@@ -1,5 +1,178 @@
 # État du projet — point de reprise
 
+> **Distribution connectée — cinq axes locaux terminés, 3 octobre 2026**,
+> même branche `codex/delivery-route-fuel`. Document chauffeur partageable figé;
+> incidents, tentatives et retours reçus humains; allocations explicites vente/WMS
+> vers colis; profils/prix carburant versionnés et comparaison à une base capturée;
+> poste `/delivery-operations` et outils IA gouvernés. Aucun effet stock/finance
+> implicite. Clôturer avec retour n’envoie pas un faux avis de livraison et émet
+> `load.closed-with-returns`, distinct des anciennes règles `load.completed`.
+> Transport seul reste utilisable; les liens CRM/WMS exigent leurs modules et droits.
+> Cinq guides ajoutés au dictionnaire intégré : **30 sujets / 332 champs** au total,
+> couverture éditoriale toujours partielle. Interfaces dans les composants Pulsar;
+> tutoriel adapté au poste, sans remettre à zéro les premières visites existantes.
+> **1 271 Shared, 1 100 API, 305 Web**, **98 HTTP / 9 suites** sur PostgreSQL jetable,
+> **85 parcours Chromium distribution + 18 documentation** réussis. Types et builds
+> API/Web verts, 12 avertissements Svelte préexistants; PDF/mobile inspectés.
+> Deux migrations requises : `20261003120000_distribution_connected` puis
+> `20261003120500_delivery_return_execution`, appliquées uniquement à la base QA.
+> Base et serveur de recette arrêtés. Aucun `.env`, lockfile, compte fournisseur,
+> appel LLM, commit, push ou déploiement modifié par ce lot.
+> **Suite :** recette humaine de tournée complète et revue consolidée du grand batch;
+> le pilote IA réel, les services transporteurs et la télématique restent à qualifier.
+> Ne pas annoncer le VPS ni toute l’application validés à partir des tests locaux.
+> [Bilan, preuves, limites et prochaine recette](plans/distribution-connected-batch.md).
+
+> **Documentation opérationnelle + préparation pilote IA — 2 octobre 2026**,
+> même branche `codex/delivery-route-fuel`. Dictionnaire intégré : **25 sujets /
+> 278 champs et contrôles** (96 Transport/IA conservés + 76 Entrepôt + 106 Fabrication).
+> Type/unité, obligation, validation, valeurs connues, effets, limites, exemples et
+> sources; filtre par application, recherche et détails progressifs dans le style
+> Pulsar. Les sujets matières exigent WMS; ressources/BOM/OF/APS autonomes restent
+> lisibles sans ce module, leurs actions matières sont expliquées séparément.
+> Deux parcours **Mettre l’IA au travail** : revue Transport et worker MRP sur
+> tâche réellement affectée. Checklist locale, consigne copiable, outils réels et
+> preuves attendues; aucune inférence ni mutation depuis Documentation. Droits de
+> l’opérateur distincts de ceux du worker; perte d’accès efface les coches.
+> **290 tests Web / 42 fichiers et 17 parcours Chromium réussis**. Typecheck Web
+> sans erreur, build Web réussi; 12 avertissements Svelte préexistants. Revue
+> croisée des contrats stock/BOM/APS et de la frontière d’exécution IA.
+> Couverture éditoriale toujours partielle; les procédures privées, les champs
+> Services/Finance et plusieurs sujets avancés restent à documenter. Tutoriels
+> de première visite inchangés, aucun reset, aucune migration ni writer métier
+> ajouté par ce lot. Aucun `.env`, lockfile, fournisseur, base métier, commit,
+> push ou déploiement modifié; tests API/HTTP du lot précédent non réexécutés ici.
+> **Suite :** publier/déployer API + Web + runner du lot de connexion précédent,
+> qualifier le compte Codex sur l’entreprise de test puis exécuter volontairement
+> un seul pilote PROPOSE avec budget et approbateur confirmés. La checklist ne
+> qualifie pas le VPS. Distribution : document chauffeur sûr puis allocations
+> commande/stock, exceptions et retours restent ouverts.
+> [WMS](plans/documentation-wms-fields.md) ·
+> [Fabrication](plans/documentation-manufacturing-fields.md) ·
+> [Pilotes IA](plans/ai-business-pilot.md).
+
+> **Distribution D2c + connexion IA + documentation détaillée — 2 octobre 2026**,
+> même branche `codex/delivery-route-fuel`. Suivi colis partagé public/portail,
+> livraisons partielles et historique legacy explicite; chronologie sans notes
+> privées ni historique GPS. Contrat EDI 214 interne conservé séparément.
+> Connexion Codex : défaut de buffering Python confirmé hors réseau (`-I` ignore
+> PYTHONUNBUFFERED), corrigé par `-I -u -X utf8` sans changer Hermes qualifié.
+> Flux tenant/admin commun, étapes et annulation, heartbeat, bornes, erreurs
+> explicites; compte, runtime et inférence restent trois preuves distinctes.
+> Documentation → Champs détaillés : **96 champs/contrôles, 8 sujets et 4 exemples
+> IA outillés**, Transport livraison et IA, types/unités, obligations, validations, effets, limites,
+> sources et cas d’usage d’outils existants. Les autres guides restent présents;
+> aucune prétention d’exhaustivité au champ près de tous les modules.
+> **1 036 tests API / 125 suites**, **260 tests Web / 39 fichiers**, **15 tests
+> runner/proxy** réussis. **42 tests HTTP / 4 suites** sur PostgreSQL jetable et
+> **28 parcours Chromium** (20 IA/admin/documentation + 8 destinataire) réussis.
+> Builds API/Web réussis, typechecks sans erreur; 12 avertissements Svelte
+> préexistants. Captures mobile inspectées; base de recette arrêtée.
+> **Déploiement nécessaire : API + web + runner ensemble**, le frontend seul
+> ne corrige pas stdout côté VPS. Aucun OAuth/LLM/transporteur réel testé,
+> aucun `.env`, lockfile, commit, push ou déploiement modifié. Pas de nouvelle
+> migration pour ce lot; les migrations D0/D1/D2a de la branche restent requises.
+> **Suite :** recette Codex sur l’entreprise de test puis mission IA en PROPOSE;
+> étendre le dictionnaire à WMS/Fabrication, document chauffeur publiable sûr,
+> allocation commande/stock et retours contrôlés. Le pilote terrain reste ouvert.
+> [Connexion IA](plans/ai-connection-reliability.md) ·
+> [Suivi destinataire](plans/distribution-recipient.md).
+
+> **Distribution D2b — 2 octobre 2026**, même branche `codex/delivery-route-fuel`.
+> Poste chauffeur mobile dans le style Pulsar : colis par destination, contenu,
+> scan clavier de sélection, chargement/remise confirmés, destinataire et POD selon
+> politique, incidents privés sans transition implicite. GPS désactivé au départ;
+> intentions minimales par empreinte de lien, reprise exacte sans renvoi automatique.
+> Capability tenant/module et affectation revalidées sous verrou, refs opaques,
+> vrai compte de service DISABLED pour les colis, événement/reçu/audit atomiques.
+> Changement chauffeur révoque le lien; POD/photo/signature/arrêts historiques durcis.
+> **982 tests unitaires API / 122 suites**, puis **85 tests ciblés** sur le code
+> final; **237 tests Web / 37 fichiers**. **95 tests HTTP/PostgreSQL / 9 suites**,
+> dont 15 nouveaux cas chauffeur (concurrence, révocation, module désactivé avec
+> cache chaud, isolation, POD et livraison partielle). **40 parcours Chromium**,
+> dont 14 mobiles; capture inspectée. Typechecks et builds API/Web réussis,
+> 12 avertissements Svelte préexistants, aucune erreur. Pas de nouvelle migration.
+> Base de recette jetable arrêtée; aucun `.env`/lockfile, fournisseur réel,
+> commit, push ou déploiement modifié. Aide intégrée et contrat mis à jour.
+> **Limites :** pas de file hors ligne durable, scan caméra ou qualification
+> Zebra matérielle. BOL legacy chauffeur **bloqué en 409**, car les PDF peuvent
+> contenir des notes privées; accès interne inchangé et testé. Le signalement
+> d’incident ne traite pas encore les retours/refus ni ne notifie un tiers.
+> **Suite :** suivi destinataire par colis et document chauffeur publiable sûr,
+> puis allocation commande/WMS, retours contrôlés et pilote terrain autorisé.
+> [Contrat et utilisation](plans/distribution-driver.md).
+
+> **Distribution D2a — 2 octobre 2026**, même branche `codex/delivery-route-fuel`.
+> Manifestes/remanifestes MF depuis un aperçu complet, snapshots et révisions
+> immuables, code-barres Code 128 et étiquettes 4 × 6, PDF multipage privés,
+> historique et réimpression canonique. Adresses/ressources/contenus capturés,
+> hash complet + version Load, UUID/acteur/corps et audit atomique; aucun stock,
+> statut de livraison, coût ou envoi implicitement modifié. Interface bureau/mobile
+> intégrée au chargement, reprise après réponse incertaine, aide et doc approfondies.
+> **958 tests API / 119 suites**, **1 223 Shared / 134 fichiers** et
+> **237 Web / 37 fichiers** réussis sur le code final. **60 tests HTTP/base /
+> 6 suites**, dont 23 cas manifestes (pool PostgreSQL d’une connexion inclus), et
+> **26 parcours Chromium** réussis. Typechecks et builds API/Web réussis;
+> 12 avertissements Svelte préexistants, aucun nouveau.
+> Migration `20261002160000_delivery_manifests` appliquée après les 145 précédentes
+> dans la base jetable; trigger d’immuabilité et FK/contraintes testés. Conflit
+> PostgreSQL brut 40001 correctement renvoyé en 409, pas de double édition;
+> document corrompu refusé et génération concurrente sans deuxième connexion.
+> Rendu PDF inspecté (9 pages de contrôle), code-barres vectoriel vérifié par
+> décodage raster indépendant; aucune preuve de compatibilité matériel revendiquée.
+> Base jetable arrêtée et fichiers PDF de recette temporaires nettoyés.
+> **Limites :** documents latins occidentaux et limites explicites de volume;
+> pas de manifeste douanier/BOL/POD, pas de scans chauffeur public ou de suivi
+> destinataire colis dans D2a. Pilote imprimante/lecteur et déploiement nécessaires.
+> Pas de changement `.env`/lockfile, données utilisateur, fournisseur réel, commit,
+> push ou déploiement. [Contrat et utilisation](plans/distribution-manifests.md).
+> **Suite D2b :** mission chauffeur et scans autorisés, exceptions/reprise terrain,
+> puis portail destinataire limité à ses colis; harmoniser les routes publiques.
+
+> **Distribution D1 — 2 octobre 2026**, même branche `codex/delivery-route-fuel`.
+> Colis physiques PKG et contenus exacts, journal append-only, chargement/retrait
+> avant transit, confirmation de remise par colis et livraison indépendante des
+> expéditions. Le camion ne livre plus implicitement les expéditions suivies et
+> conserve les heures déjà confirmées. Version colis + ID/version chargement,
+> reprise UUID/acteur/corps, audit atomique, protections véhicule/remorque et
+> réaffectation, colis actifs exigés au dispatch. Panneau Colis intégré au détail,
+> scanner clavier de sélection seulement, état partiel, mobile et aide/documentation.
+> **1 223 tests Shared / 134 fichiers**, **237 Web / 37 fichiers** réussis.
+> API : passe complète **870 tests / 115 suites**, puis **44 tests ciblés** sur
+> le dernier code (11 cas ajoutés après le démarrage de la passe complète,
+> soit **881 cas distincts** validés au bilan consolidé, pas une passe unique de 881).
+> **37 tests HTTP / 5 suites** et **15 parcours Chromium** réussis; typechecks
+> API/Web et builds API/Web réussis, 12 avertissements Web préexistants.
+> Les **145 migrations** et le seed passent sur PostgreSQL jetable; recette de
+> livraisons partielles, rollback POD, rejouabilité et conservation dates/coûts
+> réussie. Un défaut réel de désérialisation du verrou SQL a été corrigé et
+> revalidé. Base jetable arrêtée, pas d'écriture métier dans la base utilisateur.
+> Pas de modification `.env`, commit, push, fournisseur réel ni déploiement VPS.
+> **Limites D1 :** contenu déclaré sans allocation WMS/commande; pas encore de
+> manifeste global scellé, étiquette, retour/refus/correction après livraison,
+> scan chauffeur public ou portail colis. Transport fonctionne sans WMS.
+> [Usage, migration/rollback et suite D2–D5](plans/distribution-packages.md).
+
+> **Tournées et carburant — 1er octobre 2026**, branche `codex/delivery-route-fuel`
+> créée depuis `1bc698e` (centre plateforme, PR #85). Chargement → Tournée et
+> carburant : segments routiers, ordre proposé sous précédence et fenêtres,
+> manutention/attente, retour, budget chargé/vide/ralenti et horaire par arrêt.
+> Aperçu avant confirmation, invalidation après édition, version attendue,
+> sauvegarde/audit atomiques, transitions d'arrêt gardées et clôture contrôlée.
+> Distance manuelle et snapshots tarifaires terminés conservés; aucun POD ou
+> coût financier créé implicitement. Aide et documentation intégrées enrichies.
+> **1 141 tests Shared / 133 fichiers**, **837 tests API / 113 suites**,
+> **237 tests Web / 37 fichiers**, **44 tests HTTP / 5 suites** et **4 parcours
+> Chromium** réussis. Typechecks API/Web et builds API/Web réussis; 12 avertissements
+> Web préexistants. La suite API signale encore un worker forcé à quitter après les
+> tests (dette de teardown, non corrigée ici). Les **144 migrations** et le seed ont
+> été appliqués sur PostgreSQL jetable; base et serveur de recette arrêtés ensuite.
+> Une colonne JSONB additive; migration avant les images. Tests de routage synthétiques,
+> tuiles désactivées en recette navigateur : aucune qualification routière réelle.
+> Un chargement à la fois, pas de VRP multi-camions ni de garantie poids lourds.
+> Aucun `.env`, données utilisateur ou serveur modifiés; pas de commit, push ou
+> déploiement pour ce lot. [Usage, limites et suite](plans/delivery-route-fuel.md).
+
 > **Centre plateforme — 1er octobre 2026**, branche `codex/platform-service-center`.
 > Administration → Services et connexions : SMTP global dynamique, SMTP dédié ou
 > hérité par entreprise, connexion IA/OAuth et diagnostic réel du runner sélectionné.

@@ -10,7 +10,12 @@
     locationId: string;
     type: string;
   }
-  let { stops = [] as StopIn[], loadId, geometry = null as unknown } = $props();
+  let {
+    stops = [] as StopIn[],
+    loadId,
+    geometry = null as unknown,
+    locations = undefined as Loc[] | undefined,
+  } = $props();
 
   let el: HTMLDivElement;
   let hasPoints = $state(false);
@@ -39,11 +44,13 @@
       const L = await import('leaflet');
       if (destroyed) return;
 
-      const locs = await Promise.all(
-        [...new Set(stops.map((s) => s.locationId))].map((id) =>
-          api<Loc>(`/locations/${id}`).catch(() => null),
-        ),
-      );
+      const locs =
+        locations ??
+        (await Promise.all(
+          [...new Set(stops.map((s) => s.locationId))].map((id) =>
+            api<Loc>(`/locations/${id}`).catch(() => null),
+          ),
+        ));
       if (destroyed) return;
 
       const byId = new Map(locs.filter(Boolean).map((l) => [l!.id, l!]));

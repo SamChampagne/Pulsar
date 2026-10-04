@@ -6,6 +6,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { ForbiddenException } from '@nestjs/common';
 import { ShipmentStatus, TrackingEventType, parseX12, read214, read990 } from '@pulsar/shared';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { TenantModulesCacheService } from '../../prisma/tenant-modules-cache.service';
@@ -31,6 +32,14 @@ interface HarnessOptions {
   locationExists?: boolean;
   duplicateInvoice?: boolean;
   status?: 'ENABLED' | 'DISABLED';
+  tenantStatus?: string;
+  trackingEvents?: {
+    id: string;
+    type: TrackingEventType;
+    occurredAt: Date;
+    message?: string | null;
+    stop?: { type: 'PICKUP' | 'DELIVERY' } | null;
+  }[];
   /** Makes a business service blow up with a NON-decline error (internals). */
   explodeWith?: string;
 }
@@ -43,7 +52,30 @@ function harness(options: HarnessOptions = {}) {
   const invoices: any[] = [];
   const createdLocations: any[] = [];
   const deliveries: any[] = [];
-  let shipmentCall = 0;
+  const trackingEvents = options.trackingEvents ?? [
+    {
+      id: 'ev3',
+      type: TrackingEventType.DELIVERED,
+      message: null,
+      occurredAt: new Date('2026-09-22T15:00:00Z'),
+      stop: null,
+    },
+    {
+      id: 'ev2',
+      type: TrackingEventType.DEPARTED_STOP,
+      message: null,
+      occurredAt: new Date('2026-09-21T14:00:00Z'),
+      stop: { type: 'PICKUP' as const },
+    },
+    {
+      id: 'ev1',
+      type: TrackingEventType.DISPATCHED,
+      message: null,
+      occurredAt: new Date('2026-09-21T08:00:00Z'),
+      stop: null,
+    },
+  ];
+  const eventQueries: unknown[] = [];
 
   const config = {
     isaSenderId: 'PULSARTMS',
@@ -100,12 +132,25 @@ function harness(options: HarnessOptions = {}) {
       findUnique: async ({ where }: any) =>
         options.locationExists ? { id: `loc_${where.tenantId_code.code}` } : null,
     },
+    tenantModule: {
+      findFirst: async ({ where }: any) =>
+        where.tenantId === TENANT &&
+        (options.modules ?? ['transportation', 'billing']).includes(where.module.key)
+          ? { moduleId: 'transportation-module' }
+          : null,
+    },
     shipment: {
-      findFirst: async () => {
-        shipmentCall += 1;
-        // 1st call: the shared tracking projection. 2nd: the EDI-only details.
-        if (shipmentCall === 1) {
+      findFirst: async ({ select }: any) => {
+        if (select.tenant?.select.status)
           return {
+            id: 'ship_1',
+            tenantId: TENANT,
+            tenant: { status: options.tenantStatus ?? 'ACTIVE' },
+          };
+        // Route by requested projection, not a brittle query call counter.
+        if (select.deliveryPackages) {
+          return {
+            id: 'ship_1',
             tenantId: TENANT,
             shipmentNumber: 'SH-000042',
             status: ShipmentStatus.DELIVERED,
@@ -114,33 +159,17 @@ function harness(options: HarnessOptions = {}) {
             originLocation: { city: 'Montreal', state: 'QC', latitude: null, longitude: null },
             destinationLocation: { city: 'Toronto', state: 'ON', latitude: null, longitude: null },
             proofOfDelivery: null,
+            packageTrackingEnabledAt: null,
+            deliveryPackages: [],
             plannedPickupEarly: null,
             plannedPickupLate: null,
             plannedDeliveryEarly: null,
             plannedDeliveryLate: null,
             actualPickupAt: new Date('2026-09-21T13:00:00Z'),
             actualDeliveryAt: new Date('2026-09-22T15:00:00Z'),
-            trackingEvents: [
-              // Newest first, exactly like the projection.
-              {
-                id: 'ev3',
-                type: TrackingEventType.DELIVERED,
-                message: null,
-                occurredAt: new Date('2026-09-22T15:00:00Z'),
-              },
-              {
-                id: 'ev2',
-                type: TrackingEventType.DEPARTED_STOP,
-                message: null,
-                occurredAt: new Date('2026-09-21T14:00:00Z'),
-              },
-              {
-                id: 'ev1',
-                type: TrackingEventType.DISPATCHED,
-                message: null,
-                occurredAt: new Date('2026-09-21T08:00:00Z'),
-              },
-            ],
+            trackingEvents: trackingEvents
+              .filter((event) => event.type !== TrackingEventType.POSITION_UPDATE)
+              .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime()),
           };
         }
         return {
@@ -154,7 +183,12 @@ function harness(options: HarnessOptions = {}) {
       },
     },
     trackingEvent: {
-      findMany: async () => [{ id: 'ev2', stop: { type: 'PICKUP' } }],
+      findMany: async (query: unknown) => {
+        eventQueries.push(query);
+        return [...trackingEvents].sort(
+          (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || a.id.localeCompare(b.id),
+        );
+      },
       groupBy: async () => [],
     },
   } as unknown as PrismaService;
@@ -223,6 +257,7 @@ function harness(options: HarnessOptions = {}) {
     invoices,
     createdLocations,
     deliveries,
+    eventQueries,
   };
 }
 
@@ -548,6 +583,105 @@ describe('EdiService — 214 outbound status', () => {
     expect(status.events.at(-1)!.city).toBe('Toronto');
     expect(status.references.map((r) => r.value)).toEqual(['TO-000007', 'PO-88231', 'LD-000003']);
     expect(built.eventCount).toBe(3);
+  });
+
+  it('preserves DELIVERY X1/CD and GPS X6 independently of recipient presentation IDs', async () => {
+    const privateText = 'Private receiver, device code, comment and incident note';
+    const h = harness({
+      trackingEvents: [
+        {
+          id: 'delivery-departed',
+          type: TrackingEventType.DEPARTED_STOP,
+          occurredAt: new Date('2026-09-22T14:00:00Z'),
+          stop: { type: 'DELIVERY' },
+          message: privateText,
+        },
+        {
+          id: 'gps-position',
+          type: TrackingEventType.POSITION_UPDATE,
+          occurredAt: new Date('2026-09-21T20:00:00Z'),
+          message: privateText,
+        },
+        {
+          id: 'delivery-arrived',
+          type: TrackingEventType.ARRIVED_AT_STOP,
+          occurredAt: new Date('2026-09-22T13:00:00Z'),
+          stop: { type: 'DELIVERY' },
+          message: privateText,
+        },
+        {
+          id: 'pickup-departed',
+          type: TrackingEventType.DEPARTED_STOP,
+          occurredAt: new Date('2026-09-21T14:00:00Z'),
+          stop: { type: 'PICKUP' },
+        },
+        {
+          id: 'dispatched',
+          type: TrackingEventType.DISPATCHED,
+          occurredAt: new Date('2026-09-21T08:00:00Z'),
+        },
+      ],
+    });
+    const built = await h.svc.build214ForShipment(TENANT, 'ship_1', 'edi-acme');
+    const status = read214(firstTransaction(built.x12));
+    expect(status.events.map((event) => event.code)).toEqual(['AM', 'AF', 'X6', 'X1', 'CD', 'D1']);
+    expect(
+      status.events.filter((event) => ['X1', 'CD'].includes(event.code)).map((event) => event.city),
+    ).toEqual(['Toronto', 'Toronto']);
+    expect(built.x12).not.toContain(privateText);
+    expect(built.x12).not.toContain('delivery-arrived');
+    expect(h.eventQueries).toEqual([
+      {
+        where: { tenantId: TENANT, shipmentId: 'ship_1' },
+        orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+        take: 501,
+        select: { type: true, occurredAt: true, stop: { select: { type: true } } },
+      },
+    ]);
+  });
+
+  it('refuses outbound reads and queueing for an inactive tenant or disabled Transport', async () => {
+    for (const options of [{ tenantStatus: 'SUSPENDED' }, { modules: ['billing'] }]) {
+      const h = harness({ ...options, config: { url: 'https://partner.example.com/edi' } });
+      await expect(h.svc.build214ForShipment(TENANT, 'ship_1', 'edi-acme')).rejects.toThrow(
+        ForbiddenException,
+      );
+      await expect(h.svc.send214(TENANT, 'user_1', 'ship_1', 'edi-acme')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(h.deliveries).toHaveLength(0);
+      expect(h.eventQueries).toHaveLength(0);
+    }
+  });
+
+  it('refuses more than 500 source events, including GPS, without silently truncating or sending', async () => {
+    const h = harness({
+      config: { url: 'https://partner.example.com/edi' },
+      trackingEvents: Array.from({ length: 501 }, (_, index) => ({
+        id: `gps-${index}`,
+        type: TrackingEventType.POSITION_UPDATE,
+        occurredAt: new Date(Date.UTC(2026, 8, 21, 0, index)),
+      })),
+    });
+    await expect(h.svc.send214(TENANT, 'user_1', 'ship_1', 'edi-acme')).rejects.toThrow(
+      '500-event EDI 214 limit',
+    );
+    expect(h.deliveries).toHaveLength(0);
+  });
+
+  it('accepts exactly 500 source events and adds the current status only when needed', async () => {
+    const h = harness({
+      trackingEvents: Array.from({ length: 500 }, (_, index) => ({
+        id: `gps-${index}`,
+        type: TrackingEventType.POSITION_UPDATE,
+        occurredAt: new Date(Date.UTC(2026, 8, 21, 0, index)),
+      })),
+    });
+    const built = await h.svc.build214ForShipment(TENANT, 'ship_1', 'edi-acme');
+    expect(built.eventCount).toBe(501);
+    const events = read214(firstTransaction(built.x12)).events;
+    expect(events.slice(0, 500).every((event) => event.code === 'X6')).toBe(true);
+    expect(events.at(-1)?.code).toBe('D1');
   });
 
   it('refuses to send when the integration has no outbound url', async () => {

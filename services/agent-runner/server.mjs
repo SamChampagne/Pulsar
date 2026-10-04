@@ -192,12 +192,20 @@ export function createRunner(options) {
       stopped = false,
       outputBytes = 0;
     let idle = setTimeout(() => stop(), 5000);
-    const lifetime = setTimeout(() => stop(), login ? 600_000 : 3_600_000);
-    const stop = () => {
+    const lifetime = setTimeout(() => stop('LOGIN_TIMEOUT'), login ? 600_000 : 3_600_000);
+    const stop = (code) => {
       if (stopped) return;
       stopped = true;
       clearTimeout(idle);
       clearTimeout(lifetime);
+      if (
+        login &&
+        res.headersSent &&
+        !res.destroyed &&
+        !res.writableEnded &&
+        ['LOGIN_TIMEOUT', 'LOGIN_OUTPUT_LIMIT', 'LOGIN_PROCESS'].includes(code)
+      )
+        sendLogin({ type: 'error', code });
       if (child) {
         child.kill('SIGTERM');
         const force = setTimeout(() => child.kill('SIGKILL'), 2000);
@@ -216,7 +224,7 @@ export function createRunner(options) {
     req.on('aborted', stop);
     req.on('error', stop);
     const sendLogin = (event) => {
-      if (!res.destroyed) res.write(JSON.stringify(event) + '\n');
+      if (!res.destroyed && !res.writableEnded) res.write(JSON.stringify(event) + '\n');
     };
     req.setEncoding('utf8');
     req.on('data', (chunk) => {
@@ -251,8 +259,17 @@ export function createRunner(options) {
             const prepared = (options.prepare ?? prepareRuntime)(boot, { ...options, writeConfig });
             generation = fingerprint;
             cwd = prepared.cwd;
+            // -I ignores PYTHONUNBUFFERED/PYTHONUTF8: use explicit flags so the
+            // device code is visible during polling, with the API's UTF-8 encoding.
             const args = login
-              ? ['-I', options.loginWrapper, ...boot.provider.loginCommand.split(/\s+/)]
+              ? [
+                  '-I',
+                  '-u',
+                  '-X',
+                  'utf8',
+                  options.loginWrapper,
+                  ...boot.provider.loginCommand.split(/\s+/),
+                ]
               : ['-I', options.wrapper];
             child = (options.spawn ?? spawn)(options.python, args, {
               cwd,
@@ -263,15 +280,16 @@ export function createRunner(options) {
             children.add(child);
             booted = true;
             clearTimeout(idle);
-            idle = setTimeout(stop, login ? 600_000 : 300_000);
-            child.on('error', stop);
-            child.stdin.on('error', stop);
-            child.stdout.on('error', stop);
-            child.stderr.on('error', stop);
+            idle = setTimeout(() => stop('LOGIN_TIMEOUT'), login ? 600_000 : 300_000);
+            child.on('error', () => stop('LOGIN_PROCESS'));
+            child.stdin.on('error', () => stop('LOGIN_PROCESS'));
+            child.stdout.on('error', () => stop('LOGIN_PROCESS'));
+            child.stderr.on('error', () => stop('LOGIN_PROCESS'));
             child.on('close', (code) => {
               children.delete(child);
               release();
-              if (login && !stopped) sendLogin(code === 0 ? { type: 'end' } : { type: 'error' });
+              if (login && !stopped)
+                sendLogin(code === 0 ? { type: 'end' } : { type: 'error', code: 'LOGIN_EXIT' });
               clearTimeout(idle);
               clearTimeout(lifetime);
               stopped = true;
@@ -286,8 +304,8 @@ export function createRunner(options) {
               child.stdout.setEncoding('utf8');
               child.stderr.setEncoding('utf8');
               const emit = (chunk) => {
-                outputBytes += chunk.length;
-                if (outputBytes > 65536) return stop();
+                outputBytes += Buffer.byteLength(chunk);
+                if (outputBytes > 65536) return stop('LOGIN_OUTPUT_LIMIT');
                 sendLogin({ type: 'text', text: chunk.toString('utf8') });
               };
               child.stdout.on('data', emit);

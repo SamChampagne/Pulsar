@@ -64,6 +64,7 @@
   let selectedId = $state(''),
     tab = $state('global'),
     connectionLog = $state(''),
+    connectionStatus = $state(''),
     result = $state(''),
     busy = $state(false),
     confirmed = $state(false);
@@ -73,6 +74,8 @@
   let requestVersion = 0;
   const provider = $derived(RUNTIME_PROVIDERS.find((p) => p.id === form.provider));
   const dirty = $derived(JSON.stringify(form) !== saved);
+  const runtimeIdentity = (value: RuntimeConfig) =>
+    JSON.stringify([value.provider ?? '', value.baseUrl ?? '', value.defaultModel ?? '']);
   const suspended = $derived(detail?.tenant.status !== 'ACTIVE');
   $effect(() => {
     JSON.stringify(form);
@@ -110,6 +113,7 @@
     detail = null;
     tenantError = '';
     connectionLog = '';
+    connectionStatus = '';
     result = '';
     confirmed = false;
     if (!id) return;
@@ -147,6 +151,7 @@
     tenantError = '';
     result = '';
     const id = detail.tenant.id;
+    const expectedIdentity = runtimeIdentity(detail.runtime);
     const body = { expectedUpdatedAt: detail.runtime.updatedAt ?? null, confirmed: true };
     try {
       const path = `/platform/services/tenants/${encodeURIComponent(id)}/runtime`;
@@ -165,27 +170,52 @@
         await selectTenant();
         result = r.message;
       } else {
-        abort = new AbortController();
+        const attempt = new AbortController();
+        abort = attempt;
         connectionLog = '';
+        connectionStatus = 'Préparation du runner de cette entreprise…';
+        let completed = false;
         for await (const event of streamRuntimeConnect({
           path: `${path}/connect`,
           token: getPlatformToken(),
           body,
-          signal: abort.signal,
+          signal: attempt.signal,
         })) {
-          if (event.type === 'text')
-            connectionLog = (connectionLog + event.text + '\n').slice(-20000);
+          if (abort !== attempt || selectedId !== id) return;
+          if (event.type === 'status') connectionStatus = event.message;
+          if (event.type === 'text') connectionLog = (connectionLog + event.text).slice(-20000);
           if (event.type === 'error') {
             tenantError = event.message;
+            connectionStatus = 'Connexion non confirmée.';
             break;
           }
+          if (event.type === 'end') completed = true;
         }
+        if (!completed) return;
         // Refresh without erasing the device instructions/error produced by this attempt.
-        const d = await platformApi<Detail>(`/platform/services/tenants/${encodeURIComponent(id)}`);
-        if (selectedId === id) detail = d;
+        const d = await platformApi<Detail>(
+          `/platform/services/tenants/${encodeURIComponent(id)}`,
+          {
+            signal: AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)]),
+          },
+        );
+        if (selectedId === id && abort === attempt && !attempt.signal.aborted) {
+          detail = d;
+          if (runtimeIdentity(d.runtime) !== expectedIdentity) {
+            connectionStatus =
+              'La configuration IA a changé. Actualisez avant de reconnecter le compte.';
+            return;
+          }
+          connectionStatus = d.runtime.connectedAt
+            ? 'Compte connecté. Inférence et missions métier non testées.'
+            : 'Connexion non confirmée dans la configuration. Actualisez avant de réessayer.';
+        }
       }
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') tenantError = (e as Error).message;
+      if (selectedId === id) {
+        if ((e as Error).name !== 'AbortError') tenantError = (e as Error).message;
+        else connectionStatus = 'Tentative arrêtée. Aucune relance automatique.';
+      }
     } finally {
       busy = false;
       abort = undefined;
@@ -403,6 +433,27 @@
                 >{/if}
             </div>
             {#if busy}<p role="status" class="text-xs text-ink-muted">Opération en cours…</p>{/if}
+            {#if connectionStatus}<p
+                role="status"
+                class="rounded-md border border-edge p-3 text-sm"
+              >
+                {connectionStatus}
+              </p>{/if}
+            {#if abort && form.provider === 'openai-codex'}
+              <p class="text-xs text-ink-muted">
+                Autorisez le compte OpenAI de cette entreprise à l’aide du code fourni ci-dessous.
+                Ne partagez pas ces instructions. L’accès par code d’appareil doit être autorisé
+                pour ce compte.
+              </p>
+              {#if /https:\/\/auth\.openai\.com\/codex\/device(?:\s|$)/.test(connectionLog)}
+                <a
+                  class="inline-block text-sm text-accent underline"
+                  href="https://auth.openai.com/codex/device"
+                  target="_blank"
+                  rel="noopener noreferrer">Ouvrir l’autorisation OpenAI ↗</a
+                >
+              {/if}
+            {/if}
             {#if connectionLog}<pre
                 class="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-muted p-3 text-xs">{connectionLog}</pre>{/if}
             {#if result}<p role="status" class="rounded-md border border-edge p-3 text-sm">

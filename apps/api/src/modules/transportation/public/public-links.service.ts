@@ -1,25 +1,22 @@
 import {
   BadRequestException,
-  ForbiddenException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { LoadStatus, MODULE_KEYS, StopStatus, TrackingEventType } from '@pulsar/shared';
+import type { Prisma } from '@pulsar/database';
+import { AuditAction, ShipmentStatus, StopStatus, TrackingEventType } from '@pulsar/shared';
+import { AuditLogsService } from '../../../core/audit-logs/audit-logs.service';
 import { DocumentsService } from '../../../core/documents/documents.service';
 import { DomainEventsService } from '../../../core/operating/domain-events.service';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { TenantModulesCacheService } from '../../../prisma/tenant-modules-cache.service';
 import { RoutesService } from '../routes/routes.service';
-import { buildShipmentTrackingView } from './shipment-tracking.view';
 import { TrackingService } from '../tracking/tracking.service';
+import { DriverAccessService, type DriverLoadAccess } from './driver-access.service';
+import { driverReference } from './driver-reference';
+import { buildShipmentTrackingView } from './shipment-tracking.view';
 
-/**
- * Token-based access for external actors (customers, drivers) — no account, no JWT.
- * Each token grants the narrowest possible scope:
- *  - trackingToken (Shipment): read-only status page
- *  - driverToken (Load): stop check-in/out + POD capture on that load only
- * Payloads must never leak tenant ids or internal references.
- */
+/** Public capabilities never authorize internal IDs, private notes or documents outside their load. */
 @Injectable()
 export class PublicLinksService {
   constructor(
@@ -27,17 +24,11 @@ export class PublicLinksService {
     private readonly routes: RoutesService,
     private readonly tracking: TrackingService,
     private readonly documents: DocumentsService,
-    private readonly modulesCache: TenantModulesCacheService,
+    private readonly driverAccess: DriverAccessService,
     private readonly domainEvents: DomainEventsService,
+    private readonly audit: AuditLogsService,
   ) {}
 
-  // --- Customer tracking -----------------------------------------------------
-
-  /**
-   * Read-only tracking page. The projection itself lives in
-   * `shipment-tracking.view.ts` — the customer portal serves the very same
-   * payload from `GET /portal/shipments/:id`, so the two can never drift.
-   */
   getTracking(token: string) {
     return buildShipmentTrackingView(
       this.prisma,
@@ -46,251 +37,396 @@ export class PublicLinksService {
     );
   }
 
-  // --- Driver page -------------------------------------------------------------
-
-  private async loadByDriverToken(token: string) {
-    const load = await this.prisma.load.findUnique({
-      where: { driverToken: token },
-      include: {
-        tenant: { select: { name: true } },
-        carrier: { select: { name: true } },
-        shipments: {
-          select: {
-            id: true,
-            shipmentNumber: true,
-            status: true,
-            proofOfDelivery: { select: { id: true } },
-          },
-        },
-        route: {
-          include: {
-            stops: {
-              orderBy: { sequence: 'asc' },
-              include: {
-                location: {
-                  select: { name: true, addressLine1: true, city: true, state: true },
-                },
-              },
-            },
-          },
-        },
-      },
+  private async shipmentForReference(
+    token: string,
+    load: DriverLoadAccess,
+    ref: string,
+    tx: Prisma.TransactionClient,
+  ) {
+    const shipments = await tx.shipment.findMany({
+      where: { tenantId: load.tenantId, loadId: load.id },
+      select: { id: true, status: true },
+      take: 201,
     });
-    if (!load) throw new NotFoundException('Unknown driver link');
-    return load;
+    if (shipments.length > 200)
+      throw new BadRequestException('Driver access supports up to 200 shipments per load');
+    const shipment = shipments.find((s) => driverReference(token, 'shipment', s.id) === ref);
+    if (!shipment) throw new NotFoundException('Shipment not on this load');
+    return shipment;
+  }
+
+  private async stopForReference(
+    token: string,
+    load: DriverLoadAccess,
+    ref: string,
+    tx: Prisma.TransactionClient,
+  ) {
+    const stops = await tx.stop.findMany({
+      where: { tenantId: load.tenantId, route: { tenantId: load.tenantId, loadId: load.id } },
+      select: { id: true },
+      take: 501,
+    });
+    if (stops.length > 500)
+      throw new BadRequestException('Driver access supports up to 500 stops per load');
+    const stop = stops.find((s) => driverReference(token, 'stop', s.id) === ref);
+    if (!stop) throw new NotFoundException('Stop not on this load');
+    return stop;
   }
 
   async getDriverView(token: string) {
-    const load = await this.loadByDriverToken(token);
-    return {
-      shipper: load.tenant.name,
-      carrier: load.carrier?.name ?? null,
-      loadNumber: load.loadNumber,
-      status: load.status,
-      notes: load.notes,
-      shipments: load.shipments,
-      stops:
-        load.route?.stops.map((s) => ({
-          id: s.id,
-          sequence: s.sequence,
-          type: s.type,
+    return this.prisma.$transaction(async (tx) => {
+      const load = await this.driverAccess.lock(token, tx);
+      const tenant = await tx.tenant.findUnique({
+        where: { id: load.tenantId },
+        select: { name: true },
+      });
+      const resources = await tx.load.findFirst({
+        where: { id: load.id, tenantId: load.tenantId },
+        select: { carrierId: true },
+      });
+      const carrier = resources?.carrierId
+        ? await tx.carrier.findFirst({
+            where: { id: resources.carrierId, tenantId: load.tenantId },
+            select: { name: true },
+          })
+        : null;
+      const shipments = await tx.shipment.findMany({
+        where: { tenantId: load.tenantId, loadId: load.id },
+        select: { id: true, shipmentNumber: true, status: true },
+        orderBy: [{ shipmentNumber: 'asc' }, { id: 'asc' }],
+        take: 201,
+      });
+      const stops = await tx.stop.findMany({
+        where: { tenantId: load.tenantId, route: { tenantId: load.tenantId, loadId: load.id } },
+        select: {
+          id: true,
+          sequence: true,
+          type: true,
+          status: true,
+          plannedArrivalEarly: true,
+          plannedArrivalLate: true,
+          actualArrivalAt: true,
+          actualDepartureAt: true,
+          locationId: true,
+        },
+        orderBy: { sequence: 'asc' },
+        take: 501,
+      });
+      if (shipments.length > 200 || stops.length > 500)
+        throw new BadRequestException('This load exceeds the driver workspace limits');
+      const pods = await tx.proofOfDelivery.findMany({
+        where: { tenantId: load.tenantId, shipmentId: { in: shipments.map((s) => s.id) } },
+        select: { shipmentId: true },
+      });
+      const podIds = new Set(pods.map((p) => p.shipmentId));
+      const locations = await tx.location.findMany({
+        where: { tenantId: load.tenantId, id: { in: stops.map((s) => s.locationId) } },
+        select: { id: true, name: true, addressLine1: true, city: true, state: true },
+      });
+      return {
+        shipper: tenant?.name ?? '',
+        carrier: carrier?.name ?? null,
+        loadNumber: load.loadNumber,
+        status: load.status,
+        shipments: shipments.map((s) => ({
+          id: driverReference(token, 'shipment', s.id),
+          shipmentNumber: s.shipmentNumber,
           status: s.status,
-          plannedArrivalEarly: s.plannedArrivalEarly,
-          plannedArrivalLate: s.plannedArrivalLate,
-          actualArrivalAt: s.actualArrivalAt,
-          actualDepartureAt: s.actualDepartureAt,
-          notes: s.notes,
-          location: s.location,
-        })) ?? [],
-    };
+          hasPod: podIds.has(s.id),
+          proofOfDelivery: podIds.has(s.id) ? { present: true } : null,
+        })),
+        stops: stops.map((s) => {
+          const location = locations.find((l) => l.id === s.locationId);
+          if (!location) throw new ConflictException('A route location is unavailable');
+          return {
+            id: driverReference(token, 'stop', s.id),
+            sequence: s.sequence,
+            type: s.type,
+            status: s.status,
+            plannedArrivalEarly: s.plannedArrivalEarly,
+            plannedArrivalLate: s.plannedArrivalLate,
+            actualArrivalAt: s.actualArrivalAt,
+            actualDepartureAt: s.actualDepartureAt,
+            location: {
+              name: location.name,
+              addressLine1: location.addressLine1,
+              city: location.city,
+              state: location.state,
+            },
+          };
+        }),
+      };
+    });
   }
 
-  /**
-   * A COMPLETED (or CANCELLED) load is terminal — LOAD_TRANSITIONS has no outgoing edges
-   * (rule 2). The driver link must not mutate stops/POD once the load is closed; the state
-   * machine is the source of truth. Blocked server-side (the UI hides the actions too).
-   */
-  private assertLoadMutableByDriver(status: string): void {
-    if (status === LoadStatus.COMPLETED || status === LoadStatus.CANCELLED) {
-      throw new BadRequestException('This load is closed; no further updates are allowed.');
-    }
-  }
-
-  async driverUpdateStop(token: string, stopId: string, status: StopStatus) {
-    if (status !== StopStatus.ARRIVED && status !== StopStatus.DEPARTED) {
+  async driverUpdateStop(token: string, stopRef: string, status: StopStatus) {
+    if (status !== StopStatus.ARRIVED && status !== StopStatus.DEPARTED)
       throw new BadRequestException('Drivers can only report ARRIVED or DEPARTED');
-    }
-    const load = await this.loadByDriverToken(token);
-    this.assertLoadMutableByDriver(load.status);
-    const stop = load.route?.stops.find((s) => s.id === stopId);
-    if (!stop) throw new NotFoundException('Stop not on this load');
-    return this.routes.updateStopStatus(load.tenantId, stopId, status);
+    const load = await this.driverAccess.resolve(token);
+    this.driverAccess.assertMutable(load.status);
+    const stop = await this.stopForReference(token, load, stopRef, this.prisma);
+    const updated = await this.routes.updateStopStatus(
+      load.tenantId,
+      stop.id,
+      status,
+      undefined,
+      async (tx) => {
+        const current = await this.driverAccess.resolve(token, tx);
+        this.driverAccess.assertMutable(current.status);
+        if (current.id !== load.id || current.tenantId !== load.tenantId)
+          throw new NotFoundException('Unknown driver link');
+        await this.stopForReference(token, current, stopRef, tx);
+      },
+    );
+    if (!updated) throw new NotFoundException('Stop not found');
+    return {
+      id: driverReference(token, 'stop', updated.id),
+      status: updated.status,
+      actualArrivalAt: updated.actualArrivalAt,
+      actualDepartureAt: updated.actualDepartureAt,
+    };
   }
 
   async driverCreatePod(
     token: string,
     input: { shipmentId: string; signedByName?: string; notes?: string },
   ) {
-    const load = await this.loadByDriverToken(token);
-    this.assertLoadMutableByDriver(load.status);
-    if (!load.shipments.some((s) => s.id === input.shipmentId)) {
-      throw new NotFoundException('Shipment not on this load');
-    }
-    return this.tracking.createPod(load.tenantId, undefined, input);
+    return this.prisma.$transaction(async (tx) => {
+      const load = await this.driverAccess.lock(token, tx);
+      this.driverAccess.assertMutable(load.status);
+      const shipment = await this.shipmentForReference(token, load, input.shipmentId, tx);
+      await this.tracking.createPod(
+        load.tenantId,
+        undefined,
+        {
+          shipmentId: shipment.id,
+          signedByName: input.signedByName,
+          notes: input.notes,
+        },
+        tx,
+      );
+      await this.audit.log(
+        {
+          tenantId: load.tenantId,
+          action: AuditAction.CREATE,
+          entityType: 'proof-of-delivery',
+          entityId: shipment.id,
+          after: { source: 'driver-link', loadId: load.id, driverId: load.driverId },
+        },
+        tx,
+      );
+      return { ok: true };
+    });
   }
 
   async driverAttachPodPhoto(
     token: string,
-    shipmentId: string,
+    shipmentRef: string,
     file: { originalname: string; mimetype: string; buffer: Buffer },
   ) {
-    const load = await this.loadByDriverToken(token);
-    this.assertLoadMutableByDriver(load.status);
-    const shipment = load.shipments.find((s) => s.id === shipmentId);
-    if (!shipment) throw new NotFoundException('Shipment not on this load');
-    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-    if (!allowed.includes(file.mimetype)) {
+    if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.mimetype))
       throw new BadRequestException('Only JPEG/PNG/WebP images or PDF are accepted');
-    }
-    return this.documents.upload(load.tenantId, {
-      entityType: 'proof-of-delivery',
-      entityId: shipmentId,
-      fileName: file.originalname,
-      mimeType: file.mimetype,
-      body: file.buffer,
-    });
+    return this.prisma.$transaction(
+      async (tx) => {
+        const load = await this.driverAccess.lock(token, tx);
+        this.driverAccess.assertMutable(load.status);
+        const shipment = await this.shipmentForReference(token, load, shipmentRef, tx);
+        const pod = await tx.proofOfDelivery.findFirst({
+          where: { tenantId: load.tenantId, shipmentId: shipment.id },
+          select: { id: true },
+        });
+        if (!pod) throw new BadRequestException('Capture the POD before attaching its photo');
+        const doc = await this.documents.upload(
+          load.tenantId,
+          {
+            entityType: 'proof-of-delivery',
+            entityId: shipment.id,
+            fileName: file.originalname,
+            mimeType: file.mimetype,
+            body: file.buffer,
+          },
+          undefined,
+          tx,
+        );
+        await this.audit.log(
+          {
+            tenantId: load.tenantId,
+            action: AuditAction.CREATE,
+            entityType: 'proof-of-delivery-photo',
+            entityId: shipment.id,
+            after: {
+              source: 'driver-link',
+              loadId: load.id,
+              driverId: load.driverId,
+              documentId: doc.id,
+            },
+          },
+          tx,
+        );
+        return { ok: true };
+      },
+      { timeout: 15000 },
+    );
   }
 
-  /** Driver position ping. Bounded DTO upstream, deduped 60s here. */
   async driverRecordPosition(token: string, latitude: number, longitude: number) {
-    const load = await this.loadByDriverToken(token);
-    // Public routes bypass ModulesGuard — re-check activation (CLAUDE.md rule 15).
-    const enabled = await this.modulesCache.getEnabledKeys(load.tenantId);
-    if (!enabled.has(MODULE_KEYS.TRANSPORTATION)) {
-      throw new ForbiddenException('Transportation is not enabled for this shipper');
-    }
-    if (load.status !== LoadStatus.DISPATCHED && load.status !== LoadStatus.IN_TRANSIT) {
-      throw new BadRequestException(
-        'Positions can only be recorded on DISPATCHED or IN_TRANSIT loads',
-      );
-    }
-    const last = await this.prisma.trackingEvent.findFirst({
-      where: { tenantId: load.tenantId, loadId: load.id, type: TrackingEventType.POSITION_UPDATE },
-      orderBy: { occurredAt: 'desc' },
-      select: { occurredAt: true },
-    });
-    if (last && Date.now() - last.occurredAt.getTime() < 60_000) {
-      return { recorded: false }; // at most one stored position per minute per load
-    }
-    // Minute-bucket dedupKey closes the findFirst→create race (concurrent pings).
-    const dedupKey = `POS:${load.id}:${Math.floor(Date.now() / 60_000)}`;
     try {
-      await this.prisma.trackingEvent.create({
-        data: {
-          tenantId: load.tenantId,
-          type: TrackingEventType.POSITION_UPDATE,
-          loadId: load.id,
-          latitude,
-          longitude,
-          dedupKey,
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        const load = await this.driverAccess.lock(token, tx);
+        this.driverAccess.assertMutable(load.status);
+        const last = await tx.trackingEvent.findFirst({
+          where: {
+            tenantId: load.tenantId,
+            loadId: load.id,
+            type: TrackingEventType.POSITION_UPDATE,
+          },
+          orderBy: { occurredAt: 'desc' },
+          select: { occurredAt: true },
+        });
+        if (last && Date.now() - last.occurredAt.getTime() < 60_000) return { recorded: false };
+        await tx.trackingEvent.create({
+          data: {
+            tenantId: load.tenantId,
+            type: TrackingEventType.POSITION_UPDATE,
+            loadId: load.id,
+            latitude,
+            longitude,
+            dedupKey: `POS:${load.id}:${Math.floor(Date.now() / 60_000)}`,
+          },
+        });
+        return { recorded: true };
       });
-    } catch (err: unknown) {
-      // P2002 = unique violation — a concurrent ping won the bucket.
-      if ((err as { code?: string }).code === 'P2002') return { recorded: false };
-      throw err;
+    } catch (error) {
+      if ((error as { code?: string }).code === 'P2002') return { recorded: false };
+      throw error;
     }
-    return { recorded: true };
   }
 
   async driverAttachSignature(
     token: string,
-    shipmentId: string,
+    shipmentRef: string,
     file: Express.Multer.File,
   ): Promise<{ ok: boolean }> {
-    const load = await this.loadByDriverToken(token);
-    // Public routes bypass ModulesGuard — re-check activation (CLAUDE.md rule 15).
-    const enabled = await this.modulesCache.getEnabledKeys(load.tenantId);
-    if (!enabled.has(MODULE_KEYS.TRANSPORTATION)) {
-      throw new ForbiddenException('Transportation is not enabled for this shipper');
-    }
-    this.assertLoadMutableByDriver(load.status);
-    if (!load.shipments.some((s) => s.id === shipmentId)) {
-      throw new NotFoundException('Shipment not on this load');
-    }
-    if (file.mimetype !== 'image/png') {
+    if (file.mimetype !== 'image/png')
       throw new BadRequestException('Only PNG signatures are accepted');
-    }
-    const doc = await this.documents.upload(load.tenantId, {
-      entityType: 'proof-of-delivery',
-      entityId: shipmentId,
-      fileName: 'signature.png',
-      mimeType: 'image/png',
-      body: file.buffer,
-    });
-    const existing = await this.prisma.proofOfDelivery.findUnique({
-      where: { shipmentId },
-      select: { id: true },
-    });
-    if (existing) {
-      await this.prisma.proofOfDelivery.updateMany({
-        where: { shipmentId, tenantId: load.tenantId },
-        data: { signatureDocumentId: doc.id },
-      });
-    } else {
-      await this.prisma.proofOfDelivery.create({
-        data: {
-          tenantId: load.tenantId,
-          shipmentId,
-          signatureDocumentId: doc.id,
-          signedAt: new Date(),
-        },
-      });
-    }
-    return { ok: true };
+    return this.prisma.$transaction(
+      async (tx) => {
+        const load = await this.driverAccess.lock(token, tx);
+        this.driverAccess.assertMutable(load.status);
+        const shipment = await this.shipmentForReference(token, load, shipmentRef, tx);
+        if (
+          ![ShipmentStatus.IN_TRANSIT, ShipmentStatus.DELIVERED].includes(
+            shipment.status as ShipmentStatus,
+          )
+        )
+          throw new BadRequestException(
+            'POD can only be captured for IN_TRANSIT or DELIVERED shipments',
+          );
+        const doc = await this.documents.upload(
+          load.tenantId,
+          {
+            entityType: 'proof-of-delivery',
+            entityId: shipment.id,
+            fileName: 'signature.png',
+            mimeType: 'image/png',
+            body: file.buffer,
+          },
+          undefined,
+          tx,
+        );
+        const existing = await tx.proofOfDelivery.findFirst({
+          where: { shipmentId: shipment.id, tenantId: load.tenantId },
+          select: { id: true },
+        });
+        if (existing)
+          await tx.proofOfDelivery.updateMany({
+            where: { id: existing.id, shipmentId: shipment.id, tenantId: load.tenantId },
+            data: { signatureDocumentId: doc.id },
+          });
+        else
+          await tx.proofOfDelivery.create({
+            data: {
+              tenantId: load.tenantId,
+              shipmentId: shipment.id,
+              signatureDocumentId: doc.id,
+              signedAt: new Date(),
+            },
+          });
+        await this.audit.log(
+          {
+            tenantId: load.tenantId,
+            action: existing ? AuditAction.UPDATE : AuditAction.CREATE,
+            entityType: 'proof-of-delivery-signature',
+            entityId: shipment.id,
+            after: {
+              source: 'driver-link',
+              loadId: load.id,
+              driverId: load.driverId,
+              documentId: doc.id,
+            },
+          },
+          tx,
+        );
+        return { ok: true };
+      },
+      { timeout: 15000 },
+    );
   }
 
   async driverReportException(
     token: string,
     dto: { shipmentId?: string; stopId?: string; kind: string; note: string },
   ): Promise<{ ok: boolean }> {
-    const load = await this.loadByDriverToken(token);
-    // Public routes bypass ModulesGuard — re-check activation (CLAUDE.md rule 15).
-    const enabled = await this.modulesCache.getEnabledKeys(load.tenantId);
-    if (!enabled.has(MODULE_KEYS.TRANSPORTATION)) {
-      throw new ForbiddenException('Transportation is not enabled for this shipper');
-    }
-    if (dto.shipmentId && !load.shipments.some((s) => s.id === dto.shipmentId)) {
-      throw new NotFoundException('Shipment not on this load');
-    }
-    if (dto.stopId && !load.route?.stops.some((s) => s.id === dto.stopId)) {
-      throw new NotFoundException('Stop not on this load');
-    }
-    // Minute-bucket dedupKey mirrors position recording convention.
-    const bucket = new Date().toISOString().slice(0, 16); // "YYYY-MM-DDTHH:MM"
-    await this.prisma.trackingEvent.create({
-      data: {
-        tenantId: load.tenantId,
-        type: TrackingEventType.EXCEPTION,
-        loadId: load.id,
-        shipmentId: dto.shipmentId ?? null,
-        stopId: dto.stopId ?? null,
-        payload: { kind: dto.kind, note: dto.note, shipmentId: dto.shipmentId, stopId: dto.stopId },
-      },
+    const result = await this.prisma.$transaction(async (tx) => {
+      const load = await this.driverAccess.lock(token, tx);
+      this.driverAccess.assertMutable(load.status);
+      const shipmentId = dto.shipmentId
+        ? (await this.shipmentForReference(token, load, dto.shipmentId, tx)).id
+        : undefined;
+      const stopId = dto.stopId
+        ? (await this.stopForReference(token, load, dto.stopId, tx)).id
+        : undefined;
+      await tx.trackingEvent.create({
+        data: {
+          tenantId: load.tenantId,
+          type: TrackingEventType.EXCEPTION,
+          loadId: load.id,
+          shipmentId,
+          stopId,
+          payload: { kind: dto.kind, note: dto.note, shipmentId, stopId },
+        },
+      });
+      await this.audit.log(
+        {
+          tenantId: load.tenantId,
+          action: AuditAction.CREATE,
+          entityType: 'driver-exception',
+          entityId: load.id,
+          after: {
+            source: 'driver-link',
+            driverId: load.driverId,
+            shipmentId,
+            stopId,
+            kind: dto.kind,
+          },
+        },
+        tx,
+      );
+      return { load, shipmentId, stopId };
     });
     void this.domainEvents
       .emit(
-        load.tenantId,
+        result.load.tenantId,
         'driver.exception',
-        { type: 'load', id: load.id },
+        { type: 'load', id: result.load.id },
         {
-          loadId: load.id,
-          loadNumber: load.loadNumber,
-          shipmentId: dto.shipmentId,
-          stopId: dto.stopId,
+          loadId: result.load.id,
+          loadNumber: result.load.loadNumber,
+          shipmentId: result.shipmentId,
+          stopId: result.stopId,
           kind: dto.kind,
           note: dto.note,
-          bucket,
+          bucket: new Date().toISOString().slice(0, 16),
         },
       )
       .catch(() => {});

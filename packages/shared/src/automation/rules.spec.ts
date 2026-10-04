@@ -229,10 +229,12 @@ describe('produceRuleTaskSpec', () => {
 });
 
 describe('catalog data', () => {
-  it('has one descriptor per DOMAIN_EVENT_TYPES value (19)', () => {
-    expect(AUTOMATION_EVENT_CATALOG).toHaveLength(19);
+  it('has 20 unique supported event descriptors, including separate closure with returns', () => {
+    expect(AUTOMATION_EVENT_CATALOG).toHaveLength(20);
     const types = new Set(AUTOMATION_EVENT_CATALOG.map((e) => e.type));
-    expect(types.size).toBe(19);
+    expect(types.size).toBe(20);
+    expect(types.has('load.completed')).toBe(true);
+    expect(types.has('load.closed-with-returns')).toBe(true);
   });
 
   it('every descriptor has fields and a defaultSubjectField', () => {

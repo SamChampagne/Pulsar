@@ -1,6 +1,6 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@pulsar/database';
-import { ShipmentStatus, TrackingEventType } from '@pulsar/shared';
+import { MODULE_KEYS, ShipmentStatus, TrackingEventType } from '@pulsar/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
 
 /**
@@ -80,17 +80,41 @@ export function trackingPositionVisible(status: string): boolean {
   return status !== ShipmentStatus.DELIVERED && status !== ShipmentStatus.CLOSED;
 }
 
-const trackingInclude = {
+export const RECIPIENT_PACKAGE_LIMIT = 200;
+export const RECIPIENT_EVENT_LIMIT = 500;
+
+const trackingSelect = {
+  id: true,
+  tenantId: true,
+  loadId: true,
+  shipmentNumber: true,
+  status: true,
+  packageTrackingEnabledAt: true,
+  plannedPickupEarly: true,
+  plannedPickupLate: true,
+  plannedDeliveryEarly: true,
+  plannedDeliveryLate: true,
+  actualPickupAt: true,
+  actualDeliveryAt: true,
   tenant: { select: { name: true } },
   originLocation: { select: { city: true, state: true, latitude: true, longitude: true } },
   destinationLocation: { select: { city: true, state: true, latitude: true, longitude: true } },
   proofOfDelivery: { select: { signedByName: true, signedAt: true } },
-  trackingEvents: {
-    orderBy: { occurredAt: 'desc' },
-    take: 50,
-    select: { id: true, type: true, message: true, occurredAt: true },
-  },
-} satisfies Prisma.ShipmentInclude;
+} satisfies Prisma.ShipmentSelect;
+
+/** Public messages never interpolate operational comments, package contents or incident notes. */
+function recipientEventMessage(type: string): string {
+  const labels: Record<string, string> = {
+    DISPATCHED: 'Expédition répartie.',
+    ARRIVED_STOP: 'Arrivée enregistrée.',
+    DEPARTED_STOP: 'Départ enregistré.',
+    DELIVERED: 'Livraison enregistrée.',
+    POD_RECEIVED: 'Preuve de livraison enregistrée.',
+    DELAYED: 'Retard signalé.',
+    EXCEPTION: 'Un incident a été signalé.',
+  };
+  return Object.hasOwn(labels, type) ? labels[type] : 'Événement de suivi enregistré.';
+}
 
 /**
  * Builds the tracking payload of the single shipment matching `where`.
@@ -105,8 +129,63 @@ export async function buildShipmentTrackingView(
   where: Prisma.ShipmentWhereInput,
   notFoundMessage: string,
 ) {
-  const shipment = await prisma.shipment.findFirst({ where, include: trackingInclude });
+  // A capability is the sole bootstrap query. Once resolved, every related
+  // read is tenant-scoped. Public routes cannot rely on JWT ModulesGuard/cache.
+  const identity = await prisma.shipment.findFirst({
+    where,
+    select: { id: true, tenantId: true, tenant: { select: { status: true } } },
+  });
+  if (!identity) throw new NotFoundException(notFoundMessage);
+  if (!['ACTIVE', 'TRIAL'].includes(identity.tenant.status))
+    throw new ForbiddenException('Ce suivi est indisponible pour cet expéditeur.');
+  const enabled = await prisma.tenantModule.findFirst({
+    where: {
+      tenantId: identity.tenantId,
+      enabled: true,
+      module: { key: MODULE_KEYS.TRANSPORTATION },
+    },
+    select: { moduleId: true },
+  });
+  if (!enabled)
+    throw new ForbiddenException('Le module Transport est désactivé pour cet expéditeur.');
+  const shipment = await prisma.shipment.findFirst({
+    // Keep the original capability/customer ownership predicate on the final read.
+    where: { ...where, id: identity.id, tenantId: identity.tenantId },
+    select: {
+      ...trackingSelect,
+      deliveryPackages: {
+        where: { tenantId: identity.tenantId },
+        orderBy: { code: 'asc' },
+        take: RECIPIENT_PACKAGE_LIMIT + 1,
+        select: { code: true, status: true, loadedAt: true, deliveredAt: true },
+      },
+      trackingEvents: {
+        where: { tenantId: identity.tenantId, type: { not: TrackingEventType.POSITION_UPDATE } },
+        orderBy: [{ occurredAt: 'desc' }, { id: 'asc' }],
+        take: RECIPIENT_EVENT_LIMIT + 1,
+        select: { type: true, occurredAt: true },
+      },
+    },
+  });
   if (!shipment) throw new NotFoundException(notFoundMessage);
+  if (
+    shipment.deliveryPackages.length > RECIPIENT_PACKAGE_LIMIT ||
+    shipment.trackingEvents.length > RECIPIENT_EVENT_LIMIT
+  )
+    throw new BadRequestException('Cette expédition dépasse les limites du suivi destinataire.');
+  const packageTrackingEnabled = shipment.packageTrackingEnabledAt !== null;
+  if (!packageTrackingEnabled && shipment.deliveryPackages.length)
+    throw new BadRequestException('Le suivi des colis de cette expédition est incohérent.');
+  const counts = packageTrackingEnabled
+    ? {
+        total: shipment.deliveryPackages.length,
+        active: shipment.deliveryPackages.filter((p) => p.status !== 'CANCELLED').length,
+        prepared: shipment.deliveryPackages.filter((p) => p.status === 'PREPARED').length,
+        loaded: shipment.deliveryPackages.filter((p) => p.status === 'LOADED').length,
+        delivered: shipment.deliveryPackages.filter((p) => p.status === 'DELIVERED').length,
+        cancelled: shipment.deliveryPackages.filter((p) => p.status === 'CANCELLED').length,
+      }
+    : null;
 
   let lastPosition: LastPosition | null = null;
   if (trackingPositionVisible(shipment.status) && shipment.loadId) {
@@ -126,8 +205,28 @@ export async function buildShipmentTrackingView(
     plannedDeliveryLate: shipment.plannedDeliveryLate,
     actualPickupAt: shipment.actualPickupAt,
     actualDeliveryAt: shipment.actualDeliveryAt,
-    proofOfDelivery: shipment.proofOfDelivery,
-    events: shipment.trackingEvents,
+    proofOfDelivery: shipment.proofOfDelivery
+      ? {
+          signedByName: shipment.proofOfDelivery.signedByName,
+          signedAt: shipment.proofOfDelivery.signedAt,
+        }
+      : null,
+    packageTracking: {
+      enabled: packageTrackingEnabled,
+      counts,
+      packages: shipment.deliveryPackages.map(({ code, status, loadedAt, deliveredAt }) => ({
+        code,
+        status,
+        loadedAt,
+        deliveredAt,
+      })),
+    },
+    events: shipment.trackingEvents.map((event, index) => ({
+      id: `event-${index + 1}`,
+      type: event.type,
+      message: recipientEventMessage(event.type),
+      occurredAt: event.occurredAt,
+    })),
     lastPosition,
   };
 }

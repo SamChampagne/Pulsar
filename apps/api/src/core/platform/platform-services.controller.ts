@@ -8,6 +8,7 @@ import {
 } from '../email/platform-email-config.service';
 import { PlatformServicesService } from './platform-services.service';
 import { PlatformRuntimeDto, PlatformSmtpDto, ServiceChangeDto } from './dto/platform-services.dto';
+import { streamLoginSse } from '../agents/login-sse';
 
 // Platform JWT + active operator, not tenant RBAC. Never accepts a tenant JWT or an impersonated user.
 @ApiTags('platform')
@@ -70,30 +71,6 @@ export class PlatformServicesController {
     @Res() res: Response,
   ) {
     await this.services.authorizeRuntimeAction(req.user, id, dto, 'OAUTH_CONNECT');
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-store');
-    res.flushHeaders();
-    const abort = new AbortController();
-    res.on('close', () => abort.abort());
-    const send = (event: string, data: unknown) => {
-      if (!res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    };
-    try {
-      for await (const event of this.services.connectRuntime(id, abort.signal)) {
-        if (event.type === 'text') send('text', { text: event.text });
-        else if (event.type === 'end') send('end', {});
-        else
-          send('error', {
-            message: 'Connexion interrompue ou refusée. Vérifiez le runner et le fournisseur.',
-          });
-      }
-    } catch {
-      send('error', {
-        message: 'Connexion indisponible. Vérifiez le diagnostic de cette entreprise.',
-      });
-    } finally {
-      abort.abort();
-      res.end();
-    }
+    return streamLoginSse(res, (signal) => this.services.connectRuntime(id, signal));
   }
 }

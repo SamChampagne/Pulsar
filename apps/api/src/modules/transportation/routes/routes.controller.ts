@@ -37,7 +37,13 @@ export class RoutesController {
   @Post()
   @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateRouteDto) {
-    return this.routes.createForLoad(user.tenantId, dto);
+    return this.routes.createForLoad(user.tenantId, dto, user.id);
+  }
+
+  @Post('preview')
+  @RequirePermissions(PERMISSIONS.TRANSPORTATION.PLANNING_MANAGE)
+  preview(@CurrentUser() user: AuthUser, @Body() dto: CreateRouteDto) {
+    return this.routes.preview(user.tenantId, dto);
   }
 
   @Post('stops/:stopId/status')

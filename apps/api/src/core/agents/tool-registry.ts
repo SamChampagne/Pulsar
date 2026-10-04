@@ -24,9 +24,11 @@ import { emailTools } from './tools/email.tools';
 import { manufacturingTools } from './tools/manufacturing.tools';
 import { connectedBusinessTools } from './tools/connected-business.tools';
 import { mrpTools } from './tools/mrp.tools';
+import { deliveryTools } from './tools/delivery.tools';
 
 /** All agent tools, in their canonical order (preserved from the original monolithic registry). */
 export const TOOL_REGISTRY: ToolDef[] = [
+  ...deliveryTools,
   ...connectedBusinessTools,
   ...tmsTools,
   ...dispatchTools,

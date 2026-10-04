@@ -224,7 +224,7 @@ describe('parcours métier versionnés', () => {
       'pas de votre entrepôt de réception',
     );
     expect(MODULE_LESSONS.billing).toHaveLength(20);
-    expect(MODULE_LESSONS.transport).toHaveLength(6);
+    expect(MODULE_LESSONS.transport).toHaveLength(8);
     expect(MODULE_LESSONS.crm).toHaveLength(7);
     expect(MODULE_LESSONS.crm.map((s) => s.text).join(' ')).toContain(
       'Vérifier le statut enregistré',

@@ -579,9 +579,19 @@ export class PortalService {
    */
   async getShipmentTrackingFor(ctx: PortalContext, shipmentId: string) {
     await this.customerShipment(ctx.tenantId, ctx.customerId, shipmentId);
+    const enabled = await this.prisma.tenantModule.findFirst({
+      where: { tenantId: ctx.tenantId, enabled: true, module: { key: MODULE_KEYS.CUSTOMER_PORTAL } },
+      select: { moduleId: true },
+    });
+    if (!enabled)
+      throw new ForbiddenException('The customer portal is not enabled for this shipper');
     return buildShipmentTrackingView(
       this.prisma,
-      { id: shipmentId, tenantId: ctx.tenantId },
+      {
+        id: shipmentId,
+        tenantId: ctx.tenantId,
+        transportOrder: { tenantId: ctx.tenantId, customerId: ctx.customerId },
+      },
       'Shipment not found',
     );
   }

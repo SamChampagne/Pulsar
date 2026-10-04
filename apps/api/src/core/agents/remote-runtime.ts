@@ -60,6 +60,7 @@ export async function openRemoteProcess(
   kind: 'acp' | 'login',
   config: RuntimeConfigInput,
   apiKey: string | null,
+  signal?: AbortSignal,
 ): Promise<RuntimeProcess> {
   const target = runnerTarget(tenantId);
   if (!target) throw unavailable();
@@ -101,16 +102,27 @@ export async function openRemoteProcess(
     },
   });
   proc.stdin.on('error', close);
+  let abort: (() => void) | undefined;
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       close();
       reject(unavailable());
     }, 10_000);
+    abort = () => {
+      clearTimeout(timer);
+      close();
+      reject(new ServiceUnavailableException('Connexion au runner annulée.'));
+    };
     req.on('error', () => {
       clearTimeout(timer);
       close();
       reject(unavailable());
     });
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
     req.on('response', (res) => {
       clearTimeout(timer);
       if (res.statusCode !== 200) {
@@ -142,6 +154,8 @@ export async function openRemoteProcess(
         apiKey,
       }) + '\n',
     );
+  }).finally(() => {
+    if (abort) signal?.removeEventListener('abort', abort);
   });
   return proc;
 }

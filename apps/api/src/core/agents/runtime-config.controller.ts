@@ -11,6 +11,7 @@ import { RuntimeConfigService } from './runtime-config.service';
 import { AgentRuntimeService } from './agent-runtime.service';
 import { remoteRuntimeEnabled } from './remote-runtime';
 import { RuntimeHealthService } from './runtime-health.service';
+import { streamLoginSse } from './login-sse';
 
 class UpsertRuntimeDto {
   @IsString() @IsIn(RUNTIME_PROVIDERS.map((p) => p.id)) provider!: string;
@@ -124,33 +125,6 @@ export class RuntimeConfigController {
   @Post('connect')
   @RequirePermissions(PERMISSIONS.CORE.AGENTS_MANAGE)
   async connect(@CurrentUser() user: AuthUser, @Res() res: Response) {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders?.();
-    const send = (event: string, data: unknown) =>
-      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    const abort = new AbortController();
-    res.on('close', () => abort.abort());
-
-    try {
-      for await (const ev of this.runtime.connectLogin(user.tenantId, abort.signal)) {
-        if (ev.type === 'text') {
-          send('text', { text: ev.text });
-        } else if (ev.type === 'error') {
-          send('error', { message: ev.message });
-        } else if (ev.type === 'end') {
-          send('end', {});
-        }
-      }
-    } catch (err) {
-      // Surface the real cause instead of a generic message — the login subprocess
-      // error (e.g. unsupported provider command, Hermes not installed) is what the
-      // operator needs to fix it.
-      const detail = err instanceof Error ? err.message : String(err);
-      send('error', { message: `Échec du login runtime : ${detail}` });
-    } finally {
-      res.end();
-    }
+    return streamLoginSse(res, (signal) => this.runtime.connectLogin(user.tenantId, signal));
   }
 }

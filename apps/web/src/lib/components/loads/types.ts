@@ -1,6 +1,10 @@
 // Shared types for load detail sub-panels
 
 export interface ShipmentOnLoad {
+  plannedPickupEarly?: string | null;
+  plannedPickupLate?: string | null;
+  plannedDeliveryEarly?: string | null;
+  plannedDeliveryLate?: string | null;
   id: string;
   shipmentNumber: string;
   status: string;
@@ -120,6 +124,7 @@ export interface LoadDetail {
 }
 
 export interface RouteStop {
+  plannedDepartureAt?: string | null;
   id: string;
   sequence: number;
   type: string;
@@ -130,10 +135,12 @@ export interface RouteStop {
   plannedArrivalLate: string | null;
   actualArrivalAt: string | null;
   actualDepartureAt: string | null;
-  location: { name: string; city: string };
+  location: { name: string; city: string; latitude?: number | null; longitude?: number | null };
 }
 
 export interface RouteDetail {
+  deliveryPlan?: import('@pulsar/shared').DeliveryPlan | null;
+  coverageWarning?: string | null;
   id: string;
   totalDistanceKm: number | null;
   estimatedDurationMin: number | null;

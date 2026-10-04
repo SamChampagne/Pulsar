@@ -22,6 +22,7 @@ export const DOMAIN_EVENT_TYPES = {
   TRANSPORT_ORDER_PLANNED: 'transport-order.planned',
   LOAD_DISPATCHED: 'load.dispatched',
   LOAD_COMPLETED: 'load.completed',
+  LOAD_CLOSED_WITH_RETURNS: 'load.closed-with-returns',
   YARD_VISIT_CHECKED_OUT: 'yard.visit.checked-out',
   WMS_RECEIPT_POSTED: 'wms.receipt.posted',
   // CRM operating integration.

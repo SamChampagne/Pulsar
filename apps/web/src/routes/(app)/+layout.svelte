@@ -34,6 +34,7 @@
   import { density, toggleDensity } from '$lib/stores/density';
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
   import AssistantPanel from '$lib/components/agents/AssistantPanel.svelte';
+  import { assistantDraft } from '$lib/stores/assistant-draft';
   import { MODULE_UNIVERSES } from '$lib/modules/universe';
   import {
     visibleDomains as buildVisibleDomains,
@@ -70,6 +71,9 @@
   let pendingActions = $state(0);
   let assistantOpen = $state(false);
   let activeAgentChats = $state(0);
+  $effect(() => {
+    if ($assistantDraft && canChatAgents && $assistantDraft.tenantId === $auth?.tenant.id && $assistantDraft.userId === $auth?.user.id) assistantOpen = true;
+  });
 
   async function loadNotifications() {
     try {
